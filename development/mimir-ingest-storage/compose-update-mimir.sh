@@ -24,4 +24,4 @@ CGO_ENABLED=0 GOOS=linux go build -mod=vendor -gcflags "all=-N -l" -o "${SCRIPT_
 # Build docker image
 docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml build --build-arg BUILD_IMAGE="${BUILD_IMAGE}" mimir-write-zone-a-1
 # Recreate Mimir containers
-docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml up -d --force-recreate "$@" mimir-write-{1..3} mimir-read-{1..2} mimir-backend-{1..2}
+docker_compose -f "${SCRIPT_DIR}"/docker-compose.yml up -d --force-recreate "$@" mimir-write-zone-a-{1..3} mimir-write-zone-b-{1..3} mimir-read-{1..2} mimir-backend-{1..2}

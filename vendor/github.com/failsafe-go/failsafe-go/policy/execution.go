@@ -1,8 +1,6 @@
 package policy
 
 import (
-	"context"
-
 	"github.com/failsafe-go/failsafe-go"
 	"github.com/failsafe-go/failsafe-go/common"
 )
@@ -10,34 +8,28 @@ import (
 type ExecutionInternal[R any] interface {
 	failsafe.Execution[R]
 
-	// Result returns the last recorded result. If the execution was cancelled, this should be called to fetch the last
-	// recorded result.
-	Result() *common.PolicyResult[R]
+	// RecordResult records an execution result, such as before a retry attempt, and returns the result or the cancel result,
+	// if any.
+	RecordResult(result *common.PolicyResult[R]) *common.PolicyResult[R]
 
-	// InitializeAttempt prepares a new execution attempt. Returns false if the attempt could not be initialized since it was
-	// canceled by an external Context or a timeout.Timeout composed outside the Executor.
-	InitializeAttempt(policyIndex int) bool
+	// InitializeRetry prepares a new execution retry. If the retry could not be initialized because was canceled, the associated
+	// cancellation result is returned.
+	InitializeRetry() *common.PolicyResult[R]
 
-	// Record records the result of an execution attempt, if a result was not already recorded, and returns the recorded
-	// execution.
-	Record(result *common.PolicyResult[R]) *common.PolicyResult[R]
+	// Cancel cancels the execution with the result.
+	Cancel(result *common.PolicyResult[R])
 
-	// Cancel marks the execution as having been cancelled by the policyExecutor, which will also cancel pending executions
-	// of any inner policies of the policyExecutor, and also records the result. Outer policies of the policyExecutor will be
-	// unaffected.
-	Cancel(policyIndex int, result *common.PolicyResult[R])
+	// IsCanceledWithResult returns whether the execution is canceled, along with the cancellation result, if any.
+	IsCanceledWithResult() (bool, *common.PolicyResult[R])
 
-	// IsCanceledForPolicy returns whether the execution has been canceled by an external Context or a policy composed
-	// outside the Executor.
-	IsCanceledForPolicy(policyIndex int) bool
-
-	// Copy returns a copy of the failsafe.Execution. This is useful if you want to preserve the lastResult and lastError
-	// before passing the execution to an event listener, otherwise these may be changed at any time, such as by a Timeout.
-	Copy() failsafe.Execution[R]
-
-	// CopyWithResult returns a copy of the failsafe.Execution with the result.
+	// CopyWithResult returns a copy of the failsafe.Execution with the result. If the result is nil, this will preserve a
+	// copy of the lastResult and lastError. This is useful before passing the execution to an event listener, otherwise
+	// these may be changed if the execution is canceled.
 	CopyWithResult(result *common.PolicyResult[R]) failsafe.Execution[R]
 
-	// CopyWithContext returns a copy of the failsafe.Execution with the context.
-	CopyWithContext(ctx context.Context) failsafe.Execution[R]
+	// CopyForCancellable creates a cancellable child copy of the execution based on the current execution's context.
+	CopyForCancellable() failsafe.Execution[R]
+
+	// CopyForHedge creates a copy of the execution marked as a hedge.
+	CopyForHedge() failsafe.Execution[R]
 }

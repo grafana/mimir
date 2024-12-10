@@ -35,7 +35,7 @@ type ConfigCommand struct {
 	gem bool
 }
 
-// Register rule related commands and flags with the kingpin application
+// Register config related commands and flags with the kingpin application.
 func (c *ConfigCommand) Register(app *kingpin.Application, _ EnvVarNames) {
 	configCmd := app.Command("config", "Work with Grafana Mimir configuration.")
 

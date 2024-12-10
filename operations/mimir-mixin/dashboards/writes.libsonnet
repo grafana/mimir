@@ -3,10 +3,12 @@ local filename = 'mimir-writes.json';
 
 (import 'dashboard-utils.libsonnet') +
 (import 'dashboard-queries.libsonnet') {
+
   [filename]:
     assert std.md5(filename) == '8280707b8f16e7b87b840fc1cc92d4c5' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Writes') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addShowNativeLatencyVariable()
     .addRowIf(
       $._config.show_dashboard_descriptions.writes,
       ($.row('Writes dashboard description') { height: '125px', showTitle: false })
@@ -60,36 +62,32 @@ local filename = 'mimir-writes.json';
       .addPanel(
         local title = 'In-memory series';
         $.panel(title) +
-        $.statPanel(|||
-          sum(cortex_ingester_memory_series{%(ingester)s}
-          / on(%(group_by_cluster)s) group_left
-          max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s}))
-        ||| % ($._config) {
-          ingester: $.jobMatcher($._config.job_names.ingester),
-          distributor: $.jobMatcher($._config.job_names.distributor),
-        }, format='short') +
+        $.statPanel(
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_memory_series{%s}' % [$.jobMatcher($._config.job_names.ingester)]),
+          format='short'
+        ) +
         $.panelDescription(
           title,
           |||
             The number of series not yet flushed to object storage that are held in ingester memory.
+            With classic storage we the sum of series from all ingesters is divided by the replication factor.
+            With ingest storage we take the maximum series of each ingest partition.
           |||
         ),
       )
       .addPanel(
         local title = 'Exemplars in ingesters';
         $.panel(title) +
-        $.statPanel(|||
-          sum(cortex_ingester_tsdb_exemplar_exemplars_in_storage{%(ingester)s}
-          / on(%(group_by_cluster)s) group_left
-          max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s}))
-        ||| % ($._config) {
-          ingester: $.jobMatcher($._config.job_names.ingester),
-          distributor: $.jobMatcher($._config.job_names.distributor),
-        }, format='short') +
+        $.statPanel(
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_tsdb_exemplar_exemplars_in_storage{%s}' % [$.jobMatcher($._config.job_names.ingester)]),
+          format='short'
+        ) +
         $.panelDescription(
           title,
           |||
             Number of TSDB exemplars currently in ingesters' storage.
+            With classic storage we the sum of exemplars from all ingesters is divided by the replication factor.
+            With ingest storage we take the maximum exemplars of each ingest partition.
           |||
         ),
       )
@@ -100,7 +98,7 @@ local filename = 'mimir-writes.json';
       .addPanelIf(
         $._config.gateway_enabled,
         $.panel('Requests / sec') +
-        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"%s"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex], format='reqps')
+        $.statPanel(utils.ncHistogramSumBy(utils.ncHistogramCountRate($.queries.gateway.requestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector)), format='reqps')
       )
     )
     .addRowIf(
@@ -108,17 +106,15 @@ local filename = 'mimir-writes.json';
       $.row('Gateway')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel($.queries.gateway.writeRequestsPerSecond)
+        $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.queries.gateway.writeRequestsPerSecondSelector)
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway), $.queries.write_http_routes_regex], ''
-        )
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', $.queries.write_http_routes_regex)])
       )
     )
     .addRow(
@@ -134,7 +130,7 @@ local filename = 'mimir-writes.json';
             When distributor is not configured to use "early" request rejection, then rejected requests are also counted as "errors".
           |||
         ) +
-        $.qpsPanel($.queries.distributor.writeRequestsPerSecond) +
+        $.qpsPanelNativeHistogram($.queries.distributor.requestsPerSecondMetric, $.queries.distributor.writeRequestsPerSecondSelector) +
         if $._config.show_rejected_requests_on_writes_dashboard then
           {
             targets: [
@@ -154,18 +150,27 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/distributor.Distributor/Push|/httpgrpc.*|%s' % $.queries.write_http_routes_regex)])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.distributor.requestsPerSecondMetric, $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '%s' % $.queries.distributor.writeRequestsPerSecondRouteRegex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.distributor), $.queries.write_http_routes_regex], ''
-        )
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.distributor.requestsPerSecondMetric, $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '%s' % $.queries.distributor.writeRequestsPerSecondRouteRegex)])
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      $.row('Distributor (ingest storage)')
+      .addPanel(
+        $.ingestStorageKafkaProducedRecordsRatePanel('distributor')
+      )
+      .addPanel(
+        $.ingestStorageKafkaProducedRecordsLatencyPanel('distributor')
       )
     )
     .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))
-    .addRow(
-      $.row('Ingester')
+    .addRowIf(
+      $._config.show_grpc_ingestion_panels,
+      ($.row('Ingester'))
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
         $.panelDescription(
@@ -177,7 +182,7 @@ local filename = 'mimir-writes.json';
             When ingester is not configured to use "early" request rejection, then rejected requests are also counted as "errors".
           |||
         ) +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ingester)) +
+        $.qpsPanelNativeHistogram($.queries.ingester.requestsPerSecondMetric, $.queries.ingester.writeRequestsPerSecondSelector) +
         if $._config.show_rejected_requests_on_writes_dashboard then
           {
             targets: [
@@ -197,13 +202,259 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('route', '/cortex.Ingester/Push')])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.ingester.requestsPerSecondMetric, $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('route', '/cortex.Ingester/Push')])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="/cortex.Ingester/Push"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
-        )
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.ingester.requestsPerSecondMetric, $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('route', '/cortex.Ingester/Push')])
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      ($.row('Ingester – Kafka records processing (ingest storage)'))
+      .addPanel(
+        $.timeseriesPanel('Kafka fetches / sec') +
+        $.panelDescription(
+          'Kafka fetches / sec',
+          |||
+            Rate of fetches received from Kafka brokers. A fetch can contain multiple records (a write request received on the write path is mapped into a single record).
+            Read errors are any errors reported on connection to Kafka brokers, and are separate from "failed" fetches.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            |||
+              sum (rate (cortex_ingest_storage_reader_fetches_total{%s}[$__rate_interval]))
+              -
+              sum (rate (cortex_ingest_storage_reader_fetch_errors_total{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_fetch_errors_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+            // cortex_ingest_storage_reader_read_errors_total metric is reported by Kafka client.
+            'sum (rate (cortex_ingest_storage_reader_read_errors_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'successful',
+            'failed',
+            'read errors',
+          ],
+        ) + $.aliasColors({ successful: $._colors.success, failed: $._colors.failed, 'read errors': $._colors.failed }) + $.stack,
+      )
+      .addPanel(
+        $.timeseriesPanel('Kafka records batch latency') +
+        $.panelDescription(
+          'Kafka records batch latency',
+          |||
+            This panel displays the two stages in processing a record batch from Kafka. Fetching batches happens asynchronously to processing them.
+
+            If processing batches is the bottleneck, then "Awaiting next batch avg" will be close to zero. In this case you can consider tuning the ingestion-concurrency configuration parameters.
+
+            If fetching is the bottleneck, then "Awaiting next batch avg" will be in the high tens of milliseconds or higher.
+            It is normal for fetching to be the bottleneck during normal operation because a lot of the time is spent in waiting for new records to be produced.
+          |||
+        ) +
+        $.withExemplars($.queryPanel(
+          [
+            'histogram_avg(sum(rate(cortex_ingest_storage_reader_records_batch_process_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_avg(sum(rate(cortex_ingest_storage_reader_records_batch_wait_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'Batch processing avg',
+            'Awaiting next batch avg',
+          ],
+        )) + {
+          fieldConfig+: {
+            defaults+: { unit: 's', exemplar: true },
+          },
+        } +
+        $.stack,
+      )
+      .addPanel(
+        $.timeseriesPanel('Record size') +
+        $.panelDescription(
+          'Record size',
+          |||
+            Concurrent fetching estimates the size of records.
+            The estimation is used to enforce the max-buffered-bytes limit and to reduce discarded bytes.
+          |||
+        ) +
+        $.queryPanel([
+          |||
+            sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{%s}[$__rate_interval]))
+            /
+            sum(rate(cortex_ingest_storage_reader_records_per_fetch_sum{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+          |||
+            histogram_avg(sum(rate(cortex_ingest_storage_reader_estimated_bytes_per_record{%s}[$__rate_interval])))
+          |||
+          % [$.jobMatcher($._config.job_names.ingester)],
+        ], [
+          'Actual bytes per record (avg)',
+          'Estimated bytes per record (avg)',
+        ]) +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } },
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      $.row('')
+      .addPanel(
+        $.timeseriesPanel('Kafka fetch throughput') +
+        $.panelDescription(
+          'Kafka fetch throughput',
+          |||
+            Throughput of fetches received from Kafka brokers.
+            This panel shows the rate of bytes fetched from Kafka brokers, and the rate of bytes discarded.
+            The discarded bytes are due to concurrently fetching overlapping offsets.
+
+            Discarded bytes amounting to up to 10% of the total fetched bytes are exepcted during startup when there is higher concurrency in fetching.
+            Discarded bytes amounting to around 1% of the total fetched bytes are expected during normal operation.
+
+            High values of discarded bytes might indicate inaccurate estimation of record size.
+          |||
+        ) +
+        $.queryPanel([
+          'sum(rate(cortex_ingest_storage_reader_fetch_bytes_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+          'sum(rate(cortex_ingest_storage_reader_fetched_discarded_bytes_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+        ], [
+          'Fetched bytes (decompressed)',
+          'Discarded bytes (decompressed)',
+        ]) +
+        { fieldConfig+: { defaults+: { unit: 'Bps' } } },
+      )
+      .addPanel(
+        $.timeseriesPanel('Write request batches processed / sec') +
+        $.panelDescription(
+          'Write request batches processed / sec',
+          |||
+            Rate of write requests processed from Kafka. When concurrent fetcher is enabled, this panel shows the rate
+            of write request batches processed: multiple requests could get batched together and so the resulting number
+            batches processed may be lower than the number of write requests received in the distributor.
+
+            Failed records are categorized as "client" errors (e.g. per-tenant limits) or server errors.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            |||
+              sum(
+                # This is the old metric name. We're keeping support for backward compatibility.
+                rate(cortex_ingest_storage_reader_records_total{%s}[$__rate_interval])
+                or
+                rate(cortex_ingest_storage_reader_requests_total{%s}[$__rate_interval])
+              )
+              -
+              sum(
+                # This is the old metric name. We're keeping support for backward compatibility.
+                rate(cortex_ingest_storage_reader_records_failed_total{%s}[$__rate_interval])
+                or
+                rate(cortex_ingest_storage_reader_requests_failed_total{%s}[$__rate_interval])
+              )
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            'sum (
+                # This is the old metric name. We\'re keeping support for backward compatibility.
+                rate(cortex_ingest_storage_reader_records_failed_total{%s, cause="client"}[$__rate_interval])
+                or
+                rate(cortex_ingest_storage_reader_requests_failed_total{%s, cause="client"}[$__rate_interval])
+              )' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            'sum (
+              # This is the old metric name. We\'re keeping support for backward compatibility.
+              rate(cortex_ingest_storage_reader_records_failed_total{%s, cause="server"}[$__rate_interval])
+              or
+              rate(cortex_ingest_storage_reader_requests_failed_total{%s, cause="server"}[$__rate_interval])
+            )' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'successful',
+            'failed (client)',
+            'failed (server)',
+          ],
+        ) + $.aliasColors({ successful: $._colors.success, 'failed (client)': $._colors.clientError, 'failed (server)': $._colors.failed }) + $.stack,
+      )
+      .addPanel(
+        $.timeseriesPanel('Ingested series / sec') +
+        $.panelDescription(
+          'Ingested series',
+          |||
+            Concurrent ingestion estimates the number of timeseries per batch to choose the optimal concurrency settings.
+
+            Normally one timeseries contains one sample, but it can contain multiple samples.
+          |||
+        ) +
+        $.queryPanel([
+          'histogram_sum(sum(rate(cortex_ingest_storage_reader_pusher_timeseries_per_flush{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+          'sum(rate(cortex_ingest_storage_reader_pusher_estimated_timeseries_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+        ], [
+          'Actual series',
+          'Estimated series',
+        ]) +
+        { fieldConfig+: { defaults+: { unit: 'short' } } },
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      $.row('Ingester – end-to-end latency (ingest storage)')
+      .addPanel(
+        $.ingestStorageIngesterEndToEndLatencyWhenRunningPanel(),
+      )
+      .addPanel(
+        $.ingestStorageIngesterEndToEndLatencyOutliersWhenRunningPanel(),
+      )
+      .addPanel(
+        $.ingestStorageIngesterEndToEndLatencyWhenStartingPanel(),
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      ($.row('Ingester – last consumed offset (ingest storage)'))
+      .addPanel(
+        $.timeseriesPanel('Last consumed offset commits / sec') +
+        $.panelDescription(
+          'Last consumed offset commits / sec',
+          |||
+            Rate of "last consumed offset" commits issued by ingesters to Kafka.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            |||
+              sum (rate (cortex_ingest_storage_reader_offset_commit_requests_total{%s}[$__rate_interval]))
+              -
+              sum (rate (cortex_ingest_storage_reader_offset_commit_failures_total{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+            'sum (rate (cortex_ingest_storage_reader_offset_commit_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'successful',
+            'failed',
+          ],
+        ) + $.aliasColors({ successful: $._colors.success, failed: $._colors.failed }) + $.stack,
+      )
+      .addPanel(
+        $.timeseriesPanel('Last consumed offset commits latency') +
+        $.panelDescription(
+          'Kafka record processing latency',
+          |||
+            Time spent to commit "last consumed offset" by ingesters to Kafka.
+          |||
+        ) +
+        $.queryPanel(
+          [
+            'histogram_avg(sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.99, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(0.999, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+            'histogram_quantile(1.0, sum(rate(cortex_ingest_storage_reader_offset_commit_request_duration_seconds{%s}[$__rate_interval])))' % [$.jobMatcher($._config.job_names.ingester)],
+          ],
+          [
+            'avg',
+            '99th percentile',
+            '99.9th percentile',
+            '100th percentile',
+          ],
+        ) + {
+          fieldConfig+: {
+            defaults+: { unit: 's' },
+          },
+        },
       )
     )
     .addRowIf(
@@ -213,6 +464,64 @@ local filename = 'mimir-writes.json';
     .addRowIf(
       $._config.autoscaling.distributor.enabled,
       $.cpuAndMemoryBasedAutoScalingRow('Distributor'),
+    )
+    .addRowIf(
+      $._config.autoscaling.ingester.enabled,
+      $.row('Ingester – autoscaling')
+      .addPanel(
+        local replicaTemplateQueries = [
+          'max(kube_customresource_replicatemplate_spec_replicas{%(namespace_matcher)s, name=~"%(replica_template_name)s"})' % {
+            namespace_matcher: $.namespaceMatcher(),
+            replica_template_name: $._config.autoscaling.ingester.replica_template_name,
+          },
+          'max(kube_customresource_replicatemplate_status_replicas{%(namespace_matcher)s, name=~"%(replica_template_name)s"})' % {
+            namespace_matcher: $.namespaceMatcher(),
+            replica_template_name: $._config.autoscaling.ingester.replica_template_name,
+          },
+        ];
+
+        local replicaTemplateLegends = [
+          'Template spec replicas',
+          'Template status replicas',
+        ];
+
+        $.autoScalingActualReplicas('ingester', replicaTemplateQueries, replicaTemplateLegends) + { title: 'Replicas (HPA + ReplicaTemplate)' } +
+        $.panelDescription(
+          'Replicas (HPA + ReplicaTemplate)',
+          |||
+            The minimum, maximum, and current number of replicas reported by the HPA for the ReplicaTemplate object.
+            If available, also the spec and status replicas fields for the ReplicaTemplate object itself.
+            Rollout-operator will keep ingester replicas updated based on the ReplicaTemplate spec field, and then update the template's status field once the ingester count changes.
+          |||
+        )
+      )
+      .addPanel(
+        $.timeseriesPanel('Replicas (Ingesters)') +
+        $.panelDescription(
+          'Replicas (Ingesters)',
+          |||
+            Number of up ingester replicas per zone.
+            Also show the number of read-only replicas per zone, or number of Inactive partitions for ingest storage.
+          |||
+        ) + $.queryPanel(
+          [
+            'sum by (%s) (up{%s})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.ingester)],
+            'sum by (%s) (cortex_lifecycler_read_only{%s}) unless on (%s) (cortex_partition_ring_partitions{name="ingester-partitions"})' % [$._config.per_job_label, $.jobMatcher($._config.job_names.ingester), $._config.per_job_label],
+            'max(cortex_partition_ring_partitions{%s,name="ingester-partitions",state="Inactive"})' % [$.namespaceMatcher()],
+          ],
+          [
+            'up ({{ %(per_job_label)s }})' % $._config.per_job_label,
+            'read-only ({{ %(per_job_label)s }})' % $._config.per_job_label,
+            'inactive partitions',
+          ],
+        ),
+      )
+      .addPanel(
+        $.autoScalingDesiredReplicasByAverageValueScalingMetricPanel('ingester', '', '') + { title: 'Desired replicas (ReplicaTemplate)' }
+      )
+      .addPanel(
+        $.autoScalingFailuresPanel('ingester') + { title: 'Autoscaler failures rate (ReplicaTemplate)' }
+      ),
     )
     .addRow(
       $.kvStoreRow('Distributor - key-value store for high-availability (HA) deduplication', 'distributor', 'distributor-hatracker')
@@ -224,7 +533,7 @@ local filename = 'mimir-writes.json';
       $.kvStoreRow('Ingester - key-value store for the ingesters ring', 'ingester', 'ingester-.*')
     )
     .addRow(
-      $.row('Ingester - shipper')
+      $.row('Ingester – shipper')
       .addPanel(
         $.timeseriesPanel('Uploaded blocks / sec') +
         $.successFailurePanel(
@@ -253,7 +562,7 @@ local filename = 'mimir-writes.json';
       )
     )
     .addRow(
-      $.row('Ingester - TSDB head')
+      $.row('Ingester – TSDB head')
       .addPanel(
         $.timeseriesPanel('Compactions / sec') +
         $.successFailurePanel(
@@ -283,7 +592,7 @@ local filename = 'mimir-writes.json';
       )
     )
     .addRow(
-      $.row('Ingester - TSDB write ahead log (WAL)')
+      $.row('Ingester – TSDB write ahead log (WAL)')
       .addPanel(
         $.timeseriesPanel('WAL truncations / sec') +
         $.successFailurePanel(
@@ -388,18 +697,10 @@ local filename = 'mimir-writes.json';
         local title = 'Ingester ingested exemplars rate';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          |||
-            sum(
-              %(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m{%(ingester)s}
-              / on(%(group_by_cluster)s) group_left
-              max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-            )
-          ||| % {
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('%(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m{%(ingester)s}' % {
             ingester: $.jobMatcher($._config.job_names.ingester),
-            distributor: $.jobMatcher($._config.job_names.distributor),
-            group_by_cluster: $._config.group_by_cluster,
             group_prefix_jobs: $._config.group_prefix_jobs,
-          },
+          }),
           'ingested exemplars',
         ) +
         { fieldConfig+: { defaults+: { unit: 'ex/s' } } } +
@@ -407,7 +708,8 @@ local filename = 'mimir-writes.json';
           title,
           |||
             The rate of exemplars ingested in the ingesters.
-            Every exemplar is sent to the replication factor number of ingesters, so the sum of rates from all ingesters is divided by the replication factor.
+            Every exemplar is replicated to a number of ingesters. With classic storage we the sum of rates from all ingesters is divided by the replication factor.
+            With ingest storage we take the maximum rate of each ingest partition.
             This ingested exemplars rate should match the distributor's received exemplars rate.
           |||
         ),
@@ -416,18 +718,10 @@ local filename = 'mimir-writes.json';
         local title = 'Ingester appended exemplars rate';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          |||
-            sum(
-              %(group_prefix_jobs)s:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{%(ingester)s}
-              / on(%(group_by_cluster)s) group_left
-              max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-            )
-          ||| % {
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('%(group_prefix_jobs)s:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{%(ingester)s}' % {
             ingester: $.jobMatcher($._config.job_names.ingester),
-            distributor: $.jobMatcher($._config.job_names.distributor),
-            group_by_cluster: $._config.group_by_cluster,
             group_prefix_jobs: $._config.group_prefix_jobs,
-          },
+          }),
           'appended exemplars',
         ) +
         { fieldConfig+: { defaults+: { unit: 'ex/s' } } } +

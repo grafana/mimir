@@ -78,72 +78,27 @@ You might experience the following challenges when you scale down ingesters:
   It takes the [queriers]({{< relref "../../references/architecture/components/querier" >}}) and [store-gateways]({{< relref "../../references/architecture/components/store-gateway" >}}) some time before a newly uploaded block is available for querying.
   If you scale down two or more ingesters in a short period of time, queries might return partial results.
 
-#### Scaling down ingesters deployed in a single zone (default)
+#### Scaling down ingesters
 
-Complete the following steps to scale down ingesters deployed in a single zone.
+Complete the following steps to scale down ingesters in any zone.
 
-1. Configure the Grafana Mimir cluster to discover and query new uploaded blocks as quickly as possible.
+1. Set each ingester to read-only mode:
 
-   a. Configure queriers and rulers to always query the long-term storage and to disable ingesters [shuffle sharding]({{< relref "../../configure/configure-shuffle-sharding" >}}) on the read path:
+   a. Send a POST request to the `/ingester/prepare-instance-ring-downscale` API endpoint on the ingester to place it into read-only mode.
 
-   ```
-   -querier.query-store-after=0s
-   -querier.shuffle-sharding-ingesters-enabled=false
-   ```
+1. Wait until the blocks uploaded by read-only ingesters are available for querying before proceeding. The required amount of time to wait depends on your configuration and is the maximum value for the following settings:
 
-   b. Configure the compactors to frequently update the bucket index:
+- The configured `-querier.query-store-after` setting
+- Two times the configured `-blocks-storage.bucket-store.sync-interval` setting
+- Two times the configured `-compactor.cleanup-interval` setting
 
-   ```
-   -compactor.cleanup-interval=5m
-   ```
+1. Scale down each ingester:
 
-   c. Configure the store-gateways to frequently refresh the bucket index and to immediately load all blocks:
+   a. Send a POST request to the `/ingester/shutdown` API endpoint on the ingester to terminate it.
 
-   ```
-   -blocks-storage.bucket-store.sync-interval=5m
-   -blocks-storage.bucket-store.ignore-blocks-within=0s
-   ```
-
-   d. Configure queriers, rulers and store-gateways with reduced TTLs for the metadata cache:
-
-   ```
-   -blocks-storage.bucket-store.metadata-cache.bucket-index-content-ttl=1m
-   -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl=1m
-   -blocks-storage.bucket-store.metadata-cache.tenant-blocks-list-ttl=1m
-   -blocks-storage.bucket-store.metadata-cache.metafile-doesnt-exist-ttl=1m
-   ```
-
-1. Scale down one ingester at a time:
-
-   a. Invoke the `/ingester/shutdown` API endpoint on the ingester to terminate.
-
-   b. Wait until the API endpoint call has successfully returned and the ingester logged "finished flushing and shipping TSDB blocks".
+   b. Wait until the API endpoint call has successfully returned and the ingester has logged "finished flushing and shipping TSDB blocks".
 
    c. Send a `SIGINT` or `SIGTERM` signal to the process of the ingester to terminate.
-
-   d. Wait 10 minutes before proceeding with the next ingester. The temporarily applied configuration guarantees newly uploaded blocks are available for querying within 10 minutes.
-
-1. Wait until the originally configured `-querier.query-store-after` period of time has elapsed since when all ingesters have been shutdown.
-1. Revert the temporary configuration changes done at the beginning of the scale down procedure.
-
-#### Scaling down ingesters deployed in multiple zones
-
-Grafana Mimir can tolerate a full-zone outage when you deploy ingesters in [multiple zones]({{< relref "../../configure/configure-zone-aware-replication" >}}).
-A scale down of ingesters in one zone can be seen as a partial-zone outage.
-To simplify the scale down process, you can leverage ingesters deployed in multiple zones.
-
-For each zone, complete the following steps:
-
-1. Invoke the `/ingester/shutdown` API endpoint on all ingesters that you want to terminate.
-1. Wait until the API endpoint calls have successfully returned and the ingester has logged "finished flushing and shipping TSDB blocks".
-1. Send a `SIGINT` or `SIGTERM` signal to the processes of the ingesters that you want to terminate.
-1. Wait until the blocks uploaded by terminated ingesters are available for querying before proceeding with the next zone.
-
-The required amount of time to wait depends on your configuration and it's the maximum value for the following settings:
-
-- The configured `-querier.query-store-after`
-- Two times the configured `-blocks-storage.bucket-store.sync-interval`
-- Two times the configured `-compactor.cleanup-interval`
 
 ### Scaling down store-gateways
 

@@ -1,4 +1,4 @@
-{{- if .Values.overrides_exporter.enabled -}}
+{{- if and .Values.overrides_exporter.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -35,8 +35,10 @@ spec:
         - name: {{ . }}
       {{- end }}
       {{- end }}
+      {{- with .Values.overrides_exporter.initContainers }}
       initContainers:
-        {{- toYaml .Values.overrides_exporter.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: overrides-exporter
           image: "{{ include "mimir.imageReference" . }}"
@@ -46,11 +48,14 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- range $key, $value := .Values.overrides_exporter.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- if .Values.overrides_exporter.extraVolumeMounts }}
               {{ toYaml .Values.overrides_exporter.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -62,7 +67,9 @@ spec:
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage
               mountPath: "/data"
+              {{- if .Values.overrides_exporter.persistence.subPath }}
               subPath: {{ .Values.overrides_exporter.persistence.subPath }}
+              {{- end }}
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -80,6 +87,8 @@ spec:
             {{- toYaml .Values.overrides_exporter.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.overrides_exporter.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.overrides_exporter }}
+          {{- if or .Values.global.extraEnv .Values.overrides_exporter.env $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -87,11 +96,12 @@ spec:
             {{- with .Values.overrides_exporter.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.overrides_exporter }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.overrides_exporter.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -99,16 +109,23 @@ spec:
             {{- with .Values.overrides_exporter.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
         {{- with .Values.overrides_exporter.extraContainers }}
         {{ toYaml . | nindent 8 }}
         {{- end }}
+      {{- with .Values.overrides_exporter.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.overrides_exporter.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.overrides_exporter.affinity }}
       affinity:
-        {{- toYaml .Values.overrides_exporter.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "overrides-exporter") | nindent 6 }}
+      {{- with .Values.overrides_exporter.tolerations }}
       tolerations:
-        {{- toYaml .Values.overrides_exporter.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.overrides_exporter.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -123,6 +140,9 @@ spec:
             name: {{ template "mimir.fullname" . }}-runtime
         {{- if .Values.overrides_exporter.extraVolumes }}
         {{ toYaml .Values.overrides_exporter.extraVolumes | nindent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8}}
         {{- end }}
         - name: storage
           emptyDir: {}

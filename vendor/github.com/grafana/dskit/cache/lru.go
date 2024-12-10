@@ -74,22 +74,71 @@ func WrapWithLRUCache(c Cache, name string, reg prometheus.Registerer, lruSize i
 	return cache, nil
 }
 
-func (l *LRUCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
-	// store the data in the shared cache.
-	l.c.StoreAsync(data, ttl)
+func (l *LRUCache) SetAsync(key string, value []byte, ttl time.Duration) {
+	l.c.SetAsync(key, value, ttl)
 
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 
+	expires := time.Now().Add(ttl)
+	l.lru.Add(key, &Item{
+		Data:      value,
+		ExpiresAt: expires,
+	})
+}
+
+func (l *LRUCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
+	// store the data in the shared cache.
+	l.c.SetMultiAsync(data, ttl)
+
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
+	expires := time.Now().Add(ttl)
 	for k, v := range data {
 		l.lru.Add(k, &Item{
 			Data:      v,
-			ExpiresAt: time.Now().Add(ttl),
+			ExpiresAt: expires,
 		})
 	}
 }
 
-func (l *LRUCache) Fetch(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte) {
+func (l *LRUCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	err := l.c.Set(ctx, key, value, ttl)
+
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
+	expires := time.Now().Add(ttl)
+	l.lru.Add(key, &Item{
+		Data:      value,
+		ExpiresAt: expires,
+	})
+
+	return err
+}
+
+func (l *LRUCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	err := l.c.Add(ctx, key, value, ttl)
+
+	// When a caller uses the Add method, the presence of absence of an entry in the cache
+	// has significance. In order to maintain the semantics of that, we only add an entry to
+	// the LRU when it was able to be successfully added to the shared cache.
+	if err == nil {
+		l.mtx.Lock()
+		defer l.mtx.Unlock()
+
+		expires := time.Now().Add(ttl)
+		l.lru.Add(key, &Item{
+			Data:      value,
+			ExpiresAt: expires,
+		})
+	}
+
+	return err
+}
+
+func (l *LRUCache) GetMulti(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte) {
 	l.requests.Add(float64(len(keys)))
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
@@ -116,7 +165,7 @@ func (l *LRUCache) Fetch(ctx context.Context, keys []string, opts ...Option) (re
 	l.hits.Add(float64(len(found)))
 
 	if len(miss) > 0 {
-		result = l.c.Fetch(ctx, miss, opts...)
+		result = l.c.GetMulti(ctx, miss, opts...)
 		for k, v := range result {
 			// we don't know the ttl of the result, so we use the default one.
 			l.lru.Add(k, &Item{
@@ -132,6 +181,10 @@ func (l *LRUCache) Fetch(ctx context.Context, keys []string, opts ...Option) (re
 
 func (l *LRUCache) Name() string {
 	return "in-memory-" + l.name
+}
+
+func (l *LRUCache) Stop() {
+	l.c.Stop()
 }
 
 func (l *LRUCache) Delete(ctx context.Context, key string) error {

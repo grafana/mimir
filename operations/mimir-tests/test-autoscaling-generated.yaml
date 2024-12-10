@@ -650,7 +650,7 @@ spec:
           value: "8"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -746,7 +746,7 @@ spec:
           value: "5"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -771,6 +771,7 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -825,7 +826,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -897,7 +898,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -920,6 +921,7 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       volumes:
       - configMap:
           name: overrides
@@ -990,7 +992,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1083,7 +1085,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: ruler-querier
         ports:
@@ -1108,6 +1110,7 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -1165,7 +1168,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: ruler-query-frontend
         ports:
@@ -1237,7 +1240,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: ruler-query-scheduler
         ports:
@@ -1260,6 +1263,7 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       volumes:
       - configMap:
           name: overrides
@@ -1296,6 +1300,7 @@ spec:
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-idle-timeout=6m
         - -server.http-listen-port=8080
         - -target=alertmanager
         - -usage-stats.installation-mode=jsonnet
@@ -1304,7 +1309,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1403,7 +1408,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1510,9 +1515,11 @@ spec:
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "9"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1590,8 +1597,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1606,7 +1612,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.14.2
+        image: prom/memcached-exporter:v0.15.0
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1644,8 +1650,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1660,7 +1665,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.14.2
+        image: prom/memcached-exporter:v0.15.0
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1698,8 +1703,7 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1714,7 +1718,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.14.2
+        image: prom/memcached-exporter:v0.15.0
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1752,8 +1756,7 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        - --extended=track_sizes
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1768,7 +1771,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.14.2
+        image: prom/memcached-exporter:v0.15.0
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1812,16 +1815,14 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
-        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=450ms
+        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.backend=memcached
         - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency=50
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-cache.memcached.timeout=450ms
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
@@ -1855,7 +1856,7 @@ spec:
           value: "12884901888"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -1959,6 +1960,7 @@ spec:
     name: alertmanager
   triggers:
   - metadata:
+      ignoreNullValues: "false"
       metricName: cortex_alertmanager_cpu_hpa_default
       query: |
         max_over_time(
@@ -1973,6 +1975,7 @@ spec:
     name: cortex_alertmanager_cpu_hpa_default
     type: prometheus
   - metadata:
+      ignoreNullValues: "false"
       metricName: cortex_alertmanager_memory_hpa_default
       query: |
         max_over_time(
@@ -2009,9 +2012,19 @@ spec:
       behavior:
         scaleDown:
           policies:
-          - periodSeconds: 600
+          - periodSeconds: 120
             type: Percent
             value: 10
+          stabilizationWindowSeconds: 1800
+        scaleUp:
+          policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 50
+          - periodSeconds: 120
+            type: Pods
+            value: 15
+          stabilizationWindowSeconds: 120
   maxReplicaCount: 30
   minReplicaCount: 3
   pollingInterval: 10
@@ -2019,13 +2032,14 @@ spec:
     name: distributor
   triggers:
   - metadata:
+      ignoreNullValues: "false"
       metricName: cortex_distributor_cpu_hpa_default
       query: |
-        max_over_time(
+        quantile_over_time(0.95,
           sum(
             sum by (pod) (rate(container_cpu_usage_seconds_total{container="distributor",namespace="default"}[5m]))
             and
-            max by (pod) (up{container="distributor",namespace="default"}) > 0
+            max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
           )[15m:]
         ) * 1000
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2033,14 +2047,15 @@ spec:
     name: cortex_distributor_cpu_hpa_default
     type: prometheus
   - metadata:
+      ignoreNullValues: "false"
       metricName: cortex_distributor_memory_hpa_default
       query: |
-        max_over_time(
+        quantile_over_time(0.95,
           sum(
             (
               sum by (pod) (container_memory_working_set_bytes{container="distributor",namespace="default"})
               and
-              max by (pod) (up{container="distributor",namespace="default"}) > 0
+              max by (pod) (min_over_time(kube_pod_status_ready{namespace="default",condition="true"}[1m])) > 0
             ) or vector(0)
           )[15m:]
         )
@@ -2102,6 +2117,14 @@ spec:
       threshold: "6"
     name: cortex_querier_hpa_default_requests_duration
     type: prometheus
+  - metadata:
+      metricName: cortex_querier_hpa_default_7d_offset
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5"}[30m]
+        offset 6d23h30m))
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "6"
+    name: cortex_querier_hpa_default_7d_offset
+    type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
@@ -2124,6 +2147,7 @@ spec:
     name: query-frontend
   triggers:
   - metadata:
+      ignoreNullValues: "false"
       metricName: query_frontend_cpu_hpa_default
       query: |
         max_over_time(
@@ -2138,6 +2162,7 @@ spec:
     name: query_frontend_cpu_hpa_default
     type: prometheus
   - metadata:
+      ignoreNullValues: "false"
       metricName: query_frontend_memory_hpa_default
       query: |
         max_over_time(
@@ -2184,6 +2209,7 @@ spec:
     name: ruler
   triggers:
   - metadata:
+      ignoreNullValues: "false"
       metricName: ruler_cpu_hpa_default
       query: |
         max_over_time(
@@ -2198,6 +2224,7 @@ spec:
     name: ruler_cpu_hpa_default
     type: prometheus
   - metadata:
+      ignoreNullValues: "false"
       metricName: ruler_memory_hpa_default
       query: |
         max_over_time(
@@ -2244,6 +2271,7 @@ spec:
     name: ruler-querier
   triggers:
   - metadata:
+      ignoreNullValues: "false"
       metricName: ruler_querier_cpu_hpa_default
       query: |
         max_over_time(
@@ -2258,6 +2286,7 @@ spec:
     name: ruler_querier_cpu_hpa_default
     type: prometheus
   - metadata:
+      ignoreNullValues: "false"
       metricName: ruler_querier_memory_hpa_default
       query: |
         max_over_time(
@@ -2282,6 +2311,14 @@ spec:
       threshold: "1073741824"
     name: ruler_querier_memory_hpa_default
     type: prometheus
+  - metadata:
+      ignoreNullValues: "false"
+      metricName: ruler_querier_queries_hpa_default
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="default",quantile="0.5"}[1m]))
+      serverAddress: http://prometheus.default:9090/prometheus
+      threshold: "6"
+    name: ruler_querier_queries_hpa_default
+    type: prometheus
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
@@ -2304,6 +2341,7 @@ spec:
     name: ruler-query-frontend
   triggers:
   - metadata:
+      ignoreNullValues: "false"
       metricName: ruler_query_frontend_cpu_hpa_default
       query: |
         max_over_time(
@@ -2318,6 +2356,7 @@ spec:
     name: ruler_query_frontend_cpu_hpa_default
     type: prometheus
   - metadata:
+      ignoreNullValues: "false"
       metricName: ruler_query_frontend_memory_hpa_default
       query: |
         max_over_time(

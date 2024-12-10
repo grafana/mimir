@@ -8,11 +8,14 @@ package querymiddleware
 import (
 	"context"
 	"fmt"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -38,7 +41,7 @@ type querySharding struct {
 	limit Limits
 
 	engine            *promql.Engine
-	next              Handler
+	next              MetricsQueryHandler
 	logger            log.Logger
 	maxSeriesPerShard uint64
 
@@ -64,7 +67,7 @@ func newQueryShardingMiddleware(
 	limit Limits,
 	maxSeriesPerShard uint64,
 	registerer prometheus.Registerer,
-) Middleware {
+) MetricsQueryMiddleware {
 	metrics := queryShardingMetrics{
 		shardingAttempts: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_query_sharding_rewrites_attempted_total",
@@ -84,7 +87,7 @@ func newQueryShardingMiddleware(
 			Buckets: prometheus.ExponentialBuckets(2, 2, 10),
 		}),
 	}
-	return MiddlewareFunc(func(next Handler) Handler {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &querySharding{
 			next:                 next,
 			queryShardingMetrics: metrics,
@@ -96,7 +99,7 @@ func newQueryShardingMiddleware(
 	})
 }
 
-func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
+func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	log := spanlogger.FromContext(ctx, s.logger)
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
@@ -107,7 +110,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	// Parse the query.
 	queryExpr, err := parser.ParseExpr(r.GetQuery())
 	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
+		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
 	totalShards := s.getShardsForQuery(ctx, tenantIDs, r, queryExpr, log)
@@ -144,10 +147,19 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddShardedQueries(uint32(shardingStats.GetShardedQueries()))
 
-	r = r.WithQuery(shardedQuery)
-	shardedQueryable := newShardedQueryable(r, s.next)
+	r, err = r.WithQuery(shardedQuery)
+	if err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
 
-	qry, err := newQuery(ctx, r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
+	annotationAccumulator := NewAnnotationAccumulator()
+	shardedQueryable := NewShardedQueryable(r, annotationAccumulator, s.next, nil)
+
+	return ExecuteQueryOnQueryable(ctx, r, s.engine, shardedQueryable, annotationAccumulator)
+}
+
+func ExecuteQueryOnQueryable(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine, queryable storage.Queryable, annotationAccumulator *AnnotationAccumulator) (Response, error) {
+	qry, err := newQuery(ctx, r, engine, lazyquery.NewLazyQueryable(queryable))
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -157,21 +169,41 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	if err != nil {
 		return nil, mapEngineError(err)
 	}
+	// Note that the positions based on the original query may be wrong as the rewritten
+	// query which is actually used is different, but the user does not see the rewritten
+	// query, so we pass in an empty string as the query so the positions will be hidden.
+	warn, info := res.Warnings.AsStrings("", 0, 0)
+
+	if annotationAccumulator != nil {
+		// Add any annotations returned by the sharded queries, and remove any duplicates.
+		// We remove any position information for the same reason as above: the position information
+		// relates to the rewritten expression sent to queriers, not the original expression provided by the user.
+		accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
+		warn = append(warn, removeAllAnnotationPositionInformation(accumulatedWarnings)...)
+		info = append(info, removeAllAnnotationPositionInformation(accumulatedInfos)...)
+		warn = removeDuplicates(warn)
+		info = removeDuplicates(info)
+	}
+
+	var headers []*PrometheusHeader
+	shardedQueryable, ok := queryable.(*shardedQueryable)
+	if ok {
+		headers = shardedQueryable.getResponseHeaders()
+	}
+
 	return &PrometheusResponse{
 		Status: statusSuccess,
 		Data: &PrometheusData{
 			ResultType: string(res.Value.Type()),
 			Result:     extracted,
 		},
-		Headers: shardedQueryable.getResponseHeaders(),
-		// Note that the positions based on the original query may be wrong as the rewritten
-		// query which is actually used is different, but the user does not see the rewritten
-		// query, so we pass in an empty string as the query so the positions will be hidden.
-		Warnings: res.Warnings.AsStrings("", 0),
+		Headers:  headers,
+		Warnings: warn,
+		Infos:    info,
 	}, nil
 }
 
-func newQuery(ctx context.Context, r Request, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
+func newQuery(ctx context.Context, r MetricsQueryRequest, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
 	switch r := r.(type) {
 	case *PrometheusRangeQueryRequest:
 		return engine.NewRangeQuery(
@@ -191,7 +223,21 @@ func newQuery(ctx context.Context, r Request, engine *promql.Engine, queryable s
 			r.GetQuery(),
 			util.TimeFromMillis(r.GetTime()),
 		)
-
+	case *remoteReadQueryRequest:
+		return engine.NewRangeQuery(
+			ctx,
+			queryable,
+			// Lookback period is not applied to remote read queries in the same way
+			// as regular queries. However we cannot set a zero lookback period
+			// because the engine will just use the default 5 minutes instead. So we
+			// set a lookback period of 1ns and add that amount to the start time so
+			// the engine will calculate an effective 0 lookback period.
+			promql.NewPrometheusQueryOpts(false, 1*time.Nanosecond),
+			r.GetQuery(),
+			util.TimeFromMillis(r.GetStart()).Add(1*time.Nanosecond),
+			util.TimeFromMillis(r.GetEnd()),
+			time.Duration(r.GetStep())*time.Millisecond,
+		)
 	default:
 		return nil, fmt.Errorf("unsupported query type %T", r)
 	}
@@ -234,16 +280,17 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 	ctx, cancel := context.WithTimeout(ctx, shardingTimeout)
 	defer cancel()
 
-	mapper, err := astmapper.NewSharding(ctx, totalShards, s.logger, stats)
+	summer, err := astmapper.NewQueryShardSummer(ctx, totalShards, astmapper.VectorSquasher, s.logger, stats)
 	if err != nil {
 		return "", nil, err
 	}
+	mapper := astmapper.NewSharding(summer)
 
 	// The mapper can modify the input expression in-place, so we must re-parse the original query
 	// each time before passing it to the mapper.
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
+		return "", nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
 	shardedQuery, err := mapper.Map(expr)
@@ -255,7 +302,7 @@ func (s *querySharding) shardQuery(ctx context.Context, query string, totalShard
 }
 
 // getShardsForQuery calculates and return the number of shards that should be used to run the query.
-func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []string, r Request, queryExpr parser.Expr, spanLog *spanlogger.SpanLogger) int {
+func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []string, r MetricsQueryRequest, queryExpr parser.Expr, spanLog *spanlogger.SpanLogger) int {
 	// Check if sharding is disabled for the given request.
 	if r.GetOptions().ShardingDisabled {
 		return 1
@@ -289,18 +336,23 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 	maxShardedQueries := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingMaxShardedQueries)
 	hints := r.GetHints()
 
-	if v, ok := hints.GetCardinalityEstimate().(*Hints_EstimatedSeriesCount); ok && s.maxSeriesPerShard > 0 {
+	var seriesCount *EstimatedSeriesCount
+	if hints != nil {
+		seriesCount = hints.GetCardinalityEstimate()
+	}
+
+	if seriesCount != nil && s.maxSeriesPerShard > 0 {
 		prevTotalShards := totalShards
 		// If an estimate for query cardinality is available, use it to limit the number
 		// of shards based on linear interpolation.
-		totalShards = util_math.Min(totalShards, int(v.EstimatedSeriesCount/s.maxSeriesPerShard)+1)
+		totalShards = util_math.Min(totalShards, int(seriesCount.EstimatedSeriesCount/s.maxSeriesPerShard)+1)
 
 		if prevTotalShards != totalShards {
 			spanLog.DebugLog(
 				"msg", "number of shards has been adjusted to match the estimated series count",
 				"updated total shards", totalShards,
 				"previous total shards", prevTotalShards,
-				"estimated series count", v.EstimatedSeriesCount,
+				"estimated series count", seriesCount.EstimatedSeriesCount,
 			)
 		}
 	}
@@ -451,4 +503,93 @@ func longestRegexpMatcherBytes(expr parser.Expr) int {
 	}
 
 	return longest
+}
+
+// AnnotationAccumulator collects annotations returned by sharded queries.
+type AnnotationAccumulator struct {
+	warnings *sync.Map
+	infos    *sync.Map
+}
+
+func NewAnnotationAccumulator() *AnnotationAccumulator {
+	return &AnnotationAccumulator{
+		warnings: &sync.Map{},
+		infos:    &sync.Map{},
+	}
+}
+
+// addWarning collects the warning annotation w.
+//
+// addWarning is safe to call from multiple goroutines.
+func (a *AnnotationAccumulator) addWarning(w string) {
+	// We use LoadOrStore here to add the annotation if it doesn't already exist or otherwise do nothing.
+	a.warnings.LoadOrStore(w, struct{}{})
+}
+
+// addWarnings collects all of the warning annotations in warnings.
+//
+// addWarnings is safe to call from multiple goroutines.
+func (a *AnnotationAccumulator) addWarnings(warnings []string) {
+	for _, w := range warnings {
+		a.addWarning(w)
+	}
+}
+
+// addInfo collects the info annotation i.
+//
+// addInfo is safe to call from multiple goroutines.
+func (a *AnnotationAccumulator) addInfo(i string) {
+	// We use LoadOrStore here to add the annotation if it doesn't already exist or otherwise do nothing.
+	a.infos.LoadOrStore(i, struct{}{})
+}
+
+// addInfos collects all of the info annotations in infos.
+//
+// addInfo is safe to call from multiple goroutines.
+func (a *AnnotationAccumulator) addInfos(infos []string) {
+	for _, i := range infos {
+		a.addInfo(i)
+	}
+}
+
+// getAll returns all annotations collected by this accumulator.
+//
+// getAll may return inconsistent or unexpected results if it is called concurrently with addInfo or addWarning.
+func (a *AnnotationAccumulator) getAll() (warnings, infos []string) {
+	return getAllKeys(a.warnings), getAllKeys(a.infos)
+}
+
+func getAllKeys(m *sync.Map) []string {
+	var keys []string
+
+	m.Range(func(k, _ interface{}) bool {
+		keys = append(keys, k.(string))
+		return true
+	})
+
+	return keys
+}
+
+// removeDuplicates removes duplicate entries from s.
+//
+// s may be modified and should not be used after removeDuplicates returns.
+func removeDuplicates(s []string) []string {
+	slices.Sort(s)
+	return slices.Compact(s)
+}
+
+var annotationPositionPattern = regexp.MustCompile(`\s+\(\d+:\d+\)$`)
+
+func removeAnnotationPositionInformation(annotation string) string {
+	return annotationPositionPattern.ReplaceAllLiteralString(annotation, "")
+}
+
+// removeAllAnnotationPositionInformation removes position information from each annotation in annotations,
+// modifying annotations in-place and returning it for convenience.
+func removeAllAnnotationPositionInformation(annotations []string) []string {
+	for i, annotation := range annotations {
+		annotations[i] = removeAnnotationPositionInformation(annotation)
+	}
+
+	return annotations
 }

@@ -9,6 +9,7 @@ local filename = 'mimir-alertmanager.json';
     assert std.md5(filename) == 'b0d38d318bbddd80476246d4930f9e55' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Alertmanager') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addShowNativeLatencyVariable()
     .addRow(
       ($.row('Headlines') + {
          height: '100px',
@@ -28,14 +29,15 @@ local filename = 'mimir-alertmanager.json';
       )
     )
     .addRow(
+      local alertmanagerGRPCRoutesRegex = utils.selector.re('route', '%s' % $.queries.alertmanager_grpc_routes_regex);
       $.row('Alertmanager Distributor')
       .addPanel(
         $.timeseriesPanel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/alertmanagerpb.Alertmanager/HandleRequest"}' % $.jobMatcher($._config.job_names.alertmanager))
+        $.qpsPanelNativeHistogram($.queries.alertmanager.requestsPerSecondMetric, utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names.alertmanager) + [alertmanagerGRPCRoutesRegex]))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.alertmanager) + [utils.selector.re('route', '/alertmanagerpb.Alertmanager/HandleRequest')])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.alertmanager.requestsPerSecondMetric, $.jobSelector($._config.job_names.alertmanager) + [alertmanagerGRPCRoutesRegex])
       )
     )
     .addRow(
@@ -46,7 +48,7 @@ local filename = 'mimir-alertmanager.json';
           |||
             sum(%(prefix)s:cortex_alertmanager_alerts_received_total:rate5m%(selectors)s)
             -
-            sum(%(prefix)s:cortex_alertmanager_alerts_invalid_total:rate5m%(selectors)s)
+            (sum(%(prefix)s:cortex_alertmanager_alerts_invalid_total:rate5m%(selectors)s) or vector(0))
           ||| % {
             prefix: $.recordingRulePrefix(jobSelector),
             selectors: utils.toPrometheusSelector(jobSelector),
@@ -111,11 +113,11 @@ local filename = 'mimir-alertmanager.json';
       $.row('Configuration API (gateway) + Alertmanager UI')
       .addPanel(
         $.timeseriesPanel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_v1_alerts|alertmanager"}' % $.jobMatcher($._config.job_names.gateway))
+        $.qpsPanelNativeHistogram($.queries.alertmanager.requestsPerSecondMetric, utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', '%s' % $.queries.alertmanager_http_routes_regex)]))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', 'api_v1_alerts|alertmanager')])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', '%s' % $.queries.alertmanager_http_routes_regex)])
       )
     )
     .addRows(
@@ -230,7 +232,7 @@ local filename = 'mimir-alertmanager.json';
           |||
             sum(%(prefix)s:cortex_alertmanager_state_replication_total:rate5m%(selectors)s)
             -
-            sum(%(prefix)s:cortex_alertmanager_state_replication_failed_total:rate5m%(selectors)s)
+            (sum(%(prefix)s:cortex_alertmanager_state_replication_failed_total:rate5m%(selectors)s) or vector(0))
           ||| % {
             prefix: $.recordingRulePrefix(jobSelector),
             selectors: utils.toPrometheusSelector(jobSelector),
@@ -247,7 +249,7 @@ local filename = 'mimir-alertmanager.json';
           |||
             sum(%(prefix)s:cortex_alertmanager_partial_state_merges_total:rate5m%(selectors)s)
             -
-            sum(%(prefix)s:cortex_alertmanager_partial_state_merges_failed_total:rate5m%(selectors)s)
+            (sum(%(prefix)s:cortex_alertmanager_partial_state_merges_failed_total:rate5m%(selectors)s) or vector(0))
           ||| % {
             prefix: $.recordingRulePrefix(jobSelector),
             selectors: utils.toPrometheusSelector(jobSelector),

@@ -11,7 +11,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/gcs"
-	yaml "gopkg.in/yaml.v3"
 )
 
 // NewBucketClient creates a new GCS bucket client
@@ -19,14 +18,7 @@ func NewBucketClient(ctx context.Context, cfg Config, name string, logger log.Lo
 	bucketConfig := gcs.Config{
 		Bucket:         cfg.BucketName,
 		ServiceAccount: cfg.ServiceAccount.String(),
+		HTTPConfig:     cfg.HTTP.ToExtHTTP(),
 	}
-
-	// Thanos currently doesn't support passing the config as is, but expects a YAML,
-	// so we're going to serialize it.
-	serialized, err := yaml.Marshal(bucketConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	return gcs.NewBucket(ctx, logger, serialized, name)
+	return gcs.NewBucketWithConfig(ctx, logger, bucketConfig, name, nil)
 }

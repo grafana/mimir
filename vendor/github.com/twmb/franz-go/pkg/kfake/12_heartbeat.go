@@ -7,7 +7,7 @@ import (
 
 func init() { regKey(12, 0, 4) }
 
-func (c *Cluster) handleHeartbeat(creq clientReq) (kmsg.Response, error) {
+func (c *Cluster) handleHeartbeat(creq *clientReq) (kmsg.Response, error) {
 	req := creq.kreq.(*kmsg.HeartbeatRequest)
 	resp := req.ResponseKind().(*kmsg.HeartbeatResponse)
 

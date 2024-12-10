@@ -1,5 +1,6 @@
 output:
-  format: line-number
+  formats:
+    - format: line-number
 
 linters:
   enable:
@@ -9,12 +10,21 @@ linters:
     - misspell
     - errorlint
     - forbidigo
+    - loggercheck
 
 linters-settings:
   errcheck:
     # path to a file containing a list of functions to exclude from checking
     # see https://github.com/kisielk/errcheck#excluding-functions for details
-    exclude: ./.errcheck-exclude
+    exclude-functions:
+      - (*github.com/grafana/dskit/spanlogger.SpanLogger).Error
+      - (github.com/go-kit/kit/log.Logger).Log
+      - (github.com/go-kit/log.Logger).Log
+      - (github.com/mitchellh/colorstring).Println
+      - (github.com/opentracing/opentracing-go.Tracer).Inject
+      - io.Copy
+      - io/ioutil.ReadFile
+      - io/ioutil.WriteFile
 
   gci:
     # Section configuration to compare against.
@@ -63,5 +73,5 @@ run:
 
 issues:
   exclude-rules:
-    - linters: [revive]
+    - linters: [ revive ]
       text: "if-return"

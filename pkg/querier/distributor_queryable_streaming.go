@@ -5,7 +5,6 @@ package querier
 import (
 	"fmt"
 
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
@@ -13,10 +12,10 @@ import (
 	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 )
 
 type streamingChunkSeriesContext struct {
-	mint, maxt   int64
 	queryMetrics *stats.QueryMetrics
 	queryStats   *stats.Stats
 }
@@ -31,6 +30,10 @@ type streamingChunkSeries struct {
 	context *streamingChunkSeriesContext
 
 	alreadyCreated bool
+
+	// For debug logging.
+	lastOne   bool
+	chunkInfo *chunkinfologger.ChunkInfoLogger
 }
 
 func (s *streamingChunkSeries) Labels() labels.Labels {
@@ -47,11 +50,18 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 	var uniqueChunks []client.Chunk
 	totalChunks := 0
 
+	if s.chunkInfo != nil {
+		s.chunkInfo.StartSeries(s.labels)
+	}
 	for _, source := range s.sources {
 		c, err := source.StreamReader.GetChunks(source.SeriesIndex)
 
 		if err != nil {
 			return series.NewErrIterator(err)
+		}
+
+		if s.chunkInfo != nil {
+			s.chunkInfo.FormatIngesterChunkInfo(source.StreamReader.GetName(), c)
 		}
 
 		totalChunks += len(c)
@@ -69,6 +79,10 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 		chunkBytes += c.Size()
 	}
 
+	if s.chunkInfo != nil {
+		s.chunkInfo.EndSeries(s.lastOne)
+	}
+
 	s.context.queryStats.AddFetchedChunkBytes(uint64(chunkBytes))
 
 	chunks, err := client.FromChunks(s.labels, uniqueChunks)
@@ -76,5 +90,5 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 		return series.NewErrIterator(err)
 	}
 
-	return batch.NewChunkMergeIterator(it, chunks, model.Time(s.context.mint), model.Time(s.context.maxt))
+	return batch.NewChunkMergeIterator(it, s.labels, chunks)
 }

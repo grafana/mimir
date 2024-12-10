@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-kit/log"
@@ -60,6 +61,14 @@ var (
 	errInvalidSymbolFlushersConcurrency           = fmt.Errorf("invalid symbols-flushers-concurrency value, must be positive")
 	errInvalidMaxBlockUploadValidationConcurrency = fmt.Errorf("invalid max-block-upload-validation-concurrency value, can't be negative")
 	RingOp                                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+
+	// compactionIgnoredLabels defines the external labels that compactor will
+	// drop/ignore when planning jobs so that they don't keep blocks from
+	// compacting together.
+	compactionIgnoredLabels = []string{
+		mimir_tsdb.DeprecatedIngesterIDExternalLabel,
+		mimir_tsdb.DeprecatedTenantIDExternalLabel,
+	}
 )
 
 // BlocksGrouperFactory builds and returns the grouper to use to compact a tenant's blocks.
@@ -226,6 +235,9 @@ type ConfigProvider interface {
 
 	// CompactorBlockUploadMaxBlockSizeBytes returns the maximum size in bytes of a block that is allowed to be uploaded or validated for a given user.
 	CompactorBlockUploadMaxBlockSizeBytes(userID string) int64
+
+	// CompactorInMemoryTenantMetaCacheSize returns number of parsed *Meta objects that we can keep in memory for the user between compactions.
+	CompactorInMemoryTenantMetaCacheSize(userID string) int
 }
 
 // MultitenantCompactor is a multi-tenant TSDB block compactor based on Thanos.
@@ -277,6 +289,10 @@ type MultitenantCompactor struct {
 	compactionRunInterval          prometheus.Gauge
 	blocksMarkedForDeletion        prometheus.Counter
 
+	// outOfSpace is a separate metric for out-of-space errors because this is a common issue which often requires an operator to investigate,
+	// so alerts need to be able to treat it with higher priority than other compaction errors.
+	outOfSpace prometheus.Counter
+
 	// Metrics shared across all BucketCompactor instances.
 	bucketCompactorMetrics *BucketCompactorMetrics
 
@@ -288,6 +304,9 @@ type MultitenantCompactor struct {
 	blockUploadBytes       *prometheus.GaugeVec
 	blockUploadFiles       *prometheus.GaugeVec
 	blockUploadValidations atomic.Int64
+
+	// Per-tenant meta caches that are passed to MetaFetcher.
+	metaCaches map[string]*block.MetaCache
 }
 
 // NewMultitenantCompactor makes a new MultitenantCompactor.
@@ -333,6 +352,7 @@ func newMultitenantCompactor(
 		bucketClientFactory:    bucketClientFactory,
 		blocksGrouperFactory:   blocksGrouperFactory,
 		blocksCompactorFactory: blocksCompactorFactory,
+		metaCaches:             map[string]*block.MetaCache{},
 
 		compactionRunsStarted: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_runs_started_total",
@@ -376,6 +396,10 @@ func newMultitenantCompactor(
 			Name: "cortex_compactor_compaction_interval_seconds",
 			Help: "The configured interval on which compaction is run in seconds. Useful when compared to the last successful run metric to accurately detect multiple failed compaction runs.",
 		}),
+		outOfSpace: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_compactor_disk_out_of_space_errors_total",
+			Help: "Number of times a compaction failed because the compactor disk was out of space.",
+		}),
 		blocksMarkedForDeletion: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name:        blocksMarkedForDeletionName,
 			Help:        blocksMarkedForDeletionHelp,
@@ -405,10 +429,10 @@ func newMultitenantCompactor(
 	c.bucketCompactorMetrics = NewBucketCompactorMetrics(c.blocksMarkedForDeletion, registerer)
 
 	if len(compactorCfg.EnabledTenants) > 0 {
-		level.Info(c.logger).Log("msg", "compactor using enabled users", "enabled", strings.Join(compactorCfg.EnabledTenants, ", "))
+		level.Info(c.logger).Log("msg", "compactor using enabled users", "enabled", compactorCfg.EnabledTenants)
 	}
 	if len(compactorCfg.DisabledTenants) > 0 {
-		level.Info(c.logger).Log("msg", "compactor using disabled users", "disabled", strings.Join(compactorCfg.DisabledTenants, ", "))
+		level.Info(c.logger).Log("msg", "compactor using disabled users", "disabled", compactorCfg.DisabledTenants)
 	}
 
 	c.jobsOrder = GetJobsOrderFunction(compactorCfg.CompactionJobsOrder)
@@ -497,13 +521,14 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 	// Create the blocks cleaner (service).
 	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
-		DeletionDelay:              c.compactorCfg.DeletionDelay,
-		CleanupInterval:            util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
-		CleanupConcurrency:         c.compactorCfg.CleanupConcurrency,
-		TenantCleanupDelay:         c.compactorCfg.TenantCleanupDelay,
-		DeleteBlocksConcurrency:    defaultDeleteBlocksConcurrency,
-		NoBlocksFileCleanupEnabled: c.compactorCfg.NoBlocksFileCleanupEnabled,
-		CompactionBlockRanges:      c.compactorCfg.BlockRanges,
+		DeletionDelay:                 c.compactorCfg.DeletionDelay,
+		CleanupInterval:               util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
+		CleanupConcurrency:            c.compactorCfg.CleanupConcurrency,
+		TenantCleanupDelay:            c.compactorCfg.TenantCleanupDelay,
+		DeleteBlocksConcurrency:       defaultDeleteBlocksConcurrency,
+		GetDeletionMarkersConcurrency: defaultGetDeletionMarkersConcurrency,
+		NoBlocksFileCleanupEnabled:    c.compactorCfg.NoBlocksFileCleanupEnabled,
+		CompactionBlockRanges:         c.compactorCfg.BlockRanges,
 	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
@@ -657,6 +682,9 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 				// We don't want to count shutdowns as failed compactions because we will pick up with the rest of the compaction after the restart.
 				level.Info(c.logger).Log("msg", "compaction for user was interrupted by a shutdown", "user", userID)
 				return
+			case errors.Is(err, syscall.ENOSPC):
+				c.outOfSpace.Inc()
+				fallthrough
 			default:
 				c.compactionRunFailedTenants.Inc()
 				compactionErrorCount++
@@ -722,10 +750,10 @@ func (c *MultitenantCompactor) compactUserWithRetries(ctx context.Context, userI
 
 func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) error {
 	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
-	reg := prometheus.NewRegistry()
-	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg)
-
 	userLogger := util_log.WithUserID(userID, c.logger)
+
+	reg := prometheus.NewRegistry()
+	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg, userLogger)
 
 	// Filters out duplicate blocks that can be formed from two or more overlapping
 	// blocks that fully submatch the source blocks of the older blocks.
@@ -733,17 +761,26 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	// List of filters to apply (order matters).
 	fetcherFilters := []block.MetadataFilter{
-		// Remove the ingester ID because we don't shard blocks anymore, while still
-		// honoring the shard ID if sharding was done in the past.
-		// Remove TenantID external label to make sure that we compact blocks with and without the label
-		// together.
-		NewLabelRemoverFilter([]string{
-			mimir_tsdb.DeprecatedTenantIDExternalLabel,
-			mimir_tsdb.DeprecatedIngesterIDExternalLabel,
-		}),
+		NewLabelRemoverFilter(compactionIgnoredLabels),
 		deduplicateBlocksFilter,
 		// removes blocks that should not be compacted due to being marked so.
 		NewNoCompactionMarkFilter(userBucket),
+	}
+
+	var metaCache *block.MetaCache
+	metaCacheSize := c.cfgProvider.CompactorInMemoryTenantMetaCacheSize(userID)
+	if metaCacheSize == 0 {
+		delete(c.metaCaches, userID)
+	} else {
+		metaCache = c.metaCaches[userID]
+		if metaCache == nil || metaCache.MaxSize() != metaCacheSize {
+			// We use min compaction level equal to configured block ranges.
+			// Blocks created by ingesters start with compaction level 1. When blocks are first compacted (blockRanges[0], possibly split-compaction), compaction level will be 2.
+			// Higher the compaction level, higher chance of finding the same block over and over, and that's where cache helps the most.
+			// Blocks with 64 sources take at least 1 KiB of memory (each source = 16 bytes). Blocks with many sources are more expensive to reparse over and over again.
+			metaCache = block.NewMetaCache(metaCacheSize, len(c.compactorCfg.BlockRanges), 64)
+			c.metaCaches[userID] = metaCache
+		}
 	}
 
 	fetcher, err := block.NewMetaFetcher(
@@ -753,6 +790,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.metaSyncDirForUser(userID),
 		reg,
 		fetcherFilters,
+		metaCache,
 	)
 	if err != nil {
 		return err
@@ -794,6 +832,10 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		return errors.Wrap(err, "compaction")
 	}
 
+	if metaCache != nil {
+		items, size, hits, misses := metaCache.Stats()
+		level.Info(userLogger).Log("msg", "per-user meta cache stats after compacting user", "items", items, "bytes_size", size, "hits", hits, "misses", misses)
+	}
 	return nil
 }
 

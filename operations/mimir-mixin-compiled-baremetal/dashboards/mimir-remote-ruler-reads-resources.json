@@ -28,7 +28,7 @@
             "type": "dashboards"
          }
       ],
-      "refresh": "10s",
+      "refresh": "5m",
       "rows": [
          {
             "collapse": false,
@@ -285,7 +285,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query-frontend (dedicated to ruler)",
+            "title": "Ruler-query-frontend",
             "titleSize": "h6"
          },
          {
@@ -543,7 +543,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Query-scheduler (dedicated to ruler)",
+            "title": "Ruler-query-scheduler",
             "titleSize": "h6"
          },
          {
@@ -801,7 +801,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Querier (dedicated to ruler)",
+            "title": "Ruler-querier",
             "titleSize": "h6"
          }
       ],

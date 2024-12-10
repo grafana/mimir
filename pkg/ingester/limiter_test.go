@@ -57,7 +57,7 @@ func TestLimiter_maxSeriesPerUser(t *testing.T) {
 	}
 
 	runMaxFn := func(limiter *Limiter) int {
-		return limiter.maxSeriesPerUser("test", limiter.getShardSize("test"))
+		return limiter.maxSeriesPerUser("test", 0)
 	}
 
 	t.Run("ingester ring", func(t *testing.T) {
@@ -352,8 +352,6 @@ func runLimiterMaxFunctionTest(
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: testData.ringZonesCount, instancesInZoneCount: testData.ingestersInZoneCount}
@@ -431,8 +429,6 @@ func runLimiterMaxFunctionTestWithPartitionsRing(
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			h := &partitionRingHolder{pr: buildPartitionRingFromPartitionStates(testData.partitionStates...)}
 
@@ -463,7 +459,7 @@ func buildPartitionRingFromPartitionStates(states ...ring.PartitionState) *ring.
 	return ring.NewPartitionRing(*pr)
 }
 
-func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
+func TestLimiter_IsWithinMaxSeriesPerMetric(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalSeriesPerMetric int
 		ringReplicationFactor    int
@@ -495,8 +491,6 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
@@ -516,7 +510,7 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 	}
 }
 
-func TestLimiter_AssertMaxSeriesPerMetric_WithPartitionsRing(t *testing.T) {
+func TestLimiter_IsWithinMaxSeriesPerMetric_WithPartitionsRing(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalSeriesPerMetric int
 		partitionStates          []ring.PartitionState
@@ -559,7 +553,7 @@ func TestLimiter_AssertMaxSeriesPerMetric_WithPartitionsRing(t *testing.T) {
 	}
 }
 
-func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
+func TestLimiter_IsWithinMaxMetadataPerMetric(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalMetadataPerMetric int
 		ringReplicationFactor      int
@@ -591,8 +585,6 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
@@ -612,7 +604,7 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 	}
 }
 
-func TestLimiter_AssertMaxMetadataPerMetric_WithPartitionsRing(t *testing.T) {
+func TestLimiter_IsWithinMaxMetadataPerMetric_WithPartitionsRing(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalMetadataPerMetric int
 		partitionStates            []ring.PartitionState
@@ -655,13 +647,14 @@ func TestLimiter_AssertMaxMetadataPerMetric_WithPartitionsRing(t *testing.T) {
 	}
 }
 
-func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
+func TestLimiter_IsWithinMaxSeriesPerUser(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalSeriesPerUser int
 		ringReplicationFactor  int
 		ringIngesterCount      int
 		series                 int
-		shardSizeForLimitCheck int
+		tenantShardSize        int
+		minLocalLimit          int
 		expected               bool
 	}{
 		"limit is disabled": {
@@ -671,6 +664,14 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			series:                 100,
 			expected:               true,
 		},
+		"limit is disabled, series is above min limit": {
+			maxGlobalSeriesPerUser: 0,
+			ringReplicationFactor:  1,
+			ringIngesterCount:      1,
+			series:                 100,
+			minLocalLimit:          50,
+			expected:               true,
+		},
 		"current number of series is below the limit": {
 			maxGlobalSeriesPerUser: 1000,
 			ringReplicationFactor:  3,
@@ -678,19 +679,27 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			series:                 299,
 			expected:               true,
 		},
-		"current number of series is above the limit": {
+		"current number of series is above the limit, min limit not set": {
 			maxGlobalSeriesPerUser: 1000,
 			ringReplicationFactor:  3,
 			ringIngesterCount:      10,
 			series:                 300,
 			expected:               false,
 		},
+		"current number of series is above the limit, but below min limit": {
+			maxGlobalSeriesPerUser: 1000,
+			ringReplicationFactor:  3,
+			ringIngesterCount:      10,
+			series:                 300,
+			minLocalLimit:          400,
+			expected:               true,
+		},
 		"current number of series below the limit with non-zero shard size to the check": {
 			maxGlobalSeriesPerUser: 1000,
 			ringReplicationFactor:  3,
 			ringIngesterCount:      10,
 			series:                 999,
-			shardSizeForLimitCheck: 3,
+			tenantShardSize:        3,
 			expected:               true,
 		},
 		"current number of series is at the limit with non-zero shard size to the check": {
@@ -698,45 +707,52 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			ringReplicationFactor:  3,
 			ringIngesterCount:      10,
 			series:                 1000,
-			shardSizeForLimitCheck: 3,
+			tenantShardSize:        3,
 			expected:               false,
 		},
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
 
 			// Mock limits
 			limits, err := validation.NewOverrides(validation.Limits{
-				MaxGlobalSeriesPerUser: testData.maxGlobalSeriesPerUser,
+				MaxGlobalSeriesPerUser:   testData.maxGlobalSeriesPerUser,
+				IngestionTenantShardSize: testData.tenantShardSize,
 			}, nil)
 			require.NoError(t, err)
 
 			strategy := newIngesterRingLimiterStrategy(ring, testData.ringReplicationFactor, false, "", limits.IngestionTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
-			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, testData.shardSizeForLimitCheck)
+			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, testData.minLocalLimit)
 
 			assert.Equal(t, testData.expected, actual)
 		})
 	}
 }
 
-func TestLimiter_AssertMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
+func TestLimiter_IsWithinMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalSeriesPerUser int
 		partitionStates        []ring.PartitionState
 		series                 int
-		shardSizeForLimitCheck int
+		tenantShardSize        int
 		expected               bool
+		minLocalLimit          int
 	}{
 		"limit is disabled": {
 			maxGlobalSeriesPerUser: 0,
 			partitionStates:        []ring.PartitionState{ring.PartitionActive},
 			series:                 100,
+			expected:               true,
+		},
+		"limit is disabled, series is above min limit": {
+			maxGlobalSeriesPerUser: 0,
+			partitionStates:        []ring.PartitionState{ring.PartitionActive},
+			series:                 100,
+			minLocalLimit:          50,
 			expected:               true,
 		},
 		"current number of series is below the limit": {
@@ -751,18 +767,25 @@ func TestLimiter_AssertMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 			series:                 300,
 			expected:               false,
 		},
+		"current number of series is above the limit, but below min limit": {
+			maxGlobalSeriesPerUser: 900,
+			partitionStates:        []ring.PartitionState{ring.PartitionActive, ring.PartitionActive, ring.PartitionActive},
+			series:                 350,
+			expected:               true,
+			minLocalLimit:          400,
+		},
 		"current number of series below the limit with non-zero shard size to the check": {
 			maxGlobalSeriesPerUser: 1000,
 			partitionStates:        []ring.PartitionState{ring.PartitionActive, ring.PartitionActive, ring.PartitionActive, ring.PartitionActive, ring.PartitionActive},
 			series:                 499,
-			shardSizeForLimitCheck: 2,
+			tenantShardSize:        2,
 			expected:               true,
 		},
 		"current number of series is at the limit with non-zero shard size to the check": {
 			maxGlobalSeriesPerUser: 1000,
 			partitionStates:        []ring.PartitionState{ring.PartitionActive, ring.PartitionActive, ring.PartitionActive, ring.PartitionActive, ring.PartitionActive},
 			series:                 500,
-			shardSizeForLimitCheck: 2,
+			tenantShardSize:        2,
 			expected:               false,
 		},
 	}
@@ -771,19 +794,19 @@ func TestLimiter_AssertMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			pr := buildPartitionRingFromPartitionStates(testData.partitionStates...)
 
-			limits, err := validation.NewOverrides(validation.Limits{MaxGlobalSeriesPerUser: testData.maxGlobalSeriesPerUser}, nil)
+			limits, err := validation.NewOverrides(validation.Limits{MaxGlobalSeriesPerUser: testData.maxGlobalSeriesPerUser, IngestionPartitionsTenantShardSize: testData.tenantShardSize}, nil)
 			require.NoError(t, err)
 
-			strategy := newPartitionRingLimiterStrategy(&partitionRingHolder{pr: pr}, limits.IngestionTenantShardSize)
+			strategy := newPartitionRingLimiterStrategy(&partitionRingHolder{pr: pr}, limits.IngestionPartitionsTenantShardSize)
 			limiter := NewLimiter(limits, strategy)
-			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, testData.shardSizeForLimitCheck)
+			actual := limiter.IsWithinMaxSeriesPerUser("test", testData.series, testData.minLocalLimit)
 
 			assert.Equal(t, testData.expected, actual)
 		})
 	}
 }
 
-func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
+func TestLimiter_IsWithinMaxMetricsWithMetadataPerUser(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalMetadataPerUser int
 		ringReplicationFactor    int
@@ -815,8 +838,6 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			// Mock the ring
 			ring := &ringCountMock{instancesCount: testData.ringIngesterCount, zonesCount: 1}
@@ -836,7 +857,7 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 	}
 }
 
-func TestLimiter_AssertMaxMetricsWithMetadataPerUser_WithPartitionsRing(t *testing.T) {
+func TestLimiter_IsWithinMaxMetricsWithMetadataPerUser_WithPartitionsRing(t *testing.T) {
 	tests := map[string]struct {
 		maxGlobalMetadataPerUser int
 		partitionStates          []ring.PartitionState
@@ -890,6 +911,12 @@ func (m *ringCountMock) InstancesCount() int {
 }
 
 func (m *ringCountMock) InstancesInZoneCount(_ string) int {
+	return m.instancesInZoneCount
+}
+
+func (m *ringCountMock) WritableInstancesWithTokensCount() int { return m.instancesCount }
+
+func (m *ringCountMock) WritableInstancesWithTokensInZoneCount(_ string) int {
 	return m.instancesInZoneCount
 }
 

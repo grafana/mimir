@@ -8,6 +8,7 @@ package bucketindex
 import (
 	"bytes"
 	"context"
+	"maps"
 	"path"
 	"testing"
 	"time"
@@ -40,7 +41,7 @@ func TestUpdater_UpdateIndex(t *testing.T) {
 	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_5"})
 	block2Mark := block.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
 
-	w := NewUpdater(bkt, userID, nil, logger)
+	w := NewUpdater(bkt, userID, nil, 16, logger)
 	returnedIdx, _, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, returnedIdx, bkt, userID,
@@ -89,7 +90,7 @@ func TestUpdater_UpdateIndex_ShouldSkipPartialBlocks(t *testing.T) {
 	// Delete a block's meta.json to simulate a partial block.
 	require.NoError(t, bkt.Delete(ctx, path.Join(userID, block3.ULID.String(), block.MetaFilename)))
 
-	w := NewUpdater(bkt, userID, nil, logger)
+	w := NewUpdater(bkt, userID, nil, 16, logger)
 	idx, partials, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, idx, bkt, userID,
@@ -118,7 +119,7 @@ func TestUpdater_UpdateIndex_ShouldSkipBlocksWithCorruptedMeta(t *testing.T) {
 	// Overwrite a block's meta.json with invalid data.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, block3.ULID.String(), block.MetaFilename), bytes.NewReader([]byte("invalid!}"))))
 
-	w := NewUpdater(bkt, userID, nil, logger)
+	w := NewUpdater(bkt, userID, nil, 16, logger)
 	idx, partials, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, idx, bkt, userID,
@@ -147,7 +148,7 @@ func TestUpdater_UpdateIndex_ShouldSkipCorruptedDeletionMarks(t *testing.T) {
 	// Overwrite a block's deletion-mark.json with invalid data.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, block2Mark.ID.String(), block.DeletionMarkFilename), bytes.NewReader([]byte("invalid!}"))))
 
-	w := NewUpdater(bkt, userID, nil, logger)
+	w := NewUpdater(bkt, userID, nil, 16, logger)
 	idx, partials, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, idx, bkt, userID,
@@ -163,7 +164,7 @@ func TestUpdater_UpdateIndex_NoTenantInTheBucket(t *testing.T) {
 	bkt, _ := testutil.PrepareFilesystemBucket(t)
 
 	for _, oldIdx := range []*Index{nil, {}} {
-		w := NewUpdater(bkt, userID, nil, log.NewNopLogger())
+		w := NewUpdater(bkt, userID, nil, 16, log.NewNopLogger())
 		idx, partials, err := w.UpdateIndex(ctx, oldIdx)
 
 		require.NoError(t, err)
@@ -188,18 +189,21 @@ func TestUpdater_UpdateIndexFromVersion1ToVersion2(t *testing.T) {
 	block1 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_4"})
 	block2 := block.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "3_of_4"})
 
+	// Make copies of blocks without the compactor shard ID label.
 	block1WithoutCompactorShardID := block1
-	block1WithoutCompactorShardID.Thanos.Labels = nil
+	block1WithoutCompactorShardID.Thanos.Labels = maps.Clone(block1.Thanos.Labels)
+	delete(block1WithoutCompactorShardID.Thanos.Labels, mimir_tsdb.CompactorShardIDExternalLabel)
 
 	block2WithoutCompactorShardID := block2
-	block2WithoutCompactorShardID.Thanos.Labels = nil
+	block2WithoutCompactorShardID.Thanos.Labels = maps.Clone(block2.Thanos.Labels)
+	delete(block2WithoutCompactorShardID.Thanos.Labels, mimir_tsdb.CompactorShardIDExternalLabel)
 
 	// Double check that original block1 and block2 still have compactor shards set.
 	require.Equal(t, "1_of_4", block1.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel])
 	require.Equal(t, "3_of_4", block2.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel])
 
 	// Generate index (this produces V2 index, with compactor shard IDs).
-	w := NewUpdater(bkt, userID, nil, logger)
+	w := NewUpdater(bkt, userID, nil, 16, logger)
 	returnedIdx, _, err := w.UpdateIndex(ctx, nil)
 	require.NoError(t, err)
 	assertBucketIndexEqual(t, returnedIdx, bkt, userID,
@@ -209,6 +213,7 @@ func TestUpdater_UpdateIndexFromVersion1ToVersion2(t *testing.T) {
 	// Now remove Compactor Shard ID from index.
 	for _, b := range returnedIdx.Blocks {
 		b.CompactorShardID = ""
+		delete(b.Labels, mimir_tsdb.CompactorShardIDExternalLabel)
 	}
 
 	// Try to update existing index. Since we didn't change the version, updater will reuse the index, and not update CompactorShardID field.
@@ -253,6 +258,7 @@ func assertBucketIndexEqual(t testing.TB, idx *Index, bkt objstore.Bucket, userI
 			Source:           "test",
 			CompactionLevel:  1,
 			OutOfOrder:       false,
+			Labels:           b.Thanos.Labels,
 		})
 	}
 

@@ -7,7 +7,6 @@ package s3
 
 import (
 	"github.com/go-kit/log"
-	"github.com/prometheus/common/model"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/s3"
 )
@@ -24,7 +23,7 @@ func NewBucketClient(cfg Config, name string, logger log.Logger) (objstore.Bucke
 		return nil, err
 	}
 
-	return s3.NewBucketWithConfig(logger, s3Cfg, name)
+	return s3.NewBucketWithConfig(logger, s3Cfg, name, nil)
 }
 
 // NewBucketReaderClient creates a new S3 bucket client
@@ -34,7 +33,7 @@ func NewBucketReaderClient(cfg Config, name string, logger log.Logger) (objstore
 		return nil, err
 	}
 
-	return s3.NewBucketWithConfig(logger, s3Cfg, name)
+	return s3.NewBucketWithConfig(logger, s3Cfg, name, nil)
 }
 
 func newS3Config(cfg Config) (s3.Config, error) {
@@ -55,23 +54,19 @@ func newS3Config(cfg Config) (s3.Config, error) {
 		Region:             cfg.Region,
 		AccessKey:          cfg.AccessKeyID,
 		SecretKey:          cfg.SecretAccessKey.String(),
+		SessionToken:       cfg.SessionToken.String(),
 		Insecure:           cfg.Insecure,
 		PutUserMetadata:    putUserMetadata,
 		SendContentMd5:     cfg.SendContentMd5,
 		SSEConfig:          sseCfg,
+		DisableDualstack:   !cfg.DualstackEnabled,
 		ListObjectsVersion: cfg.ListObjectsVersion,
+		BucketLookupType:   cfg.BucketLookupType,
 		AWSSDKAuth:         cfg.NativeAWSAuthEnabled,
 		PartSize:           cfg.PartSize,
-		HTTPConfig: s3.HTTPConfig{
-			IdleConnTimeout:       model.Duration(cfg.HTTP.IdleConnTimeout),
-			ResponseHeaderTimeout: model.Duration(cfg.HTTP.ResponseHeaderTimeout),
-			InsecureSkipVerify:    cfg.HTTP.InsecureSkipVerify,
-			TLSHandshakeTimeout:   model.Duration(cfg.HTTP.TLSHandshakeTimeout),
-			ExpectContinueTimeout: model.Duration(cfg.HTTP.ExpectContinueTimeout),
-			MaxIdleConns:          cfg.HTTP.MaxIdleConns,
-			MaxIdleConnsPerHost:   cfg.HTTP.MaxIdleConnsPerHost,
-			MaxConnsPerHost:       cfg.HTTP.MaxConnsPerHost,
-			Transport:             cfg.HTTP.Transport,
+		HTTPConfig:         cfg.HTTP.ToExtHTTP(),
+		TraceConfig: s3.TraceConfig{
+			Enable: cfg.TraceConfig.Enabled,
 		},
 		// Enforce signature version 2 if CLI flag is set
 		SignatureV2: cfg.SignatureVersion == SignatureVersionV2,

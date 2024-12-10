@@ -36,12 +36,9 @@
       // Relax pressure on KV store when running at scale.
       'store-gateway.sharding-ring.heartbeat-period': '1m',
     } +
-    (if $._config.store_gateway_lazy_loading_enabled then {
-       'blocks-storage.bucket-store.index-header.lazy-loading-enabled': 'true',
-       'blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout': '60m',
-     } else {
-       'blocks-storage.bucket-store.index-header.lazy-loading-enabled': 'false',
-     }) +
+    (if !$._config.store_gateway_lazy_loading_enabled then {
+       'blocks-storage.bucket-store.index-header.lazy-loading-enabled': false,
+     } else {}) +
     $.blocks_chunks_concurrency_connection_config +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +

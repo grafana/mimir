@@ -183,6 +183,13 @@ var (
 	IneligibleReplica                  = &Error{"INELIGIBLE_REPLICA", 107, false, "The new ISR contains at least one ineligible replica."}
 	NewLeaderElected                   = &Error{"NEW_LEADER_ELECTED", 108, false, "The AlterPartition request successfully updated the partition state but the leader has changed."}
 	OffsetMovedToTieredStorage         = &Error{"OFFSET_MOVED_TO_TIERED_STORAGE", 109, false, "The requested offset is moved to tiered storage."}
+	FencedMemberEpoch                  = &Error{"FENCED_MEMBER_EPOCH", 110, false, "The member epoch is fenced by the group coordinator. The member must abandon all its partitions and rejoin."}
+	UnreleasedInstanceID               = &Error{"UNRELEASED_INSTANCE_ID", 111, false, "The instance ID is still used by another member in the consumer group. That member must leave first."}
+	UnsupportedAssignor                = &Error{"UNSUPPORTED_ASSIGNOR", 112, false, "The assignor or its version range is not supported by the consumer group."}
+	StaleMemberEpoch                   = &Error{"STALE_MEMBER_EPOCH", 113, false, "The member epoch is stale. The member must retry after receiving its updated member epoch via the ConsumerGroupHeartbeat API."}
+	MismatchedEndpointType             = &Error{"MISMATCHED_ENDPOINT_TYPE", 114, false, "The request was sent to an endpoint of the wrong type."}
+	UnsupportedEndpointType            = &Error{"UNSUPPORTED_ENDPOINT_TYPE", 115, false, "This endpoint type is not supported yet."}
+	UnknownControllerID                = &Error{"UNKNOWN_CONTROLLER_ID", 116, false, "This controller ID is not known"}
 )
 
 var code2err = map[int16]error{
@@ -296,5 +303,13 @@ var code2err = map[int16]error{
 	106: FetchSessionTopicIDError,
 	107: IneligibleReplica,
 	108: NewLeaderElected,
-	109: OffsetMovedToTieredStorage,
+	109: OffsetMovedToTieredStorage, // KIP-405, v3.5
+	110: FencedMemberEpoch,          // KIP-848, released unstable in v3.6, stable in 3.7
+	111: UnreleasedInstanceID,       // ""
+	112: UnsupportedAssignor,        // ""
+	113: StaleMemberEpoch,           // ""
+	114: MismatchedEndpointType,     // KIP-919, v3.7
+	115: UnsupportedEndpointType,    // ""
+	116: UnknownControllerID,        // ""
+
 }

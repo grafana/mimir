@@ -28,6 +28,7 @@ import (
 
 const (
 	dnsProviderUpdateInterval = 30 * time.Second
+	maxTTL                    = 30 * 24 * time.Hour
 )
 
 var (
@@ -36,13 +37,14 @@ var (
 	ErrInvalidWriteBufferSizeBytes             = errors.New("invalid write buffer size specified (must be greater than 0)")
 	ErrInvalidReadBufferSizeBytes              = errors.New("invalid read buffer size specified (must be greater than 0)")
 
-	_ RemoteCacheClient = (*MemcachedClient)(nil)
+	_ Cache = (*MemcachedClient)(nil)
 )
 
 // memcachedClientBackend is an interface used to mock the underlying client in tests.
 type memcachedClientBackend interface {
 	GetMulti(keys []string, opts ...memcache.Option) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
+	Add(item *memcache.Item) error
 	Delete(key string) error
 	Decrement(key string, delta uint64) (uint64, error)
 	Increment(key string, delta uint64) (uint64, error)
@@ -315,23 +317,79 @@ func (c *MemcachedClient) Name() string {
 }
 
 func (c *MemcachedClient) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
-	c.setMultiAsync(data, ttl, func(key string, buf []byte, ttl time.Duration) error {
-		return c.client.Set(&memcache.Item{
-			Key:        key,
-			Value:      buf,
-			Expiration: int32(ttl.Seconds()),
-		})
-	})
+	c.setMultiAsync(data, ttl, c.setSingleItem)
 }
 
 func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) {
-	c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
-		return c.client.Set(&memcache.Item{
-			Key:        key,
-			Value:      buf,
-			Expiration: int32(ttl.Seconds()),
-		})
+	c.setAsync(key, value, ttl, c.setSingleItem)
+}
+
+func (c *MemcachedClient) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return c.storeOperation(ctx, key, value, ttl, opSet, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return c.setSingleItem(key, value, ttl)
+		}
 	})
+}
+
+func (c *MemcachedClient) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return c.storeOperation(ctx, key, value, ttl, opAdd, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			ttlSeconds, ok := toSeconds(ttl)
+			if !ok {
+				return fmt.Errorf("%w: for set operation on %s %s", ErrInvalidTTL, key, ttl)
+			}
+
+			err := c.client.Add(&memcache.Item{
+				Key:        key,
+				Value:      value,
+				Expiration: ttlSeconds,
+			})
+
+			if errors.Is(err, memcache.ErrNotStored) {
+				return fmt.Errorf("%w: for add operation on %s", ErrNotStored, key)
+			}
+
+			return err
+		}
+	})
+}
+
+func (c *MemcachedClient) setSingleItem(key string, value []byte, ttl time.Duration) error {
+	ttlSeconds, ok := toSeconds(ttl)
+	if !ok {
+		return fmt.Errorf("%w: for set operation on %s %s", ErrInvalidTTL, key, ttl)
+	}
+
+	return c.client.Set(&memcache.Item{
+		Key:        key,
+		Value:      value,
+		Expiration: ttlSeconds,
+	})
+}
+
+// toSeconds converts a time.Duration to seconds as an int32 and returns a boolean
+// indicating if the value is valid to be used as a TTL. Durations might not be valid
+// to be used for a TTL if they are non-zero but less than a second long (Memcached
+// uses seconds for TTL units but "0" to mean infinite TTL) or if they are longer than
+// 30 days (Memcached treats TTLs more than 30 days as UNIX timestamps).
+func toSeconds(d time.Duration) (int32, bool) {
+	if d > maxTTL {
+		return 0, false
+	}
+
+	secs := int32(d.Seconds())
+	if d != 0 && secs <= 0 {
+		return 0, false
+	}
+
+	return secs, true
 }
 
 func toMemcacheOptions(opts ...Option) []memcache.Option {

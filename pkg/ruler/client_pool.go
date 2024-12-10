@@ -75,6 +75,7 @@ func dialRulerClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, reques
 		return nil, err
 	}
 
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(inst.Addr, opts...)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to dial ruler %s %s", inst.Id, inst.Addr)

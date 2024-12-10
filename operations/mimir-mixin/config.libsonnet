@@ -36,6 +36,7 @@
       alertmanager: 'alertmanager',
       alertmanager_im: 'alertmanager-im',
       ingester: 'ingester',
+      block_builder: 'block-builder',
       distributor: 'distributor',
       querier: 'querier',
       query_frontend: 'query-frontend',
@@ -57,11 +58,13 @@
     },
 
     // Some dashboards show panels grouping together multiple components of a given "path".
-    // This mapping configures which components belong to each group.
+    // This mapping configures which components belong to each group. A component can belong
+    // to multiple groups.
     local componentGroups = {
       write: ['distributor', 'ingester', 'mimir_write'],
       read: ['query_frontend', 'querier', 'ruler_query_frontend', 'ruler_querier', 'mimir_read'],
       backend: ['query_scheduler', 'ruler_query_scheduler', 'ruler', 'store_gateway', 'compactor', 'alertmanager', 'overrides_exporter', 'mimir_backend'],
+      remote_ruler_read: ['ruler_query_frontend', 'ruler_query_scheduler', 'ruler_querier'],
     },
 
     // These are used by the dashboards and allow for the simultaneous display of
@@ -70,6 +73,8 @@
     // docs/sources/mimir/manage/monitoring-grafana-mimir/requirements.md
     job_names: {
       ingester: ['ingester.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also custom and per-zone ingester deployments.
+      ingester_partition: ['ingester.*-partition'],  // Match exclusively temporarily partition ingesters run during the migration to ingest storage.
+      block_builder: ['block-builder.*'],
       distributor: ['distributor.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also per-zone distributor deployments.
       querier: ['querier.*', 'cortex', 'mimir', 'mimir-read.*'],  // Match also custom querier deployments.
       ruler_querier: ['ruler-querier.*'],  // Match also custom querier deployments.
@@ -84,6 +89,10 @@
       compactor: ['compactor.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also custom compactor deployments.
       alertmanager: ['alertmanager', 'cortex', 'mimir', 'mimir-backend.*'],
       overrides_exporter: ['overrides-exporter', 'mimir-backend.*'],
+
+      // The following are job matchers used to select all components in the read path.
+      main_read_path: std.uniq(std.sort(self.query_frontend + self.query_scheduler + self.querier)),
+      remote_ruler_read_path: std.uniq(std.sort(self.ruler_query_frontend + self.ruler_query_scheduler + self.ruler_querier)),
 
       // The following are job matchers used to select all components in a given "path".
       write: ['distributor.*', 'ingester.*', 'mimir-write.*'],
@@ -103,6 +112,7 @@
       // the instance when deployed in microservices mode (e.g. "distributor"
       // matcher shouldn't match "mimir-write" too).
       compactor: instanceMatcher(componentNameRegexp.compactor),
+      block_builder: instanceMatcher(componentNameRegexp.block_builder),
       alertmanager: instanceMatcher(componentNameRegexp.alertmanager),
       alertmanager_im: instanceMatcher(componentNameRegexp.alertmanager_im),
       ingester: instanceMatcher(componentNameRegexp.ingester),
@@ -133,6 +143,7 @@
       write: componentsGroupMatcher(componentGroups.write),
       read: componentsGroupMatcher(componentGroups.read),
       backend: componentsGroupMatcher(componentGroups.backend),
+      remote_ruler_read: componentsGroupMatcher(componentGroups.remote_ruler_read),
     },
     all_instances: std.join('|', std.map(function(name) componentNameRegexp[name], componentGroups.write + componentGroups.read + componentGroups.backend)),
 
@@ -140,6 +151,7 @@
       // Microservices deployment mode. The following matchers MUST match only
       // the instance when deployed in microservices mode (e.g. "distributor"
       // matcher shouldn't match "mimir-write" too).
+      block_builder: componentNameRegexp.block_builder,
       gateway: componentNameRegexp.gateway,
       distributor: componentNameRegexp.distributor,
       ingester: componentNameRegexp.ingester,
@@ -175,6 +187,7 @@
     per_cluster_label: 'cluster',
     per_namespace_label: 'namespace',
     per_job_label: 'job',
+    per_component_loki_label: 'name',
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
     job_labels: [$._config.per_cluster_label, $._config.per_namespace_label, $._config.per_job_label],
@@ -194,10 +207,19 @@
     // Used to add extra annotations to all alerts, Careful: takes precedence over default annotations.
     alert_extra_annotations: {},
 
+    // Used as the job prefix in alerts that select on job label (e.g. GossipMembersTooHigh, RingMembersMismatch). This can be set to a known namespace to prevent those alerts from firing incorrectly due to selecting similar metrics from Loki/Tempo.
+    alert_job_prefix: '.*/',
+
+    // Whether alerts for experimental ingest storage are enabled.
+    ingest_storage_enabled: true,
+
     cortex_p99_latency_threshold_seconds: 2.5,
 
     // Whether resources dashboards are enabled (based on cAdvisor metrics).
     resources_dashboards_enabled: true,
+
+    // Whether mimir block-builder is enabled (experimental)
+    block_builder_enabled: false,
 
     // Whether mimir gateway is enabled
     gateway_enabled: false,
@@ -278,7 +300,7 @@
             sum by (%(alert_aggregation_labels)s, deployment) (
               label_replace(
                 label_replace(
-                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[1m])),
+                  sum by (%(alert_aggregation_labels)s, %(per_instance_label)s)(rate(container_cpu_usage_seconds_total[%(recording_rules_range_interval)s])),
                   "deployment", "$1", "%(per_instance_label)s", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 ),
                 # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
@@ -527,15 +549,8 @@
         disk_utilization:
           |||
             max by(persistentvolumeclaim) (
-              kubelet_volume_stats_used_bytes{%(namespaceMatcher)s} /
-              kubelet_volume_stats_capacity_bytes{%(namespaceMatcher)s}
-            )
-            and
-            count by(persistentvolumeclaim) (
-              kube_persistentvolumeclaim_labels{
-                %(namespaceMatcher)s,
-                %(containerMatcher)s
-              }
+              kubelet_volume_stats_used_bytes{%(namespaceMatcher)s, %(persistentVolumeClaimMatcher)s} /
+              kubelet_volume_stats_capacity_bytes{%(namespaceMatcher)s, %(persistentVolumeClaimMatcher)s}
             )
           |||,
       },
@@ -629,6 +644,10 @@
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-querier',
       },
+      store_gateway: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'store-gateway-zone-a',
+      },
       distributor: {
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'distributor',
@@ -641,6 +660,15 @@
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'cortex-gw.*',
       },
+      ingester: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a',
+        replica_template_name: 'ingester-zone-a',
+      },
+      compactor: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'compactor',
+      },
     },
 
 
@@ -648,6 +676,12 @@
     alert_excluded_routes: [
       'debug_pprof',
     ],
+
+    // All query methods from IngesterServer interface. Basically everything except Push.
+    ingester_read_path_routes_regex: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
+
+    // All query methods from StoregatewayServer interface.
+    store_gateway_read_path_routes_regex: '/gatewaypb.StoreGateway/.*',
 
     // The default datasource used for dashboards.
     dashboard_datasource: 'default',
@@ -657,6 +691,10 @@
     // Set to at least twice the scrape interval; otherwise, recording rules will output no data.
     // Set to four times the scrape interval to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
     recording_rules_range_interval: '1m',
+
+    // Used to calculate range interval in alerts with default range selector under 10 minutes.
+    // Needed to account for edge cases: https://www.robustperception.io/what-range-should-i-use-with-rate/
+    base_alerts_range_interval_minutes: 1,
 
     // Used to inject rows into dashboards at specific places that support it.
     injectRows: {},
@@ -671,5 +709,11 @@
     // Disabled by default, because when -ingester.limit-inflight-requests-using-grpc-method-limiter and -distributor.limit-inflight-requests-using-grpc-method-limiter is
     // not used (default), then rejected requests are already counted as failures.
     show_rejected_requests_on_writes_dashboard: false,
+
+    // Show panels that use queries for gRPC-based ingestion (distributor -> ingester)
+    show_grpc_ingestion_panels: true,
+
+    // Show panels that use queries for "ingest storage" ingestion (distributor -> Kafka, Kafka -> ingesters)
+    show_ingest_storage_panels: false,
   },
 }

@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/http/pprof"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -34,11 +36,14 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
+	"github.com/matttproud/golang_protobuf_extensions/pbutil"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	amconfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/featurecontrol"
+	pb "github.com/prometheus/alertmanager/nflog/nflogpb"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/pkg/labels"
+	"github.com/prometheus/alertmanager/silence/silencepb"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -47,6 +52,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
+	"go.uber.org/goleak"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 
@@ -55,6 +61,7 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -66,10 +73,17 @@ receivers:
   - name: dummy`
 
 	simpleConfigTwo = `route:
-  receiver: dummy
+  receiver: dummy2
 
 receivers:
-  - name: dummy`
+  - name: dummy2`
+
+	grafanaConfig     = `{"template_files":{},"alertmanager_config":{"route":{"receiver":"grafana-default-email","group_by":["grafana_folder","alertname"]},"templates":null,"receivers":[{"name":"grafana-default-email","grafana_managed_receiver_configs":[{"uid":"dde6ntuob69dtf","name":"WH","type":"webhook","disableResolveMessage":false,"settings":{"url":"http://localhost:8080","username":"test"},"secureSettings":{"password":"test"}}]}]}}`
+	simpleTemplateOne = `{{ define "some.template.one" }}{{ end }}`
+	simpleTemplateTwo = `{{ define "some.template.two" }}{{ end }}`
+	badConfig         = `
+route:
+  receiver: NOT_EXIST`
 )
 
 func mockAlertmanagerConfig(t *testing.T) *MultitenantAlertmanagerConfig {
@@ -106,6 +120,9 @@ func setupSingleMultitenantAlertmanager(t *testing.T, cfg *MultitenantAlertmanag
 	amCfg, err := ComputeFallbackConfig("")
 	require.NoError(t, err)
 
+	if limits == nil {
+		limits = &mockAlertManagerLimits{}
+	}
 	am, err := createMultitenantAlertmanager(cfg, amCfg, store, ringStore, limits, features, logger, registerer)
 	require.NoError(t, err)
 
@@ -132,7 +149,7 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 		expected error
 	}{
 		"should pass with default config": {
-			setup:    func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {},
+			setup:    func(*testing.T, *MultitenantAlertmanagerConfig) {},
 			expected: nil,
 		},
 		"should fail with empty external URL": {
@@ -142,13 +159,13 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			expected: errEmptyExternalURL,
 		},
 		"should fail if persistent interval is 0": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+			setup: func(_ *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				cfg.Persister.Interval = 0
 			},
 			expected: errInvalidPersistInterval,
 		},
 		"should fail if persistent interval is negative": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+			setup: func(_ *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				cfg.Persister.Interval = -1
 			},
 			expected: errInvalidPersistInterval,
@@ -178,7 +195,7 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			expected: errInvalidExternalURLMissingHostname,
 		},
 		"should fail if zone aware is enabled but zone is not set": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig) {
+			setup: func(_ *testing.T, cfg *MultitenantAlertmanagerConfig) {
 				cfg.ShardingRing.ZoneAwarenessEnabled = true
 			},
 			expected: errZoneAwarenessEnabledWithoutZoneInfo,
@@ -250,13 +267,15 @@ templates:
 		userDir := dirs["user"]
 		require.NotZero(t, userDir)
 		require.True(t, dirExists(t, userDir))
-		require.True(t, dirExists(t, filepath.Join(userDir, templatesDir)))
-		require.True(t, fileExists(t, filepath.Join(userDir, templatesDir, "first.tpl")))
-		require.True(t, fileExists(t, filepath.Join(userDir, templatesDir, "second.tpl")))
 	}
 }
 
 func TestMultitenantAlertmanager_loadAndSyncConfigs(t *testing.T) {
+	utiltest.VerifyNoLeak(t,
+		// This package's init() function statically starts a singleton goroutine that runs forever.
+		goleak.IgnoreTopFunction("github.com/grafana/mimir/pkg/alertmanager.init.0.func1"),
+	)
+
 	ctx := context.Background()
 
 	// Run this test using a real storage client.
@@ -321,9 +340,11 @@ templates:
 	user3Dir := dirs["user3"]
 	require.NotZero(t, user3Dir)
 	require.True(t, dirExists(t, user3Dir))
-	require.True(t, dirExists(t, filepath.Join(user3Dir, templatesDir)))
-	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "first.tpl")))
-	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "second.tpl")))
+	finalUser3Cfg, ok := am.cfgs["user3"]
+	require.True(t, ok)
+	require.Len(t, finalUser3Cfg.Templates, 2)
+	require.Equal(t, "first.tpl", finalUser3Cfg.Templates[0].Filename)
+	require.Equal(t, "second.tpl", finalUser3Cfg.Templates[1].Filename)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -346,6 +367,127 @@ templates:
 	currentConfig, cfgExists = am.cfgs["user1"]
 	require.True(t, cfgExists)
 	require.Equal(t, simpleConfigTwo, currentConfig.RawConfig)
+	require.Empty(t, currentConfig.Templates)
+
+	// Ensure the config is reloaded if only templates changed
+	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		User:      "user1",
+		RawConfig: simpleConfigTwo,
+		Templates: []*alertspb.TemplateDesc{
+			{
+				Filename: "some-template.tmpl",
+				Body:     simpleTemplateOne,
+			},
+		},
+	}))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+
+	currentConfig, cfgExists = am.cfgs["user1"]
+	require.True(t, cfgExists)
+	require.Len(t, currentConfig.Templates, 1)
+	require.Equal(t, "some-template.tmpl", currentConfig.Templates[0].Filename)
+	require.Contains(t, currentConfig.Templates[0].Body, "some.template")
+
+	// Ensure that when a Grafana config is added, it is synced correctly.
+	userGrafanaCfg := alertspb.GrafanaAlertConfigDesc{
+		User:               "user4",
+		RawConfig:          grafanaConfig,
+		Hash:               "test",
+		CreatedAtTimestamp: time.Now().Unix(),
+		Default:            false,
+		Promoted:           true,
+		ExternalUrl:        "test.grafana.com",
+		StaticHeaders:      map[string]string{"Header1": "Value1"},
+	}
+	emptyMimirConfig := alertspb.AlertConfigDesc{User: "user4"}
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+	require.NoError(t, store.SetAlertConfig(ctx, emptyMimirConfig))
+
+	err = am.loadAndSyncConfigs(ctx, reasonPeriodic)
+	require.NoError(t, err)
+	require.Len(t, am.alertmanagers, 4)
+
+	// The Mimir configuration was empty, so the Grafana configuration should be chosen for user 4.
+	amCfg, err := createUsableGrafanaConfig(userGrafanaCfg, am.fallbackConfig)
+	require.NoError(t, err)
+	grafanaAlertConfigDesc := amCfg.AlertConfigDesc
+	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
+
+	dirs = am.getPerUserDirectories()
+	user4Dir := dirs["user4"]
+	require.NotZero(t, user4Dir)
+	require.True(t, dirExists(t, user4Dir))
+
+	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+		# TYPE cortex_alertmanager_config_last_reload_successful gauge
+		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user4"} 1
+	`), "cortex_alertmanager_config_last_reload_successful"))
+
+	// Ensure the config can be unpromoted.
+	userGrafanaCfg.Promoted = false
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Equal(t, emptyMimirConfig, am.cfgs["user4"])
+
+	// Ensure the Grafana config is used when it's promoted again.
+	userGrafanaCfg.Promoted = true
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Equal(t, grafanaAlertConfigDesc, am.cfgs["user4"])
+
+	// Add a Mimir fallback config for the same user.
+	defaultConfig := alertspb.AlertConfigDesc{
+		User:      "user4",
+		RawConfig: am.fallbackConfig,
+	}
+	require.NoError(t, store.SetAlertConfig(ctx, defaultConfig))
+
+	// The Grafana config + Mimir global config section should be used.
+	require.NoError(t, am.loadAndSyncConfigs(context.Background(), reasonPeriodic))
+
+	var gCfg GrafanaAlertmanagerConfig
+	require.NoError(t, json.Unmarshal([]byte(userGrafanaCfg.RawConfig), &gCfg))
+	mCfg, err := definition.LoadCompat([]byte(defaultConfig.RawConfig))
+	require.NoError(t, err)
+
+	gCfg.AlertmanagerConfig.Global = mCfg.Global
+
+	rawCfg, err := json.Marshal(gCfg.AlertmanagerConfig)
+	require.NoError(t, err)
+
+	expCfg := alertspb.AlertConfigDesc{
+		User:      "user4",
+		RawConfig: string(rawCfg),
+		Templates: []*alertspb.TemplateDesc{},
+	}
+	require.Equal(t, expCfg, am.cfgs["user4"])
+
+	// Ensure the Grafana config is ignored when it's marked as default.
+	userGrafanaCfg.Default = true
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Equal(t, defaultConfig, am.cfgs["user4"])
+
+	// Ensure the Grafana config is ignored when it's empty.
+	userGrafanaCfg.Default = false
+	userGrafanaCfg.RawConfig = ""
+	require.NoError(t, store.SetGrafanaAlertConfig(ctx, userGrafanaCfg))
+
+	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+	require.NoError(t, err)
+	require.Equal(t, defaultConfig, am.cfgs["user4"])
 
 	// Test Delete User, ensure config is removed and the resources are freed.
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user3"))
@@ -368,6 +510,7 @@ templates:
 		# TYPE cortex_alertmanager_config_last_reload_successful gauge
 		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
 		cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user4"} 1
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
 	// Ensure when a 3rd config is re-added, it is synced correctly
@@ -389,9 +532,6 @@ templates:
 
 	// Hierarchy that existed before should exist again.
 	require.True(t, dirExists(t, user3Dir))
-	require.True(t, dirExists(t, filepath.Join(user3Dir, templatesDir)))
-	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "first.tpl")))
-	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "second.tpl")))
 
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
 		# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
@@ -399,6 +539,7 @@ templates:
 		cortex_alertmanager_config_last_reload_successful{user="user1"} 1
 		cortex_alertmanager_config_last_reload_successful{user="user2"} 1
 		cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+		cortex_alertmanager_config_last_reload_successful{user="user4"} 1
 	`), "cortex_alertmanager_config_last_reload_successful"))
 
 	// Removed template files should be cleaned up
@@ -415,8 +556,57 @@ templates:
 	require.NoError(t, err)
 
 	require.True(t, dirExists(t, user3Dir))
-	require.True(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "first.tpl")))
-	require.False(t, fileExists(t, filepath.Join(user3Dir, templatesDir, "second.tpl")))
+
+	t.Run("when bad config is loaded", func(t *testing.T) {
+		require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+			User:      "user5",
+			RawConfig: badConfig,
+			Templates: []*alertspb.TemplateDesc{},
+		}))
+
+		err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+			# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+			# TYPE cortex_alertmanager_config_last_reload_successful gauge
+			cortex_alertmanager_config_last_reload_successful{user="user1"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user4"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user5"} 0
+		`), "cortex_alertmanager_config_last_reload_successful"))
+
+		_, amExists := am.alertmanagers["user5"]
+		require.False(t, amExists)
+	})
+
+	t.Run("when bad templates are loaded", func(t *testing.T) {
+		require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+			User:      "user6",
+			RawConfig: simpleConfigOne,
+			Templates: []*alertspb.TemplateDesc{
+				{Filename: "bad.tmpl", Body: "{{ invalid template }}"},
+			},
+		}))
+
+		err := am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
+		require.NoError(t, err)
+
+		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+			# HELP cortex_alertmanager_config_last_reload_successful Boolean set to 1 whenever the last configuration reload attempt was successful.
+			# TYPE cortex_alertmanager_config_last_reload_successful gauge
+			cortex_alertmanager_config_last_reload_successful{user="user1"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user2"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user3"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user4"} 1
+			cortex_alertmanager_config_last_reload_successful{user="user5"} 0
+			cortex_alertmanager_config_last_reload_successful{user="user6"} 0
+		`), "cortex_alertmanager_config_last_reload_successful"))
+
+		_, amExists := am.alertmanagers["user6"]
+		require.False(t, amExists)
+	})
 }
 
 func TestMultitenantAlertmanager_FirewallShouldBlockHTTPBasedReceiversWhenEnabled(t *testing.T) {
@@ -612,10 +802,6 @@ receivers:
 
 	for receiverName, testData := range tests {
 		for _, firewallEnabled := range []bool{true, false} {
-			receiverName := receiverName
-			testData := testData
-			firewallEnabled := firewallEnabled
-
 			t.Run(fmt.Sprintf("receiver=%s firewall enabled=%v", receiverName, firewallEnabled), func(t *testing.T) {
 				t.Parallel()
 
@@ -624,7 +810,7 @@ receivers:
 				serverInvoked := atomic.NewBool(false)
 
 				// Create a local HTTP server to test whether the request is received.
-				server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 					serverInvoked.Store(true)
 					writer.WriteHeader(http.StatusOK)
 				}))
@@ -798,7 +984,7 @@ func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 		cfg.ShardingRing.ZoneAwarenessEnabled = true
 		cfg.ShardingRing.InstanceZone = zone
 
-		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
@@ -814,6 +1000,19 @@ func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 	am1ZoneA := createInstance(1, "zoneA", registriesZoneA)
 	am2ZoneA := createInstance(2, "zoneA", registriesZoneA)
 	am1ZoneB := createInstance(3, "zoneB", registriesZoneB)
+	allInstances := []*MultitenantAlertmanager{am1ZoneA, am2ZoneA, am1ZoneB}
+
+	// Wait until every alertmanager has updated the ring, in order to get stable tests.
+	require.Eventually(t, func() bool {
+		for _, am := range allInstances {
+			set, err := am.ring.GetAllHealthy(SyncRingOp)
+			if err != nil || len(set.Instances) != len(allInstances) {
+				return false
+			}
+		}
+
+		return true
+	}, 2*time.Second, 10*time.Millisecond)
 
 	{
 		require.NoError(t, alertStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
@@ -870,7 +1069,7 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserState(t *testing.T) {
 		// Increase state write interval so that state gets written sooner, making test faster.
 		cfg.Persister.Interval = 500 * time.Millisecond
 
-		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
@@ -966,7 +1165,7 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserStateDisabled(t *testing.
 		// Disable state cleanup.
 		cfg.EnableStateCleanup = false
 
-		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
+		am, err := createMultitenantAlertmanager(cfg, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewLogfmtLogger(os.Stdout), reg)
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, am))
@@ -1326,18 +1525,18 @@ func TestMultitenantAlertmanager_InitialSync(t *testing.T) {
 
 			// Use an alert store with a mocked backend.
 			bkt := &bucket.ClientMock{}
-			alertStore := bucketclient.NewBucketAlertStore(bkt, nil, log.NewNopLogger())
+			alertStore := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bkt, nil, log.NewNopLogger())
 
 			// Setup the initial instance state in the ring.
 			if tt.existing {
 				require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 					ringDesc := ring.GetOrCreateRingDesc(in)
-					ringDesc.AddIngester(amConfig.ShardingRing.Common.InstanceID, amConfig.ShardingRing.Common.InstanceAddr, "", tt.initialTokens, tt.initialState, time.Now())
+					ringDesc.AddIngester(amConfig.ShardingRing.Common.InstanceID, amConfig.ShardingRing.Common.InstanceAddr, "", tt.initialTokens, tt.initialState, time.Now(), false, time.Time{})
 					return ringDesc, true, nil
 				}))
 			}
 
-			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
+			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
 			require.NoError(t, err)
 			defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1442,7 +1641,7 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 				require.NoError(t, err)
 				defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1494,18 +1693,18 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "when an instance is added to the ring",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			expected: true,
 		},
 		{
 			name: "when an instance is removed from the ring",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				desc.RemoveIngester("alertmanager-1")
@@ -1515,8 +1714,8 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should sync when an instance changes state",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.JOINING, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.JOINING, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["alertmanager-2"]
@@ -1528,8 +1727,8 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should sync when an healthy instance becomes unhealthy",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["alertmanager-1"]
@@ -1541,9 +1740,9 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should sync when an unhealthy instance becomes healthy",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
 
-				instance := desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				instance := desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 				instance.Timestamp = time.Now().Add(-time.Hour).Unix()
 				desc.Ingesters["alertmanager-2"] = instance
 			},
@@ -1557,8 +1756,8 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should NOT sync when an instance updates the heartbeat",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["alertmanager-1"]
@@ -1570,8 +1769,8 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should NOT sync when an instance is auto-forgotten in the ring but was already unhealthy in the previous state",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 
 				instance := desc.Ingesters["alertmanager-2"]
 				instance.Timestamp = time.Now().Add(-time.Hour).Unix()
@@ -1597,7 +1796,7 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 			alertStore := prepareInMemoryAlertStore()
 
 			reg := prometheus.NewPedanticRegistry()
-			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+			am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 
 			require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
@@ -1648,14 +1847,14 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 
 	alertStore := prepareInMemoryAlertStore()
 
-	am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
+	am, err := createMultitenantAlertmanager(amConfig, nil, alertStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, am))
 	defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
 	require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 		ringDesc := ring.GetOrCreateRingDesc(in)
-		instance := ringDesc.AddIngester(unhealthyInstanceID, "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(RingNumTokens, nil), ring.ACTIVE, time.Now())
+		instance := ringDesc.AddIngester(unhealthyInstanceID, "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(RingNumTokens, nil), ring.ACTIVE, time.Now(), false, time.Time{})
 		instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
 		ringDesc.Ingesters[unhealthyInstanceID] = instance
 
@@ -1683,9 +1882,9 @@ func TestMultitenantAlertmanager_InitialSyncFailure(t *testing.T) {
 	bkt := &bucket.ClientMock{}
 	bkt.MockIter("alerts/", nil, errors.New("failed to list alerts"))
 	bkt.MockIter("alertmanager/", nil, nil)
-	store := bucketclient.NewBucketAlertStore(bkt, nil, log.NewNopLogger())
+	store := bucketclient.NewBucketAlertStore(bucketclient.BucketAlertStoreConfig{}, bkt, nil, log.NewNopLogger())
 
-	am, err := createMultitenantAlertmanager(amConfig, nil, store, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
+	am, err := createMultitenantAlertmanager(amConfig, nil, store, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1715,7 +1914,7 @@ func TestAlertmanager_ReplicasPosition(t *testing.T) {
 
 	// First, create the alertmanager instances, we'll use a replication factor of 3 and create 3 instances so that we can get the tenant on each replica.
 	for i := 1; i <= 3; i++ {
-		//instanceIDs = append(instanceIDs, fmt.Sprintf("alertmanager-%d", i))
+		// instanceIDs = append(instanceIDs, fmt.Sprintf("alertmanager-%d", i))
 		instanceID := fmt.Sprintf("alertmanager-%d", i)
 
 		amConfig := mockAlertmanagerConfig(t)
@@ -1728,7 +1927,7 @@ func TestAlertmanager_ReplicasPosition(t *testing.T) {
 		amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 		reg := prometheus.NewPedanticRegistry()
-		am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+		am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 		require.NoError(t, err)
 		defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -1834,7 +2033,7 @@ func TestAlertmanager_StateReplication(t *testing.T) {
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 				require.NoError(t, err)
 				defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
 
@@ -2013,7 +2212,7 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 				amConfig.ShardingRing.RingCheckPeriod = time.Hour
 
 				reg := prometheus.NewPedanticRegistry()
-				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+				am, err := createMultitenantAlertmanager(amConfig, nil, mockStore, ringStore, &mockAlertManagerLimits{}, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 				require.NoError(t, err)
 
 				clientPool.setServer(amConfig.ShardingRing.Common.InstanceAddr+":0", am)
@@ -2145,7 +2344,8 @@ func TestAlertmanager_StateReplication_InitialSyncFromPeers(t *testing.T) {
 
 // prepareInMemoryAlertStore builds and returns an in-memory alert store.
 func prepareInMemoryAlertStore() alertstore.AlertStore {
-	return bucketclient.NewBucketAlertStore(objstore.NewInMemBucket(), nil, log.NewNopLogger())
+	cfg := bucketclient.BucketAlertStoreConfig{FetchGrafanaConfig: true}
+	return bucketclient.NewBucketAlertStore(cfg, objstore.NewInMemBucket(), nil, log.NewNopLogger())
 }
 
 func TestSafeTemplateFilepath(t *testing.T) {
@@ -2300,6 +2500,746 @@ func TestMultitenantAlertmanager_computeFallbackConfig(t *testing.T) {
 	require.Equal(t, simpleConfigOne, string(fallbackConfig))
 }
 
+func TestComputeConfig(t *testing.T) {
+	store := prepareInMemoryAlertStore()
+	reg := prometheus.NewPedanticRegistry()
+	cfg := mockAlertmanagerConfig(t)
+	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
+
+	var grafanaCfg GrafanaAlertmanagerConfig
+	require.NoError(t, json.Unmarshal([]byte(grafanaConfig), &grafanaCfg))
+
+	grafanaExternalURL := "https://grafana.com"
+
+	fallbackCfg, err := definition.LoadCompat([]byte(am.fallbackConfig))
+	require.NoError(t, err)
+
+	grafanaCfg.AlertmanagerConfig.Global = fallbackCfg.Global
+	combinedCfg, err := json.Marshal(grafanaCfg.AlertmanagerConfig)
+	require.NoError(t, err)
+
+	mimirExternalURL := am.cfg.ExternalURL.String()
+
+	tests := []struct {
+		name       string
+		cfg        alertspb.AlertConfigDescs
+		expErr     string
+		expCfg     alertspb.AlertConfigDesc
+		expURL     string
+		expHeaders map[string]string
+	}{
+		{
+			name: "no grafana configuration",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: simpleConfigOne,
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "empty grafana configuration",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     "",
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "grafana configuration is not promoted",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Promoted:      false,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "grafana configuration is default",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       true,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "no mimir configuration",
+			cfg: alertspb.AlertConfigDescs{
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: string(combinedCfg),
+				Templates: []*alertspb.TemplateDesc{},
+			},
+			expURL:     grafanaExternalURL,
+			expHeaders: map[string]string{"Test-Header": "test-value"},
+		},
+		{
+			name: "empty mimir configuration",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: "",
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: string(combinedCfg),
+				Templates: []*alertspb.TemplateDesc{},
+			},
+			expURL:     grafanaExternalURL,
+			expHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+		},
+		{
+			name: "default mimir configuration",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: am.fallbackConfig,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: string(combinedCfg),
+				Templates: []*alertspb.TemplateDesc{},
+			},
+			expURL:     grafanaExternalURL,
+			expHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+		},
+		{
+			// TODO: change once merging configs is implemented.
+			name: "both mimir and grafana configurations (merging not implemented)",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      "user",
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          "user",
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+				},
+			},
+			expCfg: alertspb.AlertConfigDesc{
+				User:      "user",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: am.cfg.ExternalURL.String(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg, err := am.computeConfig(test.cfg)
+			if test.expErr != "" {
+				require.EqualError(t, err, test.expErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
+			require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
+			require.Equal(t, test.expHeaders, cfg.staticHeaders)
+		})
+	}
+}
+
+func Test_configChanged(t *testing.T) {
+	type tc struct {
+		name    string
+		left    alertspb.AlertConfigDesc
+		right   alertspb.AlertConfigDesc
+		changed bool
+	}
+
+	cases := []tc{
+		{
+			name: "matching",
+			left: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+					{
+						Filename: "template-two.tmpl",
+						Body:     simpleTemplateTwo,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+					{
+						Filename: "template-two.tmpl",
+						Body:     simpleTemplateTwo,
+					},
+				},
+			},
+			changed: false,
+		},
+		{
+			name: "user changed",
+			left: alertspb.AlertConfigDesc{
+				User:      "user2",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			changed: true,
+		},
+		{
+			name: "config changed",
+			left: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigTwo,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			changed: true,
+		},
+		{
+			name: "template body changed",
+			left: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateTwo,
+					},
+				},
+			},
+			changed: true,
+		},
+		{
+			name: "template name changed",
+			left: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-two.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			changed: true,
+		},
+		{
+			name: "template added",
+			left: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+					{
+						Filename: "template-two.tmpl",
+						Body:     simpleTemplateTwo,
+					},
+				},
+			},
+			changed: true,
+		},
+		{
+			name: "template removed",
+			left: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+					{
+						Filename: "template-two.tmpl",
+						Body:     simpleTemplateTwo,
+					},
+				},
+			},
+			right: alertspb.AlertConfigDesc{
+				User:      "user1",
+				RawConfig: simpleConfigOne,
+				Templates: []*alertspb.TemplateDesc{
+					{
+						Filename: "template-one.tmpl",
+						Body:     simpleTemplateOne,
+					},
+				},
+			},
+			changed: true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := configChanged(c.left, c.right)
+			assert.Equal(t, c.changed, r)
+		})
+	}
+}
+
+func TestSyncStates(t *testing.T) {
+	user := "test-user"
+	externalURL, err := url.Parse("http://test.com")
+	require.NoError(t, err)
+
+	// Create test Grafana state.
+	var buf bytes.Buffer
+	_, err = pbutil.WriteDelimited(&buf, &pb.MeshEntry{
+		Entry: &pb.Entry{
+			Receiver:     &pb.Receiver{GroupName: `Grafana`, Integration: "grafanaIntegration", Idx: 0},
+			GroupKey:     []byte(`{}/{grafana="true"}/{receiver="grafana webhook"}:{alertname="grafana test"}`),
+			Timestamp:    time.Now(),
+			FiringAlerts: []uint64{14588439739663070854},
+		},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	grafanaNflog := make([]byte, buf.Len())
+	copy(grafanaNflog, buf.Bytes())
+	buf.Reset()
+
+	_, err = pbutil.WriteDelimited(&buf, &silencepb.MeshSilence{
+		Silence: &silencepb.Silence{
+			Id: "grafana silence",
+		},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	grafanaSilences := make([]byte, buf.Len())
+	copy(grafanaSilences, buf.Bytes())
+	buf.Reset()
+
+	// Create test Mimir state.
+	_, err = pbutil.WriteDelimited(&buf, &pb.MeshEntry{
+		Entry: &pb.Entry{
+			Receiver:     &pb.Receiver{GroupName: `Mimir`, Integration: "mimirIntegration", Idx: 0},
+			GroupKey:     []byte(`{}/{mimir="true"}/{receiver="mimir webhook"}:{alertname="mimir test"}`),
+			Timestamp:    time.Now(),
+			FiringAlerts: []uint64{14588439739663070854},
+		},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	mimirNflog := make([]byte, buf.Len())
+	copy(mimirNflog, buf.Bytes())
+	buf.Reset()
+
+	_, err = pbutil.WriteDelimited(&buf, &silencepb.MeshSilence{
+		Silence: &silencepb.Silence{
+			Id: "mimir silence",
+		},
+		ExpiresAt: time.Now().Add(time.Hour),
+	})
+	require.NoError(t, err)
+	mimirSilences := make([]byte, buf.Len())
+	copy(mimirSilences, buf.Bytes())
+	buf.Reset()
+
+	testMimirState := alertspb.FullStateDesc{
+		State: &clusterpb.FullState{
+			Parts: []clusterpb.Part{
+				{
+					Key:  nflogStateKeyPrefix + user,
+					Data: mimirNflog,
+				},
+				{
+					Key:  silencesStateKeyPrefix + user,
+					Data: mimirSilences,
+				},
+			},
+		},
+	}
+
+	ctx := context.Background()
+	tests := []struct {
+		name                 string
+		cfg                  amConfig
+		mimirState           *alertspb.FullStateDesc
+		parts                map[string][]byte
+		expNoNewAlertmanager bool
+		expErr               string
+	}{
+		{
+			name: "not using grafana config should be a no-op",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User: user,
+				},
+			},
+			expNoNewAlertmanager: true,
+		},
+		{
+			name: "no grafana state should be a no-op",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User: user,
+				},
+				usingGrafanaConfig: true,
+			},
+			expNoNewAlertmanager: true,
+		},
+		{
+			name: "invalid alertmanager configuration should cause an error",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: "invalid",
+				},
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
+			},
+			parts:  map[string][]byte{"notifications": grafanaNflog},
+			expErr: fmt.Sprintf("error creating new Alertmanager for user %[1]s: no usable Alertmanager configuration for %[1]s", user),
+		},
+		{
+			name: "invalid part key",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
+			},
+			parts:  map[string][]byte{"invalid": []byte("invalid")},
+			expErr: "unknown part key \"invalid\"",
+		},
+		{
+			name: "valid alertmanager configuration should cause alertmanager creation and state promotion",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
+			},
+			parts: map[string][]byte{"notifications": grafanaNflog},
+		},
+		{
+			name: "starting with existing mimir state should merge states",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
+			},
+			mimirState: &testMimirState,
+			parts:      map[string][]byte{"notifications": grafanaNflog, "silences": grafanaSilences},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			store := prepareInMemoryAlertStore()
+			am := setupSingleMultitenantAlertmanager(t,
+				mockAlertmanagerConfig(t),
+				store,
+				nil,
+				featurecontrol.NoopFlags{},
+				log.NewNopLogger(),
+				prometheus.NewPedanticRegistry(),
+			)
+
+			if test.mimirState != nil {
+				require.NoError(t, store.SetFullState(ctx, user, *test.mimirState))
+				require.NoError(t, am.setConfig(test.cfg))
+				require.NotNil(t, am.alertmanagers[user])
+				require.NoError(t, am.alertmanagers[user].WaitInitialStateSync(ctx))
+				// Make broadcast a no-op for tests, otherwise it will block indefinitely.
+				am.alertmanagers[user].silences.SetBroadcast(func(_ []byte) {})
+			}
+			if test.parts != nil {
+				var s clusterpb.FullState
+				for k, v := range test.parts {
+					s.Parts = append(s.Parts, clusterpb.Part{
+						Key:  k,
+						Data: v,
+					})
+				}
+				require.NoError(t, store.SetFullGrafanaState(ctx, user, alertspb.FullStateDesc{State: &s}))
+			}
+
+			if test.expErr != "" {
+				err := am.syncStates(ctx, test.cfg)
+				require.Error(t, err)
+				require.Equal(t, test.expErr, err.Error())
+				require.Nil(t, am.alertmanagers[user])
+				return
+			}
+
+			// Make broadcast a no-op for tests.
+			if am, ok := am.alertmanagers[user]; ok {
+				am.silences.SetBroadcast(func(_ []byte) {})
+			}
+
+			require.NoError(t, am.syncStates(ctx, test.cfg))
+			if test.expNoNewAlertmanager {
+				require.Nil(t, am.alertmanagers[user])
+				return
+			}
+			require.NotNil(t, am.alertmanagers[user])
+			require.True(t, am.alertmanagers[user].usingGrafanaState.Load())
+
+			// Grafana state should be deleted after merging.
+			_, err = store.GetFullGrafanaState(ctx, user)
+			require.Error(t, err)
+			require.Equal(t, "alertmanager storage object not found", err.Error())
+
+			// States should be merged.
+			require.NotNil(t, am.alertmanagers[user])
+			s, err := am.alertmanagers[user].getFullState()
+			require.NoError(t, err)
+
+			// One part for notification log, another one for silences.
+			require.Len(t, s.Parts, 2)
+			require.True(t, s.Parts[0].Key == nflogStateKeyPrefix+user || s.Parts[1].Key == nflogStateKeyPrefix+user)
+			require.True(t, s.Parts[0].Key == silencesStateKeyPrefix+user || s.Parts[1].Key == silencesStateKeyPrefix+user)
+
+			var silencesPart, nflogPart string
+			for _, p := range s.Parts {
+				require.True(t, p.Key == silencesStateKeyPrefix+user || p.Key == nflogStateKeyPrefix+user)
+				if p.Key == silencesStateKeyPrefix+user {
+					silencesPart = p.String()
+				} else {
+					nflogPart = p.String()
+				}
+			}
+
+			// We don't need to check the exact content of the state, the merging logic is tested in the state replication tests.
+			if _, ok := test.parts["notifications"]; ok {
+				require.True(t, strings.Contains(nflogPart, "grafana webhook"))
+			}
+			if _, ok := test.parts["silences"]; ok {
+				require.True(t, strings.Contains(silencesPart, "grafana silence"))
+			}
+			if test.mimirState != nil {
+				require.True(t, strings.Contains(nflogPart, "mimir webhook"))
+				require.True(t, strings.Contains(silencesPart, "mimir silence"))
+			}
+		})
+	}
+
+	preExistingAlertmanagerTests := []struct {
+		name            string
+		cfg             amConfig
+		initialPromoted bool
+		expPromoted     bool
+	}{
+		{
+			name: "not using grafana config should toggle the promoted flag off",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL: externalURL,
+			},
+			initialPromoted: true,
+			expPromoted:     false,
+		},
+		{
+			name: "not using grafana config should be a no-op if the alertmanager is not promoted",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL: externalURL,
+			},
+			initialPromoted: false,
+			expPromoted:     false,
+		},
+		{
+			name: "attempting to promote an already promoted alertmanager should not change the flag",
+			cfg: amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      user,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL:    externalURL,
+				usingGrafanaConfig: true,
+			},
+			initialPromoted: true,
+			expPromoted:     true,
+		},
+	}
+
+	for _, test := range preExistingAlertmanagerTests {
+		t.Run(test.name, func(t *testing.T) {
+			store := prepareInMemoryAlertStore()
+			am := setupSingleMultitenantAlertmanager(t,
+				mockAlertmanagerConfig(t),
+				store,
+				nil,
+				featurecontrol.NoopFlags{},
+				log.NewNopLogger(),
+				prometheus.NewPedanticRegistry(),
+			)
+
+			require.NoError(t, store.SetFullGrafanaState(ctx, test.cfg.User, alertspb.FullStateDesc{}))
+
+			require.NoError(t, am.setConfig(amConfig{
+				AlertConfigDesc: alertspb.AlertConfigDesc{
+					User:      test.cfg.User,
+					RawConfig: simpleConfigOne,
+				},
+				tmplExternalURL: externalURL,
+			}))
+			require.NotNil(t, am.alertmanagers[test.cfg.User])
+			am.alertmanagers[test.cfg.User].usingGrafanaState.Store(test.initialPromoted)
+
+			require.NoError(t, am.syncStates(ctx, test.cfg))
+			require.NotNil(t, am.alertmanagers[test.cfg.User])
+			require.Equal(t, test.expPromoted, am.alertmanagers[test.cfg.User].usingGrafanaState.Load())
+		})
+	}
+}
+
 type passthroughAlertmanagerClient struct {
 	server alertmanagerpb.AlertmanagerServer
 }
@@ -2353,6 +3293,10 @@ type mockAlertManagerLimits struct {
 	emailNotificationRateLimit     rate.Limit
 	emailNotificationBurst         int
 	maxConfigSize                  int
+	maxGrafanaConfigSize           int
+	maxGrafanaStateSize            int
+	maxSilencesCount               int
+	maxSilenceSizeBytes            int
 	maxTemplatesCount              int
 	maxSizeOfTemplate              int
 	maxDispatcherAggregationGroups int
@@ -2362,6 +3306,20 @@ type mockAlertManagerLimits struct {
 
 func (m *mockAlertManagerLimits) AlertmanagerMaxConfigSize(string) int {
 	return m.maxConfigSize
+}
+
+func (m *mockAlertManagerLimits) AlertmanagerMaxGrafanaConfigSize(string) int {
+	return m.maxGrafanaConfigSize
+}
+
+func (m *mockAlertManagerLimits) AlertmanagerMaxGrafanaStateSize(string) int {
+	return m.maxGrafanaStateSize
+}
+
+func (m *mockAlertManagerLimits) AlertmanagerMaxSilencesCount(string) int { return m.maxSilencesCount }
+
+func (m *mockAlertManagerLimits) AlertmanagerMaxSilenceSizeBytes(string) int {
+	return m.maxSilenceSizeBytes
 }
 
 func (m *mockAlertManagerLimits) AlertmanagerMaxTemplatesCount(string) int {

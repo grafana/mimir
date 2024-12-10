@@ -12,10 +12,13 @@ import (
 
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 )
 
-const rangeURLFormat = "/api/v1/query_range?end=%d&query=&start=%d&step=%d"
+const rangeURLFormat = "/api/v1/query_range?end=%d&query=go_goroutines{}&start=%d&step=%d"
 
 func makeRangeHTTPRequest(ctx context.Context, start, end time.Time, step int64) *http.Request {
 	rangeURL := fmt.Sprintf(rangeURLFormat, end.Unix(), start.Unix(), step)
@@ -24,7 +27,7 @@ func makeRangeHTTPRequest(ctx context.Context, start, end time.Time, step int64)
 	return rangeHTTPReq
 }
 
-const instantURLFormat = "/api/v1/query?query=&time=%d"
+const instantURLFormat = "/api/v1/query?query=go_goroutines{}&time=%d"
 
 func makeInstantHTTPRequest(ctx context.Context, time time.Time) *http.Request {
 	instantURL := fmt.Sprintf(instantURLFormat, time.Unix())
@@ -60,6 +63,7 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 	adapter := &frontendToSchedulerAdapter{
 		cfg:    Config{QueryStoreAfter: 12 * time.Hour},
 		limits: limits{queryIngestersWithin: 13 * time.Hour},
+		codec:  querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil),
 	}
 
 	now := time.Now()
@@ -192,6 +196,7 @@ func TestQueryDecoding(t *testing.T) {
 	adapter := &frontendToSchedulerAdapter{
 		cfg:    Config{QueryStoreAfter: 12 * time.Hour},
 		limits: limits{queryIngestersWithin: 13 * time.Hour},
+		codec:  querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil),
 	}
 
 	now := time.Now()

@@ -3,17 +3,19 @@
 package distributor
 
 import (
+	"context"
 	"fmt"
-	"time"
+	"net/http"
 
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -46,9 +48,10 @@ var (
 	)
 )
 
-// distributorError is a marker interface for the errors returned by distributor.
-type distributorError interface {
-	errorCause() mimirpb.ErrorCause
+// Error is a marker interface for the errors returned by distributor.
+type Error interface {
+	// Cause returns the cause of the error.
+	Cause() mimirpb.ErrorCause
 }
 
 // replicasDidNotMatchError is an error stating that replicas do not match.
@@ -68,12 +71,12 @@ func (e replicasDidNotMatchError) Error() string {
 	return fmt.Sprintf("replicas did not match, rejecting sample: replica=%s, elected=%s", e.replica, e.elected)
 }
 
-func (e replicasDidNotMatchError) errorCause() mimirpb.ErrorCause {
+func (e replicasDidNotMatchError) Cause() mimirpb.ErrorCause {
 	return mimirpb.REPLICAS_DID_NOT_MATCH
 }
 
-// Ensure that replicasDidNotMatchError implements distributorError.
-var _ distributorError = replicasDidNotMatchError{}
+// Ensure that replicasDidNotMatchError implements Error.
+var _ Error = replicasDidNotMatchError{}
 
 // tooManyClustersError is an error stating that there are too many HA clusters.
 type tooManyClustersError struct {
@@ -91,12 +94,12 @@ func (e tooManyClustersError) Error() string {
 	return fmt.Sprintf(tooManyClustersMsgFormat, e.limit)
 }
 
-func (e tooManyClustersError) errorCause() mimirpb.ErrorCause {
+func (e tooManyClustersError) Cause() mimirpb.ErrorCause {
 	return mimirpb.TOO_MANY_CLUSTERS
 }
 
-// Ensure that tooManyClustersError implements distributorError.
-var _ distributorError = tooManyClustersError{}
+// Ensure that tooManyClustersError implements Error.
+var _ Error = tooManyClustersError{}
 
 // validationError is an error, used to represent all validation errors from the validation package.
 type validationError struct {
@@ -108,12 +111,12 @@ func newValidationError(err error) validationError {
 	return validationError{error: err}
 }
 
-func (e validationError) errorCause() mimirpb.ErrorCause {
+func (e validationError) Cause() mimirpb.ErrorCause {
 	return mimirpb.BAD_DATA
 }
 
-// Ensure that validationError implements distributorError.
-var _ distributorError = validationError{}
+// Ensure that validationError implements Error.
+var _ Error = validationError{}
 
 // ingestionRateLimitedError is an error used to represent the ingestion rate limited error.
 type ingestionRateLimitedError struct {
@@ -133,12 +136,12 @@ func (e ingestionRateLimitedError) Error() string {
 	return fmt.Sprintf(ingestionRateLimitedMsgFormat, e.limit, e.burst)
 }
 
-func (e ingestionRateLimitedError) errorCause() mimirpb.ErrorCause {
+func (e ingestionRateLimitedError) Cause() mimirpb.ErrorCause {
 	return mimirpb.INGESTION_RATE_LIMITED
 }
 
-// Ensure that ingestionRateLimitedError implements distributorError.
-var _ distributorError = ingestionRateLimitedError{}
+// Ensure that ingestionRateLimitedError implements Error.
+var _ Error = ingestionRateLimitedError{}
 
 // requestRateLimitedError is an error used to represent the request rate limited error.
 type requestRateLimitedError struct {
@@ -158,12 +161,12 @@ func (e requestRateLimitedError) Error() string {
 	return fmt.Sprintf(requestRateLimitedMsgFormat, e.limit, e.burst)
 }
 
-func (e requestRateLimitedError) errorCause() mimirpb.ErrorCause {
+func (e requestRateLimitedError) Cause() mimirpb.ErrorCause {
 	return mimirpb.REQUEST_RATE_LIMITED
 }
 
-// Ensure that requestRateLimitedError implements distributorError.
-var _ distributorError = requestRateLimitedError{}
+// Ensure that requestRateLimitedError implements Error.
+var _ Error = requestRateLimitedError{}
 
 // ingesterPushError is an error used to represent a failed attempt to push to the ingester.
 type ingesterPushError struct {
@@ -191,73 +194,105 @@ func (e ingesterPushError) Error() string {
 	return e.message
 }
 
-func (e ingesterPushError) errorCause() mimirpb.ErrorCause {
+func (e ingesterPushError) Cause() mimirpb.ErrorCause {
 	return e.cause
 }
 
-// Ensure that ingesterPushError implements distributorError.
-var _ distributorError = ingesterPushError{}
+// Ensure that ingesterPushError implements Error.
+var _ Error = ingesterPushError{}
 
-type circuitBreakerOpenError struct {
-	err client.ErrCircuitBreakerOpen
+// partitionPushError is an error to represent a failed attempt to write to a partition.
+type partitionPushError struct {
+	err   error
+	cause mimirpb.ErrorCause
 }
 
-// newCircuitBreakerOpenError creates a circuitBreakerOpenError wrapping the passed client.ErrCircuitBreakerOpen.
-func newCircuitBreakerOpenError(err client.ErrCircuitBreakerOpen) circuitBreakerOpenError {
-	return circuitBreakerOpenError{err: err}
+func newPartitionPushError(err error, cause mimirpb.ErrorCause) partitionPushError {
+	return partitionPushError{
+		err:   err,
+		cause: cause,
+	}
 }
 
-func (e circuitBreakerOpenError) Error() string {
+func (e partitionPushError) Error() string {
 	return e.err.Error()
 }
 
-func (e circuitBreakerOpenError) RemainingDelay() time.Duration {
-	return e.err.RemainingDelay()
+func (e partitionPushError) Cause() mimirpb.ErrorCause {
+	return e.cause
 }
 
-func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
-	return mimirpb.CIRCUIT_BREAKER_OPEN
+func (e partitionPushError) Unwrap() error {
+	return e.err
 }
 
-// Ensure that circuitBreakerOpenError implements distributorError.
-var _ distributorError = circuitBreakerOpenError{}
+// Ensure that partitionPushError implements Error.
+var _ Error = partitionPushError{}
 
-// toGRPCError converts the given error into an appropriate gRPC error.
-func toGRPCError(pushErr error, serviceOverloadErrorEnabled bool) error {
+// toErrorWithGRPCStatus converts the given error into an appropriate gRPC error.
+func toErrorWithGRPCStatus(pushErr error, serviceOverloadErrorEnabled bool) error {
 	var (
-		distributorErr distributorError
+		distributorErr Error
 		errDetails     *mimirpb.ErrorDetails
 		errCode        = codes.Internal
 	)
 	if errors.As(pushErr, &distributorErr) {
-		errDetails = &mimirpb.ErrorDetails{Cause: distributorErr.errorCause()}
-		switch distributorErr.errorCause() {
-		case mimirpb.BAD_DATA:
-			errCode = codes.FailedPrecondition
-		case mimirpb.INGESTION_RATE_LIMITED:
-			errCode = codes.ResourceExhausted
-		case mimirpb.REQUEST_RATE_LIMITED:
-			if serviceOverloadErrorEnabled {
-				errCode = codes.Unavailable
-			} else {
-				errCode = codes.ResourceExhausted
-			}
-		case mimirpb.REPLICAS_DID_NOT_MATCH:
-			errCode = codes.AlreadyExists
-		case mimirpb.TOO_MANY_CLUSTERS:
-			errCode = codes.FailedPrecondition
-		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			errCode = codes.Unavailable
-		}
+		errDetails = &mimirpb.ErrorDetails{Cause: distributorErr.Cause()}
+		errCode = errorCauseToGRPCStatusCode(distributorErr.Cause(), serviceOverloadErrorEnabled)
 	}
-	stat := status.New(errCode, pushErr.Error())
-	if errDetails != nil {
-		statWithDetails, err := stat.WithDetails(errDetails)
-		if err == nil {
-			return statWithDetails.Err()
+	return globalerror.WrapErrorWithGRPCStatus(pushErr, errCode, errDetails).Err()
+}
+
+func errorCauseToGRPCStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) codes.Code {
+	switch errCause {
+	case mimirpb.BAD_DATA:
+		return codes.InvalidArgument
+	case mimirpb.TENANT_LIMIT:
+		return codes.FailedPrecondition
+	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
+		if serviceOverloadErrorEnabled {
+			return codes.Unavailable
 		}
+		return codes.ResourceExhausted
+	case mimirpb.REPLICAS_DID_NOT_MATCH:
+		return codes.AlreadyExists
+	case mimirpb.TOO_MANY_CLUSTERS:
+		return codes.FailedPrecondition
+	case mimirpb.CIRCUIT_BREAKER_OPEN:
+		return codes.Unavailable
+	case mimirpb.METHOD_NOT_ALLOWED:
+		return codes.Unimplemented
 	}
-	return stat.Err()
+	return codes.Internal
+}
+
+func errorCauseToHTTPStatusCode(errCause mimirpb.ErrorCause, serviceOverloadErrorEnabled bool) int {
+	switch errCause {
+	case mimirpb.BAD_DATA:
+		return http.StatusBadRequest
+	case mimirpb.TENANT_LIMIT:
+		return http.StatusBadRequest
+	case mimirpb.INGESTION_RATE_LIMITED, mimirpb.REQUEST_RATE_LIMITED:
+		// Return a 429 or a 529 here depending on configuration to tell the client it is going too fast.
+		// Client may discard the data or slow down and re-send.
+		// Prometheus v2.26 added a remote-write option 'retry_on_http_429'.
+		if serviceOverloadErrorEnabled {
+			return StatusServiceOverloaded
+		}
+		return http.StatusTooManyRequests
+	case mimirpb.REPLICAS_DID_NOT_MATCH:
+		return http.StatusAccepted
+	case mimirpb.TOO_MANY_CLUSTERS:
+		return http.StatusBadRequest
+	case mimirpb.TSDB_UNAVAILABLE:
+		return http.StatusServiceUnavailable
+	case mimirpb.CIRCUIT_BREAKER_OPEN:
+		return http.StatusServiceUnavailable
+	case mimirpb.METHOD_NOT_ALLOWED:
+		// Return a 501 (and not 405) to explicitly signal a misconfiguration and to possibly track that amongst other 5xx errors.
+		return http.StatusNotImplemented
+	}
+	return http.StatusInternalServerError
 }
 
 func wrapIngesterPushError(err error, ingesterID string) error {
@@ -267,12 +302,7 @@ func wrapIngesterPushError(err error, ingesterID string) error {
 
 	stat, ok := grpcutil.ErrorToStatus(err)
 	if !ok {
-		pushErr := err
-		var errCircuitBreakerOpen client.ErrCircuitBreakerOpen
-		if errors.As(pushErr, &errCircuitBreakerOpen) {
-			pushErr = newCircuitBreakerOpenError(errCircuitBreakerOpen)
-		}
-		return errors.Wrap(pushErr, fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID))
+		return errors.Wrap(err, fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID))
 	}
 	statusCode := stat.Code()
 	if util.IsHTTPStatusCode(statusCode) {
@@ -290,13 +320,35 @@ func wrapPartitionPushError(err error, partitionID int32) error {
 		return nil
 	}
 
-	return errors.Wrap(err, fmt.Sprintf("%s %d", failedPushingToPartitionMessage, partitionID))
+	// Add the partition ID to the error message.
+	err = errors.Wrap(err, fmt.Sprintf("%s %d", failedPushingToPartitionMessage, partitionID))
+
+	// Detect the cause.
+	cause := mimirpb.UNKNOWN_CAUSE
+	if errors.Is(err, ingest.ErrWriteRequestDataItemTooLarge) {
+		cause = mimirpb.BAD_DATA
+	}
+
+	return newPartitionPushError(err, cause)
 }
 
-func isIngesterClientError(err error) bool {
+func wrapDeadlineExceededPushError(err error) error {
+	if err != nil && errors.Is(err, context.DeadlineExceeded) {
+		return errors.Wrap(err, deadlineExceededWrapMessage)
+	}
+
+	return err
+}
+
+func isIngestionClientError(err error) bool {
 	var ingesterPushErr ingesterPushError
 	if errors.As(err, &ingesterPushErr) {
-		return ingesterPushErr.errorCause() == mimirpb.BAD_DATA
+		return ingesterPushErr.Cause() == mimirpb.BAD_DATA
+	}
+
+	var partitionPushErr partitionPushError
+	if errors.As(err, &partitionPushErr) {
+		return partitionPushErr.Cause() == mimirpb.BAD_DATA
 	}
 
 	// This code is needed for backwards compatibility, since ingesters may still return errors with HTTP status
@@ -306,4 +358,22 @@ func isIngesterClientError(err error) bool {
 	}
 
 	return false
+}
+
+type unavailableError struct {
+	state services.State
+}
+
+var _ Error = unavailableError{}
+
+func newUnavailableError(state services.State) unavailableError {
+	return unavailableError{state: state}
+}
+
+func (e unavailableError) Error() string {
+	return fmt.Sprintf("distributor is unavailable (current state: %s)", e.state.String())
+}
+
+func (e unavailableError) Cause() mimirpb.ErrorCause {
+	return mimirpb.SERVICE_UNAVAILABLE
 }

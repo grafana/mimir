@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
+	"github.com/grafana/mimir/pkg/scheduler/queue"
 )
 
 const (
@@ -47,7 +48,7 @@ const (
 )
 
 func TestFrontend(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World"))
 		require.NoError(t, err)
 	})
@@ -143,7 +144,8 @@ func TestFrontendCheckReady(t *testing.T) {
 			}()
 
 			for i := 0; i < tt.connectedClients; i++ {
-				f.requestQueue.RegisterQuerierConnection("test")
+				querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), "test")
+				require.NoError(t, f.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
 			}
 			err = f.CheckReady(context.Background())
 			errMsg := ""
@@ -161,7 +163,7 @@ func TestFrontendCheckReady(t *testing.T) {
 // the underlying query is correctly cancelled _and not retried_.
 func TestFrontendCancel(t *testing.T) {
 	var tries atomic.Int32
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 		tries.Inc()
 	})
@@ -189,7 +191,7 @@ func TestFrontendCancel(t *testing.T) {
 }
 
 func TestFrontendMetricsCleanup(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, err := w.Write([]byte("Hello World"))
 		require.NoError(t, err)
 	})
@@ -238,7 +240,7 @@ func TestFrontendStats(t *testing.T) {
 
 	tl := testLogger{}
 
-	test := func(addr string, fr *Frontend) {
+	test := func(addr string, _ *Frontend) {
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/", addr), nil)
 		require.NoError(t, err)
 		err = user.InjectOrgIDIntoHTTPRequest(user.InjectOrgID(context.Background(), "1"), req)

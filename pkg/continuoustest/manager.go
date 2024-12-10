@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/modules"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -54,7 +55,7 @@ func (m *Manager) AddTest(t Test) {
 func (m *Manager) Run(ctx context.Context) error {
 	// Initialize all tests.
 	for _, t := range m.tests {
-		if err := t.Init(ctx, time.Now()); err != nil {
+		if err := t.Init(ctx, time.Now().UTC()); err != nil {
 			return err
 		}
 	}
@@ -67,7 +68,7 @@ func (m *Manager) Run(ctx context.Context) error {
 		group.Go(func() error {
 
 			// Run it immediately, and then every configured period.
-			err := t.Run(ctx, time.Now())
+			err := t.Run(ctx, time.Now().UTC())
 			if m.cfg.SmokeTest {
 				if err != nil {
 					level.Info(m.logger).Log("msg", "Test failed", "test", t.Name(), "err", err)
@@ -84,7 +85,7 @@ func (m *Manager) Run(ctx context.Context) error {
 				case <-ticker.C:
 					// This error is intentionally ignored because we want to
 					// continue running the tests forever.
-					_ = t.Run(ctx, time.Now())
+					_ = t.Run(ctx, time.Now().UTC())
 				case <-ctx.Done():
 					return nil
 				}
@@ -92,5 +93,9 @@ func (m *Manager) Run(ctx context.Context) error {
 		})
 	}
 
-	return group.Wait()
+	err := group.Wait()
+	if err == nil && m.cfg.SmokeTest {
+		err = modules.ErrStopProcess
+	}
+	return err
 }

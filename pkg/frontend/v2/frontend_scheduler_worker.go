@@ -224,6 +224,7 @@ func (f *frontendSchedulerWorkers) connectToScheduler(ctx context.Context, addre
 		return nil, err
 	}
 
+	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.DialContext(ctx, address, opts...)
 	if err != nil {
 		return nil, err
@@ -411,8 +412,8 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 	frontendToSchedulerRequest, err := w.toSchedulerAdapter.frontendToSchedulerEnqueueRequest(req, w.frontendAddr)
 	if err != nil {
 		level.Warn(spanLogger).Log("msg", "error converting frontend request to scheduler request", "err", err)
-		req.enqueue <- enqueueResult{status: failed}
-		return err
+		req.enqueue <- enqueueResult{status: failed, clientErr: err}
+		return nil
 	}
 
 	err = loop.Send(frontendToSchedulerRequest)

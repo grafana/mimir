@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -104,7 +104,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 50
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -184,7 +184,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactHeadUpUntilNo
 	limitsCfg := defaultLimitsTestConfig()
 	limitsCfg.CreationGracePeriod = model.Duration(24 * time.Hour) // This test writes samples in the future.
 
-	ingester, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, "", nil)
+	ingester, err := prepareIngesterWithBlocksStorageAndLimits(t, ingesterCfg, limitsCfg, nil, "", nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -337,7 +337,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldCompactBlocksHonorin
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -408,7 +408,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldFailIngestingSamples
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 	cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+	ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
@@ -484,7 +484,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinInMemorySeries = 1
 			cfg.BlocksStorageConfig.TSDB.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage = 0
 
-			ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
+			ingester, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 			t.Cleanup(func() {
@@ -511,6 +511,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 					// Decide the series written by this writer.
 					fromSeriesID := writerID * (numSeries / numWriters)
 					toSeriesID := fromSeriesID + (numSeries / numWriters) - 1
+					t.Logf("Write worker %d writing series with IDs between %d and %d (both inclusive)", writerID, fromSeriesID, toSeriesID)
 
 					for sampleIdx := 0; sampleIdx < numSamplesPerSeries; sampleIdx++ {
 						timestamp := startTime.Add(time.Duration(sampleIdx) * time.Millisecond).UnixMilli()
@@ -525,7 +526,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 							})
 						}
 
-						require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, seriesToWrite))
+						require.NoErrorf(t, pushSeriesToIngester(ctxWithUser, t, ingester, seriesToWrite), "worker: %d, sample idx: %d, sample timestamp: %d (%s)", writerID, sampleIdx, timestamp, time.UnixMilli(timestamp).String())
 
 						// Keep track of the last timestamp written.
 						writerTimesMx.Lock()
@@ -596,21 +597,23 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 					case <-stopReadersAndEarlyCompaction:
 						return
 					case <-time.After(100 * time.Millisecond):
-						lowestWriterTime := int64(math.MaxInt64)
+						lowestWriterTimeMilli := int64(math.MaxInt64)
 
 						// Find the lowest sample written. We compact up until that timestamp.
 						writerTimesMx.Lock()
 						for _, ts := range writerTimes {
-							lowestWriterTime = util_math.Min(lowestWriterTime, ts)
+							lowestWriterTimeMilli = util_math.Min(lowestWriterTimeMilli, ts)
 						}
 						writerTimesMx.Unlock()
 
 						// Ensure all writers have written at least 1 batch of samples.
-						if lowestWriterTime == 0 {
+						if lowestWriterTimeMilli == 0 {
 							continue
 						}
 
-						ingester.compactBlocksToReduceInMemorySeries(ctx, time.UnixMilli(lowestWriterTime))
+						lowestWriterTime := time.UnixMilli(lowestWriterTimeMilli)
+						t.Logf("Triggering early compaction with 'now' timestamp set to %d (%s)", lowestWriterTimeMilli, lowestWriterTime.String())
+						ingester.compactBlocksToReduceInMemorySeries(ctx, lowestWriterTime)
 					}
 				}
 			}()
@@ -689,7 +692,7 @@ func listBlocksInDir(t *testing.T, dir string) (ids []ulid.ULID) {
 }
 
 func readMetricSamplesFromBlockDir(t *testing.T, blockDir string, metricName string) (results model.Matrix) {
-	block, err := tsdb.OpenBlock(log.NewNopLogger(), blockDir, nil)
+	block, err := tsdb.OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, block.Close())

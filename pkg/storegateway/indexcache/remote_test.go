@@ -112,7 +112,7 @@ func TestRemoteIndexCache_FetchMultiPostings(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StorePostings(p.userID, p.block, p.label, p.value)
+				c.StorePostings(p.userID, p.block, p.label, p.value, time.Hour)
 			}
 
 			// Fetch postings from cached and assert on it.
@@ -175,7 +175,7 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 
 			// Store the postings expected before running the benchmark.
 			for i := 0; i < numHits; i++ {
-				c.StorePostings(userID, blockID, fetchLabels[i], []byte{1})
+				c.StorePostings(userID, blockID, fetchLabels[i], []byte{1}, time.Hour)
 			}
 
 			b.ResetTimer()
@@ -215,7 +215,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 		mockedErr      error
 		fetchUserID    string
 		fetchBlockID   ulid.ULID
-		fetchIds       []storage.SeriesRef
+		fetchIDs       []storage.SeriesRef
 		expectedHits   map[storage.SeriesRef][]byte
 		expectedMisses []storage.SeriesRef
 	}{
@@ -223,7 +223,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			setup:          []mockedSeriesForRef{},
 			fetchUserID:    user1,
 			fetchBlockID:   block1,
-			fetchIds:       []storage.SeriesRef{1, 2},
+			fetchIDs:       []storage.SeriesRef{1, 2},
 			expectedHits:   nil,
 			expectedMisses: []storage.SeriesRef{1, 2},
 		},
@@ -237,7 +237,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			},
 			fetchUserID:  user1,
 			fetchBlockID: block1,
-			fetchIds:     []storage.SeriesRef{1, 2},
+			fetchIDs:     []storage.SeriesRef{1, 2},
 			expectedHits: map[storage.SeriesRef][]byte{
 				1: value1,
 				2: value2,
@@ -251,7 +251,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			},
 			fetchUserID:    user1,
 			fetchBlockID:   block1,
-			fetchIds:       []storage.SeriesRef{1, 2},
+			fetchIDs:       []storage.SeriesRef{1, 2},
 			expectedHits:   map[storage.SeriesRef][]byte{1: value1},
 			expectedMisses: []storage.SeriesRef{2},
 		},
@@ -264,7 +264,7 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			mockedErr:      errors.New("mocked error"),
 			fetchUserID:    user1,
 			fetchBlockID:   block1,
-			fetchIds:       []storage.SeriesRef{1, 2},
+			fetchIDs:       []storage.SeriesRef{1, 2},
 			expectedHits:   nil,
 			expectedMisses: []storage.SeriesRef{1, 2},
 		},
@@ -283,12 +283,12 @@ func TestRemoteIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			}
 
 			// Fetch series from cached and assert on it.
-			hits, misses := c.FetchMultiSeriesForRefs(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchIds)
+			hits, misses := c.FetchMultiSeriesForRefs(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchIDs)
 			assert.Equal(t, testData.expectedHits, hits)
 			assert.Equal(t, testData.expectedMisses, misses)
 
 			// Assert on metrics.
-			assert.Equal(t, float64(len(testData.fetchIds)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeriesForRef)))
+			assert.Equal(t, float64(len(testData.fetchIDs)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeriesForRef)))
 			assert.Equal(t, float64(len(testData.expectedHits)), prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeriesForRef)))
 			for _, typ := range remove(allCacheTypes, cacheTypeSeriesForRef) {
 				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(typ)))
@@ -942,6 +942,20 @@ func (c *mockedRemoteCacheClient) SetMultiAsync(data map[string][]byte, _ time.D
 	for key, value := range data {
 		c.cache[key] = value
 	}
+}
+
+func (c *mockedRemoteCacheClient) Set(_ context.Context, key string, value []byte, _ time.Duration) error {
+	c.cache[key] = value
+	return nil
+}
+
+func (c *mockedRemoteCacheClient) Add(_ context.Context, key string, value []byte, _ time.Duration) error {
+	if _, ok := c.cache[key]; ok {
+		return cache.ErrNotStored
+	}
+
+	c.cache[key] = value
+	return nil
 }
 
 func (c *mockedRemoteCacheClient) Delete(_ context.Context, key string) error {

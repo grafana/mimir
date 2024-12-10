@@ -50,7 +50,7 @@ local filename = 'mimir-scaling.json';
             )
           ||| % [$._config.alert_aggregation_rule_prefix, $.namespaceMatcher(), $._config.alert_aggregation_rule_prefix, $.namespaceMatcher()],
         ], {
-          __name__: { alias: 'Cluster', type: 'hidden' },
+          __name__: { type: 'hidden' },
           cluster: { alias: 'Cluster' },
           namespace: { alias: 'Namespace' },
           deployment: { alias: 'Service' },

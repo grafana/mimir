@@ -17,8 +17,7 @@ The `mimir-distributed` Helm chart provides metamonitoring support, which takes 
 For more information about Helm chart metamonitoring, refer to [Collect metrics and logs via the Helm chart](/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/).
 If you are using Helm chart metamonitoring, go to [Installing Grafana Mimir dashboards and alerts]({{< relref "./installing-dashboards-and-alerts" >}}).
 
-If you are not, then continue reading.
-Your Prometheus or Grafana Agent must be configured to add these labels in order for the dashboards and alerts to function.
+If you're not using the Helm chart, you must configure your Prometheus or Grafana Alloy instance to add these labels for the dashboards and alerts to function.
 The following table shows the required label names and whether they can be customized when [compiling dashboards or alerts from sources]({{< relref "./installing-dashboards-and-alerts" >}}).
 
 | Label name  | Configurable? | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -29,7 +28,7 @@ The following table shows the required label names and whether they can be custo
 | `pod`       | Yes           | The unique identifier of a Mimir replica, for example the Pod ID when running on Kubernetes. You can configure the instance label via the `per_instance_label` field in the mixin configuration.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | `instance`  | Yes           | The unique identifier of the node or machine where the Mimir replica is running, for example the node when running on Kubernetes. You can configure the node label via the `per_node_label` field in the mixin configuration.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
-For rules and alerts to function properly, you must configure your Prometheus or Grafana Agent to scrape metrics from Grafana Mimir at an interval of `15s` or shorter.
+For rules and alerts to function, you must configure your Prometheus or Grafana Alloy instance to scrape metrics from Grafana Mimir at an interval of `15s` or shorter.
 
 ## Deployment type
 
@@ -80,7 +79,7 @@ The Grafana Mimir dashboards displaying CPU, memory, disk, and network resources
 
 - [cAdvisor](https://github.com/google/cadvisor)
 - [kubelet](https://kubernetes.io/docs/concepts/cluster-administration/system-metrics/)
-- [node_exporter](https://github.com/prometheus/node_exporter)
+- [Node Exporter](https://github.com/prometheus/node_exporter)
 - [kube-state-metrics](https://github.com/kubernetes/kube-state-metrics) exporter
 
 For more information about the kubelet metrics and cAdvisor metrics exported by the kubelet, refer to [Metrics For Kubernetes System Components](https://kubernetes.io/docs/concepts/cluster-administration/system-metrics/).
@@ -88,15 +87,15 @@ For more information about the kubelet metrics and cAdvisor metrics exported by 
 Metrics from kubelet, kube-state-metrics, and cAdvisor must all have a `cluster` label with the same value as in the
 Mimir metrics.
 
-Metrics from node_exporter must all have an `instance` label on them that has the same value as the `instance` label on Mimir metrics.
+Metrics from Node Exporter and cAdvisor must all have an `instance` label on them that has the same value as the `instance` label on Mimir metrics.
 
 ## Log labels
 
-The **Slow queries** dashboard uses a Loki data source with the logs from Grafana Mimir to visualize slow queries. The query-frontend component logs slow queries based on how you configured the `-query-frontend.log-queries-longer-than` parameter.
+The **Slow queries** dashboard uses a Loki data source with the logs from Grafana Mimir to visualize slow queries. The query-frontend component logs query statistics when the `-query-frontend.query-stats-enabled` parameter is set to `true`.
 These logs need to have specific labels in order for the dashboard to work.
 
 | Label name  | Configurable? | Description                                                                                                                                                                |
 | :---------- | :------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cluster`   | Yes           | The Kubernetes cluster or datacenter where the Mimir cluster is running. You can configure the cluster label via the `per_cluster_label` field in the mixin configuration. |
 | `namespace` | No            | The Kubernetes namespace where the Mimir cluster is running.                                                                                                               |
-| `name`      | No            | Name of the component. For example, `query-frontend`.                                                                                                                      |
+| `name`      | Yes           | Name of the component. For example, `query-frontend`. You can configure the cluster label via the `per_component_loki_label` field in the mixin configuration.             |

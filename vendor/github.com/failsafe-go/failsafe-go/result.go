@@ -2,7 +2,6 @@ package failsafe
 
 import (
 	"errors"
-	"math"
 	"sync/atomic"
 
 	"github.com/failsafe-go/failsafe-go/common"
@@ -61,7 +60,7 @@ func (e *executionResult[R]) Get() (R, error) {
 	if result != nil {
 		return (*result).Result, (*result).Error
 	}
-	return *(new(R)), nil
+	return *new(R), nil
 }
 
 func (e *executionResult[R]) Result() R {
@@ -76,11 +75,11 @@ func (e *executionResult[R]) Error() error {
 
 func (e *executionResult[R]) Cancel() {
 	// Propagate cancelation to contexts
-	if e.cancelFunc != nil {
-		e.cancelFunc()
-	}
-	e.execution.Cancel(math.MaxInt, &common.PolicyResult[R]{
+	e.execution.Cancel(&common.PolicyResult[R]{
 		Error: ErrExecutionCanceled,
 		Done:  true,
 	})
+	if e.cancelFunc != nil {
+		e.cancelFunc()
+	}
 }

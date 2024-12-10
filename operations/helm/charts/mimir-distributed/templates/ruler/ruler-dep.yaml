@@ -1,4 +1,4 @@
-{{- if .Values.ruler.enabled -}}
+{{- if and .Values.ruler.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,7 +9,7 @@ metadata:
     {{- toYaml .Values.ruler.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if not .Values.ruler.kedaAutoscaling.enabled }}
+  {{- if or (not .Values.ruler.kedaAutoscaling.enabled) (.Values.ruler.kedaAutoscaling.preserveReplicas) }}
   replicas: {{ .Values.ruler.replicas }}
   {{- end }}
   selector:
@@ -31,8 +31,10 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "ruler") | nindent 8 }}
+      {{- with .Values.ruler.initContainers }}
       initContainers:
-        {{- toYaml .Values.ruler.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -63,11 +65,14 @@ spec:
             {{- end }}
           {{- end }}
           {{- range $key, $value := .Values.ruler.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.ruler.extraVolumeMounts }}
               {{ toYaml .Values.ruler.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -79,7 +84,9 @@ spec:
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage
               mountPath: "/data"
+              {{- if .Values.ruler.persistence.subPath }}
               subPath: {{ .Values.ruler.persistence.subPath }}
+              {{- end }}
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -100,6 +107,8 @@ spec:
             {{- toYaml .Values.ruler.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.ruler.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.ruler }}
+          {{- if or .Values.global.extraEnv .Values.ruler.env $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -107,11 +116,12 @@ spec:
             {{- with .Values.ruler.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.ruler }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.ruler.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -119,16 +129,23 @@ spec:
             {{- with .Values.ruler.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
 {{- if .Values.ruler.extraContainers }}
 {{ toYaml .Values.ruler.extraContainers | indent 8}}
 {{- end }}
+      {{- with .Values.ruler.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.ruler.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.ruler.affinity }}
       affinity:
-        {{- toYaml .Values.ruler.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "ruler") | nindent 6 }}
+      {{- with .Values.ruler.tolerations }}
       tolerations:
-        {{- toYaml .Values.ruler.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.ruler.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -141,9 +158,12 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
-{{- if .Values.ruler.extraVolumes }}
-{{ toYaml .Values.ruler.extraVolumes | indent 8}}
-{{- end }}
+        {{- if .Values.ruler.extraVolumes }}
+        {{ toYaml .Values.ruler.extraVolumes | nindent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8}}
+        {{- end }}
         - name: storage
           emptyDir: {}
         - name: active-queries

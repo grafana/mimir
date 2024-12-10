@@ -6,7 +6,7 @@ metadata:
   name: test-oss-topology-spread-constraints-values-minio
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.3.0
     release: test-oss-topology-spread-constraints-values
     heritage: Helm
 spec:

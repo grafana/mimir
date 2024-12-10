@@ -9,6 +9,7 @@ std.manifestYamlDoc({
     self.grafana +
     self.grafana_agent +
     self.memcached +
+    self.prometheus +
     {},
 
   write:: {
@@ -70,7 +71,7 @@ std.manifestYamlDoc({
         'QUERY_FRONTEND_HOST=mimir-read-1:8080',
         'COMPACTOR_HOST=mimir-backend-1:8080',
       ],
-      ports: ['8080:8080'],
+      ports: ['8780:8080'],
       volumes: ['../common/config:/etc/nginx/templates'],
     },
   },
@@ -78,11 +79,11 @@ std.manifestYamlDoc({
   minio:: {
     minio: {
       image: 'minio/minio',
-      command: ['server', '--console-address', ':9001', '/data'],
+      command: ['server', '--console-address', ':9701', '/data'],
       environment: ['MINIO_ROOT_USER=mimir', 'MINIO_ROOT_PASSWORD=supersecret'],
       ports: [
-        '9000:9000',
-        '9001:9001',
+        '9700:9700',
+        '9701:9701',
       ],
       volumes: ['.data-minio:/data:delegated'],
     },
@@ -96,7 +97,7 @@ std.manifestYamlDoc({
 
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:9.4.3',
+      image: 'grafana/grafana:10.4.3',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
@@ -115,7 +116,22 @@ std.manifestYamlDoc({
       image: 'grafana/agent:v0.37.3',
       command: ['-config.file=/etc/agent-config/grafana-agent.yaml', '-metrics.wal-directory=/tmp', '-server.http.address=127.0.0.1:9091'],
       volumes: ['./config:/etc/agent-config'],
-      ports: ['9091:9091'],
+      ports: ['9791:9091'],
+    },
+  },
+
+  prometheus:: {
+    prometheus: {
+      image: 'prom/prometheus:v2.53.0',
+      command: [
+        '--config.file=/etc/prometheus/prometheus.yaml',
+        '--enable-feature=exemplar-storage',
+        '--enable-feature=native-histograms',
+      ],
+      volumes: [
+        './config:/etc/prometheus',
+      ],
+      ports: ['9790:9090'],
     },
   },
 
@@ -152,13 +168,10 @@ std.manifestYamlDoc({
     ],
     hostname: options.name,
     // Only publish HTTP port, but not gRPC one.
-    ports: ['%d:8080' % options.publishedHttpPort],
+    ports: ['%d:8080' % (options.publishedHttpPort + 700)],
     depends_on: options.dependsOn,
     volumes: ['./config:/mimir/config', './activity:/activity'] + options.extraVolumes,
   },
-
-  // docker-compose YAML output version.
-  version: '3.4',
 
   // "true" option for std.manifestYamlDoc indents arrays in objects.
 }, true)

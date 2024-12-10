@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/go-kit/log"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	promtsdb "github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -18,7 +18,7 @@ import (
 )
 
 func openPromBlocks(t testing.TB, dir string) []promtsdb.BlockReader {
-	promDB, err := promtsdb.OpenDBReadOnly(dir, log.NewNopLogger())
+	promDB, err := promtsdb.OpenDBReadOnly(dir, "", promslog.NewNopLogger())
 	require.NoError(t, err)
 	promBlocks, err := promDB.Blocks()
 	require.NoError(t, err)

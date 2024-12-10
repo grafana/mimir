@@ -8,15 +8,25 @@ alertmanager:
   podLabels:
     foo: bar
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
-    labelSelector:
-      matchLabels:
-        foo: bar
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          foo: bar
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 distributor:
   topologySpreadConstraints:
     maxSkew: 1
@@ -25,99 +35,204 @@ distributor:
     labelSelector:
       matchLabels:
         component: distributor
+    minDomains: 1
+    nodeAffinityPolicy: Honor
+    nodeTaintsPolicy: Honor
+    matchLabelKeys:
+      - pod-template-hash
 ingester:
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
-    labelSelector:
-      matchLabels:
-        component: ingester
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          component: ingester
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 overrides_exporter:
   podLabels:
     foo: bar
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
-    labelSelector:
-      matchLabels:
-        foo: bar
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          foo: bar
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 querier:
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 query_frontend:
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 query_scheduler:
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 store_gateway:
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 compactor:
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 chunks-cache:
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 index-cache:
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 results-cache:
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 metadata-cache:
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 gateway:
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 admin_api:
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash
 admin-cache:
   topologySpreadConstraints:
-  - maxSkew: 1
-    topologyKey: kubernetes.io/hostname
-    whenUnsatisfiable: DoNotSchedule
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 1
+      nodeAffinityPolicy: Honor
+      nodeTaintsPolicy: Honor
+      matchLabelKeys:
+        - pod-template-hash

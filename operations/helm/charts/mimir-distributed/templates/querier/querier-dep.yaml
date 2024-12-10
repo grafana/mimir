@@ -1,3 +1,4 @@
+{{- if and .Values.querier.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,7 +9,7 @@ metadata:
     {{- toYaml .Values.querier.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  {{- if not .Values.querier.kedaAutoscaling.enabled }}
+  {{- if or (not .Values.querier.kedaAutoscaling.enabled) (.Values.querier.kedaAutoscaling.preserveReplicas) }}
   # If replicas is not number (when using values file it's float64, when using --set arg it's int64) and is false (i.e. null) don't set it
   {{- if or (or (kindIs "int64" .Values.querier.replicas) (kindIs "float64" .Values.querier.replicas)) (.Values.querier.replicas) }}
   replicas: {{ .Values.querier.replicas }}
@@ -32,8 +33,10 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "querier") | nindent 8 }}
+      {{- with .Values.querier.initContainers }}
       initContainers:
-        {{- toYaml .Values.querier.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -60,11 +63,14 @@ spec:
             {{- end }}
           {{- end }}
           {{- range $key, $value := .Values.querier.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.querier.extraVolumeMounts }}
               {{ toYaml .Values.querier.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -76,7 +82,9 @@ spec:
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage
               mountPath: "/data"
+              {{- if .Values.querier.persistence.subPath }}
               subPath: {{ .Values.querier.persistence.subPath }}
+              {{- end }}
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -97,6 +105,9 @@ spec:
             {{- toYaml .Values.querier.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.querier.containerSecurityContext | nindent 12 }}
+          {{- $cpu_request := dig "requests" "cpu" nil .Values.querier.resources }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.querier }}
+          {{- if or .Values.global.extraEnv .Values.querier.env $cpu_request $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -104,18 +115,18 @@ spec:
             {{- with .Values.querier.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- $cpu_request := dig "requests" "cpu" nil .Values.querier.resources }}
             {{- if $cpu_request }}
               {{- $cpu_request_doubled := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | mulf 2 | ceil }}
               {{- $cpu_request_plus_four := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | addf 4 | ceil }}
             - name: "GOMAXPROCS"
               value: {{ max $cpu_request_doubled $cpu_request_plus_four | toString | toYaml }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.querier }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.querier.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -123,16 +134,23 @@ spec:
             {{- with .Values.querier.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
 {{- if .Values.querier.extraContainers }}
 {{ toYaml .Values.querier.extraContainers | indent 8}}
 {{- end }}
+      {{- with .Values.querier.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.querier.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.querier.affinity}}
       affinity:
-        {{- toYaml .Values.querier.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "querier") | nindent 6 }}
+      {{- with .Values.querier.tolerations }}
       tolerations:
-        {{- toYaml .Values.querier.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.querier.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -145,10 +163,14 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
-{{- if .Values.querier.extraVolumes }}
-{{ toYaml .Values.querier.extraVolumes | indent 8}}
-{{- end }}
+        {{- if .Values.querier.extraVolumes }}
+        {{ toYaml .Values.querier.extraVolumes | nindent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8}}
+        {{- end }}
         - name: storage
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
+{{- end }}

@@ -7,7 +7,7 @@ import (
 
 func init() { regKey(14, 0, 5) }
 
-func (c *Cluster) handleSyncGroup(creq clientReq) (kmsg.Response, error) {
+func (c *Cluster) handleSyncGroup(creq *clientReq) (kmsg.Response, error) {
 	req := creq.kreq.(*kmsg.SyncGroupRequest)
 	resp := req.ResponseKind().(*kmsg.SyncGroupResponse)
 

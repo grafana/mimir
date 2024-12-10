@@ -1,0 +1,267 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Provenance-includes-location: https://github.com/prometheus/prometheus/tree/main/promql/testdata/native_histograms.test
+# Provenance-includes-license: Apache-2.0
+# Provenance-includes-copyright: The Prometheus Authors
+
+# buckets:[1 2 1] means 1 observation in the 1st bucket, 2 observations in the 2nd and 1 observation in the 3rd (total 4).
+load 5m
+	single_histogram {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}}
+
+eval instant at 5m single_histogram
+	{__name__="single_histogram"} {{schema:0 sum:20 count:7 buckets:[9 10 1]}}
+
+eval range from 0 to 5m step 1m single_histogram
+	{__name__="single_histogram"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}}
+
+# histogram_avg is sum / count.
+eval range from 0 to 5m step 1m histogram_avg(single_histogram)
+	{} 1.25 1.25 1.25 1.25 1.25 2.857142857142857
+
+# histogram_count extracts the count property from the histogram.
+eval range from 0 to 5m step 1m histogram_count(single_histogram)
+	{} 4 4 4 4 4 7
+
+eval range from 0 to 5m step 1m histogram_fraction(0, 2, single_histogram)
+	{} 0.75 0.75 0.75 0.75 0.75 1
+
+eval range from 0 to 5m step 1m histogram_stddev(single_histogram)
+	{} 0.842629429717281 0.842629429717281 0.842629429717281 0.842629429717281 0.842629429717281 2.986282214238901
+
+# histogram_sum extracts the sum property from the histogram.
+eval range from 0 to 5m step 1m histogram_sum(single_histogram)
+	{} 5 5 5 5 5 20
+
+clear
+
+# Test metric with mixed floats and histograms
+load 1m
+	mixed_metric 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}}
+
+eval range from 0 to 5m step 1m mixed_metric
+	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
+
+eval instant at 3m histogram_avg(mixed_metric)
+	{} 1.25
+
+eval instant at 3m histogram_count(mixed_metric)
+	{} 4
+
+eval instant at 3m histogram_fraction(0, 1, mixed_metric)
+	{} 0.25
+
+eval instant at 4m histogram_stddev(mixed_metric)
+	{} 0.6650352854715079
+
+eval instant at 4m histogram_sum(mixed_metric)
+	{} 8
+
+eval range from 0 to 5m step 1m histogram_count(mixed_metric)
+	{} _ _ _ 4 6 6
+
+eval range from 0 to 5m step 1m histogram_sum(mixed_metric)
+	{} _ _ _ 5 8 8
+
+# histogram_avg ignores any float values
+eval instant at 2m histogram_avg(mixed_metric)
+
+# histogram_count ignores any float values
+eval instant at 2m histogram_count(mixed_metric)
+
+# histogram_fraction ignores any float values
+eval instant at 2m histogram_fraction(0, 1, mixed_metric)
+
+# histogram_stddev ignores any float values
+eval instant at 2m histogram_stddev(mixed_metric)
+
+# histogram_sum ignores any float values
+eval instant at 2m histogram_sum(mixed_metric)
+
+clear
+
+# Test multiple histograms
+load 5m
+	route{path="one"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+	route{path="two"} {{schema:0 sum:10 count:20 buckets:[9 10 1]}}
+	route{path="three"} {{schema:0 sum:12 count:10 buckets:[3 2 5]}}
+
+eval instant at 0 route
+	route{path="one"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+	route{path="two"} {{schema:0 sum:10 count:20 buckets:[9 10 1]}}
+	route{path="three"} {{schema:0 sum:12 count:10 buckets:[3 2 5]}}
+
+eval instant at 0 histogram_avg(route)
+	{path="one"} 1.25
+	{path="two"} 0.5
+	{path="three"} 1.2
+
+eval instant at 0 histogram_count(route)
+	{path="one"} 4
+	{path="two"} 20
+	{path="three"} 10
+
+eval instant at 0 histogram_fraction(-10, 20, route)
+	{path="one"} 1
+	{path="two"} 1
+	{path="three"} 1
+
+eval instant at 0 histogram_stddev(route)
+	{path="one"} 0.842629429717281
+	{path="two"} 0.8415900492770793
+	{path="three"} 1.1865698706402301
+
+eval instant at 0 histogram_sum(route)
+	{path="one"} 5
+	{path="two"} 10
+	{path="three"} 12
+
+clear
+
+# TODO: Verify if these tests are correct. At the moment they match promql engine.
+# See: https://github.com/prometheus/prometheus/issues/14172
+
+# Test metric with mixed floats and histograms
+load 1m
+	mixed_metric 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:6 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+# This is what we would expect, but it currently fails (disabled)
+# eval range from 0 to 8m step 1m mixed_metric
+#	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+# eval range from 0 to 8m step 1m histogram_count(mixed_metric)
+# {} _ _ _ 4 6 _ _ 10 10
+
+# eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
+# {} _ _ _ 5 8 _ _ 18 18
+
+# Instead this is what we get from both engines.
+eval range from 0 to 8m step 1m mixed_metric
+	{__name__="mixed_metric"} 1 2 3 3 3 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
+
+eval range from 0 to 8m step 1m histogram_avg(mixed_metric)
+{} _ _ _ _ _ _ _ 1.8 1.8
+
+eval range from 0 to 8m step 1m histogram_count(mixed_metric)
+{} _ _ _ _ _ _ _ 10 10
+
+eval range from 0 to 8m step 1m histogram_fraction(0, 1, mixed_metric)
+{} _ _ _ _ _ _ _ 0.3 0.3
+
+eval range from 0 to 8m step 1m histogram_stddev(mixed_metric)
+{} _ _ _ _ _ _ _ 0.8574122997574659 0.8574122997574659
+
+eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
+{} _ _ _ _ _ _ _ 18 18
+
+clear
+
+# Test mixed schema rate and increase
+load 1m
+	incr_histogram	{{schema:3 sum:4 count:4 buckets:[1 2 1]}}+{{schema:5 sum:2 count:1 buckets:[1] offset:1}}x10
+
+eval instant at 5m rate(incr_histogram[5m])
+	{} {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}}
+
+eval instant at 5m increase(incr_histogram[5m])
+	{} {{schema:3 count:5 sum:10 offset:1 buckets:[5]}}
+
+clear
+
+# Test mixed metrics
+load 1m
+	incr_histogram	1 2 3 4 {{schema:5 sum:2 count:1 buckets:[1] offset:1}}
+
+# Each element in v that contains a mix of float and native histogram samples within the range, will be missing from the result vector.
+eval_warn instant at 5m rate(incr_histogram[5m])
+  # We expect no results.
+
+eval_warn instant at 5m increase(incr_histogram[5m])
+  # We expect no results.
+
+clear
+
+# Test mixed metrics and range query
+load 1m
+	incr_histogram_sum	1 2 {{schema:3 sum:4 count:4 buckets:[1 2 1]}}+{{schema:5 sum:2 count:1 buckets:[1] offset:1}}x3
+
+# - The first value isn't enough to calculate a rate/increase
+# - The second value is a rate/increase from two floats
+# - The third value is a rate/increase across a float and histogram (so no value returned)
+# - The remaining values contain the rate/increase across two histograms in the vector
+eval_warn range from 0 to 4m step 1m rate(incr_histogram_sum[1m1s])
+	{} _ 0.016666666666666666 _ {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}} {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}}
+
+eval_warn range from 0 to 4m step 1m increase(incr_histogram_sum[1m1s])
+	{} _ 1.0166666666666666 _ {{schema:3 count:1.0166666666666666 sum:2.033333333333333 offset:1 buckets:[1.0166666666666666]}} {{schema:3 count:1.0166666666666666 sum:2.033333333333333 offset:1 buckets:[1.0166666666666666]}}
+
+clear
+
+# Test multiple output samples covering the same input samples.
+load 1m
+	incr_histogram{env="a"}	{{sum:4 count:3 buckets:[1 2 1]}}+{{sum:2 count:1 buckets:[1] offset:1}}x10
+	incr_histogram{env="a",cluster="a"}	{{sum:4 count:3 buckets:[1 2 1]}}+{{sum:2 count:1 buckets:[1] offset:1}}x10
+	incr_histogram{env="b"}	{{sum:4 count:3 buckets:[1 2 1]}}+{{sum:2 count:1 buckets:[1] offset:1}}x10
+	incr_histogram{env="b",cluster="a"}	{{sum:4 count:3 buckets:[1 2 1]}}+{{sum:2 count:1 buckets:[1] offset:1}}x10
+
+eval range from 0 to 4m step 1m sum by (env) (rate(incr_histogram[5m]))
+	{env="a"}	_ {{count:0.01 sum:0.02 offset:1 buckets:[0.01]}} {{count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}} {{count:0.023333333333333334 sum:0.04666666666666667 offset:1 buckets:[0.023333333333333334]}} {{count:0.03333333333333333 sum:0.06666666666666667 offset:1 buckets:[0.03333333333333333]}}
+	{env="b"}	_ {{count:0.01 sum:0.02 offset:1 buckets:[0.01]}} {{count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}} {{count:0.023333333333333334 sum:0.04666666666666667 offset:1 buckets:[0.023333333333333334]}} {{count:0.03333333333333333 sum:0.06666666666666667 offset:1 buckets:[0.03333333333333333]}}
+
+eval range from 0 to 4m step 1m sum by (env) (increase(incr_histogram[5m]))
+	{env="a"}	_ {{count:3 sum:6 offset:1 buckets:[3]}} {{count:5 sum:10 offset:1 buckets:[5]}} {{count:7 sum:14 offset:1 buckets:[7]}} {{count:10 sum:20 offset:1 buckets:[10]}}
+	{env="b"}	_ {{count:3 sum:6 offset:1 buckets:[3]}} {{count:5 sum:10 offset:1 buckets:[5]}} {{count:7 sum:14 offset:1 buckets:[7]}} {{count:10 sum:20 offset:1 buckets:[10]}}
+
+clear
+
+# Test rate/increase with explicit counter reset information.
+load 1m
+  metric {{sum:3 count:4 buckets:[1 2 1] counter_reset_hint:reset}} {{sum:63 count:124 buckets:[100 4 20] counter_reset_hint:not_reset}}
+
+eval instant at 1m rate(metric[1m1s])
+  {} {{sum:1 count:2 buckets:[1.65 0.03333333333333333 0.31666666666666665] counter_reset_hint:gauge}}
+
+eval instant at 1m increase(metric[1m1s])
+  {} {{count:122 sum:61 buckets:[100.64999999999999 2.033333333333333 19.316666666666666]}}
+
+clear
+
+# Test mixing exponential and custom buckets.
+load 6m
+  metric{series="exponential"}         {{sum:4 count:5 buckets:[1 3 1]}}  _                                                                 {{sum:4 count:5 buckets:[1 3 1]}}                                 {{sum:4 count:5 buckets:[1 3 1]}}  _
+  metric{series="other-exponential"}   {{sum:3 count:4 buckets:[1 2 1]}}  _                                                                 {{sum:3 count:4 buckets:[1 2 1]}}                                 {{sum:3 count:4 buckets:[1 2 1]}}  _
+  metric{series="custom"}              _                                  {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1 0]}}   {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1 0]}}   _                                  {{schema:-53 sum:2 count:1 custom_values:[5 10] buckets:[1 0]}}
+  metric{series="other-custom"}        _                                  {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}}  {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}}  _                                  {{schema:-53 sum:16 count:2 custom_values:[5 10] buckets:[0 2]}}
+
+# T=0: only exponential
+# T=6: only custom
+# T=12: mixed, should be ignored and emit a warning
+# T=18: only exponential
+# T=24: only custom
+eval_warn range from 0 to 24m step 6m sum(metric)
+  {} {{sum:7 count:9 buckets:[2 5 2]}} {{schema:-53 sum:16 count:3 custom_values:[5 10] buckets:[1 2]}} _ {{sum:7 count:9 buckets:[2 5 2]}} {{schema:-53 sum:18 count:3 custom_values:[5 10] buckets:[1 2]}}
+
+clear
+
+# Test incompatible custom bucket schemas.
+load 6m
+  metric{series="1"} _                                                               {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1 2]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1 4]}}  {{schema:-53 sum:1 count:1 custom_values:[3] buckets:[1]}}
+  metric{series="2"} {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}      _                                                               {{schema:-53 sum:1 count:1 custom_values:[2] buckets:[1]}}       {{schema:-53 sum:1.5 count:3 custom_values:[3] buckets:[3]}}
+  metric{series="3"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1 2]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1 2]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1 4]}}  {{schema:-53 sum:1.3 count:2 custom_values:[3] buckets:[2]}}
+
+# T=0: incompatible, should be ignored and emit a warning
+# T=6: compatible
+# T=12: incompatible followed by compatible, should be ignored and emit a warning
+# T=18: compatible
+eval_warn range from 0 to 18m step 6m sum(metric)
+  {} _ {{schema:-53 sum:2 count:2 custom_values:[5 10] buckets:[2 4]}} _ {{schema:-53 sum:3.8 count:6 custom_values:[3] buckets:[6]}}
+
+clear
+
+# Test rate() and increase() over native histograms with changing schemas.
+load 1m
+  metric {{schema:4 sum:2 count:2 buckets:[2]}} {{schema:2 sum:6 count:12 buckets:[12]}} {{schema:3 sum:12 count:24 buckets:[24]}} {{schema:4 sum:164 count:326 buckets:[326]}}
+
+eval instant at 3m rate(metric[3m1s])
+  {} {{schema:2 sum:1 count:2 buckets:[2] counter_reset_hint:gauge}}
+
+eval instant at 3m increase(metric[3m1s])
+  {} {{schema:2 sum:181 count:362 buckets:[362] counter_reset_hint:gauge}}

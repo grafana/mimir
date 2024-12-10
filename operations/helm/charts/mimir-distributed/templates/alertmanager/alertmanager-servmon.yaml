@@ -1,3 +1,3 @@
-{{- if .Values.alertmanager.enabled -}}
+{{- if and .Values.alertmanager.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 {{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "alertmanager" "memberlist" true) }}
 {{- end -}}

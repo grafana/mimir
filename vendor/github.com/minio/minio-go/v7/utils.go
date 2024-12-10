@@ -20,7 +20,7 @@ package minio
 import (
 	"context"
 	"crypto/md5"
-	fipssha256 "crypto/sha256"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/hex"
@@ -40,9 +40,7 @@ import (
 	"time"
 
 	md5simd "github.com/minio/md5-simd"
-	"github.com/minio/minio-go/v7/pkg/encrypt"
 	"github.com/minio/minio-go/v7/pkg/s3utils"
-	"github.com/minio/sha256-simd"
 )
 
 func trimEtag(etag string) string {
@@ -512,6 +510,11 @@ func isAmzHeader(headerKey string) bool {
 	return strings.HasPrefix(key, "x-amz-meta-") || strings.HasPrefix(key, "x-amz-grant-") || key == "x-amz-acl" || isSSEHeader(headerKey) || strings.HasPrefix(key, "x-amz-checksum-")
 }
 
+// isMinioHeader returns true if header is x-minio- header.
+func isMinioHeader(headerKey string) bool {
+	return strings.HasPrefix(strings.ToLower(headerKey), "x-minio-")
+}
+
 // supportedQueryValues is a list of query strings that can be passed in when using GetObject.
 var supportedQueryValues = map[string]bool{
 	"attributes":                   true,
@@ -548,9 +551,6 @@ func newMd5Hasher() md5simd.Hasher {
 }
 
 func newSHA256Hasher() md5simd.Hasher {
-	if encrypt.FIPS {
-		return &hashWrapper{Hash: fipssha256.New(), isSHA256: true}
-	}
 	return &hashWrapper{Hash: sha256Pool.Get().(hash.Hash), isSHA256: true}
 }
 

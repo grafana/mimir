@@ -7,7 +7,7 @@ import (
 
 func init() { regKey(47, 0, 0) }
 
-func (c *Cluster) handleOffsetDelete(creq clientReq) (kmsg.Response, error) {
+func (c *Cluster) handleOffsetDelete(creq *clientReq) (kmsg.Response, error) {
 	req := creq.kreq.(*kmsg.OffsetDeleteRequest)
 	resp := req.ResponseKind().(*kmsg.OffsetDeleteResponse)
 

@@ -5,14 +5,64 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kbin"
 	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kgo/pool"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
+
+type recordsPool struct{ p *sync.Pool }
+
+func newRecordsPool() *recordsPool {
+	return &recordsPool{
+		p: &sync.Pool{New: func() any { return &Record{} }},
+	}
+}
+
+func (p *recordsPool) get() *Record {
+	return p.p.Get().(*Record)
+}
+
+func (p *recordsPool) put(r *Record) {
+	*r = Record{} // zero out the record
+	p.p.Put(r)
+}
+
+// rcBuffer is a reference counted buffer.
+//
+// The internal buffer will be sent back to the pool after calling release
+// when the ref count reaches 0.
+type rcBuffer[T any] struct {
+	refCount atomic.Int32
+	buffer   []T
+	pool     *pool.BucketedPool[T]
+}
+
+func newRCBuffer[T any](buffer []T, pool *pool.BucketedPool[T]) *rcBuffer[T] {
+	return &rcBuffer[T]{buffer: buffer, pool: pool}
+}
+
+func (b *rcBuffer[T]) acquire() {
+	b.refCount.Add(1)
+}
+
+func (b *rcBuffer[T]) release() {
+	if b.refCount.Add(-1) == 0 {
+		b.pool.Put(b.buffer)
+		b.buffer = nil
+		return
+	}
+	if b.refCount.Load() < 0 {
+		panic("rcBuffer released too many times")
+	}
+}
 
 type readerFrom interface {
 	ReadFrom([]byte) error
@@ -88,6 +138,32 @@ func (s *source) removeCursor(rm *cursor) {
 	if s.cursorsStart == len(s.cursors) {
 		s.cursorsStart = 0
 	}
+}
+
+type ProcessFetchPartitionOptions struct {
+	// KeepControlRecords sets the parser to keep control messages and return
+	// them with fetches, overriding the default that discards them.
+	//
+	// Generally, control messages are not useful. It is the same as kgo.KeepControlRecords().
+	KeepControlRecords bool
+
+	// Offset is the minimum offset for which we'll parse records. Records with lower offsets will not be parsed or returned.
+	Offset int64
+
+	// IsolationLevel controls whether or not to return uncomitted records. See kgo.IsolationLevel.
+	IsolationLevel IsolationLevel
+
+	// Topic is used to populate the Topic field of each Record.
+	Topic string
+
+	// Topic is used to populate the Partition field of each Record.
+	Partition int32
+
+	// DecompressBufferPool is a pool of buffers to use for decompressing batches.
+	DecompressBufferPool *pool.BucketedPool[byte]
+
+	// recordsPool is for internal use only.
+	recordPool *recordsPool
 }
 
 // cursor is where we are consuming from for an individual partition.
@@ -261,6 +337,60 @@ func (p *cursorOffsetPreferred) move() {
 }
 
 type cursorPreferreds []cursorOffsetPreferred
+
+func (cs cursorPreferreds) String() string {
+	type pnext struct {
+		p    int32
+		next int32
+	}
+	ts := make(map[string][]pnext)
+	for _, c := range cs {
+		t := c.from.topic
+		p := c.from.partition
+		ts[t] = append(ts[t], pnext{p, c.preferredReplica})
+	}
+	tsorted := make([]string, 0, len(ts))
+	for t, ps := range ts {
+		tsorted = append(tsorted, t)
+		slices.SortFunc(ps, func(l, r pnext) int {
+			if l.p < r.p {
+				return -1
+			}
+			if l.p > r.p {
+				return 1
+			}
+			if l.next < r.next {
+				return -1
+			}
+			if l.next > r.next {
+				return 1
+			}
+			return 0
+		})
+	}
+	slices.Sort(tsorted)
+
+	sb := new(strings.Builder)
+	for i, t := range tsorted {
+		ps := ts[t]
+		fmt.Fprintf(sb, "%s{", t)
+
+		for j, p := range ps {
+			if j < len(ps)-1 {
+				fmt.Fprintf(sb, "%d=>%d, ", p.p, p.next)
+			} else {
+				fmt.Fprintf(sb, "%d=>%d", p.p, p.next)
+			}
+		}
+
+		if i < len(tsorted)-1 {
+			fmt.Fprint(sb, "}, ")
+		} else {
+			fmt.Fprint(sb, "}")
+		}
+	}
+	return sb.String()
+}
 
 func (cs cursorPreferreds) eachPreferred(fn func(cursorOffsetPreferred)) {
 	for _, c := range cs {
@@ -811,6 +941,11 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 	}
 
 	// The logic below here should be relatively quick.
+	//
+	// Note that fetch runs entirely in the context of a consumer session.
+	// loopFetch does not return until this function does, meaning we
+	// cannot concurrently issue a second fetch for partitions that are
+	// being processed below.
 
 	deleteReqUsedOffset := func(topic string, partition int32) {
 		t := req.usedOffsets[topic]
@@ -827,6 +962,12 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 	// These two removals transition responsibility for finishing using the
 	// cursor from the request's used offsets to the new source or the
 	// reloading.
+	if len(preferreds) > 0 {
+		s.cl.cfg.logger.Log(LogLevelInfo, "fetch partitions returned preferred replicas",
+			"from_broker", s.nodeID,
+			"moves", preferreds.String(),
+		)
+	}
 	preferreds.eachPreferred(func(c cursorOffsetPreferred) {
 		c.move()
 		deleteReqUsedOffset(c.from.topic, c.from.partition)
@@ -889,6 +1030,9 @@ func (s *source) fetch(consumerSession *consumerSession, doneFetch chan<- struct
 	// reload offsets *always* triggers a metadata update.
 	if updateWhy != nil {
 		why := updateWhy.reason(fmt.Sprintf("fetch had inner topic errors from broker %d", s.nodeID))
+		// loadWithSessionNow triggers a metadata update IF there are
+		// offsets to reload. If there are no offsets to reload, we
+		// trigger one here.
 		if !reloadOffsets.loadWithSessionNow(consumerSession, why) {
 			if updateWhy.isOnly(kerr.UnknownTopicOrPartition) || updateWhy.isOnly(kerr.UnknownTopicID) {
 				s.cl.triggerUpdateMetadata(false, why)
@@ -937,7 +1081,9 @@ func (s *source) handleReqResp(br *broker, req *fetchRequest, resp *kmsg.FetchRe
 		debugWhyStripped multiUpdateWhy
 		numErrsStripped  int
 		kip320           = s.cl.supportsOffsetForLeaderEpoch()
+		kmove            kip951move
 	)
+	defer kmove.maybeBeginMove(s.cl)
 
 	strip := func(t string, p int32, err error) {
 		numErrsStripped++
@@ -996,8 +1142,12 @@ func (s *source) handleReqResp(br *broker, req *fetchRequest, resp *kmsg.FetchRe
 				continue
 			}
 
-			fp := partOffset.processRespPartition(br, rp, s.cl.decompressor, s.cl.cfg.hooks)
+			fp := partOffset.processRespPartition(br, rp, s.cl.cfg.hooks, s.cl.cfg.recordsPool, s.cl.cfg.decompressBufferPool)
 			if fp.Err != nil {
+				if moving := kmove.maybeAddFetchPartition(resp, rp, partOffset.from); moving {
+					strip(topic, partition, fp.Err)
+					continue
+				}
 				updateWhy.add(topic, partition, fp.Err)
 			}
 
@@ -1169,7 +1319,43 @@ func (s *source) handleReqResp(br *broker, req *fetchRequest, resp *kmsg.FetchRe
 
 // processRespPartition processes all records in all potentially compressed
 // batches (or message sets).
-func (o *cursorOffsetNext) processRespPartition(br *broker, rp *kmsg.FetchResponseTopicPartition, decompressor *decompressor, hooks hooks) FetchPartition {
+func (o *cursorOffsetNext) processRespPartition(br *broker, rp *kmsg.FetchResponseTopicPartition, hooks hooks, recordsPool *recordsPool, decompressBufferPool *pool.BucketedPool[byte]) (fp FetchPartition) {
+	if rp.ErrorCode == 0 {
+		o.hwm = rp.HighWatermark
+	}
+	opts := ProcessFetchPartitionOptions{
+		KeepControlRecords:   br.cl.cfg.keepControl,
+		Offset:               o.offset,
+		IsolationLevel:       IsolationLevel{br.cl.cfg.isolationLevel},
+		Topic:                o.from.topic,
+		Partition:            o.from.partition,
+		DecompressBufferPool: decompressBufferPool,
+		recordPool:           recordsPool,
+	}
+	observeMetrics := func(m FetchBatchMetrics) {
+		hooks.each(func(h Hook) {
+			if h, ok := h.(HookFetchBatchRead); ok {
+				h.OnFetchBatchRead(br.meta, o.from.topic, o.from.partition, m)
+			}
+		})
+	}
+	fp, o.offset = ProcessRespPartition(opts, rp, observeMetrics)
+	if len(fp.Records) > 0 {
+		lastRecord := fp.Records[len(fp.Records)-1]
+		// We adjust the offset separately because it may be larger than the offset of the last record for compacted partitions.
+		o.lastConsumedEpoch = lastRecord.LeaderEpoch
+		o.lastConsumedTime = lastRecord.Timestamp
+	}
+
+	return fp
+}
+
+// ProcessRespPartition processes all records in all potentially compressed batches (or message sets).
+// ProcessRespPartition returns the FetchPartition and the last offset of records processed. observeMetrics can be nil.
+// This is useful when issuing manual Fetch requests for records.
+// In case of a compacted partition, the last offset may be larger than the offset of the last record.
+// If the partition response is truncated and the partiiton was compacted, then the last offset is the offset of the last record.
+func ProcessRespPartition(o ProcessFetchPartitionOptions, rp *kmsg.FetchResponseTopicPartition, observeMetrics func(FetchBatchMetrics)) (FetchPartition, int64) {
 	fp := FetchPartition{
 		Partition:        rp.Partition,
 		Err:              kerr.ErrorForCode(rp.ErrorCode),
@@ -1177,11 +1363,11 @@ func (o *cursorOffsetNext) processRespPartition(br *broker, rp *kmsg.FetchRespon
 		LastStableOffset: rp.LastStableOffset,
 		LogStartOffset:   rp.LogStartOffset,
 	}
-	if rp.ErrorCode == 0 {
-		o.hwm = rp.HighWatermark
-	}
 
-	aborter := buildAborter(rp)
+	var aborter aborter
+	if o.IsolationLevel.level == 1 {
+		aborter = buildAborter(rp)
+	}
 
 	// A response could contain any of message v0, message v1, or record
 	// batches, and this is solely dictated by the magic byte (not the
@@ -1270,10 +1456,10 @@ func (o *cursorOffsetNext) processRespPartition(br *broker, rp *kmsg.FetchRespon
 
 		default:
 			fp.Err = fmt.Errorf("unknown magic %d; message offset is %d and length is %d, skipping and setting to next offset", magic, offset, length)
-			if next := offset + 1; next > o.offset {
-				o.offset = next
+			if next := offset + 1; next > o.Offset {
+				o.Offset = next
 			}
-			return fp
+			return fp, o.Offset
 		}
 
 		if !check() {
@@ -1288,30 +1474,27 @@ func (o *cursorOffsetNext) processRespPartition(br *broker, rp *kmsg.FetchRespon
 		case *kmsg.MessageV0:
 			m.CompressedBytes = int(length) // for message sets, we include the message set overhead in length
 			m.CompressionType = uint8(t.Attributes) & 0b0000_0111
-			m.NumRecords, m.UncompressedBytes = o.processV0OuterMessage(&fp, t, decompressor)
+			m.NumRecords, m.UncompressedBytes = processV0OuterMessage(&o, &fp, t, defaultDecompressor)
 
 		case *kmsg.MessageV1:
 			m.CompressedBytes = int(length)
 			m.CompressionType = uint8(t.Attributes) & 0b0000_0111
-			m.NumRecords, m.UncompressedBytes = o.processV1OuterMessage(&fp, t, decompressor)
+			m.NumRecords, m.UncompressedBytes = processV1OuterMessage(&o, &fp, t, defaultDecompressor)
 
 		case *kmsg.RecordBatch:
 			m.CompressedBytes = len(t.Records) // for record batches, we only track the record batch length
 			m.CompressionType = uint8(t.Attributes) & 0b0000_0111
-			m.NumRecords, m.UncompressedBytes = o.processRecordBatch(&fp, t, aborter, decompressor)
+			m.NumRecords, m.UncompressedBytes = processRecordBatch(&o, &fp, t, aborter, defaultDecompressor)
 		}
 
 		if m.UncompressedBytes == 0 {
 			m.UncompressedBytes = m.CompressedBytes
 		}
-		hooks.each(func(h Hook) {
-			if h, ok := h.(HookFetchBatchRead); ok {
-				h.OnFetchBatchRead(br.meta, o.from.topic, o.from.partition, m)
-			}
-		})
+		if observeMetrics != nil {
+			observeMetrics(m)
+		}
 	}
-
-	return fp
+	return fp, o.Offset
 }
 
 type aborter map[int64][]int64
@@ -1356,11 +1539,17 @@ func (a aborter) trackAbortedPID(producerID int64) {
 // processing records to fetch part //
 //////////////////////////////////////
 
+var rawRecordsPool = pool.NewBucketedPool[kmsg.Record](32, 16*1024, 2, func(len int) []kmsg.Record {
+	return make([]kmsg.Record, len)
+})
+
 // readRawRecords reads n records from in and returns them, returning early if
 // there were partial records.
 func readRawRecords(n int, in []byte) []kmsg.Record {
-	rs := make([]kmsg.Record, n)
+	rs := rawRecordsPool.Get(n)
+	rs = rs[:n]
 	for i := 0; i < n; i++ {
+		rs[i] = kmsg.Record{}
 		length, used := kbin.Varint(in)
 		total := used + int(length)
 		if used == 0 || length < 0 || len(in) < total {
@@ -1374,7 +1563,8 @@ func readRawRecords(n int, in []byte) []kmsg.Record {
 	return rs
 }
 
-func (o *cursorOffsetNext) processRecordBatch(
+func processRecordBatch(
+	o *ProcessFetchPartitionOptions,
 	fp *FetchPartition,
 	batch *kmsg.RecordBatch,
 	aborter aborter,
@@ -1385,7 +1575,7 @@ func (o *cursorOffsetNext) processRecordBatch(
 		return 0, 0
 	}
 	lastOffset := batch.FirstOffset + int64(batch.LastOffsetDelta)
-	if lastOffset < o.offset {
+	if lastOffset < o.Offset {
 		// If the last offset in this batch is less than what we asked
 		// for, we got a batch that we entirely do not need. We can
 		// avoid all work (although we should not get this batch).
@@ -1393,9 +1583,11 @@ func (o *cursorOffsetNext) processRecordBatch(
 	}
 
 	rawRecords := batch.Records
-	if compression := byte(batch.Attributes & 0x0007); compression != 0 {
+
+	compression := byte(batch.Attributes & 0x0007)
+	if compression != 0 {
 		var err error
-		if rawRecords, err = decompressor.decompress(rawRecords, compression); err != nil {
+		if rawRecords, err = decompressor.decompress(rawRecords, compression, o.DecompressBufferPool); err != nil {
 			return 0, 0 // truncated batch
 		}
 	}
@@ -1417,21 +1609,31 @@ func (o *cursorOffsetNext) processRecordBatch(
 	// either advance offsets or will set to nextAskOffset.
 	nextAskOffset := lastOffset + 1
 	defer func() {
-		if numRecords == len(krecords) && o.offset < nextAskOffset {
-			o.offset = nextAskOffset
+		if numRecords == len(krecords) && o.Offset < nextAskOffset {
+			o.Offset = nextAskOffset
 		}
 	}()
+
+	var (
+		rcBatchBuff      *rcBuffer[byte]
+		rcRawRecordsBuff *rcBuffer[kmsg.Record]
+	)
+	if o.recordPool != nil && codecType(compression) != codecNone {
+		rcBatchBuff = newRCBuffer(rawRecords, o.DecompressBufferPool)
+		rcRawRecordsBuff = newRCBuffer(krecords, rawRecordsPool)
+	}
 
 	abortBatch := aborter.shouldAbortBatch(batch)
 	for i := range krecords {
 		record := recordToRecord(
-			o.from.topic,
+			o.Topic,
 			fp.Partition,
 			batch,
 			&krecords[i],
+			o.recordPool,
 		)
-		o.maybeKeepRecord(fp, record, abortBatch)
 
+		o.maybeKeepRecord(fp, record, rcBatchBuff, rcRawRecordsBuff, abortBatch)
 		if abortBatch && record.Attrs.IsControl() {
 			// A control record has a key and a value where the key
 			// is int16 version and int16 type. Aborted records
@@ -1449,18 +1651,14 @@ func (o *cursorOffsetNext) processRecordBatch(
 // this easy, but if not, we decompress and process each inner message as
 // either v0 or v1. We only expect the inner message to be v1, but technically
 // a crazy pipeline could have v0 anywhere.
-func (o *cursorOffsetNext) processV1OuterMessage(
-	fp *FetchPartition,
-	message *kmsg.MessageV1,
-	decompressor *decompressor,
-) (int, int) {
+func processV1OuterMessage(o *ProcessFetchPartitionOptions, fp *FetchPartition, message *kmsg.MessageV1, decompressor *decompressor) (int, int) {
 	compression := byte(message.Attributes & 0x0003)
 	if compression == 0 {
-		o.processV1Message(fp, message)
+		processV1Message(o, fp, message)
 		return 1, 0
 	}
 
-	rawInner, err := decompressor.decompress(message.Value, compression)
+	rawInner, err := decompressor.decompress(message.Value, compression, o.DecompressBufferPool)
 	if err != nil {
 		return 0, 0 // truncated batch
 	}
@@ -1527,13 +1725,13 @@ out:
 		case *kmsg.MessageV0:
 			innerMessage.Offset = firstOffset + int64(i)
 			innerMessage.Attributes |= int8(compression)
-			if !o.processV0Message(fp, innerMessage) {
+			if !processV0Message(o, fp, innerMessage) {
 				return i, uncompressedBytes
 			}
 		case *kmsg.MessageV1:
 			innerMessage.Offset = firstOffset + int64(i)
 			innerMessage.Attributes |= int8(compression)
-			if !o.processV1Message(fp, innerMessage) {
+			if !processV1Message(o, fp, innerMessage) {
 				return i, uncompressedBytes
 			}
 		}
@@ -1541,7 +1739,8 @@ out:
 	return len(innerMessages), uncompressedBytes
 }
 
-func (o *cursorOffsetNext) processV1Message(
+func processV1Message(
+	o *ProcessFetchPartitionOptions,
 	fp *FetchPartition,
 	message *kmsg.MessageV1,
 ) bool {
@@ -1553,25 +1752,26 @@ func (o *cursorOffsetNext) processV1Message(
 		fp.Err = fmt.Errorf("unknown attributes on message %d", message.Attributes)
 		return false
 	}
-	record := v1MessageToRecord(o.from.topic, fp.Partition, message)
-	o.maybeKeepRecord(fp, record, false)
+	record := v1MessageToRecord(o.Topic, fp.Partition, message)
+	o.maybeKeepRecord(fp, record, nil, nil, false)
 	return true
 }
 
 // Processes an outer v0 message. We expect inner messages to be entirely v0 as
 // well, so this only tries v0 always.
-func (o *cursorOffsetNext) processV0OuterMessage(
+func processV0OuterMessage(
+	o *ProcessFetchPartitionOptions,
 	fp *FetchPartition,
 	message *kmsg.MessageV0,
 	decompressor *decompressor,
 ) (int, int) {
 	compression := byte(message.Attributes & 0x0003)
 	if compression == 0 {
-		o.processV0Message(fp, message)
+		processV0Message(o, fp, message)
 		return 1, 0 // uncompressed bytes is 0; set to compressed bytes on return
 	}
 
-	rawInner, err := decompressor.decompress(message.Value, compression)
+	rawInner, err := decompressor.decompress(message.Value, compression, o.DecompressBufferPool)
 	if err != nil {
 		return 0, 0 // truncated batch
 	}
@@ -1610,14 +1810,15 @@ func (o *cursorOffsetNext) processV0OuterMessage(
 		innerMessage := &innerMessages[i]
 		innerMessage.Attributes |= int8(compression)
 		innerMessage.Offset = firstOffset + int64(i)
-		if !o.processV0Message(fp, innerMessage) {
+		if !processV0Message(o, fp, innerMessage) {
 			return i, uncompressedBytes
 		}
 	}
 	return len(innerMessages), uncompressedBytes
 }
 
-func (o *cursorOffsetNext) processV0Message(
+func processV0Message(
+	o *ProcessFetchPartitionOptions,
 	fp *FetchPartition,
 	message *kmsg.MessageV0,
 ) bool {
@@ -1629,8 +1830,8 @@ func (o *cursorOffsetNext) processV0Message(
 		fp.Err = fmt.Errorf("unknown attributes on message %d", message.Attributes)
 		return false
 	}
-	record := v0MessageToRecord(o.from.topic, fp.Partition, message)
-	o.maybeKeepRecord(fp, record, false)
+	record := v0MessageToRecord(o.Topic, fp.Partition, message)
+	o.maybeKeepRecord(fp, record, nil, nil, false)
 	return true
 }
 
@@ -1638,8 +1839,8 @@ func (o *cursorOffsetNext) processV0Message(
 //
 // If the record is being aborted or the record is a control record and the
 // client does not want to keep control records, this does not keep the record.
-func (o *cursorOffsetNext) maybeKeepRecord(fp *FetchPartition, record *Record, abort bool) {
-	if record.Offset < o.offset {
+func (o *ProcessFetchPartitionOptions) maybeKeepRecord(fp *FetchPartition, record *Record, rcBatchBuff *rcBuffer[byte], rcRawRecordsBuff *rcBuffer[kmsg.Record], abort bool) {
+	if record.Offset < o.Offset {
 		// We asked for offset 5, but that was in the middle of a
 		// batch; we got offsets 0 thru 4 that we need to skip.
 		return
@@ -1647,17 +1848,22 @@ func (o *cursorOffsetNext) maybeKeepRecord(fp *FetchPartition, record *Record, a
 
 	// We only keep control records if specifically requested.
 	if record.Attrs.IsControl() {
-		abort = !o.from.keepControl
+		abort = !o.KeepControlRecords
 	}
 	if !abort {
+		if rcBatchBuff != nil && rcRawRecordsBuff != nil {
+			rcBatchBuff.acquire()
+			record.rcBatchBuffer = rcBatchBuff
+
+			rcRawRecordsBuff.acquire()
+			record.rcRawRecordsBuffer = rcRawRecordsBuff
+		}
 		fp.Records = append(fp.Records, record)
 	}
 
 	// The record offset may be much larger than our expected offset if the
 	// topic is compacted.
-	o.offset = record.Offset + 1
-	o.lastConsumedEpoch = record.LeaderEpoch
-	o.lastConsumedTime = record.Timestamp
+	o.Offset = record.Offset + 1
 }
 
 ///////////////////////////////
@@ -1674,6 +1880,7 @@ func recordToRecord(
 	partition int32,
 	batch *kmsg.RecordBatch,
 	record *kmsg.Record,
+	recordsPool *recordsPool,
 ) *Record {
 	h := make([]RecordHeader, 0, len(record.Headers))
 	for _, kv := range record.Headers {
@@ -1682,19 +1889,25 @@ func recordToRecord(
 			Value: kv.Value,
 		})
 	}
-
-	r := &Record{
-		Key:           record.Key,
-		Value:         record.Value,
-		Headers:       h,
-		Topic:         topic,
-		Partition:     partition,
-		Attrs:         RecordAttrs{uint8(batch.Attributes)},
-		ProducerID:    batch.ProducerID,
-		ProducerEpoch: batch.ProducerEpoch,
-		LeaderEpoch:   batch.PartitionLeaderEpoch,
-		Offset:        batch.FirstOffset + int64(record.OffsetDelta),
+	var r *Record
+	if recordsPool != nil {
+		r = recordsPool.get()
+	} else {
+		r = new(Record)
 	}
+
+	r.Key = record.Key
+	r.Value = record.Value
+	r.Headers = h
+	r.Topic = topic
+	r.Partition = partition
+	r.Attrs = RecordAttrs{uint8(batch.Attributes)}
+	r.ProducerID = batch.ProducerID
+	r.ProducerEpoch = batch.ProducerEpoch
+	r.LeaderEpoch = batch.PartitionLeaderEpoch
+	r.Offset = batch.FirstOffset + int64(record.OffsetDelta)
+	r.recordsPool = recordsPool
+
 	if r.Attrs.TimestampType() == 0 {
 		r.Timestamp = timeFromMillis(batch.FirstTimestamp + record.TimestampDelta64)
 	} else {
@@ -2026,7 +2239,7 @@ func (f *fetchRequest) MaxVersion() int16 {
 	if f.disableIDs || f.session.disableIDs {
 		return 12
 	}
-	return 15
+	return 16
 }
 func (f *fetchRequest) SetVersion(v int16) { f.version = v }
 func (f *fetchRequest) GetVersion() int16  { return f.version }

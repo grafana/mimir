@@ -72,12 +72,12 @@ func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(mock.Arguments) {
 			// Cancel the worker context while the query execution is in progress.
 			workerCancel()
 
 			// Ensure the execution context hasn't been canceled yet.
-			require.Nil(t, processClient.Context().Err())
+			require.NoError(t, processClient.Context().Err())
 
 			// Intentionally slow down the query execution, to double check the worker waits until done.
 			time.Sleep(time.Second)
@@ -152,6 +152,7 @@ func TestRecvFailDoesntCancelProcess(t *testing.T) {
 	defer cancel()
 
 	// We use random port here, hopefully without any gRPC server.
+	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
 	cc, err := grpc.DialContext(ctx, "localhost:999", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 
@@ -185,6 +186,7 @@ func TestContextCancelStopsProcess(t *testing.T) {
 	defer cancel()
 
 	// We use random port here, hopefully without any gRPC server.
+	// nolint:staticcheck // grpc.DialContext() has been deprecated; we'll address it before upgrading to gRPC 2.
 	cc, err := grpc.DialContext(ctx, "localhost:999", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 

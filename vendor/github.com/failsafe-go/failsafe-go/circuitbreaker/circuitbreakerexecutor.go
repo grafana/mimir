@@ -6,30 +6,32 @@ import (
 	"github.com/failsafe-go/failsafe-go/policy"
 )
 
-// circuitBreakerExecutor is a failsafe.Executor that handles failures according to a CircuitBreaker.
-type circuitBreakerExecutor[R any] struct {
+// executor is a policy.Executor that handles failures according to a CircuitBreaker.
+type executor[R any] struct {
 	*policy.BaseExecutor[R]
 	*circuitBreaker[R]
 }
 
-var _ policy.Executor[any] = &circuitBreakerExecutor[any]{}
+var _ policy.Executor[any] = &executor[any]{}
 
-func (cbe *circuitBreakerExecutor[R]) PreExecute(_ policy.ExecutionInternal[R]) *common.PolicyResult[R] {
-	if !cbe.circuitBreaker.TryAcquirePermit() {
+func (e *executor[R]) PreExecute(_ policy.ExecutionInternal[R]) *common.PolicyResult[R] {
+	if !e.TryAcquirePermit() {
 		return internal.FailureResult[R](ErrOpen)
 	}
 	return nil
 }
 
-func (cbe *circuitBreakerExecutor[R]) OnSuccess(exec policy.ExecutionInternal[R], result *common.PolicyResult[R]) {
-	cbe.BaseExecutor.OnSuccess(exec, result)
-	cbe.RecordSuccess()
+func (e *executor[R]) OnSuccess(exec policy.ExecutionInternal[R], result *common.PolicyResult[R]) {
+	e.BaseExecutor.OnSuccess(exec, result)
+	e.RecordSuccess()
 }
 
-func (cbe *circuitBreakerExecutor[R]) OnFailure(exec policy.ExecutionInternal[R], result *common.PolicyResult[R]) *common.PolicyResult[R] {
-	cbe.BaseExecutor.OnFailure(exec, result)
-	cbe.mtx.Lock()
-	defer cbe.mtx.Unlock()
-	cbe.recordFailure(exec)
+func (e *executor[R]) OnFailure(exec policy.ExecutionInternal[R], result *common.PolicyResult[R]) *common.PolicyResult[R] {
+	e.BaseExecutor.OnFailure(exec, result)
+	e.mtx.Lock()
+	defer e.mtx.Unlock()
+
+	// Wrap the result in the execution, so it's available when computing a delay
+	e.recordFailure(exec.CopyWithResult(result))
 	return result
 }

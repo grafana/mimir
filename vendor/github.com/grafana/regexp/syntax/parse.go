@@ -5,6 +5,7 @@
 package syntax
 
 import (
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -44,6 +45,7 @@ const (
 	ErrTrailingBackslash     ErrorCode = "trailing backslash at end of expression"
 	ErrUnexpectedParen       ErrorCode = "unexpected )"
 	ErrNestingDepth          ErrorCode = "expression nests too deeply"
+	ErrLarge                 ErrorCode = "expression too large"
 )
 
 func (e ErrorCode) String() string {
@@ -159,7 +161,7 @@ func (p *parser) reuse(re *Regexp) {
 
 func (p *parser) checkLimits(re *Regexp) {
 	if p.numRunes > maxRunes {
-		panic(ErrInternalError)
+		panic(ErrLarge)
 	}
 	p.checkSize(re)
 	p.checkHeight(re)
@@ -203,7 +205,7 @@ func (p *parser) checkSize(re *Regexp) {
 	}
 
 	if p.calcSize(re, true) > maxSize {
-		panic(ErrInternalError)
+		panic(ErrLarge)
 	}
 }
 
@@ -248,9 +250,7 @@ func (p *parser) calcSize(re *Regexp, force bool) int64 {
 		size = int64(re.Max)*sub + int64(re.Max-re.Min)
 	}
 
-	if size < 1 {
-		size = 1
-	}
+	size = max(1, size)
 	p.size[re] = size
 	return size
 }
@@ -381,14 +381,12 @@ func minFoldRune(r rune) rune {
 	if r < minFold || r > maxFold {
 		return r
 	}
-	min := r
+	m := r
 	r0 := r
 	for r = unicode.SimpleFold(r); r != r0; r = unicode.SimpleFold(r) {
-		if min > r {
-			min = r
-		}
+		m = min(m, r)
 	}
-	return min
+	return m
 }
 
 // op pushes a regexp with the given op onto the stack
@@ -591,6 +589,31 @@ func (p *parser) collapse(subs []*Regexp, op Op) *Regexp {
 func (p *parser) factor(sub []*Regexp) []*Regexp {
 	if len(sub) < 2 {
 		return sub
+	}
+
+	// Sort literals, to bring similar strings nearer to each other.
+	if len(sub) > 2 {
+		// Only sort where all subexpressions have a leading string and all have the same case-sensitivity.
+		okToSort := true
+		_, firstFold := p.leadingString(sub[0])
+		for i := range sub {
+			istr, iflags := p.leadingString(sub[i])
+			if istr == nil || iflags != firstFold {
+				okToSort = false
+				break
+			}
+		}
+		if okToSort {
+			// Where one string is a prefix of the other we want to keep the ordering the same,
+			// because earlier choices are preferred. So use stable sort, and only compare up
+			// to the length of the shorter string.
+			slices.SortStableFunc(sub, func(a, b *Regexp) int {
+				lsa, _ := p.leadingString(a)
+				lsb, _ := p.leadingString(b)
+				pref := min(len(lsa), len(lsb))
+				return slices.Compare(lsa[:pref], lsb[:pref])
+			})
+		}
 	}
 
 	// Round 1: Factor out common literal prefixes.
@@ -897,8 +920,8 @@ func parse(s string, flags Flags) (_ *Regexp, err error) {
 			panic(r)
 		case nil:
 			// ok
-		case ErrInternalError: // too big
-			err = &Error{Code: ErrInternalError, Expr: s}
+		case ErrLarge: // too big
+			err = &Error{Code: ErrLarge, Expr: s}
 		case ErrNestingDepth:
 			err = &Error{Code: ErrNestingDepth, Expr: s}
 		}
@@ -1158,9 +1181,18 @@ func (p *parser) parsePerlFlags(s string) (rest string, err error) {
 	// support all three as well. EcmaScript 4 uses only the Python form.
 	//
 	// In both the open source world (via Code Search) and the
-	// Google source tree, (?P<expr>name) is the dominant form,
-	// so that's the one we implement. One is enough.
-	if len(t) > 4 && t[2] == 'P' && t[3] == '<' {
+	// Google source tree, (?P<expr>name) and (?<expr>name) are the
+	// dominant forms of named captures and both are supported.
+	startsWithP := len(t) > 4 && t[2] == 'P' && t[3] == '<'
+	startsWithName := len(t) > 3 && t[2] == '<'
+
+	if startsWithP || startsWithName {
+		// position of expr start
+		exprStartPos := 4
+		if startsWithName {
+			exprStartPos = 3
+		}
+
 		// Pull out name.
 		end := strings.IndexRune(t, '>')
 		if end < 0 {
@@ -1170,8 +1202,8 @@ func (p *parser) parsePerlFlags(s string) (rest string, err error) {
 			return "", &Error{ErrInvalidNamedCapture, s}
 		}
 
-		capture := t[:end+1] // "(?P<name>"
-		name := t[4:end]     // "name"
+		capture := t[:end+1]        // "(?P<name>" or "(?<name>"
+		name := t[exprStartPos:end] // "name"
 		if err = checkUTF8(name); err != nil {
 			return "", err
 		}
@@ -1853,6 +1885,22 @@ func cleanClass(rp *[]rune) []rune {
 	return r[:w]
 }
 
+// inCharClass reports whether r is in the class.
+// It assumes the class has been cleaned by cleanClass.
+func inCharClass(r rune, class []rune) bool {
+	_, ok := sort.Find(len(class)/2, func(i int) int {
+		lo, hi := class[2*i], class[2*i+1]
+		if r > hi {
+			return +1
+		}
+		if r < lo {
+			return -1
+		}
+		return 0
+	})
+	return ok
+}
+
 // appendLiteral returns the result of appending the literal x to the class r.
 func appendLiteral(r []rune, x rune, flags Flags) []rune {
 	if flags&FoldCase != 0 {
@@ -1937,7 +1985,7 @@ func appendClass(r []rune, x []rune) []rune {
 	return r
 }
 
-// appendFolded returns the result of appending the case folding of the class x to the class r.
+// appendFoldedClass returns the result of appending the case folding of the class x to the class r.
 func appendFoldedClass(r []rune, x []rune) []rune {
 	for i := 0; i < len(x); i += 2 {
 		r = appendFoldedRange(r, x[i], x[i+1])

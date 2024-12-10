@@ -62,6 +62,7 @@ func TestSeriesChunksSet(t *testing.T) {
 		for r := 0; r < numRuns; r++ {
 			set := newSeriesChunksSet(numSeries, true)
 
+			lset := labels.FromStrings(labels.MetricName, "metric")
 			// Ensure the series slice is made of all zero values. Then write something inside before releasing it again.
 			// The slice is expected to be picked from the pool, at least in some runs (there's an assertion on it at
 			// the end of the test).
@@ -69,7 +70,7 @@ func TestSeriesChunksSet(t *testing.T) {
 			for i := 0; i < numSeries; i++ {
 				require.Zero(t, set.series[i])
 
-				set.series[i].lset = labels.FromStrings(labels.MetricName, "metric")
+				set.series[i].lset = lset
 				set.series[i].chks = set.newSeriesAggrChunkSlice(numChunksPerSeries)
 			}
 
@@ -313,14 +314,12 @@ func TestPreloadingSetIterator(t *testing.T) {
 
 	t.Run("should iterate all sets if no error occurs", func(t *testing.T) {
 		for preloadSize := 1; preloadSize <= len(sets)+1; preloadSize++ {
-			preloadSize := preloadSize
-
 			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
 				t.Parallel()
 
 				var source iterator[seriesChunksSet]
 				source = newSliceSeriesChunksSetIterator(sets...)
-				source = newDelayedSetIterator[seriesChunksSet](delay, source)
+				source = newDelayedIterator(delay, source)
 
 				preloading := newPreloadingSetIterator[seriesChunksSet](context.Background(), preloadSize, source)
 
@@ -341,14 +340,12 @@ func TestPreloadingSetIterator(t *testing.T) {
 
 	t.Run("should stop iterating once an error is found", func(t *testing.T) {
 		for preloadSize := 1; preloadSize <= len(sets)+1; preloadSize++ {
-			preloadSize := preloadSize
-
 			t.Run(fmt.Sprintf("preload size: %d", preloadSize), func(t *testing.T) {
 				t.Parallel()
 
 				var source iterator[seriesChunksSet]
 				source = newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
-				source = newDelayedSetIterator[seriesChunksSet](delay, source)
+				source = newDelayedIterator(delay, source)
 
 				preloading := newPreloadingSetIterator[seriesChunksSet](context.Background(), preloadSize, source)
 
@@ -374,7 +371,7 @@ func TestPreloadingSetIterator(t *testing.T) {
 
 		var source iterator[seriesChunksSet]
 		source = newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
-		source = newDelayedSetIterator[seriesChunksSet](delay, source)
+		source = newDelayedIterator(delay, source)
 
 		preloading := newPreloadingSetIterator[seriesChunksSet](ctx, 1, source)
 
@@ -402,7 +399,7 @@ func TestPreloadingSetIterator(t *testing.T) {
 
 		var source iterator[seriesChunksSet]
 		source = newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), len(sets), sets...)
-		source = newDelayedSetIterator[seriesChunksSet](delay, source)
+		source = newDelayedIterator(delay, source)
 
 		preloading := newPreloadingSetIterator[seriesChunksSet](ctx, 1, source)
 
@@ -447,6 +444,27 @@ func TestPreloadingSetIterator_Concurrency(t *testing.T) {
 		require.Error(t, preloading.Err())
 	}
 
+}
+
+func TestPreloadingSetIterator_ContextCancellation(t *testing.T) {
+	t.Cleanup(func() { test.VerifyNoLeak(t) })
+	const preloadSize = 1
+
+	// This set is unreleseable because reused by multiple test runs.
+	set := newSeriesChunksSet(1, false)
+	set.series = append(set.series, seriesChunks{
+		lset: labels.FromStrings("__name__", "metric_0"),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	source := newSliceSeriesChunksSetIteratorWithError(errors.New("mocked error"), preloadSize, set)
+	preloading := newPreloadingSetIterator[seriesChunksSet](ctx, preloadSize, source)
+
+	assert.True(t, preloading.Next())
+	require.NotZero(t, preloading.At())
+	cancel()
+	// abandon the iterator after the first Next(); This simulates the client giving up because they also detected the cancelled context
+	// At the end of the test there shouldn't be a leaking goroutine
 }
 
 type testBlock struct {
@@ -884,31 +902,30 @@ func (s *sliceSeriesChunksSetIterator) Err() error {
 	return nil
 }
 
-// delayedSetIterator implements iterator and
-// introduces an artificial delay before returning from Next() and At().
-type delayedSetIterator[S any] struct {
+// delayedIterator implements iterator and introduces an artificial delay before returning from Next() and At().
+type delayedIterator[S any] struct {
 	wrapped iterator[S]
 	delay   time.Duration
 }
 
-func newDelayedSetIterator[S any](delay time.Duration, wrapped iterator[S]) *delayedSetIterator[S] {
-	return &delayedSetIterator[S]{
+func newDelayedIterator[S any](delay time.Duration, wrapped iterator[S]) *delayedIterator[S] {
+	return &delayedIterator[S]{
 		wrapped: wrapped,
 		delay:   delay,
 	}
 }
 
-func (s *delayedSetIterator[S]) Next() bool {
+func (s *delayedIterator[S]) Next() bool {
 	time.Sleep(s.delay)
 	return s.wrapped.Next()
 }
 
-func (s *delayedSetIterator[S]) At() S {
+func (s *delayedIterator[S]) At() S {
 	time.Sleep(s.delay)
 	return s.wrapped.At()
 }
 
-func (s *delayedSetIterator[S]) Err() error {
+func (s *delayedIterator[S]) Err() error {
 	return s.wrapped.Err()
 }
 

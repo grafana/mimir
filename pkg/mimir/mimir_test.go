@@ -45,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -161,6 +162,9 @@ func TestMimir(t *testing.T) {
 			ReplicationFactor:      1,
 			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 		}},
+		Querier: querier.Config{
+			QueryEngine: "prometheus",
+		},
 	}
 	require.NoError(t, cfg.Server.LogLevel.Set("info"))
 
@@ -421,32 +425,44 @@ func TestConfigValidation(t *testing.T) {
 			expectAnyError: true,
 		},
 		{
-			name: "should pass if grpc errors are disabled, and the distributor is running with ingest storage",
-			getTestConfig: func() *Config {
-				cfg := newDefaultConfig()
-				_ = cfg.Target.Set("distributor")
-				cfg.IngestStorage.Enabled = true
-				cfg.IngestStorage.KafkaConfig.Address = "localhost:123"
-				cfg.IngestStorage.KafkaConfig.Topic = "topic"
-				cfg.Ingester.DeprecatedReturnOnlyGRPCErrors = false
-
-				return cfg
-			},
-			expectAnyError: false,
-		},
-		{
-			name: "should fails if grpc errors are disabled, and the ingester is running with ingest storage",
+			name: "should fails if push api disabled in ingester, and the ingester isn't running with ingest storage",
 			getTestConfig: func() *Config {
 				cfg := newDefaultConfig()
 				_ = cfg.Target.Set("ingester")
-				cfg.IngestStorage.Enabled = true
-				cfg.IngestStorage.KafkaConfig.Address = "localhost:123"
-				cfg.IngestStorage.KafkaConfig.Topic = "topic"
-				cfg.Ingester.DeprecatedReturnOnlyGRPCErrors = false
+				cfg.Ingester.PushGrpcMethodEnabled = false
+				cfg.IngestStorage.Enabled = false
 
 				return cfg
 			},
 			expectAnyError: true,
+		},
+		{
+			name: "should fail if ingester ring is misconfigured with spread-minimizing token generation strategy when target is ingester",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("ingester")
+				cfg.Ingester.IngesterRing.InstanceID = "" // empty string is not a valid instance-id
+				cfg.Ingester.IngesterRing.InstanceZone = "zone-1"
+				cfg.Ingester.IngesterRing.SpreadMinimizingZones = []string{"zone-1", "zone-2"}
+				cfg.Ingester.IngesterRing.TokenGenerationStrategy = "spread-minimizing"
+
+				return cfg
+			},
+			expectAnyError: true,
+		},
+		{
+			name: "should pass if ingester ring is misconfigured with spread-minimizing token generation strategy when target is not ingester",
+			getTestConfig: func() *Config {
+				cfg := newDefaultConfig()
+				_ = cfg.Target.Set("distributor")
+				cfg.Ingester.IngesterRing.InstanceID = "" // empty string is not a valid instance-id
+				cfg.Ingester.IngesterRing.InstanceZone = "zone-1"
+				cfg.Ingester.IngesterRing.SpreadMinimizingZones = []string{"zone-1", "zone-2"}
+				cfg.Ingester.IngesterRing.TokenGenerationStrategy = "spread-minimizing"
+
+				return cfg
+			},
+			expectAnyError: false,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -509,7 +525,7 @@ func TestConfig_validateFilesystemPaths(t *testing.T) {
 		expectedErr string
 	}{
 		"should succeed with the default configuration": {
-			setup: func(cfg *Config) {},
+			setup: func(*Config) {},
 		},
 		"should fail if alertmanager data directory contains bucket store sync directory when running mimir-backend": {
 			setup: func(cfg *Config) {
@@ -762,6 +778,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 		}()
 	}
 
+	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(net.JoinHostPort(cfg.Server.GRPCListenAddress, strconv.Itoa(cfg.Server.GRPCListenPort)), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	defer func() {

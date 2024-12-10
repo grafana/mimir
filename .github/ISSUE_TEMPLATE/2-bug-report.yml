@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a bug
+title: "Bug: "
+labels: ["bug"]
+body:
+- type: textarea
+  id: what
+  attributes:
+    label: What is the bug?
+    placeholder: A clear and concise description of what the bug is.
+  validations:
+    required: true
+
+- type: textarea
+  id: how
+  attributes:
+    label: How to reproduce it?
+    placeholder: Steps to reproduce the behavior. 1. Start Mimir (SHA or version) 2. Perform operations (Read/Write/Others)...
+  validations:
+    required: true
+
+- type: textarea
+  id: expectations
+  attributes:
+    label: What did you think would happen?
+    placeholder: A clear and concise description of what you expected to happen.
+  validations:
+    required: true
+
+- type: textarea
+  id: environment
+  attributes:
+    label: What was your environment?
+    placeholder: Infrastructure (e.g., Kubernetes, bare-metal, laptop), deployment tool (e.g., helm, jsonnet)
+  validations:
+    required: true
+
+- type: textarea
+  id: context
+  attributes:
+    label: Any additional context to share?
+    placeholder: Add any other context or screenshots about the feature request here.
+  validations:
+    required: false

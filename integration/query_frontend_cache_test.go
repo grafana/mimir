@@ -44,10 +44,10 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 			}, cacheConfig(backend, cacheService))
 
 			// Start the query-frontend.
-			queryFrontendAligned := e2emimir.NewQueryFrontend("query-frontend-aligned", mergeFlags(flags, map[string]string{"-query-frontend.align-queries-with-step": "true"}), e2emimir.WithConfigFile(configFile))
+			queryFrontendAligned := e2emimir.NewQueryFrontend("query-frontend-aligned", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{"-query-frontend.align-queries-with-step": "true"}), e2emimir.WithConfigFile(configFile))
 			require.NoError(t, s.Start(queryFrontendAligned))
 
-			queryFrontendUnaligned := e2emimir.NewQueryFrontend("query-frontend-unaligned", mergeFlags(flags, map[string]string{"-query-frontend.align-queries-with-step": "false"}), e2emimir.WithConfigFile(configFile))
+			queryFrontendUnaligned := e2emimir.NewQueryFrontend("query-frontend-unaligned", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{"-query-frontend.align-queries-with-step": "false"}), e2emimir.WithConfigFile(configFile))
 			require.NoError(t, s.Start(queryFrontendUnaligned))
 
 			querierAligned := e2emimir.NewQuerier("querier-aligned", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{"-querier.frontend-address": queryFrontendAligned.NetworkGRPCEndpoint()}), e2emimir.WithConfigFile(configFile))
@@ -167,10 +167,11 @@ func generateExpectedFloats(start time.Time, end time.Time, step time.Duration, 
 	val := expectedVector[0].Value
 
 	const lookbackPeriod = 5 * time.Minute
+	rangeEnd := sampleTime.Add(lookbackPeriod)
 
 	values := []model.SamplePair(nil)
 	for ts := start; !ts.After(end); ts = ts.Add(step) {
-		if ts.Before(sampleTime) || ts.After(sampleTime.Add(lookbackPeriod)) {
+		if ts.Before(sampleTime) || ts.After(rangeEnd) || ts.Equal(rangeEnd) {
 			continue
 		}
 		values = append(values, model.SamplePair{
@@ -192,10 +193,11 @@ func generateExpectedHistograms(start time.Time, end time.Time, step time.Durati
 	hist := expectedVector[0].Histogram
 
 	const lookbackPeriod = 5 * time.Minute
+	rangeEnd := sampleTime.Add(lookbackPeriod)
 
 	histograms := []model.SampleHistogramPair(nil)
 	for ts := start; !ts.After(end); ts = ts.Add(step) {
-		if ts.Before(sampleTime) || ts.After(sampleTime.Add(lookbackPeriod)) {
+		if ts.Before(sampleTime) || ts.After(rangeEnd) || ts.Equal(rangeEnd) {
 			continue
 		}
 		histograms = append(histograms, model.SampleHistogramPair{

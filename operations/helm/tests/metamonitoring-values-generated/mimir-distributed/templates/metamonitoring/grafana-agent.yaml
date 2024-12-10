@@ -16,7 +16,15 @@ spec:
     # The container specs here are merged with the ones in the operator using a strategic merge patch.
     - name: config-reloader
     - name: grafana-agent
-
+  topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: metamonitoring-values
+        app.kubernetes.io/component: meta-monitoring
   logs:
     instanceSelector:
       matchLabels:

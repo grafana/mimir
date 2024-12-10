@@ -45,9 +45,9 @@ jobs:
     - uses: actions/setup-go@v5
       with:
         go-version: ${{ needs.goversion.outputs.version }}
-    - uses: helm/kind-action@v1.9.0
+    - uses: helm/kind-action@v1.10.0
     - name: Download yq
-      uses: dsaltares/fetch-gh-release-asset@1.1.1
+      uses: dsaltares/fetch-gh-release-asset@1.1.2
       with:
         repo: 'mikefarah/yq'
         version: 'tags/v4.30.6'
@@ -55,7 +55,7 @@ jobs:
         target: 'bin/yq'
         token: ${{ secrets.GITHUB_TOKEN }}
     - name: Download tk
-      uses: dsaltares/fetch-gh-release-asset@1.1.1
+      uses: dsaltares/fetch-gh-release-asset@1.1.2
       with:
         repo: 'grafana/tanka'
         version: 'tags/v0.22.1'
@@ -63,7 +63,7 @@ jobs:
         target: 'bin/tk'
         token: ${{ secrets.GITHUB_TOKEN }}
     - name: Download jb
-      uses: dsaltares/fetch-gh-release-asset@1.1.1
+      uses: dsaltares/fetch-gh-release-asset@1.1.2
       with:
         repo: 'jsonnet-bundler/jsonnet-bundler'
         version: 'tags/v0.5.1'

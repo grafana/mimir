@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-FROM       alpine:3.19.1
+FROM       alpine:3.21.0
 ARG        EXTRA_PACKAGES
 RUN        apk add --no-cache ca-certificates tzdata $EXTRA_PACKAGES
 # Expose TARGETOS and TARGETARCH variables. These are supported by Docker when using BuildKit, but must be "enabled" using ARG.

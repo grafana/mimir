@@ -29,7 +29,9 @@ spec:
     type: OnDelete
   serviceName: test-oss-multizone-values-mimir-alertmanager
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -59,10 +61,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -86,9 +84,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-multizone-values
             app.kubernetes.io/component: alertmanager
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -114,6 +110,10 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-alertmanager.sharding-ring.instance-availability-zone=zone-a"
+            # Prometheus HTTP client used to send alerts has a hard-coded idle
+            # timeout of 5 minutes, therefore the server timeout for Alertmanager
+            # needs to be higher to avoid connections being closed abruptly.
+            - "-server.http-idle-timeout=6m"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -154,8 +154,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:
 ---
 # Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
 apiVersion: apps/v1
@@ -187,7 +185,9 @@ spec:
     type: OnDelete
   serviceName: test-oss-multizone-values-mimir-alertmanager
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -217,10 +217,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -244,9 +240,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-multizone-values
             app.kubernetes.io/component: alertmanager
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -272,6 +266,10 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-alertmanager.sharding-ring.instance-availability-zone=zone-b"
+            # Prometheus HTTP client used to send alerts has a hard-coded idle
+            # timeout of 5 minutes, therefore the server timeout for Alertmanager
+            # needs to be higher to avoid connections being closed abruptly.
+            - "-server.http-idle-timeout=6m"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -312,8 +310,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:
 ---
 # Source: mimir-distributed/templates/alertmanager/alertmanager-statefulset.yaml
 apiVersion: apps/v1
@@ -345,7 +341,9 @@ spec:
     type: OnDelete
   serviceName: test-oss-multizone-values-mimir-alertmanager
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -375,10 +373,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
       affinity:
         podAntiAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -402,9 +396,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-multizone-values
             app.kubernetes.io/component: alertmanager
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 60
+      terminationGracePeriodSeconds: 900
       volumes:
         - name: config
           configMap:
@@ -430,6 +422,10 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-alertmanager.sharding-ring.instance-availability-zone=zone-c"
+            # Prometheus HTTP client used to send alerts has a hard-coded idle
+            # timeout of 5 minutes, therefore the server timeout for Alertmanager
+            # needs to be higher to avoid connections being closed abruptly.
+            - "-server.http-idle-timeout=6m"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
@@ -470,5 +466,3 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:

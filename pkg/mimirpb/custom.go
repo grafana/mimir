@@ -38,6 +38,35 @@ func (m *WriteRequest) MinTimestamp() int64 {
 	return min
 }
 
+// IsEmpty returns whether the WriteRequest has no data to ingest.
+func (m *WriteRequest) IsEmpty() bool {
+	return len(m.Timeseries) == 0 && len(m.Metadata) == 0
+}
+
+// MetadataSize is like Size() but returns only the marshalled size of Metadata field.
+func (m *WriteRequest) MetadataSize() int {
+	var l, n int
+
+	for _, e := range m.Metadata {
+		l = e.Size()
+		n += 1 + l + sovMimir(uint64(l))
+	}
+
+	return n
+}
+
+// TimeseriesSize is like Size() but returns only the marshalled size of Timeseries field.
+func (m *WriteRequest) TimeseriesSize() int {
+	var l, n int
+
+	for _, e := range m.Timeseries {
+		l = e.Size()
+		n += 1 + l + sovMimir(uint64(l))
+	}
+
+	return n
+}
+
 func (h Histogram) IsFloatHistogram() bool {
 	_, ok := h.GetCount().(*Histogram_CountFloat)
 	return ok

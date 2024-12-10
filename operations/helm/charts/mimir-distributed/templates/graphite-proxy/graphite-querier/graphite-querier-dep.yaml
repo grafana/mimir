@@ -29,10 +29,10 @@ spec:
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "graphite-querier") | nindent 8 }}
+      {{- with .Values.graphite.querier.initContainers }}
       initContainers:
-        {{- with .Values.graphite.querier.initContainers }}
         {{- toYaml . | nindent 8 }}
-        {{- end }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
@@ -50,11 +50,14 @@ spec:
             - -target=graphite-querier
             - -config.file=/etc/mimir/mimir.yaml
           {{- range $key, $value := .Values.graphite.querier.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.graphite.querier.extraVolumeMounts }}
               {{ toYaml .Values.graphite.querier.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -66,7 +69,9 @@ spec:
               mountPath: /license
             - name: storage
               mountPath: "/data"
+              {{- if .Values.graphite.querier.persistence.subPath }}
               subPath: {{ .Values.graphite.querier.persistence.subPath }}
+              {{- end }}
             - name: active-queries
               mountPath: /active-query-tracker
           ports:
@@ -84,6 +89,8 @@ spec:
             {{- toYaml .Values.graphite.querier.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.graphite.querier.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.graphite.querier }}
+          {{- if or .Values.global.extraEnv .Values.graphite.querier.env $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
@@ -91,11 +98,12 @@ spec:
             {{- with .Values.graphite.querier.env }}
               {{ toYaml . | nindent 12 }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.graphite.querier }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.admin_api.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -103,12 +111,19 @@ spec:
             {{- with .Values.admin_api.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
+      {{- with .Values.graphite.querier.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.graphite.querier.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.graphite.querier.affinity }}
       affinity:
-        {{- toYaml .Values.graphite.querier.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.graphite.querier.tolerations }}
       tolerations:
-        {{- toYaml .Values.graphite.querier.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.graphite.querier.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -121,6 +136,9 @@ spec:
             name: {{ template "mimir.fullname" . }}-graphite-schemas
         {{- if .Values.graphite.querier.extraVolumes }}
         {{ toYaml .Values.graphite.querier.extraVolumes | indent 8}}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | indent 8}}
         {{- end }}
         - name: license
           secret:

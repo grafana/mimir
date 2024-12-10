@@ -279,6 +279,25 @@ type ActiveSeriesRequest struct {
 	Matchers []*labels.Matcher
 }
 
+type ActiveMetricWithBucketCount struct {
+	Metric         string  `json:"metric"`
+	SeriesCount    uint64  `json:"series_count"`
+	BucketCount    uint64  `json:"bucket_count"`
+	AvgBucketCount float64 `json:"avg_bucket_count"`
+	MinBucketCount uint64  `json:"min_bucket_count"`
+	MaxBucketCount uint64  `json:"max_bucket_count"`
+}
+
+func (m *ActiveMetricWithBucketCount) UpdateAverage() {
+	m.AvgBucketCount = float64(m.BucketCount) / float64(m.SeriesCount)
+}
+
+type ActiveNativeHistogramMetricsResponse struct {
+	Data   []ActiveMetricWithBucketCount `json:"data"`
+	Status string                        `json:"status,omitempty"`
+	Error  string                        `json:"error,omitempty"`
+}
+
 // DecodeActiveSeriesRequest decodes the input http.Request into an ActiveSeriesRequest.
 func DecodeActiveSeriesRequest(r *http.Request) (*ActiveSeriesRequest, error) {
 	if err := r.ParseForm(); err != nil {

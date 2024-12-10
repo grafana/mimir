@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/mitchellh/colorstring"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	yaml "gopkg.in/yaml.v3"
 
@@ -19,11 +20,13 @@ import (
 )
 
 var (
-	errNameDiff          = errors.New("rule groups are named differently")
-	errIntervalDiff      = errors.New("rule groups have different intervals")
-	errDiffRuleLen       = errors.New("rule groups have a different number of rules")
-	errDiffRWConfigs     = errors.New("rule groups have different remote write configs")
-	errDiffSourceTenants = errors.New("rule groups have different source tenants")
+	errNameDiff            = errors.New("rule groups are named differently")
+	errIntervalDiff        = errors.New("rule groups have different intervals")
+	errDiffRuleLen         = errors.New("rule groups have a different number of rules")
+	errDiffRWConfigs       = errors.New("rule groups have different remote write configs")
+	errDiffSourceTenants   = errors.New("rule groups have different source tenants")
+	errDiffEvaluationDelay = errors.New("rule groups have different evaluation delay")
+	errDiffQueryOffset     = errors.New("rule groups have different query offset")
 )
 
 // NamespaceState is used to denote the difference between the staged namespace
@@ -130,6 +133,15 @@ func CompareGroups(groupOne, groupTwo rwrulefmt.RuleGroup) error {
 
 	if len(groupOne.RWConfigs) != len(groupTwo.RWConfigs) {
 		return errDiffRWConfigs
+	}
+
+	//nolint:staticcheck // We want to intentionally access a deprecated field
+	if getEvaluationDelayOrQueryOffsetValue(groupOne.EvaluationDelay) != getEvaluationDelayOrQueryOffsetValue(groupTwo.EvaluationDelay) {
+		return errDiffEvaluationDelay
+	}
+
+	if getEvaluationDelayOrQueryOffsetValue(groupOne.QueryOffset) != getEvaluationDelayOrQueryOffsetValue(groupTwo.QueryOffset) {
+		return errDiffQueryOffset
 	}
 
 	for i := range groupOne.RWConfigs {
@@ -319,4 +331,14 @@ func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
 	fmt.Println()
 	fmt.Printf("Diff Summary: %v Groups Created, %v Groups Updated, %v Groups Deleted\n", created, updated, deleted)
 	return nil
+}
+
+func getEvaluationDelayOrQueryOffsetValue(value *model.Duration) model.Duration {
+	if value == nil {
+		// Mimir ruler considers a value of 0 as if the EvaluationDelay has not been set (nil),
+		// so when we compare the configured value we consider nil as 0.
+		return 0
+	}
+
+	return *value
 }

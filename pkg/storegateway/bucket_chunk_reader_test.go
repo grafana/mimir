@@ -44,8 +44,8 @@ func TestBucketChunkReader_refetchChunks(t *testing.T) {
 		block.meta.MinTime,
 		block.meta.MaxTime,
 		newSafeQueryStats(),
-		nil,
 		log.NewNopLogger(),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -54,12 +54,12 @@ func TestBucketChunkReader_refetchChunks(t *testing.T) {
 
 	// Each func takes the estimated length and returns a new length.
 	chunkLengthSkewingFuncs := map[string]func(uint32) uint32{
-		"tsdb.EstimatedMaxChunkSize":    func(chunkLength uint32) uint32 { return tsdb.EstimatedMaxChunkSize },
-		"10xtsdb.EstimatedMaxChunkSize": func(chunkLength uint32) uint32 { return 10 * tsdb.EstimatedMaxChunkSize },
+		"tsdb.EstimatedMaxChunkSize":    func(uint32) uint32 { return tsdb.EstimatedMaxChunkSize },
+		"10xtsdb.EstimatedMaxChunkSize": func(uint32) uint32 { return 10 * tsdb.EstimatedMaxChunkSize },
 		"size-1":                        func(chunkLength uint32) uint32 { return chunkLength - 1 },
 		"size/2":                        func(chunkLength uint32) uint32 { return chunkLength / 2 },
-		"1":                             func(chunkLength uint32) uint32 { return 1 },
-		"0":                             func(chunkLength uint32) uint32 { return 0 },
+		"1":                             func(uint32) uint32 { return 1 },
+		"0":                             func(uint32) uint32 { return 0 },
 	}
 
 	for name, skewChunkLen := range chunkLengthSkewingFuncs {

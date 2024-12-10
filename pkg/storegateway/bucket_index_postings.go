@@ -6,6 +6,7 @@
 package storegateway
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"sort"
@@ -80,7 +81,7 @@ func newLazySubtractingPostingGroup(m *labels.Matcher) rawPostingGroup {
 
 // toPostingGroup returns a postingGroup which shares the underlying keys slice with g.
 // This means that after calling toPostingGroup g.keys will be modified.
-func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, error) {
+func (g rawPostingGroup) toPostingGroup(ctx context.Context, r indexheader.Reader) (postingGroup, error) {
 	var (
 		keys      []labels.Label
 		totalSize int64
@@ -90,7 +91,7 @@ func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, err
 		if g.isSubtract {
 			filter = not(filter)
 		}
-		vals, err := r.LabelValuesOffsets(g.labelName, g.prefix, filter)
+		vals, err := r.LabelValuesOffsets(ctx, g.labelName, g.prefix, filter)
 		if err != nil {
 			return postingGroup{}, err
 		}
@@ -101,7 +102,7 @@ func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, err
 		}
 	} else {
 		var err error
-		keys, totalSize, err = g.filterNonExistingKeys(r)
+		keys, totalSize, err = g.filterNonExistingKeys(ctx, r)
 		if err != nil {
 			return postingGroup{}, errors.Wrap(err, "filter posting keys")
 		}
@@ -117,13 +118,13 @@ func (g rawPostingGroup) toPostingGroup(r indexheader.Reader) (postingGroup, err
 
 // filterNonExistingKeys uses the indexheader.Reader to filter out any label values that do not exist in this index.
 // modifies the underlying keys slice of the group. Do not use the rawPostingGroup after calling toPostingGroup.
-func (g rawPostingGroup) filterNonExistingKeys(r indexheader.Reader) ([]labels.Label, int64, error) {
+func (g rawPostingGroup) filterNonExistingKeys(ctx context.Context, r indexheader.Reader) ([]labels.Label, int64, error) {
 	var (
 		writeIdx  int
 		totalSize int64
 	)
 	for _, l := range g.keys {
-		offset, err := r.PostingsOffset(l.Name, l.Value)
+		offset, err := r.PostingsOffset(ctx, l.Name, l.Value)
 		if errors.Is(err, indexheader.NotFoundRangeErr) {
 			// This label name and value doesn't exist in this block, so there are 0 postings we can match.
 			// Try with the rest of the set matchers, maybe they can match some series.
@@ -335,16 +336,6 @@ type postingsSelectionStrategy interface {
 	selectPostings([]postingGroup) (selected, omitted []postingGroup)
 }
 
-type selectAllStrategy struct{}
-
-func (selectAllStrategy) name() string {
-	return tsdb.AllPostingsStrategy
-}
-
-func (selectAllStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
-	return groups, nil
-}
-
 // worstCaseFetchedDataStrategy select a few of the posting groups such that their total size
 // does not exceed the size of series in the worst case. The worst case is fetching all series
 // in the smallest non-subtractive posting group - this is effectively the
@@ -375,7 +366,7 @@ type worstCaseFetchedDataStrategy struct {
 }
 
 func (s worstCaseFetchedDataStrategy) name() string {
-	return fmt.Sprintf(tsdb.WorstCasePostingsStrategy+"%0.1f", s.postingListActualSizeFactor)
+	return fmt.Sprintf("worst-case%0.1f", s.postingListActualSizeFactor)
 }
 
 func (s worstCaseFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
@@ -440,53 +431,6 @@ func numSeriesInSmallestIntersectingPostingGroup(groups []postingGroup) int64 {
 		}
 	}
 	return minGroupSize / tsdb.BytesPerPostingInAPostingList
-}
-
-// speculativeFetchedDataStrategy selects postings lists in a very similar way to worstCaseFetchedDataStrategy,
-// except it speculates on the size of the actual series after intersecting the selected posting lists.
-// Right now it assumes that each intersecting posting list will halve the number of series selected by the query.
-//
-// For example, given the query `cpu_seconds_total{namespace="ns1"}`, if `namespace="ns1"` selects 1M series and
-// `__name__="cpu_seconds_total"` selects 500K series, then the speculative strategy assumes the whole query will
-// select 250K series. It uses this to calculate that in the worst case we will fetch 250K * tsdb.EstimatedSeriesP99Size
-// bytes for the series = 128 MB. So it will not fetch more than 128 MB of posting lists.
-type speculativeFetchedDataStrategy struct{}
-
-func (s speculativeFetchedDataStrategy) name() string {
-	return tsdb.SpeculativePostingsStrategy
-}
-
-func (s speculativeFetchedDataStrategy) selectPostings(groups []postingGroup) (selected, omitted []postingGroup) {
-	sort.Slice(groups, func(i, j int) bool {
-		return groups[i].totalSize < groups[j].totalSize
-	})
-
-	maxSelectedSeriesCount := numSeriesInSmallestIntersectingPostingGroup(groups)
-	if maxSelectedSeriesCount == 0 {
-		// This should also cover the case of all postings group. all postings is requested only when there is no
-		// additive group.
-		return groups, nil
-	}
-
-	var (
-		selectedSize                   int64
-		atLeastOneIntersectingSelected bool
-		maxSelectedSize                = maxSelectedSeriesCount * tsdb.EstimatedSeriesP99Size
-	)
-	for i, g := range groups {
-		if atLeastOneIntersectingSelected && selectedSize+g.totalSize > maxSelectedSize {
-			return groups[:i], groups[i:]
-		}
-		selectedSize += g.totalSize
-		atLeastOneIntersectingSelected = atLeastOneIntersectingSelected || !g.isSubtract
-
-		// We assume that every intersecting posting list after the first one will
-		// filter out half of the postings.
-		if i > 0 && !g.isSubtract {
-			maxSelectedSize /= 2
-		}
-	}
-	return groups, nil
 }
 
 // labelValuesPostingsStrategy works in a similar way to worstCaseFetchedDataStrategy.

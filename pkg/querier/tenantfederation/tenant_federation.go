@@ -22,7 +22,7 @@ type Config struct {
 	// Enabled switches on support for multi tenant query federation
 	Enabled       bool `yaml:"enabled"`
 	MaxConcurrent int  `yaml:"max_concurrent" category:"experimental"`
-	MaxTenants    int  `yaml:"max_tenants" category:"experimental"`
+	MaxTenants    int  `yaml:"max_tenants"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -31,7 +31,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxTenants, "tenant-federation.max-tenants", defaultMaxTenants, "The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.")
 }
 
-// filterValuesByMatchers applies matchers to inputed `idLabelName` and
+// FilterValuesByMatchers applies matchers to inputed `idLabelName` and
 // `ids`. A set of matched IDs is returned and also all label matchers not
 // targeting the `idLabelName` label.
 //
@@ -40,7 +40,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 // to as part of Select in the mergeQueryable, to ensure only relevant queries
 // are considered and the forwarded matchers do not contain matchers on the
 // `idLabelName`.
-func filterValuesByMatchers(idLabelName string, ids []string, matchers ...*labels.Matcher) (matchedIDs map[string]struct{}, unrelatedMatchers []*labels.Matcher) {
+func FilterValuesByMatchers(idLabelName string, ids []string, matchers ...*labels.Matcher) (matchedIDs map[string]struct{}, unrelatedMatchers []*labels.Matcher) {
 	// this contains the matchers which are not related to idLabelName
 	unrelatedMatchers = make([]*labels.Matcher, 0, len(matchers))
 

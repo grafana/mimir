@@ -35,9 +35,9 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -53,12 +53,12 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/util"
-	util_test "github.com/grafana/mimir/pkg/util/test"
+	utiltest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestMain(m *testing.M) {
-	util_test.VerifyNoLeakTestMain(m)
+	utiltest.VerifyNoLeakTestMain(m)
 }
 
 func defaultRulerConfig(t testing.TB) Config {
@@ -136,10 +136,11 @@ type prepareOptions struct {
 	rulerAddrMap     map[string]*Ruler
 	rulerAddrAutoMap bool
 	start            bool
+	managerQueryFunc rules.QueryFunc
 }
 
 func applyPrepareOptions(t *testing.T, instanceID string, opts ...prepareOption) prepareOptions {
-	defaultLogger := testutil.NewLogger(t)
+	defaultLogger := log.Logger(utiltest.NewTestingLogger(t))
 	defaultLogger = log.With(defaultLogger, "instance", instanceID)
 	defaultLogger = level.NewFilter(defaultLogger, level.AllowInfo())
 
@@ -197,11 +198,18 @@ func withPrometheusRegisterer(reg prometheus.Registerer) prepareOption {
 	}
 }
 
+// withManagerQueryFunc is a prepareOption that configures the query function to pass to the ruler manager.
+func withManagerQueryFunc(queryFunc rules.QueryFunc) prepareOption {
+	return func(opts *prepareOptions) {
+		opts.managerQueryFunc = queryFunc
+	}
+}
+
 func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ...prepareOption) *Ruler {
 	options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID, opts...)
 	manager := prepareRulerManager(t, cfg, opts...)
 
-	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
+	ruler, err := newRuler(cfg, manager, options.registerer, options.logger, storage, options.limits, newMockClientsPool(cfg, options.logger, options.registerer, options.rulerAddrMap))
 	require.NoError(t, err)
 
 	if options.rulerAddrAutoMap {
@@ -224,18 +232,24 @@ func prepareRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, opts ..
 func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *DefaultMultiTenantManager {
 	options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID, opts...)
 
-	noopQueryable := storage.QueryableFunc(func(mint, maxt int64) (storage.Querier, error) {
+	noopQueryable := storage.QueryableFunc(func(int64, int64) (storage.Querier, error) {
 		return storage.NoopQuerier(), nil
 	})
-	noopQueryFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
-		return nil, nil
+
+	var queryFunc rules.QueryFunc
+	if options.managerQueryFunc != nil {
+		queryFunc = options.managerQueryFunc
+	} else {
+		queryFunc = func(context.Context, string, time.Time) (promql.Vector, error) {
+			return nil, nil
+		}
 	}
 
 	// Mock the pusher
 	pusher := newPusherMock()
 	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, noopQueryFunc, options.limits, options.registerer)
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, noopQueryable, queryFunc, &NoopMultiTenantConcurrencyController{}, options.limits, options.registerer)
 	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, prometheus.NewRegistry(), options.logger, nil)
 	require.NoError(t, err)
 
@@ -249,7 +263,7 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 
 	// We do expect 1 API call for the user create with the getOrCreateNotifier()
 	wg.Add(1)
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		userID, _, err := tenant.ExtractTenantIDFromHTTPRequest(r)
 		require.NoError(t, err)
 		assert.Equal(t, "1", userID)
@@ -338,6 +352,79 @@ func TestRuler_Rules(t *testing.T) {
 				expectedRg := tc.mockRules[tc.userID][i]
 				compareRuleGroupDescToStateDesc(t, expectedRg, rg)
 			}
+		})
+	}
+}
+
+func TestRuler_ExcludeAlerts(t *testing.T) {
+	alertingMockRules := map[string]rulespb.RuleGroupList{
+		"user1": {
+			&rulespb.RuleGroupDesc{
+				Name:          "group1",
+				Namespace:     "namespace1",
+				User:          "user1",
+				SourceTenants: []string{"tenant-1"},
+				Rules:         []*rulespb.RuleDesc{createAlertingRule("testAlert", "up")},
+				Interval:      time.Duration(0 * time.Second),
+			},
+		},
+	}
+
+	testCases := map[string]struct {
+		mockRules           map[string]rulespb.RuleGroupList
+		userID              string
+		excludeAlerts       bool
+		expectedAlertsCount int
+	}{
+		"rules - user1 - exclude_alerts=true does not return alerts": {
+			userID:              "user1",
+			mockRules:           alertingMockRules,
+			excludeAlerts:       true,
+			expectedAlertsCount: 0,
+		},
+		"rules - user1 - exclude_alerts=false returns alerts": {
+			userID:              "user1",
+			mockRules:           alertingMockRules,
+			excludeAlerts:       false,
+			expectedAlertsCount: 1,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			cfg := defaultRulerConfig(t)
+			cfg.EvaluationInterval = time.Second
+			cfg.TenantFederation.Enabled = true
+
+			// Mock the query function to return a constant vector
+			constantQueryFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
+				return promql.Vector{
+					{T: 12345, F: 1.0},
+				}, nil
+			}
+
+			r := prepareRuler(t, cfg, newMockRuleStore(tc.mockRules), withStart(), withManagerQueryFunc(constantQueryFunc))
+
+			// Rules will be synchronized asynchronously, so we wait until the expected number of rule groups
+			// has been synched.
+			ctx := user.InjectOrgID(context.Background(), tc.userID)
+			test.Poll(t, 5*time.Second, len(mockRules[tc.userID]), func() interface{} {
+				rls, _ := r.Rules(ctx, &RulesRequest{ExcludeAlerts: tc.excludeAlerts})
+				return len(rls.Groups)
+			})
+
+			// Rules will be evaluated after some time
+			require.EventuallyWithT(t, func(c *assert.CollectT) {
+				rls, err := r.Rules(ctx, &RulesRequest{ExcludeAlerts: tc.excludeAlerts})
+				assert.NoError(c, err)
+				assert.Len(c, rls.Groups, len(mockRules[tc.userID]))
+
+				for _, ruleGroup := range rls.Groups {
+					for _, activeRule := range ruleGroup.ActiveRules {
+						assert.Len(c, activeRule.Alerts, tc.expectedAlertsCount)
+					}
+				}
+			}, time.Second*5, 1*time.Second)
 		})
 	}
 }
@@ -456,7 +543,7 @@ func TestGetRules(t *testing.T) {
 					d = ring.NewDesc()
 				}
 				for rID, tokens := range allTokensByRuler {
-					d.AddIngester(rID, rulerAddrMap[rID].lifecycler.GetInstanceAddr(), "", tokens, ring.ACTIVE, time.Now())
+					d.AddIngester(rID, rulerAddrMap[rID].lifecycler.GetInstanceAddr(), "", tokens, ring.ACTIVE, time.Now(), false, time.Time{})
 				}
 				return d, true, nil
 			}))
@@ -474,7 +561,7 @@ func TestGetRules(t *testing.T) {
 				ctx := user.InjectOrgID(ctx, u)
 
 				for _, r := range rulerAddrMap {
-					rules, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
+					rules, _, err := r.GetRules(ctx, RulesRequest{Filter: AnyRule})
 					require.NoError(t, err)
 					require.Equal(t, len(allRulesByUser[u]), len(rules))
 
@@ -564,7 +651,7 @@ func TestSharding(t *testing.T) {
 		"single ruler, with ring setup": {
 			shuffleShardSize: 0,
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", []uint32{0}, ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", []uint32{0}, ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 			expectedRules: expectedRulesMap{ruler1: allRules},
 		},
@@ -573,7 +660,7 @@ func TestSharding(t *testing.T) {
 			shuffleShardSize: 0,
 			enabledUsers:     []string{user1},
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", []uint32{0}, ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", []uint32{0}, ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 			expectedRules: expectedRulesMap{ruler1: map[string]rulespb.RuleGroupList{
 				user1: {user1Group1, user1Group2},
@@ -584,7 +671,7 @@ func TestSharding(t *testing.T) {
 			shuffleShardSize: 0,
 			disabledUsers:    []string{user1},
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", []uint32{0}, ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", []uint32{0}, ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 			expectedRules: expectedRulesMap{ruler1: map[string]rulespb.RuleGroupList{
 				user2: {user2Group1},
@@ -595,8 +682,8 @@ func TestSharding(t *testing.T) {
 		"shard size 0, multiple ACTIVE rulers": {
 			shuffleShardSize: 0,
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group2Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group2Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -616,8 +703,8 @@ func TestSharding(t *testing.T) {
 			shuffleShardSize: 0,
 			enabledUsers:     []string{user1},
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group2Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group2Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -635,8 +722,8 @@ func TestSharding(t *testing.T) {
 			shuffleShardSize: 0,
 			disabledUsers:    []string{user1},
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group2Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group2Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -654,7 +741,7 @@ func TestSharding(t *testing.T) {
 			shuffleShardSize: 0,
 
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 				desc.Ingesters[ruler2] = ring.InstanceDesc{
 					Addr:      ruler2Addr,
 					Timestamp: time.Now().Add(-time.Hour).Unix(),
@@ -677,8 +764,8 @@ func TestSharding(t *testing.T) {
 			shuffleShardSize: 0,
 
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.LEAVING, time.Now())
-				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group2Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.LEAVING, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group2Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -692,8 +779,8 @@ func TestSharding(t *testing.T) {
 			shuffleShardSize: 0,
 
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.JOINING, time.Now())
-				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group2Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{user1Group1Token + 1, user2Group1Token + 1}), ring.JOINING, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group2Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -707,7 +794,7 @@ func TestSharding(t *testing.T) {
 			shuffleShardSize: 0,
 
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{0}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{0}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -719,8 +806,8 @@ func TestSharding(t *testing.T) {
 			shuffleShardSize: 1,
 
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1, userToken(user2, 0) + 1, userToken(user3, 0) + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group1Token + 1, user1Group2Token + 1, user2Group1Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1, userToken(user2, 0) + 1, userToken(user3, 0) + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group1Token + 1, user1Group2Token + 1, user2Group1Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -735,8 +822,8 @@ func TestSharding(t *testing.T) {
 
 			setupRing: func(desc *ring.Desc) {
 				// Exact same tokens setup as previous test.
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1, userToken(user2, 0) + 1, userToken(user3, 0) + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group1Token + 1, user1Group2Token + 1, user2Group1Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1, userToken(user2, 0) + 1, userToken(user3, 0) + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{user1Group1Token + 1, user1Group2Token + 1, user2Group1Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -749,8 +836,8 @@ func TestSharding(t *testing.T) {
 			shuffleShardSize: 1,
 
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 0) + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 0) + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -767,9 +854,9 @@ func TestSharding(t *testing.T) {
 			shuffleShardSize: 2,
 
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1, user1Group1Token + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user1, 1) + 1, user1Group2Token + 1, userToken(user2, 1) + 1, userToken(user3, 1) + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler3, ruler3Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 0) + 1, user2Group1Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1, user1Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user1, 1) + 1, user1Group2Token + 1, userToken(user2, 1) + 1, userToken(user3, 1) + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler3, ruler3Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 0) + 1, user2Group1Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -789,9 +876,9 @@ func TestSharding(t *testing.T) {
 			shuffleShardSize: 2,
 
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1, userToken(user2, 1) + 1, user1Group1Token + 1, user1Group2Token + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user1, 1) + 1, userToken(user3, 1) + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler3, ruler3Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 0) + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1, userToken(user2, 1) + 1, user1Group1Token + 1, user1Group2Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user1, 1) + 1, userToken(user3, 1) + 1, user2Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler3, ruler3Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 0) + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -811,9 +898,9 @@ func TestSharding(t *testing.T) {
 			enabledUsers:     []string{user1},
 
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1, user1Group1Token + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user1, 1) + 1, user1Group2Token + 1, userToken(user2, 1) + 1, userToken(user3, 1) + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler3, ruler3Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 0) + 1, user2Group1Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1, user1Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user1, 1) + 1, user1Group2Token + 1, userToken(user2, 1) + 1, userToken(user3, 1) + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler3, ruler3Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 0) + 1, user2Group1Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -832,9 +919,9 @@ func TestSharding(t *testing.T) {
 			disabledUsers:    []string{user1},
 
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1, user1Group1Token + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user1, 1) + 1, user1Group2Token + 1, userToken(user2, 1) + 1, userToken(user3, 1) + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler3, ruler3Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 0) + 1, user2Group1Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1, user1Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user1, 1) + 1, user1Group2Token + 1, userToken(user2, 1) + 1, userToken(user3, 1) + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler3, ruler3Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 0) + 1, user2Group1Token + 1, user3Group1Token + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -851,10 +938,10 @@ func TestSharding(t *testing.T) {
 
 			setupRing: func(desc *ring.Desc) {
 				// user1, group2 should have been owned by ruler2, but ruler2 is in JOINING state. So, it would be owned by ruler1.
-				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1}), ring.ACTIVE, time.Now())
-				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user1, 1) + 1, user1Group2Token + 1, userToken(user2, 1) + 1, userToken(user3, 0) + 1}), ring.JOINING, time.Now())
+				desc.AddIngester(ruler1, ruler1Addr, "", sortTokens([]uint32{userToken(user1, 0) + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
+				desc.AddIngester(ruler2, ruler2Addr, "", sortTokens([]uint32{userToken(user1, 1) + 1, user1Group2Token + 1, userToken(user2, 1) + 1, userToken(user3, 0) + 1}), ring.JOINING, time.Now(), false, time.Time{})
 				// user2, user3 should have been owned by ruler2 or ruler3, but ruler2 is in JOINING state. So, it would be owned by ruler3.
-				desc.AddIngester(ruler3, ruler3Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 1) + 1}), ring.ACTIVE, time.Now())
+				desc.AddIngester(ruler3, ruler3Addr, "", sortTokens([]uint32{userToken(user2, 0) + 1, userToken(user3, 1) + 1}), ring.ACTIVE, time.Now(), false, time.Time{})
 			},
 
 			expectedRules: expectedRulesMap{
@@ -871,9 +958,6 @@ func TestSharding(t *testing.T) {
 	}
 
 	for name, tc := range testCases {
-		// Change scope because we run these test cases parallelly.
-		tc := tc
-
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
@@ -1013,13 +1097,14 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 
 				rulerCfg := defaultRulerConfig(t)
 				rulerCfg.PollInterval = time.Hour
-				rulerCfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+				rulerCfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+				rulerCfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
 				rulerCfg.Ring.NumTokens = 128
 				rulerCfg.Ring.Common.InstanceID = rulerAddr
 				rulerCfg.Ring.Common.InstanceAddr = rulerAddr
 				rulerCfg.Ring.Common.KVStore = kv.Config{Mock: kvStore}
 
-				limits := validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				limits := validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 					defaults.RulerTenantShardSize = rulerShardSize
 				})
 
@@ -1059,7 +1144,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				// the per-tenant rules manager gets started asynchronously.
 				for _, ruler := range rulers {
 					test.Poll(t, time.Second, numRuleGroups, func() interface{} {
-						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+						actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 						require.NoError(t, err)
 						return len(actualRuleGroups)
 					})
@@ -1082,7 +1167,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				// We use test.Poll() because the rule syncing is asynchronous in each ruler.
 				for _, ruler := range rulers {
 					test.Poll(t, time.Second, numRuleGroups-1, func() interface{} {
-						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+						actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 						require.NoError(t, err)
 						return len(actualRuleGroups)
 					})
@@ -1105,7 +1190,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingOnAllRulersWhenEnab
 				// the rule syncing is asynchronous in each ruler.
 				for _, ruler := range rulers {
 					test.Poll(t, time.Second, 0, func() interface{} {
-						actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+						actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 						require.NoError(t, err)
 						return len(actualRuleGroups)
 					})
@@ -1161,7 +1246,8 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 
 		rulerCfg := defaultRulerConfig(t)
 		rulerCfg.PollInterval = time.Hour
-		rulerCfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+		rulerCfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+		rulerCfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
 		rulerCfg.Ring.NumTokens = 128
 		rulerCfg.Ring.Common.InstanceID = rulerAddr
 		rulerCfg.Ring.Common.InstanceAddr = rulerAddr
@@ -1205,7 +1291,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 	// the per-tenant rules manager gets started asynchronously.
 	for _, ruler := range rulers {
 		test.Poll(t, time.Second, numRuleGroups, func() interface{} {
-			actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+			actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 			return len(actualRuleGroups)
 		})
@@ -1244,7 +1330,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldTriggerRulesSyncingAndCorrectlyHandleT
 	// the rule syncing is asynchronous in each ruler.
 	for _, ruler := range rulers {
 		test.Poll(t, time.Second, numRuleGroups, func() interface{} {
-			actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+			actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 			return len(actualRuleGroups)
 		})
@@ -1307,7 +1393,8 @@ func TestRuler_NotifySyncRulesAsync_ShouldNotTriggerRulesSyncingOnAllRulersWhenD
 
 		rulerCfg := defaultRulerConfig(t)
 		rulerCfg.PollInterval = time.Hour
-		rulerCfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+		rulerCfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+		rulerCfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
 		rulerCfg.Ring.NumTokens = 128
 		rulerCfg.Ring.Common.InstanceID = rulerAddr
 		rulerCfg.Ring.Common.InstanceAddr = rulerAddr
@@ -1354,7 +1441,7 @@ func TestRuler_NotifySyncRulesAsync_ShouldNotTriggerRulesSyncingOnAllRulersWhenD
 
 	// GetRules() should return no configured rule groups, because no re-sync happened.
 	for _, ruler := range rulers {
-		actualRuleGroups, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+		actualRuleGroups, _, err := ruler.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
 		require.Empty(t, actualRuleGroups)
 	}
@@ -1404,7 +1491,8 @@ func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTrigg
 	// once explicitly triggered by the change via API.
 	cfg := defaultRulerConfig(t)
 	cfg.PollInterval = time.Hour
-	cfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+	cfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+	cfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
 	cfg.Ring.Common.InstanceAddr = "ruler-1"
 
 	reg := prometheus.NewPedanticRegistry()
@@ -1482,7 +1570,7 @@ func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID strin
 	ctx := context.Background()
 
 	t.Run("ListRuleGroupsForUserAndNamespace()", func(t *testing.T) {
-		list, err := r.directStore.ListRuleGroupsForUserAndNamespace(ctx, userID, "")
+		list, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "")
 		require.NoError(t, err)
 
 		if expectedDeleted {
@@ -1495,7 +1583,7 @@ func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID strin
 	t.Run("GetRules()", func(t *testing.T) {
 		// The rules manager updates the rules asynchronously so we need to poll it.
 		test.Poll(t, time.Second, expectedDeleted, func() interface{} {
-			list, err := r.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
+			list, _, err := r.GetRules(user.InjectOrgID(ctx, userID), RulesRequest{Filter: AnyRule})
 			require.NoError(t, err)
 
 			return len(list) == 0
@@ -1632,7 +1720,6 @@ func TestSendAlerts(t *testing.T) {
 	}
 
 	for i, tc := range testCases {
-		tc := tc
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			senderFunc := senderFunc(func(alerts ...*notifier.Alert) {
 				if len(tc.in) == 0 {
@@ -1674,7 +1761,7 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits["user-1"] = validation.MockDefaultLimits()
 				tenantLimits["user-1"].RulerRecordingRulesEvaluationEnabled = true
 				tenantLimits["user-1"].RulerAlertingRulesEvaluationEnabled = false
@@ -1704,7 +1791,7 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits["user-1"] = validation.MockDefaultLimits()
 				tenantLimits["user-1"].RulerRecordingRulesEvaluationEnabled = false
 				tenantLimits["user-1"].RulerAlertingRulesEvaluationEnabled = true
@@ -1734,7 +1821,7 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 				tenantLimits["user-1"] = validation.MockDefaultLimits()
 				tenantLimits["user-1"].RulerRecordingRulesEvaluationEnabled = false
 				tenantLimits["user-1"].RulerAlertingRulesEvaluationEnabled = false
@@ -1760,7 +1847,7 @@ func TestFilterRuleGroupsByEnabled(t *testing.T) {
 					createRuleGroup("group-3", "user-2", createAlertingRule("alert-6", "6"), createAlertingRule("alert-7", "7")),
 				},
 			},
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 				defaults.RulerRecordingRulesEvaluationEnabled = false
 				defaults.RulerAlertingRulesEvaluationEnabled = false
 			}),
@@ -1909,17 +1996,17 @@ func BenchmarkFilterRuleGroupsByEnabled(b *testing.B) {
 			limits: validation.MockDefaultOverrides(),
 		},
 		"recording rules disabled": {
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 				defaults.RulerRecordingRulesEvaluationEnabled = false
 			}),
 		},
 		"alerting rules disabled": {
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 				defaults.RulerAlertingRulesEvaluationEnabled = false
 			}),
 		},
 		"all rules disabled": {
-			limits: validation.MockOverrides(func(defaults *validation.Limits, tenantLimits map[string]*validation.Limits) {
+			limits: validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
 				defaults.RulerRecordingRulesEvaluationEnabled = false
 				defaults.RulerAlertingRulesEvaluationEnabled = false
 			}),
@@ -1963,4 +2050,42 @@ func createRuleGroup(name, user string, rules ...*rulespb.RuleDesc) *rulespb.Rul
 		Rules:     rules,
 		User:      user,
 	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	t.Run("invalid tenant shard size", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		limits := validation.MockDefaultLimits()
+		limits.RulerTenantShardSize = -1
+
+		err := cfg.Validate(*limits)
+		require.ErrorIs(t, err, errInvalidTenantShardSize)
+	})
+
+	t.Run("invalid client TLS config", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.ClientTLSConfig.GRPCCompression = "bogus"
+		limits := validation.MockDefaultLimits()
+
+		err := cfg.Validate(*limits)
+		require.Error(t, err)
+	})
+
+	t.Run("invalid query frontend config", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.QueryFrontend.QueryResultResponseFormat = "bogus"
+		limits := validation.MockDefaultLimits()
+
+		err := cfg.Validate(*limits)
+		require.Error(t, err)
+	})
+
+	t.Run("invalid concurrency evaluation percentage", func(t *testing.T) {
+		cfg := defaultRulerConfig(t)
+		cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage = -1.0
+		limits := validation.MockDefaultLimits()
+
+		err := cfg.Validate(*limits)
+		require.ErrorIs(t, err, errInnvalidRuleEvaluationConcurrencyMinDurationPercentage)
+	})
 }

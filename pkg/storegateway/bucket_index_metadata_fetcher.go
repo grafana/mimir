@@ -94,6 +94,8 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 		return nil, nil, errors.Wrapf(err, "read bucket index")
 	}
 
+	level.Info(f.logger).Log("msg", "loaded bucket index", "user", f.userID, "updatedAt", idx.UpdatedAt)
+
 	// Build block metas out of the index.
 	metas = make(map[ulid.ULID]*block.Meta, len(idx.Blocks))
 	for _, b := range idx.Blocks {

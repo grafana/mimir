@@ -36,7 +36,7 @@ var implementations = []struct {
 	{
 		name: "stream binary reader",
 		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
-			br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, true, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			br, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -46,7 +46,7 @@ var implementations = []struct {
 		name: "lazy stream binary reader",
 		factory: func(t *testing.T, ctx context.Context, dir string, id ulid.ULID) Reader {
 			readerFactory := func() (Reader, error) {
-				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, true, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			}
 
 			br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
@@ -132,11 +132,11 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerReader Reader) {
 	ctx := context.Background()
 
-	indexReader, err := index.NewReader(indexByteSlice)
+	indexReader, err := index.NewReader(indexByteSlice, index.DecodePostingsRaw)
 	require.NoError(t, err)
 	defer func() { _ = indexReader.Close() }()
 
-	actVersion, err := headerReader.IndexVersion()
+	actVersion, err := headerReader.IndexVersion(ctx)
 	require.NoError(t, err)
 	require.Equal(t, indexReader.Version(), actVersion)
 
@@ -145,14 +145,14 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		iter := indexReader.Symbols()
 		i := 0
 		for iter.Next() {
-			r, err := headerReader.LookupSymbol(uint32(i))
+			r, err := headerReader.LookupSymbol(ctx, uint32(i))
 			require.NoError(t, err)
 			require.Equal(t, iter.At(), r)
 
 			i++
 		}
 		require.NoError(t, iter.Err())
-		_, err := headerReader.LookupSymbol(uint32(i))
+		_, err := headerReader.LookupSymbol(ctx, uint32(i))
 		require.Error(t, err)
 	} else {
 		// For v1 symbols refs are actual offsets in the index.
@@ -160,17 +160,17 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		require.NoError(t, err)
 
 		for refs, sym := range symbols {
-			r, err := headerReader.LookupSymbol(refs)
+			r, err := headerReader.LookupSymbol(ctx, refs)
 			require.NoError(t, err)
 			require.Equal(t, sym, r)
 		}
-		_, err = headerReader.LookupSymbol(200000)
+		_, err = headerReader.LookupSymbol(ctx, 200000)
 		require.Error(t, err)
 	}
 
 	expLabelNames, err := indexReader.LabelNames(ctx)
 	require.NoError(t, err)
-	actualLabelNames, err := headerReader.LabelNames()
+	actualLabelNames, err := headerReader.LabelNames(ctx)
 	require.NoError(t, err)
 	require.Equal(t, expLabelNames, actualLabelNames)
 
@@ -181,7 +181,7 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		expectedLabelVals, err := indexReader.SortedLabelValues(ctx, lname)
 		require.NoError(t, err)
 
-		valOffsets, err := headerReader.LabelValuesOffsets(lname, "", nil)
+		valOffsets, err := headerReader.LabelValuesOffsets(ctx, lname, "", nil)
 		require.NoError(t, err)
 		strValsFromOffsets := make([]string, len(valOffsets))
 		for i := range valOffsets {
@@ -190,14 +190,14 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		require.Equal(t, expectedLabelVals, strValsFromOffsets)
 
 		for _, v := range valOffsets {
-			ptr, err := headerReader.PostingsOffset(lname, v.LabelValue)
+			ptr, err := headerReader.PostingsOffset(ctx, lname, v.LabelValue)
 			require.NoError(t, err)
 			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.LabelValue}], ptr)
 			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.LabelValue}], v.Off)
 		}
 	}
-
-	ptr, err := headerReader.PostingsOffset(index.AllPostingsKey())
+	allPName, allPValue := index.AllPostingsKey()
+	ptr, err := headerReader.PostingsOffset(ctx, allPName, allPValue)
 	require.NoError(t, err)
 	require.Equal(t, expRanges[labels.Label{Name: "", Value: ""}].Start, ptr.Start)
 	require.Equal(t, expRanges[labels.Label{Name: "", Value: ""}].End, ptr.End)
@@ -257,7 +257,7 @@ func TestReadersLabelValuesOffsets(t *testing.T) {
 				t.Run(lbl, func(t *testing.T) {
 					for _, tc := range tcs {
 						t.Run(fmt.Sprintf("prefix='%s'%s", tc.prefix, tc.desc), func(t *testing.T) {
-							values, err := r.LabelValuesOffsets(lbl, tc.prefix, tc.filter)
+							values, err := r.LabelValuesOffsets(context.Background(), lbl, tc.prefix, tc.filter)
 							require.NoError(t, err)
 							require.Equal(t, tc.expected, len(values))
 						})

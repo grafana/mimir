@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 
 	"github.com/grafana/regexp"
 	"github.com/prometheus/prometheus/model/labels"
@@ -24,6 +23,10 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 )
+
+const maxBufferPoolSize = 1024 * 1024
+
+var bufferPool = util.NewBufferPool(maxBufferPoolSize)
 
 type parser struct {
 	processorConfig processorConfig
@@ -134,7 +137,7 @@ func (rp *parser) processHTTPRequest(req *http.Request, body []byte) *request {
 
 	if rp.decodePush && req.Method == "POST" && strings.Contains(req.URL.Path, "/push") {
 		var matched bool
-		rb := util.NewRequestBuffers(&bufferPool)
+		rb := util.NewRequestBuffers(bufferPool)
 		r.cleanup = rb.CleanUp
 		r.PushRequest, matched = rp.decodePushRequest(req, body, rp.matchers, rb)
 		if !matched {
@@ -154,17 +157,11 @@ func (rp *parser) processHTTPRequest(req *http.Request, body []byte) *request {
 	return &r
 }
 
-var bufferPool = sync.Pool{
-	New: func() any {
-		return bytes.NewBuffer(make([]byte, 0, 256*1024))
-	},
-}
-
 func (rp *parser) decodePushRequest(req *http.Request, body []byte, matchers []*labels.Matcher, buffers *util.RequestBuffers) (*pushRequest, bool) {
 	res := &pushRequest{Version: req.Header.Get("X-Prometheus-Remote-Write-Version")}
 
 	var wr mimirpb.WriteRequest
-	if err := util.ParseProtoReader(context.Background(), bytes.NewReader(body), int(req.ContentLength), 100<<20, buffers, &wr, util.RawSnappy); err != nil {
+	if _, err := util.ParseProtoReader(context.Background(), bytes.NewReader(body), int(req.ContentLength), 100<<20, buffers, &wr, util.RawSnappy); err != nil {
 		res.Error = fmt.Errorf("failed to decode decodePush request: %s", err).Error()
 		return nil, true
 	}

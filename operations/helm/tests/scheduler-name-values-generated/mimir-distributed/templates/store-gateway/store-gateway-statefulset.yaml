@@ -30,7 +30,9 @@ spec:
     type: OnDelete
   serviceName: scheduler-name-values-mimir-store-gateway-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -52,6 +54,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
+      schedulerName: "my-scheduler"
       serviceAccountName: scheduler-name-values-mimir
       securityContext:
         fsGroup: 10001
@@ -60,12 +63,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -75,9 +72,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: scheduler-name-values
             app.kubernetes.io/component: store-gateway
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           configMap:
@@ -141,7 +136,6 @@ spec:
               value: "536870912"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
-          envFrom:
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -174,7 +168,9 @@ spec:
     type: OnDelete
   serviceName: scheduler-name-values-mimir-store-gateway-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -196,6 +192,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
+      schedulerName: "my-scheduler"
       serviceAccountName: scheduler-name-values-mimir
       securityContext:
         fsGroup: 10001
@@ -204,12 +201,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -219,9 +210,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: scheduler-name-values
             app.kubernetes.io/component: store-gateway
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           configMap:
@@ -285,7 +274,6 @@ spec:
               value: "536870912"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
-          envFrom:
 ---
 # Source: mimir-distributed/templates/store-gateway/store-gateway-statefulset.yaml
 apiVersion: apps/v1
@@ -318,7 +306,9 @@ spec:
     type: OnDelete
   serviceName: scheduler-name-values-mimir-store-gateway-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -340,6 +330,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
+      schedulerName: "my-scheduler"
       serviceAccountName: scheduler-name-values-mimir
       securityContext:
         fsGroup: 10001
@@ -348,12 +339,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -363,9 +348,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: scheduler-name-values
             app.kubernetes.io/component: store-gateway
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 120
       volumes:
         - name: config
           configMap:
@@ -429,4 +412,3 @@ spec:
               value: "536870912"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
-          envFrom:

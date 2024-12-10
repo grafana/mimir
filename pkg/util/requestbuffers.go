@@ -1,16 +1,47 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+
 package util
 
 import (
 	"bytes"
+	"sync"
 )
 
-// Pool is an abstraction of sync.Pool, for testability.
+const defaultPoolBufferCap = 256 * 1024
+
+// Pool is an abstraction for a pool of byte slices.
 type Pool interface {
-	// Get a pooled object.
-	Get() any
-	// Put back an object into the pool.
-	Put(any)
+	// Get returns a new byte slices.
+	Get() []byte
+
+	// Put puts a slice back into the pool.
+	Put(s []byte)
+}
+
+type bufferPool struct {
+	maxBufferCap int
+	p            sync.Pool
+}
+
+func (p *bufferPool) Get() []byte { return p.p.Get().([]byte) }
+func (p *bufferPool) Put(s []byte) {
+	if p.maxBufferCap > 0 && cap(s) > p.maxBufferCap {
+		return // Discard large buffers
+	}
+	p.p.Put(s) //nolint:staticcheck
+}
+
+// NewBufferPool returns a new Pool for byte slices.
+// If maxBufferCapacity is 0, the pool will not have a maximum capacity.
+func NewBufferPool(maxBufferCapacity int) Pool {
+	return &bufferPool{
+		maxBufferCap: maxBufferCapacity,
+		p: sync.Pool{
+			New: func() interface{} {
+				return make([]byte, 0, defaultPoolBufferCap)
+			},
+		},
+	}
 }
 
 // RequestBuffers provides pooled request buffers.
@@ -32,20 +63,22 @@ func NewRequestBuffers(p Pool) *RequestBuffers {
 
 // Get obtains a buffer from the pool. It will be returned back to the pool when CleanUp is called.
 func (rb *RequestBuffers) Get(size int) *bytes.Buffer {
-	if rb == nil {
+	if rb == nil || rb.p == nil {
 		if size < 0 {
 			size = 0
 		}
 		return bytes.NewBuffer(make([]byte, 0, size))
 	}
 
-	b := rb.p.Get().(*bytes.Buffer)
-	b.Reset()
+	b := rb.p.Get()
+	buf := bytes.NewBuffer(b)
+	buf.Reset()
 	if size > 0 {
-		b.Grow(size)
+		buf.Grow(size)
 	}
-	rb.buffers = append(rb.buffers, b)
-	return b
+
+	rb.buffers = append(rb.buffers, buf)
+	return buf
 }
 
 // CleanUp releases buffers back to the pool.
@@ -53,7 +86,7 @@ func (rb *RequestBuffers) CleanUp() {
 	for i, b := range rb.buffers {
 		// Make sure the backing array doesn't retain a reference
 		rb.buffers[i] = nil
-		rb.p.Put(b)
+		rb.p.Put(b.Bytes())
 	}
 	rb.buffers = rb.buffers[:0]
 }

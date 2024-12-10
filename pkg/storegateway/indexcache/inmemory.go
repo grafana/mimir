@@ -6,10 +6,9 @@ package indexcache
 
 import (
 	"context"
-	"reflect"
+	"strings"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -275,23 +274,14 @@ func (c *InMemoryIndexCache) reset() {
 	c.curSize = 0
 }
 
-func copyString(s string) string {
-	var b []byte
-	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
-	h.Data = (*reflect.StringHeader)(unsafe.Pointer(&s)).Data
-	h.Len = len(s)
-	h.Cap = len(s)
-	return string(b)
-}
-
 // copyLabel is required as underlying strings might be mmaped.
 func copyLabel(l labels.Label) labels.Label {
-	return labels.Label{Value: copyString(l.Value), Name: copyString(l.Name)}
+	return labels.Label{Value: strings.Clone(l.Value), Name: strings.Clone(l.Name)}
 }
 
 // StorePostings sets the postings identified by the ulid and label to the value v,
 // if the postings already exists in the cache it is not mutated.
-func (c *InMemoryIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte) {
+func (c *InMemoryIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte, _ time.Duration) {
 	c.set(cacheKeyPostings{userID, blockID, copyLabel(l)}, v)
 }
 

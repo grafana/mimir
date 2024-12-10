@@ -11,31 +11,37 @@ weight: 30
 
 # Grafana mimir-continuous-test
 
-As a developer, you can use the standalone mimir-continuous-test tool to run smoke tests on live Grafana Mimir clusters.
+As a developer, you can use the mimir-continuous-test tool to run smoke tests on live Grafana Mimir clusters.
 This tool identifies a class of bugs that could be difficult to spot during development.
 Two operating modes are supported:
 
 - As a continuously running deployment in your environment, mimir-continuous-test can be used to detect issues on a live Grafana Mimir cluster over time.
 - As an ad-hoc smoke test tool, mimir-continuous-test can be used to validate basic functionality after configuration changes are made to a Grafana Mimir cluster.
 
-## Download mimir-continuous-test
+## Download and run mimir-continuous-test
 
 - Using Docker:
 
 ```bash
 docker pull "grafana/mimir-continuous-test:latest"
+docker run grafana/mimir-continuous-test
 ```
 
 - Using a local binary:
 
-Download the appropriate [mimir-continuous-test binary](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture, and make it executable.
+Download the appropriate [mimir binary](https://github.com/grafana/mimir/releases/latest) for your operating system and architecture, and make it executable.
 
 For Linux with the AMD64 architecture, execute the following command:
 
 ```bash
-curl -Lo mimir-continuous-test https://github.com/grafana/mimir/releases/latest/download/mimir-continuous-test-linux-amd64
-chmod +x mimir-continuous-test
+curl -Lo mimir https://github.com/grafana/mimir/releases/latest/download/mimir-linux-amd64
+chmod +x mimir
+mimir -target=continuous-test
 ```
+
+{{< admonition type="note" >}}
+The standalone [mimir-continuous-test binary](https://github.com/grafana/mimir/releases/tag/mimir-2.12.0) is deprecated.
+{{< /admonition >}}
 
 ## Configure mimir-continuous-test
 
@@ -50,7 +56,7 @@ Mimir-continuous-test requires the endpoints of the backend Grafana Mimir cluste
 - Set `-tests.smoke-test` to run the test once and immediately exit. In this mode, the process exit code is non-zero when the test fails.
 
 {{< admonition type="note" >}}
-You can run `mimir-continuous-test -help` to list all available configuration options.
+You can run `mimir -help` to list all available configuration options. All configuration options for mimir-continuous-test begin with `tests`.
 {{< /admonition >}}
 
 ## How it works
@@ -72,6 +78,18 @@ mimir_continuous_test_writes_total{test="<name>"}
 # TYPE mimir_continuous_test_writes_failed_total counter
 mimir_continuous_test_writes_failed_total{test="<name>",status_code="<code>"}
 
+# HELP mimir_continuous_test_writes_request_duration_seconds Duration of the requests
+# TYPE mimir_continuous_test_writes_request_duration_seconds histogram
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.001"}
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.004"}
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.016"}
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.064"}
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.256"}
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="1.024"}
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="+Inf"}
+mimir_continuous_test_writes_request_duration_seconds_sum{test="<name>"}
+mimir_continuous_test_writes_request_duration_seconds_count{test="<name>"}
+
 # HELP mimir_continuous_test_queries_total Total number of attempted query requests.
 # TYPE mimir_continuous_test_queries_total counter
 mimir_continuous_test_queries_total{test="<name>"}
@@ -87,6 +105,27 @@ mimir_continuous_test_query_result_checks_total{test="<name>"}
 # HELP mimir_continuous_test_query_result_checks_failed_total Total number of query results failed when checking for correctness.
 # TYPE mimir_continuous_test_query_result_checks_failed_total counter
 mimir_continuous_test_query_result_checks_failed_total{test="<name>"}
+
+# HELP mimir_continuous_test_queries_request_duration_seconds Duration of the requests
+# TYPE mimir_continuous_test_queries_request_duration_seconds histogram
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.001"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.004"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.016"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.064"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.256"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="1.024"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="+Inf"}
+mimir_continuous_test_queries_request_duration_seconds_sum{results_cache="false",test="<name>"}
+mimir_continuous_test_queries_request_duration_seconds_count{results_cache="false",test="<name>"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.001"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.004"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.016"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.064"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.256"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="1.024"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="+Inf"}
+mimir_continuous_test_queries_request_duration_seconds_sum{results_cache="true",test="<name>"}
+mimir_continuous_test_queries_request_duration_seconds_count{results_cache="true",test="<name>"}
 ```
 
 ### Alerts

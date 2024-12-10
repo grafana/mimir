@@ -1,4 +1,4 @@
-{{- if .Values.alertmanager.enabled -}}
+{{- if and .Values.alertmanager.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 {{- if .Values.alertmanager.statefulSet.enabled -}}
 {{- $args := dict "ctx" . "component" "alertmanager" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
@@ -33,7 +33,9 @@ spec:
   serviceName: {{ template "mimir.fullname" . }}-alertmanager
   {{- if .Values.alertmanager.persistentVolume.enabled }}
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
         {{- if .Values.alertmanager.persistentVolume.annotations }}
         annotations:
@@ -68,27 +70,35 @@ spec:
       {{- with .Values.alertmanager.schedulerName }}
       schedulerName: {{ . | quote }}
       {{- end }}
-      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.alertmanager.serviceAccountName" . }}
       {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.alertmanager.priorityClassName }}
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "alertmanager") | nindent 8 }}
+      {{- with .Values.alertmanager.initContainers }}
       initContainers:
-        {{- toYaml .Values.alertmanager.initContainers | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.image.pullSecrets }}
       imagePullSecrets:
       {{- range .Values.image.pullSecrets }}
         - name: {{ . }}
       {{- end }}
       {{- end }}
+      {{- with $rolloutZone.nodeSelector }}
       nodeSelector:
-        {{- $rolloutZone.nodeSelector | toYaml | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $rolloutZone.affinity }}
       affinity:
-        {{- $rolloutZone.affinity | toYaml | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "alertmanager") | nindent 6 }}
+      {{- with .Values.alertmanager.tolerations }}
       tolerations:
-        {{- toYaml .Values.alertmanager.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       terminationGracePeriodSeconds: {{ .Values.alertmanager.terminationGracePeriodSeconds }}
       volumes:
         - name: config
@@ -117,6 +127,9 @@ spec:
         {{- if .Values.alertmanager.extraVolumes }}
         {{ toYaml .Values.alertmanager.extraVolumes | nindent 8 }}
         {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8 }}
+        {{- end }}
       containers:
         {{- if .Values.alertmanager.extraContainers }}
         {{ toYaml .Values.alertmanager.extraContainers | nindent 8 }}
@@ -135,12 +148,19 @@ spec:
             - "-alertmanager.sharding-ring.instance-availability-zone=zone-default"
             {{- end }}
             {{- end }}
+            # Prometheus HTTP client used to send alerts has a hard-coded idle
+            # timeout of 5 minutes, therefore the server timeout for Alertmanager
+            # needs to be higher to avoid connections being closed abruptly.
+            - "-server.http-idle-timeout=6m"
             {{- range $key, $value := .Values.alertmanager.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- if .Values.alertmanager.extraVolumeMounts }}
             {{ toYaml .Values.alertmanager.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+            {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -154,7 +174,6 @@ spec:
               mountPath: "/data"
               {{- if .Values.alertmanager.persistentVolume.subPath }}
               subPath: {{ .Values.alertmanager.persistentVolume.subPath }}
-              {{- else }}
               {{- end }}
             {{- if .Values.alertmanager.fallbackConfig }}
             - name: alertmanager-fallback-config
@@ -181,7 +200,9 @@ spec:
           resources:
             {{- toYaml .Values.alertmanager.resources | nindent 12 }}
           securityContext:
-           {{- toYaml .Values.alertmanager.containerSecurityContext | nindent 12 }}
+            {{- toYaml .Values.alertmanager.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.alertmanager }}
+          {{- if or .Values.global.extraEnv .Values.alertmanager.env $jaeger_queue_size }}
           env:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
@@ -189,11 +210,12 @@ spec:
             {{- with .Values.alertmanager.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.alertmanager }}
             {{- if $jaeger_queue_size }}
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.alertmanager.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -201,6 +223,7 @@ spec:
             {{- with .Values.alertmanager.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
 
 ---
 {{ end }}

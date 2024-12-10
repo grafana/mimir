@@ -39,8 +39,11 @@ message GrafanaAlertConfigDesc {
 
   string user = 1;
   string raw_config = 2;
-  int64 id = 3;
+  reserved 3; // id, not used
   string hash = 4;
   int64 created_at_timestamp = 5;
   bool default = 7;
+  bool promoted = 8;
+  string external_url = 9;
+  map<string, string> static_headers = 10;
 }

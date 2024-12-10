@@ -18,11 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimir"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/tools/doc-generator/parse"
-)
-
-const (
-	maxLineWidth = 80
-	tabWidth     = 2
+	"github.com/grafana/mimir/tools/doc-generator/write"
 )
 
 func removeFlagPrefix(block *parse.ConfigBlock, prefix string) {
@@ -93,9 +89,9 @@ func annotateFlagPrefix(blocks []*parse.ConfigBlock) {
 }
 
 func generateBlocksMarkdown(blocks []*parse.ConfigBlock) string {
-	md := &markdownWriter{}
-	md.writeConfigDoc(blocks)
-	return md.string()
+	md := &write.MarkdownWriter{}
+	md.WriteConfigDoc(blocks, parse.RootBlocks)
+	return md.String()
 }
 
 func generateBlockMarkdown(blocks []*parse.ConfigBlock, blockName, fieldName string) string {
@@ -105,11 +101,11 @@ func generateBlockMarkdown(blocks []*parse.ConfigBlock, blockName, fieldName str
 			continue
 		}
 
-		md := &markdownWriter{}
+		md := &write.MarkdownWriter{}
 
 		// Wrap the root block with another block, so that we can show the name of the
 		// root field containing the block specs.
-		md.writeConfigBlock(&parse.ConfigBlock{
+		md.WriteConfigBlock(&parse.ConfigBlock{
 			Name: blockName,
 			Desc: block.Desc,
 			Entries: []*parse.ConfigEntry{
@@ -124,7 +120,7 @@ func generateBlockMarkdown(blocks []*parse.ConfigBlock, blockName, fieldName str
 			},
 		})
 
-		return md.string()
+		return md.String()
 	}
 
 	// If the block has not been found, we return an empty string.

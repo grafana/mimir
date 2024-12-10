@@ -11,45 +11,13 @@ package queryrange;
 option go_package = "querymiddleware";
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-import "google/protobuf/duration.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "google/protobuf/any.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
-message PrometheusRangeQueryRequest {
-  string path = 1;
-  int64 start = 2;
-  int64 end = 3;
-  int64 step = 4;
-  google.protobuf.Duration timeout = 5 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
-  string query = 6;
-  Options options = 7 [(gogoproto.nullable) = false];
-
-  // ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
-  int64 id = 8;
-
-  // Hints that could be optionally attached to the request to pass down the stack.
-  // These hints can be used to optimize the query execution.
-  Hints hints = 9 [(gogoproto.nullable) = true];
-}
-
-message PrometheusInstantQueryRequest {
-  string path = 1;
-  int64 time = 2;
-  string query = 3;
-  Options options = 4 [(gogoproto.nullable) = false];
-
-  // ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
-  int64 id = 5;
-
-  // Hints that could be optionally attached to the request to pass down the stack.
-  // These hints can be used to optimize the query execution.
-  Hints hints = 6 [(gogoproto.nullable) = true];
-}
-
-message PrometheusResponseHeader {
+message PrometheusHeader {
   string Name = 1 [(gogoproto.jsontag) = "-"];
   repeated string Values = 2 [(gogoproto.jsontag) = "-"];
 }
@@ -59,8 +27,9 @@ message PrometheusResponse {
   PrometheusData Data = 2 [(gogoproto.jsontag) = "data,omitempty"];
   string ErrorType = 3 [(gogoproto.jsontag) = "errorType,omitempty"];
   string Error = 4 [(gogoproto.jsontag) = "error,omitempty"];
-  repeated PrometheusResponseHeader Headers = 5 [(gogoproto.jsontag) = "-"];
+  repeated PrometheusHeader Headers = 5 [(gogoproto.jsontag) = "-"];
   repeated string Warnings = 6 [(gogoproto.jsontag) = "warnings,omitempty"];
+  repeated string Infos = 7 [(gogoproto.jsontag) = "infos,omitempty"];
 }
 
 message PrometheusData {
@@ -72,6 +41,12 @@ message SampleStream {
   repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "metric", (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
   repeated cortexpb.Sample samples = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "values"];
   repeated cortexpb.FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "histograms"];
+}
+
+message CachedError {
+  string key = 1 [(gogoproto.jsontag) = "key"];
+  string errorType = 2 [(gogoproto.jsontag) = "errorType"];
+  string errorMessage = 3 [(gogoproto.jsontag) = "errorMessage"];
 }
 
 message CachedResponse  {
@@ -101,17 +76,6 @@ message Options {
   bool InstantSplitDisabled = 4;
   // Instant split by time interval unit stored in nanoseconds (time.Duration unit in int64)
   int64 InstantSplitInterval = 5;
-}
-
-message Hints {
-  // Total number of queries that are expected to to be executed to serve the original request.
-  int32 TotalQueries = 1;
-  // Estimated total number of series that a request might return.
-  // This is a `oneof` instead of an `optional` because our tooling is on a version
-  // that does not yet support optional fields in proto3.
-  oneof CardinalityEstimate {
-    uint64 EstimatedSeriesCount = 2;
-  }
 }
 
 message QueryStatistics {

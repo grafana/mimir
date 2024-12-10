@@ -5,10 +5,10 @@ kind: Deployment
 metadata:
   name: test-oss-topology-spread-constraints-values-rollout-operator
   labels:
-    helm.sh/chart: rollout-operator-0.14.0
+    helm.sh/chart: rollout-operator-0.21.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
-    app.kubernetes.io/version: "v0.13.0"
+    app.kubernetes.io/version: "v0.21.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -43,7 +43,7 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          image: "grafana/rollout-operator:v0.13.0"
+          image: "grafana/rollout-operator:v0.21.0"
           imagePullPolicy: IfNotPresent
           args:
           - -kubernetes.namespace=citestns

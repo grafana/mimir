@@ -487,7 +487,27 @@ func KafkaHasher(hashFn func([]byte) uint32) PartitionerHasher {
 	}
 }
 
-// SaramaHasher returns a PartitionerHasher using hashFn that mirrors how
+// SaramaHasher is a historical misnamed partitioner. This library's original
+// implementation of the SaramaHasher was incorrect, if you want an exact
+// match for the Sarama partitioner, use the [SaramaCompatHasher].
+//
+// This partitioner remains because as it turns out, other ecosystems provide
+// a similar partitioner and this partitioner is useful for compatibility.
+//
+// In particular, using this function with a crc32.ChecksumIEEE hasher makes
+// this partitioner match librdkafka's consistent partitioner, or the
+// zendesk/ruby-kafka partitioner.
+func SaramaHasher(hashFn func([]byte) uint32) PartitionerHasher {
+	return func(key []byte, n int) int {
+		p := int(hashFn(key)) % n
+		if p < 0 {
+			p = -p
+		}
+		return p
+	}
+}
+
+// SaramaCompatHasher returns a PartitionerHasher using hashFn that mirrors how
 // Sarama partitions after hashing data.
 //
 // Sarama has two differences from Kafka when partitioning:
@@ -506,14 +526,23 @@ func KafkaHasher(hashFn func([]byte) uint32) PartitionerHasher {
 //
 // In short, to *exactly* match the Sarama defaults, use the following:
 //
-//	kgo.StickyKeyPartitioner(kgo.SaramaHasher(fnv.New32a()))
-func SaramaHasher(hashFn func([]byte) uint32) PartitionerHasher {
+//	kgo.StickyKeyPartitioner(kgo.SaramaCompatHasher(fnv32a))
+//
+// Where fnv32a is a function returning a new 32 bit fnv-1a hasher.
+//
+//	func fnv32a(b []byte) uint32 {
+//		h := fnv.New32a()
+//		h.Reset()
+//		h.Write(b)
+//		return h.Sum32()
+//	}
+func SaramaCompatHasher(hashFn func([]byte) uint32) PartitionerHasher {
 	return func(key []byte, n int) int {
-		p := int(hashFn(key)) % n
+		p := int32(hashFn(key)) % int32(n)
 		if p < 0 {
 			p = -p
 		}
-		return p
+		return int(p)
 	}
 }
 

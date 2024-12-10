@@ -18,6 +18,7 @@ type S3ClientConfig struct {
 	AccessKeyID     string
 	SecretAccessKey string
 	Secure          bool
+	PartSize        uint64
 }
 
 func (c *S3ClientConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
@@ -26,6 +27,7 @@ func (c *S3ClientConfig) RegisterFlags(prefix string, f *flag.FlagSet) {
 	f.StringVar(&c.AccessKeyID, prefix+"access-key-id", "", "The access key ID used in AWS Signature Version 4 authentication.")
 	f.StringVar(&c.SecretAccessKey, prefix+"secret-access-key", "", "The secret access key used in AWS Signature Version 4 authentication.")
 	f.BoolVar(&c.Secure, prefix+"secure", true, "If true (default), use HTTPS when connecting to the bucket. If false, insecure HTTP is used.")
+	f.Uint64Var(&c.PartSize, prefix+"part-size", 0, "If 0, and object's size is known and optimal for multipart upload, the default value is the minimum allowed size 16MiB.")
 }
 
 func (c *S3ClientConfig) Validate(prefix string) error {
@@ -55,12 +57,14 @@ func (c *S3ClientConfig) ToBucket() (Bucket, error) {
 	return &s3Bucket{
 		client:     client,
 		bucketName: c.BucketName,
+		partSize:   c.PartSize,
 	}, nil
 }
 
 type s3Bucket struct {
 	client     *minio.Client
 	bucketName string
+	partSize   uint64
 }
 
 func (bkt *s3Bucket) Get(ctx context.Context, objectName string, options GetOptions) (io.ReadCloser, error) {
@@ -73,22 +77,40 @@ func (bkt *s3Bucket) Get(ctx context.Context, objectName string, options GetOpti
 	return obj, nil
 }
 
+const maxSingleCopySize int64 = 5 * (1024 * 1024 * 1024) // 5 GiB
+
 func (bkt *s3Bucket) ServerSideCopy(ctx context.Context, objectName string, dstBucket Bucket, options CopyOptions) error {
 	d, ok := dstBucket.(*s3Bucket)
 	if !ok {
 		return errors.New("destination Bucket wasn't an S3 Bucket")
 	}
-	_, err := d.client.CopyObject(ctx,
-		minio.CopyDestOptions{
-			Bucket: d.bucketName,
-			Object: options.destinationObjectName(objectName),
-		},
-		minio.CopySrcOptions{
-			Bucket:    bkt.bucketName,
-			Object:    objectName,
-			VersionID: options.SourceVersionID,
-		},
-	)
+
+	stat, err := bkt.client.StatObject(ctx, bkt.bucketName, objectName, minio.StatObjectOptions{
+		VersionID: options.SourceVersionID,
+	})
+	if err != nil {
+		return err
+	}
+
+	dstOptions := minio.CopyDestOptions{
+		Bucket: d.bucketName,
+		Object: options.destinationObjectName(objectName),
+	}
+
+	srcOptions := minio.CopySrcOptions{
+		Bucket:    bkt.bucketName,
+		Object:    objectName,
+		VersionID: options.SourceVersionID,
+	}
+
+	if stat.Size <= maxSingleCopySize {
+		_, err := d.client.CopyObject(ctx, dstOptions, srcOptions)
+		return err
+	}
+
+	// Uses a multi-part upload
+	// Due to https://github.com/minio/minio-go/issues/1683 this likely does not work cross-region
+	_, err = d.client.ComposeObject(ctx, dstOptions, srcOptions)
 	return err
 }
 
@@ -163,7 +185,10 @@ func (bkt *s3Bucket) RestoreVersion(ctx context.Context, objectName string, vers
 }
 
 func (bkt *s3Bucket) Upload(ctx context.Context, objectName string, reader io.Reader, contentLength int64) error {
-	_, err := bkt.client.PutObject(ctx, bkt.bucketName, objectName, reader, contentLength, minio.PutObjectOptions{})
+	opts := minio.PutObjectOptions{
+		PartSize: bkt.partSize,
+	}
+	_, err := bkt.client.PutObject(ctx, bkt.bucketName, objectName, reader, contentLength, opts)
 	return err
 }
 

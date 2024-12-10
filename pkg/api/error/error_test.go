@@ -17,15 +17,15 @@ func TestAllPrometheusErrorTypeValues(t *testing.T) {
 
 	for _, prometheusErrorTypeString := range prometheusErrorTypeStrings {
 		errorType := Type(prometheusErrorTypeString)
-		apiError := New(errorType, "").(*apiError)
+		apiError := New(errorType, "")
 
 		if errorType == TypeUnavailable {
-			require.Equal(t, http.StatusServiceUnavailable, apiError.statusCode())
+			require.Equal(t, http.StatusServiceUnavailable, apiError.StatusCode())
 		} else if errorType == TypeInternal || errorType == TypeNone {
-			require.Equal(t, http.StatusInternalServerError, apiError.statusCode())
+			require.Equal(t, http.StatusInternalServerError, apiError.StatusCode())
 		} else {
 			// If this assertion fails, it probably means a new error type has been added to Prometheus' API.
-			require.NotEqual(t, http.StatusInternalServerError, apiError.statusCode(), "unrecognised Prometheus error type constant '%s'", prometheusErrorTypeString)
+			require.NotEqual(t, http.StatusInternalServerError, apiError.StatusCode(), "unrecognised Prometheus error type constant '%s'", prometheusErrorTypeString)
 		}
 	}
 }

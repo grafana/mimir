@@ -14,21 +14,24 @@
 package labels
 
 import (
+	"slices"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/DmitriyVTitov/size"
 	"github.com/dgraph-io/ristretto"
 	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
-	"golang.org/x/exp/slices"
+	"golang.org/x/text/unicode/norm"
 )
 
 const (
 	maxSetMatches = 256
 
 	// The minimum number of alternate values a regex should have to trigger
-	// the optimization done by optimizeEqualStringMatchers() and so use a map
+	// the optimization done by optimizeEqualOrPrefixStringMatchers() and so use a map
 	// to match values instead of iterating over a list. This value has
 	// been computed running BenchmarkOptimizeEqualStringMatchers.
 	minEqualMultiStringMatcherMapThreshold = 16
@@ -60,7 +63,7 @@ type FastRegexMatcher struct {
 	stringMatcher StringMatcher
 	prefix        string
 	suffix        string
-	contains      string
+	contains      []string
 
 	// matchString is the "compiled" function to run by MatchString().
 	matchString func(string) bool
@@ -97,13 +100,13 @@ func newFastRegexMatcherWithoutCache(v string) (*FastRegexMatcher, error) {
 		// available, even if the string matcher is faster.
 		m.matchString = m.stringMatcher.Matches
 	} else {
-		parsed, err := syntax.Parse(v, syntax.Perl)
+		parsed, err := syntax.Parse(v, syntax.Perl|syntax.DotNL)
 		if err != nil {
 			return nil, err
 		}
 		// Simplify the syntax tree to run faster.
 		parsed = parsed.Simplify()
-		m.re, err = regexp.Compile("^(?:" + parsed.String() + ")$")
+		m.re, err = regexp.Compile("^(?s:" + parsed.String() + ")$")
 		if err != nil {
 			return nil, err
 		}
@@ -123,7 +126,7 @@ func newFastRegexMatcherWithoutCache(v string) (*FastRegexMatcher, error) {
 // compileMatchStringFunction returns the function to run by MatchString().
 func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
 	// If the only optimization available is the string matcher, then we can just run it.
-	if len(m.setMatches) == 0 && m.prefix == "" && m.suffix == "" && m.contains == "" && m.stringMatcher != nil {
+	if len(m.setMatches) == 0 && m.prefix == "" && m.suffix == "" && len(m.contains) == 0 && m.stringMatcher != nil {
 		return m.stringMatcher.Matches
 	}
 
@@ -142,7 +145,7 @@ func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
 		if m.suffix != "" && !strings.HasSuffix(s, m.suffix) {
 			return false
 		}
-		if m.contains != "" && !strings.Contains(s, m.contains) {
+		if len(m.contains) > 0 && !containsInOrder(s, m.contains) {
 			return false
 		}
 		if m.stringMatcher != nil {
@@ -155,7 +158,7 @@ func (m *FastRegexMatcher) compileMatchStringFunction() func(string) bool {
 // IsOptimized returns true if any fast-path optimization is applied to the
 // regex matcher.
 func (m *FastRegexMatcher) IsOptimized() bool {
-	return len(m.setMatches) > 0 || m.stringMatcher != nil || m.prefix != "" || m.suffix != "" || m.contains != ""
+	return len(m.setMatches) > 0 || m.stringMatcher != nil || m.prefix != "" || m.suffix != "" || len(m.contains) > 0
 }
 
 // findSetMatches extract equality matches from a regexp.
@@ -291,6 +294,14 @@ func clearCapture(regs ...*syntax.Regexp) {
 	}
 }
 
+// removeEmptyMatches returns the slice with syntax.OpEmptyMatch regexps removed.
+// Note: it modifies the input slice (the returned slice is a sub-slice of the input).
+func removeEmptyMatches(regs []*syntax.Regexp) []*syntax.Regexp {
+	return slices.DeleteFunc(regs, func(r *syntax.Regexp) bool {
+		return r.Op == syntax.OpEmptyMatch
+	})
+}
+
 // clearBeginEndText removes the begin and end text from the regexp. Prometheus regexp are anchored to the beginning and end of the string.
 func clearBeginEndText(re *syntax.Regexp) {
 	// Do not clear begin/end text from an alternate operator because it could
@@ -371,7 +382,7 @@ func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 		return nil, nil
 	}
 
-	multiMatcher := newEqualMultiStringMatcher(true, estimatedAlternates)
+	multiMatcher := newEqualMultiStringMatcher(true, estimatedAlternates, 0, 0)
 
 	for end := strings.IndexByte(s, '|'); end > -1; end = strings.IndexByte(s, '|') {
 		// Split the string into the next literal and the remainder
@@ -397,8 +408,9 @@ func optimizeAlternatingLiterals(s string) (StringMatcher, []string) {
 
 // optimizeConcatRegex returns literal prefix/suffix text that can be safely
 // checked against the label value before running the regexp matcher.
-func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
+func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix string, contains []string) {
 	sub := r.Sub
+	clearCapture(sub...)
 
 	// We can safely remove begin and end text matchers respectively
 	// at the beginning and end of the regexp.
@@ -423,13 +435,11 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 		suffix = string(sub[last].Rune)
 	}
 
-	// If contains any literal which is not a prefix/suffix, we keep the
-	// 1st one. We do not keep the whole list of literals to simplify the
-	// fast path.
+	// If contains any literal which is not a prefix/suffix, we keep track of
+	// all the ones which are case-sensitive.
 	for i := 1; i < len(sub)-1; i++ {
 		if sub[i].Op == syntax.OpLiteral && (sub[i].Flags&syntax.FoldCase) == 0 {
-			contains = string(sub[i].Rune)
-			break
+			contains = append(contains, string(sub[i].Rune))
 		}
 	}
 
@@ -443,12 +453,11 @@ type StringMatcher interface {
 
 // stringMatcherFromRegexp attempts to replace a common regexp with a string matcher.
 // It returns nil if the regexp is not supported.
-// For examples, it will replace `.*foo` with `foo.*` and `.*foo.*` with `(?i)foo`.
 func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 	clearBeginEndText(re)
 
 	m := stringMatcherFromRegexpInternal(re)
-	m = optimizeEqualStringMatchers(m, minEqualMultiStringMatcherMapThreshold)
+	m = optimizeEqualOrPrefixStringMatchers(m, minEqualMultiStringMatcherMapThreshold)
 
 	return m
 }
@@ -513,6 +522,7 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 		return orStringMatcher(or)
 	case syntax.OpConcat:
 		clearCapture(re.Sub...)
+		re.Sub = removeEmptyMatches(re.Sub)
 
 		if len(re.Sub) == 0 {
 			return emptyStringMatcher{}
@@ -585,11 +595,7 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 
 		// Right matcher with 1 fixed set match.
 		case left == nil && len(matches) == 1:
-			return &literalPrefixStringMatcher{
-				prefix:              matches[0],
-				prefixCaseSensitive: matchesCaseSensitive,
-				right:               right,
-			}
+			return newLiteralPrefixStringMatcher(matches[0], matchesCaseSensitive, right)
 
 		// Left matcher with 1 fixed set match.
 		case right == nil && len(matches) == 1:
@@ -599,7 +605,7 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 				suffixCaseSensitive: matchesCaseSensitive,
 			}
 
-		// We found literals in the middle. We can triggered the fast path only if
+		// We found literals in the middle. We can trigger the fast path only if
 		// the matches are case sensitive because containsStringMatcher doesn't
 		// support case insensitive.
 		case matchesCaseSensitive:
@@ -616,7 +622,7 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 // containsStringMatcher matches a string if it contains any of the substrings.
 // If left and right are not nil, it's a contains operation where left and right must match.
 // If left is nil, it's a hasPrefix operation and right must match.
-// Finally if right is nil it's a hasSuffix operation and left must match.
+// Finally, if right is nil it's a hasSuffix operation and left must match.
 type containsStringMatcher struct {
 	// The matcher that must match the left side. Can be nil.
 	left StringMatcher
@@ -667,21 +673,47 @@ func (m *containsStringMatcher) Matches(s string) bool {
 	return false
 }
 
-// literalPrefixStringMatcher matches a string with the given literal prefix and right side matcher.
-type literalPrefixStringMatcher struct {
-	prefix              string
-	prefixCaseSensitive bool
+func newLiteralPrefixStringMatcher(prefix string, prefixCaseSensitive bool, right StringMatcher) StringMatcher {
+	if prefixCaseSensitive {
+		return &literalPrefixSensitiveStringMatcher{
+			prefix: prefix,
+			right:  right,
+		}
+	}
+
+	return &literalPrefixInsensitiveStringMatcher{
+		prefix: prefix,
+		right:  right,
+	}
+}
+
+// literalPrefixSensitiveStringMatcher matches a string with the given literal case-sensitive prefix and right side matcher.
+type literalPrefixSensitiveStringMatcher struct {
+	prefix string
 
 	// The matcher that must match the right side. Can be nil.
 	right StringMatcher
 }
 
-func (m *literalPrefixStringMatcher) Matches(s string) bool {
-	// Ensure the prefix matches.
-	if m.prefixCaseSensitive && !strings.HasPrefix(s, m.prefix) {
+func (m *literalPrefixSensitiveStringMatcher) Matches(s string) bool {
+	if !strings.HasPrefix(s, m.prefix) {
 		return false
 	}
-	if !m.prefixCaseSensitive && !hasPrefixCaseInsensitive(s, m.prefix) {
+
+	// Ensure the right side matches.
+	return m.right.Matches(s[len(m.prefix):])
+}
+
+// literalPrefixInsensitiveStringMatcher matches a string with the given literal case-insensitive prefix and right side matcher.
+type literalPrefixInsensitiveStringMatcher struct {
+	prefix string
+
+	// The matcher that must match the right side. Can be nil.
+	right StringMatcher
+}
+
+func (m *literalPrefixInsensitiveStringMatcher) Matches(s string) bool {
+	if !hasPrefixCaseInsensitive(s, m.prefix) {
 		return false
 	}
 
@@ -746,17 +778,20 @@ func (m *equalStringMatcher) Matches(s string) bool {
 type multiStringMatcherBuilder interface {
 	StringMatcher
 	add(s string)
+	addPrefix(prefix string, prefixCaseSensitive bool, matcher StringMatcher)
 	setMatches() []string
 }
 
-func newEqualMultiStringMatcher(caseSensitive bool, estimatedSize int) multiStringMatcherBuilder {
+func newEqualMultiStringMatcher(caseSensitive bool, estimatedSize, estimatedPrefixes, minPrefixLength int) multiStringMatcherBuilder {
 	// If the estimated size is low enough, it's faster to use a slice instead of a map.
-	if estimatedSize < minEqualMultiStringMatcherMapThreshold {
+	if estimatedSize < minEqualMultiStringMatcherMapThreshold && estimatedPrefixes == 0 {
 		return &equalMultiStringSliceMatcher{caseSensitive: caseSensitive, values: make([]string, 0, estimatedSize)}
 	}
 
 	return &equalMultiStringMapMatcher{
 		values:        make(map[string]struct{}, estimatedSize),
+		prefixes:      make(map[string][]StringMatcher, estimatedPrefixes),
+		minPrefixLen:  minPrefixLength,
 		caseSensitive: caseSensitive,
 	}
 }
@@ -770,6 +805,10 @@ type equalMultiStringSliceMatcher struct {
 
 func (m *equalMultiStringSliceMatcher) add(s string) {
 	m.values = append(m.values, s)
+}
+
+func (m *equalMultiStringSliceMatcher) addPrefix(_ string, _ bool, _ StringMatcher) {
+	panic("not implemented")
 }
 
 func (m *equalMultiStringSliceMatcher) setMatches() []string {
@@ -793,25 +832,49 @@ func (m *equalMultiStringSliceMatcher) Matches(s string) bool {
 	return false
 }
 
-// equalMultiStringMapMatcher matches a string exactly against a map of valid values.
+// equalMultiStringMapMatcher matches a string exactly against a map of valid values
+// or against a set of prefix matchers.
 type equalMultiStringMapMatcher struct {
 	// values contains values to match a string against. If the matching is case insensitive,
 	// the values here must be lowercase.
 	values map[string]struct{}
-
+	// prefixes maps strings, all of length minPrefixLen, to sets of matchers to check the rest of the string.
+	// If the matching is case insensitive, prefixes are all lowercase.
+	prefixes map[string][]StringMatcher
+	// minPrefixLen can be zero, meaning there are no prefix matchers.
+	minPrefixLen  int
 	caseSensitive bool
 }
 
 func (m *equalMultiStringMapMatcher) add(s string) {
 	if !m.caseSensitive {
-		s = strings.ToLower(s)
+		s = toNormalisedLower(s, nil) // Don't pass a stack buffer here - it will always escape to heap.
 	}
 
 	m.values[s] = struct{}{}
 }
 
+func (m *equalMultiStringMapMatcher) addPrefix(prefix string, prefixCaseSensitive bool, matcher StringMatcher) {
+	if m.minPrefixLen == 0 {
+		panic("addPrefix called when no prefix length defined")
+	}
+	if len(prefix) < m.minPrefixLen {
+		panic("addPrefix called with a too short prefix")
+	}
+	if m.caseSensitive != prefixCaseSensitive {
+		panic("addPrefix called with a prefix whose case sensitivity is different than the expected one")
+	}
+
+	s := prefix[:m.minPrefixLen]
+	if !m.caseSensitive {
+		s = strings.ToLower(s)
+	}
+
+	m.prefixes[s] = append(m.prefixes[s], matcher)
+}
+
 func (m *equalMultiStringMapMatcher) setMatches() []string {
-	if len(m.values) >= maxSetMatches {
+	if len(m.values) >= maxSetMatches || len(m.prefixes) > 0 {
 		return nil
 	}
 
@@ -823,12 +886,67 @@ func (m *equalMultiStringMapMatcher) setMatches() []string {
 }
 
 func (m *equalMultiStringMapMatcher) Matches(s string) bool {
-	if !m.caseSensitive {
-		s = strings.ToLower(s)
+	if len(m.values) > 0 {
+		sNorm := s
+		var a [32]byte
+		if !m.caseSensitive {
+			sNorm = toNormalisedLower(s, a[:])
+		}
+		if _, ok := m.values[sNorm]; ok {
+			return true
+		}
 	}
 
-	_, ok := m.values[s]
-	return ok
+	if m.minPrefixLen > 0 && len(s) >= m.minPrefixLen {
+		prefix := s[:m.minPrefixLen]
+		var a [32]byte
+		if !m.caseSensitive {
+			prefix = toNormalisedLower(s[:m.minPrefixLen], a[:])
+		}
+		for _, matcher := range m.prefixes[prefix] {
+			if matcher.Matches(s) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// toNormalisedLower normalise the input string using "Unicode Normalization Form D" and then convert
+// it to lower case.
+func toNormalisedLower(s string, a []byte) string {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= utf8.RuneSelf {
+			return strings.Map(unicode.ToLower, norm.NFKD.String(s))
+		}
+		if 'A' <= c && c <= 'Z' {
+			return toNormalisedLowerSlow(s, i, a)
+		}
+	}
+	return s
+}
+
+// toNormalisedLowerSlow is split from toNormalisedLower because having a call
+// to `copy` slows it down even when it is not called.
+func toNormalisedLowerSlow(s string, i int, a []byte) string {
+	var buf []byte
+	if cap(a) > len(s) {
+		buf = a[:len(s)]
+		copy(buf, s)
+	} else {
+		buf = []byte(s)
+	}
+	for ; i < len(s); i++ {
+		c := s[i]
+		if c >= utf8.RuneSelf {
+			return strings.Map(unicode.ToLower, norm.NFKD.String(s))
+		}
+		if 'A' <= c && c <= 'Z' {
+			buf[i] = c + 'a' - 'A'
+		}
+	}
+	return yoloString(buf)
 }
 
 // anyStringWithoutNewlineMatcher is a stringMatcher which matches any string
@@ -865,8 +983,12 @@ type zeroOrOneCharacterStringMatcher struct {
 }
 
 func (m *zeroOrOneCharacterStringMatcher) Matches(s string) bool {
-	// Zero or one.
-	if len(s) > 1 {
+	// If there's more than one rune in the string, then it can't match.
+	if r, size := utf8.DecodeRuneInString(s); r == utf8.RuneError {
+		// Size is 0 for empty strings, 1 for invalid rune.
+		// Empty string matches, invalid rune matches if there isn't anything else.
+		return size == len(s)
+	} else if size < len(s) {
 		return false
 	}
 
@@ -885,20 +1007,24 @@ func (m trueMatcher) Matches(_ string) bool {
 	return true
 }
 
-// optimizeEqualStringMatchers optimize a specific case where all matchers are made by an
-// alternation (orStringMatcher) of strings checked for equality (equalStringMatcher). In
-// this specific case, when we have many strings to match against we can use a map instead
+// optimizeEqualOrPrefixStringMatchers optimize a specific case where all matchers are made by an
+// alternation (orStringMatcher) of strings checked for equality (equalStringMatcher) or
+// with a literal prefix (literalPrefixSensitiveStringMatcher or literalPrefixInsensitiveStringMatcher).
+//
+// In this specific case, when we have many strings to match against we can use a map instead
 // of iterating over the list of strings.
-func optimizeEqualStringMatchers(input StringMatcher, threshold int) StringMatcher {
+func optimizeEqualOrPrefixStringMatchers(input StringMatcher, threshold int) StringMatcher {
 	var (
 		caseSensitive    bool
 		caseSensitiveSet bool
 		numValues        int
+		numPrefixes      int
+		minPrefixLength  int
 	)
 
 	// Analyse the input StringMatcher to count the number of occurrences
 	// and ensure all of them have the same case sensitivity.
-	analyseCallback := func(matcher *equalStringMatcher) bool {
+	analyseEqualMatcherCallback := func(matcher *equalStringMatcher) bool {
 		// Ensure we don't have mixed case sensitivity.
 		if caseSensitiveSet && caseSensitive != matcher.caseSensitive {
 			return false
@@ -911,34 +1037,55 @@ func optimizeEqualStringMatchers(input StringMatcher, threshold int) StringMatch
 		return true
 	}
 
-	if !findEqualStringMatchers(input, analyseCallback) {
+	analysePrefixMatcherCallback := func(prefix string, prefixCaseSensitive bool, matcher StringMatcher) bool {
+		// Ensure we don't have mixed case sensitivity.
+		if caseSensitiveSet && caseSensitive != prefixCaseSensitive {
+			return false
+		} else if !caseSensitiveSet {
+			caseSensitive = prefixCaseSensitive
+			caseSensitiveSet = true
+		}
+		if numPrefixes == 0 || len(prefix) < minPrefixLength {
+			minPrefixLength = len(prefix)
+		}
+
+		numPrefixes++
+		return true
+	}
+
+	if !findEqualOrPrefixStringMatchers(input, analyseEqualMatcherCallback, analysePrefixMatcherCallback) {
 		return input
 	}
 
-	// If the number of values found is less than the threshold, then we should skip the optimization.
-	if numValues < threshold {
+	// If the number of values and prefixes found is less than the threshold, then we should skip the optimization.
+	if (numValues + numPrefixes) < threshold {
 		return input
 	}
 
 	// Parse again the input StringMatcher to extract all values and storing them.
 	// We can skip the case sensitivity check because we've already checked it and
 	// if the code reach this point then it means all matchers have the same case sensitivity.
-	multiMatcher := newEqualMultiStringMatcher(caseSensitive, numValues)
+	multiMatcher := newEqualMultiStringMatcher(caseSensitive, numValues, numPrefixes, minPrefixLength)
 
 	// Ignore the return value because we already iterated over the input StringMatcher
 	// and it was all good.
-	findEqualStringMatchers(input, func(matcher *equalStringMatcher) bool {
+	findEqualOrPrefixStringMatchers(input, func(matcher *equalStringMatcher) bool {
 		multiMatcher.add(matcher.s)
+		return true
+	}, func(prefix string, prefixCaseSensitive bool, matcher StringMatcher) bool {
+		multiMatcher.addPrefix(prefix, caseSensitive, matcher)
 		return true
 	})
 
 	return multiMatcher
 }
 
-// findEqualStringMatchers analyze the input StringMatcher and calls the callback for each
-// equalStringMatcher found. Returns true if and only if the input StringMatcher is *only*
-// composed by an alternation of equalStringMatcher.
-func findEqualStringMatchers(input StringMatcher, callback func(matcher *equalStringMatcher) bool) bool {
+// findEqualOrPrefixStringMatchers analyze the input StringMatcher and calls the equalMatcherCallback for each
+// equalStringMatcher found, and prefixMatcherCallback for each literalPrefixSensitiveStringMatcher and literalPrefixInsensitiveStringMatcher found.
+//
+// Returns true if and only if the input StringMatcher is *only* composed by an alternation of equalStringMatcher and/or
+// literal prefix matcher. Returns false if prefixMatcherCallback is nil and a literal prefix matcher is encountered.
+func findEqualOrPrefixStringMatchers(input StringMatcher, equalMatcherCallback func(matcher *equalStringMatcher) bool, prefixMatcherCallback func(prefix string, prefixCaseSensitive bool, matcher StringMatcher) bool) bool {
 	orInput, ok := input.(orStringMatcher)
 	if !ok {
 		return false
@@ -947,17 +1094,27 @@ func findEqualStringMatchers(input StringMatcher, callback func(matcher *equalSt
 	for _, m := range orInput {
 		switch casted := m.(type) {
 		case orStringMatcher:
-			if !findEqualStringMatchers(m, callback) {
+			if !findEqualOrPrefixStringMatchers(m, equalMatcherCallback, prefixMatcherCallback) {
 				return false
 			}
 
 		case *equalStringMatcher:
-			if !callback(casted) {
+			if !equalMatcherCallback(casted) {
+				return false
+			}
+
+		case *literalPrefixSensitiveStringMatcher:
+			if prefixMatcherCallback == nil || !prefixMatcherCallback(casted.prefix, true, casted) {
+				return false
+			}
+
+		case *literalPrefixInsensitiveStringMatcher:
+			if prefixMatcherCallback == nil || !prefixMatcherCallback(casted.prefix, false, casted) {
 				return false
 			}
 
 		default:
-			// It's not an equal string matcher, so we have to stop searching
+			// It's not an equal or prefix string matcher, so we have to stop searching
 			// cause this optimization can't be applied.
 			return false
 		}
@@ -972,4 +1129,28 @@ func hasPrefixCaseInsensitive(s, prefix string) bool {
 
 func hasSuffixCaseInsensitive(s, suffix string) bool {
 	return len(s) >= len(suffix) && strings.EqualFold(s[len(s)-len(suffix):], suffix)
+}
+
+func containsInOrder(s string, contains []string) bool {
+	// Optimization for the case we only have to look for 1 substring.
+	if len(contains) == 1 {
+		return strings.Contains(s, contains[0])
+	}
+
+	return containsInOrderMulti(s, contains)
+}
+
+func containsInOrderMulti(s string, contains []string) bool {
+	offset := 0
+
+	for _, substr := range contains {
+		at := strings.Index(s[offset:], substr)
+		if at == -1 {
+			return false
+		}
+
+		offset += at + len(substr)
+	}
+
+	return true
 }

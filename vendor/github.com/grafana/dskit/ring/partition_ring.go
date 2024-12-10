@@ -280,7 +280,7 @@ func (r *PartitionRing) Partitions() []PartitionDesc {
 	return res
 }
 
-// PartitionIDs returns a list of all partition IDs in the ring.
+// PartitionIDs returns a sorted list of all partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
 func (r *PartitionRing) PartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))
@@ -293,7 +293,7 @@ func (r *PartitionRing) PartitionIDs() []int32 {
 	return ids
 }
 
-// PendingPartitionIDs returns a list of all PENDING partition IDs in the ring.
+// PendingPartitionIDs returns a sorted list of all PENDING partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
 func (r *PartitionRing) PendingPartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))
@@ -308,7 +308,7 @@ func (r *PartitionRing) PendingPartitionIDs() []int32 {
 	return ids
 }
 
-// ActivePartitionIDs returns a list of all ACTIVE partition IDs in the ring.
+// ActivePartitionIDs returns a sorted list of all ACTIVE partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
 func (r *PartitionRing) ActivePartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))
@@ -323,7 +323,7 @@ func (r *PartitionRing) ActivePartitionIDs() []int32 {
 	return ids
 }
 
-// InactivePartitionIDs returns a list of all INACTIVE partition IDs in the ring.
+// InactivePartitionIDs returns a sorted list of all INACTIVE partition IDs in the ring.
 // The returned slice is a copy, so the caller can freely manipulate it.
 func (r *PartitionRing) InactivePartitionIDs() []int32 {
 	ids := make([]int32, 0, len(r.desc.Partitions))

@@ -15,8 +15,17 @@ import (
 	"path"
 	"time"
 
+	"github.com/opentracing-contrib/go-stdlib/nethttp"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 )
+
+type ProxyBackendInterface interface {
+	Name() string
+	Endpoint() *url.URL
+	Preferred() bool
+	ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error)
+}
 
 // ProxyBackend holds the information of a single backend.
 type ProxyBackend struct {
@@ -28,48 +37,73 @@ type ProxyBackend struct {
 	// Whether this is the preferred backend from which picking up
 	// the response and sending it back to the client.
 	preferred bool
+	cfg       BackendConfig
 }
 
 // NewProxyBackend makes a new ProxyBackend
-func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool) *ProxyBackend {
+func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool, cfg BackendConfig) ProxyBackendInterface {
+	innerTransport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: skipTLSVerify,
+		},
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 100, // see https://github.com/golang/go/issues/13801
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  true,
+	}
+
+	tracingTransport := &nethttp.Transport{RoundTripper: innerTransport}
+
 	return &ProxyBackend{
 		name:      name,
 		endpoint:  endpoint,
 		timeout:   timeout,
 		preferred: preferred,
+		cfg:       cfg,
 		client: &http.Client{
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return errors.New("the query-tee proxy does not follow redirects")
 			},
-			Transport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
-				TLSClientConfig: &tls.Config{
-					InsecureSkipVerify: skipTLSVerify,
-				},
-				DialContext: (&net.Dialer{
-					Timeout:   30 * time.Second,
-					KeepAlive: 30 * time.Second,
-				}).DialContext,
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 100, // see https://github.com/golang/go/issues/13801
-				IdleConnTimeout:     90 * time.Second,
-				DisableCompression:  true,
-			},
+			Transport: tracingTransport,
 		},
 	}
 }
 
-func (b *ProxyBackend) ForwardRequest(orig *http.Request, body io.ReadCloser) (int, []byte, *http.Response, error) {
-	req, err := b.createBackendRequest(orig, body)
-	if err != nil {
-		return 0, nil, nil, err
-	}
-
-	return b.doBackendRequest(req)
+func (b *ProxyBackend) Name() string {
+	return b.name
 }
 
-func (b *ProxyBackend) createBackendRequest(orig *http.Request, body io.ReadCloser) (*http.Request, error) {
-	req := orig.Clone(context.Background())
+func (b *ProxyBackend) Endpoint() *url.URL {
+	return b.endpoint
+}
+
+func (b *ProxyBackend) Preferred() bool {
+	return b.preferred
+}
+
+func (b *ProxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, *http.Response, error) {
+	req, err := b.createBackendRequest(ctx, orig, body)
+	if err != nil {
+		return 0, 0, nil, nil, err
+	}
+
+	req, ht := nethttp.TraceRequest(opentracing.GlobalTracer(), req)
+	defer ht.Finish()
+
+	start := time.Now()
+	status, responseBody, resp, err := b.doBackendRequest(req)
+	elapsed := time.Since(start)
+
+	return elapsed, status, responseBody, resp, err
+}
+
+func (b *ProxyBackend) createBackendRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (*http.Request, error) {
+	req := orig.Clone(ctx)
 	req.Body = body
 	// RequestURI can't be set on a cloned request. It's only for handlers.
 	req.RequestURI = ""
@@ -107,12 +141,18 @@ func (b *ProxyBackend) createBackendRequest(orig *http.Request, body io.ReadClos
 	// Remove Accept-Encoding header to avoid sending compressed responses
 	req.Header.Del("Accept-Encoding")
 
+	for headerName, headerValues := range b.cfg.RequestHeaders {
+		for _, headerValue := range headerValues {
+			req.Header.Add(headerName, headerValue)
+		}
+	}
+
 	return req, nil
 }
 
 func (b *ProxyBackend) doBackendRequest(req *http.Request) (int, []byte, *http.Response, error) {
 	// Honor the read timeout.
-	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+	ctx, cancel := context.WithTimeout(req.Context(), b.timeout)
 	defer cancel()
 
 	// Execute the request.

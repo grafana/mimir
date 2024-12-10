@@ -64,6 +64,7 @@ func InitFrontend(
 	grpcListenPort int,
 	log log.Logger,
 	reg prometheus.Registerer,
+	codec querymiddleware.Codec,
 ) (http.RoundTripper, *v1.Frontend, *v2.Frontend, error) {
 	switch {
 	case cfg.DownstreamURL != "":
@@ -86,7 +87,7 @@ func InitFrontend(
 			cfg.FrontendV2.Port = grpcListenPort
 		}
 
-		fr, err := v2.NewFrontend(cfg.FrontendV2, v2Limits, log, reg)
+		fr, err := v2.NewFrontend(cfg.FrontendV2, v2Limits, log, reg, codec)
 		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr), nil, fr, err
 
 	default:

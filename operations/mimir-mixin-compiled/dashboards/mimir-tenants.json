@@ -8,7 +8,25 @@
          }
       ],
       "annotations": {
-         "list": [ ]
+         "list": [
+            {
+               "datasource": "$datasource",
+               "enable": true,
+               "expr": "sum by (user) (cortex_ingester_active_series_loading{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}) > 0",
+               "filter": {
+                  "exclude": false,
+                  "ids": [
+                     2,
+                     7,
+                     8
+                  ]
+               },
+               "hide": true,
+               "iconColor": "yellow",
+               "name": "Active Series Reload",
+               "titleFormat": "Active series reloading for user {{user}}"
+            }
+         ]
       },
       "editable": true,
       "gnetId": null,
@@ -28,7 +46,7 @@
             "type": "dashboards"
          }
       ],
-      "refresh": "10s",
+      "refresh": "5m",
       "rows": [
          {
             "collapse": false,
@@ -59,7 +77,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
-                  "description": "### All series\nNumber of active and in-memory series per user, and active series matching custom trackers (in parenthesis).\nNote that these counts include all series regardless of the type of data (counter, gauge, native histogram, etc.).\nNote that active series matching custom trackers are included in the total active series count.\n\n",
+                  "description": "### All series\nNumber of active, in-memory, and owned series per user, and active series matching custom trackers (in parenthesis).\nNote that these counts include all series regardless of the type of data (counter, gauge, native histogram, etc.).\nNote that active series matching custom trackers are included in the total active series count.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -109,14 +127,14 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum(\n  (\n    cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n    - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  )\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    (\n  cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n)\n unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        (\n  cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  - cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n)\n,\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "in-memory",
                         "legendLink": null
@@ -128,19 +146,289 @@
                         "legendLink": null
                      },
                      {
-                        "expr": "sum(\n  cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "active",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum by (name) (\n  cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n) > 0\n",
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                        "format": "time_series",
+                        "legendFormat": "owned",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, name) (\n    cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, name) (\n    max by (ingester_id, cluster, namespace, name) (\n      label_replace(\n        cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "active ({{ name }})",
                         "legendLink": null
                      }
                   ],
                   "title": "All series",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### In-memory series per ingester\nLocal tenant series limit and number of in-memory series per ingester.\nBecause series can be unevenly distributed across ingesters, ingesters may hit the local limit at different times.\nNote that in-memory series may exceed the local limit if limiting based on owned series is enabled.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 0,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/local limit .+/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              },
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "yellow",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 3,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "desc"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "min by (job) (cortex_ingester_local_limits{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", limit=\"max_global_series_per_user\", user=\"$user\"})\n",
+                        "format": "time_series",
+                        "legendFormat": "local limit ({{job}})",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n- cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n",
+                        "format": "time_series",
+                        "legendFormat": "{{pod}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "In-memory series per ingester",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Owned series per ingester\nLocal tenant series limit and number of owned series per ingester.\nBecause series can be unevenly distributed across ingesters, ingesters may hit the local limit at different times.\nOwned series are the subset of an ingester's in-memory series that currently map to it in the ring\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 0,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/local limit .+/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "custom.lineStyle",
+                                 "value": {
+                                    "fill": "dash"
+                                 }
+                              },
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "yellow",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "id": 4,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "desc"
+                     }
+                  },
+                  "span": 4,
+                  "targets": [
+                     {
+                        "expr": "min by (job) (cortex_ingester_local_limits{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", limit=\"max_global_series_per_user\", user=\"$user\"})\n",
+                        "format": "time_series",
+                        "legendFormat": "local limit ({{job}})",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n",
+                        "format": "time_series",
+                        "legendFormat": "{{pod}}",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Owned series per ingester",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Tenant series counts",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "description": "### Series with exemplars\nNumber of series with exemplars currently in storage.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 5,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                        "format": "time_series",
+                        "legendFormat": "series",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Series with exemplars",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Oldest exemplar age\nThe age of the oldest exemplar stored in circular storage.\nUseful to check for what time range the current exemplar buffer limit allows.\nThis usually means the max age for all exemplars for a typical setup.\nThis is not true though if one of the series timestamp is in future compared to rest series.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 6,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "time() - min(cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} > 0)",
+                        "format": "time_series",
+                        "legendFormat": "age",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Oldest exemplar age",
                   "type": "timeseries"
                },
                {
@@ -188,27 +476,27 @@
                         }
                      ]
                   },
-                  "id": 3,
+                  "id": 7,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(\n  cortex_ingester_active_native_histogram_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_active_native_histogram_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_active_native_histogram_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "active",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum by (name) (\n  cortex_ingester_active_native_histogram_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n) > 0\n",
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, name) (\n    cortex_ingester_active_native_histogram_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, name) (\n    max by (ingester_id, cluster, namespace, name) (\n      label_replace(\n        cortex_ingester_active_native_histogram_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "active ({{ name }})",
                         "legendLink": null
@@ -262,27 +550,27 @@
                         }
                      ]
                   },
-                  "id": 4,
+                  "id": 8,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(\n  cortex_ingester_active_native_histogram_buckets{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    cortex_ingester_active_native_histogram_buckets{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        cortex_ingester_active_native_histogram_buckets{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "buckets",
                         "legendLink": null
                      },
                      {
-                        "expr": "sum by (name) (\n  cortex_ingester_active_native_histogram_buckets_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n) > 0\n",
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, name) (\n    cortex_ingester_active_native_histogram_buckets_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, name) (\n    max by (ingester_id, cluster, namespace, name) (\n      label_replace(\n        cortex_ingester_active_native_histogram_buckets_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"},\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "buckets ({{ name }})",
                         "legendLink": null
@@ -296,166 +584,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Active series and native histograms",
-            "titleSize": "h6"
-         },
-         {
-            "collapse": false,
-            "height": "250px",
-            "panels": [
-               {
-                  "datasource": "$datasource",
-                  "description": "### Series with exemplars\nNumber of series with exemplars currently in storage.\n\n",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 1,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "short"
-                     },
-                     "overrides": [ ]
-                  },
-                  "id": 5,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": false
-                     },
-                     "tooltip": {
-                        "mode": "single",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 4,
-                  "targets": [
-                     {
-                        "expr": "sum(\n  cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
-                        "format": "time_series",
-                        "legendFormat": "series",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Series with exemplars",
-                  "type": "timeseries"
-               },
-               {
-                  "datasource": "$datasource",
-                  "description": "### Newest seen sample age\nThe age of the newest received sample seen in the distributors.\n\n",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 1,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "s"
-                     },
-                     "overrides": [ ]
-                  },
-                  "id": 6,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": false
-                     },
-                     "tooltip": {
-                        "mode": "single",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 4,
-                  "targets": [
-                     {
-                        "expr": "time() - max(cortex_distributor_latest_seen_sample_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} > 0)",
-                        "format": "time_series",
-                        "legendFormat": "age",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Newest seen sample age",
-                  "type": "timeseries"
-               },
-               {
-                  "datasource": "$datasource",
-                  "description": "### Oldest exemplar age\nThe age of the oldest exemplar stored in circular storage.\nUseful to check for what time range the current exemplar buffer limit allows.\nThis usually means the max age for all exemplars for a typical setup.\nThis is not true though if one of the series timestamp is in future compared to rest series.\n\n",
-                  "fieldConfig": {
-                     "defaults": {
-                        "custom": {
-                           "drawStyle": "line",
-                           "fillOpacity": 1,
-                           "lineWidth": 1,
-                           "pointSize": 5,
-                           "showPoints": "never",
-                           "spanNulls": false,
-                           "stacking": {
-                              "group": "A",
-                              "mode": "none"
-                           }
-                        },
-                        "min": 0,
-                        "thresholds": {
-                           "mode": "absolute",
-                           "steps": [ ]
-                        },
-                        "unit": "s"
-                     },
-                     "overrides": [ ]
-                  },
-                  "id": 7,
-                  "links": [ ],
-                  "options": {
-                     "legend": {
-                        "showLegend": false
-                     },
-                     "tooltip": {
-                        "mode": "single",
-                        "sort": "none"
-                     }
-                  },
-                  "span": 4,
-                  "targets": [
-                     {
-                        "expr": "time() - min(cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} > 0)",
-                        "format": "time_series",
-                        "legendFormat": "age",
-                        "legendLink": null
-                     }
-                  ],
-                  "title": "Oldest exemplar age",
-                  "type": "timeseries"
-               }
-            ],
-            "repeat": null,
-            "repeatIteration": null,
-            "repeatRowId": null,
-            "showTitle": true,
-            "title": "Samples and exemplars",
+            "title": "Exemplars and native histograms",
             "titleSize": "h6"
          },
          {
@@ -488,18 +617,18 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 8,
+                  "id": 9,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": false
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_distributor_requests_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -556,18 +685,18 @@
                         }
                      ]
                   },
-                  "id": 9,
+                  "id": 10,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_distributor_received_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -583,6 +712,55 @@
                      }
                   ],
                   "title": "Distributor requests received (accepted) rate",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Newest seen sample age\nThe age of the newest received sample seen in the distributors.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 11,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 3,
+                  "targets": [
+                     {
+                        "expr": "time() - max(cortex_distributor_latest_seen_sample_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"} > 0)",
+                        "format": "time_series",
+                        "legendFormat": "age",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Newest seen sample age",
                   "type": "timeseries"
                },
                {
@@ -611,18 +789,18 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 10,
+                  "id": 12,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
-                  "span": 4,
+                  "span": 3,
                   "targets": [
                      {
                         "expr": "sum by (reason) (rate(cortex_discarded_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -672,14 +850,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 11,
+                  "id": 13,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": false
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -740,14 +918,14 @@
                         }
                      ]
                   },
-                  "id": 12,
+                  "id": 14,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -795,18 +973,18 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 13,
+                  "id": 15,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 2,
                   "targets": [
                      {
                         "expr": "sum(rate(cortex_distributor_deduped_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -826,7 +1004,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Distributor and ingester discarded samples rate\nThe rate of each sample's discarding reason.\n\n",
+                  "description": "### Distributor and ingester discarded samples rate\nThe rate of each sample's discarding reason.\nThis doesn't account for the replication factor.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -850,18 +1028,18 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 14,
+                  "id": 16,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
-                  "span": 3,
+                  "span": 2,
                   "targets": [
                      {
                         "expr": "sum by (reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
@@ -872,11 +1050,60 @@
                      {
                         "expr": "sum by (reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
-                        "legendFormat": "{{ reason }} (ingester)",
+                        "legendFormat": "{{ reason }} (ingester, replicated)",
                         "legendLink": null
                      }
                   ],
                   "title": "Distributor and ingester discarded samples rate",
+                  "type": "timeseries"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Out-of-order samples appended\nThe rate of OOO samples that have been appended.\nThis doesn't account for the replication factor.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 17,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": false
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 2,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_ingester_tsdb_out_of_order_samples_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "rate",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Out-of-order samples appended",
                   "type": "timeseries"
                }
             ],
@@ -917,14 +1144,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 15,
+                  "id": 18,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": false
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -966,14 +1193,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 16,
+                  "id": 19,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": false
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1015,14 +1242,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 17,
+                  "id": 20,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1040,7 +1267,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Ingester appended exemplars rate\nTotal number of exemplars appended in the ingesters.\nThis can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.\n\n",
+                  "description": "### Ingester appended exemplars rate\nTotal number of exemplars appended in the ingesters.\nThis can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.\nThis doesn't account for the replication factor.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -1064,21 +1291,21 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 18,
+                  "id": 21,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": false
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(\n  rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval])\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\n",
+                        "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]) unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir|mimir-write.*))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", user=\"$user\"}[$__rate_interval]),\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
                         "format": "time_series",
                         "legendFormat": "rate",
                         "legendLink": null
@@ -1125,14 +1352,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 19,
+                  "id": 22,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1174,14 +1401,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 20,
+                  "id": 23,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1254,14 +1481,14 @@
                         }
                      ]
                   },
-                  "id": 21,
+                  "id": 24,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1309,14 +1536,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 25,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": false
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1357,14 +1584,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 23,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": false
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1405,27 +1632,27 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 24,
+                  "id": 27,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval])) > 0",
+                        "expr": "topk(50, sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}[$__rate_interval])) > 0)",
                         "format": "time_series",
                         "legendFormat": "{{ rule_group }}",
                         "legendLink": null
                      }
                   ],
-                  "title": "Failed evaluations rate",
+                  "title": "Failed evaluations rate (top 50 rule groups)",
                   "type": "timeseries"
                }
             ],
@@ -1446,8 +1673,48 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value #A"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "rules"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        }
+                     ]
+                  },
                   "fill": 1,
-                  "id": 25,
+                  "id": 28,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1474,40 +1741,6 @@
                   "span": 6,
                   "stack": false,
                   "steppedLine": false,
-                  "styles": [
-                     {
-                        "alias": "Time",
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "pattern": "Time",
-                        "type": "hidden"
-                     },
-                     {
-                        "alias": "rules",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "Value #A",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "pattern": "/.*/",
-                        "thresholds": [ ],
-                        "type": "string",
-                        "unit": "short"
-                     }
-                  ],
                   "targets": [
                      {
                         "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}))",
@@ -1560,8 +1793,48 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value #A"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "seconds"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "short"
+                              }
+                           ]
+                        }
+                     ]
+                  },
                   "fill": 1,
-                  "id": 26,
+                  "id": 29,
                   "legend": {
                      "avg": false,
                      "current": false,
@@ -1588,40 +1861,6 @@
                   "span": 6,
                   "stack": false,
                   "steppedLine": false,
-                  "styles": [
-                     {
-                        "alias": "Time",
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "pattern": "Time",
-                        "type": "hidden"
-                     },
-                     {
-                        "alias": "seconds",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "link": false,
-                        "linkTargetBlank": false,
-                        "linkTooltip": "Drill down",
-                        "linkUrl": "",
-                        "pattern": "Value #A",
-                        "thresholds": [ ],
-                        "type": "number",
-                        "unit": "short"
-                     },
-                     {
-                        "alias": "",
-                        "colorMode": null,
-                        "colors": [ ],
-                        "dateFormat": "YYYY-MM-DD HH:mm:ss",
-                        "decimals": 2,
-                        "pattern": "/.*/",
-                        "thresholds": [ ],
-                        "type": "string",
-                        "unit": "short"
-                     }
-                  ],
                   "targets": [
                      {
                         "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", user=\"$user\"}))",
@@ -1705,14 +1944,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 27,
+                  "id": 30,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": false
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1769,14 +2008,14 @@
                         }
                      ]
                   },
-                  "id": 28,
+                  "id": 31,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": false
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1829,14 +2068,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 29,
+                  "id": 32,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1914,14 +2153,14 @@
                         }
                      ]
                   },
-                  "id": 30,
+                  "id": 33,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1968,14 +2207,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 31,
+                  "id": 34,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2034,14 +2273,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 35,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2082,14 +2321,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 33,
+                  "id": 36,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2142,14 +2381,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 34,
+                  "id": 37,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2190,14 +2429,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 35,
+                  "id": 38,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2251,7 +2490,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 36,
+                  "id": 39,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2259,7 +2498,7 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 6,
@@ -2300,14 +2539,14 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 37,
+                  "id": 40,
                   "links": [ ],
                   "options": {
                      "legend": {
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2386,7 +2625,7 @@
                },
                "datasource": "$datasource",
                "hide": 0,
-               "includeAll": true,
+               "includeAll": false,
                "label": "namespace",
                "multi": true,
                "name": "namespace",
@@ -2417,7 +2656,7 @@
                "query": "label_values(cortex_ingester_active_series{cluster=~\"$cluster\", namespace=~\"$namespace\"}, user)",
                "refresh": 1,
                "regex": "",
-               "sort": 1,
+               "sort": 7,
                "tagValuesQuery": "",
                "tags": [ ],
                "tagsQuery": "",
@@ -2432,6 +2671,7 @@
                },
                "hide": 0,
                "includeAll": false,
+               "label": "limit",
                "multi": false,
                "name": "limit",
                "options": [
@@ -2461,7 +2701,10 @@
                      "value": "1000"
                   }
                ],
-               "type": "custom"
+               "query": "10 : 10,50 : 50,100 : 100,500 : 500,1000 : 1000",
+               "skipUrlSync": false,
+               "type": "custom",
+               "useTags": false
             }
          ]
       },

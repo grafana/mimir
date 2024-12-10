@@ -47,6 +47,9 @@ data:
       s3:
         bucket_name: alertmanager
     auth:
+      admin:
+        pass_access_policy_name: true
+        pass_token_name: true
       type: enterprise
     blocks_storage:
       backend: s3
@@ -57,14 +60,14 @@ data:
             addresses: dns+enterprise-https-values-mimir-chunks-cache.citestns.svc:11211
             max_idle_connections: 150
             max_item_size: 1048576
-            timeout: 450ms
+            timeout: 750ms
         index_cache:
           backend: memcached
           memcached:
             addresses: dns+enterprise-https-values-mimir-index-cache.citestns.svc:11211
             max_idle_connections: 150
             max_item_size: 5242880
-            timeout: 450ms
+            timeout: 750ms
         metadata_cache:
           backend: memcached
           memcached:
@@ -107,6 +110,7 @@ data:
         tls_insecure_skip_verify: false
         tls_key_path: /certs/tls.key
         tls_server_name: gem.grafana.com
+      log_query_request_headers: X-Access-Policy-Name,X-Token-Name
       parallelize_shardable_queries: true
       query_sharding_target_series_per_shard: 2500
       results_cache:

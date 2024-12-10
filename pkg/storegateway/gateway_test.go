@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -63,17 +64,17 @@ func TestConfig_Validate(t *testing.T) {
 		expected error
 	}{
 		"should pass by default": {
-			setup:    func(cfg *Config, limits *validation.Limits) {},
+			setup:    func(*Config, *validation.Limits) {},
 			expected: nil,
 		},
 		"should fail if shard size is negative": {
-			setup: func(cfg *Config, limits *validation.Limits) {
+			setup: func(_ *Config, limits *validation.Limits) {
 				limits.StoreGatewayTenantShardSize = -3
 			},
 			expected: errInvalidTenantShardSize,
 		},
 		"should pass if shard size has been set": {
-			setup: func(cfg *Config, limits *validation.Limits) {
+			setup: func(_ *Config, limits *validation.Limits) {
 				limits.StoreGatewayTenantShardSize = 3
 			},
 			expected: nil,
@@ -146,7 +147,7 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 			if testData.initialExists {
 				require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 					ringDesc := ring.GetOrCreateRingDesc(in)
-					ringDesc.AddIngester(gatewayCfg.ShardingRing.InstanceID, gatewayCfg.ShardingRing.InstanceAddr, "", testData.initialTokens, testData.initialState, time.Now())
+					ringDesc.AddIngester(gatewayCfg.ShardingRing.InstanceID, gatewayCfg.ShardingRing.InstanceAddr, "", testData.initialTokens, testData.initialState, time.Now(), false, time.Time{})
 					return ringDesc, true, nil
 				}))
 			}
@@ -193,7 +194,7 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	bucketClient := &bucket.ErrorInjectedBucketClient{Injector: func(operation bucket.Operation, s string) error { return assert.AnError }}
+	bucketClient := &bucket.ErrorInjectedBucketClient{Injector: func(bucket.Operation, string) error { return assert.AnError }}
 
 	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), log.NewLogfmtLogger(os.Stdout), nil, nil)
 	require.NoError(t, err)
@@ -205,6 +206,7 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 
 	// We expect a clean shutdown, including unregistering the instance from the ring.
 	assert.False(t, g.ringLifecycler.IsRegistered())
+	_ = services.StopAndAwaitTerminated(ctx, g) // There will be an error since the initial sync failed
 }
 
 // TestStoreGateway_InitialSyncWithWaitRingTokensStability tests the store-gateway cold start case.
@@ -295,9 +297,6 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		// capture running variables, otherwise reused due to t.Parallel leading to corrupt test
-		testName := testName
-		testData := testData
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
@@ -438,9 +437,6 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 	// Start all gateways concurrently.
 	for _, g := range initialGateways {
-		// Local variable scope (ensures the cleanup function is called on the right gateway).
-		g := g
-
 		require.NoError(t, g.StartAsync(ctx))
 		t.Cleanup(func() {
 			assert.NoError(t, services.StopAndAwaitTerminated(ctx, g))
@@ -475,9 +471,6 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 	// Start all new gateways concurrently.
 	for _, g := range scaleUpGateways {
-		// Local variable scope (ensures the cleanup function is called on the right gateway).
-		g := g
-
 		require.NoError(t, g.StartAsync(ctx))
 		t.Cleanup(func() {
 			assert.NoError(t, services.StopAndAwaitTerminated(ctx, g))
@@ -601,17 +594,17 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 	}{
 		"should sync when an instance is added to the ring": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			expectedSync: true,
 		},
 		"should sync when an instance is removed from the ring": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				desc.RemoveIngester("instance-1")
@@ -620,8 +613,8 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 		},
 		"should sync when an instance changes state": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.JOINING, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.JOINING, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["instance-2"]
@@ -632,8 +625,8 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 		},
 		"should sync when an healthy instance becomes unhealthy": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["instance-2"]
@@ -644,9 +637,9 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 		},
 		"should sync when an unhealthy instance becomes healthy": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
 
-				instance := desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				instance := desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 				instance.Timestamp = time.Now().Add(-time.Hour).Unix()
 				desc.Ingesters["instance-2"] = instance
 			},
@@ -659,8 +652,8 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 		},
 		"should NOT sync when an instance updates the heartbeat": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["instance-2"]
@@ -671,8 +664,8 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 		},
 		"should NOT sync when an instance is auto-forgotten in the ring but was already unhealthy in the previous state": {
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt)
-				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt)
+				desc.AddIngester("instance-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 
 				// Set it already unhealthy.
 				instance := desc.Ingesters["instance-2"]
@@ -897,7 +890,7 @@ func TestStoreGateway_SyncShouldKeepPreviousBlocksIfInstanceIsUnhealthyInTheRing
 		// Re-register the instance to the ring.
 		require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 			ringDesc := ring.GetOrCreateRingDesc(in)
-			ringDesc.AddIngester(instanceID, instanceAddr, "", ring.Tokens{1, 2, 3}, ring.ACTIVE, time.Now())
+			ringDesc.AddIngester(instanceID, instanceAddr, "", ring.Tokens{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{})
 			return ringDesc, true, nil
 		}))
 
@@ -960,7 +953,7 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 		require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 			ringDesc := ring.GetOrCreateRingDesc(in)
 
-			instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(ringNumTokensDefault), ring.ACTIVE, time.Now())
+			instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(ringNumTokensDefault), ring.ACTIVE, time.Now(), false, time.Time{})
 			instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
 			ringDesc.Ingesters[unhealthyInstanceID] = instance
 
@@ -1678,6 +1671,17 @@ func (s sample) Type() chunkenc.ValueType {
 	}
 }
 
+func (s sample) Copy() chunks.Sample {
+	c := sample{t: s.t, v: s.v}
+	if s.h != nil {
+		c.h = s.h.Copy()
+	}
+	if s.fh != nil {
+		c.fh = s.fh.Copy()
+	}
+	return c
+}
+
 func defaultLimitsConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
@@ -1706,7 +1710,7 @@ func (m *mockShardingStrategy) FilterBlocks(ctx context.Context, userID string, 
 }
 
 func createBucketIndex(t *testing.T, bkt objstore.Bucket, userID string) *bucketindex.Index {
-	updater := bucketindex.NewUpdater(bkt, userID, nil, log.NewNopLogger())
+	updater := bucketindex.NewUpdater(bkt, userID, nil, 16, log.NewNopLogger())
 	idx, _, err := updater.UpdateIndex(context.Background(), nil)
 	require.NoError(t, err)
 	require.NoError(t, bucketindex.WriteIndex(context.Background(), bkt, userID, nil, idx))

@@ -31,7 +31,7 @@ import (
 	"strings"
 	"time"
 
-	jsoniter "github.com/json-iterator/go"
+	"github.com/goccy/go-json"
 )
 
 // DefaultExpiryWindow - Default expiry window.
@@ -61,6 +61,7 @@ type IAM struct {
 	// Support for container authorization token https://docs.aws.amazon.com/sdkref/latest/guide/feature-container-credentials.html
 	Container struct {
 		AuthorizationToken     string
+		AuthorizationTokenFile string
 		CredentialsFullURI     string
 		CredentialsRelativeURI string
 	}
@@ -103,6 +104,11 @@ func (m *IAM) Retrieve() (Value, error) {
 	token := os.Getenv("AWS_CONTAINER_AUTHORIZATION_TOKEN")
 	if token == "" {
 		token = m.Container.AuthorizationToken
+	}
+
+	tokenFile := os.Getenv("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE")
+	if tokenFile == "" {
+		tokenFile = m.Container.AuthorizationToken
 	}
 
 	relativeURI := os.Getenv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI")
@@ -181,6 +187,10 @@ func (m *IAM) Retrieve() (Value, error) {
 
 		roleCreds, err = getEcsTaskCredentials(m.Client, endpoint, token)
 
+	case tokenFile != "" && fullURI != "":
+		endpoint = fullURI
+		roleCreds, err = getEKSPodIdentityCredentials(m.Client, endpoint, tokenFile)
+
 	case fullURI != "":
 		if len(endpoint) == 0 {
 			endpoint = fullURI
@@ -209,6 +219,7 @@ func (m *IAM) Retrieve() (Value, error) {
 		AccessKeyID:     roleCreds.AccessKeyID,
 		SecretAccessKey: roleCreds.SecretAccessKey,
 		SessionToken:    roleCreds.Token,
+		Expiration:      roleCreds.Expiration,
 		SignerType:      SignatureV4,
 	}, nil
 }
@@ -297,11 +308,23 @@ func getEcsTaskCredentials(client *http.Client, endpoint, token string) (ec2Role
 	}
 
 	respCreds := ec2RoleCredRespBody{}
-	if err := jsoniter.NewDecoder(resp.Body).Decode(&respCreds); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&respCreds); err != nil {
 		return ec2RoleCredRespBody{}, err
 	}
 
 	return respCreds, nil
+}
+
+func getEKSPodIdentityCredentials(client *http.Client, endpoint string, tokenFile string) (ec2RoleCredRespBody, error) {
+	if tokenFile != "" {
+		bytes, err := os.ReadFile(tokenFile)
+		if err != nil {
+			return ec2RoleCredRespBody{}, fmt.Errorf("getEKSPodIdentityCredentials: failed to read token file:%s", err)
+		}
+		token := string(bytes)
+		return getEcsTaskCredentials(client, endpoint, token)
+	}
+	return ec2RoleCredRespBody{}, fmt.Errorf("getEKSPodIdentityCredentials: no tokenFile found")
 }
 
 func fetchIMDSToken(client *http.Client, endpoint string) (string, error) {
@@ -395,7 +418,7 @@ func getCredentials(client *http.Client, endpoint string) (ec2RoleCredRespBody, 
 	}
 
 	respCreds := ec2RoleCredRespBody{}
-	if err := jsoniter.NewDecoder(resp.Body).Decode(&respCreds); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&respCreds); err != nil {
 		return ec2RoleCredRespBody{}, err
 	}
 

@@ -15,12 +15,7 @@ On the read path, the [querier]({{< relref "./querier" >}}) and the [ruler]({{< 
 ## Bucket index
 
 To find the right blocks to look up at query time, the store-gateway requires a view of the bucket in long-term storage.
-The store-gateway keeps the bucket view updated using one of the following options:
-
-- Periodically downloading the [bucket index]({{< relref "../bucket-index" >}}) (default)
-- Periodically scanning the bucket
-
-### Bucket index enabled (default)
+The store-gateway keeps the bucket view updated by periodically downloading the [bucket index]({{< relref "../bucket-index" >}}).
 
 To discover each tenant's blocks and block deletion marks, at startup, store-gateways fetch the [bucket index]({{< relref "../bucket-index" >}}) from long-term storage for each tenant that belongs to their [shard](#blocks-sharding-and-replication).
 
@@ -40,12 +35,6 @@ To avoid the store-gateway having to re-download the index header during subsequ
 For example, if you're running the Grafana Mimir cluster in Kubernetes, you can use a StatefulSet with a PersistentVolumeClaim for the store-gateways.
 
 For more information about the index-header, refer to [Binary index-header documentation]({{< relref "../binary-index-header" >}}).
-
-### Bucket index disabled
-
-When the bucket index is disabled, the overall workflow is still nearly the same.
-The difference occurs during the discovery phase of the blocks at startup, and during the periodic checks.
-Iterations over the entire long-term storage download `meta.json` metadata files while filtering out blocks that don't belong to tenants in their shard.
 
 ## Blocks sharding and replication
 
@@ -125,11 +114,15 @@ Keeping the index-header on the local disk makes query execution faster.
 ### Index-header lazy loading
 
 By default, a store-gateway downloads the index-headers to disk and doesn't load them to memory until required.
-When required by a query, index-headers are memory-mapped and automatically released by the store-gateway after the amount of inactivity time you specify in `-blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout` has passed.
+When required by a query, index-headers are loaded and automatically released by the store-gateway after the amount of inactivity time you specify in `-blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout` has passed.
 
 Grafana Mimir provides a configuration flag `-blocks-storage.bucket-store.index-header.lazy-loading-enabled=false` to disable index-header lazy loading.
-When disabled, the store-gateway memory-maps all index-headers, which provides faster access to the data in the index-header.
-However, in a cluster with a large number of blocks, each store-gateway might have a large amount of memory-mapped index-headers, regardless of how frequently they are used at query time.
+When disabled, the store-gateway loads all index-headers at startup, which provides faster access to the data in the index-header when querying at the cost of longer startup times.
+However, in a cluster with a large number of blocks, each store-gateway might have a large amount of loaded index-headers, regardless of how frequently they are used at query time.
+
+When the index-header is loaded, only a portion of it is kept in memory to reduce memory usage.
+The rest of the index-header is read from disk as required.
+This requires that store-gateways have memory available to be used by the operating system for caching disk accesses.
 
 ## Caching
 

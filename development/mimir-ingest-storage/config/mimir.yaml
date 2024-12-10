@@ -12,14 +12,17 @@ common:
 ingest_storage:
   enabled:       true
   kafka:
-    address: kafka:9092
+    address: kafka_1:9092
     topic:   mimir-ingest
+    last_produced_offset_poll_interval: 500ms
+    startup_fetch_concurrency: 15
+    ongoing_fetch_concurrency: 2
 
 ingester:
-  return_only_grpc_errors: true
+  track_ingester_owned_series: true
 
   partition_ring:
-    min_partition_owners_count:       2
+    min_partition_owners_count:       1
     min_partition_owners_duration:    10s
     delete_inactive_partition_after:  1m
 
@@ -97,3 +100,6 @@ limits:
 
 runtime_config:
   file: ./config/runtime.yaml
+
+server:
+  log_level: debug

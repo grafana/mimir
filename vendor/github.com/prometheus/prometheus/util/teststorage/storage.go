@@ -14,6 +14,7 @@
 package teststorage
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -29,9 +30,19 @@ import (
 
 // New returns a new TestStorage for testing purposes
 // that removes all associated files on closing.
-func New(t testutil.T) *TestStorage {
+func New(t testutil.T, outOfOrderTimeWindow ...int64) *TestStorage {
+	stor, err := NewWithError(outOfOrderTimeWindow...)
+	require.NoError(t, err)
+	return stor
+}
+
+// NewWithError returns a new TestStorage for user facing tests, which reports
+// errors directly.
+func NewWithError(outOfOrderTimeWindow ...int64) (*TestStorage, error) {
 	dir, err := os.MkdirTemp("", "test_storage")
-	require.NoError(t, err, "unexpected error while opening test directory")
+	if err != nil {
+		return nil, fmt.Errorf("opening test directory: %w", err)
+	}
 
 	// Tests just load data for a series sequentially. Thus we
 	// need a long appendable window.
@@ -40,14 +51,26 @@ func New(t testutil.T) *TestStorage {
 	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.RetentionDuration = 0
 	opts.EnableNativeHistograms = true
+
+	// Set OutOfOrderTimeWindow if provided, otherwise use default (0)
+	if len(outOfOrderTimeWindow) > 0 {
+		opts.OutOfOrderTimeWindow = outOfOrderTimeWindow[0]
+	} else {
+		opts.OutOfOrderTimeWindow = 0 // Default value is zero
+	}
+
 	db, err := tsdb.Open(dir, nil, nil, opts, tsdb.NewDBStats())
-	require.NoError(t, err, "unexpected error while opening test storage")
+	if err != nil {
+		return nil, fmt.Errorf("opening test storage: %w", err)
+	}
 	reg := prometheus.NewRegistry()
 	eMetrics := tsdb.NewExemplarMetrics(reg)
 
 	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics)
-	require.NoError(t, err, "unexpected error while opening test exemplar storage")
-	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}
+	if err != nil {
+		return nil, fmt.Errorf("opening test exemplar storage: %w", err)
+	}
+	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}, nil
 }
 
 type TestStorage struct {

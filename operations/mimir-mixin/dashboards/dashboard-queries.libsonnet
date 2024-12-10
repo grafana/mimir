@@ -1,106 +1,202 @@
+local utils = import 'mixin-utils/utils.libsonnet';
+
 {
+  // Helper function to produce failure rate in percentage queries for native and classic histograms.
+  // Takes a metric name and a selector as strings and returns a dictionary with classic and native queries.
+  ncHistogramFailureRate(metric, selector):: {
+    local template = |||
+      (
+          # gRPC errors are not tracked as 5xx but "error".
+          sum(%(countFailQuery)s)
+          or
+          # Handle the case no failure has been tracked yet.
+          vector(0)
+      )
+      /
+      sum(%(countQuery)s)
+    |||,
+    classic: template % {
+      countFailQuery: utils.ncHistogramCountRate(metric, selector + ',status_code=~"5.*|error"').classic,
+      countQuery: utils.ncHistogramCountRate(metric, selector).classic,
+    },
+    native: template % {
+      countFailQuery: utils.ncHistogramCountRate(metric, selector + ',status_code=~"5.*|error"').native,
+      countQuery: utils.ncHistogramCountRate(metric, selector).native,
+    },
+  },
+
+  ncSumHistogramCountRate(metric, selectors, extra_selector, rate_interval='$__rate_interval')::
+    local selectorsStr = $.toPrometheusSelector(selectors);
+    local extendedSelectorsStr = $.toPrometheusSelector(selectors + extra_selector);
+    {
+      classic: 'sum(rate(%(metric)s_count%(extendedSelectors)s[%(rateInterval)s])) /\nsum(rate(%(metric)s_count%(selectors)s[%(rateInterval)s]))' % {
+        metric: metric,
+        rateInterval: rate_interval,
+        extendedSelectors: extendedSelectorsStr,
+        selectors: selectorsStr,
+      },
+      native: 'sum(histogram_count(rate(%(metric)s%(extendedSelectors)s[%(rateInterval)s]))) /\nsum(histogram_count(rate(%(metric)s%(selectors)s[%(rateInterval)s])))' % {
+        metric: metric,
+        rateInterval: rate_interval,
+        extendedSelectors: extendedSelectorsStr,
+        selectors: selectorsStr,
+      },
+    },
+
+  ncAvgHistogramQuantile(quantile, metric, selectors, offset, rate_interval='$__rate_interval')::
+    local labels = std.join('_', [matcher.label for matcher in selectors]);
+    local metricStr = '%(labels)s:%(metric)s' % { labels: labels, metric: metric };
+    local selectorsStr = $.toPrometheusSelector(selectors);
+    {
+      classic: |||
+        1 - (
+          avg_over_time(histogram_quantile(%(quantile)s, sum by (le) (%(metric)s_bucket:sum_rate%(selectors)s offset %(offset)s))[%(rateInterval)s])
+          /
+          avg_over_time(histogram_quantile(%(quantile)s, sum by (le) (%(metric)s_bucket:sum_rate%(selectors)s))[%(rateInterval)s])
+        )
+      ||| % {
+        quantile: quantile,
+        metric: metricStr,
+        selectors: selectorsStr,
+        offset: offset,
+        rateInterval: rate_interval,
+      },
+      native: |||
+        1 - (
+          avg_over_time(histogram_quantile(%(quantile)s, sum(%(metric)s:sum_rate%(selectors)s offset %(offset)s))[%(rateInterval)s])
+          /
+          avg_over_time(histogram_quantile(%(quantile)s, sum(%(metric)s:sum_rate%(selectors)s))[%(rateInterval)s])
+        )
+      ||| % {
+        quantile: quantile,
+        metric: metricStr,
+        selectors: selectorsStr,
+        offset: offset,
+        rateInterval: rate_interval,
+      },
+    },
+
   // This object contains common queries used in the Mimir dashboards.
   // These queries are NOT intended to be configurable or overriddeable via jsonnet,
   // but they're defined in a common place just to share them between different dashboards.
   queries:: {
     // Define the supported replacement variables in a single place. Most of them are frequently used.
     local variables = {
+      requestsPerSecondMetric: $.requests_per_second_metric,
       gatewayMatcher: $.jobMatcher($._config.job_names.gateway),
       distributorMatcher: $.jobMatcher($._config.job_names.distributor),
+      ingesterMatcher: $.jobMatcher($._config.job_names.ingester),
       queryFrontendMatcher: $.jobMatcher($._config.job_names.query_frontend),
       rulerMatcher: $.jobMatcher($._config.job_names.ruler),
       alertmanagerMatcher: $.jobMatcher($._config.job_names.alertmanager),
       namespaceMatcher: $.namespaceMatcher(),
+      storeGatewayMatcher: $.jobMatcher($._config.job_names.store_gateway),
+      rulerQueryFrontendMatcher: $.jobMatcher($._config.job_names.ruler_query_frontend),
       writeHTTPRoutesRegex: $.queries.write_http_routes_regex,
-      writeGRPCRoutesRegex: $.queries.write_grpc_routes_regex,
+      writeDistributorRoutesRegex: std.join('|', [$.queries.write_grpc_distributor_routes_regex, $.queries.write_http_routes_regex]),
+      writeGRPCIngesterRoute: $.queries.write_grpc_ingester_route,
       readHTTPRoutesRegex: $.queries.read_http_routes_regex,
+      readGRPCIngesterRoute: $.queries.read_grpc_ingester_route,
+      readGRPCStoreGatewayRoute: $.queries.read_grpc_store_gateway_route,
+      rulerQueryFrontendRoutesRegex: $.queries.ruler_query_frontend_routes_regex,
       perClusterLabel: $._config.per_cluster_label,
       recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')),  // The job name does not matter here.
       groupPrefixJobs: $._config.group_prefix_jobs,
+      instance: $._config.per_instance_label,
     },
 
+    requests_per_second_metric: 'cortex_request_duration_seconds',
     write_http_routes_regex: 'api_(v1|prom)_push|otlp_v1_metrics',
-    write_grpc_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
+    write_grpc_distributor_routes_regex: '/distributor.Distributor/Push|/httpgrpc.*',
+    write_grpc_ingester_route: '/cortex.Ingester/Push',
     read_http_routes_regex: '(prometheus|api_prom)_api_v1_.+',
+    read_grpc_ingester_route: $._config.ingester_read_path_routes_regex,
+    read_grpc_store_gateway_route: $._config.store_gateway_read_path_routes_regex,
     query_http_routes_regex: '(prometheus|api_prom)_api_v1_query(_range)?',
+    alertmanager_http_routes_regex: 'api_v1_alerts|alertmanager',
+    alertmanager_grpc_routes_regex: '/alertmanagerpb.Alertmanager/HandleRequest',
+    // Both support gRPC and HTTP requests. HTTP request is used when rule evaluation query requests go through the query-tee.
+    ruler_query_frontend_routes_regex: '/httpgrpc.HTTP/Handle|.*api_v1_query',
 
     gateway: {
-      writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"}' % variables,
-      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
+      local p = self,
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
+      writeRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"' % variables,
+      readRequestsPerSecondSelector: '%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
 
       // Write failures rate as percentage of total requests.
-      writeFailuresRate: |||
-        (
-            sum(rate(cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s",status_code=~"5.*"}[$__rate_interval]))
-            or
-            # Handle the case no failure has been tracked yet.
-            vector(0)
-        )
-        /
-        sum(rate(cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(writeHTTPRoutesRegex)s"}[$__rate_interval]))
-      ||| % variables,
+      writeFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),
 
       // Read failures rate as percentage of total requests.
-      readFailuresRate: |||
-        (
-            sum(rate(cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s",status_code=~"5.*"}[$__rate_interval]))
-            or
-            # Handle the case no failure has been tracked yet.
-            vector(0)
-        )
-        /
-        sum(rate(cortex_request_duration_seconds_count{%(gatewayMatcher)s, route=~"%(readHTTPRoutesRegex)s"}[$__rate_interval]))
-      ||| % variables,
+      readFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.readRequestsPerSecondSelector),
     },
 
     distributor: {
-      writeRequestsPerSecond: 'cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}' % variables,
+      local p = self,
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
+      writeRequestsPerSecondRouteRegex: '%(writeDistributorRoutesRegex)s' % variables,
+      writeRequestsPerSecondSelector: '%(distributorMatcher)s, route=~"%(writeDistributorRoutesRegex)s"' % variables,
       samplesPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_samples:rate5m{%(distributorMatcher)s})' % variables,
       exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
 
       // Write failures rate as percentage of total requests.
-      writeFailuresRate: |||
-        (
-            # gRPC errors are not tracked as 5xx but "error".
-            sum(rate(cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s",status_code=~"5.*|error"}[$__rate_interval]))
-            or
-            # Handle the case no failure has been tracked yet.
-            vector(0)
-        )
-        /
-        sum(rate(cortex_request_duration_seconds_count{%(distributorMatcher)s, route=~"%(writeGRPCRoutesRegex)s|%(writeHTTPRoutesRegex)s"}[$__rate_interval]))
-      ||| % variables,
+      writeFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),
     },
 
     query_frontend: {
-      readRequestsPerSecond: 'cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"}' % variables,
-      instantQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query"}[$__rate_interval]))' % variables,
-      rangeQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query_range"}[$__rate_interval]))' % variables,
-      labelNamesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_labels"}[$__rate_interval]))' % variables,
-      labelValuesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_label_name_values"}[$__rate_interval]))' % variables,
-      seriesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_series"}[$__rate_interval]))' % variables,
-      remoteReadQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_read"}[$__rate_interval]))' % variables,
-      metadataQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_metadata"}[$__rate_interval]))' % variables,
-      exemplarsQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_query_exemplars"}[$__rate_interval]))' % variables,
-      activeSeriesQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route="prometheus_api_v1_cardinality_active_series"}[$__rate_interval])) > 0' % variables,
-      labelNamesCardinalityQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route="prometheus_api_v1_cardinality_label_names"}[$__rate_interval])) > 0' % variables,
-      labelValuesCardinalityQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route="prometheus_api_v1_cardinality_label_values"}[$__rate_interval])) > 0' % variables,
-      otherQueriesPerSecond: 'sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_.*",route!~".*(query|query_range|label.*|series|read|metadata|query_exemplars|cardinality_.*)"}[$__rate_interval]))' % variables,
+      local p = self,
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
+      readRequestsPerSecondSelector: '%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"' % variables,
+      // These query routes are used in the overview and other dashboard, everythign else is considered "other" queries.
+      // Has to be a list to keep the same colors as before, see overridesNonErrorColorsPalette.
+      local overviewRoutes = [
+        { name: 'instantQuery', displayName: 'instant queries', route: '/api/v1/query', routeLabel: '_api_v1_query' },
+        { name: 'rangeQuery', displayName: 'range queries', route: '/api/v1/query_range', routeLabel: '_api_v1_query_range' },
+        { name: 'labelNames', displayName: '"label names" queries', route: '/api/v1/labels', routeLabel: '_api_v1_labels' },
+        { name: 'labelValues', displayName: '"label values" queries', route: '/api/v1/label_name_values', routeLabel: '_api_v1_label_name_values' },
+        { name: 'series', displayName: 'series queries', route: '/api/v1/series', routeLabel: '_api_v1_series' },
+        { name: 'remoteRead', displayName: 'remote read queries', route: '/api/v1/read', routeLabel: '_api_v1_read' },
+        { name: 'metadata', displayName: 'metadata queries', route: '/api/v1/metadata', routeLabel: '_api_v1_metadata' },
+        { name: 'exemplars', displayName: 'exemplar queries', route: '/api/v1/query_exemplars', routeLabel: '_api_v1_query_exemplars' },
+        { name: 'activeSeries', displayName: '"active series" queries', route: '/api/v1/cardinality_active_series', routeLabel: '_api_v1_cardinality_active_series' },
+        { name: 'labelNamesCardinality', displayName: '"label name cardinality" queries', route: '/api/v1/cardinality_label_names', routeLabel: '_api_v1_cardinality_label_names' },
+        { name: 'labelValuesCardinality', displayName: '"label value cardinality" queries', route: '/api/v1/cardinality_label_values', routeLabel: '_api_v1_cardinality_label_values' },
+      ],
+      local overviewRoutesRegex = '(prometheus|api_prom)(%s)' % std.join('|', [r.routeLabel for r in overviewRoutes]),
+      overviewRoutesOverrides: [
+        {
+          matcher: {
+            id: 'byRegexp',
+            // To distinguish between query and query_range, we need to match the route with a negative lookahead.
+            options: '/.*%s($|[^_])/' % r.routeLabel,
+          },
+          properties: [
+            {
+              id: 'displayName',
+              value: r.displayName,
+            },
+          ],
+        }
+        for r in overviewRoutes
+      ],
+      overviewRoutesPerSecondMetric: 'cortex_request_duration_seconds',
+      overviewRoutesPerSecondSelector: '%(queryFrontendMatcher)s,route=~"%(overviewRoutesRegex)s"' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
+      nonOverviewRoutesPerSecondSelector: '%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)_api_v1_.*",route!~"%(overviewRoutesRegex)s"' % (variables { overviewRoutesRegex: overviewRoutesRegex }),
+
+      local ncQueryPerSecond(name) = utils.ncHistogramSumBy(utils.ncHistogramCountRate(p.requestsPerSecondMetric, '%(queryFrontendMatcher)s,route=~"(prometheus|api_prom)%(route)s"' %
+                                                                                                                  (variables { route: std.filter(function(r) r.name == name, overviewRoutes)[0].routeLabel }))),
+      ncInstantQueriesPerSecond: ncQueryPerSecond('instantQuery'),
+      ncRangeQueriesPerSecond: ncQueryPerSecond('rangeQuery'),
+      ncLabelNamesQueriesPerSecond: ncQueryPerSecond('labelNames'),
+      ncLabelValuesQueriesPerSecond: ncQueryPerSecond('labelValues'),
+      ncSeriesQueriesPerSecond: ncQueryPerSecond('series'),
 
       // Read failures rate as percentage of total requests.
-      readFailuresRate: |||
-        (
-            sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s",status_code=~"5.*"}[$__rate_interval]))
-            or
-            # Handle the case no failure has been tracked yet.
-            vector(0)
-        )
-        /
-        sum(rate(cortex_request_duration_seconds_count{%(queryFrontendMatcher)s, route=~"%(readHTTPRoutesRegex)s"}[$__rate_interval]))
-      ||| % variables,
+      readFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.readRequestsPerSecondSelector),
     },
 
     ruler: {
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
       evaluations: {
         successPerSecond:
           |||
@@ -155,6 +251,7 @@
     },
 
     alertmanager: {
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
       notifications: {
         // Notifications / sec attempted to deliver by the Alertmanager to the receivers.
         totalPerSecond: |||
@@ -191,6 +288,51 @@
         /
         sum(rate(thanos_objstore_bucket_operations_total{%(namespaceMatcher)s}[$__rate_interval]))
       ||| % variables,
+    },
+
+    ingester: {
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
+      readRequestsPerSecondSelector: '%(ingesterMatcher)s,route=~"%(readGRPCIngesterRoute)s"' % variables,
+      writeRequestsPerSecondSelector: '%(ingesterMatcher)s, route="%(writeGRPCIngesterRoute)s"' % variables,
+
+      ingestOrClassicDeduplicatedQuery(perIngesterQuery, groupByLabels=''):: |||
+        ( # Classic storage
+          sum by (%(groupByCluster)s, %(groupByLabels)s) (
+            %(perIngesterQuery)s unless on (job)
+            cortex_partition_ring_partitions{%(ingester)s}
+          )
+          / on (%(groupByCluster)s) group_left()
+          max by (%(groupByCluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+        )
+        or
+        ( # Ingest storage
+          sum by (%(groupByCluster)s, %(groupByLabels)s) (
+            max by (ingester_id, %(groupByCluster)s, %(groupByLabels)s) (
+              label_replace(
+                %(perIngesterQuery)s,
+                "ingester_id", "$1", "%(instance)s", ".*-([0-9]+)$"
+              )
+            )
+          )
+        )
+      ||| % {
+        perIngesterQuery: perIngesterQuery,
+        instance: variables.instance,
+        groupByLabels: groupByLabels,
+        groupByCluster: $._config.group_by_cluster,
+        distributor: variables.distributorMatcher,
+        ingester: variables.ingesterMatcher,
+      },
+    },
+
+    store_gateway: {
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
+      readRequestsPerSecondSelector: '%(storeGatewayMatcher)s,route=~"%(readGRPCStoreGatewayRoute)s"' % variables,
+    },
+
+    ruler_query_frontend: {
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
+      readRequestsPerSecondSelector: '%(rulerQueryFrontendMatcher)s,route=~"%(rulerQueryFrontendRoutesRegex)s"' % variables,
     },
   },
 }

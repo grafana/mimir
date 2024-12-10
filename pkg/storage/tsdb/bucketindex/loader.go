@@ -108,9 +108,13 @@ func (l *Loader) GetIndex(ctx context.Context, userID string) (*Index, error) {
 	l.loadAttempts.Inc()
 	idx, err := ReadIndex(ctx, l.bkt, userID, l.cfgProvider, l.logger)
 	if err != nil {
-		// Cache the error, to avoid hammering the object store in case of persistent issues
-		// (eg. corrupted bucket index or not existing).
-		l.cacheIndex(userID, nil, err)
+		if !errors.Is(err, context.Canceled) {
+			// Cache the error, to avoid hammering the object store in case of persistent issues
+			// (eg. corrupted bucket index or not existing).
+			// Don't cache context.Canceled errors, as they are caused by the individual query, and we don't want to
+			// continue failing queries on them.
+			l.cacheIndex(userID, nil, err)
+		}
 
 		if errors.Is(err, ErrIndexNotFound) {
 			level.Warn(l.logger).Log("msg", "bucket index not found", "user", userID)
@@ -129,7 +133,7 @@ func (l *Loader) GetIndex(ctx context.Context, userID string) (*Index, error) {
 
 	elapsedTime := time.Since(startTime)
 	l.loadDuration.Observe(elapsedTime.Seconds())
-	level.Info(l.logger).Log("msg", "loaded bucket index", "user", userID, "duration", elapsedTime)
+	level.Info(l.logger).Log("msg", "loaded bucket index", "user", userID, "updatedAt", idx.UpdatedAt, "duration", elapsedTime)
 	return idx, nil
 }
 
@@ -204,6 +208,12 @@ func (l *Loader) updateCachedIndex(ctx context.Context, userID string) {
 	// is when a tenant has rules configured but hasn't started remote writing yet. Rules will be evaluated and
 	// bucket index loaded by the ruler.
 	l.indexesMx.Lock()
+	userIdx := l.indexes[userID]
+	if idx != nil {
+		if userIdx == nil || (userIdx.index != nil && userIdx.index.UpdatedAt != idx.UpdatedAt) {
+			level.Debug(l.logger).Log("msg", "loaded bucket index", "user", userID, "updatedAt", idx.UpdatedAt)
+		}
+	}
 	l.indexes[userID].index = idx
 	l.indexes[userID].err = err
 	l.indexes[userID].setUpdatedAt(startTime)

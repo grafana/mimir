@@ -1,4 +1,4 @@
-// Package failsafe provides the entrypoint for using Failsafe-go.
+// Package failsafe provides fault tolerance and resilience patterns.
 //
 // Failsafe-go adds fault tolerance to function execution. Functions can be wrapped with one or more resilience policies, for example:
 //

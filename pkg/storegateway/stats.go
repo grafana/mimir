@@ -70,10 +70,11 @@ type queryStats struct {
 	streamingSeriesWaitBatchLoadedDuration time.Duration
 
 	// The Series() request timing breakdown.
-	streamingSeriesExpandPostingsDuration  time.Duration
-	streamingSeriesEncodeResponseDuration  time.Duration
-	streamingSeriesSendResponseDuration    time.Duration
-	streamingSeriesIndexHeaderLoadDuration time.Duration
+	streamingSeriesExpandPostingsDuration       time.Duration
+	streamingSeriesEncodeResponseDuration       time.Duration
+	streamingSeriesSendResponseDuration         time.Duration
+	streamingSeriesIndexHeaderLoadDuration      time.Duration
+	streamingSeriesConcurrencyLimitWaitDuration time.Duration
 
 	// streamingSeriesAmbientTime is the total wall clock time spent serving the request. It includes all other durations.
 	streamingSeriesAmbientTime time.Duration
@@ -158,6 +159,7 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 	s.streamingSeriesAmbientTime += o.streamingSeriesAmbientTime
 
 	s.streamingSeriesIndexHeaderLoadDuration += o.streamingSeriesIndexHeaderLoadDuration
+	s.streamingSeriesConcurrencyLimitWaitDuration += o.streamingSeriesConcurrencyLimitWaitDuration
 
 	return &s
 }

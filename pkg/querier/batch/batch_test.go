@@ -12,6 +12,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
@@ -32,6 +33,8 @@ func BenchmarkNewChunkMergeIterator_CreateAndIterate(b *testing.B) {
 		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 3},
 	}
 
+	lbls := labels.EmptyLabels()
+
 	for _, scenario := range scenarios {
 		for _, encoding := range []chunk.Encoding{chunk.PrometheusXorChunk, chunk.PrometheusHistogramChunk, chunk.PrometheusFloatHistogramChunk} {
 			name := fmt.Sprintf("chunks: %d samples per chunk: %d duplication factor: %d encoding: %s", scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, encoding)
@@ -45,7 +48,7 @@ func BenchmarkNewChunkMergeIterator_CreateAndIterate(b *testing.B) {
 					fh *histogram.FloatHistogram
 				)
 				for n := 0; n < b.N; n++ {
-					it = NewChunkMergeIterator(it, chunks, 0, 0)
+					it = NewChunkMergeIterator(it, lbls, chunks)
 					for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 						switch valType {
 						case chunkenc.ValFloat:
@@ -74,7 +77,7 @@ func TestSeekCorrectlyDealWithSinglePointChunks(t *testing.T) {
 	chunkTwo := mkChunk(t, model.Time(10*step/time.Millisecond), 1, chunk.PrometheusXorChunk)
 	chunks := []chunk.Chunk{chunkOne, chunkTwo}
 
-	sut := NewChunkMergeIterator(nil, chunks, 0, 0)
+	sut := NewChunkMergeIterator(nil, labels.EmptyLabels(), chunks)
 
 	// Following calls mimics Prometheus's query engine behaviour for VectorSelector.
 	require.Equal(t, chunkenc.ValFloat, sut.Next())

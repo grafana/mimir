@@ -13,6 +13,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -60,6 +61,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+func init() {
+	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
+	model.NameValidationScheme = model.LegacyValidation
+}
+
 var (
 	// Validation errors.
 	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater than or equal to zero")
@@ -79,6 +85,8 @@ const (
 
 	// metaLabelTenantID is the name of the metric_relabel_configs label with tenant ID.
 	metaLabelTenantID = model.MetaLabelPrefix + "tenant_id"
+
+	maxOTLPRequestSizeFlag = "distributor.max-otlp-request-size"
 
 	instanceIngestionRateTickInterval = time.Second
 
@@ -104,7 +112,7 @@ type Distributor struct {
 	healthyInstancesCount  *atomic.Uint32
 
 	// For handling HA replicas.
-	HATracker *haTracker
+	HATracker haTracker
 
 	// Per-user rate limiters.
 	requestRateLimiter   *limiter.RateLimiter
@@ -134,9 +142,10 @@ type Distributor struct {
 	nonHASamples                     *prometheus.CounterVec
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
-	sampleDelayHistogram             prometheus.Histogram
-	replicationFactor                prometheus.Gauge
+	incomingSamplesPerRequest        *prometheus.HistogramVec
+	incomingExemplarsPerRequest      *prometheus.HistogramVec
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
+	labelValuesWithNewlinesPerUser   *prometheus.CounterVec
 	hashCollisionCount               prometheus.Counter
 
 	// Metrics for data rejected for hitting per-tenant limits
@@ -153,7 +162,12 @@ type Distributor struct {
 	exemplarValidationMetrics *exemplarValidationMetrics
 	metadataValidationMetrics *metadataValidationMetrics
 
+	// Metrics to be passed to distributor push handlers
+	PushMetrics *PushMetrics
+
 	PushWithMiddlewares PushFunc
+
+	RequestBufferPool util.Pool
 
 	// Pool of []byte used when marshalling write requests.
 	writeRequestBytePool sync.Pool
@@ -168,6 +182,19 @@ type Distributor struct {
 
 	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
 	partitionsRing *ring.PartitionInstanceRing
+
+	// For testing functionality that relies on timing without having to sleep in unit tests.
+	sleep func(time.Duration)
+	now   func() time.Time
+}
+
+func defaultSleep(d time.Duration) { time.Sleep(d) }
+func defaultNow() time.Time        { return time.Now() }
+
+// OTelResourceAttributePromotionConfig contains methods for configuring OTel resource attribute promotion.
+type OTelResourceAttributePromotionConfig interface {
+	// PromoteOTelResourceAttributes returns which OTel resource attributes to promote for tenant ID.
+	PromoteOTelResourceAttributes(id string) []string
 }
 
 // Config contains the configuration required to
@@ -178,8 +205,10 @@ type Config struct {
 	RetryConfig     RetryConfig     `yaml:"retry_after_header"`
 	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
 
-	MaxRecvMsgSize int           `yaml:"max_recv_msg_size" category:"advanced"`
-	RemoteTimeout  time.Duration `yaml:"remote_timeout" category:"advanced"`
+	MaxRecvMsgSize           int           `yaml:"max_recv_msg_size" category:"advanced"`
+	MaxOTLPRequestSize       int           `yaml:"max_otlp_request_size" category:"experimental"`
+	MaxRequestPoolBufferSize int           `yaml:"max_request_pool_buffer_size" category:"experimental"`
+	RemoteTimeout            time.Duration `yaml:"remote_timeout" category:"advanced"`
 
 	// Distributors ring
 	DistributorRing RingConfig `yaml:"ring"`
@@ -187,13 +216,16 @@ type Config struct {
 	// for testing and for extending the ingester by adding calls to the client
 	IngesterClientFactory ring_client.PoolFactory `yaml:"-"`
 
-	// when true the distributor does not validate the label name, Mimir doesn't directly use
-	// this (and should never use it) but this feature is used by other projects built on top of it
-	SkipLabelNameValidation bool `yaml:"-"`
+	// When SkipLabelValidation is true the distributor does not validate the label name and value, Mimir doesn't directly use
+	// this (and should never use it) but this feature is used by other projects built on top of it.
+	SkipLabelValidation bool `yaml:"-"`
+
+	// When SkipLabelCountValidation is true the distributor does not validate the number of labels, Mimir doesn't directly use
+	// this (and should never use it) but this feature is used by other projects built on top of it.
+	SkipLabelCountValidation bool `yaml:"-"`
 
 	// This config is dynamically injected because it is defined in the querier config.
 	ShuffleShardingLookbackPeriod              time.Duration `yaml:"-"`
-	PreferStreamingChunksFromIngesters         bool          `yaml:"-"`
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
@@ -211,9 +243,11 @@ type Config struct {
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
 
-	WriteRequestsBufferPoolingEnabled           bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
-	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"deprecated"` // TODO Remove the configuration option in Mimir 2.14, keeping the same behavior as if it's enabled
-	ReusableIngesterPushWorkers                 int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
+	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
+	ReusableIngesterPushWorkers       int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
+
+	// OTelResourceAttributePromotionConfig allows for specializing OTel resource attribute promotion.
+	OTelResourceAttributePromotionConfig OTelResourceAttributePromotionConfig `yaml:"-"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -227,9 +261,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.RetryConfig.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
+	f.IntVar(&cfg.MaxOTLPRequestSize, maxOTLPRequestSizeFlag, 100<<20, "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
+	f.IntVar(&cfg.MaxRequestPoolBufferSize, "distributor.max-request-pool-buffer-size", 0, "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
-	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", true, "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 
 	cfg.DefaultLimits.RegisterFlags(f)
@@ -253,34 +288,66 @@ const (
 	limitLabel               = "limit"
 )
 
+type PushMetrics struct {
+	otlpRequestCounter   *prometheus.CounterVec
+	uncompressedBodySize *prometheus.HistogramVec
+}
+
+func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
+	return &PushMetrics{
+		otlpRequestCounter: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_otlp_requests_total",
+			Help: "The total number of OTLP requests that have come in to the distributor.",
+		}, []string{"user"}),
+		uncompressedBodySize: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_uncompressed_request_body_size_bytes",
+			Help:                            "Size of uncompressed request body in bytes.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
+	}
+}
+
+func (m *PushMetrics) IncOTLPRequest(user string) {
+	if m != nil {
+		m.otlpRequestCounter.WithLabelValues(user).Inc()
+	}
+}
+
+func (m *PushMetrics) ObserveUncompressedBodySize(user string, size float64) {
+	if m != nil {
+		m.uncompressedBodySize.WithLabelValues(user).Observe(size)
+	}
+}
+
+func (m *PushMetrics) deleteUserMetrics(user string) {
+	m.otlpRequestCounter.DeleteLabelValues(user)
+	m.uncompressedBodySize.DeleteLabelValues(user)
+}
+
 // New constructs a new Distributor
 func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Overrides, activeGroupsCleanupService *util.ActiveGroupsCleanupService, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionInstanceRing, canJoinDistributorsRing bool, reg prometheus.Registerer, log log.Logger) (*Distributor, error) {
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
-			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics, log)
+			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics)
 		})
 	}
 
 	cfg.PoolConfig.RemoteTimeout = cfg.RemoteTimeout
-
-	haTracker, err := newHATracker(cfg.HATrackerConfig, limits, reg, log)
-	if err != nil {
-		return nil, err
-	}
-
 	subservices := []services.Service(nil)
-	subservices = append(subservices, haTracker)
+	requestBufferPool := util.NewBufferPool(cfg.MaxRequestPoolBufferSize)
 
 	d := &Distributor{
 		cfg:                   cfg,
 		log:                   log,
 		ingestersRing:         ingestersRing,
+		RequestBufferPool:     requestBufferPool,
 		partitionsRing:        partitionsRing,
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
-		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -333,34 +400,27 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:    "Number of labels per sample.",
 			Buckets: []float64{5, 10, 15, 20, 25},
 		}),
-		sampleDelayHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name: "cortex_distributor_sample_delay_seconds",
-			Help: "Number of seconds by which a sample came in late wrt wallclock.",
-			Buckets: []float64{
-				-60 * 1,      // 1 min early
-				-15,          // 15s early
-				-5,           // 5s early
-				30,           // 30s
-				60 * 1,       // 1 min
-				60 * 2,       // 2 min
-				60 * 4,       // 4 min
-				60 * 8,       // 8 min
-				60 * 10,      // 10 min
-				60 * 30,      // 30 min
-				60 * 60,      // 1h
-				60 * 60 * 2,  // 2h
-				60 * 60 * 3,  // 3h
-				60 * 60 * 6,  // 6h
-				60 * 60 * 24, // 24h
-			},
-		}),
-		replicationFactor: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_distributor_replication_factor",
-			Help: "The configured replication factor.",
-		}),
+		incomingSamplesPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_samples_per_request",
+			Help:                            "Number of samples per request before deduplication and validation.",
+			NativeHistogramBucketFactor:     2,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
+		incomingExemplarsPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_exemplars_per_request",
+			Help:                            "Number of exemplars per request before deduplication and validation.",
+			NativeHistogramBucketFactor:     2,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
 		latestSeenSampleTimestampPerUser: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_distributor_latest_seen_sample_timestamp_seconds",
 			Help: "Unix timestamp of latest received sample per user.",
+		}, []string{"user"}),
+		labelValuesWithNewlinesPerUser: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_label_values_with_newlines_total",
+			Help: "Total number of label values with newlines seen at ingestion time.",
 		}, []string{"user"}),
 
 		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, reasonTooManyHAClusters),
@@ -382,6 +442,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_hash_collisions_total",
 			Help: "Number of times a hash collision was detected when de-duplicating samples.",
 		}),
+
+		PushMetrics: newPushMetrics(reg),
+		now:         defaultNow,
+		sleep:       defaultSleep,
 	}
 
 	// Initialize expected rejected request labels
@@ -439,6 +503,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	var ingestionRateStrategy, requestRateStrategy limiter.RateLimiterStrategy
 	var distributorsLifecycler *ring.BasicLifecycler
 	var distributorsRing *ring.Ring
+	var err error
 
 	if !canJoinDistributorsRing {
 		requestRateStrategy = newInfiniteRateStrategy()
@@ -454,12 +519,29 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingestionRateStrategy = newGlobalRateStrategyWithBurstFactor(limits, d)
 	}
 
+	// If this isn't a real distributor that will be accepting writes or if the HA tracker is
+	// disabled, use a no-op implementation. We don't want to require it to be configured when
+	// it's not used due to being disabled or this being a component that doesn't use it (rulers,
+	// queriers).
+	var haTrackerImpl haTracker
+
+	if !canJoinDistributorsRing || !cfg.HATrackerConfig.EnableHATracker {
+		haTrackerImpl = newNopHaTracker()
+	} else {
+		haTrackerImpl, err = newHaTracker(cfg.HATrackerConfig, limits, reg, log)
+		if err != nil {
+			return nil, err
+		}
+
+		subservices = append(subservices, haTrackerImpl)
+	}
+
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
 	d.ingestionRateLimiter = limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second)
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
+	d.HATracker = haTrackerImpl
 
-	d.replicationFactor.Set(float64(ingestersRing.ReplicationFactor()))
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
 	d.activeGroups = activeGroupsCleanupService
 
@@ -483,6 +565,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		subservices = append(subservices, d.ingestStorageWriter)
 	}
 
+	// Register each metric only if the corresponding storage is enabled.
+	// Some queries in the mixin use the presence of these metrics as indication whether Mimir is running with ingest storage or not.
+	exportStorageModeMetrics(reg, cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled || !cfg.IngestStorageConfig.Enabled, cfg.IngestStorageConfig.Enabled, ingestersRing.ReplicationFactor())
+
 	d.subservices, err = services.NewManager(subservices...)
 	if err != nil {
 		return nil, err
@@ -492,6 +578,24 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 	d.Service = services.NewBasicService(d.starting, d.running, d.stopping)
 	return d, nil
+}
+
+func exportStorageModeMetrics(reg prometheus.Registerer, classicStorageEnabled, ingestStorageEnabled bool, classicStorageReplicationFactor int) {
+	ingestStorageEnabledVal := float64(0)
+	if ingestStorageEnabled {
+		ingestStorageEnabledVal = 1
+	}
+	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_distributor_ingest_storage_enabled",
+		Help: "Whether writes are being processed via ingest storage. Equal to 1 if ingest storage is enabled, 0 if disabled.",
+	}).Set(ingestStorageEnabledVal)
+
+	if classicStorageEnabled {
+		promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_distributor_replication_factor",
+			Help: "The configured replication factor.",
+		}).Set(float64(classicStorageReplicationFactor))
+	}
 }
 
 // newRingAndLifecycler creates a new distributor ring and lifecycler with all required lifecycler delegates
@@ -574,8 +678,13 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.incomingSamples.DeleteLabelValues(userID)
 	d.incomingExemplars.DeleteLabelValues(userID)
 	d.incomingMetadata.DeleteLabelValues(userID)
+	d.incomingSamplesPerRequest.DeleteLabelValues(userID)
+	d.incomingExemplarsPerRequest.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
+	d.labelValuesWithNewlinesPerUser.DeleteLabelValues(userID)
+
+	d.PushMetrics.deleteUserMetrics(userID)
 
 	filter := prometheus.Labels{"user": userID}
 	d.dedupedSamples.DeletePartialMatch(filter)
@@ -632,30 +741,29 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS, maxExemplarTS int64) error {
-	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelNameValidation); err != nil {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
+	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation); err != nil {
 		return err
 	}
 
 	now := model.TimeFromUnixNano(nowt.UnixNano())
 
 	for _, s := range ts.Samples {
-
-		delta := now - model.Time(s.TimestampMs)
-		d.sampleDelayHistogram.Observe(float64(delta) / 1000)
-
 		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
 			return err
 		}
 	}
 
-	for i, h := range ts.Histograms {
-		delta := now - model.Time(h.Timestamp)
-		d.sampleDelayHistogram.Observe(float64(delta) / 1000)
-
-		if err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i]); err != nil {
+	histogramsUpdated := false
+	for i := range ts.Histograms {
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i])
+		if err != nil {
 			return err
 		}
+		histogramsUpdated = histogramsUpdated || updated
+	}
+	if histogramsUpdated {
+		ts.HistogramsUpdated()
 	}
 
 	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
@@ -663,23 +771,47 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 		return nil
 	}
 
+	allowedExemplars := d.limits.MaxExemplarsPerSeriesPerRequest(userID)
+	if allowedExemplars > 0 && len(ts.Exemplars) > allowedExemplars {
+		d.exemplarValidationMetrics.tooManyExemplars.WithLabelValues(userID).Add(float64(len(ts.Exemplars) - allowedExemplars))
+		ts.ResizeExemplars(allowedExemplars)
+	}
+
+	var previousExemplarTS int64 = math.MinInt64
+	isInOrder := true
 	for i := 0; i < len(ts.Exemplars); {
 		e := ts.Exemplars[i]
 		if err := validateExemplar(d.exemplarValidationMetrics, userID, ts.Labels, e); err != nil {
-			// An exemplar validation error prevents ingesting samples
-			// in the same series object. However because the current Prometheus
-			// remote write implementation only populates one or the other,
-			// there never will be any.
-			return err
+			// OTel sends empty exemplars by default which aren't useful and are discarded by TSDB, so let's just skip invalid ones and ingest the data we can instead of returning an error.
+			ts.DeleteExemplarByMovingLast(i)
+			// Don't increase index i. After moving the last exemplar to this index, we want to check it again.
+			continue
 		}
 		if !validateExemplarTimestamp(d.exemplarValidationMetrics, userID, minExemplarTS, maxExemplarTS, e) {
 			ts.DeleteExemplarByMovingLast(i)
-			// Don't increase index i. After moving last exemplar to this index, we want to check it again.
+			// Don't increase index i. After moving the last exemplar to this index, we want to check it again.
 			continue
 		}
+		// We want to check if exemplars are in order. If they are not, we will sort them and invalidate the cache.
+		if isInOrder && previousExemplarTS > e.TimestampMs {
+			isInOrder = false
+		}
+		previousExemplarTS = e.TimestampMs
 		i++
 	}
+	if !isInOrder {
+		ts.SortExemplars()
+	}
 	return nil
+}
+func (d *Distributor) labelValuesWithNewlines(labels []mimirpb.LabelAdapter) int {
+	count := 0
+	for _, l := range labels {
+		if strings.IndexByte(l.Value, '\n') >= 0 {
+			count++
+		}
+	}
+	return count
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
@@ -690,7 +822,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 	// The middlewares will be applied to the request (!) in the specified order, from first to last.
 	// To guarantee that, middleware functions will be called in reversed order, wrapping the
 	// result from previous call.
-	middlewares = append(middlewares, d.limitsMiddleware) // should run first because it checks limits before other middlewares need to read the request body
+	middlewares = append(middlewares, d.limitsMiddleware) // Should run first because it checks limits before other middlewares need to read the request body.
 	middlewares = append(middlewares, d.metricsMiddleware)
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
@@ -702,17 +834,15 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 		next = middlewares[ix](next)
 	}
 
-	return next
+	// The delay middleware must take into account total runtime of all other middlewares and the push func, hence why we wrap all others.
+	return d.outerMaybeDelayMiddleware(next)
+
 }
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -725,7 +855,6 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		if len(req.Timeseries) == 0 || !d.limits.AcceptHASamples(userID) {
-			cleanupInDefer = false
 			return next(ctx, pushReq)
 		}
 
@@ -772,19 +901,14 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
 		}
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
 }
 
 func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -792,7 +916,6 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 		}
 
 		if !d.limits.MetricRelabelingEnabled(userID) {
-			cleanupInDefer = false
 			return next(ctx, pushReq)
 		}
 
@@ -835,7 +958,6 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
 }
@@ -844,12 +966,8 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 // filtering empty values. This is a protection mechanism for ingesters.
 func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -885,19 +1003,14 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 			req.Timeseries = util.RemoveSliceIndexes(req.Timeseries, removeTsIndexes)
 		}
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
 }
 
 func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -943,6 +1056,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var minExemplarTS int64
 		if earliestSampleTimestampMs != math.MaxInt64 {
 			minExemplarTS = earliestSampleTimestampMs - 5*time.Minute.Milliseconds()
+
+			if d.limits.PastGracePeriod(userID) > 0 {
+				minExemplarTS = max(minExemplarTS, now.Add(-d.limits.PastGracePeriod(userID)).Add(-d.limits.OutOfOrderTimeWindow(userID)).UnixMilli())
+			}
 		}
 
 		// Enforce the creation grace period on exemplars too.
@@ -950,7 +1067,12 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 		var firstPartialErr error
 		var removeIndexes []int
+		totalSamples, totalExemplars := 0, 0
+
+		labelValuesWithNewlines := 0
 		for tsIdx, ts := range req.Timeseries {
+			totalSamples += len(ts.Samples)
+			totalExemplars += len(ts.Exemplars)
 			if len(ts.Labels) == 0 {
 				removeIndexes = append(removeIndexes, tsIdx)
 				continue
@@ -958,9 +1080,11 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 			d.labelsHistogram.Observe(float64(len(ts.Labels)))
 
-			skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
+			skipLabelValidation := d.cfg.SkipLabelValidation || req.GetSkipLabelValidation()
+			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
+
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelNameValidation, minExemplarTS, maxExemplarTS)
+			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
@@ -975,7 +1099,15 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
+			labelValuesWithNewlines += d.labelValuesWithNewlines(ts.Labels)
 		}
+
+		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
+		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
+		if labelValuesWithNewlines > 0 {
+			d.labelValuesWithNewlinesPerUser.WithLabelValues(userID).Add(float64(labelValuesWithNewlines))
+		}
+
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
 				mimirpb.ReusePreallocTimeseries(&req.Timeseries[removeIndex])
@@ -1021,7 +1153,6 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
 		d.ingestionRate.Add(int64(totalN))
 
-		cleanupInDefer = false
 		err = next(ctx, pushReq)
 		if err != nil {
 			// Errors resulting from the pushing to the ingesters have priority over validation errors.
@@ -1036,12 +1167,8 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 // including data that later gets modified or dropped.
 func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -1072,8 +1199,29 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 		d.incomingExemplars.WithLabelValues(userID).Add(float64(numExemplars))
 		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
+	}
+}
+
+// outerMaybeDelayMiddleware is a middleware that may delay ingestion if configured.
+func (d *Distributor) outerMaybeDelayMiddleware(next PushFunc) PushFunc {
+	return func(ctx context.Context, pushReq *Request) error {
+		start := d.now()
+		// Execute the whole middleware chain.
+		err := next(ctx, pushReq)
+
+		userID, userErr := tenant.TenantID(ctx) // Log tenant ID if available.
+		if userErr == nil {
+			// Target delay - time spent processing the middleware chain including the push.
+			// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a negative value.
+			if delay := d.limits.DistributorIngestionArtificialDelay(userID) - d.now().Sub(start); delay > 0 {
+				d.sleep(util.DurationWithJitter(delay, 0.10))
+			}
+			return err
+		}
+
+		level.Warn(d.log).Log("msg", "failed to get tenant ID while trying to delay ingestion", "err", userErr)
+		return err
 	}
 }
 
@@ -1217,6 +1365,13 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
+		// Make sure the distributor service and all its dependent services have been
+		// started. The following checks in this middleware depend on the runtime config
+		// service having been started.
+		if s := d.State(); s != services.Running {
+			return newUnavailableError(s)
+		}
+
 		// We don't know request size yet, will check it later.
 		ctx, rs, err := d.startPushRequest(ctx, -1)
 		if err != nil {
@@ -1229,12 +1384,8 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			d.cleanupAfterPushFinished(rs)
 		})
 
-		cleanupInDefer := true
-		defer func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}()
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
+		defer maybeCleanup()
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -1260,9 +1411,25 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 			return err
 		}
 
-		cleanupInDefer = false
 		return next(ctx, pushReq)
 	}
+}
+
+// NextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
+// The cleanup function will only call Request.CleanUp() if next() wasn't called previously.
+//
+// This function is used outside of this codebase.
+func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
+	cleanupInDefer := true
+	return func(ctx context.Context, req *Request) error {
+			cleanupInDefer = false
+			return next(ctx, req)
+		},
+		func() {
+			if cleanupInDefer {
+				pushReq.CleanUp()
+			}
+		}
 }
 
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
@@ -1289,19 +1456,12 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 		return pushErr
 	}
 
-	// This code is needed for backwards compatibility, since ingesters may still return errors
-	// created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate it.
-	_, ok := httpgrpc.HTTPResponseFromError(pushErr)
-	if ok {
-		return pushErr
-	}
-
 	serviceOverloadErrorEnabled := false
 	userID, err := tenant.TenantID(ctx)
 	if err == nil {
 		serviceOverloadErrorEnabled = d.limits.ServiceOverloadStatusCodeOnRateLimitEnabled(userID)
 	}
-	return toGRPCError(pushErr, serviceOverloadErrorEnabled)
+	return toErrorWithGRPCStatus(pushErr, serviceOverloadErrorEnabled)
 }
 
 // push takes a write request and distributes it to ingesters using the ring.
@@ -1342,64 +1502,173 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 		ctx = ingester_client.WithSlabPool(ctx, slabPool)
 	}
 
-	// Use an independent context to make sure all ingesters get samples even if we return early.
-	// It will still take a while to calculate which ingester gets which series,
-	// so we'll start the remote timeout once the first callback is called.
-	remoteRequestContext := sync.OnceValues(func() (context.Context, context.CancelFunc) {
-		return context.WithTimeout(context.WithoutCancel(ctx), d.cfg.RemoteTimeout)
-	})
-
 	// Get both series and metadata keys in one slice.
 	keys, initialMetadataIndex := getSeriesAndMetadataTokens(userID, req)
 
+	var (
+		ingestersSubring  ring.DoBatchRing
+		partitionsSubring ring.DoBatchRing
+	)
+
 	// Get the tenant's subring to use to either write to ingesters or partitions.
-	var tenantRing ring.DoBatchRing
 	if d.cfg.IngestStorageConfig.Enabled {
 		subring, err := d.partitionsRing.ShuffleShard(userID, d.limits.IngestionPartitionsTenantShardSize(userID))
 		if err != nil {
 			return err
 		}
 
-		tenantRing = ring.NewActivePartitionBatchRing(subring.PartitionRing())
-	} else {
-		tenantRing = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
+		partitionsSubring = ring.NewActivePartitionBatchRing(subring.PartitionRing())
 	}
 
-	// we must not re-use buffers now until all DoBatch goroutines have finished,
-	// so set this flag false and pass cleanup() to DoBatch.
+	if !d.cfg.IngestStorageConfig.Enabled || d.cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled {
+		ingestersSubring = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
+	}
+
+	// we must not re-use buffers now until all writes to backends (e.g. ingesters) have completed, which can happen
+	// even after this function returns. For this reason, it's unsafe to cleanup in the defer and we'll do the cleanup
+	// once all backend requests have completed (see cleanup function passed to sendWriteRequestToBackends()).
 	cleanupInDefer = false
 
-	err = ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
-		func(instance ring.InstanceDesc, indexes []int) error {
-			req := req.ForIndexes(indexes, initialMetadataIndex)
+	return d.sendWriteRequestToBackends(ctx, userID, req, keys, initialMetadataIndex, ingestersSubring, partitionsSubring, pushReq.CleanUp)
+}
 
-			// Do not cancel the remoteRequestContext in this callback:
-			// there are more callbacks using it at the same time.
-			localCtx, _ := remoteRequestContext()
-			var err error
-			if d.cfg.IngestStorageConfig.Enabled {
-				err = d.sendToStorage(localCtx, userID, instance, req)
-			} else {
-				err = d.sendToIngester(localCtx, instance, req)
-			}
-
-			if errors.Is(err, context.DeadlineExceeded) {
-				return errors.Wrap(err, deadlineExceededWrapMessage)
-			}
-			return err
-		},
-		ring.DoBatchOptions{
-			Cleanup: func() {
-				pushReq.CleanUp()
-				_, cancel := remoteRequestContext()
-				cancel()
-			},
-			IsClientError: isIngesterClientError,
-			Go:            d.doBatchPushWorkers,
-		},
+// sendWriteRequestToBackends sends the input req data to backends. The backends could be:
+// - Ingesters, when ingestersSubring is not nil
+// - Ingest storage partitions, when partitionsSubring is not nil
+//
+// The input cleanup function is guaranteed to be called after all requests to all backends have completed.
+func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID string, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, ingestersSubring, partitionsSubring ring.DoBatchRing, cleanup func()) error {
+	var (
+		wg            = sync.WaitGroup{}
+		partitionsErr error
+		ingestersErr  error
 	)
 
-	return err
+	// Ensure at least one ring has been provided.
+	if ingestersSubring == nil && partitionsSubring == nil {
+		// It should never happen. If it happens, it's a logic bug.
+		panic("no tenant subring has been provided to sendWriteRequestToBackends()")
+	}
+
+	// Use an independent context to make sure all backend instances (e.g. ingesters) get samples even if we return early.
+	// It will still take a while to lookup the ring and calculate which instance gets which series,
+	// so we'll start the remote timeout once the first callback is called.
+	remoteRequestContextAndCancel := sync.OnceValues(func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(context.WithoutCancel(ctx), d.cfg.RemoteTimeout)
+	})
+
+	remoteRequestContext := func() context.Context {
+		ctx, _ := remoteRequestContextAndCancel()
+		return ctx
+	}
+
+	batchCleanup := func() {
+		// Notify the provided callback that it's now safe to run the cleanup because there are no
+		// more in-flight requests to the backend.
+		cleanup()
+
+		// All requests have completed, so it's now safe to cancel the requests context to release resources.
+		_, cancel := remoteRequestContextAndCancel()
+		cancel()
+	}
+
+	batchOptions := ring.DoBatchOptions{
+		Cleanup:       batchCleanup,
+		IsClientError: isIngestionClientError,
+		Go:            d.doBatchPushWorkers,
+	}
+
+	// Keep it easy if there's only 1 backend to write to.
+	if partitionsSubring == nil {
+		return d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
+	}
+	if ingestersSubring == nil {
+		return d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
+	}
+
+	// Prepare a callback function that will call the input cleanup callback function only after
+	// the cleanup has been done for all backends.
+	cleanupWaitBackends := atomic.NewInt64(2)
+	batchOptions.Cleanup = func() {
+		if cleanupWaitBackends.Dec() == 0 {
+			batchCleanup()
+		}
+	}
+
+	// Write both to ingesters and partitions.
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+
+		ingestersErr = d.sendWriteRequestToIngesters(ctx, ingestersSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		partitionsErr = d.sendWriteRequestToPartitions(ctx, tenantID, partitionsSubring, req, keys, initialMetadataIndex, remoteRequestContext, batchOptions)
+	}()
+
+	// Wait until all backends have done.
+	wg.Wait()
+
+	// Ingester errors could be soft (e.g. 4xx) or hard errors (e.g. 5xx) errors, while partition errors are always hard
+	// errors. For this reason, it's important to give precedence to partition errors, otherwise the distributor may return
+	// a 4xx (ingester error) when it should actually be a 5xx (partition error).
+	if partitionsErr != nil {
+		return partitionsErr
+	}
+	return ingestersErr
+}
+
+func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
+	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
+		func(ingester ring.InstanceDesc, indexes []int) error {
+			req := req.ForIndexes(indexes, initialMetadataIndex)
+
+			h, err := d.ingesterPool.GetClientForInstance(ingester)
+			if err != nil {
+				return err
+			}
+			c := h.(ingester_client.IngesterClient)
+
+			ctx := remoteRequestContext()
+			ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
+
+			_, err = c.Push(ctx, req)
+			err = wrapIngesterPushError(err, ingester.Id)
+			err = wrapDeadlineExceededPushError(err)
+
+			return err
+		}, batchOptions)
+
+	// Since data may be written to different backends it may be helpful to clearly identify which backend failed.
+	return errors.Wrap(err, "send data to ingesters")
+}
+
+func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
+	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
+		func(partition ring.InstanceDesc, indexes []int) error {
+			req := req.ForIndexes(indexes, initialMetadataIndex)
+
+			// The partition ID is stored in the ring.InstanceDesc Id.
+			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
+			if err != nil {
+				return err
+			}
+
+			ctx := remoteRequestContext()
+			err = d.ingestStorageWriter.WriteSync(ctx, int32(partitionID), tenantID, req)
+			err = wrapPartitionPushError(err, int32(partitionID))
+			err = wrapDeadlineExceededPushError(err)
+
+			return err
+		}, batchOptions,
+	)
+
+	// Since data may be written to different backends it may be helpful to clearly identify which backend failed.
+	return errors.Wrap(err, "send data to partitions")
 }
 
 // getSeriesAndMetadataTokens returns a slice of tokens for the series and metadata from the request in this specific order.
@@ -1459,31 +1728,6 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))
 	d.receivedExemplars.WithLabelValues(userID).Add(float64(receivedExemplars))
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(receivedMetadata))
-}
-
-// sendToIngester sends received data to a specific ingester. This function is used when ingest storage is disabled.
-func (d *Distributor) sendToIngester(ctx context.Context, ingester ring.InstanceDesc, req *mimirpb.WriteRequest) error {
-	h, err := d.ingesterPool.GetClientForInstance(ingester)
-	if err != nil {
-		return err
-	}
-	c := h.(ingester_client.IngesterClient)
-
-	ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
-	_, err = c.Push(ctx, req)
-	return wrapIngesterPushError(err, ingester.Id)
-}
-
-// sendToStorage sends received data to the configured ingest storage. This function is used when ingest storage is enabled.
-func (d *Distributor) sendToStorage(ctx context.Context, userID string, partition ring.InstanceDesc, req *mimirpb.WriteRequest) error {
-	// The partition ID is stored in the ring.InstanceDesc Id.
-	partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
-	if err != nil {
-		return err
-	}
-
-	err = d.ingestStorageWriter.WriteSync(ctx, int32(partitionID), userID, req)
-	return wrapPartitionPushError(err, int32(partitionID))
 }
 
 // forReplicationSets runs f, in parallel, for all ingesters in the input replicationSets.
@@ -1835,11 +2079,20 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		return nil, err
 	}
 
-	// When the ingest storage is enabled a partition is owned by only 1 ingester per zone,
-	// so regardless the number of zones we have it's behaving like multi-zone is always enabled.
-	isMultiZone := d.cfg.IngestStorageConfig.Enabled || (len(replicationSets) > 0 && replicationSets[0].ZoneCount() > 1)
+	zonesTotal := 0
+	if len(replicationSets) > 0 {
+		zonesTotal = replicationSets[0].ZoneCount()
+	}
+	approximateFromZonesFunc := func(countByZone map[string]uint64) uint64 {
+		return approximateFromZones(zonesTotal, d.ingestersRing.ReplicationFactor(), countByZone)
+	}
+	// When the ingest storage is enabled a partition is owned by only 1 ingester per zone.
+	// So we always approximate the resulting stats as max of what a single zone has.
+	if d.cfg.IngestStorageConfig.Enabled {
+		approximateFromZonesFunc = maxFromZones[uint64]
+	}
 
-	return cardinalityConcurrentMap.toResponse(isMultiZone, d.ingestersRing.ReplicationFactor()), nil
+	return cardinalityConcurrentMap.toResponse(approximateFromZonesFunc), nil
 }
 
 func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher, countMethod cardinality.CountMethod) (*ingester_client.LabelValuesCardinalityRequest, error) {
@@ -1929,7 +2182,7 @@ func (cm *labelValuesCardinalityConcurrentMap) processMessage(replicationSetIdx 
 
 // toResponse adjust builds and returns LabelValuesCardinalityResponse containing the count of series by label name
 // and value.
-func (cm *labelValuesCardinalityConcurrentMap) toResponse(isMultiZone bool, replicationFactor int) *ingester_client.LabelValuesCardinalityResponse {
+func (cm *labelValuesCardinalityConcurrentMap) toResponse(approximateFromZonesFunc func(countByZone map[string]uint64) uint64) *ingester_client.LabelValuesCardinalityResponse {
 	// we need to acquire the lock to prevent concurrent read/write to the map
 	cm.labelValuesCountersMx.Lock()
 	defer cm.labelValuesCountersMx.Unlock()
@@ -1946,7 +2199,7 @@ func (cm *labelValuesCardinalityConcurrentMap) toResponse(isMultiZone bool, repl
 			total := uint64(0)
 
 			for _, countByZone := range dataByReplicationSet {
-				total += approximateFromZones(isMultiZone, replicationFactor, countByZone)
+				total += approximateFromZonesFunc(countByZone)
 			}
 
 			countByLabelValue[labelValue] = total
@@ -1966,6 +2219,34 @@ func (cm *labelValuesCardinalityConcurrentMap) toResponse(isMultiZone bool, repl
 // ActiveSeries queries the ingester replication set for active series matching
 // the given selector. It combines and deduplicates the results.
 func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Matcher) ([]labels.Labels, error) {
+	res, err := d.deduplicateActiveSeries(ctx, matchers, false)
+	if err != nil {
+		return nil, err
+	}
+
+	deduplicatedSeries, fetchedSeries := res.result()
+
+	reqStats := stats.FromContext(ctx)
+	reqStats.AddFetchedSeries(fetchedSeries)
+
+	return deduplicatedSeries, nil
+}
+
+func (d *Distributor) ActiveNativeHistogramMetrics(ctx context.Context, matchers []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
+	res, err := d.deduplicateActiveSeries(ctx, matchers, true)
+	if err != nil {
+		return nil, err
+	}
+
+	metrics, fetchedSeries := res.metricResult()
+
+	reqStats := stats.FromContext(ctx)
+	reqStats.AddFetchedSeries(fetchedSeries)
+
+	return &cardinality.ActiveNativeHistogramMetricsResponse{Data: metrics}, nil
+}
+
+func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*labels.Matcher, nativeHistograms bool) (*activeSeriesResponse, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -1981,6 +2262,9 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 	if err != nil {
 		return nil, err
 	}
+	if nativeHistograms {
+		req.Type = ingester_client.NATIVE_HISTOGRAM_SERIES
+	}
 
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1991,7 +2275,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 	if limit := d.limits.ActiveSeriesResultsMaxSizeBytes(tenantID); limit > 0 {
 		maxResponseSize = limit
 	}
-	res := newActiveSeriesResponse(d.hashCollisionCount, maxResponseSize)
+	res := newActiveSeriesResponse(d.hashCollisionCount, maxResponseSize, !nativeHistograms)
 
 	ingesterQuery := func(ctx context.Context, client ingester_client.IngesterClient) (any, error) {
 		// This function is invoked purely for its side effects on the captured
@@ -2003,7 +2287,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 
 		stream, err := client.ActiveSeries(ctx, req)
 		if err != nil {
-			if errors.Is(util.WrapGrpcContextError(err), context.Canceled) {
+			if errors.Is(globalerror.WrapGRPCErrorWithContextError(ctx, err), context.Canceled) {
 				return ignored{}, nil
 			}
 			level.Error(log).Log("msg", "error creating active series response stream", "err", err)
@@ -2013,7 +2297,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 
 		defer func() {
 			err = util.CloseAndExhaust[*ingester_client.ActiveSeriesResponse](stream)
-			if err != nil && !errors.Is(util.WrapGrpcContextError(err), context.Canceled) {
+			if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(ctx, err), context.Canceled) {
 				level.Warn(d.log).Log("msg", "error closing active series response stream", "err", err)
 			}
 		}()
@@ -2024,7 +2308,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 				if errors.Is(err, io.EOF) {
 					break
 				}
-				if errors.Is(util.WrapGrpcContextError(err), context.Canceled) {
+				if errors.Is(globalerror.WrapGRPCErrorWithContextError(ctx, err), context.Canceled) {
 					return ignored{}, nil
 				}
 				level.Error(log).Log("msg", "error receiving active series response", "err", err)
@@ -2032,7 +2316,7 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 				return nil, err
 			}
 
-			err = res.add(msg.Metric)
+			err = res.add(msg.Metric, msg.BucketCount)
 			if err != nil {
 				return nil, err
 			}
@@ -2046,21 +2330,22 @@ func (d *Distributor) ActiveSeries(ctx context.Context, matchers []*labels.Match
 		return nil, err
 	}
 
-	deduplicatedSeries := res.result()
+	return res, nil
+}
 
-	reqStats := stats.FromContext(ctx)
-	reqStats.AddFetchedSeries(uint64(len(deduplicatedSeries)))
-
-	return deduplicatedSeries, nil
+type labelsWithBucketCount struct {
+	labels.Labels
+	bucketCount uint64
 }
 
 type entry struct {
-	first      labels.Labels
-	collisions []labels.Labels
+	first      labelsWithBucketCount
+	collisions []labelsWithBucketCount
 }
 
 // activeSeriesResponse is a helper to merge/deduplicate ActiveSeries responses from ingesters.
 type activeSeriesResponse struct {
+	ignoreBucketCount  bool
 	m                  sync.Mutex
 	series             map[uint64]entry
 	builder            labels.ScratchBuilder
@@ -2072,8 +2357,9 @@ type activeSeriesResponse struct {
 	maxSize int
 }
 
-func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int) *activeSeriesResponse {
+func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int, ignoreBucketCount bool) *activeSeriesResponse {
 	return &activeSeriesResponse{
+		ignoreBucketCount:  ignoreBucketCount,
 		series:             map[uint64]entry{},
 		builder:            labels.NewScratchBuilder(40),
 		hashCollisionCount: hashCollisionCount,
@@ -2083,12 +2369,12 @@ func newActiveSeriesResponse(hashCollisionCount prometheus.Counter, maxSize int)
 
 var ErrResponseTooLarge = errors.New("response too large")
 
-func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
+func (r *activeSeriesResponse) add(series []*mimirpb.Metric, bucketCounts []uint64) error {
 
 	r.m.Lock()
 	defer r.m.Unlock()
 
-	for _, metric := range series {
+	for i, metric := range series {
 		mimirpb.FromLabelAdaptersOverwriteLabels(&r.builder, metric.Labels, &r.lbls)
 		lblHash := r.lbls.Hash()
 		if e, ok := r.series[lblHash]; !ok {
@@ -2099,18 +2385,21 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
 			if r.size > r.maxSize {
 				return ErrResponseTooLarge
 			}
-
-			r.series[lblHash] = entry{first: l}
+			if r.ignoreBucketCount {
+				r.series[lblHash] = entry{first: labelsWithBucketCount{labels.Labels(l), 0}}
+			} else {
+				r.series[lblHash] = entry{first: labelsWithBucketCount{labels.Labels(l), bucketCounts[i]}}
+			}
 		} else {
 			// A series with this hash is already present in the result set, we need to
 			// detect potential hash collisions by comparing the labels of the candidate to
 			// the labels in the result set and add the candidate if it's not present.
-			present := labels.Equal(e.first, r.lbls)
+			present := labels.Equal(e.first.Labels, r.lbls)
 			for _, lbls := range e.collisions {
 				if present {
 					break
 				}
-				present = labels.Equal(lbls, r.lbls)
+				present = labels.Equal(lbls.Labels, r.lbls)
 			}
 
 			if !present {
@@ -2121,8 +2410,11 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
 				if r.size > r.maxSize {
 					return ErrResponseTooLarge
 				}
-
-				e.collisions = append(e.collisions, l)
+				if r.ignoreBucketCount {
+					e.collisions = append(e.collisions, labelsWithBucketCount{labels.Labels(l), 0})
+				} else {
+					e.collisions = append(e.collisions, labelsWithBucketCount{labels.Labels(l), bucketCounts[i]})
+				}
 				r.series[lblHash] = e
 				r.hashCollisionCount.Inc()
 			}
@@ -2132,49 +2424,125 @@ func (r *activeSeriesResponse) add(series []*mimirpb.Metric) error {
 	return nil
 }
 
-func (r *activeSeriesResponse) result() []labels.Labels {
+func (r *activeSeriesResponse) result() ([]labels.Labels, uint64) {
 	r.m.Lock()
 	defer r.m.Unlock()
 
 	result := make([]labels.Labels, 0, len(r.series))
 	for _, series := range r.series {
-		result = append(result, series.first)
-		result = append(result, series.collisions...)
+		result = append(result, series.first.Labels)
+		for _, collision := range series.collisions {
+			result = append(result, collision.Labels)
+		}
 	}
-	return result
+	return result, uint64(len(result))
 }
 
-// approximateFromZones computes a zonal value while factoring in replication.
+type metricBucketCounts struct {
+	SeriesCount    uint64
+	BucketCount    uint64
+	MaxBucketCount uint64
+	MinBucketCount uint64
+}
+
+// Aggregate native histogram bucket counts on metric level.
+func (r *activeSeriesResponse) metricResult() ([]cardinality.ActiveMetricWithBucketCount, uint64) {
+	metrics, fetchedSeries := r.getMetricCounts()
+	result := make([]cardinality.ActiveMetricWithBucketCount, 0, len(metrics))
+	for name, metric := range metrics {
+		result = append(result, cardinality.ActiveMetricWithBucketCount{
+			Metric:         name,
+			SeriesCount:    metric.SeriesCount,
+			BucketCount:    metric.BucketCount,
+			MaxBucketCount: metric.MaxBucketCount,
+			MinBucketCount: metric.MinBucketCount,
+			AvgBucketCount: float64(metric.BucketCount) / float64(metric.SeriesCount),
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Metric < result[j].Metric
+	})
+	return result, fetchedSeries
+}
+
+func (r *activeSeriesResponse) getMetricCounts() (map[string]*metricBucketCounts, uint64) {
+	r.m.Lock()
+	defer r.m.Unlock()
+
+	fetchedSeries := uint64(0)
+	metrics := map[string]*metricBucketCounts{}
+	for _, series := range r.series {
+		fetchedSeries += 1 + uint64(len(series.collisions))
+		updateMetricCounts(metrics, series.first)
+		for _, collision := range series.collisions {
+			updateMetricCounts(metrics, collision)
+		}
+	}
+	return metrics, fetchedSeries
+}
+
+func updateMetricCounts(metrics map[string]*metricBucketCounts, series labelsWithBucketCount) {
+	bucketCount := series.bucketCount
+	if m, ok := metrics[series.Get(model.MetricNameLabel)]; ok {
+		m.SeriesCount++
+		m.BucketCount += bucketCount
+		if m.MaxBucketCount < bucketCount {
+			m.MaxBucketCount = bucketCount
+		}
+		if m.MinBucketCount > bucketCount {
+			m.MinBucketCount = bucketCount
+		}
+	} else {
+		metrics[series.Get(model.MetricNameLabel)] = &metricBucketCounts{
+			SeriesCount:    1,
+			BucketCount:    bucketCount,
+			MaxBucketCount: bucketCount,
+			MinBucketCount: bucketCount,
+		}
+	}
+}
+
+// approximateFromZones computes a zonal value while factoring in replication;
 // e.g. series cardinality or ingestion rate.
 //
 // If Mimir isn't deployed in a multi-zone configuration, approximateFromZones
 // divides the sum of all values by the replication factor to come up with an approximation.
-func approximateFromZones[T ~float64 | ~uint64](isMultiZone bool, replicationFactor int, seriesCountMapByZone map[string]T) T {
+func approximateFromZones[T ~float64 | ~uint64](zonesTotal, replicationFactor int, seriesCountByZone map[string]T) T {
 	// If we have more than one zone, we return the max value across zones.
 	// Values can be different across zones due to incomplete replication or
 	// other issues. Any inconsistency should always be an underestimation of
 	// the real value, so we take the max to get the best available
 	// approximation.
-	if isMultiZone {
-		var max T
-		for _, seriesCount := range seriesCountMapByZone {
-			if seriesCount > max {
-				max = seriesCount
-			}
+	if zonesTotal > 1 {
+		val := maxFromZones(seriesCountByZone)
+		if zonesTotal <= replicationFactor {
+			return val
 		}
-		return max
+		// When the number of zones is larger than the replication factor, we factor
+		// that into the approximation. We multiply the max of all zones to a ratio
+		// of number of zones to the replication factor to approximate how series
+		// are spread across zones.
+		return T(math.Round(float64(val) * float64(zonesTotal) / float64(replicationFactor)))
 	}
 
-	// If we have a single zone: we can't return the value directly because
-	// series will be replicated randomly across ingesters, and there's no way
-	// here to know how many unique series really exist. In this case, dividing
-	// by the replication factor will give us an approximation of the real
-	// value.
+	// If we have a single zone or number of zones is larger than RF, we can't return
+	// the value directly. The series will be replicated randomly across ingesters, and there's no way
+	// here to know how many unique series really exist. In this case, dividing by the replication factor
+	// will give us an approximation of the real value.
 	var sum T
-	for _, seriesCount := range seriesCountMapByZone {
+	for _, seriesCount := range seriesCountByZone {
 		sum += seriesCount
 	}
 	return T(math.Round(float64(sum) / float64(replicationFactor)))
+}
+
+func maxFromZones[T ~float64 | ~uint64](seriesCountByZone map[string]T) (val T) {
+	for _, seriesCount := range seriesCountByZone {
+		if seriesCount > val {
+			val = seriesCount
+		}
+	}
+	return val
 }
 
 // LabelNames returns the names of all labels from series with samples timestamp between from and to, and matching
@@ -2246,7 +2614,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		if err := queryLimiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(m)); err != nil {
+		if err := queryLimiter.AddSeries(m); err != nil {
 			return nil, err
 		}
 		result = append(result, m)
@@ -2380,14 +2748,19 @@ func (d *Distributor) UserStats(ctx context.Context, countMethod cardinality.Cou
 			zoneNumSeries[r.zone] += r.resp.NumSeries
 		}
 
-		// When the ingest storage is enabled a partition is owned by only 1 ingester per zone,
-		// so regardless the number of zones we have it's behaving like multi-zone is always enabled.
-		isMultiZone := d.cfg.IngestStorageConfig.Enabled || replicationSet.ZoneCount() > 1
-
-		totalStats.IngestionRate += approximateFromZones(isMultiZone, d.ingestersRing.ReplicationFactor(), zoneIngestionRate)
-		totalStats.APIIngestionRate += approximateFromZones(isMultiZone, d.ingestersRing.ReplicationFactor(), zoneAPIIngestionRate)
-		totalStats.RuleIngestionRate += approximateFromZones(isMultiZone, d.ingestersRing.ReplicationFactor(), zoneRuleIngestionRate)
-		totalStats.NumSeries += approximateFromZones(isMultiZone, d.ingestersRing.ReplicationFactor(), zoneNumSeries)
+		// When the ingest storage is enabled, a partition is owned by only 1 ingester per zone.
+		// So we always approximate the resulting stats as max of what a single zone has.
+		if d.cfg.IngestStorageConfig.Enabled {
+			totalStats.IngestionRate += maxFromZones(zoneIngestionRate)
+			totalStats.APIIngestionRate += maxFromZones(zoneAPIIngestionRate)
+			totalStats.RuleIngestionRate += maxFromZones(zoneRuleIngestionRate)
+			totalStats.NumSeries += maxFromZones(zoneNumSeries)
+		} else {
+			totalStats.IngestionRate += approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneIngestionRate)
+			totalStats.APIIngestionRate += approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneAPIIngestionRate)
+			totalStats.RuleIngestionRate += approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneRuleIngestionRate)
+			totalStats.NumSeries += approximateFromZones(replicationSet.ZoneCount(), d.ingestersRing.ReplicationFactor(), zoneNumSeries)
+		}
 	}
 
 	return totalStats, nil

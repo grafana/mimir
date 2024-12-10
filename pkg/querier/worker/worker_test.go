@@ -29,7 +29,7 @@ func TestConfig_Validate(t *testing.T) {
 		expectedErr string
 	}{
 		"should pass with default config": {
-			setup: func(cfg *Config) {},
+			setup: func(*Config) {},
 		},
 		"should pass if frontend address is configured, but not scheduler address": {
 			setup: func(cfg *Config) {
@@ -125,46 +125,46 @@ func TestResetConcurrency(t *testing.T) {
 		expectedConcurrency int
 	}{
 		{
-			name:                "Create at least one processor per target if max concurrent = 0, with all targets in use",
+			name:                "Create at least the minimum processors per target if max concurrent = 0, with all targets in use",
 			maxConcurrent:       0,
 			numTargets:          2,
 			numInUseTargets:     2,
-			expectedConcurrency: 2,
+			expectedConcurrency: 8,
 		},
 		{
-			name:                "Create at least one processor per target if max concurrent = 0, with some targets in use",
+			name:                "Create at least the minimum processors per target if max concurrent = 0, with some targets in use",
 			maxConcurrent:       0,
 			numTargets:          2,
 			numInUseTargets:     1,
-			expectedConcurrency: 2,
+			expectedConcurrency: 8,
 		},
 		{
 			name:                "Max concurrent dividing with a remainder, with all targets in use",
-			maxConcurrent:       7,
+			maxConcurrent:       19,
 			numTargets:          4,
 			numInUseTargets:     4,
-			expectedConcurrency: 7,
+			expectedConcurrency: 19,
 		},
 		{
 			name:            "Max concurrent dividing with a remainder, with some targets in use",
-			maxConcurrent:   7,
+			maxConcurrent:   9,
 			numTargets:      4,
 			numInUseTargets: 2,
-			expectedConcurrency:/* in use:  */ 7 + /* not in use : */ 2,
+			expectedConcurrency:/* in use:  */ 9 + /* not in use : */ 8,
 		},
 		{
 			name:                "Max concurrent dividing evenly, with all targets in use",
-			maxConcurrent:       6,
+			maxConcurrent:       12,
 			numTargets:          2,
 			numInUseTargets:     2,
-			expectedConcurrency: 6,
+			expectedConcurrency: 12,
 		},
 		{
 			name:            "Max concurrent dividing evenly, with some targets in use",
-			maxConcurrent:   6,
+			maxConcurrent:   12,
 			numTargets:      4,
 			numInUseTargets: 2,
-			expectedConcurrency:/* in use:  */ 6 + /* not in use : */ 2,
+			expectedConcurrency:/* in use:  */ 12 + /* not in use : */ 8,
 		},
 	}
 
@@ -205,25 +205,25 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 	}{
 		"should return empty map on no instances": {
 			instances:     nil,
-			maxConcurrent: 4,
+			maxConcurrent: 2,
 			expected:      map[string]int{},
 		},
-		"should divide the max concurrency between in-use instances, and create 1 connection for each instance not in-use": {
+		"should divide the max concurrency between in-use instances, and create minimum connections for each instance not in-use": {
 			instances: []servicediscovery.Instance{
 				{Address: "1.1.1.1", InUse: true},
 				{Address: "2.2.2.2", InUse: false},
 				{Address: "3.3.3.3", InUse: true},
 				{Address: "4.4.4.4", InUse: false},
 			},
-			maxConcurrent: 4,
+			maxConcurrent: 12,
 			expected: map[string]int{
-				"1.1.1.1": 2,
-				"2.2.2.2": 1,
-				"3.3.3.3": 2,
-				"4.4.4.4": 1,
+				"1.1.1.1": 6,
+				"2.2.2.2": MinConcurrencyPerRequestQueue,
+				"3.3.3.3": 6,
+				"4.4.4.4": MinConcurrencyPerRequestQueue,
 			},
 		},
-		"should create 1 connection for each instance if max concurrency is set to 0": {
+		"should create the minimum connections for each instance if max concurrency is set to 0": {
 			instances: []servicediscovery.Instance{
 				{Address: "1.1.1.1", InUse: true},
 				{Address: "2.2.2.2", InUse: false},
@@ -232,25 +232,25 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 			},
 			maxConcurrent: 0,
 			expected: map[string]int{
-				"1.1.1.1": 1,
-				"2.2.2.2": 1,
-				"3.3.3.3": 1,
-				"4.4.4.4": 1,
+				"1.1.1.1": MinConcurrencyPerRequestQueue,
+				"2.2.2.2": MinConcurrencyPerRequestQueue,
+				"3.3.3.3": MinConcurrencyPerRequestQueue,
+				"4.4.4.4": MinConcurrencyPerRequestQueue,
 			},
 		},
-		"should create 1 connection for each instance if max concurrency is > 0 but less than the number of in-use instances": {
+		"should create the minimum connections for each instance if max concurrency is less than (instances * minimum connections per instance)": {
 			instances: []servicediscovery.Instance{
 				{Address: "1.1.1.1", InUse: true},
 				{Address: "2.2.2.2", InUse: false},
 				{Address: "3.3.3.3", InUse: true},
 				{Address: "4.4.4.4", InUse: false},
 			},
-			maxConcurrent: 1,
+			maxConcurrent: 2,
 			expected: map[string]int{
-				"1.1.1.1": 1,
-				"2.2.2.2": 1,
-				"3.3.3.3": 1,
-				"4.4.4.4": 1,
+				"1.1.1.1": MinConcurrencyPerRequestQueue,
+				"2.2.2.2": MinConcurrencyPerRequestQueue,
+				"3.3.3.3": MinConcurrencyPerRequestQueue,
+				"4.4.4.4": MinConcurrencyPerRequestQueue,
 			},
 		},
 	}

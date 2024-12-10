@@ -1,0 +1,85 @@
+---
+# Source: mimir-distributed/charts/minio/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-ruler-dedicated-query-path-values-minio
+  labels:
+    app: minio
+    chart: minio-5.3.0
+    release: test-ruler-dedicated-query-path-values
+    heritage: Helm
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 100%
+      maxUnavailable: 0
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      release: test-ruler-dedicated-query-path-values
+  template:
+    metadata:
+      name: test-ruler-dedicated-query-path-values-minio
+      labels:
+        app: minio
+        release: test-ruler-dedicated-query-path-values
+      annotations:
+        checksum/secrets: 4a539a32977b5fb35ace69ebd2a0d4509d0fdfce24da90bd607de9f97f1626aa
+        checksum/config: cfb80dab323c58c0e2b76d1b410d1ae615b62f016b5830fde41a23162adc4292
+    spec:
+      securityContext:
+        
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
+      
+      serviceAccountName: minio-sa
+      containers:
+        - name: minio
+          image: "quay.io/minio/minio:RELEASE.2024-04-18T19-09-19Z"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-ce"
+            - "/usr/bin/docker-entrypoint.sh minio server /export -S /etc/minio/certs/ --address :9000 --console-address :9001"
+          volumeMounts:
+            - name: minio-user
+              mountPath: "/tmp/credentials"
+              readOnly: true
+            - name: export
+              mountPath: /export            
+          ports:
+            - name: http
+              containerPort: 9000
+            - name: http-console
+              containerPort: 9001
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: test-ruler-dedicated-query-path-values-minio
+                  key: rootUser
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: test-ruler-dedicated-query-path-values-minio
+                  key: rootPassword
+            - name: MINIO_PROMETHEUS_AUTH_TYPE
+              value: "public"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
+      volumes:
+        - name: export
+          persistentVolumeClaim:
+            claimName: test-ruler-dedicated-query-path-values-minio
+        - name: minio-user
+          secret:
+            secretName: test-ruler-dedicated-query-path-values-minio

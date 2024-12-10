@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"regexp"
 	"strconv"
 	"strings"
@@ -444,16 +443,16 @@ func NewRecordFormatter(layout string) (*RecordFormatter, error) {
 				layout = layout[len("compression}"):]
 				f.fns = append(f.fns, func(b []byte, _ *FetchPartition, r *Record) []byte {
 					return writeR(b, r, func(b []byte, r *Record) []byte {
-						switch r.Attrs.CompressionType() {
-						case 0:
+						switch codecType(r.Attrs.CompressionType()) {
+						case codecNone:
 							return append(b, "none"...)
-						case 1:
+						case codecGzip:
 							return append(b, "gzip"...)
-						case 2:
+						case codecSnappy:
 							return append(b, "snappy"...)
-						case 3:
+						case codecLZ4:
 							return append(b, "lz4"...)
-						case 4:
+						case codecZstd:
 							return append(b, "zstd"...)
 						default:
 							return append(b, "unknown"...)
@@ -1829,7 +1828,7 @@ func (r *RecordReader) readExact(d []byte) error {
 func (r *RecordReader) readDelim(d []byte) error {
 	// Empty delimiters opt in to reading the rest of the text.
 	if len(d) == 0 {
-		b, err := ioutil.ReadAll(r.r)
+		b, err := io.ReadAll(r.r)
 		r.buf = b
 		// ReadAll stops at io.EOF, but we need to bubble that up.
 		if err == nil {

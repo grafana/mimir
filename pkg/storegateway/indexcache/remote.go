@@ -38,7 +38,7 @@ var (
 // RemoteIndexCache is a memcached or redis based index cache.
 type RemoteIndexCache struct {
 	logger log.Logger
-	remote cache.RemoteCacheClient
+	remote cache.Cache
 
 	// Metrics.
 	requests *prometheus.CounterVec
@@ -46,7 +46,7 @@ type RemoteIndexCache struct {
 }
 
 // NewRemoteIndexCache makes a new RemoteIndexCache.
-func NewRemoteIndexCache(logger log.Logger, remote cache.RemoteCacheClient, reg prometheus.Registerer) (*RemoteIndexCache, error) {
+func NewRemoteIndexCache(logger log.Logger, remote cache.Cache, reg prometheus.Registerer) (*RemoteIndexCache, error) {
 	c := &RemoteIndexCache{
 		logger: logger,
 		remote: remote,
@@ -83,8 +83,8 @@ func (c *RemoteIndexCache) get(ctx context.Context, typ string, key string) ([]b
 // StorePostings sets the postings identified by the ulid and label to the value v.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
-func (c *RemoteIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte) {
-	c.remote.SetAsync(postingsCacheKey(userID, blockID.String(), l), v, defaultTTL)
+func (c *RemoteIndexCache) StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte, ttl time.Duration) {
+	c.remote.SetAsync(postingsCacheKey(userID, blockID.String(), l), v, ttl)
 }
 
 // FetchMultiPostings fetches multiple postings - each identified by a label.

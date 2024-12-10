@@ -364,11 +364,6 @@ func (c *consumer) initGroup() {
 		}
 		g.tps.storeTopics(topics)
 	}
-
-	if !g.cfg.autocommitDisable && g.cfg.autocommitInterval > 0 {
-		g.cfg.logger.Log(LogLevelInfo, "beginning autocommit loop", "group", g.cfg.group)
-		go g.loopCommit()
-	}
 }
 
 // Manages the group consumer's join / sync / heartbeat / fetch offset flow.
@@ -380,6 +375,10 @@ func (c *consumer) initGroup() {
 func (g *groupConsumer) manage() {
 	defer close(g.manageDone)
 	g.cfg.logger.Log(LogLevelInfo, "beginning to manage the group lifecycle", "group", g.cfg.group)
+	if !g.cfg.autocommitDisable && g.cfg.autocommitInterval > 0 {
+		g.cfg.logger.Log(LogLevelInfo, "beginning autocommit loop", "group", g.cfg.group)
+		go g.loopCommit()
+	}
 
 	var consecutiveErrors int
 	joinWhy := "beginning to manage the group lifecycle"
@@ -640,6 +639,7 @@ func (g *groupConsumer) revoke(stage revokeStage, lost map[string][]int32, leavi
 			g.cfg.onRevoked(g.cl.ctx, g.cl, g.nowAssigned.read())
 		}
 		g.nowAssigned.store(nil)
+		g.lastAssigned = nil
 
 		// After nilling uncommitted here, nothing should recreate
 		// uncommitted until a future fetch after the group is
@@ -862,12 +862,6 @@ func (g *groupConsumer) setupAssignedAndHeartbeat() (string, error) {
 	fetchDone := make(chan struct{})
 	defer func() { <-fetchDone }()
 
-	// If cooperative consuming, we may have to resume fetches. See the
-	// comment on adjustCooperativeFetchOffsets.
-	if g.cooperative.Load() {
-		added = g.adjustCooperativeFetchOffsets(added, lost)
-	}
-
 	// Before we fetch offsets, we wait for the user's onAssign callback to
 	// be done. This ensures a few things:
 	//
@@ -884,6 +878,18 @@ func (g *groupConsumer) setupAssignedAndHeartbeat() (string, error) {
 	// necessarily run onRevoke before returning (because of a fatal
 	// error).
 	s.assign(g, added)
+
+	// If cooperative consuming, we may have to resume fetches. See the
+	// comment on adjustCooperativeFetchOffsets.
+	//
+	// We do this AFTER the user's callback. If we add more partitions
+	// to `added` that are from a previously canceled fetch, we do NOT
+	// want to pass those fetch-resumed partitions to the user callback
+	// again. See #705.
+	if g.cooperative.Load() {
+		added = g.adjustCooperativeFetchOffsets(added, lost)
+	}
+
 	<-s.assignDone
 
 	if len(added) > 0 {
@@ -2131,11 +2137,17 @@ func (g *groupConsumer) loopCommit() {
 		g.noCommitDuringJoinAndSync.RLock()
 		g.mu.Lock()
 		if !g.blockAuto {
-			g.cfg.logger.Log(LogLevelDebug, "autocommitting", "group", g.cfg.group)
-			g.commit(g.ctx, g.getUncommittedLocked(true, false), func(cl *Client, req *kmsg.OffsetCommitRequest, resp *kmsg.OffsetCommitResponse, err error) {
+			uncommitted := g.getUncommittedLocked(true, false)
+			if len(uncommitted) == 0 {
+				g.cfg.logger.Log(LogLevelDebug, "skipping autocommit due to no offsets to commit", "group", g.cfg.group)
 				g.noCommitDuringJoinAndSync.RUnlock()
-				g.cfg.commitCallback(cl, req, resp, err)
-			})
+			} else {
+				g.cfg.logger.Log(LogLevelDebug, "autocommitting", "group", g.cfg.group)
+				g.commit(g.ctx, uncommitted, func(cl *Client, req *kmsg.OffsetCommitRequest, resp *kmsg.OffsetCommitResponse, err error) {
+					g.noCommitDuringJoinAndSync.RUnlock()
+					g.cfg.commitCallback(cl, req, resp, err)
+				})
+			}
 		} else {
 			g.noCommitDuringJoinAndSync.RUnlock()
 		}
@@ -2428,6 +2440,44 @@ func (cl *Client) MarkCommitRecords(rs ...*Record) {
 	}
 }
 
+// MarkCommitOffsets marks offsets to be available for autocommitting. This
+// function is only useful if you use the AutoCommitMarks config option, see
+// the documentation on that option for more details. This function does not
+// allow rewinds.
+func (cl *Client) MarkCommitOffsets(unmarked map[string]map[int32]EpochOffset) {
+	g := cl.consumer.g
+	if g == nil || !cl.cfg.autocommitMarks {
+		return
+	}
+
+	// protect g.uncommitted map
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.uncommitted == nil {
+		g.uncommitted = make(uncommitted)
+	}
+
+	for topic, partitions := range unmarked {
+		curPartitions := g.uncommitted[topic]
+		if curPartitions == nil {
+			curPartitions = make(map[int32]uncommit)
+			g.uncommitted[topic] = curPartitions
+		}
+
+		for partition, newHead := range partitions {
+			current := curPartitions[partition]
+			if current.head.Less(newHead) {
+				curPartitions[partition] = uncommit{
+					dirty:     current.dirty,
+					committed: current.committed,
+					head:      newHead,
+				}
+			}
+		}
+	}
+}
+
 // CommitUncommittedOffsets issues a synchronous offset commit for any
 // partition that has been consumed from that has uncommitted offsets.
 // Retryable errors are retried up to the configured retry limit, and any
@@ -2575,12 +2625,13 @@ func (g *groupConsumer) commitOffsetsSync(
 		onDone = func(*Client, *kmsg.OffsetCommitRequest, *kmsg.OffsetCommitResponse, error) {}
 	}
 
-	g.syncCommitMu.Lock() // block all other concurrent commits until our OnDone is done.
-
 	if err := g.waitJoinSyncMu(ctx); err != nil {
 		onDone(g.cl, kmsg.NewPtrOffsetCommitRequest(), kmsg.NewPtrOffsetCommitResponse(), err)
+		close(done)
 		return
 	}
+
+	g.syncCommitMu.Lock() // block all other concurrent commits until our OnDone is done.
 	unblockCommits := func(cl *Client, req *kmsg.OffsetCommitRequest, resp *kmsg.OffsetCommitResponse, err error) {
 		g.noCommitDuringJoinAndSync.RUnlock()
 		defer close(done)
@@ -2657,19 +2708,16 @@ func (cl *Client) CommitOffsets(
 		return
 	}
 
-	g.syncCommitMu.RLock() // block sync commit, but allow other concurrent Commit to cancel us
-	unblockSyncCommit := func(cl *Client, req *kmsg.OffsetCommitRequest, resp *kmsg.OffsetCommitResponse, err error) {
-		defer g.syncCommitMu.RUnlock()
-		onDone(cl, req, resp, err)
-	}
-
 	if err := g.waitJoinSyncMu(ctx); err != nil {
 		onDone(g.cl, kmsg.NewPtrOffsetCommitRequest(), kmsg.NewPtrOffsetCommitResponse(), err)
 		return
 	}
+
+	g.syncCommitMu.RLock() // block sync commit, but allow other concurrent Commit to cancel us
 	unblockJoinSync := func(cl *Client, req *kmsg.OffsetCommitRequest, resp *kmsg.OffsetCommitResponse, err error) {
 		g.noCommitDuringJoinAndSync.RUnlock()
-		unblockSyncCommit(cl, req, resp, err)
+		defer g.syncCommitMu.RUnlock()
+		onDone(cl, req, resp, err)
 	}
 
 	g.mu.Lock()

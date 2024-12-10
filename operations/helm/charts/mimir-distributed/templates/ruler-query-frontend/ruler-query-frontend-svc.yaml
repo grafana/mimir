@@ -1,0 +1,30 @@
+{{- if .Values.ruler.remoteEvaluationDedicatedQueryPath }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ruler-query-frontend") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "ruler-query-frontend") | nindent 4 }}
+    {{- with .Values.ruler_query_frontend.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- toYaml .Values.ruler_query_frontend.service.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  type: {{ .Values.ruler_query_frontend.service.type }}
+  {{- if semverCompare ">= 1.22-0" (include "mimir.kubeVersion" .) }}
+  internalTrafficPolicy: {{ .Values.ruler_query_frontend.service.internalTrafficPolicy }}
+  {{- end }}
+  ports:
+    - port: {{ include "mimir.serverHttpListenPort" .}}
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: {{ include "mimir.serverGrpcListenPort" . }}
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ruler-query-frontend") | nindent 4 }}
+{{- end }}

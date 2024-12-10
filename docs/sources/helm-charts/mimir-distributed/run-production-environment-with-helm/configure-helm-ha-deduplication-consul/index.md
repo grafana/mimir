@@ -14,13 +14,13 @@ weight: 70
 # Configuring Grafana Mimir-Distributed Helm Chart for high-availability deduplication with Consul
 
 Grafana Mimir can deduplicate data from a high-availability (HA) Prometheus setup. You can configure
-the deduplication by using the Grafana Mimir helm chart deployment that uses external Consul. For more information, see [Configure high availability].
+the deduplication by using the Grafana Mimir helm chart deployment that uses external Consul. For more information, see [Configure high availability](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/).
 
 ## Before you begin
 
 You need to have a Grafana Mimir installed via the mimir-distributed Helm chart.
 
-For conceptual information about how Mimir deduplicates incoming HA samples, refer to [Configure high availability].
+For conceptual information about how Mimir deduplicates incoming HA samples, refer to [Configure high availability](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/).
 
 You also need to configure HA for Prometheus or Grafana Agent. Lastly, you need a key-value store such as Consul KV.
 
@@ -42,7 +42,7 @@ global:
 
 Reload or restart Prometheus or Grafana Agent after you update the configuration.
 
-> **Note:** [Configure high availability].
+> **Note:** [Configure high availability](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-high-availability-deduplication/).
 > document contains the same information on Prometheus setup for HA dedup.
 
 ## Install Consul using Helm
@@ -151,7 +151,7 @@ If the table is empty, it means there is something wrong with the configuration.
 
 If you have set up [metamonitoring]({{< relref "../monitor-system-health.md" >}}) or if you
 run GEM with built-in system monitoring,
-Mimir [distributor]
+Mimir [distributor](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/)
 exposes some metrics related to HA deduplication. The relevant metrics are those with `cortex_ha_tracker_` prefix.
 
 ### Ensure HA metrics are deduplicated
@@ -163,8 +163,3 @@ select Format = Table. In the result you can see the several time series with di
 
 The most important thing is you will not find `__replica__` label (or any label that you set in `ha_replica_label`
 config) anymore. This means you have configured the deduplication successfully.
-
-{{% docs/reference %}}
-[Configure high availability]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/configure/configure-high-availability-deduplication"
-[distributor]: "/ -> /docs/mimir/<MIMIR_DOCS_VERSION>/references/architecture/components/distributor"
-{{% /docs/reference %}}

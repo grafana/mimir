@@ -27,7 +27,7 @@ var (
 	supportedCompressions     = []string{CompressionSnappy}
 	errUnsupportedCompression = errors.New("unsupported compression")
 
-	_ Cache = (*snappyCache)(nil)
+	_ Cache = (*SnappyCache)(nil)
 )
 
 type CompressionConfig struct {
@@ -57,32 +57,45 @@ func NewCompression(cfg CompressionConfig, next Cache, logger log.Logger) Cache 
 	}
 }
 
-type snappyCache struct {
+type SnappyCache struct {
 	next   Cache
 	logger log.Logger
 }
 
 // NewSnappy makes a new snappy encoding cache wrapper.
-func NewSnappy(next Cache, logger log.Logger) Cache {
-	return &snappyCache{
+func NewSnappy(next Cache, logger log.Logger) *SnappyCache {
+	return &SnappyCache{
 		next:   next,
 		logger: logger,
 	}
 }
 
-// StoreAsync implements Cache.
-func (s *snappyCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
+// SetAsync implements Cache.
+func (s *SnappyCache) SetAsync(key string, value []byte, ttl time.Duration) {
+	s.next.SetAsync(key, snappy.Encode(nil, value), ttl)
+}
+
+// SetMultiAsync implements Cache.
+func (s *SnappyCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
 	encoded := make(map[string][]byte, len(data))
 	for key, value := range data {
 		encoded[key] = snappy.Encode(nil, value)
 	}
 
-	s.next.StoreAsync(encoded, ttl)
+	s.next.SetMultiAsync(encoded, ttl)
 }
 
-// Fetch implements Cache.
-func (s *snappyCache) Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
-	found := s.next.Fetch(ctx, keys, opts...)
+func (s *SnappyCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return s.next.Set(ctx, key, snappy.Encode(nil, value), ttl)
+}
+
+func (s *SnappyCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return s.next.Add(ctx, key, snappy.Encode(nil, value), ttl)
+}
+
+// GetMulti implements Cache.
+func (s *SnappyCache) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
+	found := s.next.GetMulti(ctx, keys, opts...)
 	decoded := make(map[string][]byte, len(found))
 
 	for key, encodedValue := range found {
@@ -98,10 +111,17 @@ func (s *snappyCache) Fetch(ctx context.Context, keys []string, opts ...Option) 
 	return decoded
 }
 
-func (s *snappyCache) Name() string {
+// Stop implements Cache.
+func (s *SnappyCache) Stop() {
+	s.next.Stop()
+}
+
+// Name implements Cache.
+func (s *SnappyCache) Name() string {
 	return s.next.Name()
 }
 
-func (s *snappyCache) Delete(ctx context.Context, key string) error {
+// Delete implements Cache.
+func (s *SnappyCache) Delete(ctx context.Context, key string) error {
 	return s.next.Delete(ctx, key)
 }

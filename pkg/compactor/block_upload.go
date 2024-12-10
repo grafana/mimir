@@ -25,6 +25,8 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -231,16 +233,34 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, meta *bloc
 		}
 	}
 
+	blockMinTime := timestamp.Time(meta.MinTime)
+	blockMaxTime := timestamp.Time(meta.MaxTime)
+
 	// validate data is within the retention period
 	retention := c.cfgProvider.CompactorBlocksRetentionPeriod(tenantID)
 	if retention > 0 {
 		threshold := time.Now().Add(-retention)
-		if time.UnixMilli(meta.MaxTime).Before(threshold) {
-			maxTimeStr := util.FormatTimeMillis(meta.MaxTime)
+		if blockMaxTime.Before(threshold) {
 			return httpError{
-				message:    fmt.Sprintf("block max time (%s) older than retention period", maxTimeStr),
+				message:    fmt.Sprintf("block max time (%s) older than retention period", blockMaxTime.String()),
 				statusCode: http.StatusUnprocessableEntity,
 			}
+		}
+	}
+
+	blockDuration := blockMaxTime.Sub(blockMinTime)
+	maxRange := c.compactorCfg.BlockRanges[len(c.compactorCfg.BlockRanges)-1]
+	if blockDuration > maxRange {
+		return httpError{
+			message:    fmt.Sprintf("block duration (%v) is larger than max configured compactor time range (%v)", model.Duration(blockDuration), model.Duration(maxRange)),
+			statusCode: http.StatusUnprocessableEntity,
+		}
+	}
+
+	if blockMaxTime.After(blockMinTime.Truncate(maxRange).Add(maxRange)) {
+		return httpError{
+			message:    fmt.Sprintf("block time range crosses boundary of configured compactor time range (%v)", model.Duration(maxRange)),
+			statusCode: http.StatusUnprocessableEntity,
 		}
 	}
 
@@ -480,8 +500,9 @@ func (c *MultitenantCompactor) sanitizeMeta(logger log.Logger, userID string, bl
 	// validate that times are in the past
 	now := time.Now()
 	if meta.MinTime > now.UnixMilli() || meta.MaxTime > now.UnixMilli() {
-		return fmt.Sprintf("block time(s) greater than the present: minTime=%d, maxTime=%d",
-			meta.MinTime, meta.MaxTime)
+		return fmt.Sprintf("block time(s) greater than the present: minTime=%d (%s), maxTime=%d (%s)",
+			meta.MinTime, formatTime(time.UnixMilli(meta.MinTime)),
+			meta.MaxTime, formatTime(time.UnixMilli(meta.MaxTime)))
 	}
 
 	// Mark block source
@@ -677,10 +698,6 @@ func (c *MultitenantCompactor) GetBlockUploadStateHandler(w http.ResponseWriter,
 	)
 
 	userBkt := bucket.NewUserBucketClient(tenantID, c.bucketClient, c.cfgProvider)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
 
 	s, _, v, err := c.getBlockUploadState(r.Context(), userBkt, blockID)
 	if err != nil {

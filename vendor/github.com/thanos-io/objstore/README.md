@@ -48,12 +48,14 @@ See [MAINTAINERS.md](https://github.com/thanos-io/thanos/blob/main/MAINTAINERS.m
 
 The core this module is the [`Bucket` interface](objstore.go):
 
-```go mdox-exec="sed -n '37,50p' objstore.go"
+```go mdox-exec="sed -n '55,73p' objstore.go"
 // Bucket provides read and write access to an object storage bucket.
 // NOTE: We assume strong consistency for write-read flow.
 type Bucket interface {
 	io.Closer
 	BucketReader
+
+	Provider() ObjProvider
 
 	// Upload the contents of the reader as an object into the bucket.
 	// Upload should be idempotent.
@@ -63,18 +65,31 @@ type Bucket interface {
 	// If object does not exist in the moment of deletion, Delete should throw error.
 	Delete(ctx context.Context, name string) error
 
+	// Name returns the bucket name for the provider.
+	Name() string
+}
 ```
 
 All [provider implementations](providers) have to implement `Bucket` interface that allows common read and write operations that all supported by all object providers. If you want to limit the code that will do bucket operation to only read access (smart idea, allowing to limit access permissions), you can use the [`BucketReader` interface](objstore.go):
 
-```go mdox-exec="sed -n '68,93p' objstore.go"
-
+```go mdox-exec="sed -n '89,124p' objstore.go"
 // BucketReader provides read access to an object storage bucket.
 type BucketReader interface {
 	// Iter calls f for each entry in the given directory (not recursive.). The argument to f is the full
 	// object name including the prefix of the inspected directory.
+
 	// Entries are passed to function in sorted order.
-	Iter(ctx context.Context, dir string, f func(string) error, options ...IterOption) error
+	Iter(ctx context.Context, dir string, f func(name string) error, options ...IterOption) error
+
+	// IterWithAttributes calls f for each entry in the given directory similar to Iter.
+	// In addition to Name, it also includes requested object attributes in the argument to f.
+	//
+	// Attributes can be requested using IterOption.
+	// Not all IterOptions are supported by all providers, requesting for an unsupported option will fail with ErrOptionNotSupported.
+	IterWithAttributes(ctx context.Context, dir string, f func(attrs IterObjectAttributes) error, options ...IterOption) error
+
+	// SupportedIterOptions returns a list of supported IterOptions by the underlying provider.
+	SupportedIterOptions() []IterOptionType
 
 	// Get returns a reader for the given object name.
 	Get(ctx context.Context, name string) (io.ReadCloser, error)
@@ -145,7 +160,7 @@ Thanos uses the [minio client](https://github.com/minio/minio-go) library to upl
 
 > NOTE: S3 client was designed for AWS S3, but it can be configured against other S3-compatible object storages e.g Ceph
 
-The S# object storage yaml configuration definition:
+The S3 object storage yaml configuration definition:
 
 ```yaml mdox-exec="go run scripts/cfggen/main.go --name=s3.Config"
 type: S3
@@ -153,6 +168,7 @@ config:
   bucket: ""
   endpoint: ""
   region: ""
+  disable_dualstack: false
   aws_sdk_auth: false
   access_key: ""
   insecure: false
@@ -181,6 +197,7 @@ config:
   list_objects_version: ""
   bucket_lookup_type: auto
   send_content_md5: true
+  disable_multipart: false
   part_size: 67108864
   sse_config:
     type: ""
@@ -198,6 +215,8 @@ However if you set `aws_sdk_auth: true` Thanos will use the default authenticati
 The field `prefix` can be used to transparently use prefixes in your S3 bucket. This allows you to separate blocks coming from different sources into paths with different prefixes, making it easier to understand what's going on (i.e. you don't have to use Thanos tooling to know from where which blocks came).
 
 The AWS region to endpoint mapping can be found in this [link](https://docs.aws.amazon.com/general/latest/gr/s3.html).
+
+By default, the library prefers using [dual-stack endpoints](https://docs.aws.amazon.com/AmazonS3/latest/userguide/dual-stack-endpoints.html). You can explicitly disable this behaviour by setting `disable_dualstack: true`.
 
 Make sure you use a correct signature version. Currently AWS requires signature v4, so it needs `signature_version2: false`. If you don't specify it, you will get an `Access Denied` error. On the other hand, several S3 compatible APIs use `signature_version2: true`.
 
@@ -370,6 +389,7 @@ config:
       server_name: ""
       insecure_skip_verify: false
     disable_compression: false
+  chunk_size_bytes: 0
 prefix: ""
 ```
 
@@ -443,6 +463,7 @@ config:
   storage_account: ""
   storage_account_key: ""
   storage_connection_string: ""
+  storage_create_container: false
   container: ""
   endpoint: ""
   user_assigned_id: ""

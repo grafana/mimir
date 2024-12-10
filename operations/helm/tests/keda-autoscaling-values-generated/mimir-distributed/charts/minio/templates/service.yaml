@@ -6,7 +6,7 @@ metadata:
   name: keda-autoscaling-values-minio
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.3.0
     release: keda-autoscaling-values
     heritage: Helm
     monitoring: "true"

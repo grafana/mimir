@@ -14,6 +14,7 @@ local filename = 'mimir-ruler.json';
     assert std.md5(filename) == '631e15d5d85afb2ca8e35d62984eeaa0' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Ruler') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
+    .addShowNativeLatencyVariable()
     .addRow(
       ($.row('Headlines') + {
          height: '100px',
@@ -28,10 +29,10 @@ local filename = 'mimir-ruler.json';
         $.statPanel('sum(cortex_prometheus_rule_group_rules{%s})' % $.jobMatcher($._config.job_names.ruler), format='short')
       )
       .addPanel(
-        $.panel('Read from ingesters - QPS') +
+        $.panel('Reads from ingesters - RPS') +
         $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler + $._config.job_names.ruler_querier), format='reqps') +
         $.panelDescription(
-          'Read from ingesters - QPS',
+          'Reads from ingesters - RPS',
           |||
             Note: Even while operating in Remote ruler mode you will still see values for this panel.
 
@@ -42,8 +43,29 @@ local filename = 'mimir-ruler.json';
         ),
       )
       .addPanel(
-        $.panel('Write to ingesters - QPS') +
-        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ruler), format='reqps')
+        $.panel(
+          if $._config.show_ingest_storage_panels then
+            'Writes to ingesters / ingest storage - RPS'
+          else
+            'Writes to ingesters - RPS'
+        ) +
+        $.statPanel(
+          local query =
+            if $._config.show_ingest_storage_panels then
+              |||
+                # Classic architecture.
+                (sum(rate(cortex_ingester_client_request_duration_seconds_count{%(job_matcher)s, operation="/cortex.Ingester/Push"}[$__rate_interval])) or vector(0))
+                +
+                # Ingest storage architecture.
+                (sum(rate(cortex_ingest_storage_writer_produce_requests_total{%(job_matcher)s}[$__rate_interval])) or vector(0))
+              ||| % { job_matcher: $.jobMatcher($._config.job_names.ruler) }
+            else
+              |||
+                sum(rate(cortex_ingester_client_request_duration_seconds_count{%(job_matcher)s, operation="/cortex.Ingester/Push"}[$__rate_interval]))
+              ||| % { job_matcher: $.jobMatcher($._config.job_names.ruler) };
+
+          query, format='reqps'
+        )
       )
     )
     .addRow(
@@ -73,32 +95,40 @@ local filename = 'mimir-ruler.json';
       $.row('Configuration API (gateway)')
       .addPanel(
         $.timeseriesPanel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.gateway), ruler_config_api_routes_re])
+        $.qpsPanelNativeHistogram($.queries.ruler.requestsPerSecondMetric, utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)]))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)])
       )
       .addPanel(
         local selectors = $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)];
+        local labels = std.join('_', [matcher.label for matcher in selectors]);
+        local metricStr = '%(labels)s:%(metric)s' % { labels: labels, metric: $.queries.gateway.requestsPerSecondMetric };
         $.timeseriesPanel('Per route p99 latency') +
-        $.queryPanel(
-          'histogram_quantile(0.99, sum by (route, le) (%s:cortex_request_duration_seconds_bucket:sum_rate%s))' %
-          [$.recordingRulePrefix(selectors), utils.toPrometheusSelector(selectors)],
-          '{{ route }}'
-        ) +
+        $.perInstanceLatencyPanelNativeHistogram('0.99', metricStr, selectors, legends=['{{ route }}', '{{ route }}'], instanceLabel='route', from_recording=true) +
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
     )
     .addRow(
       $.row('Writes (ingesters)')
       .addPanel(
-        $.timeseriesPanel('QPS') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ruler))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
         $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ruler))
+      )
+    )
+    .addRowIf(
+      $._config.show_ingest_storage_panels,
+      $.row('Writes (ingest storage)')
+      .addPanel(
+        $.ingestStorageKafkaProducedRecordsRatePanel('ruler')
+      )
+      .addPanel(
+        $.ingestStorageKafkaProducedRecordsLatencyPanel('ruler')
       )
     )
     .addRow(
@@ -162,9 +192,9 @@ local filename = 'mimir-ruler.json';
       .addPanel(
         $.timeseriesPanel('Queue length') +
         $.queryPanel(|||
-          sum by(user) (rate(cortex_prometheus_notifications_queue_length{%s}[$__rate_interval]))
+          sum by(user) (cortex_prometheus_notifications_queue_length{%s})
             /
-          sum by(user) (rate(cortex_prometheus_notifications_queue_capacity{%s}[$__rate_interval])) > 0
+          sum by(user) (cortex_prometheus_notifications_queue_capacity{%s}) > 0
         ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}')
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } },
       )

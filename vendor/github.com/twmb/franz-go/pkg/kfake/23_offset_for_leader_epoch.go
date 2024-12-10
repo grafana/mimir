@@ -74,11 +74,24 @@ func (c *Cluster) handleOffsetForLeaderEpoch(b *broker, kreq kmsg.Request) (kmsg
 				continue
 			}
 
+			// If our epoch was bumped before anything was
+			// produced, return the epoch and a start offset of 0.
+			if len(pd.batches) == 0 {
+				sp.LeaderEpoch = pd.epoch
+				sp.EndOffset = 0
+				if rp.LeaderEpoch > pd.epoch {
+					sp.LeaderEpoch = -1
+					sp.EndOffset = -1
+				}
+				continue
+			}
+
 			// What is the largest epoch after the requested epoch?
+			nextEpoch := rp.LeaderEpoch + 1
 			idx, _ := sort.Find(len(pd.batches), func(idx int) int {
 				batchEpoch := pd.batches[idx].epoch
 				switch {
-				case rp.LeaderEpoch <= batchEpoch:
+				case nextEpoch <= batchEpoch:
 					return -1
 				default:
 					return 1
@@ -92,19 +105,16 @@ func (c *Cluster) handleOffsetForLeaderEpoch(b *broker, kreq kmsg.Request) (kmsg
 				continue
 			}
 
-			// Requested epoch is before the LSO: return the requested
-			// epoch and the LSO.
-			if idx == 0 && pd.batches[0].epoch > rp.LeaderEpoch {
+			// Next epoch is actually the first epoch: return the
+			// requested epoch and the LSO.
+			if idx == 0 {
 				sp.LeaderEpoch = rp.LeaderEpoch
 				sp.EndOffset = pd.logStartOffset
 				continue
 			}
 
-			// The requested epoch exists and is not the latest
-			// epoch, we return the end offset being the first
-			// offset of the next epoch.
-			sp.LeaderEpoch = pd.batches[idx].epoch
-			sp.EndOffset = pd.batches[idx+1].FirstOffset
+			sp.LeaderEpoch = pd.batches[idx-1].epoch
+			sp.EndOffset = pd.batches[idx].FirstOffset
 		}
 	}
 	return resp, nil

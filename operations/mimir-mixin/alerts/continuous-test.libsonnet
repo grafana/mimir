@@ -9,8 +9,10 @@
           alert: $.alertName('ContinuousTestNotRunningOnWrites'),
           'for': '1h',
           expr: |||
-            sum by(%(alert_aggregation_labels)s, test) (rate(mimir_continuous_test_writes_failed_total[5m])) > 0
-          ||| % $._config,
+            sum by(%(alert_aggregation_labels)s, test) (rate(mimir_continuous_test_writes_failed_total[%(range_interval)s])) > 0
+          ||| % $._config {
+            range_interval: $.alertRangeInterval(5),
+          },
           labels: {
             severity: 'warning',
           },
@@ -24,8 +26,10 @@
           alert: $.alertName('ContinuousTestNotRunningOnReads'),
           'for': '1h',
           expr: |||
-            sum by(%(alert_aggregation_labels)s, test) (rate(mimir_continuous_test_queries_failed_total[5m])) > 0
-          ||| % $._config,
+            sum by(%(alert_aggregation_labels)s, test) (rate(mimir_continuous_test_queries_failed_total[%(range_interval)s])) > 0
+          ||| % $._config {
+            range_interval: $.alertRangeInterval(5),
+          },
           labels: {
             severity: 'warning',
           },

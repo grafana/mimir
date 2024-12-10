@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/ring/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -30,7 +31,9 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
@@ -83,7 +86,7 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 
 		workerCtx, workerCancel := context.WithCancel(context.Background())
 
-		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(mock.Arguments) {
 			// Cancel the worker context while the query execution is in progress.
 			workerCancel()
 
@@ -249,14 +252,19 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		}, 2*time.Second, 10*time.Millisecond, "expected frontend to be informed of query result exactly once")
 
 		// We expect Send() to be called twice: first to send the querier ID to scheduler
-		// and then to send the query result.
-		loopClient.AssertNumberOfCalls(t, "Send", 2)
+		// and then to send the query result. However, there's no guarantee that the 2nd
+		// Send() has already been called when we reach this point because this test is mocking
+		// several components and there's no real coordination between them, so we poll the assertion.
+		require.EventuallyWithT(t, func(collect *assert.CollectT) {
+			loopClient.AssertNumberOfCalls(test.NewCollectWithLogf(collect), "Send", 2)
+		}, 2*time.Second, 10*time.Millisecond)
+
 		loopClient.AssertCalled(t, "Send", &schedulerpb.QuerierToScheduler{QuerierID: "test-querier-id"})
 	})
 }
 
 func TestSchedulerProcessor_QueryTime(t *testing.T) {
-	runTest := func(t *testing.T, statsEnabled bool) {
+	runTest := func(t *testing.T, statsEnabled bool, statsRace bool) {
 		fp, processClient, requestHandler, frontend := prepareSchedulerProcessor(t)
 
 		recvCount := atomic.NewInt64(0)
@@ -289,6 +297,11 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 
 			if statsEnabled {
 				require.Equal(t, queueTime, stat.LoadQueueTime())
+
+				if statsRace {
+					// This triggers the race detector reliably if the same stats object is marshaled.
+					go stat.AddEstimatedSeriesCount(1)
+				}
 			} else {
 				require.Equal(t, time.Duration(0), stat.LoadQueueTime())
 			}
@@ -304,11 +317,15 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 	}
 
 	t.Run("query stats enabled should record queue time", func(t *testing.T) {
-		runTest(t, true)
+		runTest(t, true, false)
+	})
+
+	t.Run("query stats enabled should not trigger race detector", func(t *testing.T) {
+		runTest(t, true, true)
 	})
 
 	t.Run("query stats disabled will not record queue time", func(t *testing.T) {
-		runTest(t, false)
+		runTest(t, false, false)
 	})
 }
 
@@ -405,7 +422,7 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 
 			requestHandler.On("Handle", mock.Anything, mock.Anything).Run(
-				func(arguments mock.Arguments) { cancel() },
+				func(mock.Arguments) { cancel() },
 			).Return(returnResponses(responses)())
 
 			reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")
@@ -549,6 +566,42 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 		assert.Equal(t, responseBody, frontend.responses[queryID].body)
 
 		workerCancel()
+	})
+
+	t.Run("should retry streamed responses", func(t *testing.T) {
+		reqProcessor, processClient, requestHandler, frontend := prepareSchedulerProcessor(t)
+		// enable response streaming
+		reqProcessor.streamingEnabled = true
+		// make sure responses don't get rejected as too large
+		reqProcessor.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
+
+		mockStreamer := &mockFrontendResponseStreamer{
+			initialFailures: 1,
+		}
+		reqProcessor.streamResponse = mockStreamer.streamResponseToFrontend
+
+		queryID := uint64(1)
+		requestQueue := []*schedulerpb.SchedulerToQuerier{
+			{QueryID: queryID, HttpRequest: nil, FrontendAddress: frontend.addr, UserID: "test"},
+		}
+
+		responseBodyBytes := bytes.Repeat([]byte("a"), 2*responseStreamingBodyChunkSizeBytes+1)
+
+		responses := []*httpgrpc.HTTPResponse{{
+			Code: http.StatusOK, Body: responseBodyBytes,
+			Headers: []*httpgrpc.Header{streamingEnabledHeader},
+		}}
+
+		processClient.On("Recv").Return(receiveRequests(requestQueue, processClient))
+		ctx, cancel := context.WithCancel(context.Background())
+
+		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(
+			func(mock.Arguments) { cancel() },
+		).Return(returnResponses(responses)())
+
+		reqProcessor.processQueriesOnSingleStream(ctx, nil, "127.0.0.1")
+
+		require.Equal(t, 2, mockStreamer.totalCalls)
 	})
 }
 
@@ -729,8 +782,8 @@ func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.Frontend
 					close(f.responseStreamStarted)
 				}
 			})
-			f.queryResultStreamBodyCalls.Inc()
-			if f.queryResultStreamErrorAfter > 0 && int(f.queryResultStreamBodyCalls.Load()) > f.queryResultStreamErrorAfter {
+			bodyCalls := int(f.queryResultStreamBodyCalls.Inc())
+			if f.queryResultStreamErrorAfter > 0 && bodyCalls > f.queryResultStreamErrorAfter {
 				return errors.New("something went wrong")
 			}
 			if !metadataSent {
@@ -742,5 +795,21 @@ func (f *frontendForQuerierMockServer) QueryResultStream(s frontendv2pb.Frontend
 		}
 	}
 
+	return nil
+}
+
+type mockFrontendResponseStreamer struct {
+	initialFailures int
+	totalCalls      int
+}
+
+func (m *mockFrontendResponseStreamer) streamResponseToFrontend(
+	_ context.Context, _ context.Context, _ client.PoolClient,
+	_ uint64, _ *httpgrpc.HTTPResponse, _ *querier_stats.Stats, _ log.Logger,
+) error {
+	m.totalCalls++
+	if m.totalCalls <= m.initialFailures {
+		return errors.New("sorry, we've an error")
+	}
 	return nil
 }

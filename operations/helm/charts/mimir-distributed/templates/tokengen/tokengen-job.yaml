@@ -1,5 +1,4 @@
-{{- if .Values.enterprise.enabled -}}
-{{ if .Values.tokengenJob.enable }}
+{{- if and .Values.enterprise.enabled .Values.tokengenJob.enable (not .Values.federation_frontend.disableOtherComponents) -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -48,11 +47,14 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- range $key, $value := .Values.tokengenJob.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- if .Values.tokengenJob.extraVolumeMounts }}
               {{ toYaml .Values.tokengenJob.extraVolumeMounts | nindent 12 }}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12 }}
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -60,6 +62,7 @@ spec:
               mountPath: /license
             - name: active-queries
               mountPath: /active-query-tracker
+          {{- if or .Values.global.extraEnv .Values.tokengenJob.env }}
           env:
             {{- with .Values.global.extraEnv }}
               {{ toYaml . | nindent 12 }}
@@ -67,6 +70,8 @@ spec:
             {{- with .Values.tokengenJob.env }}
               {{ toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.tokengenJob.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -74,6 +79,7 @@ spec:
             {{- with .Values.tokengenJob.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- end }}
           securityContext:
             {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
       restartPolicy: OnFailure
@@ -83,6 +89,9 @@ spec:
         {{- if .Values.tokengenJob.extraVolumes }}
         {{ toYaml .Values.tokengenJob.extraVolumes | nindent 8 }}
         {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8 }}
+        {{- end }}
         - name: license
           secret:
             secretName: {{ tpl .Values.license.secretName . }}
@@ -90,5 +99,4 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
-{{- end -}}
 {{- end -}}

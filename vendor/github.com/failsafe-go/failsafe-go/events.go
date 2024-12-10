@@ -20,17 +20,17 @@ type ExecutionScheduledEvent[R any] struct {
 
 // ExecutionDoneEvent indicates an execution is done.
 type ExecutionDoneEvent[R any] struct {
-	ExecutionStats
+	ExecutionInfo
 	// The execution result, else the zero value for R
 	Result R
 	// The execution error, else nil
 	Error error
 }
 
-func newExecutionDoneEvent[R any](er *common.PolicyResult[R], stats ExecutionStats) ExecutionDoneEvent[R] {
+func newExecutionDoneEvent[R any](info ExecutionInfo, er *common.PolicyResult[R]) ExecutionDoneEvent[R] {
 	return ExecutionDoneEvent[R]{
-		Result:         er.Result,
-		Error:          er.Error,
-		ExecutionStats: stats,
+		ExecutionInfo: info,
+		Result:        er.Result,
+		Error:         er.Error,
 	}
 }

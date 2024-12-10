@@ -3,10 +3,10 @@
 package querymiddleware
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,7 +29,14 @@ const (
 	stringParamSeparator = rune(0)
 )
 
-func newLabelsQueryCacheRoundTripper(cache cache.Cache, generator CacheKeyGenerator, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper {
+func newLabelsQueryCacheRoundTripper(
+	cache cache.Cache,
+	generator CacheKeyGenerator,
+	limits Limits,
+	next http.RoundTripper,
+	logger log.Logger,
+	reg prometheus.Registerer,
+) http.RoundTripper {
 	ttl := &labelsQueryTTL{
 		limits: limits,
 	}
@@ -45,47 +52,43 @@ func (c *labelsQueryTTL) ttl(userID string) time.Duration {
 	return c.limits.ResultsCacheTTLForLabelsQuery(userID)
 }
 
-func (DefaultCacheKeyGenerator) LabelValues(_ context.Context, path string, values url.Values) (*GenericQueryCacheKey, error) {
-	var (
-		cacheKeyPrefix string
-		labelName      string
+func (g DefaultCacheKeyGenerator) LabelValues(r *http.Request) (*GenericQueryCacheKey, error) {
+	labelValuesReq, err := g.codec.DecodeLabelsSeriesQueryRequest(r.Context(), r)
+	if err != nil {
+		return nil, err
+	}
+
+	var cacheKeyPrefix string
+	switch labelValuesReq.(type) {
+	case *PrometheusLabelNamesQueryRequest:
+		cacheKeyPrefix = labelNamesQueryCachePrefix
+	case *PrometheusLabelValuesQueryRequest:
+		cacheKeyPrefix = labelValuesQueryCachePrefix
+	}
+
+	labelMatcherSets, err := parseRequestMatchersParam(
+		map[string][]string{"match[]": labelValuesReq.GetLabelMatcherSets()},
+		"match[]",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	cacheKey := generateLabelsQueryRequestCacheKey(
+		labelValuesReq.GetStartOrDefault(),
+		labelValuesReq.GetEndOrDefault(),
+		labelValuesReq.GetLabelName(),
+		labelMatcherSets,
+		labelValuesReq.GetLimit(),
 	)
 
-	// Detect the request type
-	switch {
-	case strings.HasSuffix(path, labelNamesPathSuffix):
-		cacheKeyPrefix = labelNamesQueryCachePrefix
-	case labelValuesPathSuffix.MatchString(path):
-		cacheKeyPrefix = labelValuesQueryCachePrefix
-		labelName = labelValuesPathSuffix.FindStringSubmatch(path)[1]
-	default:
-		return nil, errors.New("unknown labels API endpoint")
-	}
-
-	// Both the label names and label values API endpoints support the same exact parameters (with the same defaults),
-	// so in this function there's no distinction between the two.
-	startTime, err := parseRequestTimeParam(values, "start", v1.MinTime.UnixMilli())
-	if err != nil {
-		return nil, err
-	}
-
-	endTime, err := parseRequestTimeParam(values, "end", v1.MaxTime.UnixMilli())
-	if err != nil {
-		return nil, err
-	}
-
-	matcherSets, err := parseRequestMatchersParam(values, "match[]")
-	if err != nil {
-		return nil, err
-	}
-
 	return &GenericQueryCacheKey{
-		CacheKey:       generateLabelsQueryRequestCacheKey(startTime, endTime, labelName, matcherSets),
+		CacheKey:       cacheKey,
 		CacheKeyPrefix: cacheKeyPrefix,
 	}, nil
 }
 
-func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName string, matcherSets [][]*labels.Matcher) string {
+func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName string, matcherSets [][]*labels.Matcher, limit uint64) string {
 	var (
 		twoHoursMillis = (2 * time.Hour).Milliseconds()
 		b              = strings.Builder{}
@@ -120,25 +123,13 @@ func generateLabelsQueryRequestCacheKey(startTime, endTime int64, labelName stri
 	b.WriteRune(stringParamSeparator)
 	b.WriteString(util.MultiMatchersStringer(matcherSets).String())
 
+	// if limit is set, then it will be a positive number
+	if limit > 0 {
+		b.WriteRune(stringParamSeparator)
+		b.WriteString(strconv.Itoa(int(limit)))
+	}
+
 	return b.String()
-}
-
-func parseRequestTimeParam(values url.Values, paramName string, defaultValue int64) (int64, error) {
-	var value string
-	if len(values[paramName]) > 0 {
-		value = values[paramName][0]
-	}
-
-	if value == "" {
-		return defaultValue, nil
-	}
-
-	parsed, err := util.ParseTime(value)
-	if err != nil {
-		return 0, errors.Wrapf(err, "invalid '%s' parameter", paramName)
-	}
-
-	return parsed, nil
 }
 
 func parseRequestMatchersParam(values url.Values, paramName string) ([][]*labels.Matcher, error) {

@@ -69,6 +69,18 @@ func (rs AlterPartitionAssignmentsResponses) Each(fn func(AlterPartitionAssignme
 	}
 }
 
+// Error returns the first error in the responses, if any.
+func (rs AlterPartitionAssignmentsResponses) Error() error {
+	for _, ps := range rs {
+		for _, r := range ps {
+			if r.Err != nil {
+				return r.Err
+			}
+		}
+	}
+	return nil
+}
+
 // AlterPartitionAssignments alters partition assignments for the requested
 // partitions, returning an error if the response could not be issued or if
 // you do not have permissions.
@@ -96,7 +108,7 @@ func (cl *Client) AlterPartitionAssignments(ctx context.Context, req AlterPartit
 		return nil, err
 	}
 	if err = kerr.ErrorForCode(kresp.ErrorCode); err != nil {
-		return nil, err
+		return nil, &ErrAndMessage{err, unptrStr(kresp.ErrorMessage)}
 	}
 
 	a := make(AlterPartitionAssignmentsResponses)
@@ -175,7 +187,7 @@ func (cl *Client) ListPartitionReassignments(ctx context.Context, s TopicsSet) (
 		return nil, err
 	}
 	if err = kerr.ErrorForCode(kresp.ErrorCode); err != nil {
-		return nil, err
+		return nil, &ErrAndMessage{err, unptrStr(kresp.ErrorMessage)}
 	}
 
 	a := make(ListPartitionReassignmentsResponses)

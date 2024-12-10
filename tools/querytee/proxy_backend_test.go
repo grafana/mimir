@@ -6,6 +6,7 @@
 package querytee
 
 import (
+	"context"
 	"fmt"
 	"net/http/httptest"
 	"net/url"
@@ -83,8 +84,12 @@ func Test_ProxyBackend_createBackendRequest_HTTPBasicAuthentication(t *testing.T
 				orig.Header.Set("X-Scope-OrgID", testData.clientTenant)
 			}
 
-			b := NewProxyBackend("test", u, time.Second, false, false)
-			r, err := b.createBackendRequest(orig, nil)
+			b := NewProxyBackend("test", u, time.Second, false, false, defaultBackendConfig())
+			bp, ok := b.(*ProxyBackend)
+			if !ok {
+				t.Fatalf("Type assertion to *ProxyBackend failed")
+			}
+			r, err := bp.createBackendRequest(context.Background(), orig, nil)
 			require.NoError(t, err)
 
 			actualUser, actualPass, _ := r.BasicAuth()
@@ -92,4 +97,8 @@ func Test_ProxyBackend_createBackendRequest_HTTPBasicAuthentication(t *testing.T
 			assert.Equal(t, testData.expectedPass, actualPass)
 		})
 	}
+}
+
+func defaultBackendConfig() BackendConfig {
+	return BackendConfig{}
 }

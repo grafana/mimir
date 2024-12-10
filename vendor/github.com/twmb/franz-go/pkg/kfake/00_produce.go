@@ -2,6 +2,8 @@ package kfake
 
 import (
 	"hash/crc32"
+	"net"
+	"strconv"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kerr"
@@ -14,7 +16,7 @@ import (
 // * Multiple batches in one produce
 // * Compact
 
-func init() { regKey(0, 3, 9) }
+func init() { regKey(0, 3, 10) }
 
 func (c *Cluster) handleProduce(b *broker, kreq kmsg.Request) (kmsg.Response, error) {
 	var (
@@ -46,12 +48,24 @@ func (c *Cluster) handleProduce(b *broker, kreq kmsg.Request) (kmsg.Response, er
 			donet(t, errCode)
 		}
 	}
+	var includeBrokers bool
 	toresp := func() kmsg.Response {
 		for topic, partitions := range tdone {
 			st := kmsg.NewProduceResponseTopic()
 			st.Topic = topic
 			st.Partitions = partitions
 			resp.Topics = append(resp.Topics, st)
+		}
+		if includeBrokers {
+			for _, b := range c.bs {
+				sb := kmsg.NewProduceResponseBroker()
+				h, p, _ := net.SplitHostPort(b.ln.Addr().String())
+				p32, _ := strconv.Atoi(p)
+				sb.NodeID = b.node
+				sb.Host = h
+				sb.Port = int32(p32)
+				resp.Brokers = append(resp.Brokers, sb)
+			}
 		}
 		return resp
 	}
@@ -76,7 +90,10 @@ func (c *Cluster) handleProduce(b *broker, kreq kmsg.Request) (kmsg.Response, er
 				continue
 			}
 			if pd.leader != b {
-				donep(rt.Topic, rp, kerr.NotLeaderForPartition.Code)
+				p := donep(rt.Topic, rp, kerr.NotLeaderForPartition.Code)
+				p.CurrentLeader.LeaderID = pd.leader.node
+				p.CurrentLeader.LeaderEpoch = pd.epoch
+				includeBrokers = true
 				continue
 			}
 

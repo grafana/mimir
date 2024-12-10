@@ -84,7 +84,7 @@ func (l *MapIterator[T]) Size() int {
 // IndexCache is the interface exported by index cache backends.
 type IndexCache interface {
 	// StorePostings stores postings for a single series.
-	StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte)
+	StorePostings(userID string, blockID ulid.ULID, l labels.Label, v []byte, ttl time.Duration)
 
 	// FetchMultiPostings fetches multiple postings - each identified by a label.
 	// The returned result should contain one item for each requested key.
@@ -158,7 +158,11 @@ const bytesPerPosting = int(unsafe.Sizeof(storage.SeriesRef(0)))
 // It casts the memory region of the underlying array to a slice of bytes. The resulting byte slice is only valid as long as the postings slice exists and is unmodified.
 func unsafeCastPostingsToBytes(postings []storage.SeriesRef) []byte {
 	byteSlice := make([]byte, 0)
+	// Ignore deprecation warning for now
+	//nolint:staticcheck
 	slicePtr := (*reflect.SliceHeader)(unsafe.Pointer(&byteSlice))
+	// Ignore deprecation warning for now
+	//nolint:staticcheck
 	slicePtr.Data = (*reflect.SliceHeader)(unsafe.Pointer(&postings)).Data
 	slicePtr.Len = len(postings) * bytesPerPosting
 	slicePtr.Cap = slicePtr.Len

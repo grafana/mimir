@@ -1,13 +1,15 @@
 multitenancy_enabled: false
 
 distributor:
+  ha_tracker:
+    enable_ha_tracker: true
+    kvstore:
+      store: consul
   pool:
     health_check_ingesters: true
   ring:
     kvstore:
-      store: consul
-      consul:
-        host: consul:8500
+      store: memberlist
 
 ingester_client:
   grpc_client_config:
@@ -22,9 +24,7 @@ ingester:
     final_sleep: 0s
     num_tokens: 512
     kvstore:
-      store: consul
-      consul:
-        host: consul:8500
+      store: memberlist
 
 # These memberlist options will be only used if memberlist is activated via CLI option.
 memberlist:
@@ -37,9 +37,13 @@ blocks_storage:
 
   tsdb:
     dir: /tmp/mimir-tsdb-ingester
+    # Note: this value is intentionally set low to create a faster feedback loop
+    # in development. However, setting this lower than 2m can cause the ruler's
+    # write requests to fail with out of bounds errors
+    block_ranges_period: ["2m"]
+    # retention_period must be larger than block_ranges_period and querier.query_store_after
+    retention_period: 15m
     ship_interval: 1m
-    block_ranges_period: [ 2h ]
-    retention_period: 3h
 
     # Always use the PostingsForMatchers() cache in order to exercise it.
     head_postings_for_matchers_cache_force: true
@@ -48,8 +52,12 @@ blocks_storage:
 
   bucket_store:
     sync_dir: /tmp/mimir-tsdb-querier
-    index_header_lazy_loading_enabled: true
     sync_interval: 1m
+    # ignore_blocks_within and sync_interval must be small enough for the store-gateways
+    # to discover & load new blocks shipped from the ingesters before they begin to be queried.
+    # With querier.query_store_after: 10m and sync_interval: 1m, anything larger than 2m causes issues.
+    # Slightly larger values for ignore_blocks_within work if sync_interval is reduced.
+    ignore_blocks_within: 2m
 
     index_cache:
       # Cache is configured via CLI flags. See docker-compose.jsonnet
@@ -72,9 +80,7 @@ ruler:
     heartbeat_period:   5s
     heartbeat_timeout:  15s
     kvstore:
-      store: consul
-      consul:
-        host: consul:8500
+      store: memberlist
 
   alertmanager_url: http://alertmanager-1:8031/alertmanager,http://alertmanager-2:8032/alertmanager,http://alertmanager-3:8033/alertmanager
 
@@ -98,9 +104,7 @@ alertmanager:
     heartbeat_period: 5s
     heartbeat_timeout: 15s
     kvstore:
-      store: consul
-      consul:
-        host: consul:8500
+      store: memberlist
 
 alertmanager_storage:
   backend: s3
@@ -112,15 +116,15 @@ alertmanager_storage:
     insecure:          true
 
 compactor:
-  compaction_interval: 30s
-  data_dir:            /tmp/mimir-compactor
-  cleanup_interval:    1m
+  data_dir: "/tmp/mimir-compactor"
+  block_ranges: [ 2m, 4m, 8m, 16m ]
+  compaction_interval: 1m
+  compaction_concurrency: 2
+  cleanup_interval: 1m
   tenant_cleanup_delay: 1m
   sharding_ring:
     kvstore:
-      store: consul
-      consul:
-        host: consul:8500
+      store: memberlist
 
 store_gateway:
   sharding_ring:
@@ -129,16 +133,12 @@ store_gateway:
     heartbeat_timeout:  15s
     wait_stability_min_duration: 0
     kvstore:
-      store: consul
-      consul:
-        host: consul:8500
+      store: memberlist
 
 frontend:
   query_stats_enabled: true
   parallelize_shardable_queries: true
-  align_queries_with_step: true
   cache_results: true
-  additional_query_queue_dimensions_enabled: true
   shard_active_series_queries: true
 
   # Uncomment when using "dns" service discovery mode for query-scheduler.
@@ -157,10 +157,13 @@ frontend_worker:
   # Uncomment to skip query-scheduler and enqueue queries directly in the query-frontend.
   # frontend_address: "query-frontend:9007"
 
+querier:
+  # query_store_after must be smaller than blocks_storage.tsdb.retention_period
+  query_store_after: 10m
+
 query_scheduler:
   # Change to "dns" to switch to query-scheduler DNS-based service discovery.
   service_discovery_mode: "ring"
-  additional_query_queue_dimensions_enabled: true
 
 limits:
   # Limit max query time range to 31d
@@ -169,8 +172,17 @@ limits:
   query_sharding_total_shards: 16
   query_sharding_max_sharded_queries: 32
   ingestion_rate: 50000
+  # expanded OOO window makes it easier to run continuous-test
+  # otherwise catch-up writes are rejected when metamonitoring is on
+  out_of_order_time_window: 1h
   native_histograms_ingestion_enabled: true
   cardinality_analysis_enabled: true
+  query_ingesters_within: 20m
+  # HA tracker configuration
+  accept_ha_samples: true
+  ha_cluster_label: ha_cluster
+  ha_replica_label: ha_replica
+  ha_max_clusters: 10
 
 runtime_config:
   file: ./config/runtime.yaml

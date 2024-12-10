@@ -3,7 +3,6 @@
 package querymiddleware
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
@@ -125,6 +125,7 @@ func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {
 
 	requestTypes := map[string]struct {
 		requestPath                   string
+		request                       *http.Request
 		expectedCacheKeyPrefix        string
 		expectedCacheKeyWithLabelName bool
 	}{
@@ -140,12 +141,20 @@ func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {
 		},
 	}
 
+	reg := prometheus.NewPedanticRegistry()
+	codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
+
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			for requestTypeName, requestTypeData := range requestTypes {
 				t.Run(requestTypeName, func(t *testing.T) {
-					c := DefaultCacheKeyGenerator{}
-					actual, err := c.LabelValues(context.Background(), requestTypeData.requestPath, testData.params)
+					c := DefaultCacheKeyGenerator{codec: codec}
+					requestURL, _ := url.Parse(requestTypeData.requestPath)
+					requestURL.RawQuery = testData.params.Encode()
+					request, err := http.NewRequest("GET", requestURL.String(), nil)
+					require.NoError(t, err)
+
+					actual, err := c.LabelValues(request)
 					require.NoError(t, err)
 
 					assert.Equal(t, requestTypeData.expectedCacheKeyPrefix, actual.CacheKeyPrefix)
@@ -168,6 +177,7 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 		labelName        string
 		matcherSets      [][]*labels.Matcher
 		expectedCacheKey string
+		limit            uint64
 	}{
 		"start and end time are aligned to 2h boundaries": {
 			startTime: mustParseTime("2023-07-05T00:00:00Z"),
@@ -247,11 +257,32 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 				`{first="1",second!="2"},{first!="0"}`,
 			}, string(stringParamSeparator)),
 		},
+		"multiple label matcher sets, label name, and limit": {
+			startTime: mustParseTime("2023-07-05T00:00:00Z"),
+			endTime:   mustParseTime("2023-07-05T06:00:00Z"),
+			labelName: "test",
+			matcherSets: [][]*labels.Matcher{
+				{
+					labels.MustNewMatcher(labels.MatchEqual, "first", "1"),
+					labels.MustNewMatcher(labels.MatchNotEqual, "second", "2"),
+				}, {
+					labels.MustNewMatcher(labels.MatchNotEqual, "first", "0"),
+				},
+			},
+			limit: 10,
+			expectedCacheKey: strings.Join([]string{
+				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
+				fmt.Sprintf("%d", mustParseTime("2023-07-05T06:00:00Z")),
+				"test",
+				`{first="1",second!="2"},{first!="0"}`,
+				"10",
+			}, string(stringParamSeparator)),
+		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, testData.expectedCacheKey, generateLabelsQueryRequestCacheKey(testData.startTime, testData.endTime, testData.labelName, testData.matcherSets))
+			assert.Equal(t, testData.expectedCacheKey, generateLabelsQueryRequestCacheKey(testData.startTime, testData.endTime, testData.labelName, testData.matcherSets, testData.limit))
 		})
 	}
 }

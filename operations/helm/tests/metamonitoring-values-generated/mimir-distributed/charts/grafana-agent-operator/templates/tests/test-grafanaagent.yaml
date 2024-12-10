@@ -73,13 +73,13 @@ metadata:
 spec:
   containers:
   - name: busybox
-    image: busybox
+    image: "docker.io/library/busybox:latest"
     command: ['wget']
     args:  ['grafana-agent-test-operated:8080/-/healthy']
   # Wait for GrafanaAgent CR
   initContainers:
   - name: sleep
-    image: busybox
+    image: "docker.io/library/busybox:latest"
     command: ['sleep', '60']
   restartPolicy: Never
 ---
@@ -94,7 +94,7 @@ metadata:
     "helm.sh/hook": test
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
 spec:
-  image: "docker.io/grafana/agent:v0.39.1"
+  image: "docker.io/grafana/agent:v0.43.3"
   logLevel: info
   serviceAccountName: grafana-agent-test-sa
   metrics:

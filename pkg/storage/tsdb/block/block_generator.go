@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -71,6 +72,8 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 	blockID := ulid.MustNew(ulid.Now(), crypto_rand.Reader)
 	blockDir := filepath.Join(storageDir, blockID.String())
 
+	stats := tsdb.BlockStats{}
+
 	// Ensure series are sorted.
 	sort.Slice(specs, func(i, j int) bool {
 		return labels.Compare(specs[i].Labels, specs[j].Labels) < 0
@@ -109,11 +112,15 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 
 	// Updates the Ref on each chunk.
 	for _, series := range specs {
+		stats.NumSeries++
+
 		// Ensure every chunk meta has chunk data.
 		for _, c := range series.Chunks {
 			if c.Chunk == nil {
 				return nil, errors.Errorf("missing chunk data for series %s", series.Labels.String())
 			}
+			stats.NumChunks++
+			stats.NumSamples += uint64(c.Chunk.NumSamples())
 		}
 
 		if err := chunkw.WriteChunks(series.Chunks...); err != nil {
@@ -123,7 +130,7 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 
 	chunkwClosed = true
 	if err := chunkw.Close(); err != nil {
-		return nil, nil
+		return nil, err
 	}
 
 	// Write index.
@@ -172,6 +179,7 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 				Sources: []ulid.ULID{blockID},
 			},
 			Version: 1,
+			Stats:   stats,
 		},
 		Thanos: ThanosMeta{
 			Version: ThanosVersion1,
@@ -266,19 +274,24 @@ func CreateBlock(
 	if err := g.Wait(); err != nil {
 		return id, err
 	}
-	c, err := tsdb.NewLeveledCompactor(ctx, nil, log.NewNopLogger(), []int64{maxt - mint}, nil, nil)
+	c, err := tsdb.NewLeveledCompactor(ctx, nil, promslog.NewNopLogger(), []int64{maxt - mint}, nil, nil)
 	if err != nil {
 		return id, errors.Wrap(err, "create compactor")
 	}
 
-	id, err = c.Write(dir, h, mint, maxt, nil)
+	blocks, err := c.Write(dir, h, mint, maxt, nil)
 	if err != nil {
 		return id, errors.Wrap(err, "write block")
 	}
 
-	if id.Compare(ulid.ULID{}) == 0 {
+	if len(blocks) == 0 || (blocks[0] == ulid.ULID{}) {
 		return id, errors.Errorf("nothing to write, asked for %d samples", numSamples)
 	}
+	if len(blocks) > 1 {
+		return id, errors.Errorf("expected one block, got %d, asked for %d samples", len(blocks), numSamples)
+	}
+
+	id = blocks[0]
 
 	blockDir := filepath.Join(dir, id.String())
 

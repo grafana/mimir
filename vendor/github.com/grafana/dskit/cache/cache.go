@@ -13,48 +13,41 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// RemoteCacheClient is a high level client to interact with remote cache.
-type RemoteCacheClient interface {
+var (
+	ErrNotStored  = errors.New("item not stored")
+	ErrInvalidTTL = errors.New("invalid TTL")
+)
+
+// Cache is a high level interface to interact with a cache.
+type Cache interface {
 	// GetMulti fetches multiple keys at once from a cache. In case of error,
 	// an empty map is returned and the error tracked/logged. One or more Option
 	// instances may be passed to modify the behavior of this GetMulti call.
 	GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte
 
-	// SetAsync enqueues an asynchronous operation to store a key into a cache.
-	// In case the underlying async operation fails, the error will be tracked/logged.
+	// SetAsync enqueues an operation to store a key into a cache. In case the underlying
+	// operation fails, the error will be tracked/logged.
 	SetAsync(key string, value []byte, ttl time.Duration)
 
-	// SetMultiAsync enqueues asynchronous operations to store a keys and values
-	// into a cache. In case the underlying async operations fail, the error will
-	// be tracked/logged.
+	// SetMultiAsync enqueues operations to store a keys and values into a cache. In case
+	// any underlying async operations fail, the errors will be tracked/logged.
 	SetMultiAsync(data map[string][]byte, ttl time.Duration)
 
-	// Delete deletes a key from a cache.
-	// This is a synchronous operation. If an asynchronous set operation for key is still
-	// pending to be processed, it will wait for it to complete before performing deletion.
+	// Set stores a key and value into a cache.
+	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
+
+	// Add stores a key and value into a cache only if it does not already exist. If the
+	// item was not stored because an entry already exists in the cache, ErrNotStored will
+	// be returned.
+	Add(ctx context.Context, key string, value []byte, ttl time.Duration) error
+
+	// Delete deletes a key from a cache. This is a synchronous operation. If an asynchronous
+	// set operation for key is still pending to be processed, it will wait for it to complete
+	// before performing deletion.
 	Delete(ctx context.Context, key string) error
 
 	// Stop client and release underlying resources.
 	Stop()
-
-	// Name returns the name of this particular cache instance.
-	Name() string
-}
-
-// Cache is a generic interface.
-type Cache interface {
-	// StoreAsync writes data into the cache asynchronously.
-	//
-	// Note that individual byte buffers may be retained by the cache!
-	StoreAsync(data map[string][]byte, ttl time.Duration)
-
-	// Fetch multiple keys from cache. Returns map of input keys to data.
-	// If key isn't in the map, data for given key was not found. One or more
-	// Option instances may be passed to modify the behavior of this Fetch call.
-	Fetch(ctx context.Context, keys []string, opts ...Option) map[string][]byte
-
-	// Delete cache entry with the given key if it exists.
-	Delete(ctx context.Context, key string) error
 
 	// Name returns the name of this particular cache instance.
 	Name() string
@@ -123,19 +116,10 @@ func CreateClient(cacheName string, cfg BackendConfig, logger log.Logger, reg pr
 	case "":
 		// No caching.
 		return nil, nil
-
 	case BackendMemcached:
-		client, err := NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached, reg)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to create memcached client")
-		}
-		return NewRemoteCacheAdapter(client), nil
+		return NewMemcachedClientWithConfig(logger, cacheName, cfg.Memcached, reg)
 	case BackendRedis:
-		client, err := NewRedisClient(logger, cacheName, cfg.Redis, reg)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to create redis client")
-		}
-		return NewRemoteCacheAdapter(client), nil
+		return NewRedisClient(logger, cacheName, cfg.Redis, reg)
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, cfg.Backend)
 	}

@@ -41,7 +41,7 @@ You can use [Tanka](https://tanka.dev/) and [jsonnet-bundler](https://github.com
 
    # Initialise the Tanka.
    mkdir jsonnet-example && cd jsonnet-example
-   tk init --k8s=1.21
+   tk init --k8s=1.29
 
    # Install Mimir jsonnet.
    jb install github.com/grafana/mimir/operations/mimir@main

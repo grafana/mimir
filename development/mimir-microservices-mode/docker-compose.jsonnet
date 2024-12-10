@@ -22,14 +22,22 @@ std.manifestYamlDoc({
     // - multi (uses consul as primary and memberlist as secondary, but this can be switched in runtime via runtime.yaml)
     ring: 'memberlist',
 
+    enable_continuous_test: true,
+
     // If true, a load generator is started.
-    enable_load_generator: true,
+    enable_load_generator: false,
 
     // If true, start and enable scraping by these components.
     // Note that if more than one component is enabled, the dashboards shown in Grafana may contain duplicate series or aggregates may be doubled or tripled.
     enable_grafana_agent: false,
+    // If true, start a base prometheus that scrapes the Mimir component metrics and remote writes to distributor-1.
+    // Two additional Prometheus instances are started that scrape the same memcached-exporter and load-generator
+    // targets and remote write to distributor-2.
     enable_prometheus: true,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
     enable_otel_collector: false,
+
+    // If true, a query-tee instance with a single backend is started.
+    enable_query_tee: false,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -43,14 +51,16 @@ std.manifestYamlDoc({
     self.alertmanagers(3) +
     self.nginx +
     self.minio +
-    (if $._config.enable_prometheus then self.prometheus else {}) +
+    (if $._config.enable_continuous_test then self.continuous_test else {}) +
+    (if $._config.enable_prometheus then self.prometheus + self.prompair1 + self.prompair2 else {}) +
     self.grafana +
     (if $._config.enable_grafana_agent then self.grafana_agent else {}) +
     (if $._config.enable_otel_collector then self.otel_collector else {}) +
     self.jaeger +
-    (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
+    self.consul +
     (if $._config.cache_backend == 'redis' then self.redis else self.memcached + self.memcached_exporter) +
     (if $._config.enable_load_generator then self.load_generator else {}) +
+    (if $._config.enable_query_tee then self.query_tee else {}) +
     {},
 
   distributor:: {
@@ -58,12 +68,14 @@ std.manifestYamlDoc({
       name: 'distributor-1',
       target: 'distributor',
       httpPort: 8000,
+      extraArguments: '-distributor.ha-tracker.consul.hostname=consul:8500',
     }),
 
     'distributor-2': mimirService({
       name: 'distributor-2',
       target: 'distributor',
       httpPort: 8001,
+      extraArguments: '-distributor.ha-tracker.consul.hostname=consul:8500',
     }),
   },
 
@@ -171,9 +183,39 @@ std.manifestYamlDoc({
     }),
   },
 
+  continuous_test:: {
+    'continuous-test': mimirService({
+      name: 'continuous-test',
+      target: 'continuous-test',
+      httpPort: 8090,
+      extraArguments:
+        ' -tests.run-interval=2m' +
+        ' -tests.read-endpoint=http://query-frontend:8007/prometheus' +
+        ' -tests.tenant-id=mimir-continuous-test' +
+        ' -tests.write-endpoint=http://distributor-1:8000' +
+        ' -tests.write-read-series-test.max-query-age=1h' +
+        ' -tests.write-read-series-test.num-series=100',
+    }),
+  },
+
   local all_caches = ['-blocks-storage.bucket-store.index-cache', '-blocks-storage.bucket-store.chunks-cache', '-blocks-storage.bucket-store.metadata-cache', '-query-frontend.results-cache', '-ruler-storage.cache'],
 
   local all_rings = ['-ingester.ring', '-distributor.ring', '-compactor.ring', '-store-gateway.sharding-ring', '-ruler.ring', '-alertmanager.sharding-ring'],
+
+  local jaegerEnv(appName) = {
+    JAEGER_AGENT_HOST: 'jaeger',
+    JAEGER_AGENT_PORT: 6831,
+    JAEGER_SAMPLER_TYPE: 'const',
+    JAEGER_SAMPLER_PARAM: 1,
+    JAEGER_TAGS: 'app=%s' % appName,
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: 1000,
+  },
+
+  local formatEnv(env) = [
+    '%s=%s' % [key, env[key]]
+    for key in std.objectFields(env)
+    if env[key] != null
+  ],
 
   // This function builds docker-compose declaration for Mimir service.
   // Default grpcPort is (httpPort + 1000), and default debug port is (httpPort + 10000)
@@ -189,14 +231,7 @@ std.manifestYamlDoc({
       // Extra arguments passed to Mimir command line.
       extraArguments: '',
       dependsOn: ['minio'] + (if $._config.ring == 'consul' || $._config.ring == 'multi' then ['consul'] else if s.target != 'distributor' then ['distributor-1'] else []),
-      env: {
-        JAEGER_AGENT_HOST: 'jaeger',
-        JAEGER_AGENT_PORT: 6831,
-        JAEGER_SAMPLER_TYPE: 'const',
-        JAEGER_SAMPLER_PARAM: 1,
-        JAEGER_TAGS: 'app=%s' % s.jaegerApp,
-        JAEGER_REPORTER_MAX_QUEUE_SIZE: 1000,
-      },
+      env: jaegerEnv(s.jaegerApp),
       extraVolumes: [],
       memberlistNodeName: self.jaegerApp,
       memberlistBindPort: self.httpPort + 2000,
@@ -223,11 +258,7 @@ std.manifestYamlDoc({
         std.join(' ', if $._config.cache_backend == 'redis' then [x + '.backend=redis' for x in all_caches] + [x + '.redis.endpoint=redis:6379' for x in all_caches] else [x + '.backend=memcached' for x in all_caches] + [x + '.memcached.addresses=dns+memcached:11211' for x in all_caches]),
       ]),
     ],
-    environment: [
-      '%s=%s' % [key, options.env[key]]
-      for key in std.objectFields(options.env)
-      if options.env[key] != null
-    ],
+    environment: formatEnv(options.env),
     hostname: options.name,
     // Only publish HTTP and debug port, but not gRPC one.
     ports: ['%d:%d' % [options.httpPort, options.httpPort]] +
@@ -242,8 +273,9 @@ std.manifestYamlDoc({
   // Other services used by Mimir.
   consul:: {
     consul: {
-      image: 'consul',
-      command: ['agent', '-dev', '-client=0.0.0.0', '-log-level=info'],
+      image: 'consul:1.15',
+      command: ['agent', '-dev', '-client=0.0.0.0', '-log-level=debug'],
+      hostname: 'consul',
       ports: ['8500:8500'],
     },
   },
@@ -280,7 +312,7 @@ std.manifestYamlDoc({
 
   memcached:: {
     memcached: {
-      image: 'memcached:1.6.19-alpine',
+      image: 'memcached:1.6.28-alpine',
       ports: [
         '11211:11211',
       ],
@@ -289,7 +321,7 @@ std.manifestYamlDoc({
 
   memcached_exporter:: {
     'memcached-exporter': {
-      image: 'prom/memcached-exporter:v0.6.0',
+      image: 'prom/memcached-exporter:v0.15.0',
       command: ['--memcached.address=memcached:11211', '--web.listen-address=0.0.0.0:9150'],
     },
   },
@@ -309,7 +341,7 @@ std.manifestYamlDoc({
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v2.47.2',
+      image: 'prom/prometheus:v2.51.1',
       command: [
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
@@ -324,15 +356,48 @@ std.manifestYamlDoc({
     },
   },
 
+  prompair1:: {
+    prompair1: {
+      image: 'prom/prometheus:v2.51.1',
+      hostname: 'prom-ha-pair-1',
+      command: [
+        '--config.file=/etc/prometheus/prom-ha-pair-1.yaml',
+        '--enable-feature=exemplar-storage',
+        '--enable-feature=native-histograms',
+      ],
+      volumes: [
+        './config:/etc/prometheus',
+      ],
+      ports: ['9092:9090'],
+    },
+  },
+
+  prompair2:: {
+    prompair2: {
+      image: 'prom/prometheus:v2.51.1',
+      hostname: 'prom-ha-pair-2',
+      command: [
+        '--config.file=/etc/prometheus/prom-ha-pair-2.yaml',
+        '--enable-feature=exemplar-storage',
+        '--enable-feature=native-histograms',
+      ],
+      volumes: [
+        './config:/etc/prometheus',
+      ],
+      ports: ['9093:9090'],
+    },
+  },
+
+
   grafana:: {
     grafana: {
-      image: 'grafana/grafana:10.1.5',
+      image: 'grafana/grafana:10.4.3',
       environment: [
         'GF_AUTH_ANONYMOUS_ENABLED=true',
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
       ],
       volumes: [
-        './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
+        './config/datasources.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
         './config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml',
         '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir',
       ],
@@ -385,8 +450,20 @@ std.manifestYamlDoc({
     },
   },
 
-  // docker-compose YAML output version.
-  version: '3.4',
+  query_tee:: {
+    'query-tee': {
+      local env = jaegerEnv('query-tee'),
+
+      image: 'query-tee',
+      build: {
+        context: '../../cmd/query-tee',
+      },
+      command: '-backend.endpoints=http://nginx:8080 -backend.preferred=nginx -proxy.passthrough-non-registered-routes=true -server.path-prefix=/prometheus',
+      environment: formatEnv(env),
+      hostname: 'query-tee',
+      ports: ['9999:80'],
+    },
+  },
 
   // "true" option for std.manifestYamlDoc indents arrays in objects.
 }, true)

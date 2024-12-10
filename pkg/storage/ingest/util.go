@@ -4,30 +4,28 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/sasl/plain"
+	"github.com/twmb/franz-go/plugin/kotel"
 	"github.com/twmb/franz-go/plugin/kprom"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
 	// Regular expression used to parse the ingester numeric ID.
 	ingesterIDRegexp = regexp.MustCompile("-([0-9]+)$")
-
-	// The Prometheus summary objectives used when tracking latency.
-	latencySummaryObjectives = map[float64]float64{
-		0.5:   0.05,
-		0.90:  0.01,
-		0.99:  0.001,
-		0.995: 0.001,
-		0.999: 0.001,
-		1:     0.001,
-	}
 )
 
 // IngesterPartitionID returns the partition ID owner the the given ingester.
@@ -46,11 +44,22 @@ func IngesterPartitionID(ingesterID string) (int32, error) {
 	return int32(ingesterSeq), nil
 }
 
+type onlySampledTraces struct {
+	propagation.TextMapPropagator
+}
+
+func (o onlySampledTraces) Inject(ctx context.Context, carrier propagation.TextMapCarrier) {
+	sc := trace.SpanContextFromContext(ctx)
+	if !sc.IsSampled() {
+		return
+	}
+	o.TextMapPropagator.Inject(ctx, carrier)
+}
+
 func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Logger) []kgo.Opt {
-	return []kgo.Opt{
+	opts := []kgo.Opt{
 		kgo.ClientID(cfg.ClientID),
 		kgo.SeedBrokers(cfg.Address),
-		kgo.AllowAutoTopicCreation(),
 		kgo.DialTimeout(cfg.DialTimeout),
 
 		// A cluster metadata update is a request sent to a broker and getting back the map of partitions and
@@ -74,8 +83,7 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 		kgo.MetadataMinAge(10 * time.Second),
 		kgo.MetadataMaxAge(10 * time.Second),
 
-		kgo.WithHooks(metrics),
-		kgo.WithLogger(newKafkaLogger(logger)),
+		kgo.WithLogger(NewKafkaLogger(logger)),
 
 		kgo.RetryTimeoutFn(func(key int16) time.Duration {
 			switch key {
@@ -87,6 +95,28 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 			return 30 * time.Second
 		}),
 	}
+
+	// SASL plain auth.
+	if cfg.SASLUsername != "" && cfg.SASLPassword.String() != "" {
+		opts = append(opts, kgo.SASL(plain.Plain(func(_ context.Context) (plain.Auth, error) {
+			return plain.Auth{
+				User: cfg.SASLUsername,
+				Pass: cfg.SASLPassword.String(),
+			}, nil
+		})))
+	}
+
+	opts = append(opts, kgo.WithHooks(kotel.NewKotel(kotel.WithTracer(recordsTracer())).Hooks()...))
+
+	if metrics != nil {
+		opts = append(opts, kgo.WithHooks(metrics))
+	}
+
+	return opts
+}
+
+func recordsTracer() *kotel.Tracer {
+	return kotel.NewTracer(kotel.TracerPropagator(propagation.NewCompositeTextMapPropagator(onlySampledTraces{propagation.TraceContext{}})))
 }
 
 // resultPromise is a simple utility to have multiple goroutines waiting for a result from another one.
@@ -120,4 +150,46 @@ func (w *resultPromise[T]) wait(ctx context.Context) (T, error) {
 	case <-w.done:
 		return w.resultValue, w.resultErr
 	}
+}
+
+// CreateTopic creates the topic in the Kafka cluster. If creating the topic fails, then an error is returned.
+// If the topic already exists, then the function logs a message and returns nil.
+func CreateTopic(cfg KafkaConfig, logger log.Logger) error {
+	logger = log.With(logger, "task", "autocreate_topic")
+
+	cl, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, logger)...)
+	if err != nil {
+		return fmt.Errorf("failed to create kafka client: %w", err)
+	}
+
+	adm := kadm.NewClient(cl)
+	defer adm.Close()
+	ctx := context.Background()
+
+	// As of kafka 2.4 we can pass -1 and the broker will use its default configuration.
+	const defaultReplication = -1
+	resp, err := adm.CreateTopic(ctx, int32(cfg.AutoCreateTopicDefaultPartitions), defaultReplication, nil, cfg.Topic)
+	if err == nil {
+		err = resp.Err
+	}
+	if err != nil {
+		if errors.Is(err, kerr.TopicAlreadyExists) {
+			level.Info(logger).Log(
+				"msg", "topic already exists",
+				"topic", resp.Topic,
+				"num_partitions", resp.NumPartitions,
+				"replication_factor", resp.ReplicationFactor,
+			)
+			return nil
+		}
+		return fmt.Errorf("failed to create topic %s: %w", cfg.Topic, err)
+	}
+
+	level.Info(logger).Log(
+		"msg", "successfully created topic",
+		"topic", resp.Topic,
+		"num_partitions", resp.NumPartitions,
+		"replication_factor", resp.ReplicationFactor,
+	)
+	return nil
 }

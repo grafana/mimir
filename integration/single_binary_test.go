@@ -41,8 +41,10 @@ func TestMimirShouldStartInSingleBinaryModeWithAllMemcachedConfigured(t *testing
 		"-blocks-storage.bucket-store.chunks-cache.backend":               "memcached",
 		"-blocks-storage.bucket-store.chunks-cache.memcached.addresses":   "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 		// Ingester.
-		"-ingester.ring.store":           "consul",
-		"-ingester.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
+		"-ingester.ring.store":                     "consul",
+		"-ingester.ring.consul.hostname":           consul.NetworkHTTPEndpoint(),
+		"-ingester.partition-ring.store":           "consul",
+		"-ingester.partition-ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 		// Distributor.
 		"-ingester.ring.replication-factor": "2",
 		"-distributor.ring.store":           "consul",

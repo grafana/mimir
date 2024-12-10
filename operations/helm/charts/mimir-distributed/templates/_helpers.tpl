@@ -80,9 +80,23 @@ Create the name of the ruler service account
 {{- define "mimir.ruler.serviceAccountName" -}}
 {{- if and .Values.ruler.serviceAccount.create (eq .Values.ruler.serviceAccount.name "") -}}
 {{- $sa := default (include "mimir.fullname" .) .Values.serviceAccount.name }}
-{{- printf "%s-%s" $sa "ruler" }}
+{{- printf "%s-ruler" $sa }}
 {{- else if and .Values.ruler.serviceAccount.create (not (eq .Values.ruler.serviceAccount.name "")) -}}
 {{- .Values.ruler.serviceAccount.name -}}
+{{- else -}}
+{{- include "mimir.serviceAccountName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the name of the alertmanager service account
+*/}}
+{{- define "mimir.alertmanager.serviceAccountName" -}}
+{{- if and .Values.alertmanager.serviceAccount.create (eq .Values.alertmanager.serviceAccount.name "") -}}
+{{- $sa := default (include "mimir.fullname" .) .Values.serviceAccount.name }}
+{{- printf "%s-alertmanager" $sa }}
+{{- else if and .Values.alertmanager.serviceAccount.create (not (eq .Values.alertmanager.serviceAccount.name "")) -}}
+{{- .Values.alertmanager.serviceAccount.name -}}
 {{- else -}}
 {{- include "mimir.serviceAccountName" . -}}
 {{- end -}}
@@ -430,6 +444,7 @@ Examples:
   "compactor" "compactor"
   "continuous-test" "continuous_test"
   "distributor" "distributor"
+  "federation-frontend" "federation_frontend"
   "gateway" "gateway"
   "gr-aggr-cache" "gr-aggr-cache"
   "gr-metricname-cache" "gr-metricname-cache"
@@ -438,6 +453,7 @@ Examples:
   "index-cache" "index-cache"
   "ingester" "ingester"
   "memcached" "memcached"
+  "meta-monitoring" "metaMonitoring.grafanaAgent"
   "metadata-cache" "metadata-cache"
   "nginx" "nginx"
   "overrides-exporter" "overrides_exporter"
@@ -446,6 +462,9 @@ Examples:
   "query-scheduler" "query_scheduler"
   "results-cache" "results-cache"
   "ruler" "ruler"
+  "ruler-querier" "ruler_querier"
+  "ruler-query-frontend" "ruler_query_frontend"
+  "ruler-query-scheduler" "ruler_query_scheduler"
   "smoke-test" "smoke_test"
   "store-gateway" "store_gateway"
   "tokengen" "tokengenJob"
@@ -637,7 +656,7 @@ Params:
 
 {{/*
 siToBytes is used to convert Kubernetes byte units to bytes.
-Only works for limited set of SI prefixes: Ki, Mi, Gi, Ti.
+Works for a sub set of SI suffixes: m, k, M, G, T, and their power-of-two equivalents: Ki, Mi, Gi, Ti.
 
 mimir.siToBytes takes 1 argument
   .value = the input value with SI unit
@@ -651,6 +670,16 @@ mimir.siToBytes takes 1 argument
         {{- trimSuffix "Gi" .value | float64 | mul 1073741824 | ceil | int64 -}}
     {{- else if (hasSuffix "Ti" .value) -}}
         {{- trimSuffix "Ti" .value | float64 | mul 1099511627776 | ceil | int64 -}}
+    {{- else if (hasSuffix "k" .value) -}}
+        {{- trimSuffix "k" .value | float64 | mul 1000 | ceil | int64 -}}
+    {{- else if (hasSuffix "M" .value) -}}
+        {{- trimSuffix "M" .value | float64 | mul 1000000 | ceil | int64 -}}
+    {{- else if (hasSuffix "G" .value) -}}
+        {{- trimSuffix "G" .value | float64 | mul 1000000000 | ceil | int64 -}}
+    {{- else if (hasSuffix "T" .value) -}}
+        {{- trimSuffix "T" .value | float64 | mul 1000000000000 | ceil | int64 -}}
+    {{- else if (hasSuffix "m" .value) -}}
+        {{- trimSuffix "m" .value | float64 | mulf 0.001 | ceil | int64 -}}
     {{- else -}}
         {{- .value }}
     {{- end -}}
@@ -669,5 +698,21 @@ mimir.parseCPU takes 1 argument
         {{ trimSuffix "m" $value_string | float64 | mulf 0.001 -}}
     {{- else -}}
         {{- $value_string }}
+    {{- end -}}
+{{- end -}}
+
+{{/*
+cpuToMilliCPU is used to convert Kubernetes CPU units to MilliCPU.
+The returned value is a string representation. If you need to do any math on it, please parse the string first.
+
+mimir.cpuToMilliCPU takes 1 argument
+  .value = the Kubernetes CPU request value
+*/}}
+{{- define "mimir.cpuToMilliCPU" -}}
+    {{- $value_string := .value | toString -}}
+    {{- if (hasSuffix "m" $value_string) -}}
+        {{ trimSuffix "m" $value_string -}}
+    {{- else -}}
+        {{- $value_string | float64 | mulf 1000 | toString }}
     {{- end -}}
 {{- end -}}

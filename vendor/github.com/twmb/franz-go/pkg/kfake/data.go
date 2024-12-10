@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -93,7 +92,9 @@ func (d *data) mkt(t string, nparts int, nreplicas int, configs map[string]*stri
 	d.id2t[id] = t
 	d.t2id[t] = id
 	d.treplicas[t] = nreplicas
-	d.tcfgs[t] = configs
+	if configs != nil {
+		d.tcfgs[t] = configs
+	}
 	for i := 0; i < nparts; i++ {
 		d.tps.mkp(t, int32(i), d.c.newPartData)
 	}
@@ -244,9 +245,6 @@ func (d *data) configs(t string, fn func(k string, v *string, src kmsg.ConfigSou
 
 // Unlike Kafka, we validate the value before allowing it to be set.
 func (c *Cluster) setBrokerConfig(k string, v *string, dry bool) bool {
-	if !validateSetBrokerConfig(k, v) {
-		return false
-	}
 	if dry {
 		return true
 	}
@@ -255,9 +253,6 @@ func (c *Cluster) setBrokerConfig(k string, v *string, dry bool) bool {
 }
 
 func (d *data) setTopicConfig(t string, k string, v *string, dry bool) bool {
-	if !validateSetTopicConfig(k, v) {
-		return false
-	}
 	if dry {
 		return true
 	}
@@ -266,61 +261,6 @@ func (d *data) setTopicConfig(t string, k string, v *string, dry bool) bool {
 	}
 	d.tcfgs[t][k] = v
 	return true
-}
-
-func validateSetTopicConfig(k string, v *string) bool {
-	if _, ok := validTopicConfigs[k]; !ok {
-		return false
-	}
-	fn, ok := validateSetConfig[k]
-	if !ok {
-		return false
-	}
-	return fn(v)
-}
-
-func validateSetBrokerConfig(k string, v *string) bool {
-	if _, ok := validBrokerConfigs[k]; !ok {
-		return false
-	}
-	fn, ok := validateSetConfig[k]
-	if !ok {
-		return false
-	}
-	return fn(v)
-}
-
-// Validation functions for all configs we support setting. Keys not in this
-// map are not settable.
-var validateSetConfig = map[string]func(*string) bool{
-	"cleanup.policy": func(v *string) bool {
-		if v == nil {
-			return false
-		}
-		s := strings.Split(*v, ",")
-		for _, policy := range s {
-			if policy != "delete" && policy != "compact" {
-				return false
-			}
-		}
-		return true
-	},
-
-	"compression.type": staticConfig("uncompressed", "lz4", "zstd", "snappy", "gzip", "producer"),
-
-	"max.message.bytes":      numberConfig(0, true, 0, false),
-	"message.timestamp.type": staticConfig("CreateTime", "LogAppendTime"),
-	"min.insync.replicas":    numberConfig(1, true, 0, false),
-	"retention.bytes":        numberConfig(-1, true, 0, false),
-	"retention.ms":           numberConfig(-1, true, 0, false),
-
-	"default.replication.factor": numberConfig(1, true, 0, false),
-	"fetch.max.bytes":            numberConfig(1024, true, 0, false),
-	"log.dir":                    func(v *string) bool { return v != nil },
-	"log.message.timestamp.type": staticConfig("CreateTime", "LogAppendTime"),
-	"log.retention.bytes":        numberConfig(-1, true, 0, false),
-	"log.retention.ms":           numberConfig(-1, true, 0, false),
-	"message.max.bytes":          numberConfig(0, true, 0, false),
 }
 
 // All valid topic configs we support, as well as the equivalent broker

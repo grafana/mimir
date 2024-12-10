@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/cardinality"
 )
 
 func TestActiveSeriesWithQuerySharding(t *testing.T) {
@@ -50,16 +51,89 @@ func TestActiveSeriesWithQuerySharding(t *testing.T) {
 		testName := fmt.Sprintf("query scheduler=%v/query sharding=%v",
 			tc.querySchedulerEnabled, tc.shardingEnabled,
 		)
-		t.Run(testName, func(t *testing.T) {
+		t.Run("active series/"+testName, func(t *testing.T) {
 			runTestActiveSeriesWithQueryShardingHTTPTest(t, config)
+		})
+
+		t.Run("active native histograms/"+testName, func(t *testing.T) {
+			runTestActiveNativeHistogramMetricsWithQueryShardingHTTPTest(t, config)
 		})
 	}
 }
 
+const (
+	metricName = "test_metric"
+)
+
 func runTestActiveSeriesWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTestConfig) {
+	numSeries := 100
+	s, c := setupComponentsForActiveSeriesTest(t, cfg, numSeries)
+	defer s.Close()
+
+	// Query active series.
+	for _, options := range [][]e2emimir.ActiveSeriesOption{
+		{e2emimir.WithRequestMethod(http.MethodGet)},
+		{e2emimir.WithRequestMethod(http.MethodPost)},
+		{e2emimir.WithRequestMethod(http.MethodGet), e2emimir.WithEnableCompression()},
+		{e2emimir.WithRequestMethod(http.MethodPost), e2emimir.WithEnableCompression()},
+		{e2emimir.WithQueryShards(1)},
+		{e2emimir.WithQueryShards(12)},
+	} {
+		response, err := c.ActiveSeries(metricName, options...)
+		require.NoError(t, err)
+		require.Len(t, response.Data, numSeries)
+	}
+
+	var err error
+	_, err = c.ActiveSeries(metricName, e2emimir.WithQueryShards(512))
+	if cfg.shardActiveSeriesQueries {
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "shard count 512 exceeds allowed maximum (128)")
+	} else {
+		require.NoError(t, err)
+	}
+}
+
+func runTestActiveNativeHistogramMetricsWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTestConfig) {
+	numSeries := 100
+	s, c := setupComponentsForActiveSeriesTest(t, cfg, numSeries)
+	defer s.Close()
+
+	// Query active series.
+	for _, options := range [][]e2emimir.ActiveSeriesOption{
+		{e2emimir.WithRequestMethod(http.MethodGet)},
+		{e2emimir.WithRequestMethod(http.MethodPost)},
+		{e2emimir.WithRequestMethod(http.MethodGet), e2emimir.WithEnableCompression()},
+		{e2emimir.WithRequestMethod(http.MethodPost), e2emimir.WithEnableCompression()},
+		{e2emimir.WithQueryShards(1)},
+		{e2emimir.WithQueryShards(12)},
+	} {
+		response, err := c.ActiveNativeHistogramMetrics(metricName, options...)
+		require.NoError(t, err)
+		require.Len(t, response.Data, 1)
+		require.Equal(t, response.Data[0], cardinality.ActiveMetricWithBucketCount{
+			Metric:         metricName,
+			SeriesCount:    uint64(numSeries / 2),     // Only half of the series are native histograms.
+			BucketCount:    uint64(numSeries / 2 * 8), // We add up the bucket count of all histograms.
+			AvgBucketCount: 8.0,
+			MinBucketCount: 8,
+			MaxBucketCount: 8,
+		})
+	}
+
+	var err error
+	_, err = c.ActiveNativeHistogramMetrics(metricName, e2emimir.WithQueryShards(512))
+	if cfg.shardActiveSeriesQueries {
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "shard count 512 exceeds allowed maximum (128)")
+	} else {
+		require.NoError(t, err)
+	}
+}
+
+func setupComponentsForActiveSeriesTest(t *testing.T, cfg queryFrontendTestConfig, numSeries int) (*e2e.Scenario, *e2emimir.Client) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
-	defer s.Close()
 
 	memcached := e2ecache.NewMemcached()
 	consul := e2edb.NewConsul()
@@ -99,7 +173,7 @@ func runTestActiveSeriesWithQueryShardingHTTPTest(t *testing.T, cfg queryFronten
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -130,38 +204,21 @@ func runTestActiveSeriesWithQueryShardingHTTPTest(t *testing.T, cfg queryFronten
 	// Push series for the test user to Mimir.
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
-	numSeries := 100
-	metricName := "test_metric"
 	now := time.Now()
 	series := make([]prompb.TimeSeries, numSeries)
 	for i := 0; i < numSeries; i++ {
-		ts, _, _ := e2e.GenerateSeries(metricName, now, prompb.Label{Name: "index", Value: strconv.Itoa(i)})
+		var ts []prompb.TimeSeries
+		if i%2 == 0 {
+			// Let half of the series be float samples and the other half native histograms.
+			ts, _, _ = e2e.GenerateSeries(metricName, now, prompb.Label{Name: "index", Value: strconv.Itoa(i)})
+		} else {
+			ts, _, _ = generateHistogramSeries(metricName, now, prompb.Label{Name: "index", Value: strconv.Itoa(i)})
+		}
 		series[i] = ts[0]
 	}
 	res, err := c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
-	// Query active series.
-	for _, options := range [][]e2emimir.ActiveSeriesOption{
-		{e2emimir.WithRequestMethod(http.MethodGet)},
-		{e2emimir.WithRequestMethod(http.MethodPost)},
-		{e2emimir.WithRequestMethod(http.MethodGet), e2emimir.WithEnableCompression()},
-		{e2emimir.WithRequestMethod(http.MethodPost), e2emimir.WithEnableCompression()},
-		{e2emimir.WithQueryShards(1)},
-		{e2emimir.WithQueryShards(12)},
-	} {
-		response, err := c.ActiveSeries(metricName, options...)
-		require.NoError(t, err)
-		require.Equal(t, http.StatusOK, res.StatusCode)
-		require.Len(t, response.Data, numSeries)
-	}
-
-	_, err = c.ActiveSeries(metricName, e2emimir.WithQueryShards(512))
-	if cfg.shardActiveSeriesQueries {
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "shard count 512 exceeds allowed maximum (128)")
-	} else {
-		require.NoError(t, err)
-	}
+	return s, c
 }

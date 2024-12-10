@@ -59,13 +59,13 @@ func TestShardedQuerier_Select(t *testing.T) {
 
 				// override handler func to assert new query has been substituted
 				q.handler = HandlerFunc(
-					func(ctx context.Context, req Request) (Response, error) {
+					func(_ context.Context, req MetricsQueryRequest) (Response, error) {
 						require.Equal(t, `http_requests_total{cluster="prod"}`, req.GetQuery())
 						return expected, nil
 					},
 				)
 
-				encoded, err := astmapper.JSONCodec.Encode([]string{`http_requests_total{cluster="prod"}`})
+				encoded, err := astmapper.JSONCodec.Encode([]astmapper.EmbeddedQuery{astmapper.NewEmbeddedQuery(`http_requests_total{cluster="prod"}`, nil)})
 				require.Nil(t, err)
 				set := q.Select(
 					ctx,
@@ -86,7 +86,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				nil,
 			)),
 			fn: func(t *testing.T, q *shardedQuerier) {
-				encoded, err := astmapper.JSONCodec.Encode([]string{`http_requests_total{cluster="prod"}`})
+				encoded, err := astmapper.JSONCodec.Encode([]astmapper.EmbeddedQuery{astmapper.NewEmbeddedQuery(`http_requests_total{cluster="prod"}`, nil)})
 				require.Nil(t, err)
 				set := q.Select(
 					ctx,
@@ -143,7 +143,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				nil,
 			)),
 			fn: func(t *testing.T, q *shardedQuerier) {
-				encoded, err := astmapper.JSONCodec.Encode([]string{`http_requests_total{cluster="prod"}`})
+				encoded, err := astmapper.JSONCodec.Encode([]astmapper.EmbeddedQuery{astmapper.NewEmbeddedQuery(`http_requests_total{cluster="prod"}`, nil)})
 				require.Nil(t, err)
 				set := q.Select(
 					ctx,
@@ -204,10 +204,15 @@ func TestShardedQuerier_Select(t *testing.T) {
 }
 
 func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T) {
-	embeddedQueries := []string{
+	embeddedQueriesRaw := []string{
 		`sum(rate(metric{__query_shard__="0_of_3"}[1m]))`,
 		`sum(rate(metric{__query_shard__="1_of_3"}[1m]))`,
 		`sum(rate(metric{__query_shard__="2_of_3"}[1m]))`,
+	}
+
+	embeddedQueries := make([]astmapper.EmbeddedQuery, len(embeddedQueriesRaw))
+	for i, query := range embeddedQueriesRaw {
+		embeddedQueries[i] = astmapper.NewEmbeddedQuery(query, nil)
 	}
 
 	ctx := context.Background()
@@ -218,7 +223,7 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 	downstreamWg := sync.WaitGroup{}
 	downstreamWg.Add(len(embeddedQueries))
 
-	querier := mkShardedQuerier(HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
+	querier := mkShardedQuerier(HandlerFunc(func(context.Context, MetricsQueryRequest) (Response, error) {
 		// Wait until the downstream handler has been concurrently called for each embedded query.
 		downstreamWg.Done()
 		downstreamWg.Wait()
@@ -257,18 +262,18 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 }
 
 func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
-	queryable := newShardedQueryable(&PrometheusRangeQueryRequest{}, nil)
+	queryable := NewShardedQueryable(&PrometheusRangeQueryRequest{}, nil, nil, nil)
 	assert.Empty(t, queryable.getResponseHeaders())
 
 	// Merge some response headers from the 1st querier.
 	querier, err := queryable.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
-	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
+	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusHeader{
 		{Name: "content-type", Values: []string{"application/json"}},
 		{Name: "cache-control", Values: []string{"no-cache"}},
 	})
-	assert.ElementsMatch(t, []*PrometheusResponseHeader{
+	assert.ElementsMatch(t, []*PrometheusHeader{
 		{Name: "content-type", Values: []string{"application/json"}},
 		{Name: "cache-control", Values: []string{"no-cache"}},
 	}, queryable.getResponseHeaders())
@@ -277,18 +282,18 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	querier, err = queryable.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
-	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
+	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusHeader{
 		{Name: "content-type", Values: []string{"application/json"}},
 		{Name: "cache-control", Values: []string{"no-store"}},
 	})
-	assert.ElementsMatch(t, []*PrometheusResponseHeader{
+	assert.ElementsMatch(t, []*PrometheusHeader{
 		{Name: "content-type", Values: []string{"application/json"}},
 		{Name: "cache-control", Values: []string{"no-cache", "no-store"}},
 	}, queryable.getResponseHeaders())
 }
 
-func mkShardedQuerier(handler Handler) *shardedQuerier {
-	return &shardedQuerier{req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker()}
+func mkShardedQuerier(handler MetricsQueryHandler) *shardedQuerier {
+	return &shardedQuerier{req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker(), handleEmbeddedQuery: defaultHandleEmbeddedQueryFunc}
 }
 
 func TestNewSeriesSetFromEmbeddedQueriesResults(t *testing.T) {
@@ -418,7 +423,7 @@ func TestResponseToSamples(t *testing.T) {
 		},
 	}
 
-	streams, err := responseToSamples(input)
+	streams, err := ResponseToSamples(input)
 	require.NoError(t, err)
 	assertEqualSampleStream(t, input.Data.Result, streams)
 }

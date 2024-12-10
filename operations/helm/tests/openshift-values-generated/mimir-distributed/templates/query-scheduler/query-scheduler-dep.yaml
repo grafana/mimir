@@ -38,8 +38,6 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
       containers:
         - name: query-scheduler
           imagePullPolicy: IfNotPresent
@@ -82,12 +80,6 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          env:
-          envFrom:
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -97,8 +89,6 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: openshift-values
             app.kubernetes.io/component: query-scheduler
-      tolerations:
-        []
       terminationGracePeriodSeconds: 180
       volumes:
         - name: config

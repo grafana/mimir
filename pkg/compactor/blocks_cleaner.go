@@ -33,17 +33,19 @@ import (
 )
 
 const (
-	defaultDeleteBlocksConcurrency = 16
+	defaultDeleteBlocksConcurrency       = 16
+	defaultGetDeletionMarkersConcurrency = 16
 )
 
 type BlocksCleanerConfig struct {
-	DeletionDelay              time.Duration
-	CleanupInterval            time.Duration
-	CleanupConcurrency         int
-	TenantCleanupDelay         time.Duration // Delay before removing tenant deletion mark and "debug".
-	DeleteBlocksConcurrency    int
-	NoBlocksFileCleanupEnabled bool
-	CompactionBlockRanges      mimir_tsdb.DurationList // Used for estimating compaction jobs.
+	DeletionDelay                 time.Duration
+	CleanupInterval               time.Duration
+	CleanupConcurrency            int
+	TenantCleanupDelay            time.Duration // Delay before removing tenant deletion mark and "debug".
+	DeleteBlocksConcurrency       int
+	GetDeletionMarkersConcurrency int
+	NoBlocksFileCleanupEnabled    bool
+	CompactionBlockRanges         mimir_tsdb.DurationList // Used for estimating compaction jobs.
 }
 
 type BlocksCleaner struct {
@@ -357,7 +359,7 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 		level.Info(userLogger).Log("msg", "deleted blocks for tenant marked for deletion", "deletedBlocks", deletedBlocks)
 	}
 
-	mark, err := mimir_tsdb.ReadTenantDeletionMark(ctx, c.bucketClient, userID)
+	mark, err := mimir_tsdb.ReadTenantDeletionMark(ctx, c.bucketClient, userID, c.logger)
 	if err != nil {
 		return errors.Wrap(err, "failed to read tenant deletion mark")
 	}
@@ -432,7 +434,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	}
 
 	// Generate an updated in-memory version of the bucket index.
-	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, userLogger)
+	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, c.cfg.GetDeletionMarkersConcurrency, userLogger)
 	idx, partials, err := w.UpdateIndex(ctx, idx)
 	if err != nil {
 		return err
@@ -674,7 +676,7 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 			lastModified = attrib.LastModified
 		}
 		return nil
-	}, objstore.WithRecursiveIter)
+	}, objstore.WithRecursiveIter())
 
 	if errors.Is(err, errStopIter) {
 		return time.Time{}, nil
@@ -683,18 +685,18 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 }
 
 func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, userBucket objstore.InstrumentedBucket, idx *bucketindex.Index, compactionBlockRanges mimir_tsdb.DurationList, mergeShards int, splitGroups int) ([]*Job, error) {
-	metas := convertBucketIndexToMetasForCompactionJobPlanning(idx)
+	metas := ConvertBucketIndexToMetasForCompactionJobPlanning(idx)
 
 	// We need to pass this metric to MetadataFilters, but we don't need to report this value from BlocksCleaner.
 	synced := newNoopGaugeVec()
 
 	for _, f := range []block.MetadataFilter{
+		NewLabelRemoverFilter(compactionIgnoredLabels),
 		// We don't include ShardAwareDeduplicateFilter, because it relies on list of compaction sources, which are not present in the BucketIndex.
 		// We do include NoCompactionMarkFilter to avoid computing jobs from blocks that are marked for no-compaction.
 		NewNoCompactionMarkFilter(userBucket),
 	} {
-		err := f.Filter(ctx, metas, synced)
-		if err != nil {
+		if err := f.Filter(ctx, metas, synced); err != nil {
 			return nil, err
 		}
 	}
@@ -705,23 +707,31 @@ func estimateCompactionJobsFromBucketIndex(ctx context.Context, userID string, u
 }
 
 // Convert index into map of block Metas, but ignore blocks marked for deletion.
-func convertBucketIndexToMetasForCompactionJobPlanning(idx *bucketindex.Index) map[ulid.ULID]*block.Meta {
+func ConvertBucketIndexToMetasForCompactionJobPlanning(idx *bucketindex.Index) map[ulid.ULID]*block.Meta {
 	deletedULIDs := idx.BlockDeletionMarks.GetULIDs()
-	deleted := make(map[ulid.ULID]bool, len(deletedULIDs))
+	deleted := make(map[ulid.ULID]struct{}, len(deletedULIDs))
 	for _, id := range deletedULIDs {
-		deleted[id] = true
+		deleted[id] = struct{}{}
 	}
 
 	metas := map[ulid.ULID]*block.Meta{}
 	for _, b := range idx.Blocks {
-		if deleted[b.ID] {
+		if _, del := deleted[b.ID]; del {
 			continue
 		}
 		metas[b.ID] = b.ThanosMeta()
 		if metas[b.ID].Thanos.Labels == nil {
 			metas[b.ID].Thanos.Labels = map[string]string{}
 		}
-		metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID // Needed for correct planning.
+
+		// Correct planning depends on external labels being present. We didn't
+		// always persist labels into the bucket index, but we may have tracked
+		// the shard ID label, so copy that back over if it isn't there.
+		if b.CompactorShardID != "" {
+			if _, found := metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]; !found {
+				metas[b.ID].Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel] = b.CompactorShardID
+			}
+		}
 	}
 	return metas
 }

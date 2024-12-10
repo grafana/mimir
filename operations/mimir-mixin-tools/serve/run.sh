@@ -4,6 +4,8 @@
 set -e
 
 SCRIPT_DIR=$(cd `dirname $0` && pwd)
+# Ensure we run recent Grafana.
+GRAFANA_VERSION=11.1.3
 DOCKER_CONTAINER_NAME="mixin-serve-grafana"
 DOCKER_OPTS=""
 
@@ -59,8 +61,7 @@ function cleanup() {
 cleanup
 trap cleanup EXIT
 
-# Ensure we run on Grafana latest.
-docker pull grafana/grafana:latest
+docker pull grafana/grafana:${GRAFANA_VERSION}
 
 # Run Grafana.
 echo "Starting Grafana container with name ${DOCKER_CONTAINER_NAME} listening on host port ${GRAFANA_PUBLISHED_PORT}"
@@ -83,4 +84,4 @@ docker run \
   -v "${SCRIPT_DIR}/provisioning-datasources.yaml:/etc/grafana/provisioning/datasources/provisioning-datasources.yaml" \
   --expose 3000 \
   --publish "${GRAFANA_PUBLISHED_PORT}:3000" \
-  grafana/grafana:latest
+  grafana/grafana:${GRAFANA_VERSION}

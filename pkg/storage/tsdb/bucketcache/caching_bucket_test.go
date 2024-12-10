@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,6 +40,7 @@ func TestChunksCaching(t *testing.T) {
 	}
 
 	name := "/test/chunks/000001"
+	keyGen := newCacheKeyBuilder(bucketID, name)
 
 	inmem := objstore.NewInMemBucket()
 	assert.NoError(t, inmem.Upload(context.Background(), name, bytes.NewReader(data)))
@@ -148,9 +150,9 @@ func TestChunksCaching(t *testing.T) {
 			init: func() {
 				ctx := context.Background()
 				// Delete first 3 subranges.
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 0*subrangeSize, 1*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 1*subrangeSize, 2*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 2*subrangeSize, 3*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(0*subrangeSize, 1*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(1*subrangeSize, 2*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(2*subrangeSize, 3*subrangeSize)))
 			},
 		},
 
@@ -166,9 +168,9 @@ func TestChunksCaching(t *testing.T) {
 			init: func() {
 				ctx := context.Background()
 				// Delete last 3 subranges.
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 7*subrangeSize, 8*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 8*subrangeSize, 9*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 9*subrangeSize, 10*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(7*subrangeSize, 8*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(8*subrangeSize, 9*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(9*subrangeSize, 10*subrangeSize)))
 			},
 		},
 
@@ -184,9 +186,9 @@ func TestChunksCaching(t *testing.T) {
 			init: func() {
 				ctx := context.Background()
 				// Delete 3 subranges in the middle.
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 3*subrangeSize, 4*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 4*subrangeSize, 5*subrangeSize)))
-				require.NoError(t, cache.Delete(ctx, cachingKeyObjectSubrange(bucketID, name, 5*subrangeSize, 6*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(3*subrangeSize, 4*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(4*subrangeSize, 5*subrangeSize)))
+				require.NoError(t, cache.Delete(ctx, keyGen.objectSubrange(5*subrangeSize, 6*subrangeSize)))
 			},
 		},
 
@@ -205,7 +207,7 @@ func TestChunksCaching(t *testing.T) {
 					if i > 0 && i%3 == 0 {
 						continue
 					}
-					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, name, i*subrangeSize, (i+1)*subrangeSize)))
+					require.NoError(t, cache.Delete(context.Background(), keyGen.objectSubrange(i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
@@ -227,7 +229,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 3 || i == 5 || i == 7 {
 						continue
 					}
-					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, name, i*subrangeSize, (i+1)*subrangeSize)))
+					require.NoError(t, cache.Delete(context.Background(), keyGen.objectSubrange(i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
@@ -248,7 +250,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 5 || i == 6 || i == 7 {
 						continue
 					}
-					require.NoError(t, cache.Delete(context.Background(), cachingKeyObjectSubrange(bucketID, name, i*subrangeSize, (i+1)*subrangeSize)))
+					require.NoError(t, cache.Delete(context.Background(), keyGen.objectSubrange(i*subrangeSize, (i+1)*subrangeSize)))
 				}
 			},
 		},
@@ -290,7 +292,7 @@ func TestChunksCaching(t *testing.T) {
 			cfg := NewCachingBucketConfig()
 			cfg.CacheGetRange(cfgName, cache, isTSDBChunkFile, subrangeSize, cache, time.Hour, time.Hour, tc.maxGetRangeRequests)
 
-			cachingBucket, err := NewCachingBucket(bucketID, inmem, cfg, nil, nil)
+			cachingBucket, err := NewCachingBucket(bucketID, inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 			assert.NoError(t, err)
 
 			ctx := context.Background()
@@ -366,7 +368,7 @@ func TestInvalidOffsetAndLength(t *testing.T) {
 	cfg := NewCachingBucketConfig()
 	cfg.CacheGetRange("chunks", cache, func(string) bool { return true }, 10000, cache, time.Hour, time.Hour, 3)
 
-	c, err := NewCachingBucket("test", b, cfg, nil, nil)
+	c, err := NewCachingBucket("test", b, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	r, err := c.GetRange(context.Background(), "test", -1, 1000)
@@ -411,7 +413,7 @@ func TestCachedIter(t *testing.T) {
 	cfg := NewCachingBucketConfig()
 	cfg.CacheIter(cfgName, cache, func(string) bool { return true }, 5*time.Minute, JSONIterCodec{})
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Iter() should return objects list from the cache on cache hit", func(t *testing.T) {
@@ -503,7 +505,7 @@ func TestExists(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Exists() should return cached value on cache hit", func(t *testing.T) {
@@ -536,6 +538,9 @@ func TestExists(t *testing.T) {
 		assert.NoError(t, inmem.Upload(context.Background(), filename, strings.NewReader("hej")))
 		verifyExists(ctx, t, cb, filename, false, true, true, cfgName) // Reused cache result.
 
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		cache.Advance(2 * invalidationLockTTL)
+
 		// Calling Exists() with cache lookup disabled should lookup the object storage and also update the cached value.
 		verifyExists(WithCacheLookupEnabled(ctx, false), t, cb, filename, true, false, false, cfgName)
 		verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
@@ -553,7 +558,7 @@ func TestExistsCachingDisabled(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheExists(cfgName, cache, func(string) bool { return false }, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Exists() should not use the cache when caching is disabled for the given object", func(t *testing.T) {
@@ -607,7 +612,7 @@ func TestGet(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Get() should cache non-existence of the requested object if it doesn't exist", func(t *testing.T) {
@@ -650,6 +655,9 @@ func TestGet(t *testing.T) {
 		data := []byte("content-3")
 		assert.NoError(t, inmem.Upload(ctx, filename, bytes.NewBuffer(data)))
 
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		cache.Advance(2 * invalidationLockTTL)
+
 		// Calling Get() with cache lookup disabled should lookup the object storage and also update the cached value.
 		verifyGet(WithCacheLookupEnabled(ctx, false), t, cb, filename, data, false, false, cfgName)
 
@@ -662,6 +670,9 @@ func TestGet(t *testing.T) {
 		// Pre-condition: the content and existence is looked up from the cache by default.
 		verifyGet(ctx, t, cb, filename, data, true, true, cfgName)
 		verifyExists(ctx, t, cb, filename, true, true, true, cfgName)
+
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		cache.Advance(2 * invalidationLockTTL)
 
 		// Calling Get() with cache lookup disabled should lookup the object storage and also update the cached value.
 		verifyGet(WithCacheLookupEnabled(ctx, false), t, cb, filename, nil, false, false, cfgName)
@@ -685,7 +696,7 @@ func TestGetTooBigObject(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 5, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	data := []byte("hello world")
@@ -709,7 +720,7 @@ func TestGetPartialRead(t *testing.T) {
 	cfg.CacheGet(cfgName, cache, matchAll, 1024, 10*time.Minute, 10*time.Minute, 2*time.Minute)
 	cfg.CacheExists(cfgName, cache, matchAll, 10*time.Minute, 2*time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	data := []byte("hello world")
@@ -772,7 +783,7 @@ func TestAttributes(t *testing.T) {
 	const cfgName = "test"
 	cfg.CacheAttributes(cfgName, cache, matchAll, time.Minute)
 
-	cb, err := NewCachingBucket("test", inmem, cfg, nil, nil)
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 	assert.NoError(t, err)
 
 	t.Run("Attributes() should not cache non existing objects", func(t *testing.T) {
@@ -810,6 +821,9 @@ func TestAttributes(t *testing.T) {
 		verifyObjectAttrs(ctx, t, cb, filename, len(firstData), true, false, cfgName)
 		verifyObjectAttrs(ctx, t, cb, filename, len(firstData), true, true, cfgName)
 
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		cache.Advance(2 * invalidationLockTTL)
+
 		// Modify the object.
 		secondData := append(firstData, []byte("with additional data")...)
 		require.NotEqual(t, len(firstData), len(secondData))
@@ -821,71 +835,100 @@ func TestAttributes(t *testing.T) {
 	})
 }
 
-func TestCachingKeyAttributes(t *testing.T) {
-	assert.Equal(t, "attrs:/object", cachingKeyAttributes("", "/object"))
-	assert.Equal(t, "test:attrs:/object", cachingKeyAttributes("test", "/object"))
+func TestCacheKeyBuilder(t *testing.T) {
+	keyGenNoBucket := newCacheKeyBuilder("", "/object")
+	keyGenWithBucket := newCacheKeyBuilder("test", "/object")
+	keyGenLongObjectName := newCacheKeyBuilder("hashed", "/object-abcdefghijklmnopqrstuvwxyz1234567890")
+
+	t.Run("attributes()", func(t *testing.T) {
+		assert.Equal(t, "attrs:/object", keyGenNoBucket.attributes())
+		assert.Equal(t, "attrs:/object:lock", keyGenNoBucket.attributesLock())
+
+		assert.Equal(t, "test:attrs:/object", keyGenWithBucket.attributes())
+		assert.Equal(t, "test:attrs:/object:lock", keyGenWithBucket.attributesLock())
+
+		assert.Equal(t, "hashed:attrs:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M", keyGenLongObjectName.attributes())
+		assert.Equal(t, "hashed:attrs:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M:lock", keyGenLongObjectName.attributesLock())
+	})
+
+	t.Run("objectSubrange()", func(t *testing.T) {
+		assert.Equal(t, "subrange:/object:10:20", keyGenNoBucket.objectSubrange(10, 20))
+		assert.Equal(t, "test:subrange:/object:10:20", keyGenWithBucket.objectSubrange(10, 20))
+		assert.Equal(t, "hashed:subrange:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M:10:20", keyGenLongObjectName.objectSubrange(10, 20))
+	})
+
+	t.Run("iter()", func(t *testing.T) {
+		assert.Equal(t, "iter:/object", keyGenNoBucket.iter())
+		assert.Equal(t, "iter:/object:recursive", keyGenNoBucket.iter(objstore.WithRecursiveIter()))
+
+		assert.Equal(t, "test:iter:/object", keyGenWithBucket.iter())
+		assert.Equal(t, "test:iter:/object:recursive", keyGenWithBucket.iter(objstore.WithRecursiveIter()))
+
+		assert.Equal(t, "hashed:iter:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M", keyGenLongObjectName.iter())
+		assert.Equal(t, "hashed:iter:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M:recursive", keyGenLongObjectName.iter(objstore.WithRecursiveIter()))
+	})
+
+	t.Run("exists()", func(t *testing.T) {
+		assert.Equal(t, "exists:/object", keyGenNoBucket.exists())
+		assert.Equal(t, "exists:/object:lock", keyGenNoBucket.existsLock())
+
+		assert.Equal(t, "test:exists:/object", keyGenWithBucket.exists())
+		assert.Equal(t, "test:exists:/object:lock", keyGenWithBucket.existsLock())
+
+		assert.Equal(t, "hashed:exists:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M", keyGenLongObjectName.exists())
+		assert.Equal(t, "hashed:exists:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M:lock", keyGenLongObjectName.existsLock())
+	})
+
+	t.Run("content()", func(t *testing.T) {
+		assert.Equal(t, "content:/object", keyGenNoBucket.content())
+		assert.Equal(t, "content:/object:lock", keyGenNoBucket.contentLock())
+
+		assert.Equal(t, "test:content:/object", keyGenWithBucket.content())
+		assert.Equal(t, "test:content:/object:lock", keyGenWithBucket.contentLock())
+
+		assert.Equal(t, "hashed:content:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M", keyGenLongObjectName.content())
+		assert.Equal(t, "hashed:content:JIkwa1Vf4I2-wSD_yFor1EGKX0zMmgl2kFS3_efqy6M:lock", keyGenLongObjectName.contentLock())
+	})
 }
 
-func TestCachingKeyObjectSubrange(t *testing.T) {
-	assert.Equal(t, "subrange:/object:10:20", cachingKeyObjectSubrange("", "/object", 10, 20))
-	assert.Equal(t, "test:subrange:/object:10:20", cachingKeyObjectSubrange("test", "/object", 10, 20))
-}
-
-func TestCachingKeyIter(t *testing.T) {
-	assert.Equal(t, "iter:/object", cachingKeyIter("", "/object"))
-	assert.Equal(t, "iter:/object:recursive", cachingKeyIter("", "/object", objstore.WithRecursiveIter))
-	assert.Equal(t, "test:iter:/object", cachingKeyIter("test", "/object"))
-	assert.Equal(t, "test:iter:/object:recursive", cachingKeyIter("test", "/object", objstore.WithRecursiveIter))
-}
-
-func TestCachingKeyExists(t *testing.T) {
-	assert.Equal(t, "exists:/object", cachingKeyExists("", "/object"))
-	assert.Equal(t, "test:exists:/object", cachingKeyExists("test", "/object"))
-}
-
-func TestCachingKeyContent(t *testing.T) {
-	assert.Equal(t, "content:/object", cachingKeyContent("", "/object"))
-	assert.Equal(t, "test:content:/object", cachingKeyContent("test", "/object"))
-}
-
-func TestCachingKey_ShouldKeepAllocationsToMinimum(t *testing.T) {
+func TestCacheKeyBuilder_ShouldKeepAllocationsToMinimum(t *testing.T) {
 	tests := map[string]struct {
-		run            func(bucketID string)
+		run            func(keyGen cacheKeyBuilder)
 		expectedAllocs float64
 	}{
-		"cachingKeyAttributes()": {
-			run: func(bucketID string) {
-				cachingKeyAttributes(bucketID, "/object")
+		"attributes()": {
+			run: func(keyGen cacheKeyBuilder) {
+				keyGen.attributes()
 			},
 			expectedAllocs: 1.0,
 		},
-		"cachingKeyObjectSubrange()": {
-			run: func(bucketID string) {
-				cachingKeyObjectSubrange(bucketID, "/object", 10, 20)
+		"objectSubrange()": {
+			run: func(keyGen cacheKeyBuilder) {
+				keyGen.objectSubrange(10, 20)
 			},
 			expectedAllocs: 1.0,
 		},
-		"cachingKeyIter()": {
-			run: func(bucketID string) {
-				cachingKeyIter(bucketID, "/dir")
+		"iter()": {
+			run: func(keyGen cacheKeyBuilder) {
+				keyGen.iter()
 			},
 			expectedAllocs: 2.0,
 		},
-		"cachingKeyIter() recursive": {
-			run: func(bucketID string) {
-				cachingKeyIter(bucketID, "/dir", objstore.WithRecursiveIter)
+		"iter() recursive": {
+			run: func(keyGen cacheKeyBuilder) {
+				keyGen.iter(objstore.WithRecursiveIter())
 			},
 			expectedAllocs: 2.0,
 		},
-		"cachingKeyExists()": {
-			run: func(bucketID string) {
-				cachingKeyExists(bucketID, "/object")
+		"exists()": {
+			run: func(keyGen cacheKeyBuilder) {
+				keyGen.exists()
 			},
 			expectedAllocs: 1.0,
 		},
-		"cachingKeyContent()": {
-			run: func(bucketID string) {
-				cachingKeyContent(bucketID, "/object")
+		"content()": {
+			run: func(keyGen cacheKeyBuilder) {
+				keyGen.content()
 			},
 			expectedAllocs: 1.0,
 		},
@@ -899,8 +942,9 @@ func TestCachingKey_ShouldKeepAllocationsToMinimum(t *testing.T) {
 					bucketID = "test"
 				}
 
+				keyGen := newCacheKeyBuilder(bucketID, "/object")
 				allocs := testing.AllocsPerRun(100, func() {
-					testData.run(bucketID)
+					testData.run(keyGen)
 				})
 
 				require.Equal(t, testData.expectedAllocs, allocs)
@@ -909,56 +953,152 @@ func TestCachingKey_ShouldKeepAllocationsToMinimum(t *testing.T) {
 	}
 }
 
+func TestMutationInvalidatesCache(t *testing.T) {
+	inmem := objstore.NewInMemBucket()
+
+	// We reuse cache between tests (!)
+	c := cache.NewMockCache()
+	ctx := context.Background()
+
+	const cfgName = "test"
+	cfg := NewCachingBucketConfig()
+	cfg.CacheGet(cfgName, c, matchAll, 1024, time.Minute, time.Minute, time.Minute)
+	cfg.CacheExists(cfgName, c, matchAll, time.Minute, time.Minute)
+	cfg.CacheAttributes(cfgName, c, matchAll, time.Minute)
+
+	cb, err := NewCachingBucket("test", inmem, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	t.Run("invalidated on upload", func(t *testing.T) {
+		c.Flush()
+
+		// Initial upload bypassing the CachingBucket but read the object back to ensure it is in cache.
+		require.NoError(t, inmem.Upload(ctx, "/object-1", strings.NewReader("test content 1")))
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 1"), true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", true, true, true, cfgName)
+		verifyObjectAttrs(ctx, t, cb, "/object-1", 14, true, false, cfgName)
+
+		// Do an upload via the CachingBucket and ensure the first read after does not come from cache.
+		require.NoError(t, cb.Upload(ctx, "/object-1", strings.NewReader("test content 12")))
+
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		c.Advance(2 * invalidationLockTTL)
+
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 12"), true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", true, true, true, cfgName)
+		verifyObjectAttrs(ctx, t, cb, "/object-1", 15, true, false, cfgName)
+	})
+
+	t.Run("invalidated on delete", func(t *testing.T) {
+		c.Flush()
+
+		// Initial upload bypassing the CachingBucket but read the object back to ensure it is in cache.
+		require.NoError(t, inmem.Upload(ctx, "/object-1", strings.NewReader("test content 1")))
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 1"), true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", true, true, true, cfgName)
+		verifyObjectAttrs(ctx, t, cb, "/object-1", 14, true, false, cfgName)
+
+		// Delete via the CachingBucket and ensure the first read after does not come from cache but non-existence is cached.
+		require.NoError(t, cb.Delete(ctx, "/object-1"))
+
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		c.Advance(2 * invalidationLockTTL)
+
+		verifyGet(ctx, t, cb, "/object-1", nil, true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", false, true, true, cfgName)
+		verifyObjectAttrs(ctx, t, cb, "/object-1", -1, true, false, cfgName)
+	})
+
+	t.Run("item not cached immediately after invalidation", func(t *testing.T) {
+		c.Flush()
+
+		// Initial upload bypassing the CachingBucket but read the object back to ensure it is in cache.
+		require.NoError(t, inmem.Upload(ctx, "/object-1", strings.NewReader("test content 1")))
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 1"), true, false, cfgName)
+		verifyExists(ctx, t, cb, "/object-1", true, true, true, cfgName)
+
+		// Do an upload via the CachingBucket and ensure all reads after do not come from cache until
+		// locks are allowed to expire.
+		require.NoError(t, cb.Upload(ctx, "/object-1", strings.NewReader("test content 12")))
+
+		// Verify that we can read the object but none of the reads come from cache.
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 12"), true, false, cfgName)
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 12"), true, false, cfgName)
+
+		// Advance "now" for the cache so that lock keys with TTLs used for invalidation expire.
+		c.Advance(2 * invalidationLockTTL)
+
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 12"), true, false, cfgName)
+		verifyGet(ctx, t, cb, "/object-1", []byte("test content 12"), true, true, cfgName)
+	})
+}
+
 func BenchmarkCachingKey(b *testing.B) {
+	const key = "/object"
+	const longKey = key + "-abcdefghijklmnopqrstuvwxyz1234567890"
+
 	tests := map[string]struct {
-		run func(bucketID string)
+		run func(bucketID string, name string)
 	}{
-		"cachingKeyAttributes()": {
-			run: func(bucketID string) {
-				cachingKeyAttributes(bucketID, "/object")
+		"cacheKeyBuilder.attributes()": {
+			run: func(bucketID string, name string) {
+				keyGen := newCacheKeyBuilder(bucketID, name)
+				keyGen.attributes()
 			},
 		},
-		"cachingKeyObjectSubrange()": {
-			run: func(bucketID string) {
-				cachingKeyObjectSubrange(bucketID, "/object", 10, 20)
+
+		"cacheKeyBuilder.objectSubrange()": {
+			run: func(bucketID string, name string) {
+				keyGen := newCacheKeyBuilder(bucketID, name)
+				keyGen.objectSubrange(10, 20)
 			},
 		},
-		"cachingKeyIter()": {
-			run: func(bucketID string) {
-				cachingKeyIter(bucketID, "/dir")
+
+		"cacheKeyBuilder.iter()": {
+			run: func(bucketID string, name string) {
+				keyGen := newCacheKeyBuilder(bucketID, name)
+				keyGen.iter()
 			},
 		},
-		"cachingKeyIter() recursive": {
-			run: func(bucketID string) {
-				cachingKeyIter(bucketID, "/dir", objstore.WithRecursiveIter)
+
+		"cacheKeyBuilder.iter() recursive": {
+			run: func(bucketID string, name string) {
+				keyGen := newCacheKeyBuilder(bucketID, name)
+				keyGen.iter(objstore.WithRecursiveIter())
 			},
 		},
-		"cachingKeyExists()": {
-			run: func(bucketID string) {
-				cachingKeyExists(bucketID, "/object")
+
+		"cacheKeyBuilder.exists()": {
+			run: func(bucketID string, name string) {
+				keyGen := newCacheKeyBuilder(bucketID, name)
+				keyGen.exists()
 			},
 		},
-		"cachingKeyContent()": {
-			run: func(bucketID string) {
-				cachingKeyContent(bucketID, "/object")
+
+		"cacheKeyBuilder.content()": {
+			run: func(bucketID string, name string) {
+				keyGen := newCacheKeyBuilder(bucketID, name)
+				keyGen.content()
 			},
 		},
 	}
 
 	for testName, testData := range tests {
 		for _, withBucketID := range []bool{false, true} {
-			b.Run(fmt.Sprintf("%s with bucket ID: %t", testName, withBucketID), func(b *testing.B) {
-				bucketID := ""
-				if withBucketID {
-					bucketID = "test"
-				}
+			for _, objectKey := range []string{key, longKey} {
+				b.Run(fmt.Sprintf("%s keyLength=%d, bucketID=%t", testName, len(objectKey), withBucketID), func(b *testing.B) {
+					bucketID := ""
+					if withBucketID {
+						bucketID = "test"
+					}
 
-				b.ResetTimer()
+					b.ResetTimer()
 
-				for n := 0; n < b.N; n++ {
-					testData.run(bucketID)
-				}
-			})
+					for n := 0; n < b.N; n++ {
+						testData.run(bucketID, objectKey)
+					}
+				})
+			}
 		}
 	}
 }

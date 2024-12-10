@@ -54,8 +54,8 @@ func (l *Limiter) IsWithinMaxMetadataPerMetric(userID string, metadata int) bool
 
 // IsWithinMaxSeriesPerUser returns true if limit has not been reached compared to the current
 // number of series in input; otherwise returns false.
-func (l *Limiter) IsWithinMaxSeriesPerUser(userID string, series int, userShardSize int) bool {
-	actualLimit := l.maxSeriesPerUser(userID, userShardSize)
+func (l *Limiter) IsWithinMaxSeriesPerUser(userID string, series int, minLocalLimit int) bool {
+	actualLimit := l.maxSeriesPerUser(userID, minLocalLimit)
 	return series < actualLimit
 }
 
@@ -67,26 +67,26 @@ func (l *Limiter) IsWithinMaxMetricsWithMetadataPerUser(userID string, metrics i
 }
 
 func (l *Limiter) maxSeriesPerMetric(userID string) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.getShardSize(userID), l.limits.MaxGlobalSeriesPerMetric)
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalSeriesPerMetric, 0)
 }
 
 func (l *Limiter) maxMetadataPerMetric(userID string) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.getShardSize(userID), l.limits.MaxGlobalMetadataPerMetric)
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalMetadataPerMetric, 0)
 }
 
-func (l *Limiter) maxSeriesPerUser(userID string, userShardSize int) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, userShardSize, l.limits.MaxGlobalSeriesPerUser)
+func (l *Limiter) maxSeriesPerUser(userID string, minLocalLimit int) int {
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalSeriesPerUser, minLocalLimit)
 }
 
 func (l *Limiter) maxMetadataPerUser(userID string) int {
-	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.getShardSize(userID), l.limits.MaxGlobalMetricsWithMetadataPerUser)
+	return l.convertGlobalToLocalLimitOrUnlimited(userID, l.limits.MaxGlobalMetricsWithMetadataPerUser, 0)
 }
 
 func (l *Limiter) maxExemplarsPerUser(userID string) int {
 	globalLimit := l.limits.MaxGlobalExemplarsPerUser(userID)
 
 	// We don't use `convertGlobalToLocalLimitOrUnlimited`, because we don't want "unlimited" part. 0 means disabled.
-	localLimit := l.ringStrategy.convertGlobalToLocalLimit(l.getShardSize(userID), globalLimit)
+	localLimit := l.ringStrategy.convertGlobalToLocalLimit(userID, globalLimit)
 	if localLimit > 0 {
 		return localLimit
 	}
@@ -97,27 +97,23 @@ func (l *Limiter) maxExemplarsPerUser(userID string) int {
 	return globalLimit
 }
 
-func (l *Limiter) convertGlobalToLocalLimitOrUnlimited(userID string, userShardSize int, globalLimitFn func(string) int) int {
+func (l *Limiter) convertGlobalToLocalLimitOrUnlimited(userID string, globalLimitFn func(string) int, minLocalLimit int) int {
 	// We can assume that series/metadata are evenly distributed across ingesters
 	globalLimit := globalLimitFn(userID)
-	localLimit := l.ringStrategy.convertGlobalToLocalLimit(userShardSize, globalLimit)
+	localLimit := l.ringStrategy.convertGlobalToLocalLimit(userID, globalLimit)
 
 	// If the limit is disabled
 	if localLimit == 0 {
 		localLimit = math.MaxInt32
 	}
 
-	return localLimit
-}
-
-func (l *Limiter) getShardSize(userID string) int {
-	return l.ringStrategy.getShardSize(userID)
+	return max(minLocalLimit, localLimit)
 }
 
 // limiterRingStrategy provides computations based on ingester or partitions ring.
 type limiterRingStrategy interface {
 	// convertGlobalToLocalLimit converts global limit to local, per-ingester limit, using given user's shard size (ingesters or partitions).
-	convertGlobalToLocalLimit(userShardSize int, globalLimit int) int
+	convertGlobalToLocalLimit(userID string, globalLimit int) int
 
 	// getShardSize returns shard size applicable for given ring.
 	getShardSize(userID string) int
@@ -126,8 +122,8 @@ type limiterRingStrategy interface {
 // ingesterRingLimiterRingCount is the interface exposed by a ring implementation which allows
 // to count members
 type ingesterRingLimiterRingCount interface {
-	InstancesCount() int
-	InstancesInZoneCount(zone string) int
+	WritableInstancesWithTokensCount() int
+	WritableInstancesWithTokensInZoneCount(zone string) int
 	ZonesCount() int
 }
 
@@ -150,21 +146,23 @@ func newIngesterRingLimiterStrategy(ring ingesterRingLimiterRingCount, replicati
 	}
 }
 
-func (is *ingesterRingLimiterStrategy) convertGlobalToLocalLimit(userShardSize int, globalLimit int) int {
+func (is *ingesterRingLimiterStrategy) convertGlobalToLocalLimit(userID string, globalLimit int) int {
 	if globalLimit == 0 {
 		return 0
 	}
 
 	zonesCount := is.getZonesCount()
+	userShardSize := is.getShardSize(userID)
+
 	var ingestersInZoneCount int
 	if zonesCount > 1 {
 		// In this case zone-aware replication is enabled, and ingestersInZoneCount is initially set to
-		// the total number of ingesters in the corresponding zone
-		ingestersInZoneCount = is.ring.InstancesInZoneCount(is.ingesterZone)
+		// the total number of writable ingesters with tokens in the corresponding zone
+		ingestersInZoneCount = is.ring.WritableInstancesWithTokensInZoneCount(is.ingesterZone)
 	} else {
 		// In this case zone-aware replication is disabled, and ingestersInZoneCount is initially set to
-		// the total number of ingesters
-		ingestersInZoneCount = is.ring.InstancesCount()
+		// the total number of writable ingesters with tokens
+		ingestersInZoneCount = is.ring.WritableInstancesWithTokensCount()
 	}
 	// If shuffle sharding is enabled and the total number of ingesters in the zone is greater than the
 	// expected number of ingesters per sharded zone, then we should honor the latter because series/metadata
@@ -214,10 +212,12 @@ func newPartitionRingLimiterStrategy(watcher partitionRingWatcher, getPartitionT
 	}
 }
 
-func (ps *partitionRingLimiterStrategy) convertGlobalToLocalLimit(userShardSize int, globalLimit int) int {
+func (ps *partitionRingLimiterStrategy) convertGlobalToLocalLimit(userID string, globalLimit int) int {
 	if globalLimit == 0 {
 		return 0
 	}
+
+	userShardSize := ps.getShardSize(userID)
 
 	pr := ps.partitionRingWatcher.PartitionRing()
 	// ShuffleShardSize correctly handles cases when user has 0 or negative number of shards,
@@ -240,7 +240,7 @@ func (ps *partitionRingLimiterStrategy) getShardSize(userID string) int {
 
 type flusherLimiterStrategy struct{}
 
-func (f flusherLimiterStrategy) convertGlobalToLocalLimit(_ int, _ int) int {
+func (f flusherLimiterStrategy) convertGlobalToLocalLimit(_ string, _ int) int {
 	return 0
 }
 

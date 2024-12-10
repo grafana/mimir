@@ -5,6 +5,7 @@
 package server
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -15,12 +16,14 @@ import (
 )
 
 type Metrics struct {
-	TCPConnections      *prometheus.GaugeVec
-	TCPConnectionsLimit *prometheus.GaugeVec
-	RequestDuration     *prometheus.HistogramVec
-	ReceivedMessageSize *prometheus.HistogramVec
-	SentMessageSize     *prometheus.HistogramVec
-	InflightRequests    *prometheus.GaugeVec
+	TCPConnections           *prometheus.GaugeVec
+	TCPConnectionsLimit      *prometheus.GaugeVec
+	RequestDuration          *prometheus.HistogramVec
+	PerTenantRequestDuration *prometheus.HistogramVec
+	ReceivedMessageSize      *prometheus.HistogramVec
+	SentMessageSize          *prometheus.HistogramVec
+	InflightRequests         *prometheus.GaugeVec
+	RequestThroughput        *prometheus.HistogramVec
 }
 
 func NewServerMetrics(cfg Config) *Metrics {
@@ -46,6 +49,15 @@ func NewServerMetrics(cfg Config) *Metrics {
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
 		}, []string{"method", "route", "status_code", "ws"}),
+		PerTenantRequestDuration: reg.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace:                       cfg.MetricsNamespace,
+			Name:                            "per_tenant_request_duration_seconds",
+			Help:                            "Time (in seconds) spent serving HTTP requests for a particular tenant.",
+			Buckets:                         instrument.DefBuckets,
+			NativeHistogramBucketFactor:     cfg.MetricsNativeHistogramFactor,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
+		}, []string{"method", "route", "status_code", "ws", "tenant"}),
 		ReceivedMessageSize: reg.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: cfg.MetricsNamespace,
 			Name:      "request_message_bytes",
@@ -62,6 +74,16 @@ func NewServerMetrics(cfg Config) *Metrics {
 			Namespace: cfg.MetricsNamespace,
 			Name:      "inflight_requests",
 			Help:      "Current number of inflight requests.",
+		}, []string{"method", "route"}),
+		RequestThroughput: reg.NewHistogramVec(prometheus.HistogramOpts{
+			Namespace:                       cfg.MetricsNamespace,
+			Name:                            "request_throughput_" + cfg.Throughput.Unit,
+			Help:                            "Server throughput of running requests.",
+			ConstLabels:                     prometheus.Labels{"cutoff_ms": strconv.FormatInt(cfg.Throughput.LatencyCutoff.Milliseconds(), 10)},
+			Buckets:                         instrument.DefBuckets,
+			NativeHistogramBucketFactor:     cfg.MetricsNativeHistogramFactor,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
 		}, []string{"method", "route"}),
 	}
 }

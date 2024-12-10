@@ -27,9 +27,11 @@ spec:
   endpoints:
     - port: http-metrics
       relabelings:
-        - sourceLabels: [job]
+        - action: replace
+          sourceLabels: [job]
           replacement: "citestns/query-frontend"
           targetLabel: job
-        - replacement: "metamonitoring-values"
+        - action: replace
+          replacement: "metamonitoring-values"
           targetLabel: cluster
       scheme: http

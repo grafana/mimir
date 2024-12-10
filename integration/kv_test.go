@@ -31,7 +31,7 @@ func TestKVList(t *testing.T) {
 		// Create keys to list back
 		keysToCreate := []string{"key-a", "key-b", "key-c"}
 		for _, key := range keysToCreate {
-			err := client.CAS(context.Background(), key, func(in interface{}) (out interface{}, retry bool, err error) {
+			err := client.CAS(context.Background(), key, func(interface{}) (out interface{}, retry bool, err error) {
 				return key, false, nil
 			})
 			require.NoError(t, err, "could not create key")
@@ -53,7 +53,7 @@ func TestKVList(t *testing.T) {
 func TestKVDelete(t *testing.T) {
 	testKVs(t, func(t *testing.T, client kv.Client, reg *prometheus.Registry) {
 		// Create a key
-		err := client.CAS(context.Background(), "key-to-delete", func(in interface{}) (out interface{}, retry bool, err error) {
+		err := client.CAS(context.Background(), "key-to-delete", func(interface{}) (out interface{}, retry bool, err error) {
 			return "key-to-delete", false, nil
 		})
 		require.NoError(t, err, "object could not be created")
@@ -76,11 +76,11 @@ func TestKVDelete(t *testing.T) {
 }
 
 func TestKVWatchAndDelete(t *testing.T) {
-	testKVs(t, func(t *testing.T, client kv.Client, reg *prometheus.Registry) {
+	testKVs(t, func(t *testing.T, client kv.Client, _ *prometheus.Registry) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		err := client.CAS(context.Background(), "key-before-watch", func(in interface{}) (out interface{}, retry bool, err error) {
+		err := client.CAS(context.Background(), "key-before-watch", func(interface{}) (out interface{}, retry bool, err error) {
 			return "value-before-watch", false, nil
 		})
 		require.NoError(t, err)
@@ -93,7 +93,7 @@ func TestKVWatchAndDelete(t *testing.T) {
 			w.watch(ctx, client)
 		}()
 
-		err = client.CAS(context.Background(), "key-to-delete", func(in interface{}) (out interface{}, retry bool, err error) {
+		err = client.CAS(context.Background(), "key-to-delete", func(interface{}) (out interface{}, retry bool, err error) {
 			return "value-to-delete", false, nil
 		})
 		require.NoError(t, err, "object could not be created")

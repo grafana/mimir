@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/common/version"
 	"github.com/rs/cors"
 
-	"github.com/prometheus/alertmanager/api/metrics"
 	open_api_models "github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/alertmanager/api/v2/restapi"
 	"github.com/prometheus/alertmanager/api/v2/restapi/operations"
@@ -42,6 +41,8 @@ import (
 	general_ops "github.com/prometheus/alertmanager/api/v2/restapi/operations/general"
 	receiver_ops "github.com/prometheus/alertmanager/api/v2/restapi/operations/receiver"
 	silence_ops "github.com/prometheus/alertmanager/api/v2/restapi/operations/silence"
+
+	"github.com/prometheus/alertmanager/api/metrics"
 	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/dispatch"
@@ -53,7 +54,7 @@ import (
 	"github.com/prometheus/alertmanager/types"
 )
 
-// API represents an Alertmanager API v2
+// API represents an Alertmanager API v2.
 type API struct {
 	peer           cluster.ClusterPeer
 	silences       *silence.Silences
@@ -82,7 +83,7 @@ type (
 	setAlertStatusFn func(prometheus_model.LabelSet)
 )
 
-// NewAPI returns a new Alertmanager API v2
+// NewAPI returns a new Alertmanager API v2.
 func NewAPI(
 	alerts provider.Alerts,
 	gf groupsFn,
@@ -99,7 +100,7 @@ func NewAPI(
 		peer:           peer,
 		silences:       silences,
 		logger:         l,
-		m:              metrics.NewAlerts(r),
+		m:              metrics.NewAlerts(r, l),
 		uptime:         time.Now(),
 	}
 
@@ -225,8 +226,9 @@ func (api *API) getReceiversHandler(params receiver_ops.GetReceiversParams) midd
 	defer api.mtx.RUnlock()
 
 	receivers := make([]*open_api_models.Receiver, 0, len(api.alertmanagerConfig.Receivers))
-	for i := range api.alertmanagerConfig.Receivers {
-		receivers = append(receivers, &open_api_models.Receiver{Name: &api.alertmanagerConfig.Receivers[i].Name})
+	for _, r := range api.alertmanagerConfig.Receivers {
+		name := r.Name
+		receivers = append(receivers, &open_api_models.Receiver{Name: &name})
 	}
 
 	return receiver_ops.NewGetReceiversOK().WithPayload(receivers)
@@ -545,9 +547,9 @@ var silenceStateOrder = map[types.SilenceState]int{
 
 // SortSilences sorts first according to the state "active, pending, expired"
 // then by end time or start time depending on the state.
-// active silences should show the next to expire first
+// Active silences should show the next to expire first
 // pending silences are ordered based on which one starts next
-// expired are ordered based on which one expired most recently
+// expired are ordered based on which one expired most recently.
 func SortSilences(sils open_api_models.GettableSilences) {
 	sort.Slice(sils, func(i, j int) bool {
 		state1 := types.SilenceState(*sils[i].Status.State)
@@ -660,8 +662,7 @@ func (api *API) postSilencesHandler(params silence_ops.PostSilencesParams) middl
 		return silence_ops.NewPostSilencesBadRequest().WithPayload(msg)
 	}
 
-	sid, err := api.silences.Set(sil)
-	if err != nil {
+	if err = api.silences.Set(sil); err != nil {
 		level.Error(logger).Log("msg", "Failed to create silence", "err", err)
 		if errors.Is(err, silence.ErrNotFound) {
 			return silence_ops.NewPostSilencesNotFound().WithPayload(err.Error())
@@ -670,7 +671,7 @@ func (api *API) postSilencesHandler(params silence_ops.PostSilencesParams) middl
 	}
 
 	return silence_ops.NewPostSilencesOK().WithPayload(&silence_ops.PostSilencesOKBody{
-		SilenceID: sid,
+		SilenceID: sil.Id,
 	})
 }
 

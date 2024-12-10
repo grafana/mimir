@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/signals"
 	"github.com/grafana/dskit/spanprofiler"
+	"github.com/okzk/sdnotify"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -47,7 +48,10 @@ import (
 	alertbucketclient "github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/api"
+	"github.com/grafana/mimir/pkg/blockbuilder"
+	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -74,6 +78,7 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
+	"github.com/grafana/mimir/pkg/util/tracing"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/vault"
@@ -109,23 +114,25 @@ type Config struct {
 	PrintConfig                     bool                   `yaml:"-"`
 	ApplicationName                 string                 `yaml:"-"`
 
-	API              api.Config                      `yaml:"api"`
-	Server           server.Config                   `yaml:"server"`
-	Distributor      distributor.Config              `yaml:"distributor"`
-	Querier          querier.Config                  `yaml:"querier"`
-	IngesterClient   client.Config                   `yaml:"ingester_client"`
-	Ingester         ingester.Config                 `yaml:"ingester"`
-	Flusher          flusher.Config                  `yaml:"flusher"`
-	LimitsConfig     validation.Limits               `yaml:"limits"`
-	Worker           querier_worker.Config           `yaml:"frontend_worker"`
-	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
-	IngestStorage    ingest.Config                   `yaml:"ingest_storage" doc:"hidden"`
-	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
-	Compactor        compactor.Config                `yaml:"compactor"`
-	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
-	TenantFederation tenantfederation.Config         `yaml:"tenant_federation"`
-	ActivityTracker  activitytracker.Config          `yaml:"activity_tracker"`
-	Vault            vault.Config                    `yaml:"vault"`
+	API                   api.Config                      `yaml:"api"`
+	Server                server.Config                   `yaml:"server"`
+	Distributor           distributor.Config              `yaml:"distributor"`
+	Querier               querier.Config                  `yaml:"querier"`
+	IngesterClient        client.Config                   `yaml:"ingester_client"`
+	Ingester              ingester.Config                 `yaml:"ingester"`
+	Flusher               flusher.Config                  `yaml:"flusher"`
+	LimitsConfig          validation.Limits               `yaml:"limits"`
+	Worker                querier_worker.Config           `yaml:"frontend_worker"`
+	Frontend              frontend.CombinedFrontendConfig `yaml:"frontend"`
+	IngestStorage         ingest.Config                   `yaml:"ingest_storage"`
+	BlockBuilder          blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
+	BlockBuilderScheduler blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
+	BlocksStorage         tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
+	Compactor             compactor.Config                `yaml:"compactor"`
+	StoreGateway          storegateway.Config             `yaml:"store_gateway"`
+	TenantFederation      tenantfederation.Config         `yaml:"tenant_federation"`
+	ActivityTracker       activitytracker.Config          `yaml:"activity_tracker"`
+	Vault                 vault.Config                    `yaml:"vault"`
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
@@ -135,6 +142,7 @@ type Config struct {
 	MemberlistKV        memberlist.KVConfig                        `yaml:"memberlist"`
 	QueryScheduler      scheduler.Config                           `yaml:"query_scheduler"`
 	UsageStats          usagestats.Config                          `yaml:"usage_stats"`
+	ContinuousTest      continuoustest.Config                      `yaml:"-"`
 	OverridesExporter   exporter.Config                            `yaml:"overrides_exporter"`
 
 	Common CommonConfig `yaml:"common"`
@@ -142,7 +150,7 @@ type Config struct {
 	TimeseriesUnmarshalCachingOptimizationEnabled bool `yaml:"timeseries_unmarshal_caching_optimization_enabled" category:"experimental"`
 }
 
-// RegisterFlags registers flag.
+// RegisterFlags registers flags.
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ApplicationName = "Grafana Mimir"
 	c.Server.MetricsNamespace = "cortex"
@@ -177,6 +185,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
 	c.IngestStorage.RegisterFlags(f)
+	c.BlockBuilder.RegisterFlags(f, logger)
+	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
@@ -192,6 +202,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f, logger)
 	c.UsageStats.RegisterFlags(f)
+	c.ContinuousTest.RegisterFlags(f)
 	c.OverridesExporter.RegisterFlags(f, logger)
 
 	c.Common.RegisterFlags(f)
@@ -240,8 +251,10 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.IngestStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
-	if c.isAnyModuleEnabled(Ingester, Write, All) && c.IngestStorage.Enabled && !c.Ingester.DeprecatedReturnOnlyGRPCErrors {
-		return errors.New("to use ingest storage (-ingest-storage.enabled) also enable -ingester.return-only-grpc-errors")
+	if c.isAnyModuleEnabled(Ingester, Write, All) {
+		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
+			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
+		}
 	}
 	if err := c.BlocksStorage.Validate(c.Ingester.ActiveSeriesMetrics); err != nil {
 		return errors.Wrap(err, "invalid TSDB config")
@@ -256,11 +269,18 @@ func (c *Config) Validate(log log.Logger) error {
 		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
 			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
 	}
-	if err := c.IngesterClient.Validate(log); err != nil {
+	if err := c.IngesterClient.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
 	if err := c.Ingester.Validate(log); err != nil {
-		return errors.Wrap(err, "invalid ingester config")
+		// We check for "ingester" module here because, as of today, its config has a special mode, that assumes
+		// passing a unique set of per instance flags, e.g. "-ingester.ring.instance-id".
+		// Such a scenario breaks the validation of other modules if those flags aren't also passed to each instance (ref
+		// grafana/mimir#7822). Otherwise, log the fact and move on.
+		if c.isAnyModuleEnabled(Ingester, Write, All) || !errors.Is(err, ingester.ErrSpreadMinimizingValidation) {
+			return errors.Wrap(err, "invalid ingester config")
+		}
+		level.Debug(log).Log("msg", "ingester config is invalid; moving on because the \"ingester\" module is not in this process's targets", "err", err.Error())
 	}
 	if err := c.Worker.Validate(); err != nil {
 		return errors.Wrap(err, "invalid frontend_worker config")
@@ -685,37 +705,40 @@ type Mimir struct {
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                           *api.API
-	Server                        *server.Server
-	IngesterRing                  *ring.Ring
-	IngesterPartitionRingWatcher  *ring.PartitionRingWatcher
-	IngesterPartitionInstanceRing *ring.PartitionInstanceRing
-	TenantLimits                  validation.TenantLimits
-	Overrides                     *validation.Overrides
-	ActiveGroupsCleanup           *util.ActiveGroupsCleanupService
-	Distributor                   *distributor.Distributor
-	Ingester                      *ingester.Ingester
-	Flusher                       *flusher.Flusher
-	FrontendV1                    *frontendv1.Frontend
-	RuntimeConfig                 *runtimeconfig.Manager
-	QuerierQueryable              prom_storage.SampleAndChunkQueryable
-	ExemplarQueryable             prom_storage.ExemplarQueryable
-	MetadataSupplier              querier.MetadataSupplier
-	QuerierEngine                 *promql.Engine
-	QueryFrontendTripperware      querymiddleware.Tripperware
-	QueryFrontendCodec            querymiddleware.Codec
-	Ruler                         *ruler.Ruler
-	RulerDirectStorage            rulestore.RuleStore
-	RulerCachedStorage            rulestore.RuleStore
-	Alertmanager                  *alertmanager.MultitenantAlertmanager
-	Compactor                     *compactor.MultitenantCompactor
-	StoreGateway                  *storegateway.StoreGateway
-	StoreQueryable                prom_storage.Queryable
-	MemberlistKV                  *memberlist.KVInitService
-	ActivityTracker               *activitytracker.ActivityTracker
-	Vault                         *vault.Vault
-	UsageStatsReporter            *usagestats.Reporter
-	BuildInfoHandler              http.Handler
+	API                             *api.API
+	Server                          *server.Server
+	IngesterRing                    *ring.Ring
+	IngesterPartitionRingWatcher    *ring.PartitionRingWatcher
+	IngesterPartitionInstanceRing   *ring.PartitionInstanceRing
+	TenantLimits                    validation.TenantLimits
+	Overrides                       *validation.Overrides
+	ActiveGroupsCleanup             *util.ActiveGroupsCleanupService
+	Distributor                     *distributor.Distributor
+	Ingester                        *ingester.Ingester
+	Flusher                         *flusher.Flusher
+	FrontendV1                      *frontendv1.Frontend
+	RuntimeConfig                   *runtimeconfig.Manager
+	QuerierQueryable                prom_storage.SampleAndChunkQueryable
+	ExemplarQueryable               prom_storage.ExemplarQueryable
+	AdditionalStorageQueryables     []querier.TimeRangeQueryable
+	MetadataSupplier                querier.MetadataSupplier
+	QuerierEngine                   promql.QueryEngine
+	QueryFrontendTripperware        querymiddleware.Tripperware
+	QueryFrontendTopicOffsetsReader *ingest.TopicOffsetsReader
+	QueryFrontendCodec              querymiddleware.Codec
+	Ruler                           *ruler.Ruler
+	RulerStorage                    rulestore.RuleStore
+	Alertmanager                    *alertmanager.MultitenantAlertmanager
+	Compactor                       *compactor.MultitenantCompactor
+	StoreGateway                    *storegateway.StoreGateway
+	MemberlistKV                    *memberlist.KVInitService
+	ActivityTracker                 *activitytracker.ActivityTracker
+	Vault                           *vault.Vault
+	UsageStatsReporter              *usagestats.Reporter
+	BlockBuilder                    *blockbuilder.BlockBuilder
+	BlockBuilderScheduler           *blockbuilderscheduler.BlockBuilderScheduler
+	ContinuousTestManager           *continuoustest.Manager
+	BuildInfoHandler                http.Handler
 }
 
 // New makes a new Mimir.
@@ -750,6 +773,10 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
 		})
 
+	// Do not allow to configure potentially unsafe options until we've properly tested them in Mimir.
+	// These configuration options are hidden in the auto-generated documentation (see pkg/util/configdoc).
+	cfg.Server.GRPCServerRecvBufferPoolsEnabled = false
+
 	// Inject the registerer in the Server config too.
 	cfg.Server.Registerer = reg
 
@@ -766,7 +793,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	// We are passing the wrapped tracer to both opentracing and opentelemetry until after the ecosystem
 	// gets converged into the latter.
 	opentracing.SetGlobalTracer(tracer)
-	otel.SetTracerProvider(NewOpenTelemetryProviderBridge(tracer))
+	otel.SetTracerProvider(tracing.NewOpenTelemetryProviderBridge(tracer))
 
 	mimir.Cfg.Server.Router = mux.NewRouter()
 
@@ -807,6 +834,7 @@ func (t *Mimir) setupObjstoreTracing() {
 // Run starts Mimir running, and blocks until a Mimir stops.
 func (t *Mimir) Run() error {
 	mimirpb.TimeseriesUnmarshalCachingEnabled = t.Cfg.TimeseriesUnmarshalCachingOptimizationEnabled
+	defer util_log.Flush()
 
 	// Register custom process metrics.
 	if c, err := process.NewProcessCollector(); err == nil {
@@ -864,9 +892,15 @@ func (t *Mimir) Run() error {
 		grpcutil.WithManager(sm),
 	))
 
-	// Let's listen for events from this manager, and log them.
-	healthy := func() { level.Info(util_log.Logger).Log("msg", "Application started") }
-	stopped := func() { level.Info(util_log.Logger).Log("msg", "Application stopped") }
+	// Let's listen for events from this manager, log them and send sd_notify event
+	healthy := func() {
+		level.Info(util_log.Logger).Log("msg", "Application started")
+		_ = sdnotify.Ready()
+	}
+	stopped := func() {
+		level.Info(util_log.Logger).Log("msg", "Application stopped")
+		_ = sdnotify.Stopping()
+	}
 	serviceFailed := func(service services.Service) {
 		// if any service fails, stop entire Mimir
 		sm.StopAsync()

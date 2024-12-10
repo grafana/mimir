@@ -42,9 +42,10 @@ func (c *Config) MaybeValue() string {
 // ResourceConfig contains the configuration values for a resource (topic,
 // broker, broker logger).
 type ResourceConfig struct {
-	Name    string   // Name is the name of this resource.
-	Configs []Config // Configs are the configs for this topic.
-	Err     error    // Err is any error preventing configs from loading (likely, an unknown topic).
+	Name       string   // Name is the name of this resource.
+	Configs    []Config // Configs are the configs for this topic.
+	Err        error    // Err is any error preventing configs from loading (likely, an unknown topic).
+	ErrMessage string   // ErrMessage a potential extra message describing any error.
 }
 
 // ResourceConfigs contains the configuration values for many resources.
@@ -124,8 +125,9 @@ func (cl *Client) describeConfigs(
 				return err
 			}
 			rc := ResourceConfig{
-				Name: r.ResourceName,
-				Err:  kerr.ErrorForCode(r.ErrorCode),
+				Name:       r.ResourceName,
+				Err:        kerr.ErrorForCode(r.ErrorCode),
+				ErrMessage: unptrStr(r.ErrorMessage),
 			}
 			for _, c := range r.Configs {
 				rcv := Config{
@@ -183,8 +185,9 @@ type AlterConfig struct {
 
 // AlteredConfigsResponse contains the response for an individual alteration.
 type AlterConfigsResponse struct {
-	Name string // Name is the name of this resource (topic name or broker number).
-	Err  error  // Err is non-nil if the config could not be altered.
+	Name       string // Name is the name of this resource (topic name or broker number).
+	Err        error  // Err is non-nil if the config could not be altered.
+	ErrMessage string // ErrMessage a potential extra message describing any error.
 }
 
 // AlterConfigsResponses contains responses for many alterations.
@@ -314,8 +317,9 @@ func (cl *Client) alterConfigs(
 		resp := kr.(*kmsg.IncrementalAlterConfigsResponse)
 		for _, r := range resp.Resources {
 			rs = append(rs, AlterConfigsResponse{ // we are not storing in a map, no existence check possible
-				Name: r.ResourceName,
-				Err:  kerr.ErrorForCode(r.ErrorCode),
+				Name:       r.ResourceName,
+				Err:        kerr.ErrorForCode(r.ErrorCode),
+				ErrMessage: unptrStr(r.ErrorMessage),
 			})
 		}
 		return nil
@@ -403,8 +407,9 @@ func (cl *Client) alterConfigsState(
 		resp := kr.(*kmsg.AlterConfigsResponse)
 		for _, r := range resp.Resources {
 			rs = append(rs, AlterConfigsResponse{ // we are not storing in a map, no existence check possible
-				Name: r.ResourceName,
-				Err:  kerr.ErrorForCode(r.ErrorCode),
+				Name:       r.ResourceName,
+				Err:        kerr.ErrorForCode(r.ErrorCode),
+				ErrMessage: unptrStr(r.ErrorMessage),
 			})
 		}
 		return nil

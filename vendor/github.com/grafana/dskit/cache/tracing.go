@@ -14,25 +14,37 @@ var _ Cache = (*SpanlessTracingCache)(nil)
 
 // SpanlessTracingCache wraps a Cache and logs Fetch operation in the parent spans.
 type SpanlessTracingCache struct {
-	c        Cache
+	next     Cache
 	resolver spanlogger.TenantResolver
 	logger   log.Logger
 }
 
-func NewSpanlessTracingCache(cache Cache, logger log.Logger, resolver spanlogger.TenantResolver) Cache {
-	return SpanlessTracingCache{c: cache, resolver: resolver, logger: logger}
+func NewSpanlessTracingCache(cache Cache, logger log.Logger, resolver spanlogger.TenantResolver) *SpanlessTracingCache {
+	return &SpanlessTracingCache{next: cache, resolver: resolver, logger: logger}
 }
 
-func (t SpanlessTracingCache) StoreAsync(data map[string][]byte, ttl time.Duration) {
-	t.c.StoreAsync(data, ttl)
+func (t *SpanlessTracingCache) SetAsync(key string, value []byte, ttl time.Duration) {
+	t.next.SetAsync(key, value, ttl)
 }
 
-func (t SpanlessTracingCache) Fetch(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte) {
+func (t *SpanlessTracingCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
+	t.next.SetMultiAsync(data, ttl)
+}
+
+func (t *SpanlessTracingCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return t.next.Set(ctx, key, value, ttl)
+}
+
+func (t *SpanlessTracingCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return t.next.Add(ctx, key, value, ttl)
+}
+
+func (t *SpanlessTracingCache) GetMulti(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte) {
 	var (
 		bytes  int
 		logger = spanlogger.FromContext(ctx, t.logger, t.resolver)
 	)
-	result = t.c.Fetch(ctx, keys, opts...)
+	result = t.next.GetMulti(ctx, keys, opts...)
 
 	for _, v := range result {
 		bytes += len(v)
@@ -42,10 +54,14 @@ func (t SpanlessTracingCache) Fetch(ctx context.Context, keys []string, opts ...
 	return
 }
 
-func (t SpanlessTracingCache) Name() string {
-	return t.c.Name()
+func (t *SpanlessTracingCache) Name() string {
+	return t.next.Name()
 }
 
-func (t SpanlessTracingCache) Delete(ctx context.Context, key string) error {
-	return t.c.Delete(ctx, key)
+func (t *SpanlessTracingCache) Stop() {
+	t.next.Stop()
+}
+
+func (t *SpanlessTracingCache) Delete(ctx context.Context, key string) error {
+	return t.next.Delete(ctx, key)
 }

@@ -3,11 +3,12 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package util_test
+package util
 
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"html/template"
 	"io"
 	"math/rand"
@@ -18,13 +19,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
-	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestRenderHTTPResponse(t *testing.T) {
@@ -77,7 +77,7 @@ func TestRenderHTTPResponse(t *testing.T) {
 				request.Header.Add(k, v)
 			}
 
-			util.RenderHTTPResponse(writer, tt.value, tmpl, request)
+			RenderHTTPResponse(writer, tt.value, tmpl, request)
 
 			assert.Equal(t, tt.expectedContentType, writer.Header().Get("Content-Type"))
 			assert.Equal(t, 200, writer.Code)
@@ -89,7 +89,7 @@ func TestRenderHTTPResponse(t *testing.T) {
 func TestWriteTextResponse(t *testing.T) {
 	w := httptest.NewRecorder()
 
-	util.WriteTextResponse(w, "hello world")
+	WriteTextResponse(w, "hello world")
 
 	assert.Equal(t, 200, w.Code)
 	assert.Equal(t, "hello world", w.Body.String())
@@ -132,7 +132,7 @@ func TestStreamWriteYAMLResponse(t *testing.T) {
 	done := make(chan struct{})
 	iter := make(chan interface{})
 	go func() {
-		util.StreamWriteYAMLResponse(w, iter, util_log.Logger)
+		StreamWriteYAMLResponse(w, iter, test.NewTestingLogger(t))
 		close(done)
 	}()
 	for k, v := range tt.value {
@@ -147,55 +147,67 @@ func TestStreamWriteYAMLResponse(t *testing.T) {
 
 func TestParseProtoReader(t *testing.T) {
 	// 47 bytes compressed and 53 uncompressed
-	req := &mimirpb.PreallocWriteRequest{
-		WriteRequest: mimirpb.WriteRequest{
-			Timeseries: []mimirpb.PreallocTimeseries{
-				{
-					TimeSeries: &mimirpb.TimeSeries{
-						Labels: []mimirpb.LabelAdapter{
-							{Name: "foo", Value: "bar"},
-						},
-						Samples: []mimirpb.Sample{
-							{Value: 10, TimestampMs: 1},
-							{Value: 20, TimestampMs: 2},
-							{Value: 30, TimestampMs: 3},
-						},
-						Exemplars: []mimirpb.Exemplar{},
-					},
+	req := &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{Name: "foo", Value: "bar"},
+				},
+				Samples: []prompb.Sample{
+					{Value: 10, Timestamp: 1},
+					{Value: 20, Timestamp: 2},
+					{Value: 30, Timestamp: 3},
 				},
 			},
 		},
 	}
 
 	for _, tt := range []struct {
-		name           string
-		compression    util.CompressionType
-		maxSize        int
-		expectErr      bool
-		useBytesBuffer bool
+		name                  string
+		compression           CompressionType
+		maxSize               int
+		expectSerializeErr    bool
+		expectParseErr        bool
+		useBytesBuffer        bool
+		mockTooLargeForSnappy bool
 	}{
-		{"rawSnappy", util.RawSnappy, 53, false, false},
-		{"noCompression", util.NoCompression, 53, false, false},
-		{"gzip", util.Gzip, 53, false, false},
-		{"too big rawSnappy", util.RawSnappy, 10, true, false},
-		{"too big decoded rawSnappy", util.RawSnappy, 50, true, false},
-		{"too big noCompression", util.NoCompression, 10, true, false},
-		{"too big gzip", util.Gzip, 10, true, false},
-		{"too big decoded gzip", util.Gzip, 50, true, false},
+		{"rawSnappy", RawSnappy, 53, false, false, false, false},
+		{"noCompression", NoCompression, 53, false, false, false, false},
+		{"gzip", Gzip, 53, false, false, false, false},
+		{"too big rawSnappy", RawSnappy, 10, false, true, false, false},
+		{"too big encoded rawSnappy", RawSnappy, 10, true, false, false, true},
+		{"too big decoded rawSnappy", RawSnappy, 50, false, true, false, false},
+		{"too big noCompression", NoCompression, 10, false, true, false, false},
+		{"too big gzip", Gzip, 10, false, true, false, false},
+		{"too big decoded gzip", Gzip, 50, false, true, false, false},
 
-		{"bytesbuffer rawSnappy", util.RawSnappy, 53, false, true},
-		{"bytesbuffer noCompression", util.NoCompression, 53, false, true},
-		{"bytesbuffer gzip", util.Gzip, 53, false, true},
-		{"bytesbuffer too big rawSnappy", util.RawSnappy, 10, true, true},
-		{"bytesbuffer too big decoded rawSnappy", util.RawSnappy, 50, true, true},
-		{"bytesbuffer too big noCompression", util.NoCompression, 10, true, true},
-		{"bytesbuffer too big gzip", util.Gzip, 10, true, true},
-		{"bytesbuffer too big decoded gzip", util.Gzip, 50, true, true},
+		{"bytesbuffer rawSnappy", RawSnappy, 53, false, false, true, false},
+		{"bytesbuffer noCompression", NoCompression, 53, false, false, true, false},
+		{"bytesbuffer gzip", Gzip, 53, false, false, true, false},
+		{"bytesbuffer too big rawSnappy", RawSnappy, 10, false, true, true, false},
+		{"bytesbuffer too big decoded rawSnappy", RawSnappy, 50, false, true, true, false},
+		{"bytesbuffer too big noCompression", NoCompression, 10, false, true, true, false},
+		{"bytesbuffer too big gzip", Gzip, 10, false, true, true, false},
+		{"bytesbuffer too big decoded gzip", Gzip, 50, false, true, true, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			require.NoError(t, util.SerializeProtoResponse(w, req, tt.compression))
-			var fromWire mimirpb.PreallocWriteRequest
+
+			if tt.mockTooLargeForSnappy && tt.compression == RawSnappy {
+				snappyEncoding = func([]byte, []byte) ([]byte, error) {
+					return nil, fmt.Errorf("data too large to encode")
+				}
+				defer func() { snappyEncoding = snappyCheckAndEncode }()
+			}
+
+			err := SerializeProtoResponse(w, req, tt.compression)
+
+			if tt.expectSerializeErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			var fromWire prompb.WriteRequest
 
 			reader := w.Result().Body
 			if tt.useBytesBuffer {
@@ -205,13 +217,12 @@ func TestParseProtoReader(t *testing.T) {
 				reader = bytesBuffered{Buffer: &buf}
 			}
 
-			err := util.ParseProtoReader(context.Background(), reader, 0, tt.maxSize, nil, &fromWire, tt.compression)
-			if tt.expectErr {
+			_, err = ParseProtoReader(context.Background(), reader, 0, tt.maxSize, nil, &fromWire, tt.compression)
+			if tt.expectParseErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
-			fromWire.ClearTimeseriesUnmarshalData() // non-nil unmarshal buffer in PreallocTimeseries breaks equality test
 			assert.Equal(t, req, &fromWire)
 		})
 	}
@@ -231,11 +242,11 @@ func (b bytesBuffered) BytesBuffer() *bytes.Buffer {
 
 func TestIsRequestBodyTooLargeRegression(t *testing.T) {
 	_, err := io.ReadAll(http.MaxBytesReader(httptest.NewRecorder(), io.NopCloser(bytes.NewReader([]byte{1, 2, 3, 4})), 1))
-	assert.True(t, util.IsRequestBodyTooLarge(err))
+	assert.True(t, IsRequestBodyTooLarge(err))
 }
 
 func TestNewMsgSizeTooLargeErr(t *testing.T) {
-	err := util.MsgSizeTooLargeErr{Actual: 100, Limit: 50}
+	err := MsgSizeTooLargeErr{Actual: 100, Limit: 50}
 	msg := `the request has been rejected because its size of 100 bytes exceeds the limit of 50 bytes`
 
 	assert.Equal(t, msg, err.Error())
@@ -251,7 +262,7 @@ func TestParseRequestFormWithoutConsumingBody(t *testing.T) {
 		req, err := http.NewRequest("GET", "http://localhost/?"+expected.Encode(), nil)
 		require.NoError(t, err)
 
-		actual, err := util.ParseRequestFormWithoutConsumingBody(req)
+		actual, err := ParseRequestFormWithoutConsumingBody(req)
 		require.NoError(t, err)
 		assert.Equal(t, expected, actual)
 
@@ -266,7 +277,7 @@ func TestParseRequestFormWithoutConsumingBody(t *testing.T) {
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		actual, err := util.ParseRequestFormWithoutConsumingBody(req)
+		actual, err := ParseRequestFormWithoutConsumingBody(req)
 		require.NoError(t, err)
 		assert.Equal(t, expected, actual)
 
@@ -314,7 +325,7 @@ func TestIsValidURL(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			isValid := util.IsValidURL(test.endpoint)
+			isValid := IsValidURL(test.endpoint)
 			if test.valid {
 				assert.True(t, isValid)
 			} else {

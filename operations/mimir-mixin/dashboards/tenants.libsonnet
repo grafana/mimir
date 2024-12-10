@@ -1,7 +1,8 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-tenants.json';
 
-(import 'dashboard-utils.libsonnet') {
+(import 'dashboard-utils.libsonnet') +
+(import 'dashboard-queries.libsonnet') {
   local user_limits_overrides_query(limit_name) = |||
     max(cortex_limits_overrides{%(overrides_exporter)s, limit_name="%(limit_name)s", user="$user"})
     or
@@ -16,12 +17,24 @@ local filename = 'mimir-tenants.json';
     $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
   ]),
 
+  // These are the IDs of the 'All series', 'Native histogram series', and 'Total number of buckets used by native histogram series' panels
+  // Not ideal, since these will change if the dashboard is rearranged
+  local reload_annotation_panel_ids = [2, 7, 8],
+
   [filename]:
     assert std.md5(filename) == '35fa247ce651ba189debf33d7ae41611' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Tenants') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addActiveUserSelectorTemplates()
-    .addCustomTemplate('limit', ['10', '50', '100', '500', '1000'])
+    .addCustomTemplate(
+      'limit', 'limit', [
+        { label: '10', value: '10' },
+        { label: '50', value: '50' },
+        { label: '100', value: '100' },
+        { label: '500', value: '500' },
+        { label: '1000', value: '1000' },
+      ]
+    )
     .addRowIf(
       $._config.show_dashboard_descriptions.tenants,
       ($.row('Tenants dashboard description') { height: '25px', showTitle: false })
@@ -35,54 +48,31 @@ local filename = 'mimir-tenants.json';
     )
 
     .addRow(
-      $.row('Active series and native histograms')
+      $.row('Tenant series counts')
       .addPanel(
         local title = 'All series';
         $.timeseriesPanel(title) +
         $.queryPanel(
           [
-            |||
-              sum(
-                (
-                  cortex_ingester_memory_series_created_total{%(ingester)s, user="$user"}
-                  - cortex_ingester_memory_series_removed_total{%(ingester)s, user="$user"}
-                )
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+            local perIngesterInMemorySeries = |||
+              (
+                cortex_ingester_memory_series_created_total{%(ingester)s, user="$user"}
+                - cortex_ingester_memory_series_removed_total{%(ingester)s, user="$user"}
               )
             ||| % {
               ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
-            },
+            };
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery(perIngesterInMemorySeries),
             user_limits_overrides_query('max_global_series_per_user'),
-            |||
-              sum(
-                cortex_ingester_active_series{%(ingester)s, user="$user"}
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              )
-            ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
-            },
-            |||
-              sum by (name) (
-                cortex_ingester_active_series_custom_tracker{%(ingester)s, user="$user"}
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              ) > 0
-            ||| % {
-              ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
-            },
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_owned_series{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_series_custom_tracker{%s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='name'),
           ],
           [
             'in-memory',
             'limit',
             'active',
+            'owned',
             'active ({{ name }})',
           ],
         ) +
@@ -90,114 +80,112 @@ local filename = 'mimir-tenants.json';
         $.panelDescription(
           title,
           |||
-            Number of active and in-memory series per user, and active series matching custom trackers (in parenthesis).
+            Number of active, in-memory, and owned series per user, and active series matching custom trackers (in parenthesis).
             Note that these counts include all series regardless of the type of data (counter, gauge, native histogram, etc.).
             Note that active series matching custom trackers are included in the total active series count.
           |||
         ),
       )
       .addPanel(
-        local title = 'Native histogram series';
+        local title = 'In-memory series per ingester';
         $.timeseriesPanel(title) +
         $.queryPanel(
           [
             |||
-              sum(
-                cortex_ingester_active_native_histogram_series{%(ingester)s, user="$user"}
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              )
+              min by (job) (cortex_ingester_local_limits{%(ingester)s, limit="max_global_series_per_user", user="$user"})
             ||| % {
               ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
             },
             |||
-              sum by (name) (
-                cortex_ingester_active_native_histogram_series_custom_tracker{%(ingester)s, user="$user"}
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              ) > 0
+              cortex_ingester_memory_series_created_total{%(ingester)s, user="$user"}
+              - cortex_ingester_memory_series_removed_total{%(ingester)s, user="$user"}
             ||| % {
               ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
             },
           ],
           [
-            'active',
-            'active ({{ name }})',
+            'local limit ({{job}})',
+            '{{pod}}',
           ],
         ) +
-        { fieldConfig+: { overrides+: [limitStyle] } } +
+        $.showAllTooltip +
+        {
+          fieldConfig+: {
+            defaults+: { custom+: { fillOpacity: 0 } },
+            overrides+: [
+              $.overrideField('byRegexp', '/local limit .+/', [
+                $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+                $.overrideProperty('color', { mode: 'fixed', fixedColor: 'yellow' }),
+              ]),
+            ],
+          },
+          options+: {
+            legend+: { showLegend: false },
+          },
+        } +
         $.panelDescription(
           title,
           |||
-            Number of active native histogram series per user, and active native histogram series matching custom trackers (in parenthesis).
-            Note that active series matching custom trackers are included in the total active series count.
+            Local tenant series limit and number of in-memory series per ingester.
+            Because series can be unevenly distributed across ingesters, ingesters may hit the local limit at different times.
+            Note that in-memory series may exceed the local limit if limiting based on owned series is enabled.
           |||
         ),
       )
       .addPanel(
-        local title = 'Total number of buckets used by native histogram series';
+        local title = 'Owned series per ingester';
         $.timeseriesPanel(title) +
         $.queryPanel(
           [
             |||
-              sum(
-                cortex_ingester_active_native_histogram_buckets{%(ingester)s, user="$user"}
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              )
+              min by (job) (cortex_ingester_local_limits{%(ingester)s, limit="max_global_series_per_user", user="$user"})
             ||| % {
               ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
             },
             |||
-              sum by (name) (
-                cortex_ingester_active_native_histogram_buckets_custom_tracker{%(ingester)s, user="$user"}
-                / on(%(group_by_cluster)s) group_left
-                max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-              ) > 0
+              cortex_ingester_owned_series{%(ingester)s, user="$user"}
             ||| % {
               ingester: $.jobMatcher($._config.job_names.ingester),
-              distributor: $.jobMatcher($._config.job_names.distributor),
-              group_by_cluster: $._config.group_by_cluster,
             },
           ],
           [
-            'buckets',
-            'buckets ({{ name }})',
+            'local limit ({{job}})',
+            '{{pod}}',
           ],
         ) +
-        { fieldConfig+: { overrides+: [limitStyle] } } +
+        $.showAllTooltip +
+        {
+          fieldConfig+: {
+            defaults+: { custom+: { fillOpacity: 0 } },
+            overrides+: [
+              $.overrideField('byRegexp', '/local limit .+/', [
+                $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
+                $.overrideProperty('color', { mode: 'fixed', fixedColor: 'yellow' }),
+              ]),
+            ],
+          },
+          options+: {
+            legend+: { showLegend: false },
+          },
+        } +
         $.panelDescription(
           title,
           |||
-            Total number of buckets in active native histogram series per user, and total active native histogram buckets matching custom trackers (in parenthesis).
+            Local tenant series limit and number of owned series per ingester.
+            Because series can be unevenly distributed across ingesters, ingesters may hit the local limit at different times.
+            Owned series are the subset of an ingester's in-memory series that currently map to it in the ring
           |||
         ),
       )
     )
 
     .addRow(
-      $.row('Samples and exemplars')
+      $.row('Exemplars and native histograms')
       .addPanel(
         local title = 'Series with exemplars';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          |||
-            sum(
-              cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{%(ingester)s, user="$user"}
-              / on(%(group_by_cluster)s) group_left
-              max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-            )
-          ||| % {
-            ingester: $.jobMatcher($._config.job_names.ingester),
-            distributor: $.jobMatcher($._config.job_names.distributor),
-            group_by_cluster: $._config.group_by_cluster,
-          },
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
           'series',
         ) +
         { options+: { legend+: { showLegend: false } } } +
@@ -205,25 +193,6 @@ local filename = 'mimir-tenants.json';
           title,
           |||
             Number of series with exemplars currently in storage.
-          |||
-        ),
-      )
-      .addPanel(
-        local title = 'Newest seen sample age';
-        $.timeseriesPanel(title) +
-        $.queryPanel(
-          'time() - max(cortex_distributor_latest_seen_sample_timestamp_seconds{%(distributor)s, user="$user"} > 0)'
-          % { distributor: $.jobMatcher($._config.job_names.distributor) },
-          'age',
-        ) +
-        {
-          fieldConfig+: { defaults+: { unit: 's' } },
-          options+: { legend+: { showLegend: false } },
-        } +
-        $.panelDescription(
-          title,
-          |||
-            The age of the newest received sample seen in the distributors.
           |||
         ),
       )
@@ -246,6 +215,49 @@ local filename = 'mimir-tenants.json';
             Useful to check for what time range the current exemplar buffer limit allows.
             This usually means the max age for all exemplars for a typical setup.
             This is not true though if one of the series timestamp is in future compared to rest series.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Native histogram series';
+        $.timeseriesPanel(title) +
+        $.queryPanel(
+          [
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_series{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_series_custom_tracker{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='name'),
+          ],
+          [
+            'active',
+            'active ({{ name }})',
+          ],
+        ) +
+        { fieldConfig+: { overrides+: [limitStyle] } } +
+        $.panelDescription(
+          title,
+          |||
+            Number of active native histogram series per user, and active native histogram series matching custom trackers (in parenthesis).
+            Note that active series matching custom trackers are included in the total active series count.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Total number of buckets used by native histogram series';
+        $.timeseriesPanel(title) +
+        $.queryPanel(
+          [
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_buckets{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)]),
+            $.queries.ingester.ingestOrClassicDeduplicatedQuery('cortex_ingester_active_native_histogram_buckets_custom_tracker{%(ingester)s, user="$user"}' % [$.jobMatcher($._config.job_names.ingester)], groupByLabels='name'),
+          ],
+          [
+            'buckets',
+            'buckets ({{ name }})',
+          ],
+        ) +
+        { fieldConfig+: { overrides+: [limitStyle] } } +
+        $.panelDescription(
+          title,
+          |||
+            Total number of buckets in active native histogram series per user, and total active native histogram buckets matching custom trackers (in parenthesis).
           |||
         ),
       ),
@@ -292,6 +304,25 @@ local filename = 'mimir-tenants.json';
         ),
       )
       .addPanel(
+        local title = 'Newest seen sample age';
+        $.timeseriesPanel(title) +
+        $.queryPanel(
+          'time() - max(cortex_distributor_latest_seen_sample_timestamp_seconds{%(distributor)s, user="$user"} > 0)'
+          % { distributor: $.jobMatcher($._config.job_names.distributor) },
+          'age',
+        ) +
+        {
+          fieldConfig+: { defaults+: { unit: 's' } },
+          options+: { legend+: { showLegend: false } },
+        } +
+        $.panelDescription(
+          title,
+          |||
+            The age of the newest received sample seen in the distributors.
+          |||
+        ),
+      )
+      .addPanel(
         local title = 'Distributor discarded requests rate';
         $.timeseriesPanel(title) +
         $.queryPanel(
@@ -314,6 +345,7 @@ local filename = 'mimir-tenants.json';
 
     .addRow(
       $.row('Samples ingestion funnel')
+      .justifyPanels()  // Make sure panels use all width even if 12 columns are not divisible by the number of panels.
       .addPanel(
         local title = 'Distributor samples incoming rate';
         $.timeseriesPanel(title) +
@@ -386,13 +418,31 @@ local filename = 'mimir-tenants.json';
           ],
           [
             '{{ reason }} (distributor)',
-            '{{ reason }} (ingester)',
+            '{{ reason }} (ingester, replicated)',
           ]
         ) +
         $.panelDescription(
           title,
           |||
             The rate of each sample's discarding reason.
+            This doesn't account for the replication factor.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Out-of-order samples appended';
+        $.timeseriesPanel(title) +
+        $.queryPanel(
+          'sum(rate(cortex_ingester_tsdb_out_of_order_samples_appended_total{%(job)s, user="$user"}[$__rate_interval]))'
+          % { job: $.jobMatcher($._config.job_names.ingester) },
+          'rate',
+        ) +
+        { options+: { legend+: { showLegend: false } } } +
+        $.panelDescription(
+          title,
+          |||
+            The rate of OOO samples that have been appended.
+            This doesn't account for the replication factor.
           |||
         ),
       ),
@@ -453,17 +503,7 @@ local filename = 'mimir-tenants.json';
         local title = 'Ingester appended exemplars rate';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          |||
-            sum(
-              rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{%(ingester)s, user="$user"}[$__rate_interval])
-              / on(%(group_by_cluster)s) group_left
-              max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
-            )
-          ||| % {
-            ingester: $.jobMatcher($._config.job_names.ingester),
-            distributor: $.jobMatcher($._config.job_names.distributor),
-            group_by_cluster: $._config.group_by_cluster,
-          },
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{%(ingester)s, user="$user"}[$__rate_interval])' % [$.jobMatcher($._config.job_names.ingester)]),
           'rate',
         ) +
         { options+: { legend+: { showLegend: false } } } +
@@ -472,10 +512,13 @@ local filename = 'mimir-tenants.json';
           |||
             Total number of exemplars appended in the ingesters.
             This can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.
+            This doesn't account for the replication factor.
           |||
         ),
       ),
     )
+
+    .addRowsIf(std.objectHasAll($._config.injectRows, 'postTenantIngestionFunnel'), $._config.injectRows.postTenantIngestionFunnel($))
 
     .addRow(
       ($.row("Ingesters' storage") + { collapse: true })
@@ -564,10 +607,10 @@ local filename = 'mimir-tenants.json';
         { options+: { legend+: { showLegend: false } } },
       )
       .addPanel(
-        local title = 'Failed evaluations rate';
+        local title = 'Failed evaluations rate (top 50 rule groups)';
         $.timeseriesPanel(title) +
         $.queryPanel(
-          'sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%(job)s, user="$user"}[$__rate_interval])) > 0'
+          'topk(50, sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%(job)s, user="$user"}[$__rate_interval])) > 0)'
           % { job: $.jobMatcher($._config.job_names.ruler) },
           '{{ rule_group }}',
         ) +
@@ -747,18 +790,14 @@ local filename = 'mimir-tenants.json';
             (sum(rate(cortex_bucket_index_estimated_compaction_jobs_errors_total{%s}[$__rate_interval])) == 0)
           ||| % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)],
           '{{ job }}',
-        ) + {
+        ) +
+        $.showAllTooltip + {
           fieldConfig+: {
             defaults+: {
               custom+: {
                 fillOpacity: 50,
                 stacking+: { mode: 'normal' },
               },
-            },
-          },
-          options+: {
-            tooltip+: {
-              mode: 'multi',
             },
           },
         } +
@@ -790,5 +829,23 @@ local filename = 'mimir-tenants.json';
           |||
         )
       ),
-    ),
+    ) + {
+      annotations+: {
+        list+: [
+          {
+            name: 'Active Series Reload',
+            datasource: '$datasource',
+            expr: 'sum by (user) (cortex_ingester_active_series_loading{%s, user="$user"}) > 0' % [$.jobMatcher($._config.job_names.ingester)],
+            titleFormat: 'Active series reloading for user {{user}}',
+            enable: true,
+            hide: true,
+            iconColor: 'yellow',
+            filter: {
+              exclude: false,
+              ids: reload_annotation_panel_ids,
+            },
+          },
+        ],
+      },
+    },
 }

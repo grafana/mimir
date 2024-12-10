@@ -14,7 +14,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// Common functionality shared between the Memcached and Redis Cache implementations
+
 const (
+	opAdd            = "add"
 	opSet            = "set"
 	opGetMulti       = "getmulti"
 	opDelete         = "delete"
@@ -27,6 +30,8 @@ const (
 	reasonMaxItemSize     = "max-item-size"
 	reasonAsyncBufferFull = "async-buffer-full"
 	reasonMalformedKey    = "malformed-key"
+	reasonInvalidTTL      = "invalid-ttl"
+	reasonNotStored       = "not-stored"
 	reasonConnectTimeout  = "connect-timeout"
 	reasonTimeout         = "request-timeout"
 	reasonServerError     = "server-error"
@@ -72,6 +77,7 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 		Help: "Total number of operations against cache.",
 	}, []string{"operation"})
 	cm.operations.WithLabelValues(opGetMulti)
+	cm.operations.WithLabelValues(opAdd)
 	cm.operations.WithLabelValues(opSet)
 	cm.operations.WithLabelValues(opDelete)
 	cm.operations.WithLabelValues(opIncrement)
@@ -83,9 +89,12 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 		Name: "operation_failures_total",
 		Help: "Total number of operations against cache that failed.",
 	}, []string{"operation", "reason"})
-	for _, op := range []string{opGetMulti, opSet, opDelete, opIncrement, opFlush, opTouch, opCompareAndSwap} {
+	for _, op := range []string{opGetMulti, opAdd, opSet, opDelete, opIncrement, opFlush, opTouch, opCompareAndSwap} {
+		cm.failures.WithLabelValues(op, reasonConnectTimeout)
 		cm.failures.WithLabelValues(op, reasonTimeout)
 		cm.failures.WithLabelValues(op, reasonMalformedKey)
+		cm.failures.WithLabelValues(op, reasonInvalidTTL)
+		cm.failures.WithLabelValues(op, reasonNotStored)
 		cm.failures.WithLabelValues(op, reasonServerError)
 		cm.failures.WithLabelValues(op, reasonNetworkError)
 		cm.failures.WithLabelValues(op, reasonOther)
@@ -96,6 +105,7 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 		Help: "Total number of operations against cache that have been skipped.",
 	}, []string{"operation", "reason"})
 	cm.skipped.WithLabelValues(opGetMulti, reasonMaxItemSize)
+	cm.skipped.WithLabelValues(opAdd, reasonMaxItemSize)
 	cm.skipped.WithLabelValues(opSet, reasonMaxItemSize)
 	cm.skipped.WithLabelValues(opSet, reasonAsyncBufferFull)
 
@@ -103,8 +113,13 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 		Name:    "operation_duration_seconds",
 		Help:    "Duration of operations against cache.",
 		Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.2, 0.5, 1, 3, 6, 10},
+		// Use defaults recommended by Prometheus for native histograms.
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: time.Hour,
 	}, []string{"operation"})
 	cm.duration.WithLabelValues(opGetMulti)
+	cm.duration.WithLabelValues(opAdd)
 	cm.duration.WithLabelValues(opSet)
 	cm.duration.WithLabelValues(opDelete)
 	cm.duration.WithLabelValues(opIncrement)
@@ -122,6 +137,7 @@ func newClientMetrics(reg prometheus.Registerer) *clientMetrics {
 		[]string{"operation"},
 	)
 	cm.dataSize.WithLabelValues(opGetMulti)
+	cm.dataSize.WithLabelValues(opAdd)
 	cm.dataSize.WithLabelValues(opSet)
 	cm.dataSize.WithLabelValues(opCompareAndSwap)
 
@@ -165,28 +181,44 @@ func (c *baseClient) setAsync(key string, value []byte, ttl time.Duration, f fun
 	}
 
 	err := c.asyncQueue.submit(func() {
-		start := time.Now()
-		c.metrics.operations.WithLabelValues(opSet).Inc()
-
-		err := f(key, value, ttl)
-		if err != nil {
-			level.Debug(c.logger).Log(
-				"msg", "failed to store item to cache",
-				"key", key,
-				"sizeBytes", len(value),
-				"err", err,
-			)
-			c.trackError(opSet, err)
-		}
-
-		c.metrics.dataSize.WithLabelValues(opSet).Observe(float64(len(value)))
-		c.metrics.duration.WithLabelValues(opSet).Observe(time.Since(start).Seconds())
+		// Because this operation is executed in a separate goroutine: We run the operation without
+		// a context (it is expected to keep running no matter what happens) and we don't return the
+		// error (it will be tracked via metrics instead of being returned to the caller).
+		_ = c.storeOperation(context.Background(), key, value, ttl, opSet, func(_ context.Context, key string, value []byte, ttl time.Duration) error {
+			return f(key, value, ttl)
+		})
 	})
 
 	if err != nil {
 		c.metrics.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
 		level.Debug(c.logger).Log("msg", "failed to store item to cache because the async buffer is full", "err", err, "size", c.asyncBuffSize)
 	}
+}
+
+func (c *baseClient) storeOperation(ctx context.Context, key string, value []byte, ttl time.Duration, operation string, f func(ctx context.Context, key string, value []byte, ttl time.Duration) error) error {
+	if c.maxItemSize > 0 && uint64(len(value)) > c.maxItemSize {
+		c.metrics.skipped.WithLabelValues(operation, reasonMaxItemSize).Inc()
+		return nil
+	}
+
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(operation).Inc()
+
+	err := f(ctx, key, value, ttl)
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to store item to cache",
+			"operation", operation,
+			"key", key,
+			"sizeBytes", len(value),
+			"err", err,
+		)
+		c.trackError(operation, err)
+	}
+
+	c.metrics.dataSize.WithLabelValues(operation).Observe(float64(len(value)))
+	c.metrics.duration.WithLabelValues(operation).Observe(time.Since(start).Seconds())
+	return err
 }
 
 // wait submits an async task and blocks until it completes. This can be used during
@@ -248,6 +280,10 @@ func (c *baseClient) trackError(op string, err error) {
 		} else {
 			c.metrics.failures.WithLabelValues(op, reasonNetworkError).Inc()
 		}
+	case errors.Is(err, ErrNotStored):
+		c.metrics.failures.WithLabelValues(op, reasonNotStored).Inc()
+	case errors.Is(err, ErrInvalidTTL):
+		c.metrics.failures.WithLabelValues(op, reasonInvalidTTL).Inc()
 	case errors.Is(err, memcache.ErrMalformedKey):
 		c.metrics.failures.WithLabelValues(op, reasonMalformedKey).Inc()
 	case errors.Is(err, memcache.ErrServerError):

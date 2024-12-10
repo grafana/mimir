@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Most cases for selector operators are covered already in the upstream test cases.
+# These test cases cover scenarios not covered by the upstream test cases, such as range queries, or edge cases that are uniquely likely to cause issues in the streaming engine.
+
+load 1m
+  some_metric{env="prod", cluster="eu"} 0+1x4
+  some_metric{env="prod", cluster="us"} 0+2x4
+  some_metric{env="test", cluster="eu"} 0+3x4
+  some_metric{env="test", cluster="us"} 0+4x4
+
+# Range query with instant vector selector.
+eval range from 0 to 4m step 1m some_metric
+  some_metric{env="prod", cluster="eu"} 0 1 2 3 4
+  some_metric{env="prod", cluster="us"} 0 2 4 6 8
+  some_metric{env="test", cluster="eu"} 0 3 6 9 12
+  some_metric{env="test", cluster="us"} 0 4 8 12 16
+
+# If no series are matched, we shouldn't return any results.
+eval range from 0 to 4m step 1m some_nonexistent_metric
+  # Should return no results.
+
+# Range query with positive offset (looking backwards).
+# Output T=0 should be looking for sample at T=-1m, hence no results
+# Output T=1m to T=5m should be looking for sample at one minute earlier
+# T=6m should be looking for sample at T=5m, and then fallback to lookback to previous point within 5m lookback window
+eval range from 0 to 6m step 1m some_metric offset 1m
+  some_metric{env="prod", cluster="eu"} _ 0 1 2 3 4 4
+  some_metric{env="prod", cluster="us"} _ 0 2 4 6 8 8
+  some_metric{env="test", cluster="eu"} _ 0 3 6 9 12 12
+  some_metric{env="test", cluster="us"} _ 0 4 8 12 16 16
+
+# Range query with negative offset (looking forwards).
+# Output T=0m to T=3m should be looking for sample at one minute in the future
+# T=5m should be looking for sample at T=4m, and then fallback to lookback to previous point within 5m lookback window
+eval range from 0 to 4m step 1m some_metric offset -1m
+  some_metric{env="prod", cluster="eu"} 1 2 3 4 4
+  some_metric{env="prod", cluster="us"} 2 4 6 8 8
+  some_metric{env="test", cluster="eu"} 3 6 9 12 12
+  some_metric{env="test", cluster="us"} 4 8 12 16 16
+
+# Range query with @ modifier.
+eval range from 0 to 10m step 1m some_metric @ 2m
+  some_metric{env="prod", cluster="eu"} 2 2 2 2 2 2 2 2 2 2 2
+  some_metric{env="prod", cluster="us"} 4 4 4 4 4 4 4 4 4 4 4
+  some_metric{env="test", cluster="eu"} 6 6 6 6 6 6 6 6 6 6 6
+  some_metric{env="test", cluster="us"} 8 8 8 8 8 8 8 8 8 8 8
+
+# Range query with @ modifier and offset.
+eval range from 0 to 10m step 1m some_metric @ 3m offset 1m
+  some_metric{env="prod", cluster="eu"} 2 2 2 2 2 2 2 2 2 2 2
+  some_metric{env="prod", cluster="us"} 4 4 4 4 4 4 4 4 4 4 4
+  some_metric{env="test", cluster="eu"} 6 6 6 6 6 6 6 6 6 6 6
+  some_metric{env="test", cluster="us"} 8 8 8 8 8 8 8 8 8 8 8
+
+# Range query with @ modifier beyond range of available data.
+eval range from 0 to 10m step 1m some_metric @ 20m
+  # Should return no results.
+
+# Range query with @ modifier before range of available data.
+eval range from 0 to 10m step 1m some_metric @ -5m
+  # Should return no results.
+
+clear
+
+load 1m
+  some_metric{env="prod", cluster="eu"} _ _ _ 0+1x4
+  some_metric{env="prod", cluster="us"} _ _ _ 0+2x4
+  some_metric{env="prod", cluster="au"} _ _ _ {{count:5}}+{{count:5}}x4
+
+# Range query with instant vector selector with many steps at beginning of range with no samples.
+eval range from 0 to 7m step 1m some_metric
+  some_metric{env="prod", cluster="eu"} _ _ _ 0 1 2 3 4
+  some_metric{env="prod", cluster="us"} _ _ _ 0 2 4 6 8
+  some_metric{env="prod", cluster="au"} _ _ _ {{count:5}} {{count:10}} {{count:15}} {{count:20}} {{count:25}}

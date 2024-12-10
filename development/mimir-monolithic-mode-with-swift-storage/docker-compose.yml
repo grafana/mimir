@@ -1,4 +1,3 @@
-version: '3.4'
 services:
 
   consul:
@@ -33,7 +32,7 @@ services:
 
   prometheus:
 
-    image: prom/prometheus:v2.50.0
+    image: prom/prometheus:v2.55.1
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
       - ./config:/etc/prometheus
@@ -43,7 +42,7 @@ services:
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is not supported by Prometheus).
   grafana-agent:
-    image: grafana/agent:v0.39.2
+    image: grafana/agent:v0.43.4
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-metrics.wal-directory=/tmp", "-server.http.address=127.0.0.1:9091"]
     volumes:
       - ./config:/etc/agent-config

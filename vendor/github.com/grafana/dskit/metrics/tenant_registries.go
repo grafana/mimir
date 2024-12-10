@@ -219,23 +219,27 @@ func (d MetricFamiliesPerTenant) SendSumOfGaugesWithLabels(out chan<- prometheus
 
 // SendSumOfGaugesPerTenant provides metrics on a per-tenant basis.
 // This function assumes that `tenant` is the first label on the provided metric Desc.
-func (d MetricFamiliesPerTenant) SendSumOfGaugesPerTenant(out chan<- prometheus.Metric, desc *prometheus.Desc, gauge string) {
-	d.SendSumOfGaugesPerTenantWithLabels(out, desc, gauge)
-}
+func (d MetricFamiliesPerTenant) SendSumOfGaugesPerTenant(out chan<- prometheus.Metric, desc *prometheus.Desc, metric string, options ...MetricOption) {
+	opts := applyMetricOptions(options...)
 
-// SendSumOfGaugesPerTenantWithLabels provides metrics with the provided label names on a per-tenant basis. This function assumes that `tenant` is the
-// first label on the provided metric Desc
-func (d MetricFamiliesPerTenant) SendSumOfGaugesPerTenantWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, metric string, labelNames ...string) {
 	for _, tenantEntry := range d {
 		if tenantEntry.tenant == "" {
 			continue
 		}
 
 		result := singleValueWithLabelsMap{}
-		tenantEntry.metrics.sumOfSingleValuesWithLabels(metric, labelNames, gaugeValue, result.aggregateFn, false)
+		tenantEntry.metrics.sumOfSingleValuesWithLabels(metric, opts.labelNames, gaugeValue, result.aggregateFn, opts.skipZeroValueMetrics)
 		result.prependTenantLabelValue(tenantEntry.tenant)
 		result.WriteToMetricChannel(out, desc, prometheus.GaugeValue)
 	}
+}
+
+// SendSumOfGaugesPerTenantWithLabels provides metrics with the provided label names on a per-tenant basis. This function assumes that `tenant` is the
+// first label on the provided metric Desc
+//
+// Deprecated: use SendSumOfGaugesPerTenant with WithLabels option instead.
+func (d MetricFamiliesPerTenant) SendSumOfGaugesPerTenantWithLabels(out chan<- prometheus.Metric, desc *prometheus.Desc, metric string, labelNames ...string) {
+	d.SendSumOfGaugesPerTenant(out, desc, metric, WithLabels(labelNames...))
 }
 
 func (d MetricFamiliesPerTenant) sumOfSingleValuesWithLabels(metric string, fn func(*dto.Metric) float64, labelNames []string, skipZeroValue bool) singleValueWithLabelsMap {

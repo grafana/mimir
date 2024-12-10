@@ -127,8 +127,31 @@ We recommend ensuring Memcached evictions happen infrequently.
 Grafana Mimir query performance might be negatively affected if your Memcached cluster evicts items frequently.
 We recommend increasing your Memcached cluster replicas to add more memory to the cluster and reduce evictions.
 
-We also recommend running a dedicated Memcached cluster for each type of cache: query results, metadata, index, and chunks.
-Running a dedicated Memcached cluster for each cache type is not required, but recommended so that each cache is isolated from the others.
+We also recommend running a dedicated Memcached cluster for each type of cache since each Mimir uses each differently and they scale differently.
+Separation also isolates each cache from the others so that one type of cache entry doesn't crowd out other entries and degrade performance.
+
+The metadata cache stores information about files in object storage, contents of auxiliary files such as bucket indexes, and discovered information about object storage such as lists of tenants.
+This results in relatively low CPU and bandwidth usage.
+
+The query results cache to stores query responses.
+Entries in this cache tend to be small and Mimir only fetches a few at a time.
+This results in relatively low CPU and bandwidth usage.
+
+The index caches store portions of the TSDB index fetched from object storage.
+Entries in this cache vary in size from a few hundred bytes to several megabytes.
+Mimir fetches entries both individually and in batches.
+A single query may fetch many entries from the cache.
+This results in higher CPU usage compared to other caches.
+
+The chunks caches store portions of time series samples fetched from object storage.
+Entries in this cache tend to be large (several kilobytes) and are fetched in batches by the store-gateway components.
+This results in higher bandwidth usage compared to other caches.
+
+### Cache size
+
+Memcached [extstore](https://docs.memcached.org/features/flashstorage/) feature allows to extend Memcached’s memory space onto flash (or similar) storage.
+
+Refer to [how we scaled Grafana Cloud Logs' Memcached cluster to 50TB and improved reliability](https://grafana.com/blog/2023/08/23/how-we-scaled-grafana-cloud-logs-memcached-cluster-to-50tb-and-improved-reliability/).
 
 ## Security
 
@@ -159,3 +182,20 @@ To configure gRPC compression, use the following CLI flags or their YAML equival
 | `-ruler.query-frontend.grpc-client-config.grpc-compression` | `ingester_client.grpc_client_config.grpc_compression`      |
 | `-alertmanager.alertmanager-client.grpc-compression`        | `query_scheduler.grpc_client_config.grpc_compression`      |
 | `-ingester.client.grpc-compression`                         | `ruler.query_frontend.grpc_client_config.grpc_compression` |
+
+## Heavy multi-tenancy
+
+For each tenant, Mimir opens and maintains a TSDB in memory. If you have a significant number of tenants, the memory overhead might become prohibitive.
+To reduce the associated overhead, consider the following:
+
+- Reduce `-blocks-storage.tsdb.head-chunks-write-buffer-size-bytes`, default `4MB`. For example, try `1MB` or `128KB`.
+- Reduce `-blocks-storage.tsdb.stripe-size`, default `16384`. For example, try `256`, or even `64`.
+- Configure [shuffle sharding](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/)
+
+## Periodic latency spikes when cutting blocks
+
+Depending on the workload, you might witness latency spikes when Mimir cuts blocks.
+To reduce the impact of this behavior, consider the following:
+
+- Upgrade to `2.15+`. Refer to <https://github.com/grafana/mimir/commit/03f2f06e1247e997a0246d72f5c2c1fd9bd386df>.
+- Reduce `-blocks-storage.tsdb.block-ranges-period`, default `2h`. For example. try `1h`.

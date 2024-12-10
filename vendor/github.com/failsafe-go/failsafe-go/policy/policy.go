@@ -29,6 +29,16 @@ func (p *BaseFailurePolicy[R]) HandleErrors(errs ...error) {
 	p.errorsChecked = true
 }
 
+func (p *BaseFailurePolicy[R]) HandleErrorTypes(errs ...any) {
+	for _, target := range errs {
+		t := target
+		p.failureConditions = append(p.failureConditions, func(r R, actualErr error) bool {
+			return util.ErrorTypesMatch(actualErr, t)
+		})
+	}
+	p.errorsChecked = true
+}
+
 func (p *BaseFailurePolicy[R]) HandleResult(result R) {
 	p.failureConditions = append(p.failureConditions, func(r R, err error) bool {
 		return reflect.DeepEqual(r, result)
@@ -80,4 +90,48 @@ func (d *BaseDelayablePolicy[R]) ComputeDelay(exec failsafe.ExecutionAttempt[R])
 		return d.DelayFunc(exec)
 	}
 	return -1
+}
+
+// BaseAbortablePolicy provides a base for implementing policies that can be aborted or canceled.
+type BaseAbortablePolicy[R any] struct {
+	// Conditions that determine whether the policy should be aborted
+	abortConditions []func(result R, err error) bool
+}
+
+func (c *BaseAbortablePolicy[R]) AbortOnResult(result R) {
+	c.abortConditions = append(c.abortConditions, func(r R, err error) bool {
+		return reflect.DeepEqual(r, result)
+	})
+}
+
+func (c *BaseAbortablePolicy[R]) AbortOnErrors(errs ...error) {
+	for _, target := range errs {
+		t := target
+		c.abortConditions = append(c.abortConditions, func(result R, actualErr error) bool {
+			return errors.Is(actualErr, t)
+		})
+	}
+}
+
+func (c *BaseAbortablePolicy[R]) AbortOnErrorTypes(errs ...any) {
+	for _, target := range errs {
+		t := target
+		c.abortConditions = append(c.abortConditions, func(result R, actualErr error) bool {
+			return util.ErrorTypesMatch(actualErr, t)
+		})
+	}
+}
+
+func (c *BaseAbortablePolicy[R]) AbortIf(predicate func(R, error) bool) {
+	c.abortConditions = append(c.abortConditions, func(result R, err error) bool {
+		return predicate(result, err)
+	})
+}
+
+func (c *BaseAbortablePolicy[R]) IsConfigured() bool {
+	return len(c.abortConditions) > 0
+}
+
+func (c *BaseAbortablePolicy[R]) IsAbortable(result R, err error) bool {
+	return util.AppliesToAny(c.abortConditions, result, err)
 }

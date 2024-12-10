@@ -22,7 +22,7 @@ func TestOverridesExporter_emptyRing(t *testing.T) {
 
 	// Create an empty ring.
 	ctx := context.Background()
-	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(interface{}) (out interface{}, retry bool, err error) {
 		return ring.NewDesc(), true, nil
 	}))
 
@@ -66,10 +66,10 @@ func TestOverridesExporterRing_scaleDown(t *testing.T) {
 
 	// Register instances in the ring (manually, to be able to assign tokens).
 	ctx := context.Background()
-	require.NoError(t, ringStore.CAS(ctx, ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
+	require.NoError(t, ringStore.CAS(ctx, ringKey, func(interface{}) (out interface{}, retry bool, err error) {
 		desc := ring.NewDesc()
-		desc.AddIngester(l1.GetInstanceID(), l1.GetInstanceAddr(), "", []uint32{leaderToken + 1}, ring.ACTIVE, time.Now())
-		desc.AddIngester(l2.GetInstanceID(), l2.GetInstanceAddr(), "", []uint32{leaderToken + 2}, ring.ACTIVE, time.Now())
+		desc.AddIngester(l1.GetInstanceID(), l1.GetInstanceAddr(), "", []uint32{leaderToken + 1}, ring.ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester(l2.GetInstanceID(), l2.GetInstanceAddr(), "", []uint32{leaderToken + 2}, ring.ACTIVE, time.Now(), false, time.Time{})
 		return desc, true, nil
 	}))
 

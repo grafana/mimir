@@ -6,10 +6,9 @@
 package alertmanager
 
 import (
+	"github.com/go-kit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // This struct aggregates metrics exported by Alertmanager
@@ -81,9 +80,9 @@ type alertmanagerMetrics struct {
 	alertsLimiterAlertsSize  *prometheus.Desc
 }
 
-func newAlertmanagerMetrics() *alertmanagerMetrics {
+func newAlertmanagerMetrics(logger log.Logger) *alertmanagerMetrics {
 	return &alertmanagerMetrics{
-		regs: dskit_metrics.NewTenantRegistries(util_log.Logger),
+		regs: dskit_metrics.NewTenantRegistries(logger),
 		alertsReceived: prometheus.NewDesc(
 			"cortex_alertmanager_alerts_received_total",
 			"The total number of received alerts.",
@@ -338,8 +337,8 @@ func (m *alertmanagerMetrics) Describe(out chan<- *prometheus.Desc) {
 func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data := m.regs.BuildMetricFamiliesPerTenant()
 
-	data.SendSumOfCountersPerTenant(out, m.alertsReceived, "alertmanager_alerts_received_total")
-	data.SendSumOfCountersPerTenant(out, m.alertsInvalid, "alertmanager_alerts_invalid_total")
+	data.SendSumOfCountersPerTenant(out, m.alertsReceived, "alertmanager_alerts_received_total", dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.alertsInvalid, "alertmanager_alerts_invalid_total", dskit_metrics.WithSkipZeroValueMetrics)
 
 	data.SendSumOfCountersPerTenant(out, m.numNotifications, "alertmanager_notifications_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfCountersPerTenant(out, m.numFailedNotifications, "alertmanager_notifications_failed_total", dskit_metrics.WithLabels("integration", "reason"), dskit_metrics.WithSkipZeroValueMetrics)
@@ -347,7 +346,7 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCountersPerTenant(out, m.numNotificationRequestsFailedTotal, "alertmanager_notification_requests_failed_total", dskit_metrics.WithLabels("integration"), dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfCountersPerTenant(out, m.numNotificationSuppressedTotal, "alertmanager_notifications_suppressed_total", dskit_metrics.WithLabels("reason"), dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfHistograms(out, m.notificationLatencySeconds, "alertmanager_notification_latency_seconds")
-	data.SendSumOfGaugesPerTenantWithLabels(out, m.markerAlerts, "alertmanager_alerts", "state")
+	data.SendSumOfGaugesPerTenant(out, m.markerAlerts, "alertmanager_alerts", dskit_metrics.WithLabels("state"), dskit_metrics.WithSkipZeroValueMetrics)
 
 	data.SendSumOfSummaries(out, m.nflogGCDuration, "alertmanager_nflog_gc_duration_seconds")
 	data.SendSumOfSummaries(out, m.nflogSnapshotDuration, "alertmanager_nflog_snapshot_duration_seconds")
@@ -368,14 +367,14 @@ func (m *alertmanagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, m.silencesQueryErrorsTotal, "alertmanager_silences_query_errors_total")
 	data.SendSumOfHistograms(out, m.silencesQueryDuration, "alertmanager_silences_query_duration_seconds")
 	data.SendSumOfCounters(out, m.silencesPropagatedMessagesTotal, "alertmanager_silences_gossip_messages_propagated_total")
-	data.SendSumOfGaugesPerTenantWithLabels(out, m.silences, "alertmanager_silences", "state")
+	data.SendSumOfGaugesPerTenant(out, m.silences, "alertmanager_silences", dskit_metrics.WithLabels("state"), dskit_metrics.WithSkipZeroValueMetrics)
 
 	data.SendMaxOfGaugesPerTenant(out, m.configHashValue, "alertmanager_config_hash")
 
-	data.SendSumOfCountersPerTenant(out, m.partialMerges, "alertmanager_partial_state_merges_total")
-	data.SendSumOfCountersPerTenant(out, m.partialMergesFailed, "alertmanager_partial_state_merges_failed_total")
-	data.SendSumOfCountersPerTenant(out, m.replicationTotal, "alertmanager_state_replication_total")
-	data.SendSumOfCountersPerTenant(out, m.replicationFailed, "alertmanager_state_replication_failed_total")
+	data.SendSumOfCountersPerTenant(out, m.partialMerges, "alertmanager_partial_state_merges_total", dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.partialMergesFailed, "alertmanager_partial_state_merges_failed_total", dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.replicationTotal, "alertmanager_state_replication_total", dskit_metrics.WithSkipZeroValueMetrics)
+	data.SendSumOfCountersPerTenant(out, m.replicationFailed, "alertmanager_state_replication_failed_total", dskit_metrics.WithSkipZeroValueMetrics)
 	data.SendSumOfCounters(out, m.fetchReplicaStateTotal, "alertmanager_state_fetch_replica_state_total")
 	data.SendSumOfCounters(out, m.fetchReplicaStateFailed, "alertmanager_state_fetch_replica_state_failed_total")
 	data.SendSumOfCounters(out, m.initialSyncTotal, "alertmanager_state_initial_sync_total")

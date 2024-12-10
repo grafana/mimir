@@ -12,28 +12,73 @@ import (
 )
 
 func TestCreateFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "test")
-	wantData := "test1"
-	if err := CreateFile(path, strings.NewReader(wantData)); err != nil {
-		t.Errorf("CreateFile() error = %v, wantErr %v", err, false)
-	}
-	data, err := os.ReadFile(path)
-	require.NoError(t, err)
+	path := filepath.Join(t.TempDir(), "TestCreateFile")
+	require.NoError(t, CreateFile(path, strings.NewReader("test")))
 
-	require.Equal(t, wantData, string(data))
+	// Ensure the temporary file created by CreateFile has been removed.
+	_, err := os.Stat(tempPath(path))
+	require.ErrorIs(t, err, os.ErrNotExist)
+
+	// Ensure the directory entry for the file exists.
+	entries, err := os.ReadDir(filepath.Dir(path))
+	require.NoError(t, err)
+	requireContainsFile(t, entries, path)
+
+	// Check the contents of the file.
+	contents, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "test", string(contents))
 }
 
-func TestCreateFileAndMove(t *testing.T) {
-	tmpPath := filepath.Join(t.TempDir(), "test")
-	finalPath := filepath.Join(t.TempDir(), "testFinal")
-	wantData := "test1"
-	err := CreateFileAndMove(tmpPath, finalPath, strings.NewReader(wantData))
-	require.NoError(t, err)
-	_, err = os.ReadFile(tmpPath)
-	require.Error(t, err, "we expect error because the file in tmpPath should already been removed")
+func TestCreate(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "TestCreate")
+		f, err := Create(path)
+		require.NoError(t, err)
 
-	data, err := os.ReadFile(finalPath)
-	require.NoError(t, err)
+		_, err = f.WriteString("test")
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
 
-	require.Equal(t, wantData, string(data))
+		// Ensure the directory entry for the file exists.
+		entries, err := os.ReadDir(filepath.Dir(path))
+		require.NoError(t, err)
+		requireContainsFile(t, entries, path)
+
+		// Check the contents of the file.
+		contents, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, "test", string(contents))
+	})
+
+	t.Run("duplicate close", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "TestCreate")
+		f, err := Create(path)
+		require.NoError(t, err)
+
+		_, err = f.WriteString("test")
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+
+		// File has already been closed, our attempt to fsync and close again should fail.
+		require.ErrorIs(t, f.Close(), os.ErrClosed)
+
+		// Original file _should not_ have been modified by trying to close again.
+		contents, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, "test", string(contents))
+	})
+
+}
+
+func requireContainsFile(t *testing.T, entries []os.DirEntry, path string) {
+	name := filepath.Base(path)
+
+	for _, entry := range entries {
+		if entry.Name() == name {
+			return
+		}
+	}
+
+	t.Fatalf("expected to find %s in %+v", name, entries)
 }

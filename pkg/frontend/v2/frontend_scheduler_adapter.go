@@ -21,6 +21,7 @@ type frontendToSchedulerAdapter struct {
 	log    log.Logger
 	cfg    Config
 	limits Limits
+	codec  querymiddleware.Codec
 }
 
 func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
@@ -28,11 +29,9 @@ func (a *frontendToSchedulerAdapter) frontendToSchedulerEnqueueRequest(
 ) (*schedulerpb.FrontendToScheduler, error) {
 	var addlQueueDims []string
 	var err error
-	if a.cfg.AdditionalQueryQueueDimensionsEnabled {
-		addlQueueDims, err = a.extractAdditionalQueueDimensions(req.ctx, req.request, time.Now())
-		if err != nil {
-			return nil, err
-		}
+	addlQueueDims, err = a.extractAdditionalQueueDimensions(req.ctx, req.request, time.Now())
+	if err != nil {
+		return nil, err
 	}
 
 	return &schedulerpb.FrontendToScheduler{
@@ -66,25 +65,25 @@ func (a *frontendToSchedulerAdapter) extractAdditionalQueueDimensions(
 	}
 
 	switch {
-	case querymiddleware.IsRangeQuery(httpRequest.URL.Path):
-		start, end, _, err := querymiddleware.DecodeRangeQueryTimeParams(httpRequest)
+	case querymiddleware.IsRangeQuery(httpRequest.URL.Path), querymiddleware.IsInstantQuery(httpRequest.URL.Path):
+		decodedRequest, err := a.codec.DecodeMetricsQueryRequest(httpRequest.Context(), httpRequest)
 		if err != nil {
 			return nil, err
 		}
-		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, start, end, now), nil
-	case querymiddleware.IsInstantQuery(httpRequest.URL.Path):
-		time, err := querymiddleware.DecodeInstantQueryTimeParams(httpRequest, time.Now)
-		if err != nil {
-			return nil, err
-		}
-		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, time, time, now), nil
+		minT := decodedRequest.GetMinT()
+		maxT := decodedRequest.GetMaxT()
+
+		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, minT, maxT, now), nil
 	case querymiddleware.IsLabelsQuery(httpRequest.URL.Path):
-		start, end, err := querymiddleware.DecodeLabelsQueryTimeParams(httpRequest)
+		decodedRequest, err := a.codec.DecodeLabelsSeriesQueryRequest(httpRequest.Context(), httpRequest)
 		if err != nil {
 			return nil, err
 		}
-		return a.queryComponentQueueDimensionFromTimeParams(tenantIDs, start, end, now), nil
-	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path), querymiddleware.IsActiveSeriesQuery(httpRequest.URL.Path):
+
+		return a.queryComponentQueueDimensionFromTimeParams(
+			tenantIDs, decodedRequest.GetStart(), decodedRequest.GetEnd(), now,
+		), nil
+	case querymiddleware.IsCardinalityQuery(httpRequest.URL.Path), querymiddleware.IsActiveSeriesQuery(httpRequest.URL.Path), querymiddleware.IsActiveNativeHistogramMetricsQuery(httpRequest.URL.Path):
 		// cardinality only hits ingesters
 		return []string{ShouldQueryIngestersQueueDimension}, nil
 	default:

@@ -26,7 +26,7 @@ type AlertStore interface {
 	// GetAlertConfigs loads and returns the alertmanager configuration for given users.
 	// If any of the provided users has no configuration, then this function does not return an
 	// error but the returned configs will not include the missing users.
-	GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDesc, error)
+	GetAlertConfigs(ctx context.Context, userIDs []string) (map[string]alertspb.AlertConfigDescs, error)
 
 	// GetAlertConfig loads and returns the alertmanager configuration for the given user.
 	GetAlertConfig(ctx context.Context, user string) (alertspb.AlertConfigDesc, error)
@@ -73,7 +73,7 @@ type AlertStore interface {
 }
 
 // NewAlertStore returns a alertmanager store backend client based on the provided cfg.
-func NewAlertStore(ctx context.Context, cfg Config, cfgProvider bucket.TenantConfigProvider, logger log.Logger, reg prometheus.Registerer) (AlertStore, error) {
+func NewAlertStore(ctx context.Context, cfg Config, cfgProvider bucket.TenantConfigProvider, bucketConfig bucketclient.BucketAlertStoreConfig, logger log.Logger, reg prometheus.Registerer) (AlertStore, error) {
 	if cfg.Backend == local.Name {
 		level.Warn(logger).Log("msg", "-alertmanager-storage.backend=local is not suitable for persisting alertmanager state between replicas (silences, notifications); you should switch to an external object store for production use")
 		return local.NewStore(cfg.Local)
@@ -88,5 +88,5 @@ func NewAlertStore(ctx context.Context, cfg Config, cfgProvider bucket.TenantCon
 		return nil, err
 	}
 
-	return bucketclient.NewBucketAlertStore(bucketClient, cfgProvider, logger), nil
+	return bucketclient.NewBucketAlertStore(bucketConfig, bucketClient, cfgProvider, logger), nil
 }

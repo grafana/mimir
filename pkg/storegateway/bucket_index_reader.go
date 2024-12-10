@@ -59,8 +59,8 @@ func newBucketIndexReader(block *bucketBlock, postingsStrategy postingsSelection
 		block:            block,
 		postingsStrategy: postingsStrategy,
 		dec: &index.Decoder{
-			LookupSymbol: func(_ context.Context, o uint32) (string, error) {
-				return block.indexHeaderReader.LookupSymbol(o)
+			LookupSymbol: func(ctx context.Context, o uint32) (string, error) {
+				return block.indexHeaderReader.LookupSymbol(ctx, o)
 			},
 		},
 		indexHeaderReader: block.indexHeaderReader,
@@ -189,7 +189,7 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, use
 
 // expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
 func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher, stats *safeQueryStats) (returnRefs []storage.SeriesRef, pendingMatchers []*labels.Matcher, returnErr error) {
-	postingGroups, err := toPostingGroups(ms, r.block.indexHeaderReader)
+	postingGroups, err := toPostingGroups(ctx, ms, r.block.indexHeaderReader)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "toPostingGroups")
 	}
@@ -236,7 +236,7 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 
 	// As of version two all series entries are 16 byte padded. All references
 	// we get have to account for that to get the correct offset.
-	version, err := r.block.indexHeaderReader.IndexVersion()
+	version, err := r.block.indexHeaderReader.IndexVersion(ctx)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "get index version")
 	}
@@ -314,7 +314,7 @@ var allPostingsKey = func() labels.Label {
 
 // toPostingGroups returns a set of labels for which to look up postings lists. It guarantees that
 // each postingGroup's keys exist in the index.
-func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, error) {
+func toPostingGroups(ctx context.Context, ms []*labels.Matcher, indexhdr indexheader.Reader) ([]postingGroup, error) {
 	var (
 		rawPostingGroups = make([]rawPostingGroup, 0, len(ms))
 		allRequested     = false
@@ -354,7 +354,7 @@ func toPostingGroups(ms []*labels.Matcher, indexhdr indexheader.Reader) ([]posti
 	// Based on the previous sorting, we start with the ones that have a known set of values because it's less expensive to check them in
 	// the index header.
 	for _, rawGroup := range rawPostingGroups {
-		pg, err := rawGroup.toPostingGroup(indexhdr)
+		pg, err := rawGroup.toPostingGroup(ctx, indexhdr)
 		if err != nil {
 			return nil, errors.Wrap(err, "filtering posting group")
 		}
@@ -400,7 +400,7 @@ func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Lab
 
 	// As of version two all series entries are 16 byte padded. All references
 	// we get have to account for that to get the correct offset.
-	version, err := r.block.indexHeaderReader.IndexVersion()
+	version, err := r.block.indexHeaderReader.IndexVersion(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "get index version")
 	}
@@ -460,7 +460,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		}
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
-		ptr, err := r.block.indexHeaderReader.PostingsOffset(key.Name, key.Value)
+		ptr, err := r.block.indexHeaderReader.PostingsOffset(ctx, key.Name, key.Value)
 		if errors.Is(err, indexheader.NotFoundRangeErr) {
 			// This block does not have any posting for given key.
 			output[ix] = index.EmptyPostings()
@@ -487,6 +487,9 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	parts := r.block.partitioners.postings.Partition(len(ptrs), func(i int) (start, end uint64) {
 		return uint64(ptrs[i].ptr.Start), uint64(ptrs[i].ptr.End)
 	})
+
+	// Use a different TTL for postings based on the duration of the block.
+	postingsTTL := indexcache.BlockTTL(r.block.meta)
 
 	g, ctx := errgroup.WithContext(ctx)
 	for _, part := range parts {
@@ -534,7 +537,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				compressionTime = time.Since(s)
 				if err == nil {
 					compressedSize = len(dataToCache)
-					r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache)
+					r.block.indexCache.StorePostings(r.block.userID, r.block.meta.ULID, keys[p.keyID], dataToCache, postingsTTL)
 				} else {
 					compressionErrors = 1
 					level.Warn(r.block.logger).Log(

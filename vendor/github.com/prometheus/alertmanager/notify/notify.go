@@ -27,6 +27,9 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/alertmanager/featurecontrol"
 	"github.com/prometheus/alertmanager/inhibit"
@@ -36,6 +39,8 @@ import (
 	"github.com/prometheus/alertmanager/timeinterval"
 	"github.com/prometheus/alertmanager/types"
 )
+
+var tracer = otel.Tracer("github.com/prometheus/alertmanager/notify")
 
 // ResolvedSender returns true if resolved notifications should be sent.
 type ResolvedSender interface {
@@ -70,8 +75,8 @@ type Integration struct {
 }
 
 // NewIntegration returns a new integration.
-func NewIntegration(notifier Notifier, rs ResolvedSender, name string, idx int, receiverName string) Integration {
-	return Integration{
+func NewIntegration(notifier Notifier, rs ResolvedSender, name string, idx int, receiverName string) *Integration {
+	return &Integration{
 		notifier:     notifier,
 		rs:           rs,
 		name:         name,
@@ -82,6 +87,14 @@ func NewIntegration(notifier Notifier, rs ResolvedSender, name string, idx int, 
 
 // Notify implements the Notifier interface.
 func (i *Integration) Notify(ctx context.Context, alerts ...*types.Alert) (bool, error) {
+	ctx, span := tracer.Start(ctx, "notify.Integration.Notify",
+		trace.WithAttributes(
+			attribute.String("integration", i.name),
+			attribute.Int("alerts", len(alerts)),
+		),
+	)
+	defer span.End()
+
 	return i.notifier.Notify(ctx, alerts...)
 }
 
@@ -291,10 +304,13 @@ func NewMetrics(r prometheus.Registerer, ff featurecontrol.Flagger) *Metrics {
 			Help:      "The total number of notifications suppressed for being silenced, inhibited, outside of active time intervals or within muted time intervals.",
 		}, []string{"reason"}),
 		notificationLatencySeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Namespace: "alertmanager",
-			Name:      "notification_latency_seconds",
-			Help:      "The latency of notifications in seconds.",
-			Buckets:   []float64{1, 5, 10, 15, 20},
+			Namespace:                       "alertmanager",
+			Name:                            "notification_latency_seconds",
+			Help:                            "The latency of notifications in seconds.",
+			Buckets:                         []float64{1, 5, 10, 15, 20},
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}, labels),
 		ff: ff,
 	}
@@ -308,7 +324,7 @@ func NewMetrics(r prometheus.Registerer, ff featurecontrol.Flagger) *Metrics {
 	return m
 }
 
-func (m *Metrics) InitializeFor(receiver map[string][]Integration) {
+func (m *Metrics) InitializeFor(receivers map[string][]*Integration) {
 	if m.ff.EnableReceiverNamesInMetrics() {
 
 		// Reset the vectors to take into account receiver names changing after hot reloads.
@@ -318,9 +334,8 @@ func (m *Metrics) InitializeFor(receiver map[string][]Integration) {
 		m.notificationLatencySeconds.Reset()
 		m.numTotalFailedNotifications.Reset()
 
-		for name, integrations := range receiver {
+		for name, integrations := range receivers {
 			for _, integration := range integrations {
-
 				m.numNotifications.WithLabelValues(integration.Name(), name)
 				m.numNotificationRequestsTotal.WithLabelValues(integration.Name(), name)
 				m.numNotificationRequestsFailedTotal.WithLabelValues(integration.Name(), name)
@@ -376,7 +391,7 @@ func NewPipelineBuilder(r prometheus.Registerer, ff featurecontrol.Flagger) *Pip
 
 // New returns a map of receivers to Stages.
 func (pb *PipelineBuilder) New(
-	receivers map[string][]Integration,
+	receivers map[string][]*Integration,
 	wait func() time.Duration,
 	inhibitor *inhibit.Inhibitor,
 	silencer *silence.Silencer,
@@ -405,7 +420,7 @@ func (pb *PipelineBuilder) New(
 // createReceiverStage creates a pipeline of stages for a receiver.
 func createReceiverStage(
 	name string,
-	integrations []Integration,
+	integrations []*Integration,
 	wait func() time.Duration,
 	notificationLog NotificationLog,
 	metrics *Metrics,
@@ -419,7 +434,7 @@ func createReceiverStage(
 		}
 		var s MultiStage
 		s = append(s, NewWaitStage(wait))
-		s = append(s, NewDedupStage(&integrations[i], notificationLog, recv))
+		s = append(s, NewDedupStage(integrations[i], notificationLog, recv))
 		s = append(s, NewRetryStage(integrations[i], name, metrics))
 		s = append(s, NewSetNotifiesStage(notificationLog, recv))
 
@@ -466,7 +481,7 @@ func (ms MultiStage) Exec(ctx context.Context, l log.Logger, alerts ...*types.Al
 	return ctx, alerts, nil
 }
 
-// FanoutStage executes its stages concurrently
+// FanoutStage executes its stages concurrently.
 type FanoutStage []Stage
 
 // Exec attempts to execute all stages concurrently and discards the results.
@@ -613,7 +628,7 @@ func utcNow() time.Time {
 	return time.Now().UTC()
 }
 
-// Wrap a slice in a struct so we can store a pointer in sync.Pool
+// Wrap a slice in a struct so we can store a pointer in sync.Pool.
 type hashBuffer struct {
 	buf []byte
 }
@@ -733,14 +748,14 @@ func (n *DedupStage) Exec(ctx context.Context, _ log.Logger, alerts ...*types.Al
 // RetryStage notifies via passed integration with exponential backoff until it
 // succeeds. It aborts if the context is canceled or timed out.
 type RetryStage struct {
-	integration Integration
+	integration *Integration
 	groupName   string
 	metrics     *Metrics
 	labelValues []string
 }
 
 // NewRetryStage returns a new instance of a RetryStage.
-func NewRetryStage(i Integration, groupName string, metrics *Metrics) *RetryStage {
+func NewRetryStage(i *Integration, groupName string, metrics *Metrics) *RetryStage {
 	labelValues := []string{i.Name()}
 
 	if metrics.ff.EnableReceiverNamesInMetrics() {
@@ -834,9 +849,11 @@ func (r RetryStage) exec(ctx context.Context, l log.Logger, alerts ...*types.Ale
 		case <-tick.C:
 			now := time.Now()
 			retry, err := r.integration.Notify(ctx, sent...)
-			dur := time.Since(now)
-			r.metrics.notificationLatencySeconds.WithLabelValues(r.labelValues...).Observe(dur.Seconds())
+
+			duration := time.Since(now)
+			r.metrics.notificationLatencySeconds.WithLabelValues(r.labelValues...).Observe(duration.Seconds())
 			r.metrics.numNotificationRequestsTotal.WithLabelValues(r.labelValues...).Inc()
+
 			if err != nil {
 				r.metrics.numNotificationRequestsFailedTotal.WithLabelValues(r.labelValues...).Inc()
 				if !retry {
@@ -857,7 +874,7 @@ func (r RetryStage) exec(ctx context.Context, l log.Logger, alerts ...*types.Ale
 					lvl = level.Debug(log.With(l, "alerts", fmt.Sprintf("%v", alerts)))
 				}
 
-				lvl.Log("msg", "Notify success", "attempts", i, "duration", dur)
+				lvl.Log("msg", "Notify success", "attempts", i, "duration", duration)
 				return ctx, alerts, nil
 			}
 		case <-ctx.Done():

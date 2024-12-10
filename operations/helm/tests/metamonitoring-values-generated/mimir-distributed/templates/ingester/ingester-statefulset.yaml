@@ -25,7 +25,9 @@ spec:
     type: RollingUpdate
   serviceName: metamonitoring-values-mimir-ingester-headless
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -52,12 +54,6 @@ spec:
         runAsUser: 10001
         seccompProfile:
           type: RuntimeDefault
-      initContainers:
-        []
-      nodeSelector:
-        {}
-      affinity:
-        {}
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -67,9 +63,7 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: metamonitoring-values
             app.kubernetes.io/component: ingester
-      tolerations:
-        []
-      terminationGracePeriodSeconds: 240
+      terminationGracePeriodSeconds: 1200
       volumes:
         - name: config
           configMap:
@@ -128,6 +122,8 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
           env:
+            
+            - name: "GOMAXPROCS"
+              value: "4"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
-          envFrom:

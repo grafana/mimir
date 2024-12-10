@@ -1,0 +1,51 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "extends": [
+      "config:base"
+    ],
+    "baseBranches": ["main", "release-2.14", "release-2.13"],
+    "postUpdateOptions": [
+      "gomodTidy",
+      "gomodUpdateImportPaths"
+    ],
+    "schedule": ["before 9am on Monday"],
+    "packageRules": [
+      {
+        "matchBaseBranches": ["release-2.14", "release-2.13"],
+        "packagePatterns": ["*"],
+        "enabled": false
+      },
+      {
+        "matchPackageNames": [
+          "github.com/grafana/mimir-prometheus",
+          "github.com/grafana/memberlist",
+          "github.com/grafana/regexp",
+          "github.com/colega/go-yaml-yaml",
+          "github.com/grafana/goautoneg",
+          "github.com/grafana/opentracing-contrib-go-stdlib",
+          "github.com/charleskorn/go-grpc"
+        ],
+        "enabled": false
+      },
+      // Pin Go at the current version, since we want to upgrade it manually.
+      // Remember to keep this in sync when upgrading our Go version!
+      {
+        "matchDatasources": ["docker", "golang-version"],
+        "matchPackageNames": ["go", "golang"],
+        "allowedVersions": "<=1.22.5"
+      },
+      // Keep deps for the dashboard screenshotting tool up to date
+      {
+        "description": "Enable updating Node.js dependencies in operations/mimir-mixin-tools/screenshots",
+        "paths": ["operations/mimir-mixin-tools/screenshots"],
+        "managers": ["npm"],
+        "enabled": true
+      }
+    ],
+    "branchPrefix": "deps-update/",
+    "vulnerabilityAlerts": {
+      "enabled": true,
+      "labels": ["security-update"]
+    },
+    "osvVulnerabilityAlerts": true
+}

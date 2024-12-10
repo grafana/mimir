@@ -30,6 +30,11 @@ var (
 		cardinalityStrategy,
 		validation.MaxEstimatedChunksPerQueryMultiplierFlag,
 	)
+	maxEstimatedMemoryConsumptionPerQueryLimitMsgFormat = globalerror.MaxEstimatedMemoryConsumptionPerQuery.MessageWithStrategyAndPerTenantLimitConfig(
+		"the query exceeded the maximum allowed estimated amount of memory consumed by a single query (limit: %d bytes)",
+		cardinalityStrategy,
+		validation.MaxEstimatedMemoryConsumptionPerQueryFlag,
+	)
 )
 
 func limitError(format string, limit uint64) validation.LimitError {
@@ -50,4 +55,8 @@ func NewMaxChunksPerQueryLimitError(maxChunksPerQuery uint64) validation.LimitEr
 
 func NewMaxEstimatedChunksPerQueryLimitError(maxEstimatedChunksPerQuery uint64) validation.LimitError {
 	return limitError(maxEstimatedChunksPerQueryLimitMsgFormat, maxEstimatedChunksPerQuery)
+}
+
+func NewMaxEstimatedMemoryConsumptionPerQueryLimitError(maxEstimatedMemoryConsumptionPerQuery uint64) validation.LimitError {
+	return limitError(maxEstimatedMemoryConsumptionPerQueryLimitMsgFormat, maxEstimatedMemoryConsumptionPerQuery)
 }

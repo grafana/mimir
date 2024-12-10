@@ -10,49 +10,62 @@ import (
 	"net/http"
 
 	"github.com/go-kit/log/level"
+	"github.com/grafana/alerting/definition"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
-	errMarshallingState             = "error marshalling Grafana Alertmanager state"
-	errMarshallingStateJSON         = "error marshalling JSON Grafana Alertmanager state"
-	errMarshallingGrafanaConfigJSON = "error marshalling JSON Grafana Alertmanager config"
-	errReadingState                 = "unable to read the Grafana Alertmanager state"
-	errDeletingState                = "unable to delete the Grafana Alertmanager State"
-	errStoringState                 = "unable to store the Grafana Alertmanager state"
-	errReadingGrafanaConfig         = "unable to read the Grafana Alertmanager config"
-	errDeletingGrafanaConfig        = "unable to delete the Grafana Alertmanager config"
-	errStoringGrafanaConfig         = "unable to store the Grafana Alertmanager config"
-	errBase64DecodeState            = "unable to base64 decode Grafana Alertmanager state"
-	errUnmarshalProtoState          = "unable to unmarshal protobuf for Grafana Alertmanager state"
+	errMalformedGrafanaConfigInStore = "error unmarshalling Grafana configuration from storage"
+	errMarshallingState              = "error marshalling Grafana Alertmanager state"
+	errMarshallingStateJSON          = "error marshalling JSON Grafana Alertmanager state"
+	errMarshallingGrafanaConfigJSON  = "error marshalling JSON Grafana Alertmanager config"
+	errReadingState                  = "unable to read the Grafana Alertmanager state"
+	errDeletingState                 = "unable to delete the Grafana Alertmanager State"
+	errStoringState                  = "unable to store the Grafana Alertmanager state"
+	errReadingGrafanaConfig          = "unable to read the Grafana Alertmanager config"
+	errDeletingGrafanaConfig         = "unable to delete the Grafana Alertmanager config"
+	errStoringGrafanaConfig          = "unable to store the Grafana Alertmanager config"
+	errBase64DecodeState             = "unable to base64 decode Grafana Alertmanager state"
+	errUnmarshalProtoState           = "unable to unmarshal protobuf for Grafana Alertmanager state"
 
 	statusSuccess = "success"
 	statusError   = "error"
 )
 
+var (
+	maxGrafanaConfigSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaConfigSize.MessageWithPerTenantLimitConfig(
+		"Alertmanager configuration is too big, limit: %d bytes",
+		validation.AlertmanagerMaxGrafanaConfigSizeFlag,
+	)
+	maxGrafanaStateSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaStateSize.MessageWithPerTenantLimitConfig(
+		"Alertmanager state is too big, limit: %d bytes",
+		validation.AlertmanagerMaxGrafanaStateSizeFlag,
+	)
+)
+
+type GrafanaAlertmanagerConfig struct {
+	Templates          map[string]string                    `json:"template_files"`
+	AlertmanagerConfig definition.PostableApiAlertingConfig `json:"alertmanager_config"`
+}
 type UserGrafanaConfig struct {
-	ID                        int64  `json:"id"`
-	GrafanaAlertmanagerConfig string `json:"configuration"`
-	Hash                      string `json:"configuration_hash"`
-	CreatedAt                 int64  `json:"created"`
-	Default                   bool   `json:"default"`
+	GrafanaAlertmanagerConfig GrafanaAlertmanagerConfig `json:"configuration"`
+	Hash                      string                    `json:"configuration_hash"`
+	CreatedAt                 int64                     `json:"created"`
+	Default                   bool                      `json:"default"`
+	Promoted                  bool                      `json:"promoted"`
+	ExternalURL               string                    `json:"external_url"`
+	StaticHeaders             map[string]string         `json:"static_headers"`
 }
 
 func (gc *UserGrafanaConfig) Validate() error {
-	if gc.GrafanaAlertmanagerConfig == "" {
-		return errors.New("no Grafana Alertmanager config specified")
-	}
-
-	if gc.ID == 0 {
-		return errors.New("ID must be non-zero")
-	}
-
 	if gc.Hash == "" {
 		return errors.New("no hash specified")
 	}
@@ -61,6 +74,9 @@ func (gc *UserGrafanaConfig) Validate() error {
 		return errors.New("created must be non-zero")
 	}
 
+	if err := gc.GrafanaAlertmanagerConfig.AlertmanagerConfig.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -82,8 +98,13 @@ type UserGrafanaState struct {
 	State string `json:"state"`
 }
 
-func (gs *UserGrafanaState) UnmarshalJSON(data []byte) error {
-	type plain UserGrafanaState
+type PostableUserGrafanaState struct {
+	UserGrafanaState
+	Promoted bool `json:"promoted"`
+}
+
+func (gs *PostableUserGrafanaState) UnmarshalJSON(data []byte) error {
+	type plain PostableUserGrafanaState
 	err := json.Unmarshal(data, (*plain)(gs))
 	if err != nil {
 		return err
@@ -161,8 +182,27 @@ func (am *MultitenantAlertmanager) SetUserGrafanaState(w http.ResponseWriter, r 
 		return
 	}
 
-	payload, err := io.ReadAll(r.Body)
+	var input io.Reader
+	maxStateSize := am.limits.AlertmanagerMaxGrafanaStateSize(userID)
+	if maxStateSize > 0 {
+		input = http.MaxBytesReader(w, r.Body, int64(maxStateSize))
+	} else {
+		input = r.Body
+	}
+
+	payload, err := io.ReadAll(input)
 	if err != nil {
+		if maxBytesErr := (&http.MaxBytesError{}); errors.As(err, &maxBytesErr) {
+			msg := fmt.Sprintf(maxGrafanaStateSizeMsgFormat, maxStateSize)
+			level.Warn(logger).Log("msg", msg)
+			w.WriteHeader(http.StatusBadRequest)
+			util.WriteJSONResponse(w, errorResult{
+				Status: statusError,
+				Error:  msg,
+			})
+			return
+		}
+
 		level.Error(logger).Log("msg", errReadingState, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		util.WriteJSONResponse(w, errorResult{
@@ -172,7 +212,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaState(w http.ResponseWriter, r 
 		return
 	}
 
-	st := &UserGrafanaState{}
+	st := &PostableUserGrafanaState{}
 	err = json.Unmarshal(payload, st)
 	if err != nil {
 		level.Error(logger).Log("msg", errMarshallingStateJSON, "err", err.Error())
@@ -269,14 +309,24 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
+	var grafanaConfig GrafanaAlertmanagerConfig
+	if err := json.Unmarshal([]byte(cfg.RawConfig), &grafanaConfig); err != nil {
+		level.Error(logger).Log("msg", errMalformedGrafanaConfigInStore, "err", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: err.Error()})
+		return
+	}
+
 	util.WriteJSONResponse(w, successResult{
 		Status: statusSuccess,
 		Data: &UserGrafanaConfig{
-			ID:                        cfg.Id,
-			GrafanaAlertmanagerConfig: cfg.RawConfig,
+			GrafanaAlertmanagerConfig: grafanaConfig,
 			Hash:                      cfg.Hash,
 			CreatedAt:                 cfg.CreatedAtTimestamp,
 			Default:                   cfg.Default,
+			Promoted:                  cfg.Promoted,
+			ExternalURL:               cfg.ExternalUrl,
+			StaticHeaders:             cfg.StaticHeaders,
 		},
 	})
 }
@@ -291,8 +341,27 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	payload, err := io.ReadAll(r.Body)
+	var input io.Reader
+	maxConfigSize := am.limits.AlertmanagerMaxGrafanaConfigSize(userID)
+	if maxConfigSize > 0 {
+		input = http.MaxBytesReader(w, r.Body, int64(maxConfigSize))
+	} else {
+		input = r.Body
+	}
+
+	payload, err := io.ReadAll(input)
 	if err != nil {
+		if maxBytesErr := (&http.MaxBytesError{}); errors.As(err, &maxBytesErr) {
+			msg := fmt.Sprintf(maxGrafanaConfigSizeMsgFormat, maxConfigSize)
+			level.Warn(logger).Log("msg", msg)
+			w.WriteHeader(http.StatusBadRequest)
+			util.WriteJSONResponse(w, errorResult{
+				Status: statusError,
+				Error:  msg,
+			})
+			return
+		}
+
 		level.Error(logger).Log("msg", errReadingGrafanaConfig, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errReadingGrafanaConfig, err.Error())})
@@ -308,7 +377,15 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	cfgDesc := alertspb.ToGrafanaProto(cfg.GrafanaAlertmanagerConfig, userID, cfg.Hash, cfg.ID, cfg.CreatedAt, cfg.Default)
+	rawCfg, err := json.Marshal(cfg.GrafanaAlertmanagerConfig)
+	if err != nil {
+		level.Error(logger).Log("msg", errMarshallingGrafanaConfigJSON, "err", err.Error())
+		w.WriteHeader(http.StatusInternalServerError)
+		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errStoringGrafanaConfig, err.Error())})
+		return
+	}
+
+	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, cfg.StaticHeaders)
 	err = am.store.SetGrafanaAlertConfig(r.Context(), cfgDesc)
 	if err != nil {
 		level.Error(logger).Log("msg", errStoringGrafanaConfig, "err", err.Error())

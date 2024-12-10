@@ -6,6 +6,7 @@ package integration
 import (
 	"fmt"
 	"io"
+	"strconv"
 	"testing"
 	"time"
 
@@ -48,17 +49,12 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 
 	// Start Mimir in single binary mode, reading the config from file and overwriting
 	// the backend config to make it work with Minio.
-	enable := "false"
-	if enableSuffixes {
-		enable = "true"
-	}
 	flags := mergeFlags(
 		DefaultSingleBinaryFlags(),
 		BlocksStorageFlags(),
 		BlocksStorageS3Flags(),
 		map[string]string{
-			"-distributor.enable-otlp-metadata-storage": "true",
-			"-distributor.otel-metric-suffixes-enabled": enable,
+			"-distributor.otel-metric-suffixes-enabled": strconv.FormatBool(enableSuffixes),
 		},
 	)
 
@@ -105,7 +101,7 @@ func testOTLPIngestion(t *testing.T, enableSuffixes bool) {
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := c.LabelNames(v1.MinTime, v1.MaxTime)
+	labelNames, err := c.LabelNames(v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 

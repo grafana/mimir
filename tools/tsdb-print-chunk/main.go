@@ -14,6 +14,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var logger = log.NewLogfmtLogger(os.Stderr)
@@ -30,7 +32,7 @@ func main() {
 }
 
 func printChunks(blockDir string, chunkRefs []string) {
-	b, err := tsdb.OpenBlock(logger, blockDir, nil)
+	b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), blockDir, nil, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to open TSDB block", blockDir, "due to error:", err)
 		os.Exit(1)
@@ -74,10 +76,10 @@ func printChunks(blockDir string, chunkRefs []string) {
 				fmt.Printf("%g\t%d (%s)\n", v, ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
 			case chunkenc.ValHistogram:
 				ts, h = it.AtHistogram(h)
-				fmt.Printf("%s\t%d (%s)\n", h.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+				fmt.Printf("%s\t%d (%s) H %s\n", h.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano), counterResetHintString(h.CounterResetHint))
 			case chunkenc.ValFloatHistogram:
 				ts, fh = it.AtFloatHistogram(fh)
-				fmt.Printf("%s\t%d (%s)\n", fh.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano))
+				fmt.Printf("%s\t%d (%s) FH %s\n", fh.String(), ts, timestamp.Time(ts).UTC().Format(time.RFC3339Nano), counterResetHintString(fh.CounterResetHint))
 			default:
 				fmt.Printf("skipping unsupported value type %v\n", valType)
 			}
@@ -85,5 +87,20 @@ func printChunks(blockDir string, chunkRefs []string) {
 		if e := it.Err(); e != nil {
 			fmt.Fprintln(os.Stderr, "Failed to iterate chunk", val, "due to error:", err)
 		}
+	}
+}
+
+func counterResetHintString(crh histogram.CounterResetHint) string {
+	switch crh {
+	case histogram.UnknownCounterReset:
+		return "UnknownCounterReset"
+	case histogram.CounterReset:
+		return "CounterReset"
+	case histogram.NotCounterReset:
+		return "NotCounterReset"
+	case histogram.GaugeType:
+		return "GaugeType"
+	default:
+		return "unrecognized counter reset hint"
 	}
 }

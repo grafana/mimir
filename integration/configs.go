@@ -88,14 +88,6 @@ receivers:
     labels: {}
     annotations: {}
 `
-
-	mimirRulerEvalStaleNanConfigYaml = `groups:
-- name: rule
-  interval: 1s
-  rules:
-  - record: stale_nan_eval
-    expr: a_sometimes_stale_nan_series * 2
-`
 )
 
 var (
@@ -135,6 +127,12 @@ var (
 			"-alertmanager-storage.s3.bucket-name":       alertsBucketName,
 			"-alertmanager-storage.s3.endpoint":          fmt.Sprintf("%s-minio-9000:9000", networkName),
 			"-alertmanager-storage.s3.insecure":          "true",
+		}
+	}
+
+	AlertmanagerGrafanaCompatibilityFlags = func() map[string]string {
+		return map[string]string{
+			"-alertmanager.grafana-alertmanager-compatibility-enabled": "true",
 		}
 	}
 
@@ -196,7 +194,7 @@ var (
 			"-querier.frontend-client.backoff-min-period": "100ms",
 			"-querier.frontend-client.backoff-max-period": "100ms",
 			"-querier.frontend-client.backoff-retries":    "1",
-			"-querier.max-concurrent":                     "1",
+			"-querier.max-concurrent":                     "4",
 			// Distributor.
 			"-distributor.ring.store": "memberlist",
 			// Ingester.
@@ -251,6 +249,12 @@ blocks_storage:
 			// Do not wait before switching an INACTIVE partition to ACTIVE.
 			"-ingester.partition-ring.min-partition-owners-count":    "0",
 			"-ingester.partition-ring.min-partition-owners-duration": "0s",
+
+			// Enable ingestion and fetch concurrency
+			"-ingest-storage.kafka.ongoing-fetch-concurrency":            "12",
+			"-ingest-storage.kafka.startup-fetch-concurrency":            "12",
+			"-ingest-storage.kafka.ingestion-concurrency-max":            "8",
+			"-ingest-storage.kafka.auto-create-topic-default-partitions": "10",
 		}
 	}
 )

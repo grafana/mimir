@@ -31,6 +31,14 @@ import (
 )
 
 func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
+	for _, useZeroAllocationDecoder := range []bool{false, true} {
+		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
+			runTestShardActiveSeriesMiddlewareRoundTrip(t, useZeroAllocationDecoder)
+		})
+	}
+}
+
+func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocationDecoder bool) {
 	const tenantShardCount = 4
 	const tenantMaxShardCount = 128
 
@@ -144,6 +152,9 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 
 			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
 				assert.Contains(t, err.Error(), errShardCountTooLow.Error())
+				resp, ok := apierror.HTTPResponseFromError(err)
+				require.True(t, ok)
+				assert.Equal(t, int(resp.Code), http.StatusRequestEntityTooLarge)
 				return false
 			},
 		},
@@ -311,6 +322,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 			// Run the request through the middleware.
 			s := newShardActiveSeriesMiddleware(
 				upstream,
+				useZeroAllocationDecoder,
 				mockLimits{maxShardedQueries: tenantMaxShardCount, totalShards: tenantShardCount},
 				log.NewNopLogger(),
 			)
@@ -355,6 +367,14 @@ func Test_shardActiveSeriesMiddleware_RoundTrip(t *testing.T) {
 }
 
 func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
+	for _, useZeroAllocationDecoder := range []bool{false, true} {
+		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
+			runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t, useZeroAllocationDecoder)
+		})
+	}
+}
+
+func runTestShardActiveSeriesMiddlewareRoundTripConcurrent(t *testing.T, useZeroAllocationDecoder bool) {
 	const shardCount = 4
 
 	upstream := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -372,6 +392,7 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
 
 	s := newShardActiveSeriesMiddleware(
 		upstream,
+		useZeroAllocationDecoder,
 		mockLimits{maxShardedQueries: shardCount, totalShards: shardCount},
 		log.NewNopLogger(),
 	)
@@ -423,7 +444,15 @@ func Test_shardActiveSeriesMiddleware_RoundTrip_concurrent(t *testing.T) {
 }
 
 func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testing.T) {
-	s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+	for _, useZeroAllocationDecoder := range []bool{false, true} {
+		t.Run(fmt.Sprintf("useZeroAllocationDecoder=%t", useZeroAllocationDecoder), func(t *testing.T) {
+			runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t, useZeroAllocationDecoder)
+		})
+	}
+}
+
+func runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t *testing.T, useZeroAllocationDecoder bool) {
+	s := newShardActiveSeriesMiddleware(nil, true, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(fmt.Errorf("test ran to completion"))
 
@@ -439,19 +468,25 @@ func Test_shardActiveSeriesMiddleware_mergeResponse_contextCancellation(t *testi
 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
 		{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))},
 	}
+	var resp *http.Response
 
-	resp := s.mergeResponses(ctx, responses, "")
-	defer func() {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
-	}()
+	if useZeroAllocationDecoder {
+		resp = s.mergeResponsesWithZeroAllocationDecoder(ctx, responses, "")
+	} else {
+		defer func() {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}()
+
+		resp = s.mergeResponses(ctx, responses, "")
+	}
 
 	var buf bytes.Buffer
 	_, err = io.CopyN(&buf, resp.Body, int64(os.Getpagesize()))
 	require.NoError(t, err)
 
 	cancelCause := "request canceled while streaming response"
-	cancel(fmt.Errorf(cancelCause))
+	cancel(errors.New(cancelCause))
 
 	_, err = io.Copy(&buf, resp.Body)
 	require.NoError(t, err)
@@ -512,13 +547,13 @@ func benchmarkActiveSeriesMiddlewareMergeResponses(b *testing.B, encoding string
 				benchResponses[i] = responses
 			}
 
-			s := newShardActiveSeriesMiddleware(nil, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
+			s := newShardActiveSeriesMiddleware(nil, true, mockLimits{}, log.NewNopLogger()).(*shardActiveSeriesMiddleware)
 
 			b.ResetTimer()
 			b.ReportAllocs()
 
 			for i := 0; i < b.N; i++ {
-				resp := s.mergeResponses(context.Background(), benchResponses[i], encoding)
+				resp := s.mergeResponsesWithZeroAllocationDecoder(context.Background(), benchResponses[i], encoding)
 
 				_, _ = io.Copy(io.Discard, resp.Body)
 				_ = resp.Body.Close()

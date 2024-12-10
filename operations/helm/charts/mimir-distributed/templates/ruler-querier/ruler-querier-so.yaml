@@ -1,0 +1,46 @@
+{{- if .Values.ruler.remoteEvaluationDedicatedQueryPath }}
+{{- if .Values.ruler_querier.kedaAutoscaling.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ruler-querier") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "ruler-querier") | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ruler_querier.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  advanced:
+    horizontalPodAutoscalerConfig:
+      {{- with .Values.ruler_querier.kedaAutoscaling.behavior }}
+      behavior:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  maxReplicaCount: {{ .Values.ruler_querier.kedaAutoscaling.maxReplicaCount }}
+  minReplicaCount: {{ .Values.ruler_querier.kedaAutoscaling.minReplicaCount }}
+  pollingInterval: {{ .Values.kedaAutoscaling.pollingInterval }}
+  scaleTargetRef:
+    name: {{ include "mimir.resourceName" (dict "ctx" . "component" "ruler-querier") }}
+    apiVersion: apps/v1
+    kind: Deployment
+  triggers:
+  - metadata:
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5"}[1m]))
+      serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }} 
+      threshold: {{ .Values.ruler_querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
+      {{- if .Values.kedaAutoscaling.customHeaders }}
+      customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
+      {{- end }}
+    name: cortex_querier_hpa_default
+    type: prometheus
+  - metadata:
+      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="ruler-querier",namespace="{{ .Release.Namespace }}"}[1m]))
+      serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }} 
+      threshold: {{ .Values.ruler_querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
+      {{- if .Values.kedaAutoscaling.customHeaders }}
+      customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
+      {{- end }}
+    name: cortex_querier_hpa_default_requests_duration
+    type: prometheus
+{{- end }}
+{{- end }}

@@ -78,8 +78,7 @@ type Client struct {
 	producer producer
 	consumer consumer
 
-	compressor   *compressor
-	decompressor *decompressor
+	compressor *compressor
 
 	coordinatorsMu sync.Mutex
 	coordinators   map[coordinatorKey]*coordinatorLoad
@@ -215,11 +214,11 @@ func (cl *Client) OptValue(opt any) any {
 //			InstanceID("foo"),
 //			ConsumeTopics("foo", "bar"),
 //		)
-//		idValues = cl.OptValues(InstanceID)          // idValues is []any{"foo", true}
-//		tValues  = cl.OptValues(SessionTimeout)      // tValues is []any{45 * time.Second}
-//		topics   = cl.OptValues(ConsumeTopics)       // topics is []any{[]string{"foo", "bar"}
+//		idValues = cl.OptValues(InstanceID)           // idValues is []any{"foo", true}
+//		tValues  = cl.OptValues(SessionTimeout)       // tValues is []any{45 * time.Second}
+//		topics   = cl.OptValues(ConsumeTopics)        // topics is []any{[]string{"foo", "bar"}
 //		bpoll    = cl.OptValues(BlockRebalanceOnPoll) // bpoll is []any{false}
-//		unknown  = cl.OptValues("Unknown")           // unknown is nil
+//		unknown  = cl.OptValues("Unknown")            // unknown is nil
 //	)
 func (cl *Client) OptValues(opt any) []any {
 	name := namefn(opt)
@@ -237,7 +236,7 @@ func (cl *Client) OptValues(opt any) []any {
 	case namefn(SoftwareNameAndVersion):
 		return []any{cfg.softwareName, cfg.softwareVersion}
 	case namefn(WithLogger):
-		if cfg.logger != nil {
+		if _, wrapped := cfg.logger.(*wrappedLogger); wrapped {
 			return []any{cfg.logger.(*wrappedLogger).inner}
 		}
 		return []any{nil}
@@ -482,8 +481,7 @@ func NewClient(opts ...Opt) (*Client, error) {
 		bufPool: newBufPool(),
 		prsPool: newPrsPool(),
 
-		compressor:   compressor,
-		decompressor: newDecompressor(),
+		compressor: compressor,
 
 		coordinators: make(map[coordinatorKey]*coordinatorLoad),
 
@@ -524,7 +522,7 @@ func NewClient(opts ...Opt) (*Client, error) {
 // Opts returns the options that were used to create this client. This can be
 // as a base to generate a new client, where you can add override options to
 // the end of the original input list. If you want to know a specific option
-// value, you can use ConfigValue or ConfigValues.
+// value, you can use OptValue or OptValues.
 func (cl *Client) Opts() []Opt {
 	return cl.opts
 }
@@ -2250,8 +2248,12 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 				}
 
 				resp, err := broker.waitResp(ctx, myIssue.req)
+				var errIsFromResp bool
 				if err == nil {
 					err = sharder.onResp(myUnderlyingReq, resp) // perform some potential cleanup, and potentially receive an error to retry
+					if ke := (*kerr.Error)(nil); errors.As(err, &ke) {
+						errIsFromResp = true
+					}
 				}
 
 				// If we failed to issue the request, we *maybe* will retry.
@@ -2265,7 +2267,7 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 				backoff := cl.cfg.retryBackoff(tries)
 				if err != nil &&
 					(reshardable && isPinned && errors.Is(err, errBrokerTooOld) && tries <= 3) ||
-					(retryTimeout == 0 || time.Now().Add(backoff).Sub(start) < retryTimeout) && cl.shouldRetry(tries, err) && cl.waitTries(ctx, backoff) {
+					(retryTimeout == 0 || time.Now().Add(backoff).Sub(start) <= retryTimeout) && cl.shouldRetry(tries, err) && cl.waitTries(ctx, backoff) {
 					// Non-reshardable re-requests just jump back to the
 					// top where the broker is loaded. This is the case on
 					// requests where the original request is split to
@@ -2279,6 +2281,14 @@ func (cl *Client) handleShardedReq(ctx context.Context, req kmsg.Request) ([]Res
 					return
 				}
 
+				// If we pulled an error out of the response body in an attempt
+				// to possibly retry, the request was NOT an error that we want
+				// to bubble as a shard error. The request was successful, we
+				// have a response. Before we add the shard, strip the error.
+				// The end user can parse the response ErrorCode.
+				if errIsFromResp {
+					err = nil
+				}
 				addShard(shard(broker, myUnderlyingReq, resp, err)) // the error was not retryable
 			}()
 		}
@@ -2389,7 +2399,7 @@ func (cl *Client) maybeDeleteMappedMetadata(unknownTopic bool, ts ...string) (sh
 // requests that are sharded and use metadata, and the one this benefits most
 // is ListOffsets. Likely, ListOffsets for the same topic will be issued back
 // to back, so not caching for so long is ok.
-func (cl *Client) cachedMappedMetadata(ts ...string) (map[string]mappedMetadataTopic, []string) {
+func (cl *Client) fetchCachedMappedMetadata(ts ...string) (map[string]mappedMetadataTopic, []string) {
 	cl.mappedMetaMu.Lock()
 	defer cl.mappedMetaMu.Unlock()
 	if cl.mappedMeta == nil {
@@ -2404,6 +2414,7 @@ func (cl *Client) cachedMappedMetadata(ts ...string) (map[string]mappedMetadataT
 			cached[t] = tcached
 		} else {
 			needed = append(needed, t)
+			delete(cl.mappedMeta, t)
 		}
 	}
 	return cached, needed
@@ -2416,7 +2427,7 @@ func (cl *Client) fetchMappedMetadata(ctx context.Context, topics []string, useC
 	var r map[string]mappedMetadataTopic
 	needed := topics
 	if useCache {
-		r, needed = cl.cachedMappedMetadata(topics...)
+		r, needed = cl.fetchCachedMappedMetadata(topics...)
 		if len(needed) == 0 {
 			return r, nil
 		}
@@ -2430,6 +2441,17 @@ func (cl *Client) fetchMappedMetadata(ctx context.Context, topics []string, useC
 		return nil, err
 	}
 
+	// Cache the mapped metadata, and also store each topic in the results.
+	cl.storeCachedMappedMetadata(meta, func(entry mappedMetadataTopic) {
+		r[*entry.t.Topic] = entry
+	})
+
+	return r, nil
+}
+
+// storeCachedMappedMetadata caches the fetched metadata in the Client, and calls the onEachTopic callback
+// function for each topic in the MetadataResponse.
+func (cl *Client) storeCachedMappedMetadata(meta *kmsg.MetadataResponse, onEachTopic func(_ mappedMetadataTopic)) {
 	cl.mappedMetaMu.Lock()
 	defer cl.mappedMetaMu.Unlock()
 	if cl.mappedMeta == nil {
@@ -2448,12 +2470,24 @@ func (cl *Client) fetchMappedMetadata(ctx context.Context, topics []string, useC
 			when: when,
 		}
 		cl.mappedMeta[*topic.Topic] = t
-		r[*topic.Topic] = t
 		for _, partition := range topic.Partitions {
 			t.ps[partition.Partition] = partition
 		}
+
+		if onEachTopic != nil {
+			onEachTopic(t)
+		}
 	}
-	return r, nil
+	if len(meta.Topics) != len(cl.mappedMeta) {
+		for topic, mapped := range cl.mappedMeta {
+			if mapped.when.Equal(when) {
+				continue
+			}
+			if time.Since(mapped.when) > cl.cfg.metadataMinAge {
+				delete(cl.mappedMeta, topic)
+			}
+		}
+	}
 }
 
 func unknownOrCode(exists bool, code int16) error {

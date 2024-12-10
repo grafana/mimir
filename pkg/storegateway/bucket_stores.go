@@ -18,6 +18,8 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/gate"
+	"github.com/grafana/dskit/multierror"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -26,12 +28,14 @@ import (
 	"github.com/thanos-io/objstore"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -41,13 +45,10 @@ import (
 // (This is now separate from DeprecatedTenantIDExternalLabel to signify different use case.)
 const GrpcContextMetadataTenantID = "__org_id__"
 
-// defaultBlockDurations is the expected duration of blocks the compactor generates. This is used for
-// metrics emitted by the store-gateway, so it's fine to hardcode it here instead of using the durations
-// that are actually configured to avoid coupling to compactor configuration.
-var defaultBlockDurations = []time.Duration{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
-
 // BucketStores is a multi-tenant wrapper of Thanos BucketStore.
 type BucketStores struct {
+	services.Service
+
 	logger             log.Logger
 	cfg                tsdb.BlocksStorageConfig
 	limits             *validation.Overrides
@@ -76,6 +77,9 @@ type BucketStores struct {
 	storesMu sync.RWMutex
 	stores   map[string]*BucketStore
 
+	// Tenants that are specifically enabled or disabled via configuration
+	allowedTenants *util.AllowedTenants
+
 	// Metrics.
 	syncTimes         prometheus.Histogram
 	syncLastSuccess   prometheus.Gauge
@@ -84,8 +88,8 @@ type BucketStores struct {
 	blocksLoaded      *prometheus.Desc
 }
 
-// NewBucketStores makes a new BucketStores.
-func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
+// NewBucketStores makes a new BucketStores. After starting the returned BucketStores
+func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowedTenants, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
 	chunksCacheClient, err := cache.CreateClient("chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
 		return nil, errors.Wrapf(err, "chunks-cache")
@@ -102,14 +106,16 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	queryGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "query"}, gateReg)
 	queryGate := gate.NewBlocking(cfg.BucketStore.MaxConcurrent)
 	queryGate = gate.NewInstrumented(queryGateReg, cfg.BucketStore.MaxConcurrent, queryGate)
+	queryGate = timeoutGate{delegate: queryGate, timeout: cfg.BucketStore.MaxConcurrentQueueTimeout}
 
 	// The number of concurrent index header loads from storegateway are limited.
 	lazyLoadingGateReg := prometheus.WrapRegistererWith(prometheus.Labels{"gate": "index_header"}, gateReg)
 	lazyLoadingGate := gate.NewNoop()
 	lazyLoadingMax := cfg.BucketStore.IndexHeader.LazyLoadingConcurrency
 	if lazyLoadingMax != 0 {
-		blockingGate := gate.NewBlocking(cfg.BucketStore.IndexHeader.LazyLoadingConcurrency)
-		lazyLoadingGate = gate.NewInstrumented(lazyLoadingGateReg, cfg.BucketStore.IndexHeader.LazyLoadingConcurrency, blockingGate)
+		lazyLoadingGate = gate.NewBlocking(cfg.BucketStore.IndexHeader.LazyLoadingConcurrency)
+		lazyLoadingGate = gate.NewInstrumented(lazyLoadingGateReg, cfg.BucketStore.IndexHeader.LazyLoadingConcurrency, lazyLoadingGate)
+		lazyLoadingGate = timeoutGate{delegate: lazyLoadingGate, timeout: cfg.BucketStore.IndexHeader.LazyLoadingConcurrencyQueueTimeout}
 	}
 
 	u := &BucketStores{
@@ -118,9 +124,10 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		limits:             limits,
 		bucket:             cachingBucket,
 		shardingStrategy:   shardingStrategy,
+		allowedTenants:     allowedTenants,
 		stores:             map[string]*BucketStore{},
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
-		metaFetcherMetrics: NewMetadataFetcherMetrics(),
+		metaFetcherMetrics: NewMetadataFetcherMetrics(logger),
 		queryGate:          queryGate,
 		lazyLoadingGate:    lazyLoadingGate,
 		partitioners:       newGapBasedPartitioners(cfg.BucketStore.PartitionerMaxGapBytes, reg),
@@ -165,19 +172,33 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		reg.MustRegister(u.metaFetcherMetrics)
 		reg.MustRegister(u)
 	}
+	u.Service = services.NewIdleService(u.initialSync, u.stopBucketStores)
 
 	return u, nil
 }
 
-// InitialSync does an initial synchronization of blocks for all users.
-func (u *BucketStores) InitialSync(ctx context.Context) error {
+func (u *BucketStores) stopBucketStores(error) error {
+	u.storesMu.Lock()
+	defer u.storesMu.Unlock()
+	errs := multierror.New()
+	for userID, bs := range u.stores {
+		err := services.StopAndAwaitTerminated(context.Background(), bs)
+		if err != nil {
+			errs.Add(fmt.Errorf("closing bucket store for user %s: %w", userID, err))
+		}
+	}
+	return errs.Err()
+}
+
+// initialSync does an initial synchronization of blocks for all users.
+func (u *BucketStores) initialSync(ctx context.Context) error {
 	level.Info(u.logger).Log("msg", "synchronizing TSDB blocks for all users")
 
-	if err := u.syncUsersBlocksWithRetries(ctx, func(ctx context.Context, s *BucketStore) error {
-		return s.InitialSync(ctx)
+	if err := u.syncUsersBlocksWithRetries(ctx, func(ctx context.Context, store *BucketStore) error {
+		return store.InitialSync(ctx)
 	}); err != nil {
 		level.Warn(u.logger).Log("msg", "failed to synchronize TSDB blocks", "err", err)
-		return err
+		return fmt.Errorf("initial synchronisation with bucket: %w", err)
 	}
 
 	level.Info(u.logger).Log("msg", "successfully synchronized TSDB blocks for all users")
@@ -186,8 +207,8 @@ func (u *BucketStores) InitialSync(ctx context.Context) error {
 
 // SyncBlocks synchronizes the stores state with the Bucket store for every user.
 func (u *BucketStores) SyncBlocks(ctx context.Context) error {
-	return u.syncUsersBlocksWithRetries(ctx, func(ctx context.Context, s *BucketStore) error {
-		return s.SyncBlocks(ctx)
+	return u.syncUsersBlocksWithRetries(ctx, func(ctx context.Context, store *BucketStore) error {
+		return store.SyncBlocks(ctx)
 	})
 }
 
@@ -196,7 +217,12 @@ func (u *BucketStores) syncUsersBlocksWithRetries(ctx context.Context, f func(co
 
 	var lastErr error
 	for retries.Ongoing() {
-		lastErr = u.syncUsersBlocks(ctx, f)
+		userIDs, err := u.ownedUsers(ctx)
+		if err != nil {
+			retries.Wait()
+			continue
+		}
+		lastErr = u.syncUsersBlocks(ctx, userIDs, f)
 		if lastErr == nil {
 			return nil
 		}
@@ -211,7 +237,22 @@ func (u *BucketStores) syncUsersBlocksWithRetries(ctx context.Context, f func(co
 	return lastErr
 }
 
-func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Context, *BucketStore) error) (returnErr error) {
+func (u *BucketStores) ownedUsers(ctx context.Context) ([]string, error) {
+	userIDs, err := u.scanUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	u.tenantsDiscovered.Set(float64(len(userIDs)))
+
+	ownedUserIDs, err := u.shardingStrategy.FilterUsers(ctx, userIDs)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to check tenants owned by this store-gateway instance")
+	}
+
+	return ownedUserIDs, nil
+}
+
+func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []string, f func(context.Context, *BucketStore) error) (returnErr error) {
 	defer func(start time.Time) {
 		u.syncTimes.Observe(time.Since(start).Seconds())
 		if returnErr == nil {
@@ -229,25 +270,6 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 	errs := tsdb_errors.NewMulti()
 	errsMx := sync.Mutex{}
 
-	// Scan users in the bucket. In case of error, it may return a subset of users. If we sync a subset of users
-	// during a periodic sync, we may end up unloading blocks for users that still belong to this store-gateway
-	// so we do prefer to not run the sync at all.
-	userIDs, err := u.scanUsers(ctx)
-	if err != nil {
-		return err
-	}
-
-	ownedUserIDs, err := u.shardingStrategy.FilterUsers(ctx, userIDs)
-	if err != nil {
-		return errors.Wrap(err, "unable to check tenants owned by this store-gateway instance")
-	}
-
-	includeUserIDs := make(map[string]struct{}, len(ownedUserIDs))
-	for _, userID := range ownedUserIDs {
-		includeUserIDs[userID] = struct{}{}
-	}
-
-	u.tenantsDiscovered.Set(float64(len(userIDs)))
 	u.tenantsSynced.Set(float64(len(includeUserIDs)))
 
 	// Create a pool of workers which will synchronize blocks. The pool size
@@ -270,8 +292,8 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 
 	// Lazily create a bucket store for each new user found
 	// and submit a sync job for each user.
-	for userID := range includeUserIDs {
-		bs, err := u.getOrCreateStore(userID)
+	for _, userID := range includeUserIDs {
+		bs, err := u.getOrCreateStore(ctx, userID)
 		if err != nil {
 			errsMx.Lock()
 			errs.Add(err)
@@ -360,10 +382,22 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 	return store.LabelValues(ctx, req)
 }
 
-// scanUsers in the bucket and return the list of found users. If an error occurs while
-// iterating the bucket, it may return both an error and a subset of the users in the bucket.
+// scanUsers in the bucket and return the list of found users, respecting any specifically
+// enabled or disabled users.
 func (u *BucketStores) scanUsers(ctx context.Context) ([]string, error) {
-	return tsdb.ListUsers(ctx, u.bucket)
+	users, err := tsdb.ListUsers(ctx, u.bucket)
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := make([]string, 0, len(users))
+	for _, user := range users {
+		if u.allowedTenants.IsAllowed(user) {
+			filtered = append(filtered, user)
+		}
+	}
+
+	return filtered, nil
 }
 
 func (u *BucketStores) getStore(userID string) *BucketStore {
@@ -406,7 +440,44 @@ func (u *BucketStores) syncDirForUser(userID string) string {
 	return filepath.Join(u.cfg.BucketStore.SyncDir, userID)
 }
 
-func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
+// timeoutGate returns errGateTimeout when the timeout is reached while still waiting for the delegate gate.
+// timeoutGate belongs better in dskit. However, at the time of writing dskit supports go 1.20.
+// go 1.20 doesn't have context.WithTimeoutCause yet,
+// so we choose to implement timeoutGate here instead of implementing context.WithTimeoutCause ourselves in dskit.
+// It also allows to keep the span logger in timeoutGate as opposed to in the bucket store.
+type timeoutGate struct {
+	delegate gate.Gate
+	timeout  time.Duration
+}
+
+var errGateTimeout = staticError{cause: mimirpb.INSTANCE_LIMIT, msg: "timeout waiting for concurrency gate"}
+
+func (t timeoutGate) Start(ctx context.Context) error {
+	if t.timeout == 0 {
+		return t.delegate.Start(ctx)
+	}
+
+	// Inject our own error so that we can differentiate between a timeout caused by this gate
+	// or a timeout in the original request timeout.
+	ctx, cancel := context.WithTimeoutCause(ctx, t.timeout, errGateTimeout)
+	defer cancel()
+
+	err := t.delegate.Start(ctx)
+	// Note that we only return an error for a timeout when the delegate has also returned an
+	// error. This ensures that when we get a slot in the delegate, our caller will call Done()
+	// and release the slot.
+	if err != nil && errors.Is(context.Cause(ctx), errGateTimeout) {
+		_ = spanlogger.FromContext(ctx, log.NewNopLogger()).Error(err)
+		err = errGateTimeout
+	}
+	return err
+}
+
+func (t timeoutGate) Done() {
+	t.delegate.Done()
+}
+
+func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*BucketStore, error) {
 	// Check if the store already exists.
 	bs := u.getStore(userID)
 	if bs != nil {
@@ -434,7 +505,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		NewShardingMetadataFilterAdapter(userID, u.shardingStrategy),
 		newMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
 		// Use our own custom implementation.
-		NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksDelay, u.cfg.BucketStore.MetaSyncConcurrency),
+		NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay, u.cfg.BucketStore.MetaSyncConcurrency),
 		// The duplicate filter has been intentionally omitted because it could cause troubles with
 		// the consistency check done on the querier. The duplicate filter removes redundant blocks
 		// but if the store-gateway removes redundant blocks before the querier discovers them, the
@@ -461,7 +532,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		fetcher,
 		u.syncDirForUser(userID),
 		u.cfg.BucketStore,
-		selectPostingsStrategy(u.logger, u.cfg.BucketStore.SeriesSelectionStrategyName, u.cfg.BucketStore.SelectionStrategies.WorstCaseSeriesPreference),
+		worstCaseFetchedDataStrategy{postingListActualSizeFactor: u.cfg.BucketStore.SeriesFetchPreference},
 		NewChunksLimiterFactory(func() uint64 {
 			return uint64(u.limits.MaxChunksPerQuery(userID))
 		}),
@@ -476,6 +547,9 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err = services.StartAndAwaitRunning(ctx, bs); err != nil {
+		return nil, fmt.Errorf("starting bucket store for tenant %s: %w", userID, err)
+	}
 
 	u.stores[userID] = bs
 	u.metaFetcherMetrics.AddUserRegistry(userID, fetcherReg)
@@ -483,39 +557,22 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	return bs, nil
 }
 
-func selectPostingsStrategy(l log.Logger, name string, worstCaseSeriesPreference float64) postingsSelectionStrategy {
-	switch name {
-	case tsdb.AllPostingsStrategy:
-		return selectAllStrategy{}
-	case tsdb.SpeculativePostingsStrategy:
-		return speculativeFetchedDataStrategy{}
-	case tsdb.WorstCasePostingsStrategy:
-		return worstCaseFetchedDataStrategy{postingListActualSizeFactor: worstCaseSeriesPreference}
-	case tsdb.WorstCaseSmallPostingListsPostingsStrategy:
-		return worstCaseFetchedDataStrategy{postingListActualSizeFactor: 0.3}
-	default:
-		// This should only be reached if the tsdb package has mismatching names for these strategies.
-		// Prefer keeping the store-gateway running as opposed to failing, since strategies are still an experimental feature anyway.
-		level.Warn(l).Log("msg", "unknown posting strategy; using "+tsdb.AllPostingsStrategy+" instead", "strategy", name)
-		return selectAllStrategy{}
-	}
-}
-
 // closeBucketStoreAndDeleteLocalFilesForExcludedTenants closes bucket store and removes local "sync" directories
 // for tenants that are not included in the current shard.
-func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(includeUserIDs map[string]struct{}) {
+func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(includedUserIDs []string) {
 	files, err := os.ReadDir(u.cfg.BucketStore.SyncDir)
 	if err != nil {
 		return
 	}
 
+	includedUserIDsMap := util.StringsMap(includedUserIDs)
 	for _, f := range files {
 		if !f.IsDir() {
 			continue
 		}
 
 		userID := f.Name()
-		if _, included := includeUserIDs[userID]; included {
+		if includedUserIDsMap[userID] {
 			// Preserve directory for users owned by this shard.
 			continue
 		}
@@ -541,17 +598,15 @@ func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(inc
 }
 
 // countBlocksLoaded returns the total number of blocks loaded, summed for all users.
-func (u *BucketStores) countBlocksLoaded(durations []time.Duration) int {
+func (u *BucketStores) countBlocksLoaded() int {
 	total := 0
 
 	u.storesMu.RLock()
 	defer u.storesMu.RUnlock()
 
 	for _, store := range u.stores {
-		stats := store.Stats(durations)
-		for _, n := range stats.BlocksLoaded {
-			total += n
-		}
+		stats := store.Stats()
+		total += stats.BlocksLoadedTotal
 	}
 
 	return total
@@ -562,17 +617,12 @@ func (u *BucketStores) Describe(descs chan<- *prometheus.Desc) {
 }
 
 func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
-	total := u.countBlocksLoaded(defaultBlockDurations)
+	total := u.countBlocksLoaded()
 	metrics <- prometheus.MustNewConstMetric(u.blocksLoaded, prometheus.GaugeValue, float64(total))
 }
 
 func getUserIDFromGRPCContext(ctx context.Context) string {
-	meta, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return ""
-	}
-
-	values := meta.Get(GrpcContextMetadataTenantID)
+	values := metadata.ValueFromIncomingContext(ctx, GrpcContextMetadataTenantID)
 	if len(values) != 1 {
 		return ""
 	}

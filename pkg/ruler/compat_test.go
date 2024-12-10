@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -32,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
@@ -40,6 +42,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/storage/series"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -238,6 +241,11 @@ func TestPusherErrors(t *testing.T) {
 			expectedWrites:   1,
 			expectedFailures: 0,
 		},
+		"a METHOD_NOT_ALLOWED push error is reported as failure": {
+			returnedError:    mustStatusWithDetails(codes.Unimplemented, mimirpb.METHOD_NOT_ALLOWED).Err(),
+			expectedWrites:   1,
+			expectedFailures: 1,
+		},
 		"a TSDB_UNAVAILABLE push error is reported as failure": {
 			returnedError:    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.TSDB_UNAVAILABLE).Err(),
 			expectedWrites:   1,
@@ -274,7 +282,8 @@ func TestPusherErrors(t *testing.T) {
 }
 
 func TestMetricsQueryFuncErrors(t *testing.T) {
-	for name, tc := range map[string]struct {
+	// Cases handled the same on remote and local
+	commonCases := map[string]struct {
 		returnedError         error
 		expectedError         error
 		expectedQueries       int
@@ -284,35 +293,12 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 			expectedQueries:       1,
 			expectedFailedQueries: 0,
 		},
-
-		"httpgrpc 400 error": {
-			returnedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
-			expectedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
-			expectedQueries:       1,
-			expectedFailedQueries: 0, // 400 errors not reported as failures.
-		},
-
-		"httpgrpc 500 error": {
-			returnedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
-			expectedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
-			expectedQueries:       1,
-			expectedFailedQueries: 1, // 500 errors are failures
-		},
-
-		"unknown but non-queryable error": {
-			returnedError:         errors.New("test error"),
-			expectedError:         errors.New("test error"),
-			expectedQueries:       1,
-			expectedFailedQueries: 1, // Any other error should always be reported.
-		},
-
 		"promql.ErrStorage": {
 			returnedError:         WrapQueryableErrors(promql.ErrStorage{Err: errors.New("test error")}),
 			expectedError:         promql.ErrStorage{Err: errors.New("test error")},
 			expectedQueries:       1,
 			expectedFailedQueries: 1,
 		},
-
 		"promql.ErrQueryCanceled": {
 			returnedError:         WrapQueryableErrors(promql.ErrQueryCanceled("test error")),
 			expectedError:         promql.ErrQueryCanceled("test error"),
@@ -333,22 +319,73 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 			expectedQueries:       1,
 			expectedFailedQueries: 0, // Not interesting.
 		},
-
 		"unknown error": {
 			returnedError:         WrapQueryableErrors(errors.New("test error")),
 			expectedError:         errors.New("test error"),
 			expectedQueries:       1,
 			expectedFailedQueries: 1, // unknown errors are not 400, so they are reported.
 		},
-	} {
+	}
+	type testCase struct {
+		returnedError         error
+		expectedError         error
+		expectedQueries       int
+		expectedFailedQueries int
+		remoteQuerier         bool
+	}
+	// Add special cases to test first.
+	allCases := map[string]testCase{
+		"httpgrpc 400 error": {
+			returnedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
+			expectedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
+			expectedQueries:       1,
+			expectedFailedQueries: 0, // 400 errors not reported as failures.
+			remoteQuerier:         true,
+		},
+
+		"httpgrpc 500 error": {
+			returnedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
+			expectedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
+			expectedQueries:       1,
+			expectedFailedQueries: 1, // 500 errors are failures
+			remoteQuerier:         true,
+		},
+
+		"unknown but non-queryable error from remote": {
+			returnedError:         errors.New("test error"),
+			expectedError:         errors.New("test error"),
+			expectedQueries:       1,
+			expectedFailedQueries: 1, // Any other error should always be reported.
+			remoteQuerier:         true,
+		},
+		"unknown but non-queryable error from local": {
+			returnedError:         errors.New("test error"),
+			expectedError:         errors.New("test error"),
+			expectedQueries:       1,
+			expectedFailedQueries: 0, // Assume that simple local errors are coming from user errors.
+		},
+	}
+	// Add the common cases for both remote and local.
+	for _, rc := range []bool{true, false} {
+		for name, tc := range commonCases {
+			allCases[fmt.Sprintf("%s remote=%v", name, rc)] = testCase{
+				returnedError:         tc.returnedError,
+				expectedError:         tc.expectedError,
+				expectedQueries:       tc.expectedQueries,
+				expectedFailedQueries: tc.expectedFailedQueries,
+				remoteQuerier:         rc,
+			}
+		}
+	}
+	for name, tc := range allCases {
 		t.Run(name, func(t *testing.T) {
 			queries := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 
-			mockFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
+			mockFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
 				return promql.Vector{}, tc.returnedError
 			}
-			qf := MetricsQueryFunc(mockFunc, queries, failures)
+			qf := MetricsQueryFunc(mockFunc, queries, failures, tc.remoteQuerier)
 
 			_, err := qf(context.Background(), "test", time.Now())
 			require.Equal(t, tc.expectedError, err)
@@ -363,7 +400,7 @@ func TestRecordAndReportRuleQueryMetrics(t *testing.T) {
 	queryTime := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
 	zeroFetchedSeriesCount := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
 
-	mockFunc := func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
+	mockFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
 		time.Sleep(1 * time.Second)
 		return promql.Vector{}, nil
 	}
@@ -457,11 +494,11 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			// setup
 			cfg := defaultRulerConfig(t)
 			options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
-			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
+			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, util_log.SlogFromGoKit(options.logger))
 			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
 
-			tracker := promql.NewActiveQueryTracker(t.TempDir(), 20, log.NewNopLogger())
+			tracker := promql.NewActiveQueryTracker(t.TempDir(), 20, promslog.NewNopLogger())
 			eng := promql.NewEngine(promql.EngineOpts{
 				MaxSamples:         1e6,
 				ActiveQueryTracker: tracker,
@@ -475,7 +512,7 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			// create and use manager factory
 			pusher := newPusherMock()
 			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, options.limits, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
@@ -491,9 +528,86 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			case <-time.NewTimer(time.Second).C:
 				require.Fail(t, "neither of the queryables was called within the timeout")
 			}
+
+			// Ensure the result has been written.
+			require.EventuallyWithT(t, func(collect *assert.CollectT) {
+				pusher.AssertCalled(test.NewCollectWithLogf(collect), "Push", mock.Anything, mock.Anything)
+			}, 5*time.Second, 100*time.Millisecond)
+
 			manager.Stop()
 		})
 	}
+}
+
+func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t *testing.T) {
+	const userID = "tenant-1"
+
+	for _, writeEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("write enabled: %t", writeEnabled), func(t *testing.T) {
+			t.Parallel()
+
+			// Create a test recording rule.
+			ruleGroup := rulespb.RuleGroupDesc{
+				Name:     "test",
+				Interval: time.Second,
+				Rules: []*rulespb.RuleDesc{{
+					Record: "test",
+					Expr:   "1",
+				}},
+			}
+
+			// Setup ruler with writes disabled.
+			cfg := defaultRulerConfig(t)
+			cfg.RuleEvaluationWriteEnabled = writeEnabled
+
+			var (
+				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
+				notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, util_log.SlogFromGoKit(options.logger))
+				ruleFiles       = writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, ruleGroup)
+				queryable       = newMockQueryable()
+				tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(log.NewNopLogger()))
+				eng             = promql.NewEngine(promql.EngineOpts{
+					MaxSamples:         1e6,
+					ActiveQueryTracker: tracker,
+					Timeout:            2 * time.Minute,
+				})
+				queryFunc = rules.EngineQueryFunc(eng, queryable)
+			)
+
+			pusher := newPusherMock()
+			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+
+			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			manager := factory(context.Background(), userID, notifierManager, options.logger, nil)
+
+			// Load rules into manager and start it.
+			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
+			go manager.Run()
+
+			// Wait until the query has been executed.
+			select {
+			case <-queryable.called:
+				t.Log("query executed")
+			case <-time.NewTimer(time.Second).C:
+				require.Fail(t, "no query executed")
+			}
+
+			if writeEnabled {
+				// Ensure the result has been written.
+				require.EventuallyWithT(t, func(collect *assert.CollectT) {
+					pusher.AssertCalled(test.NewCollectWithLogf(collect), "Push", mock.Anything, mock.Anything)
+				}, 5*time.Second, 100*time.Millisecond)
+			} else {
+				// Ensure no write occurred within a reasonable amount of time.
+				time.Sleep(time.Second)
+				pusher.AssertNumberOfCalls(t, "Push", 0)
+			}
+
+			manager.Stop()
+
+		})
+	}
+
 }
 
 func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDetail(t *testing.T) {
@@ -536,8 +650,8 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 			var (
 				cfg             = defaultRulerConfig(t)
 				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
-				notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
-				tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, options.logger)
+				notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, util_log.SlogFromGoKit(options.logger))
+				tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(options.logger))
 				eng             = promql.NewEngine(promql.EngineOpts{
 					MaxSamples:         1e6,
 					ActiveQueryTracker: tracker,
@@ -562,7 +676,7 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 				matchersString := strings.Join(matchersStrings, ",")
 
 				// Ensure the read consistency injected in the context is the expected one.
-				actual, _ := api.ReadConsistencyFromContext(ctx)
+				actual, _ := api.ReadConsistencyLevelFromContext(ctx)
 				expected, hasExpected := testData.expectedReadConsistency[matchersString]
 				assert.Truef(t, hasExpected, "missing expected read consistency for matchers: %s", matchersString)
 				assert.Equal(t, expected, actual)
@@ -580,7 +694,7 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 
 			// Create the manager from the factory.
 			queryable := &storage.MockQueryable{MockQuerier: querier}
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), options.limits, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// Load rules into manager.
@@ -615,8 +729,8 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 
 	var (
 		options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
-		notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
-		tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, options.logger)
+		notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, util_log.SlogFromGoKit(options.logger))
+		tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(options.logger))
 		eng             = promql.NewEngine(promql.EngineOpts{
 			MaxSamples:         1e6,
 			ActiveQueryTracker: tracker,
@@ -625,9 +739,8 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 
 		// Create a test alerting rule with a "for" duration greater than the "grace period".
 		ruleGroup = rulespb.RuleGroupDesc{
-			Name:            "test",
-			Interval:        cfg.EvaluationInterval,
-			EvaluationDelay: 0,
+			Name:     "test",
+			Interval: cfg.EvaluationInterval,
 			Rules: []*rulespb.RuleDesc{{
 				Expr:  fmt.Sprintf("%s > 0", metricName),
 				Alert: "test",
@@ -646,7 +759,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 
 		if isQueryingAlertsForStateMetric("", matchers...) {
 			// Ensure it's queried with strong read consistency.
-			actual, ok := api.ReadConsistencyFromContext(ctx)
+			actual, ok := api.ReadConsistencyLevelFromContext(ctx)
 			assert.True(t, ok)
 			assert.Equal(t, api.ReadConsistencyStrong, actual)
 
@@ -677,7 +790,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 
 	// Create the manager from the factory.
 	queryable := &storage.MockQueryable{MockQuerier: querier}
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), options.limits, nil)
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 	manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 	// Load rules into manager.

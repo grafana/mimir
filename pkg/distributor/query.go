@@ -84,10 +84,7 @@ func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.Query
 		if err != nil {
 			return err
 		}
-
-		if d.cfg.PreferStreamingChunksFromIngesters {
-			req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
-		}
+		req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
 
 		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 		if err != nil {
@@ -140,11 +137,7 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 	// Lookup ingesters ring because ingest storage is disabled.
 	shardSize := d.limits.IngestionTenantShardSize(userID)
 	r := d.ingestersRing
-
-	// If tenant uses shuffle sharding, we should only query ingesters which are part of the tenant's subring.
-	if lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod; shardSize > 0 && lookbackPeriod > 0 {
-		r = r.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now())
-	}
+	r = r.ShuffleShardWithLookback(userID, shardSize, d.cfg.ShuffleShardingLookbackPeriod, time.Now())
 
 	replicationSet, err := r.GetReplicationSetForOperation(readNoExtend)
 	if err != nil {
@@ -184,7 +177,7 @@ func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryRespons
 	exemplarResults := make(map[string]mimirpb.TimeSeries)
 	for _, r := range results {
 		for _, ts := range r.Timeseries {
-			lbls := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
+			lbls := mimirpb.FromLabelAdaptersToKeyString(ts.Labels)
 			e, ok := exemplarResults[lbls]
 			if !ok {
 				exemplarResults[lbls] = ts
@@ -275,7 +268,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 			if len(resp.Timeseries) > 0 {
 				for _, series := range resp.Timeseries {
-					if limitErr := queryLimiter.AddSeries(series.Labels); limitErr != nil {
+					if limitErr := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); limitErr != nil {
 						return ingesterQueryResult{}, limitErr
 					}
 				}
@@ -292,7 +285,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 				}
 
 				for _, series := range resp.Chunkseries {
-					if err := queryLimiter.AddSeries(series.Labels); err != nil {
+					if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); err != nil {
 						return ingesterQueryResult{}, err
 					}
 				}
@@ -307,7 +300,9 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 				streamingSeriesCount += len(resp.StreamingSeries)
 
 				for _, s := range resp.StreamingSeries {
-					if err := queryLimiter.AddSeries(s.Labels); err != nil {
+					l := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+
+					if err := queryLimiter.AddSeries(l); err != nil {
 						return ingesterQueryResult{}, err
 					}
 
@@ -320,7 +315,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 						return ingesterQueryResult{}, err
 					}
 
-					labelsBatch = append(labelsBatch, mimirpb.FromLabelAdaptersToLabels(s.Labels))
+					labelsBatch = append(labelsBatch, l)
 				}
 
 				streamingSeriesBatches = append(streamingSeriesBatches, labelsBatch)
@@ -334,7 +329,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 						result.streamingSeries.Series = append(result.streamingSeries.Series, batch...)
 					}
 
-					streamReader := ingester_client.NewSeriesChunksStreamReader(ctx, stream, streamingSeriesCount, queryLimiter, cleanup, d.log)
+					streamReader := ingester_client.NewSeriesChunksStreamReader(ctx, stream, ing.Id, streamingSeriesCount, queryLimiter, cleanup, d.log)
 					closeStream = false
 					result.streamingSeries.StreamReader = streamReader
 				}
@@ -377,7 +372,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		// Accumulate any chunk series
 		for _, batch := range res.chunkseriesBatches {
 			for _, series := range batch {
-				key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
+				key := mimirpb.FromLabelAdaptersToKeyString(series.Labels)
 				existing := hashToChunkseries[key]
 				existing.Labels = series.Labels
 
@@ -393,7 +388,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		// Accumulate any time series
 		for _, batch := range res.timeseriesBatches {
 			for _, series := range batch {
-				key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
+				key := mimirpb.FromLabelAdaptersToKeyString(series.Labels)
 				existing := hashToTimeSeries[key]
 				existing.Labels = series.Labels
 				if existing.Samples == nil {

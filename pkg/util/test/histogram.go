@@ -97,20 +97,12 @@ func GenerateTestSampleHistogram(i int) *model.SampleHistogram {
 	}
 }
 
-// RequireHistogramEqual ignores counter resets of non gauge histograms
+// RequireHistogramEqual requires the two histograms to be equal.
 func RequireHistogramEqual(t require.TestingT, expected, actual *histogram.Histogram, msgAndArgs ...interface{}) {
-	if expected.CounterResetHint != histogram.GaugeType {
-		// Ignore counter resets injected by tsdb
-		actual.CounterResetHint = histogram.UnknownCounterReset
-	}
-	require.EqualValues(t, expected, actual, msgAndArgs)
+	require.EqualValues(t, expected, actual, msgAndArgs...)
 }
 
-// RequireFloatHistogramEqual ignores counter resets of non gauge histograms
+// RequireFloatHistogramEqual requires the two float histograms to be equal.
 func RequireFloatHistogramEqual(t require.TestingT, expected, actual *histogram.FloatHistogram, msgAndArgs ...interface{}) {
-	if expected.CounterResetHint != histogram.GaugeType {
-		// Ignore counter resets injected by tsdb
-		actual.CounterResetHint = histogram.UnknownCounterReset
-	}
-	require.EqualValues(t, expected, actual, msgAndArgs)
+	require.EqualValues(t, expected, actual, msgAndArgs...)
 }

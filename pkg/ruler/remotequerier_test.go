@@ -42,7 +42,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 	setup := func() (mockHTTPGRPCClient, *httpgrpc.HTTPRequest) {
 		var inReq httpgrpc.HTTPRequest
 
-		mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+		mockClientFn := func(_ context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 			inReq = *req
 
 			b, err := proto.Marshal(&prompb.ReadResponse{
@@ -65,7 +65,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 		client, inReq := setup()
 
 		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
-		_, err := q.Read(context.Background(), &prompb.Query{})
+		_, err := q.Read(context.Background(), &prompb.Query{}, false)
 		require.NoError(t, err)
 
 		require.NotNil(t, inReq)
@@ -77,7 +77,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 		client, inReq := setup()
 
 		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
-		_, err := q.Read(context.Background(), &prompb.Query{})
+		_, err := q.Read(context.Background(), &prompb.Query{}, false)
 		require.NoError(t, err)
 
 		require.Equal(t, "", getHeader(inReq.Headers, api.ReadConsistencyHeader))
@@ -88,8 +88,8 @@ func TestRemoteQuerier_Read(t *testing.T) {
 
 		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
 
-		ctx := api.ContextWithReadConsistency(context.Background(), api.ReadConsistencyStrong)
-		_, err := q.Read(ctx, &prompb.Query{})
+		ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
+		_, err := q.Read(ctx, &prompb.Query{}, false)
 		require.NoError(t, err)
 
 		require.Equal(t, api.ReadConsistencyStrong, getHeader(inReq.Headers, api.ReadConsistencyHeader))
@@ -97,13 +97,13 @@ func TestRemoteQuerier_Read(t *testing.T) {
 }
 
 func TestRemoteQuerier_ReadReqTimeout(t *testing.T) {
-	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+	mockClientFn := func(ctx context.Context, _ *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
 	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Second, formatJSON, "/prometheus", log.NewNopLogger())
 
-	_, err := q.Read(context.Background(), &prompb.Query{})
+	_, err := q.Read(context.Background(), &prompb.Query{}, false)
 	require.Error(t, err)
 }
 
@@ -117,7 +117,7 @@ func TestRemoteQuerier_Query(t *testing.T) {
 	setup := func() (mockHTTPGRPCClient, *httpgrpc.HTTPRequest) {
 		var inReq httpgrpc.HTTPRequest
 
-		mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+		mockClientFn := func(_ context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 			inReq = *req
 
 			return &httpgrpc.HTTPResponse{
@@ -177,7 +177,7 @@ func TestRemoteQuerier_Query(t *testing.T) {
 
 		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
 
-		ctx := api.ContextWithReadConsistency(context.Background(), api.ReadConsistencyStrong)
+		ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
 		_, err := q.Query(ctx, "qs", tm)
 		require.NoError(t, err)
 
@@ -266,7 +266,7 @@ func TestRemoteQuerier_QueryRetryOnFailure(t *testing.T) {
 			var count atomic.Int64
 
 			ctx, cancel := context.WithCancel(context.Background())
-			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+			mockClientFn := func(context.Context, *httpgrpc.HTTPRequest, ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 				count.Add(1)
 				if testCase.err != nil {
 					if grpcutil.IsCanceled(testCase.err) {
@@ -396,7 +396,7 @@ func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+			mockClientFn := func(context.Context, *httpgrpc.HTTPRequest, ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 				return &httpgrpc.HTTPResponse{
 					Code: http.StatusOK,
 					Headers: []*httpgrpc.Header{
@@ -664,7 +664,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+			mockClientFn := func(context.Context, *httpgrpc.HTTPRequest, ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 				b, err := scenario.body.Marshal()
 				if err != nil {
 					return nil, err
@@ -692,7 +692,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 }
 
 func TestRemoteQuerier_QueryUnknownResponseContentType(t *testing.T) {
-	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+	mockClientFn := func(context.Context, *httpgrpc.HTTPRequest, ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 		return &httpgrpc.HTTPResponse{
 			Code: http.StatusOK,
 			Headers: []*httpgrpc.Header{
@@ -709,7 +709,7 @@ func TestRemoteQuerier_QueryUnknownResponseContentType(t *testing.T) {
 }
 
 func TestRemoteQuerier_QueryReqTimeout(t *testing.T) {
-	mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+	mockClientFn := func(ctx context.Context, _ *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
@@ -767,7 +767,7 @@ func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 	}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
-			mockClientFn := func(ctx context.Context, req *httpgrpc.HTTPRequest, _ ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+			mockClientFn := func(context.Context, *httpgrpc.HTTPRequest, ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 				return testCase.resp, testCase.err
 			}
 			logger := newLoggerWithCounter()

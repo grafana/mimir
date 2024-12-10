@@ -1,4 +1,4 @@
-{{- if .Values.distributor.kedaAutoscaling.enabled }}
+{{- if and .Values.distributor.enabled .Values.distributor.kedaAutoscaling.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
@@ -27,7 +27,7 @@ spec:
       query: max_over_time(sum(sum by (pod) (rate(container_cpu_usage_seconds_total{container="distributor",namespace="{{ .Release.Namespace }}"}[5m])) and max by (pod) (up{container="distributor",namespace="{{ .Release.Namespace }}"}) > 0)[15m:]) * 1000
       serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }} 
       {{- $cpu_request := dig "requests" "cpu" nil .Values.distributor.resources }}
-      threshold: {{ mulf (include "mimir.parseCPU" (dict "value" $cpu_request)) (divf .Values.distributor.kedaAutoscaling.targetCPUUtilizationPercentage 100) | floor | int64 | quote }}
+      threshold: {{ mulf (include "mimir.cpuToMilliCPU" (dict "value" $cpu_request)) (divf .Values.distributor.kedaAutoscaling.targetCPUUtilizationPercentage 100) | floor | int64 | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}

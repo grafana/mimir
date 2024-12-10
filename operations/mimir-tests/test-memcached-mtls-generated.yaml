@@ -534,7 +534,7 @@ spec:
           value: "8"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -637,7 +637,7 @@ spec:
           value: "5"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -671,6 +671,7 @@ spec:
           readOnly: true
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -741,7 +742,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -831,7 +832,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -854,6 +855,7 @@ spec:
         volumeMounts:
         - mountPath: /etc/mimir
           name: overrides
+      terminationGracePeriodSeconds: 180
       volumes:
       - configMap:
           name: overrides
@@ -935,7 +937,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1004,6 +1006,7 @@ spec:
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-idle-timeout=6m
         - -server.http-listen-port=8080
         - -target=alertmanager
         - -usage-stats.installation-mode=jsonnet
@@ -1012,7 +1015,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1111,7 +1114,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1218,9 +1221,11 @@ spec:
         - -target=ingester
         - -usage-stats.installation-mode=jsonnet
         env:
+        - name: GOMAXPROCS
+          value: "9"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1275,7 +1280,7 @@ metadata:
   name: memcached
   namespace: default
 spec:
-  replicas: 3
+  replicas: 6
   selector:
     matchLabels:
       name: memcached
@@ -1298,11 +1303,10 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        - --extended=track_sizes
         - --listen=notls:127.0.0.1:11211,0.0.0.0:11212
         - --enable-ssl
         - --extended=ssl_ca_cert=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem,ssl_chain_cert=/var/secrets/memcached-server-cert/memcached-server-cert.pem,ssl_key=/var/secrets/memcached-server-key/memcached-server-key.pem,ssl_kernel_tls,ssl_verify_mode=2
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1327,7 +1331,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.14.2
+        image: prom/memcached-exporter:v0.15.0
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1352,7 +1356,7 @@ metadata:
   name: memcached-frontend
   namespace: default
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       name: memcached-frontend
@@ -1375,11 +1379,10 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        - --extended=track_sizes
         - --listen=notls:127.0.0.1:11211,0.0.0.0:11212
         - --enable-ssl
         - --extended=ssl_ca_cert=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem,ssl_chain_cert=/var/secrets/memcached-server-cert/memcached-server-cert.pem,ssl_key=/var/secrets/memcached-server-key/memcached-server-key.pem,ssl_kernel_tls,ssl_verify_mode=2
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1404,7 +1407,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.14.2
+        image: prom/memcached-exporter:v0.15.0
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1429,7 +1432,7 @@ metadata:
   name: memcached-index-queries
   namespace: default
 spec:
-  replicas: 3
+  replicas: 4
   selector:
     matchLabels:
       name: memcached-index-queries
@@ -1452,11 +1455,10 @@ spec:
         - -I 5m
         - -c 16384
         - -v
-        - --extended=track_sizes
         - --listen=notls:127.0.0.1:11211,0.0.0.0:11212
         - --enable-ssl
         - --extended=ssl_ca_cert=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem,ssl_chain_cert=/var/secrets/memcached-server-cert/memcached-server-cert.pem,ssl_key=/var/secrets/memcached-server-key/memcached-server-key.pem,ssl_kernel_tls,ssl_verify_mode=2
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1481,7 +1483,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.14.2
+        image: prom/memcached-exporter:v0.15.0
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1506,7 +1508,7 @@ metadata:
   name: memcached-metadata
   namespace: default
 spec:
-  replicas: 1
+  replicas: 8
   selector:
     matchLabels:
       name: memcached-metadata
@@ -1529,11 +1531,10 @@ spec:
         - -I 1m
         - -c 16384
         - -v
-        - --extended=track_sizes
         - --listen=notls:127.0.0.1:11211,0.0.0.0:11212
         - --enable-ssl
         - --extended=ssl_ca_cert=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem,ssl_chain_cert=/var/secrets/memcached-server-cert/memcached-server-cert.pem,ssl_key=/var/secrets/memcached-server-key/memcached-server-key.pem,ssl_kernel_tls,ssl_verify_mode=2
-        image: memcached:1.6.22-alpine
+        image: memcached:1.6.28-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1558,7 +1559,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.14.2
+        image: prom/memcached-exporter:v0.15.0
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1613,7 +1614,7 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
-        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=450ms
+        - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.chunks-cache.memcached.tls-ca-path=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem
         - -blocks-storage.bucket-store.chunks-cache.memcached.tls-cert-path=/var/secrets/memcached-client-cert/memcached-client-cert.pem
         - -blocks-storage.bucket-store.chunks-cache.memcached.tls-enabled=true
@@ -1626,14 +1627,12 @@ spec:
         - -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency=100
         - -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections=150
         - -blocks-storage.bucket-store.index-cache.memcached.max-item-size=5242880
-        - -blocks-storage.bucket-store.index-cache.memcached.timeout=450ms
+        - -blocks-storage.bucket-store.index-cache.memcached.timeout=750ms
         - -blocks-storage.bucket-store.index-cache.memcached.tls-ca-path=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem
         - -blocks-storage.bucket-store.index-cache.memcached.tls-cert-path=/var/secrets/memcached-client-cert/memcached-client-cert.pem
         - -blocks-storage.bucket-store.index-cache.memcached.tls-enabled=true
         - -blocks-storage.bucket-store.index-cache.memcached.tls-key-path=/var/secrets/memcached-client-key/memcached-client-key.pem
         - -blocks-storage.bucket-store.index-cache.memcached.tls-server-name=memcached-cluster
-        - -blocks-storage.bucket-store.index-header.lazy-loading-enabled=true
-        - -blocks-storage.bucket-store.index-header.lazy-loading-idle-timeout=60m
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11212
         - -blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout=1s
@@ -1673,7 +1672,7 @@ spec:
           value: "12884901888"
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.11.0
+        image: grafana/mimir:2.14.1
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

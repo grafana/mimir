@@ -1,0 +1,93 @@
+---
+# Source: mimir-distributed/templates/metadata-cache/metadata-cache-statefulset.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-enterprise-configmap-values-mimir-metadata-cache
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-configmap-values
+    app.kubernetes.io/component: memcached
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  podManagementPolicy: Parallel
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-enterprise-configmap-values
+      app.kubernetes.io/component: metadata-cache
+  updateStrategy:
+    type: RollingUpdate
+  serviceName: test-enterprise-configmap-values-mimir-metadata-cache
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-enterprise-configmap-values
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: metadata-cache
+      annotations:
+        minio-secret-version: "42"
+
+    spec:
+      serviceAccountName: test-enterprise-configmap-values-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      
+      terminationGracePeriodSeconds: 30
+      volumes:
+      containers:
+        - name: memcached
+          image: memcached:1.6.33-alpine
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits: null
+            requests: null
+          ports:
+            - containerPort: 11211
+              name: client
+          args:
+            - -m 512
+            - --extended=modern
+            - -I 1m
+            - -c 16384
+            - -v
+            - -u 11211
+          envFrom:
+            - secretRef:
+                name: mimir-minio-secret
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+        - name: exporter
+          image: prom/memcached-exporter:v0.15.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9150
+              name: http-metrics
+          args:
+            - "--memcached.address=localhost:11211"
+            - "--web.listen-address=0.0.0.0:9150"
+          resources:
+            limits: {}
+            requests: {}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true

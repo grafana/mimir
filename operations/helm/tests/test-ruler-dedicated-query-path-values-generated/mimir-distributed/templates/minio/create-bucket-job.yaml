@@ -1,0 +1,47 @@
+---
+# Source: mimir-distributed/templates/minio/create-bucket-job.yaml
+# Minio provides post-install hook to create bucket
+# however the hook won't be executed if helm install is run
+# with --wait flag. Hence this job is a workaround for that.
+# See https://github.com/grafana/mimir/issues/2464
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-ruler-dedicated-query-path-values-mimir-make-minio-buckets-5.3.0
+  namespace: "citestns"
+  labels:
+    app: mimir-distributed-make-bucket-job
+    release: test-ruler-dedicated-query-path-values
+    heritage: Helm
+spec:
+  template:
+    metadata:
+      labels:
+        app: mimir-distributed-job
+        release: test-ruler-dedicated-query-path-values
+    spec:
+      restartPolicy: OnFailure      
+      volumes:
+        - name: minio-configuration
+          projected:
+            sources:
+            - configMap:
+                name: test-ruler-dedicated-query-path-values-minio
+            - secret:
+                name: test-ruler-dedicated-query-path-values-minio
+      containers:
+      - name: minio-mc
+        image: "quay.io/minio/mc:RELEASE.2024-04-18T16-45-29Z"
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "/config/initialize"]
+        env:
+          - name: MINIO_ENDPOINT
+            value: test-ruler-dedicated-query-path-values-minio
+          - name: MINIO_PORT
+            value: "9000"
+        volumeMounts:
+          - name: minio-configuration
+            mountPath: /config
+        resources:
+          requests:
+            memory: 128Mi

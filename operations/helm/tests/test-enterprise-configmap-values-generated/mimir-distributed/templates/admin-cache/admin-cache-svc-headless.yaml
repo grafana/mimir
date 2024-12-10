@@ -1,0 +1,30 @@
+---
+# Source: mimir-distributed/templates/admin-cache/admin-cache-svc-headless.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-enterprise-configmap-values-mimir-admin-cache
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-configmap-values
+    app.kubernetes.io/component: admin-cache
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: memcached-client
+      port: 11211
+      targetPort: 11211
+    
+    - name: http-metrics
+      port: 9150
+      targetPort: 9150
+    
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-configmap-values
+    app.kubernetes.io/component: admin-cache

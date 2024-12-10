@@ -32,6 +32,10 @@ func NewDelayedBucketClient(wrapped objstore.Bucket, minDelay, maxDelay time.Dur
 	}
 }
 
+func (m *DelayedBucketClient) Provider() objstore.ObjProvider {
+	return m.wrapped.Provider()
+}
+
 func (m *DelayedBucketClient) Upload(ctx context.Context, name string, r io.Reader) error {
 	m.delay()
 	defer m.delay()
@@ -55,6 +59,20 @@ func (m *DelayedBucketClient) Iter(ctx context.Context, dir string, f func(strin
 	defer m.delay()
 
 	return m.wrapped.Iter(ctx, dir, f, options...)
+}
+
+func (m *DelayedBucketClient) IterWithAttributes(ctx context.Context, dir string, f func(attrs objstore.IterObjectAttributes) error, options ...objstore.IterOption) error {
+	m.delay()
+	defer m.delay()
+
+	return m.wrapped.IterWithAttributes(ctx, dir, f, options...)
+}
+
+func (m *DelayedBucketClient) SupportedIterOptions() []objstore.IterOptionType {
+	m.delay()
+	defer m.delay()
+
+	return m.wrapped.SupportedIterOptions()
 }
 
 func (m *DelayedBucketClient) Get(ctx context.Context, name string) (io.ReadCloser, error) {

@@ -24,6 +24,10 @@ type ClientMock struct {
 	mock.Mock
 }
 
+func (m *ClientMock) Provider() objstore.ObjProvider {
+	return objstore.MEMORY
+}
+
 // Upload mocks objstore.Bucket.Upload()
 func (m *ClientMock) Upload(ctx context.Context, name string, r io.Reader) error {
 	args := m.Called(ctx, name, r)
@@ -49,6 +53,17 @@ func (m *ClientMock) Name() string {
 func (m *ClientMock) Iter(ctx context.Context, dir string, f func(string) error, options ...objstore.IterOption) error {
 	args := m.Called(ctx, dir, f, options)
 	return args.Error(0)
+}
+
+// IterWithAttributes mocks objstore.Bucket.IterWithAttributes().
+func (m *ClientMock) IterWithAttributes(ctx context.Context, dir string, f func(attrs objstore.IterObjectAttributes) error, options ...objstore.IterOption) error {
+	return m.Called(ctx, dir, f, options).Error(0)
+}
+
+// SupportedIterOptions mocks objstore.Bucket.SupportedIterOptions().
+func (m *ClientMock) SupportedIterOptions() []objstore.IterOptionType {
+	m.Called()
+	return nil
 }
 
 // MockIter is a convenient method to mock Iter()

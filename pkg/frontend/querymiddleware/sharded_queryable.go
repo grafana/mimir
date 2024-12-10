@@ -32,32 +32,41 @@ var (
 	errNotImplemented       = errors.New("not implemented")
 )
 
+type HandleEmbeddedQueryFunc func(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error)
+
 // shardedQueryable is an implementor of the Queryable interface.
 type shardedQueryable struct {
-	req             Request
-	handler         Handler
-	responseHeaders *responseHeadersTracker
+	req                   MetricsQueryRequest
+	annotationAccumulator *AnnotationAccumulator
+	handler               MetricsQueryHandler
+	responseHeaders       *responseHeadersTracker
+	handleEmbeddedQuery   HandleEmbeddedQueryFunc
 }
 
-// newShardedQueryable makes a new shardedQueryable. We expect a new queryable is created for each
+// NewShardedQueryable makes a new shardedQueryable. We expect a new queryable is created for each
 // query, otherwise the response headers tracker doesn't work as expected, because it merges the
 // headers for all queries run through the queryable and never reset them.
-func newShardedQueryable(req Request, next Handler) *shardedQueryable {
+func NewShardedQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next MetricsQueryHandler, handleEmbeddedQuery HandleEmbeddedQueryFunc) *shardedQueryable { //nolint:revive
+	if handleEmbeddedQuery == nil {
+		handleEmbeddedQuery = defaultHandleEmbeddedQueryFunc
+	}
 	return &shardedQueryable{
-		req:             req,
-		handler:         next,
-		responseHeaders: newResponseHeadersTracker(),
+		req:                   req,
+		annotationAccumulator: annotationAccumulator,
+		handler:               next,
+		responseHeaders:       newResponseHeadersTracker(),
+		handleEmbeddedQuery:   handleEmbeddedQuery,
 	}
 }
 
 // Querier implements storage.Queryable.
 func (q *shardedQueryable) Querier(_, _ int64) (storage.Querier, error) {
-	return &shardedQuerier{req: q.req, handler: q.handler, responseHeaders: q.responseHeaders}, nil
+	return &shardedQuerier{req: q.req, annotationAccumulator: q.annotationAccumulator, handler: q.handler, responseHeaders: q.responseHeaders, handleEmbeddedQuery: q.handleEmbeddedQuery}, nil
 }
 
 // getResponseHeaders returns the merged response headers received by the downstream
 // when running the embedded queries.
-func (q *shardedQueryable) getResponseHeaders() []*PrometheusResponseHeader {
+func (q *shardedQueryable) getResponseHeaders() []*PrometheusHeader {
 	return q.responseHeaders.getHeaders()
 }
 
@@ -65,11 +74,14 @@ func (q *shardedQueryable) getResponseHeaders() []*PrometheusResponseHeader {
 // from the astmapper.EmbeddedQueriesMetricName metric label value and concurrently run embedded queries
 // through the downstream handler.
 type shardedQuerier struct {
-	req     Request
-	handler Handler
+	req                   MetricsQueryRequest
+	annotationAccumulator *AnnotationAccumulator
+	handler               MetricsQueryHandler
 
 	// Keep track of response headers received when running embedded queries.
 	responseHeaders *responseHeadersTracker
+
+	handleEmbeddedQuery HandleEmbeddedQueryFunc
 }
 
 // Select implements storage.Querier.
@@ -103,25 +115,47 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 	return q.handleEmbeddedQueries(ctx, queries, hints)
 }
 
+func defaultHandleEmbeddedQueryFunc(ctx context.Context, queryExpr astmapper.EmbeddedQuery, query MetricsQueryRequest, handler MetricsQueryHandler) ([]SampleStream, *PrometheusResponse, error) {
+	query, err := query.WithQuery(queryExpr.Expr)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	resp, err := handler.Do(ctx, query)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	promRes, ok := resp.(*PrometheusResponse)
+	if !ok {
+		return nil, nil, errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{})
+	}
+	resStreams, err := ResponseToSamples(promRes)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return resStreams, promRes, nil
+}
+
 // handleEmbeddedQueries concurrently executes the provided queries through the downstream handler.
 // The returned storage.SeriesSet contains sorted series.
-func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []string, hints *storage.SelectHints) storage.SeriesSet {
+func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []astmapper.EmbeddedQuery, hints *storage.SelectHints) storage.SeriesSet {
 	streams := make([][]SampleStream, len(queries))
 
 	// Concurrently run each query. It breaks and cancels each worker context on first error.
 	err := concurrency.ForEachJob(ctx, len(queries), len(queries), func(ctx context.Context, idx int) error {
-		resp, err := q.handler.Do(ctx, q.req.WithQuery(queries[idx]))
+		resStreams, promRes, err := q.handleEmbeddedQuery(ctx, queries[idx], q.req, q.handler)
 		if err != nil {
 			return err
 		}
 
-		resStreams, err := responseToSamples(resp)
-		if err != nil {
-			return err
-		}
 		streams[idx] = resStreams // No mutex is needed since each job writes its own index. This is like writing separate variables.
 
-		q.responseHeaders.mergeHeaders(resp.(*PrometheusResponse).Headers)
+		q.responseHeaders.mergeHeaders(promRes.Headers)
+		q.annotationAccumulator.addInfos(promRes.Infos)
+		q.annotationAccumulator.addWarnings(promRes.Warnings)
+
 		return nil
 	})
 
@@ -133,12 +167,12 @@ func (q *shardedQuerier) handleEmbeddedQueries(ctx context.Context, queries []st
 }
 
 // LabelValues implements storage.LabelQuerier.
-func (q *shardedQuerier) LabelValues(context.Context, string, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *shardedQuerier) LabelValues(context.Context, string, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errNotImplemented
 }
 
 // LabelNames implements storage.LabelQuerier.
-func (q *shardedQuerier) LabelNames(context.Context, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *shardedQuerier) LabelNames(context.Context, *storage.LabelHints, ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, errNotImplemented
 }
 
@@ -158,7 +192,7 @@ func newResponseHeadersTracker() *responseHeadersTracker {
 	}
 }
 
-func (t *responseHeadersTracker) mergeHeaders(headers []*PrometheusResponseHeader) {
+func (t *responseHeadersTracker) mergeHeaders(headers []*PrometheusHeader) {
 	t.headersMx.Lock()
 	defer t.headersMx.Unlock()
 
@@ -172,14 +206,14 @@ func (t *responseHeadersTracker) mergeHeaders(headers []*PrometheusResponseHeade
 	}
 }
 
-func (t *responseHeadersTracker) getHeaders() []*PrometheusResponseHeader {
+func (t *responseHeadersTracker) getHeaders() []*PrometheusHeader {
 	t.headersMx.Lock()
 	defer t.headersMx.Unlock()
 
 	// Convert the response headers into the right data type.
-	out := make([]*PrometheusResponseHeader, 0, len(t.headers))
+	out := make([]*PrometheusHeader, 0, len(t.headers))
 	for name, values := range t.headers {
-		out = append(out, &PrometheusResponseHeader{Name: name, Values: values})
+		out = append(out, &PrometheusHeader{Name: name, Values: values})
 	}
 
 	return out
@@ -284,26 +318,23 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 	return series.NewConcreteSeriesSetFromUnsortedSeries(set)
 }
 
-// responseToSamples is needed to map back from api response to the underlying series data
-func responseToSamples(resp Response) ([]SampleStream, error) {
-	promRes, ok := resp.(*PrometheusResponse)
-	if !ok {
-		return nil, errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{})
+// ResponseToSamples is needed to map back from api response to the underlying series data
+func ResponseToSamples(resp *PrometheusResponse) ([]SampleStream, error) {
+	if resp.Error != "" {
+		return nil, errors.New(resp.Error)
 	}
-	if promRes.Error != "" {
-		return nil, errors.New(promRes.Error)
-	}
-	switch promRes.Data.ResultType {
+
+	switch resp.Data.ResultType {
 	case string(parser.ValueTypeString),
 		string(parser.ValueTypeScalar),
 		string(parser.ValueTypeVector),
 		string(parser.ValueTypeMatrix):
-		return promRes.Data.Result, nil
+		return resp.Data.Result, nil
 	}
 
 	return nil, errors.Errorf(
 		"Invalid promql.Value type: [%s]. Only %s, %s, %s and %s supported",
-		promRes.Data.ResultType,
+		resp.Data.ResultType,
 		parser.ValueTypeString,
 		parser.ValueTypeScalar,
 		parser.ValueTypeVector,

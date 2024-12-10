@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -99,6 +98,14 @@ const (
 	// partitioner aggregates together two bucket GET object requests.
 	DefaultPartitionerMaxGapSize = uint64(512 * 1024)
 
+	// NewBlockDiscoveryDelayMultiplier is the factor used (multiplied with BucketStoreConfig.SyncInterval) to determine
+	// when querying a newly uploaded block is required.
+	// For example, if BucketStoreConfig.SyncInterval is 15 minutes, then a querier will require that it can query all
+	// blocks uploaded at least 45 minutes ago, and not fail queries when a store-gateway does not respond to queries for
+	// newer blocks (those uploaded in the last 45 minutes).
+	// This gives store-gateways time to discover and load newly created blocks.
+	NewBlockDiscoveryDelayMultiplier = 3
+
 	headChunksEndTimeVarianceHelp = "How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance."
 	headStripeSizeHelp            = "The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance."
 	headChunksWriteQueueSizeHelp  = "The size of the write queue used by the head chunks mapper. Lower values reduce memory utilisation at the cost of potentially higher ingest latency. Value of 0 switches chunks mapper to implementation without a queue."
@@ -107,8 +114,11 @@ const (
 
 	DefaultMaxTSDBOpeningConcurrencyOnStartup = 10
 
-	seriesSelectionStrategyFlag = "blocks-storage.bucket-store.series-selection-strategy"
-	bucketIndexFlagPrefix       = "blocks-storage.bucket-store.bucket-index."
+	bucketIndexFlagPrefix = "blocks-storage.bucket-store.bucket-index."
+
+	syncIntervalFlag                           = "blocks-storage.bucket-store.sync-interval"
+	ignoreDeletionMarksInStoreGatewayDelayFlag = "blocks-storage.bucket-store.ignore-deletion-marks-delay"
+	ignoreDeletionMarksWhileQueryingDelayFlag  = "blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay"
 )
 
 // Validation errors
@@ -123,6 +133,8 @@ var (
 	errInvalidEarlyHeadCompactionMinSeriesReduction = errors.New("early compaction minimum series reduction percentage must be a value between 0 and 100 (included)")
 	errEarlyCompactionRequiresActiveSeries          = fmt.Errorf("early compaction requires -%s to be enabled", activeseries.EnabledFlag)
 	errEmptyBlockranges                             = errors.New("empty block ranges for TSDB")
+	errInvalidIgnoreDeletionMarksDelayConfig        = fmt.Errorf("value for -%s must be less than -%s", ignoreDeletionMarksWhileQueryingDelayFlag, ignoreDeletionMarksInStoreGatewayDelayFlag)
+	errIgnoreDeletionMarksDelayTooShort             = fmt.Errorf("value for -%s must be greater than %v× -%s to ensure that newly compacted blocks are queried before old blocks are ignored", ignoreDeletionMarksWhileQueryingDelayFlag, NewBlockDiscoveryDelayMultiplier, syncIntervalFlag)
 )
 
 // BlocksStorageConfig holds the config information for the blocks storage.
@@ -193,24 +205,25 @@ func (cfg *BlocksStorageConfig) Validate(activeSeriesCfg activeseries.Config) er
 //
 //nolint:revive
 type TSDBConfig struct {
-	Dir                       string        `yaml:"dir"`
-	BlockRanges               DurationList  `yaml:"block_ranges_period" category:"experimental" doc:"hidden"`
-	Retention                 time.Duration `yaml:"retention_period"`
-	ShipInterval              time.Duration `yaml:"ship_interval" category:"advanced"`
-	ShipConcurrency           int           `yaml:"ship_concurrency" category:"advanced"`
-	HeadCompactionInterval    time.Duration `yaml:"head_compaction_interval" category:"advanced"`
-	HeadCompactionConcurrency int           `yaml:"head_compaction_concurrency" category:"advanced"`
-	HeadCompactionIdleTimeout time.Duration `yaml:"head_compaction_idle_timeout" category:"advanced"`
-	HeadChunksWriteBufferSize int           `yaml:"head_chunks_write_buffer_size_bytes" category:"advanced"`
-	HeadChunksEndTimeVariance float64       `yaml:"head_chunks_end_time_variance" category:"experimental"`
-	StripeSize                int           `yaml:"stripe_size" category:"advanced"`
-	WALCompressionEnabled     bool          `yaml:"wal_compression_enabled" category:"advanced"`
-	WALSegmentSizeBytes       int           `yaml:"wal_segment_size_bytes" category:"advanced"`
-	WALReplayConcurrency      int           `yaml:"wal_replay_concurrency" category:"advanced"`
-	FlushBlocksOnShutdown     bool          `yaml:"flush_blocks_on_shutdown" category:"advanced"`
-	CloseIdleTSDBTimeout      time.Duration `yaml:"close_idle_tsdb_timeout" category:"advanced"`
-	MemorySnapshotOnShutdown  bool          `yaml:"memory_snapshot_on_shutdown" category:"experimental"`
-	HeadChunksWriteQueueSize  int           `yaml:"head_chunks_write_queue_size" category:"advanced"`
+	Dir                                 string        `yaml:"dir"`
+	BlockRanges                         DurationList  `yaml:"block_ranges_period" category:"experimental" doc:"hidden"`
+	Retention                           time.Duration `yaml:"retention_period"`
+	ShipInterval                        time.Duration `yaml:"ship_interval" category:"advanced"`
+	ShipConcurrency                     int           `yaml:"ship_concurrency" category:"advanced"`
+	HeadCompactionInterval              time.Duration `yaml:"head_compaction_interval" category:"advanced"`
+	HeadCompactionConcurrency           int           `yaml:"head_compaction_concurrency" category:"advanced"`
+	HeadCompactionIdleTimeout           time.Duration `yaml:"head_compaction_idle_timeout" category:"advanced"`
+	HeadChunksWriteBufferSize           int           `yaml:"head_chunks_write_buffer_size_bytes" category:"advanced"`
+	HeadChunksEndTimeVariance           float64       `yaml:"head_chunks_end_time_variance" category:"experimental"`
+	StripeSize                          int           `yaml:"stripe_size" category:"advanced"`
+	WALCompressionEnabled               bool          `yaml:"wal_compression_enabled" category:"advanced"`
+	WALSegmentSizeBytes                 int           `yaml:"wal_segment_size_bytes" category:"advanced"`
+	WALReplayConcurrency                int           `yaml:"wal_replay_concurrency" category:"advanced"`
+	FlushBlocksOnShutdown               bool          `yaml:"flush_blocks_on_shutdown" category:"advanced"`
+	CloseIdleTSDBTimeout                time.Duration `yaml:"close_idle_tsdb_timeout" category:"advanced"`
+	MemorySnapshotOnShutdown            bool          `yaml:"memory_snapshot_on_shutdown" category:"experimental"`
+	HeadChunksWriteQueueSize            int           `yaml:"head_chunks_write_queue_size" category:"advanced"`
+	BiggerOutOfOrderBlocksForOldSamples bool          `yaml:"bigger_out_of_order_blocks_for_old_samples" category:"experimental"`
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
@@ -264,6 +277,9 @@ type TSDBConfig struct {
 	// HeadCompactionIntervalJitterEnabled is enabled by default, but allows to disable it in tests.
 	HeadCompactionIntervalJitterEnabled bool `yaml:"-"`
 
+	// HeadCompactionIntervalWhileStarting setting is hardcoded, but allowed to overwrite it in tests.
+	HeadCompactionIntervalWhileStarting time.Duration `yaml:"-"`
+
 	// TimelyHeadCompaction allows head compaction to happen when min block range can no longer be appended,
 	// without requiring 1.5x the chunk range worth of data in the head.
 	TimelyHeadCompaction bool `yaml:"timely_head_compaction_enabled" category:"experimental"`
@@ -312,8 +328,10 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Int64Var(&cfg.EarlyHeadCompactionMinInMemorySeries, "blocks-storage.tsdb.early-head-compaction-min-in-memory-series", 0, fmt.Sprintf("When the number of in-memory series in the ingester is equal to or greater than this setting, the ingester tries to compact the TSDB Head. The early compaction removes from the memory all samples and inactive series up until -%s time ago. After an early compaction, the ingester will not accept any sample with a timestamp older than -%s time ago (unless out of order ingestion is enabled). The ingester checks every -%s whether an early compaction is required. Use 0 to disable it.", activeseries.IdleTimeoutFlag, activeseries.IdleTimeoutFlag, headCompactionIntervalFlag))
 	f.IntVar(&cfg.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage", 15, "When the early compaction is enabled, the early compaction is triggered only if the estimated series reduction is at least the configured percentage (0-100).")
 	f.BoolVar(&cfg.TimelyHeadCompaction, "blocks-storage.tsdb.timely-head-compaction-enabled", false, "Allows head compaction to happen when the min block range can no longer be appended, without requiring 1.5x the chunk range worth of data in the head.")
+	f.BoolVar(&cfg.BiggerOutOfOrderBlocksForOldSamples, "blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples", false, "When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.")
 
 	cfg.HeadCompactionIntervalJitterEnabled = true
+	cfg.HeadCompactionIntervalWhileStarting = 30 * time.Second
 }
 
 // Validate the config.
@@ -382,25 +400,23 @@ func (cfg *TSDBConfig) IsBlocksShippingEnabled() bool {
 
 // BucketStoreConfig holds the config information for Bucket Stores used by the querier and store-gateway.
 type BucketStoreConfig struct {
-	SyncDir                  string              `yaml:"sync_dir"`
-	SyncInterval             time.Duration       `yaml:"sync_interval" category:"advanced"`
-	MaxConcurrent            int                 `yaml:"max_concurrent" category:"advanced"`
-	TenantSyncConcurrency    int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
-	BlockSyncConcurrency     int                 `yaml:"block_sync_concurrency" category:"advanced"`
-	MetaSyncConcurrency      int                 `yaml:"meta_sync_concurrency" category:"advanced"`
-	IndexCache               IndexCacheConfig    `yaml:"index_cache"`
-	ChunksCache              ChunksCacheConfig   `yaml:"chunks_cache"`
-	MetadataCache            MetadataCacheConfig `yaml:"metadata_cache"`
-	IgnoreDeletionMarksDelay time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
-	BucketIndex              BucketIndexConfig   `yaml:"bucket_index"`
-	IgnoreBlocksWithin       time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
+	SyncDir                                string              `yaml:"sync_dir"`
+	SyncInterval                           time.Duration       `yaml:"sync_interval" category:"advanced"`
+	MaxConcurrent                          int                 `yaml:"max_concurrent" category:"advanced"`
+	MaxConcurrentQueueTimeout              time.Duration       `yaml:"max_concurrent_queue_timeout" category:"advanced"`
+	TenantSyncConcurrency                  int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
+	BlockSyncConcurrency                   int                 `yaml:"block_sync_concurrency" category:"advanced"`
+	MetaSyncConcurrency                    int                 `yaml:"meta_sync_concurrency" category:"advanced"`
+	IndexCache                             IndexCacheConfig    `yaml:"index_cache"`
+	ChunksCache                            ChunksCacheConfig   `yaml:"chunks_cache"`
+	MetadataCache                          MetadataCacheConfig `yaml:"metadata_cache"`
+	IgnoreDeletionMarksInStoreGatewayDelay time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
+	IgnoreDeletionMarksWhileQueryingDelay  time.Duration       `yaml:"ignore_deletion_mark_while_querying_delay" category:"experimental"`
+	BucketIndex                            BucketIndexConfig   `yaml:"bucket_index"`
+	IgnoreBlocksWithin                     time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`
-
-	// Controls whether index-header lazy loading is enabled.
-	DeprecatedIndexHeaderLazyLoadingEnabled     bool          `yaml:"index_header_lazy_loading_enabled" category:"deprecated"`      // Deprecated. TODO: Remove in Mimir 2.12.
-	DeprecatedIndexHeaderLazyLoadingIdleTimeout time.Duration `yaml:"index_header_lazy_loading_idle_timeout" category:"deprecated"` // Deprecated. TODO: Remove in Mimir 2.12.
 
 	// Controls the partitioner, used to aggregate multiple GET object API requests.
 	PartitionerMaxGapBytes uint64 `yaml:"partitioner_max_gap_bytes" category:"advanced"`
@@ -412,28 +428,11 @@ type BucketStoreConfig struct {
 	// 1 will keep all in memory. Default value is the same as in Prometheus which gives a good balance.
 	PostingOffsetsInMemSampling int `yaml:"postings_offsets_in_mem_sampling" category:"advanced"`
 
-	// Controls experimental options for index-header file reading.
-	IndexHeader indexheader.Config `yaml:"index_header" category:"experimental"`
+	// Controls advanced options for index-header file reading.
+	IndexHeader indexheader.Config `yaml:"index_header" category:"advanced"`
 
-	StreamingBatchSize          int    `yaml:"streaming_series_batch_size" category:"advanced"`
-	SeriesSelectionStrategyName string `yaml:"series_selection_strategy" category:"experimental"`
-	SelectionStrategies         struct {
-		WorstCaseSeriesPreference float64 `yaml:"worst_case_series_preference" category:"experimental"`
-	} `yaml:"series_selection_strategies"`
-}
-
-const (
-	SpeculativePostingsStrategy                = "speculative"
-	WorstCasePostingsStrategy                  = "worst-case"
-	WorstCaseSmallPostingListsPostingsStrategy = "worst-case-small-posting-lists"
-	AllPostingsStrategy                        = "all"
-)
-
-var validSeriesSelectionStrategies = []string{
-	SpeculativePostingsStrategy,
-	WorstCasePostingsStrategy,
-	WorstCaseSmallPostingListsPostingsStrategy,
-	AllPostingsStrategy,
+	StreamingBatchSize    int     `yaml:"streaming_series_batch_size" category:"advanced"`
+	SeriesFetchPreference float64 `yaml:"series_fetch_preference" category:"advanced"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -445,28 +444,38 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.IndexHeader.RegisterFlagsWithPrefix(f, "blocks-storage.bucket-store.index-header.")
 
 	f.StringVar(&cfg.SyncDir, "blocks-storage.bucket-store.sync-dir", "./tsdb-sync/", "Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time.")
-	f.DurationVar(&cfg.SyncInterval, "blocks-storage.bucket-store.sync-interval", 15*time.Minute, "How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction).")
+	f.DurationVar(&cfg.SyncInterval, syncIntervalFlag, 15*time.Minute, "How frequently to scan the bucket, or to refresh the bucket index (if enabled), in order to look for changes (new blocks shipped by ingesters and blocks deleted by retention or compaction).")
 	f.Uint64Var(&cfg.SeriesHashCacheMaxBytes, "blocks-storage.bucket-store.series-hash-cache-max-size-bytes", uint64(1*units.Gibibyte), "Max size - in bytes - of the in-memory series hash cache. The cache is shared across all tenants and it's used only when query sharding is enabled.")
-	f.IntVar(&cfg.MaxConcurrent, "blocks-storage.bucket-store.max-concurrent", 100, "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.")
+	f.IntVar(&cfg.MaxConcurrent, "blocks-storage.bucket-store.max-concurrent", 200, "Max number of concurrent queries to execute against the long-term storage. The limit is shared across all tenants.")
+	f.DurationVar(&cfg.MaxConcurrentQueueTimeout, "blocks-storage.bucket-store.max-concurrent-queue-timeout", 5*time.Second, "Timeout for the queue of queries waiting for execution. If the queue is full and the timeout is reached, the query will be retried on another store-gateway. 0 means no timeout and all queries will wait indefinitely for their turn.")
 	f.IntVar(&cfg.TenantSyncConcurrency, "blocks-storage.bucket-store.tenant-sync-concurrency", 1, "Maximum number of concurrent tenants synching blocks.")
 	f.IntVar(&cfg.BlockSyncConcurrency, "blocks-storage.bucket-store.block-sync-concurrency", 4, "Maximum number of concurrent blocks synching per tenant.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "blocks-storage.bucket-store.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from object storage per tenant.")
-	f.DurationVar(&cfg.IgnoreDeletionMarksDelay, "blocks-storage.bucket-store.ignore-deletion-marks-delay", time.Hour*1, "Duration after which the blocks marked for deletion will be filtered out while fetching blocks. "+
+	f.DurationVar(&cfg.IgnoreDeletionMarksInStoreGatewayDelay, ignoreDeletionMarksInStoreGatewayDelayFlag, time.Hour*1, "Duration after which the blocks marked for deletion will be filtered out while fetching blocks. "+
 		"The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet.")
+	f.DurationVar(&cfg.IgnoreDeletionMarksWhileQueryingDelay, ignoreDeletionMarksWhileQueryingDelayFlag, 50*time.Minute, "Duration after which blocks marked for deletion will still be queried. "+
+		"This ensures queriers still query blocks that are meant to be deleted but do not have a replacement yet.")
 	f.DurationVar(&cfg.IgnoreBlocksWithin, "blocks-storage.bucket-store.ignore-blocks-within", 10*time.Hour, "Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.")
 	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
-	f.BoolVar(&cfg.DeprecatedIndexHeaderLazyLoadingEnabled, "blocks-storage.bucket-store.index-header-lazy-loading-enabled", indexheader.DefaultIndexHeaderLazyLoadingEnabled, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
-	f.DurationVar(&cfg.DeprecatedIndexHeaderLazyLoadingIdleTimeout, "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout", indexheader.DefaultIndexHeaderLazyLoadingIdleTimeout, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 	f.IntVar(&cfg.StreamingBatchSize, "blocks-storage.bucket-store.batch-series-size", 5000, "This option controls how many series to fetch per batch. The batch size must be greater than 0.")
-	f.StringVar(&cfg.SeriesSelectionStrategyName, seriesSelectionStrategyFlag, WorstCasePostingsStrategy, "This option controls the strategy to selection of series and deferring application of matchers. A more aggressive strategy will fetch less posting lists at the cost of more series. This is useful when querying large blocks in which many series share the same label name and value. Supported values (most aggressive to least aggressive): "+strings.Join(validSeriesSelectionStrategies, ", ")+".")
-	f.Float64Var(&cfg.SelectionStrategies.WorstCaseSeriesPreference, "blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference", 0.75, "This option is only used when "+seriesSelectionStrategyFlag+"="+WorstCasePostingsStrategy+". Increasing the series preference results in fetching more series than postings. Must be a positive floating point number.")
+	f.Float64Var(&cfg.SeriesFetchPreference, "blocks-storage.bucket-store.series-fetch-preference", 0.75, "This parameter controls the trade-off in fetching series versus fetching postings to fulfill a series request. Increasing the series preference results in fetching more series and reducing the volume of postings fetched. Reducing the series preference results in the opposite. Increase this parameter to reduce the rate of fetched series bytes (see \"Mimir / Queries\" dashboard) or API calls to the object store. Must be a positive floating point number.")
 }
 
 // Validate the config.
 func (cfg *BucketStoreConfig) Validate() error {
 	if cfg.StreamingBatchSize <= 0 {
 		return errInvalidStreamingBatchSize
+	}
+	if cfg.IgnoreDeletionMarksWhileQueryingDelay >= cfg.IgnoreDeletionMarksInStoreGatewayDelay {
+		// If we ignore deletion marks for longer while querying, we'll try to query blocks that store-gateways have
+		// already unloaded, which will cause consistency check failures.
+		return errInvalidIgnoreDeletionMarksDelayConfig
+	}
+	if cfg.IgnoreDeletionMarksWhileQueryingDelay <= NewBlockDiscoveryDelayMultiplier*cfg.SyncInterval {
+		// If we ignore deletion marks for less time while querying, we may skip querying both newly compacted blocks
+		// and their source blocks, and so missing querying some series.
+		return errIgnoreDeletionMarksDelayTooShort
 	}
 	if err := cfg.IndexCache.Validate(); err != nil {
 		return errors.Wrap(err, "index-cache configuration")
@@ -480,10 +489,7 @@ func (cfg *BucketStoreConfig) Validate() error {
 	if err := cfg.BucketIndex.Validate(); err != nil {
 		return errors.Wrap(err, "bucket-index configuration")
 	}
-	if !util.StringsContain(validSeriesSelectionStrategies, cfg.SeriesSelectionStrategyName) {
-		return errors.New("invalid series-selection-strategy, set one of " + strings.Join(validSeriesSelectionStrategies, ", "))
-	}
-	if cfg.SeriesSelectionStrategyName == WorstCasePostingsStrategy && cfg.SelectionStrategies.WorstCaseSeriesPreference <= 0 {
+	if cfg.SeriesFetchPreference <= 0 {
 		return errors.New("invalid worst-case series preference; must be positive")
 	}
 	if err := cfg.IndexHeader.Validate(); err != nil {

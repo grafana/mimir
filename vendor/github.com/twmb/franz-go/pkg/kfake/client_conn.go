@@ -25,8 +25,8 @@ type (
 		cc   *clientConn
 		kreq kmsg.Request
 		at   time.Time
-		corr int32
 		cid  string
+		corr int32
 		seq  uint32
 	}
 
@@ -38,7 +38,7 @@ type (
 	}
 )
 
-func (creq clientReq) empty() bool { return creq.cc == nil || creq.kreq == nil }
+func (creq *clientReq) empty() bool { return creq == nil || creq.cc == nil || creq.kreq == nil }
 
 func (cc *clientConn) read() {
 	defer cc.conn.Close()
@@ -101,7 +101,7 @@ func (cc *clientConn) read() {
 		}
 
 		select {
-		case cc.c.reqCh <- clientReq{cc, kreq, time.Now(), corr, cid, seq}:
+		case cc.c.reqCh <- &clientReq{cc, kreq, time.Now(), cid, corr, seq}:
 			seq++
 		case <-cc.c.die:
 			return
@@ -141,6 +141,9 @@ func (cc *clientConn) write() {
 			case <-cc.c.die:
 				return
 			}
+		} else {
+			delete(oooresp, seq)
+			seq++
 		}
 		if err := resp.err; err != nil {
 			cc.c.cfg.logger.Logf(LogLevelInfo, "client %s request unable to be handled: %v", who, err)

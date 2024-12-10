@@ -28,6 +28,13 @@ spec:
                 name: test-ingress-values-mimir-alertmanager-headless
                 port:
                   number: 8080
+          - path: /multitenant_alertmanager/configs
+            pathType: Prefix
+            backend:
+              service:
+                name: test-ingress-values-mimir-alertmanager-headless
+                port:
+                  number: 8080
           - path: /api/v1/alerts
             pathType: Prefix
             backend:

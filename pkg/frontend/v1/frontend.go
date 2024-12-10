@@ -87,6 +87,8 @@ type request struct {
 
 // New creates a new frontend. Frontend implements service, and must be started and stopped.
 func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*Frontend, error) {
+	var err error
+
 	f := &Frontend{
 		cfg:                cfg,
 		log:                log,
@@ -111,12 +113,31 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 		Name: "cortex_query_frontend_enqueue_duration_seconds",
 		Help: "Time spent by requests waiting to join the queue or be rejected.",
 	})
+	querierInflightRequests := promauto.With(registerer).NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "cortex_query_frontend_querier_inflight_requests",
+			Help:       "Number of inflight requests being processed on all querier-scheduler connections. Quantile buckets keep track of inflight requests over the last 60s.",
+			Objectives: map[float64]float64{0.5: 0.05, 0.75: 0.02, 0.8: 0.02, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001},
+			MaxAge:     time.Minute,
+			AgeBuckets: 6,
+		},
+		[]string{"query_component"},
+	)
+	f.requestQueue, err = queue.NewRequestQueue(
+		log,
+		cfg.MaxOutstandingPerTenant,
+		cfg.QuerierForgetDelay,
+		f.queueLength,
+		f.discardedRequests,
+		enqueueDuration,
+		querierInflightRequests,
+	)
+	if err != nil {
+		return nil, err
+	}
 
-	// additional queue dimensions not used in v1/frontend
-	f.requestQueue = queue.NewRequestQueue(log, cfg.MaxOutstandingPerTenant, false, cfg.QuerierForgetDelay, f.queueLength, f.discardedRequests, enqueueDuration)
 	f.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(f.cleanupInactiveUserMetrics)
 
-	var err error
 	f.subservices, err = services.NewManager(f.requestQueue, f.activeUsers)
 	if err != nil {
 		return nil, err
@@ -208,17 +229,22 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		return err
 	}
 
-	f.requestQueue.RegisterQuerierConnection(querierID)
-	defer f.requestQueue.UnregisterQuerierConnection(querierID)
+	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(server.Context(), querierID)
+	err = f.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
+	if err != nil {
+		return err
+	}
+	defer f.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
-	lastUserIndex := queue.FirstUser()
+	lastTenantIdx := queue.FirstTenant()
 
 	for {
-		reqWrapper, idx, err := f.requestQueue.GetNextRequestForQuerier(server.Context(), lastUserIndex, querierID)
+		dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
+		reqWrapper, idx, err := f.requestQueue.AwaitRequestForQuerier(dequeueReq)
 		if err != nil {
 			return err
 		}
-		lastUserIndex = idx
+		lastTenantIdx = idx
 
 		req := reqWrapper.(*request)
 
@@ -228,22 +254,22 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 
 		/*
 		  We want to dequeue the next unexpired request from the chosen tenant queue.
-		  The chance of choosing a particular tenant for dequeueing is (1/active_tenants).
+		  The chance of choosing a particular tenant for dequeuing is (1/active_tenants).
 		  This is problematic under load, especially with other middleware enabled such as
 		  querier.split-by-interval, where one request may fan out into many.
 		  If expired requests aren't exhausted before checking another tenant, it would take
 		  n_active_tenants * n_expired_requests_at_front_of_queue requests being processed
 		  before an active request was handled for the tenant in question.
 		  If this tenant meanwhile continued to queue requests,
-		  it's possible that it's own queue would perpetually contain only expired requests.
+		  it's possible that its own queue would perpetually contain only expired requests.
 		*/
 		if req.originalCtx.Err() != nil {
-			lastUserIndex = lastUserIndex.ReuseLastUser()
+			lastTenantIdx = lastTenantIdx.ReuseLastTenant()
 			continue
 		}
 
 		// Handle the stream sending & receiving on a goroutine so we can
-		// monitoring the contexts in a select and cancel things appropriately.
+		// monitor the contexts in a select and cancel things appropriately.
 		resps := make(chan *frontendv1pb.ClientToFrontend, 1)
 		errs := make(chan error, 1)
 		go func() {
@@ -292,9 +318,9 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 	}
 }
 
-func (f *Frontend) NotifyClientShutdown(_ context.Context, req *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
+func (f *Frontend) NotifyClientShutdown(ctx context.Context, req *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
 	level.Info(f.log).Log("msg", "received shutdown notification from querier", "querier", req.GetClientID())
-	f.requestQueue.NotifyQuerierShutdown(req.GetClientID())
+	f.requestQueue.SubmitNotifyQuerierShutdown(ctx, req.GetClientID())
 
 	return &frontendv1pb.NotifyClientShutdownResponse{}, nil
 }
@@ -338,7 +364,7 @@ func (f *Frontend) queueRequest(ctx context.Context, req *request) error {
 	joinedTenantID := tenant.JoinTenantIDs(tenantIDs)
 	f.activeUsers.UpdateUserTimestamp(joinedTenantID, now)
 
-	err = f.requestQueue.EnqueueRequestToDispatcher(joinedTenantID, req, maxQueriers, nil)
+	err = f.requestQueue.SubmitRequestToEnqueue(joinedTenantID, req, maxQueriers, nil)
 	if errors.Is(err, queue.ErrTooManyRequests) {
 		return errTooManyRequest
 	}

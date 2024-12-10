@@ -9,8 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kfake"
+	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 func TestIngesterPartitionID(t *testing.T) {
@@ -122,5 +125,129 @@ func TestResultPromise(t *testing.T) {
 		actual, err := rw.wait(ctxWithTimeout)
 		require.Equal(t, context.DeadlineExceeded, err)
 		require.Equal(t, 0, actual)
+	})
+}
+
+func TestCreateTopic(t *testing.T) {
+	createKafkaCluster := func(t *testing.T) (string, *kfake.Cluster) {
+		cluster, err := kfake.NewCluster(kfake.NumBrokers(1))
+		require.NoError(t, err)
+		t.Cleanup(cluster.Close)
+
+		addrs := cluster.ListenAddrs()
+		require.Len(t, addrs, 1)
+
+		return addrs[0], cluster
+	}
+
+	t.Run("should create the partitions", func(t *testing.T) {
+		var (
+			addr, cluster = createKafkaCluster(t)
+			cfg           = KafkaConfig{
+				Topic:                            "topic-name",
+				Address:                          addr,
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+		)
+
+		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(request kmsg.Request) (kmsg.Response, error, bool) {
+			r := request.(*kmsg.CreateTopicsRequest)
+
+			assert.Len(t, r.Topics, 1)
+			res := r.Topics[0]
+			assert.Equal(t, cfg.Topic, res.Topic)
+			assert.Equal(t, 100, res.NumPartitions)
+			assert.Equal(t, -1, res.ReplicationFactor)
+			assert.Empty(t, res.Configs)
+			assert.Empty(t, res.ReplicaAssignment)
+
+			return &kmsg.CreateTopicsResponse{
+				Version: r.Version,
+				Topics: []kmsg.CreateTopicsResponseTopic{
+					{
+						Topic:             cfg.Topic,
+						NumPartitions:     res.NumPartitions,
+						ReplicationFactor: 3,
+					},
+				},
+			}, nil, true
+		})
+
+		logger := log.NewNopLogger()
+
+		require.NoError(t, CreateTopic(cfg, logger))
+	})
+
+	t.Run("should return an error if the request fails", func(t *testing.T) {
+		var (
+			addr, cluster = createKafkaCluster(t)
+			cfg           = KafkaConfig{
+				Address:                          addr,
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+		)
+
+		cluster.ControlKey(kmsg.CreateTopics.Int16(), func(_ kmsg.Request) (kmsg.Response, error, bool) {
+			return &kmsg.CreateTopicsResponse{}, errors.New("failed request"), true
+		})
+
+		logger := log.NewNopLogger()
+
+		require.NoError(t, CreateTopic(cfg, logger))
+	})
+
+	t.Run("should return an error if the request succeed but the response contains an error", func(t *testing.T) {
+		var (
+			addr, cluster = createKafkaCluster(t)
+			cfg           = KafkaConfig{
+				Topic:                            "topic-name",
+				Address:                          addr,
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+		)
+
+		cluster.ControlKey(kmsg.AlterConfigs.Int16(), func(kReq kmsg.Request) (kmsg.Response, error, bool) {
+			req := kReq.(*kmsg.CreateTopicsRequest)
+			assert.Len(t, req.Topics, 1)
+			res := req.Topics[0]
+			assert.Equal(t, cfg.Topic, res.Topic)
+			assert.Equal(t, 100, res.NumPartitions)
+			assert.Equal(t, -1, res.ReplicationFactor)
+			assert.Empty(t, res.Configs)
+			assert.Empty(t, res.ReplicaAssignment)
+
+			return &kmsg.CreateTopicsResponse{
+				Version: req.Version,
+				Topics: []kmsg.CreateTopicsResponseTopic{
+					{
+						Topic:             cfg.Topic,
+						NumPartitions:     res.NumPartitions,
+						ReplicationFactor: 3,
+					},
+				},
+			}, nil, true
+		})
+
+		logger := log.NewNopLogger()
+
+		require.NoError(t, CreateTopic(cfg, logger))
+	})
+
+	t.Run("should not return error when topic already exists", func(t *testing.T) {
+		var (
+			addr, _ = createKafkaCluster(t)
+			cfg     = KafkaConfig{
+				Topic:                            "topic-name",
+				Address:                          addr,
+				AutoCreateTopicDefaultPartitions: 100,
+			}
+			logger = log.NewNopLogger()
+		)
+
+		// First call should create the topic
+		assert.NoError(t, CreateTopic(cfg, logger))
+
+		// Second call should succeed because topic already exists
+		assert.NoError(t, CreateTopic(cfg, logger))
 	})
 }

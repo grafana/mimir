@@ -47,7 +47,7 @@ const (
 	saslStageComplete
 )
 
-func (c *Cluster) handleSASL(creq clientReq) (allow bool) {
+func (c *Cluster) handleSASL(creq *clientReq) (allow bool) {
 	switch creq.cc.saslStage {
 	case saslStageBegin:
 		switch creq.kreq.(type) {

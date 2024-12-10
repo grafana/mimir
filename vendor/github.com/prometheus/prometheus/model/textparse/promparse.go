@@ -166,8 +166,11 @@ type PromParser struct {
 }
 
 // NewPromParser returns a new parser of the byte slice.
-func NewPromParser(b []byte) Parser {
-	return &PromParser{l: &promlexer{b: append(b, '\n')}}
+func NewPromParser(b []byte, st *labels.SymbolTable) Parser {
+	return &PromParser{
+		l:       &promlexer{b: append(b, '\n')},
+		builder: labels.NewScratchBuilderWithSymbolTable(st, 16),
+	}
 }
 
 // Series returns the bytes of the series, the timestamp if set, and the value
@@ -236,7 +239,8 @@ func (p *PromParser) Metric(l *labels.Labels) string {
 		label := unreplace(s[a:b])
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
-		value := unreplace(s[c:d])
+		value := normalizeFloatsInLabelValues(p.mtype, label, unreplace(s[c:d]))
+
 		p.builder.Add(label, value)
 	}
 
@@ -277,8 +281,8 @@ func (p *PromParser) parseError(exp string, got token) error {
 	return fmt.Errorf("%s, got %q (%q) while parsing: %q", exp, p.l.b[p.l.start:e], got, p.l.b[p.start:e])
 }
 
-// Next advances the parser to the next sample. It returns false if no
-// more samples were read or an error occurred.
+// Next advances the parser to the next sample.
+// It returns (EntryInvalid, io.EOF) if no samples were read.
 func (p *PromParser) Next() (Entry, error) {
 	var err error
 
@@ -499,13 +503,13 @@ func unreplace(s string) string {
 }
 
 func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
+	return unsafe.String(unsafe.SliceData(b), len(b))
 }
 
 func parseFloat(s string) (float64, error) {
 	// Keep to pre-Go 1.13 float formats.
 	if strings.ContainsAny(s, "pP_") {
-		return 0, fmt.Errorf("unsupported character in float")
+		return 0, errors.New("unsupported character in float")
 	}
 	return strconv.ParseFloat(s, 64)
 }

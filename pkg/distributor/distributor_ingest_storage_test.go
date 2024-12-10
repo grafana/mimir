@@ -6,28 +6,39 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/mtime"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -70,7 +81,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 		"should shard series across all partitions when shuffle sharding is disabled": {
 			shardSize: 0,
 			expectedSeriesByPartition: map[int32][]string{
-				0: {"series_one", "series_three", "series_four"},
+				0: {"series_four", "series_one", "series_three"},
 				1: {"series_two"},
 				2: {"series_five"},
 			},
@@ -78,8 +89,8 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 		"should shard series across the number of configured partitions when shuffle sharding is enabled": {
 			shardSize: 2,
 			expectedSeriesByPartition: map[int32][]string{
-				1: {"series_one", "series_two", "series_three"},
-				2: {"series_four", "series_five"},
+				1: {"series_one", "series_three", "series_two"},
+				2: {"series_five", "series_four"},
 			},
 		},
 		"should return gRPC error if writing to 1 out of N partitions fail with a non-retryable error": {
@@ -88,10 +99,10 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				// Non-retryable error.
 				1: testkafka.CreateProduceResponseError(0, kafkaTopic, 1, kerr.InvalidTopicException),
 			},
-			expectedErr: fmt.Errorf(fmt.Sprintf("%s %d", failedPushingToPartitionMessage, 1)),
+			expectedErr: fmt.Errorf("%s 1", failedPushingToPartitionMessage),
 			expectedSeriesByPartition: map[int32][]string{
 				// Partition 1 is missing because it failed.
-				0: {"series_one", "series_three", "series_four"},
+				0: {"series_four", "series_one", "series_three"},
 				2: {"series_five"},
 			},
 		},
@@ -108,15 +119,13 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 			expectedErr: context.DeadlineExceeded,
 			expectedSeriesByPartition: map[int32][]string{
 				// Partition 1 is missing because it failed.
-				0: {"series_one", "series_three", "series_four"},
+				0: {"series_four", "series_one", "series_three"},
 				2: {"series_five"},
 			},
 		},
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
@@ -129,6 +138,11 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				ingestStorageEnabled:    true,
 				ingestStoragePartitions: 3,
 				limits:                  limits,
+				configure: func(cfg *Config) {
+					// Run a number of clients equal to the number of partitions, so that each partition
+					// has its own client, as requested by some test cases.
+					cfg.IngestStorageConfig.KafkaConfig.WriteClients = 3
+				},
 			}
 
 			distributors, _, regs, kafkaCluster := prepare(t, testConfig)
@@ -175,21 +189,8 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				assert.Equal(t, emptyResponse, res)
 			}
 
-			// Read all requests written to Kafka.
-			requestsByPartition := readAllRequestsByPartitionFromKafka(t, kafkaCluster.ListenAddrs(), testConfig.ingestStoragePartitions, time.Second)
-
 			// Ensure series has been sharded as expected.
-			actualSeriesByPartition := map[int32][]string{}
-
-			for partitionID, requests := range requestsByPartition {
-				for _, req := range requests {
-					for _, series := range req.Timeseries {
-						metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(series.Labels)
-						actualSeriesByPartition[partitionID] = append(actualSeriesByPartition[partitionID], metricName)
-					}
-				}
-			}
-
+			actualSeriesByPartition := readAllMetricNamesByPartitionFromKafka(t, kafkaCluster.ListenAddrs(), testConfig.ingestStoragePartitions, time.Second)
 			assert.Equal(t, testData.expectedSeriesByPartition, actualSeriesByPartition)
 
 			// Asserts on tracked metrics.
@@ -229,27 +230,6 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 					# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 					# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
 					cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} %f
-
-					# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
-					# TYPE cortex_distributor_sample_delay_seconds histogram
-					cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
-					cortex_distributor_sample_delay_seconds_bucket{le="-15"} 0
-					cortex_distributor_sample_delay_seconds_bucket{le="-5"} 0
-					cortex_distributor_sample_delay_seconds_bucket{le="30"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="60"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="120"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="240"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="480"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="600"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="1800"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="3600"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="7200"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="10800"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="21600"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="86400"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 5
-					cortex_distributor_sample_delay_seconds_sum 0
-					cortex_distributor_sample_delay_seconds_count 5
 				`, float64(now.UnixMilli())/1000.)),
 				"cortex_distributor_received_requests_total",
 				"cortex_distributor_received_samples_total",
@@ -260,10 +240,372 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				"cortex_distributor_exemplars_in_total",
 				"cortex_distributor_metadata_in_total",
 				"cortex_distributor_latest_seen_sample_timestamp_seconds",
-				"cortex_distributor_sample_delay_seconds",
 			))
 		})
 	}
+}
+
+func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestContainsTimeseriesBiggerThanLimit(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+	now := time.Now()
+
+	hugeLabelValueLength := 100 * 1024 * 1024
+
+	createWriteRequest := func() *mimirpb.WriteRequest {
+		return &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{
+				makeTimeseries([]string{model.MetricNameLabel, strings.Repeat("x", hugeLabelValueLength)}, makeSamples(now.UnixMilli(), 1), nil),
+			},
+		}
+	}
+
+	limits := prepareDefaultLimits()
+	limits.MaxLabelValueLength = hugeLabelValueLength
+
+	overrides, err := validation.NewOverrides(*limits, nil)
+	require.NoError(t, err)
+
+	testConfig := prepConfig{
+		numDistributors:         1,
+		ingestStorageEnabled:    true,
+		ingestStoragePartitions: 1,
+		limits:                  limits,
+	}
+
+	distributors, _, regs, _ := prepare(t, testConfig)
+	require.Len(t, distributors, 1)
+	require.Len(t, regs, 1)
+
+	t.Run("Push()", func(t *testing.T) {
+		// Send write request.
+		res, err := distributors[0].Push(ctx, createWriteRequest())
+		require.Error(t, err)
+		require.Nil(t, res)
+
+		// We expect a gRPC error.
+		errStatus, ok := grpcutil.ErrorToStatus(err)
+		require.True(t, ok)
+		assert.Equal(t, codes.InvalidArgument, errStatus.Code())
+		assert.ErrorContains(t, errStatus.Err(), ingest.ErrWriteRequestDataItemTooLarge.Error())
+
+		// We expect the gRPC error to be detected as client error.
+		assert.True(t, mimirpb.IsClientError(err))
+	})
+
+	t.Run("Handler()", func(t *testing.T) {
+		marshalledReq, err := createWriteRequest().Marshal()
+		require.NoError(t, err)
+
+		maxRecvMsgSize := hugeLabelValueLength * 2
+		resp := httptest.NewRecorder()
+		sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
+
+		// Send write request through the HTTP handler.
+		h := Handler(maxRecvMsgSize, nil, sourceIPs, false, false, overrides, RetryConfig{}, distributors[0].PushWithMiddlewares, nil, log.NewNopLogger())
+		h.ServeHTTP(resp, createRequest(t, marshalledReq))
+		assert.Equal(t, http.StatusBadRequest, resp.Code)
+	})
+}
+
+func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user")
+	now := time.Now()
+
+	// To keep assertions simple, all tests send the same request.
+	createRequest := func() *mimirpb.WriteRequest {
+		return &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{
+				makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_two"}, makeSamples(now.UnixMilli(), 2), nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_three"}, makeSamples(now.UnixMilli(), 3), nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_four"}, makeSamples(now.UnixMilli(), 4), nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_five"}, makeSamples(now.UnixMilli(), 5), nil),
+			},
+		}
+	}
+
+	tests := map[string]struct {
+		shardSize                     int
+		shouldFailWritingToPartitions bool
+		shouldFailWritingToIngesters  bool
+		expectedErr                   string
+		expectedMetricsByPartition    map[int32][]string
+		expectedMetricsByIngester     map[string][]string
+	}{
+		"should shard series across all partitions when shuffle sharding is disabled": {
+			shardSize: 0,
+			expectedMetricsByPartition: map[int32][]string{
+				0: {"series_four", "series_one", "series_three"},
+				1: {"series_two"},
+				2: {"series_five"},
+			},
+			expectedMetricsByIngester: map[string][]string{
+				"ingester-0": {"series_four", "series_five"},
+				"ingester-1": {"series_one", "series_two", "series_three"},
+				"ingester-2": {},
+			},
+		},
+		"should shard series across the number of configured partitions / ingesters when shuffle sharding is enabled": {
+			shardSize: 2,
+			expectedMetricsByPartition: map[int32][]string{
+				1: {"series_one", "series_three", "series_two"},
+				2: {"series_five", "series_four"},
+			},
+			expectedMetricsByIngester: map[string][]string{
+				"ingester-0": {"series_four", "series_five"},
+				"ingester-1": {"series_one", "series_two", "series_three"},
+			},
+		},
+		"should return gRPC error if fails to write to ingesters": {
+			shouldFailWritingToIngesters: true,
+			expectedErr:                  failedPushingToIngesterMessage,
+		},
+		"should return gRPC error if fails to write to partitions": {
+			shouldFailWritingToPartitions: true,
+			expectedErr:                   failedPushingToPartitionMessage,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			// Pre-condition: ensure that sharding is different between ingesters and partitions.
+			// This is required to ensure series are correctly sharded based on ingesters and partitions ring.
+			// If the sharding is the same, then we have no guarantee it's actually working as expected.
+			if len(testData.expectedMetricsByIngester) > 0 && len(testData.expectedMetricsByPartition) > 0 {
+				actualPartitionsSharding := map[string][]string{}
+				actualIngestersSharding := map[string][]string{}
+
+				for partitionID, partitionMetrics := range testData.expectedMetricsByPartition {
+					actualPartitionsSharding[strconv.Itoa(int(partitionID))] = slices.Clone(partitionMetrics)
+					slices.Sort(actualPartitionsSharding[strconv.Itoa(int(partitionID))])
+				}
+				for ingesterID, ingesterMetrics := range testData.expectedMetricsByIngester {
+					partitionID, err := ingest.IngesterPartitionID(ingesterID)
+					require.NoError(t, err)
+
+					actualIngestersSharding[strconv.Itoa(int(partitionID))] = slices.Clone(ingesterMetrics)
+					slices.Sort(actualIngestersSharding[strconv.Itoa(int(partitionID))])
+				}
+
+				require.NotEqual(t, actualPartitionsSharding, actualIngestersSharding)
+			}
+
+			// Setup distributors and ingesters.
+			limits := prepareDefaultLimits()
+			limits.IngestionPartitionsTenantShardSize = testData.shardSize
+			limits.IngestionTenantShardSize = testData.shardSize
+
+			testConfig := prepConfig{
+				numDistributors:         1,
+				numIngesters:            3,
+				happyIngesters:          3,
+				replicationFactor:       1,
+				ingesterIngestionType:   ingesterIngestionTypeGRPC, // Do not consume from Kafka. Partitions are asserted directly checking Kafka.
+				ingestStorageEnabled:    true,
+				ingestStoragePartitions: 3,
+				limits:                  limits,
+				configure: func(cfg *Config) {
+					cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
+				},
+			}
+
+			distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig)
+			require.Len(t, distributors, 1)
+			require.Len(t, ingesters, 3)
+			require.Len(t, regs, 1)
+
+			if testData.shouldFailWritingToPartitions {
+				kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
+					kafkaCluster.KeepControl()
+
+					partitionID := req.(*kmsg.ProduceRequest).Topics[0].Partitions[0].Partition
+					res := testkafka.CreateProduceResponseError(req.GetVersion(), kafkaTopic, partitionID, kerr.InvalidTopicException)
+
+					return res, nil, true
+				})
+			}
+
+			if testData.shouldFailWritingToIngesters {
+				for _, ingester := range ingesters {
+					ingester.happy = false
+				}
+			}
+
+			// Send write request.
+			_, err := distributors[0].Push(ctx, createRequest())
+
+			if testData.expectedErr != "" {
+				require.Error(t, err)
+
+				// We expect a gRPC error.
+				errStatus, ok := grpcutil.ErrorToStatus(err)
+				require.True(t, ok)
+				assert.Equal(t, codes.Internal, errStatus.Code())
+				assert.ErrorContains(t, errStatus.Err(), testData.expectedErr)
+
+				// End the test here.
+				return
+			}
+
+			require.NoError(t, err)
+
+			// Ensure series has been correctly sharded to partitions.
+			actualSeriesByPartition := readAllMetricNamesByPartitionFromKafka(t, kafkaCluster.ListenAddrs(), testConfig.ingestStoragePartitions, time.Second)
+			if !assert.Equal(t, testData.expectedMetricsByPartition, actualSeriesByPartition, "please report this failure in https://github.com/grafana/mimir/issues/9299") {
+				// This test is sometimes flaky. Add a log line to help debug it.
+				// Inspect the offsets of partitions in Kafka. There may be records, but we couldn't fetch them in the 1s timeout above.
+				kafkaClient, err := kgo.NewClient(kgo.SeedBrokers(kafkaCluster.ListenAddrs()...))
+				assert.NoError(t, err)
+				offsets, err := kadm.NewClient(kafkaClient).ListEndOffsets(context.Background(), kafkaTopic)
+				assert.NoError(t, err)
+				t.Logf("Kafka topic %s end offsets: %#v", kafkaTopic, offsets)
+			}
+
+			// Ensure series have been correctly sharded to ingesters.
+			for _, ingester := range ingesters {
+				assert.ElementsMatchf(t, testData.expectedMetricsByIngester[ingester.instanceID()], ingester.metricNames(), "ingester ID: %s", ingester.instanceID())
+			}
+		})
+	}
+}
+
+func TestDistributor_Push_ShouldCleanupWriteRequestAfterWritingBothToIngestersAndPartitions(t *testing.T) {
+	t.Parallel()
+
+	ctx := user.InjectOrgID(context.Background(), "user")
+	now := time.Now()
+
+	testConfig := prepConfig{
+		numDistributors:         1,
+		numIngesters:            3,
+		happyIngesters:          3,
+		replicationFactor:       3,
+		ingesterIngestionType:   ingesterIngestionTypeGRPC, // Do not consume from Kafka in this test.
+		ingestStorageEnabled:    true,
+		ingestStoragePartitions: 1,
+		limits:                  prepareDefaultLimits(),
+		configure: func(cfg *Config) {
+			cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
+		},
+	}
+
+	distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig)
+	require.Len(t, distributors, 1)
+	require.Len(t, ingesters, 3)
+	require.Len(t, regs, 1)
+
+	// In this test ingesters have been configured with RF=3. This means that the write request will succeed
+	// once written to at least 2 out of 3 ingesters. We configure 1 ingester to block the Push() request, and
+	// then we control when unblocking it.
+	releaseSlowIngesterPush := make(chan struct{})
+	ingesters[0].registerBeforePushHook(func(_ context.Context, _ *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool) {
+		<-releaseSlowIngesterPush
+		return nil, nil, false
+	})
+
+	// Wrap the distributor Push() to inject a custom cleanup function, so that we can track when it gets called.
+	pushCleanupCallsCount := atomic.NewInt64(0)
+	origPushWithMiddlewares := distributors[0].PushWithMiddlewares
+	distributors[0].PushWithMiddlewares = func(ctx context.Context, req *Request) error {
+		req.AddCleanup(func() {
+			pushCleanupCallsCount.Inc()
+		})
+
+		return origPushWithMiddlewares(ctx, req)
+	}
+
+	// Send write request.
+	_, err := distributors[0].Push(ctx, &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil),
+		},
+	})
+	require.NoError(t, err)
+
+	// Since there's still 1 ingester in-flight request, we expect the cleanup function not being called yet.
+	require.Equal(t, int64(0), pushCleanupCallsCount.Load())
+	time.Sleep(time.Second)
+	require.Equal(t, int64(0), pushCleanupCallsCount.Load())
+
+	// Unblock the slow ingester.
+	close(releaseSlowIngesterPush)
+
+	// Now we expect the cleanup function being called as soon as the request to the slow ingester completes.
+	test.Poll(t, time.Second, int64(1), func() interface{} {
+		return pushCleanupCallsCount.Load()
+	})
+
+	// Ensure series has been correctly written to partitions.
+	actualSeriesByPartition := readAllMetricNamesByPartitionFromKafka(t, kafkaCluster.ListenAddrs(), testConfig.ingestStoragePartitions, time.Second)
+	assert.Equal(t, map[int32][]string{0: {"series_one"}}, actualSeriesByPartition)
+
+	// Ensure series have been correctly sharded to ingesters.
+	for _, ingester := range ingesters {
+		assert.Equal(t, []string{"series_one"}, ingester.metricNames(), "ingester ID: %s", ingester.instanceID())
+	}
+}
+
+func TestDistributor_Push_ShouldGivePrecedenceToPartitionsErrorWhenWritingBothToIngestersAndPartitions(t *testing.T) {
+	t.Parallel()
+
+	ctx := user.InjectOrgID(context.Background(), "user")
+	now := time.Now()
+
+	testConfig := prepConfig{
+		numDistributors:         1,
+		numIngesters:            1,
+		happyIngesters:          1,
+		replicationFactor:       1,
+		ingesterIngestionType:   ingesterIngestionTypeGRPC, // Do not consume from Kafka in this test.
+		ingestStorageEnabled:    true,
+		ingestStoragePartitions: 1,
+		limits:                  prepareDefaultLimits(),
+		configure: func(cfg *Config) {
+			cfg.IngestStorageConfig.Migration.DistributorSendToIngestersEnabled = true
+		},
+	}
+
+	distributors, ingesters, regs, kafkaCluster := prepare(t, testConfig)
+	require.Len(t, distributors, 1)
+	require.Len(t, ingesters, 1)
+	require.Len(t, regs, 1)
+
+	// Mock Kafka to return an hard error.
+	releaseProduceRequest := make(chan struct{})
+	kafkaCluster.ControlKey(int16(kmsg.Produce), func(req kmsg.Request) (kmsg.Response, error, bool) {
+		kafkaCluster.KeepControl()
+
+		// Wait until released, then add an extra sleep to increase the likelihood this error
+		// will be returned after the ingester one.
+		<-releaseProduceRequest
+		time.Sleep(time.Second)
+
+		partitionID := req.(*kmsg.ProduceRequest).Topics[0].Partitions[0].Partition
+		res := testkafka.CreateProduceResponseError(req.GetVersion(), kafkaTopic, partitionID, kerr.InvalidTopicException)
+
+		return res, nil, true
+	})
+
+	// Mock ingester to return a soft error.
+	ingesters[0].registerBeforePushHook(func(_ context.Context, _ *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error, bool) {
+		// Release the Kafka produce request once the push to ingester has been received.
+		close(releaseProduceRequest)
+
+		ingesterErr := httpgrpc.Errorf(http.StatusBadRequest, "ingester error")
+		return &mimirpb.WriteResponse{}, ingesterErr, true
+	})
+
+	// Send write request.
+	_, err := distributors[0].Push(ctx, &mimirpb.WriteRequest{
+		Timeseries: []mimirpb.PreallocTimeseries{
+			makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil),
+		},
+	})
+
+	require.Error(t, err)
+	assert.ErrorContains(t, err, "send data to partitions")
 }
 
 func TestDistributor_UserStats_ShouldSupportIngestStorage(t *testing.T) {
@@ -511,14 +853,10 @@ func TestDistributor_UserStats_ShouldSupportIngestStorage(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
-
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 
@@ -813,14 +1151,10 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
-
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 
@@ -1106,14 +1440,10 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistencyWithIngestStorage(t 
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
-
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 
@@ -1209,4 +1539,22 @@ func readAllRequestsByPartitionFromKafka(t testing.TB, kafkaAddresses []string, 
 	}
 
 	return requestsByPartition
+}
+
+func readAllMetricNamesByPartitionFromKafka(t testing.TB, kafkaAddresses []string, numPartitions int32, timeout time.Duration) map[int32][]string {
+	requestsByPartition := readAllRequestsByPartitionFromKafka(t, kafkaAddresses, numPartitions, timeout)
+	actualSeriesByPartition := map[int32][]string{}
+
+	for partitionID, requests := range requestsByPartition {
+		for _, req := range requests {
+			for _, series := range req.Timeseries {
+				metricName, _ := extract.UnsafeMetricNameFromLabelAdapters(series.Labels)
+				actualSeriesByPartition[partitionID] = append(actualSeriesByPartition[partitionID], metricName)
+			}
+		}
+
+		slices.Sort(actualSeriesByPartition[partitionID])
+	}
+
+	return actualSeriesByPartition
 }

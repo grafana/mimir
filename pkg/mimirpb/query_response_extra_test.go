@@ -77,5 +77,37 @@ func extractPrometheusStrings(t *testing.T, constantType string) []string {
 // FloatHistogram types converted into each other with unsafe.Pointer
 // are compatible
 func TestFloatHistogramProtobufTypeRemainsInSyncWithPrometheus(t *testing.T) {
-	test.RequireSameShape(t, histogram.FloatHistogram{}, FloatHistogram{}, false)
+	test.RequireSameShape(t, histogram.FloatHistogram{}, FloatHistogram{}, false, false)
+}
+
+// This example is from an investigation into a bug in the ruler. Keeping it here for future reference.
+func TestFloatHistogramProtobufToPrometheus(t *testing.T) {
+	fh := &FloatHistogram{
+		CounterResetHint: 3,
+		Schema:           3,
+		ZeroThreshold:    2.938735877055719e-39,
+		ZeroCount:        0,
+		Count:            6.844444444444443,
+		Sum:              0.00872226031111156,
+		PositiveSpans:    []BucketSpan{{-134, 10}, {1, 2}, {2, 4}, {2, 2}, {5, 1}, {43, 1}, {3, 2}, {3, 1}, {21, 1}, {1, 2}, {4, 1}},
+		NegativeSpans:    nil,
+		PositiveBuckets:  []float64{0.02222222222222222, 0.9999999999999998, 1.2, 1.0666666666666667, 0.9777777777777776, 1.1777777777777776, 0.42222222222222217, 0.2444444444444444, 0.1333333333333333, 0.17777777777777776, 0.04444444444444444, 0.02222222222222222, 0.04444444444444444, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222},
+		NegativeBuckets:  nil,
+	}
+	expectedModelh := &histogram.FloatHistogram{
+		CounterResetHint: histogram.GaugeType,
+		Schema:           3,
+		ZeroThreshold:    2.938735877055719e-39,
+		ZeroCount:        0,
+		Count:            6.844444444444443,
+		Sum:              0.00872226031111156,
+		PositiveSpans:    []histogram.Span{{Offset: -134, Length: 10}, {Offset: 1, Length: 2}, {Offset: 2, Length: 4}, {Offset: 2, Length: 2}, {Offset: 5, Length: 1}, {Offset: 43, Length: 1}, {Offset: 3, Length: 2}, {Offset: 3, Length: 1}, {Offset: 21, Length: 1}, {Offset: 1, Length: 2}, {Offset: 4, Length: 1}},
+		NegativeSpans:    nil,
+		PositiveBuckets:  []float64{0.02222222222222222, 0.9999999999999998, 1.2, 1.0666666666666667, 0.9777777777777776, 1.1777777777777776, 0.42222222222222217, 0.2444444444444444, 0.1333333333333333, 0.17777777777777776, 0.04444444444444444, 0.02222222222222222, 0.04444444444444444, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222, 0.02222222222222222},
+		NegativeBuckets:  nil,
+	}
+
+	modelh := fh.ToPrometheusModel()
+
+	require.Equal(t, expectedModelh, modelh)
 }

@@ -42,6 +42,79 @@ func TestWriteRequest_MinTimestamp(t *testing.T) {
 	assert.Equal(t, int64(10), req.MinTimestamp())
 }
 
+func TestWriteRequest_IsEmpty(t *testing.T) {
+	t.Run("should return false if a WriteRequest has both Timeseries and Metadata", func(t *testing.T) {
+		req := &WriteRequest{
+			Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
+				Samples: []Sample{{TimestampMs: 20}},
+			}}},
+			Metadata: []*MetricMetadata{
+				{Type: COUNTER, MetricFamilyName: "test_metric", Help: "This is a test metric."},
+			},
+		}
+
+		assert.False(t, req.IsEmpty())
+	})
+
+	t.Run("should return false if a WriteRequest has only Timeseries", func(t *testing.T) {
+		req := &WriteRequest{
+			Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
+				Samples: []Sample{{TimestampMs: 20}},
+			}}},
+		}
+
+		assert.False(t, req.IsEmpty())
+	})
+
+	t.Run("should return false if a WriteRequest has only Metadata", func(t *testing.T) {
+		req := &WriteRequest{
+			Metadata: []*MetricMetadata{
+				{Type: COUNTER, MetricFamilyName: "test_metric", Help: "This is a test metric."},
+			},
+		}
+
+		assert.False(t, req.IsEmpty())
+	})
+
+	t.Run("should return true if a WriteRequest has no Timeseries and Metadata", func(t *testing.T) {
+		req := &WriteRequest{
+			Source:              API,
+			SkipLabelValidation: true,
+		}
+
+		assert.True(t, req.IsEmpty())
+	})
+}
+
+func TestWriteRequest_MetadataSize_TimeseriesSize(t *testing.T) {
+	req := &WriteRequest{
+		Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
+			Samples:    []Sample{{TimestampMs: 20}},
+			Exemplars:  []Exemplar{{TimestampMs: 30}},
+			Histograms: []Histogram{{Timestamp: 10}},
+		}}},
+		Metadata: []*MetricMetadata{
+			{Type: COUNTER, MetricFamilyName: "test_metric", Help: "This is a test metric."},
+		},
+	}
+
+	origSize := req.Size()
+	metadataSize := req.MetadataSize()
+	timeseriesSize := req.TimeseriesSize()
+
+	assert.Less(t, metadataSize, origSize)
+	assert.Less(t, timeseriesSize, origSize)
+	assert.Equal(t, origSize, req.Size())
+
+	reqWithoutTimeseries := *req
+	reqWithoutTimeseries.Timeseries = nil
+	assert.Equal(t, origSize-timeseriesSize, reqWithoutTimeseries.Size())
+
+	reqWithoutMetadata := *req
+	reqWithoutMetadata.Metadata = nil
+	assert.Equal(t, origSize-metadataSize, reqWithoutMetadata.Size())
+}
+
 func TestIsFloatHistogram(t *testing.T) {
 	tests := map[string]struct {
 		histogram Histogram

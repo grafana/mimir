@@ -37,6 +37,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -67,7 +68,7 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	grpcPort, err := strconv.Atoi(p)
 	require.NoError(t, err)
 
-	cfg := Config{AdditionalQueryQueueDimensionsEnabled: true}
+	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.SchedulerAddress = l.Addr().String()
 	cfg.WorkerConcurrency = concurrency
@@ -75,7 +76,9 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	cfg.Port = grpcPort
 
 	logger := log.NewLogfmtLogger(os.Stdout)
-	f, err := NewFrontend(cfg, limits{}, logger, reg)
+	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
+
+	f, err := NewFrontend(cfg, limits{}, logger, reg, codec)
 	require.NoError(t, err)
 
 	frontendv2pb.RegisterFrontendForQuerierServer(server, f)
@@ -139,7 +142,7 @@ func TestFrontendBasicWorkflow(t *testing.T) {
 	})
 
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
@@ -175,7 +178,7 @@ func TestFrontend_ShouldTrackPerRequestMetrics(t *testing.T) {
 	assert.Equal(t, uint64(0), metricsMap["cortex_query_frontend_enqueue_duration_seconds"].GetMetric()[0].GetHistogram().GetSampleCount())
 
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
@@ -220,36 +223,78 @@ func TestFrontendRetryEnqueue(t *testing.T) {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	_, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)
 }
 
 func TestFrontendTooManyRequests(t *testing.T) {
-	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+	f, _ := setupFrontend(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	})
 
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
 	require.Equal(t, int32(http.StatusTooManyRequests), resp.Code)
 }
 
-func TestFrontendEnqueueFailure(t *testing.T) {
-	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
-		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
-	})
+func TestFrontendEnqueueFailures(t *testing.T) {
+	t.Run("scheduler is shutting down with valid query", func(t *testing.T) {
+		f, _ := setupFrontend(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
+		})
 
-	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
-	}
-	_, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
-	require.Error(t, err)
-	require.True(t, strings.Contains(err.Error(), "failed to enqueue request"))
+		req := &httpgrpc.HTTPRequest{
+			Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up",
+		}
+		_, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
+		require.Error(t, err)
+		require.True(t, strings.Contains(err.Error(), "failed to enqueue request"))
+	})
+	t.Run("scheduler is running fine", func(t *testing.T) {
+		f, _ := setupFrontend(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+			return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
+		})
+
+		cases := []struct {
+			name, url, error string
+		}{
+			{
+				name:  "start time is wrong",
+				url:   "/api/v1/query_range?start=9466camnsd84800&end=946771200&step=60&query=up{}",
+				error: `rpc error: code = Code(400) desc = failed to enqueue request: invalid parameter "start": cannot parse "9466camnsd84800" to a valid timestamp`,
+			},
+			{
+				name:  "end time is wrong",
+				url:   "/api/v1/query_range?start=946684800&end=946771200dgiu&step=60&query=up{}",
+				error: `rpc error: code = Code(400) desc = failed to enqueue request: invalid parameter "end": cannot parse "946771200dgiu" to a valid timestamp`,
+			},
+			{
+				name:  "query time is wrong",
+				url:   "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{",
+				error: `rpc error: code = Code(400) desc = failed to enqueue request: invalid parameter "query": 1:4: parse error: unexpected end of input inside braces`,
+			},
+			{
+				name:  "no query provided",
+				url:   "/api/v1/query_range?start=946684800&end=946771200&step=60",
+				error: `rpc error: code = Code(400) desc = failed to enqueue request: invalid parameter "query": unknown position: parse error: no expression found in input`,
+			},
+		}
+		for _, c := range cases {
+			t.Run(c.name, func(t *testing.T) {
+				req := &httpgrpc.HTTPRequest{
+					Url: c.url,
+				}
+				_, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), "test"), req)
+				require.Error(t, err)
+				require.Equal(t, c.error, err.Error())
+			})
+		}
+	})
 }
 
 func TestFrontendCancellation(t *testing.T) {
@@ -259,7 +304,7 @@ func TestFrontendCancellation(t *testing.T) {
 	defer cancel()
 
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
 	require.EqualError(t, err, context.DeadlineExceeded.Error())
@@ -292,7 +337,7 @@ func TestFrontendWorkerCancellation(t *testing.T) {
 
 	// send multiple requests > maxconcurrency of scheduler. So that it keeps all the frontend worker busy in serving requests.
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	reqCount := testFrontendWorkerConcurrency + 5
 	var wg sync.WaitGroup
@@ -363,7 +408,7 @@ func TestFrontendFailedCancellation(t *testing.T) {
 
 	// send request
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(ctx, "test"), req)
 	require.EqualError(t, err, context.Canceled.Error())
@@ -447,16 +492,17 @@ func TestFrontendStreamingResponse(t *testing.T) {
 			name: "context cancelled while streaming response",
 			sendResultStream: func(f *Frontend, msg *schedulerpb.FrontendToScheduler) error {
 				ctx, cancelCause := context.WithCancelCause(user.InjectOrgID(context.Background(), userID))
-				recvCalled := make(chan struct{})
+				recvCalled := make(chan chan struct{})
 				cancelAfterCalls := 2
 				s := &mockQueryResultStreamServer{ctx: ctx, queryID: msg.QueryID, recvCalled: recvCalled}
 				go func() {
 					recvCount := 0
-					for range recvCalled {
+					for called := range recvCalled {
 						recvCount++
 						if recvCount == cancelAfterCalls {
 							cancelCause(fmt.Errorf("streaming cancelled"))
 						}
+						called <- struct{}{}
 					}
 				}()
 				s.msgs = append(s.msgs,
@@ -536,7 +582,7 @@ type mockQueryResultStreamServer struct {
 	queryID    uint64
 	msgs       []*frontendv2pb.QueryResultStreamRequest
 	next       int
-	recvCalled chan struct{}
+	recvCalled chan chan struct{}
 
 	grpc.ServerStream
 }
@@ -550,14 +596,16 @@ func (s *mockQueryResultStreamServer) SendAndClose(_ *frontendv2pb.QueryResultRe
 }
 
 func (s *mockQueryResultStreamServer) Recv() (*frontendv2pb.QueryResultStreamRequest, error) {
-	if s.recvCalled != nil {
-		s.recvCalled <- struct{}{}
-	}
 	if err := s.ctx.Err(); err != nil {
 		if s.recvCalled != nil {
 			close(s.recvCalled)
 		}
 		return nil, err
+	}
+	if s.recvCalled != nil {
+		called := make(chan struct{}, 1)
+		s.recvCalled <- called
+		<-called
 	}
 	if s.next >= len(s.msgs) {
 		return nil, io.EOF
@@ -630,7 +678,7 @@ func TestConfig_Validate(t *testing.T) {
 		expectedErr string
 	}{
 		"should pass with default config": {
-			setup: func(cfg *Config) {},
+			setup: func(*Config) {},
 		},
 		"should pass if scheduler address is configured, and query-scheduler discovery mode is the default one": {
 			setup: func(cfg *Config) {
@@ -668,7 +716,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 	const frontendConcurrency = 1
 	const userID = "test"
 
-	f, _ := setupFrontendWithConcurrencyAndServerOptions(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
+	f, _ := setupFrontendWithConcurrencyAndServerOptions(t, nil, func(*Frontend, *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
 	}, frontendConcurrency, grpc.KeepaliveParams(keepalive.ServerParameters{
 		MaxConnectionIdle:     100 * time.Millisecond,
@@ -680,7 +728,7 @@ func TestWithClosingGrpcServer(t *testing.T) {
 
 	// Connection will be established on the first roundtrip.
 	req := &httpgrpc.HTTPRequest{
-		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60",
+		Url: "/api/v1/query_range?start=946684800&end=946771200&step=60&query=up{}",
 	}
 	resp, _, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), req)
 	require.NoError(t, err)

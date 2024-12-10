@@ -26,7 +26,7 @@ var (
 	ErrRedisConfigNoEndpoint               = errors.New("no redis endpoint provided")
 	ErrRedisMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
 
-	_ RemoteCacheClient = (*RedisClient)(nil)
+	_ Cache = (*RedisClient)(nil)
 )
 
 // RedisClientConfig is the config accepted by RedisClient.
@@ -226,7 +226,7 @@ func NewRedisClient(logger log.Logger, name string, config RedisClientConfig, re
 	return c, nil
 }
 
-// SetMultiAsync implements RemoteCacheClient.
+// SetMultiAsync implements Cache.
 func (c *RedisClient) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
 	c.setMultiAsync(data, ttl, func(key string, value []byte, ttl time.Duration) error {
 		_, err := c.client.Set(context.Background(), key, value, ttl).Result()
@@ -234,7 +234,7 @@ func (c *RedisClient) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
 	})
 }
 
-// SetAsync implements RemoteCacheClient.
+// SetAsync implements Cache.
 func (c *RedisClient) SetAsync(key string, value []byte, ttl time.Duration) {
 	c.setAsync(key, value, ttl, func(key string, buf []byte, ttl time.Duration) error {
 		_, err := c.client.Set(context.Background(), key, buf, ttl).Result()
@@ -242,7 +242,30 @@ func (c *RedisClient) SetAsync(key string, value []byte, ttl time.Duration) {
 	})
 }
 
-// GetMulti implements RemoteCacheClient.
+// Set implements Cache.
+func (c *RedisClient) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return c.storeOperation(ctx, key, value, ttl, opSet, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+		_, err := c.client.Set(ctx, key, value, ttl).Result()
+		return err
+	})
+}
+
+// Add implements Cache.
+func (c *RedisClient) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return c.storeOperation(ctx, key, value, ttl, opAdd, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+		stored, err := c.client.SetNX(ctx, key, value, ttl).Result()
+		if err != nil {
+			return err
+		}
+		if !stored {
+			return fmt.Errorf("%w: for Set NX operation on %s", ErrNotStored, key)
+		}
+
+		return nil
+	})
+}
+
+// GetMulti implements Cache.
 func (c *RedisClient) GetMulti(ctx context.Context, keys []string, _ ...Option) map[string][]byte {
 	if len(keys) == 0 {
 		return nil
@@ -311,12 +334,7 @@ func (c *RedisClient) Name() string {
 	return c.name
 }
 
-// stringToBytes converts string to byte slice (copied from vendor/github.com/go-redis/redis/v8/internal/util/unsafe.go).
+// stringToBytes converts string to byte slice.
 func stringToBytes(s string) []byte {
-	return *(*[]byte)(unsafe.Pointer(
-		&struct {
-			string
-			Cap int
-		}{s, len(s)},
-	))
+	return unsafe.Slice(unsafe.StringData(s), len(s))
 }

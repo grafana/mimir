@@ -19,7 +19,6 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -166,9 +165,7 @@ func TestBlockStreamingQuerierSeriesSet(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ss := &blockStreamingQuerierSeriesSet{streamReader: &mockChunkStreamer{series: c.input, causeError: c.errorChunkStreamer}}
 			for _, s := range c.input {
-				ss.series = append(ss.series, &storepb.StreamingSeries{
-					Labels: mimirpb.FromLabelsToLabelAdapters(s.lbls),
-				})
+				ss.series = append(ss.series, s.lbls)
 			}
 			idx := 0
 			var it chunkenc.Iterator
@@ -497,7 +494,8 @@ func TestStoreGatewayStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 	expectedError := "attempted to read series at index 1 from store-gateway chunks stream, but the stream has failed: expected to receive 3 series, but got EOF after receiving 1 series"
 	require.EqualError(t, err, expectedError)
 
-	require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after failure")
+	// Poll for the client to be closed, as the closure happens in a separate goroutine (the same one which buffers).
+	require.Eventually(t, mockClient.closed.Load, time.Second, 10*time.Millisecond, "expected gRPC client to be closed after receiving more series than expected")
 
 	// Ensure we continue to return the error, even for subsequent calls to GetChunks.
 	_, err = reader.GetChunks(2)
@@ -545,7 +543,8 @@ func TestStoreGatewayStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
 			expectedError := "attempted to read series at index 0 from store-gateway chunks stream, but the stream has failed: expected to receive only 1 series, but received at least 3 series"
 			require.EqualError(t, err, expectedError)
 
-			require.True(t, mockClient.closed.Load(), "expected gRPC client to be closed after receiving more series than expected")
+			// Poll for the client to be closed, as the closure happens in a separate goroutine (the same one which buffers).
+			require.Eventually(t, mockClient.closed.Load, time.Second, 10*time.Millisecond, "expected gRPC client to be closed after receiving more series than expected")
 
 			// Ensure we continue to return the error, even for subsequent calls to GetChunks.
 			_, err = reader.GetChunks(1)
@@ -643,7 +642,6 @@ func batchesToMessages(estimatedChunks uint64, batches ...storepb.StreamingChunk
 	messages[0] = storepb.NewStreamingChunksEstimate(estimatedChunks)
 
 	for i, b := range batches {
-		b := b
 		messages[i+1] = storepb.NewStreamingChunksResponse(&b)
 	}
 

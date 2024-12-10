@@ -1,6 +1,7 @@
 {
   local container = $.core.v1.container,
 
+  // CLI flags for queriers. Also applied to ruler-queriers.
   querier_args::
     $._config.commonConfig +
     $._config.usageStatsConfig +
@@ -28,6 +29,10 @@
       // the GC to trigger continuously. Setting a ballast of 256MB reduces GC.
       'mem-ballast-size-bytes': 1 << 28,  // 256M
     },
+
+  // CLI flags that are applied only to queriers, and not ruler-queriers.
+  // Values take precedence over querier_args.
+  querier_only_args:: {},
 
   querier_ports:: $.util.defaultPorts,
 
@@ -58,7 +63,7 @@
   querier_node_affinity_matchers:: [],
 
   querier_container::
-    self.newQuerierContainer('querier', $.querier_args, $.querier_env_map),
+    self.newQuerierContainer('querier', $.querier_args + $.querier_only_args, $.querier_env_map),
 
   newQuerierDeployment(name, container, nodeAffinityMatchers=[])::
     local deployment = $.apps.v1.deployment;
@@ -69,7 +74,9 @@
     $.mimirVolumeMounts +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0),
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
+    // Set a termination grace period greater than query timeout.
+    deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(180),
 
   querier_deployment: if !$._config.is_microservices_deployment_mode then null else
     self.newQuerierDeployment('querier', $.querier_container, $.querier_node_affinity_matchers),

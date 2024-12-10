@@ -7,7 +7,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: test-ingress-values-mimir-make-minio-buckets-5.0.14
+  name: test-ingress-values-mimir-make-minio-buckets-5.3.0
   namespace: "citestns"
   labels:
     app: mimir-distributed-make-bucket-job
@@ -31,7 +31,7 @@ spec:
                 name: test-ingress-values-minio
       containers:
       - name: minio-mc
-        image: "quay.io/minio/mc:RELEASE.2023-09-29T16-41-22Z"
+        image: "quay.io/minio/mc:RELEASE.2024-04-18T16-45-29Z"
         imagePullPolicy: IfNotPresent
         command: ["/bin/sh", "/config/initialize"]
         env:

@@ -157,9 +157,6 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		// Change scope since we're running each test in parallel.
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
@@ -216,19 +213,19 @@ func TestCheckDirectoryReadWriteAccess(t *testing.T) {
 		expected          string
 	}{
 		"should fail on directory without write access": {
-			dirExistsFn: func(dir string) (bool, error) {
+			dirExistsFn: func(string) (bool, error) {
 				return true, nil
 			},
-			isDirReadWritable: func(dir string) error {
+			isDirReadWritable: func(string) error {
 				return errors.New("read only")
 			},
 			expected: fmt.Sprintf("failed to access directory %s: read only", configuredPath),
 		},
 		"should pass on directory with read-write access": {
-			dirExistsFn: func(dir string) (bool, error) {
+			dirExistsFn: func(string) (bool, error) {
 				return true, nil
 			},
-			isDirReadWritable: func(dir string) error {
+			isDirReadWritable: func(string) error {
 				return nil
 			},
 			expected: "",

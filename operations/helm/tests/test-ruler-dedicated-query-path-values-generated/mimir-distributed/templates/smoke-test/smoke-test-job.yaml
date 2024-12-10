@@ -1,0 +1,53 @@
+---
+# Source: mimir-distributed/templates/smoke-test/smoke-test-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: test-ruler-dedicated-query-path-values-mimir-smoke-test
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+    app.kubernetes.io/component: smoke-test
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    "helm.sh/hook": test
+  namespace: "citestns"
+spec:
+  backoffLimit: 5
+  completions: 1
+  parallelism: 1
+  selector:
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mimir
+        app.kubernetes.io/instance: test-ruler-dedicated-query-path-values
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/component: smoke-test
+    spec:
+      serviceAccountName: test-ruler-dedicated-query-path-values-mimir
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        []
+      containers:
+        - name: smoke-test
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-target=continuous-test"
+            - "-activity-tracker.filepath="
+            - "-tests.smoke-test"
+            - "-tests.write-endpoint=http://test-ruler-dedicated-query-path-values-mimir-nginx.citestns.svc:80"
+            - "-tests.read-endpoint=http://test-ruler-dedicated-query-path-values-mimir-nginx.citestns.svc:80/prometheus"
+            - "-tests.tenant-id="
+            - "-tests.write-read-series-test.num-series=1000"
+            - "-tests.write-read-series-test.max-query-age=48h"
+            - "-server.http-listen-port=8080"
+          volumeMounts:
+      restartPolicy: OnFailure
+      volumes:
