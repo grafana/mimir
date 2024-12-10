@@ -2665,6 +2665,8 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 }
 
 func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
+	t.Parallel()
+
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
@@ -2697,6 +2699,8 @@ func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
 }
 
 func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
+	t.Parallel()
+
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(false)
 
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
@@ -2737,6 +2741,8 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 }
 
 func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
+	t.Parallel()
+
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
@@ -2765,6 +2771,8 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 }
 
 func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
+	t.Parallel()
+
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
@@ -2790,6 +2798,8 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 }
 
 func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
+	t.Parallel()
+
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
