@@ -219,19 +219,25 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	mixedPoints := (len(left.Floats) > 0 && len(left.Histograms) > 0) || (len(right.Floats) > 0 && len(right.Histograms) > 0)
 
 	prepareFSlice := func() error {
-		if !mixedPoints && minPoints <= cap(left.Floats) && cap(left.Floats) < cap(right.Floats) && takeOwnershipOfLeft {
-			// Can fit output in left side, the left side is smaller than the right, and we're allowed to modify it
+		canFitInLeftSide := minPoints <= cap(left.Floats)
+		leftSideIsSmaller := cap(left.Floats) < cap(right.Floats)
+		safeToReuseLeftSide := !mixedPoints && canFitInLeftSide && takeOwnershipOfLeft
+		canFitInRightSide := minPoints <= cap(right.Floats)
+		safeToReuseRightSide := !mixedPoints && canFitInRightSide && takeOwnershipOfRight
+
+		if safeToReuseLeftSide && (leftSideIsSmaller || !safeToReuseRightSide) {
 			canReturnLeftFPointSlice = false
 			fPoints = left.Floats[:0]
 			return nil
 		}
-		if !mixedPoints && minPoints <= cap(right.Floats) && takeOwnershipOfRight {
-			// Can otherwise fit in the right side and we're allowed to modify it
+
+		if safeToReuseRightSide {
 			canReturnRightFPointSlice = false
 			fPoints = right.Floats[:0]
 			return nil
 		}
-		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
+
+		// We can't reuse either existing slice, so create a new one.
 		var err error
 		if fPoints, err = types.FPointSlicePool.Get(minPoints, e.memoryConsumptionTracker); err != nil {
 			return err
@@ -240,19 +246,25 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	}
 
 	prepareHSlice := func() error {
-		if !mixedPoints && minPoints <= cap(left.Histograms) && cap(left.Histograms) < cap(right.Histograms) && takeOwnershipOfLeft {
-			// Can fit output in left side, the left side is smaller than the right, and we're allowed to modify it
+		canFitInLeftSide := minPoints <= cap(left.Histograms)
+		leftSideIsSmaller := cap(left.Histograms) < cap(right.Histograms)
+		safeToReuseLeftSide := !mixedPoints && canFitInLeftSide && takeOwnershipOfLeft
+		canFitInRightSide := minPoints <= cap(right.Histograms)
+		safeToReuseRightSide := !mixedPoints && canFitInRightSide && takeOwnershipOfRight
+
+		if safeToReuseLeftSide && (leftSideIsSmaller || !safeToReuseRightSide) {
 			canReturnLeftHPointSlice = false
 			hPoints = left.Histograms[:0]
 			return nil
 		}
-		if !mixedPoints && minPoints <= cap(right.Histograms) && takeOwnershipOfRight {
-			// Can otherwise fit in the right side and we're allowed to modify it
+
+		if safeToReuseRightSide {
 			canReturnRightHPointSlice = false
 			hPoints = right.Histograms[:0]
 			return nil
 		}
-		// Either we have mixed points or we can't fit in either left or right side, so create a new slice
+
+		// We can't reuse either existing slice, so create a new one.
 		var err error
 		if hPoints, err = types.HPointSlicePool.Get(minPoints, e.memoryConsumptionTracker); err != nil {
 			return err
