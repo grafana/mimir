@@ -21,13 +21,13 @@ const (
 
 type bitset uint64
 
-func metaMatchH2(m []prefix, p prefix) bitset {
+func metaMatchH2(idx uint64, p prefix) bitset {
 	// https://graphics.stanford.edu/~seander/bithacks.html##ValueInWord
-	return hasZeroByte(castUint64(m) ^ (loBits * uint64(p)))
+	return hasZeroByte(idx ^ (loBits * uint64(p)))
 }
 
-func metaMatchEmpty(m []prefix) bitset {
-	return hasZeroByte(castUint64(m))
+func metaMatchEmpty(m uint64) bitset {
+	return hasZeroByte(m)
 }
 
 func nextMatch(b *bitset) uint32 {
@@ -40,6 +40,6 @@ func hasZeroByte(x uint64) bitset {
 	return bitset(((x - loBits) & ^(x)) & hiBits)
 }
 
-func castUint64(m []prefix) uint64 {
-	return *(*uint64)(unsafe.Pointer(unsafe.SliceData(m)))
+func castUint64(p unsafe.Pointer, offset int) uint64 {
+	return *(*uint64)(unsafe.Add(p, offset))
 }

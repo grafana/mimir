@@ -10,6 +10,7 @@ import (
 	"math"
 	"slices"
 	"sync"
+	"unsafe"
 
 	"go.uber.org/atomic"
 
@@ -89,6 +90,7 @@ func (m *Map) Put(key uint64, value clock.Minutes, series *atomic.Uint64, limit 
 		// we also can't store valueMask: if we negate that, we get 0, which we use to represent an empty value.
 		panic("value is too large")
 	}
+	ptr := unsafe.Pointer(unsafe.SliceData(m.index))
 
 	masked := key & keyMask
 	pfx, sfx := splitHash(key)
@@ -98,7 +100,7 @@ func (m *Map) Put(key uint64, value clock.Minutes, series *atomic.Uint64, limit 
 		if i+8 > uint32(len(m.index)) {
 			i -= i + 8 - uint32(len(m.index))
 		}
-		matches := metaMatchH2(m.index[i:], pfx)
+		matches := metaMatchH2(castUint64(ptr, int(i)), pfx)
 		for matches != 0 {
 			j := nextMatch(&matches)
 			if masked == m.data[i+j]&keyMask { // found
@@ -111,14 +113,9 @@ func (m *Map) Put(key uint64, value clock.Minutes, series *atomic.Uint64, limit 
 		}
 		// |key| is not in group |i|,
 		// stop probing if we see an empty slot
-		matches = metaMatchEmpty(m.index[i:])
+		matches = metaMatchEmpty(castUint64(ptr, int(i)))
 		if matches != 0 { // insert
 			j := nextMatch(&matches)
-			if i+j >= uint32(len(m.index)) {
-				// We didn't find an empty slot, we found a fake 0 because we're at the end of the slice.
-				i = 0
-				continue
-			}
 			// Only check limit if we're tracking series.
 			// We don't check limit for Load events.
 			if series != nil {
