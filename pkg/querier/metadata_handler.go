@@ -48,24 +48,28 @@ type metadataErrorResult struct {
 // Mimir for a given tenant. It is kept and returned as a set.
 func NewMetadataHandler(m MetadataSupplier) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		limit := -1
+		limit := int32(-1)
 		if s := r.FormValue("limit"); s != "" {
-			var err error
-			if limit, err = strconv.Atoi(s); err != nil {
+			if parsed, err := strconv.ParseInt(s, 10, 32); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				util.WriteJSONResponse(w, metadataErrorResult{Status: statusError, Error: "limit must be a number"})
 				return
+			} else {
+				limit = int32(parsed)
 			}
 		}
-		limitPerMetric := -1
+
+		limitPerMetric := int32(-1)
 		if s := r.FormValue("limit_per_metric"); s != "" {
-			var err error
-			if limitPerMetric, err = strconv.Atoi(s); err != nil {
+			if parsed, err := strconv.ParseInt(s, 10, 32); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				util.WriteJSONResponse(w, metadataErrorResult{Status: statusError, Error: "limit_per_metric must be a number"})
 				return
+			} else {
+				limitPerMetric = int32(parsed)
 			}
 		}
+
 		metric := r.FormValue("metric")
 		req := &client.MetricsMetadataRequest{
 			Limit:          int32(limit),
@@ -87,11 +91,11 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 			// We enforce this both here and in the ingesters. Doing it in the ingesters is
 			// more efficient as it is earlier in the process, but since that one is per user,
 			// we still need to do it here after all the results are merged.
-			if limitPerMetric > 0 && len(ms) >= limitPerMetric {
+			if limitPerMetric > 0 && len(ms) >= int(limitPerMetric) {
 				continue
 			}
 			if !ok {
-				if limit >= 0 && len(metrics) >= limit {
+				if limit >= 0 && len(metrics) >= int(limit) {
 					break
 				}
 				// Most metrics will only hold 1 copy of the same metadata.
