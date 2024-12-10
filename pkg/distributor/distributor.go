@@ -760,7 +760,7 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 			return validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, ts.Samples[idx])
 		}
 	} else {
-		timestamps = make(map[int64]struct{})
+		timestamps = make(map[int64]struct{}, min(len(ts.Samples), 100))
 		validation = func(idx int) error {
 			s := ts.Samples[idx]
 			if _, ok := timestamps[s.TimestampMs]; ok {
@@ -819,7 +819,7 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 			return validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx])
 		}
 	} else {
-		timestamps = make(map[int64]struct{})
+		timestamps = make(map[int64]struct{}, min(len(ts.Histograms), 100))
 		validation = func(idx int) (bool, error) {
 			h := ts.Histograms[idx]
 			if _, ok := timestamps[h.Timestamp]; ok {

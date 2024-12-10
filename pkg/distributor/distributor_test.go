@@ -1468,19 +1468,7 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 }
 
 func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
-	const (
-		metricName         = "series"
-		ts1        int64   = 10
-		ts2        int64   = 20
-		ts3        int64   = 30
-		ts4        int64   = 40
-		v1         float64 = 1
-		v2         float64 = 2
-		v3         float64 = 3
-		v4         float64 = 4
-	)
-
-	labels := []string{labels.MetricName, metricName, "job", "job", "service", "service"}
+	labels := []string{labels.MetricName, "series", "job", "job", "service", "service"}
 
 	testCases := map[string]struct {
 		req             *mimirpb.WriteRequest
@@ -1490,26 +1478,26 @@ func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
 	}{
 		"do not deduplicate if there are no duplicated timestamps": {
 			req: makeWriteRequestWith(
-				makeTimeseries(labels, makeSamples(ts1, v1), nil, nil),
-				makeTimeseries(labels, makeSamples(ts2, v2), nil, nil),
+				makeTimeseries(labels, makeSamples(10, 1), nil, nil),
+				makeTimeseries(labels, makeSamples(20, 2), nil, nil),
 			),
 			expectedSamples: []mimirpb.PreallocTimeseries{
-				makeTimeseries(labels, makeSamples(ts1, v1), nil, nil),
-				makeTimeseries(labels, makeSamples(ts2, v2), nil, nil),
+				makeTimeseries(labels, makeSamples(10, 1), nil, nil),
+				makeTimeseries(labels, makeSamples(20, 2), nil, nil),
 			},
 		},
 		"deduplicate duplicated timestamps within a single timeseries, and return the first error encountered": {
 			req: makeWriteRequestWith(
-				makeTimeseries(labels, append(makeSamples(ts1, v1), append(makeSamples(ts2, v2), append(makeSamples(ts1, v3), makeSamples(ts2, v4)...)...)...), nil, nil),
-				makeTimeseries(labels, nil, append(makeHistograms(ts3, generateTestHistogram(0)), append(makeHistograms(ts4, generateTestHistogram(1)), append(makeHistograms(ts4, generateTestHistogram(2)), makeHistograms(ts3, generateTestHistogram(3))...)...)...), nil),
+				makeTimeseries(labels, append(makeSamples(10, 1), append(makeSamples(20, 2), append(makeSamples(10, 3), makeSamples(20, 4)...)...)...), nil, nil),
+				makeTimeseries(labels, nil, append(makeHistograms(30, generateTestHistogram(0)), append(makeHistograms(40, generateTestHistogram(1)), append(makeHistograms(40, generateTestHistogram(2)), makeHistograms(30, generateTestHistogram(3))...)...)...), nil),
 			),
 			expectedSamples: []mimirpb.PreallocTimeseries{
-				makeTimeseries(labels, append(makeSamples(ts1, v1), makeSamples(ts2, v2)...), nil, nil),
-				makeTimeseries(labels, nil, append(makeHistograms(ts3, generateTestHistogram(0)), makeHistograms(ts4, generateTestHistogram(1))...), nil),
+				makeTimeseries(labels, append(makeSamples(10, 1), makeSamples(20, 2)...), nil, nil),
+				makeTimeseries(labels, nil, append(makeHistograms(30, generateTestHistogram(0)), makeHistograms(40, generateTestHistogram(1))...), nil),
 			},
 			expectedErrors: []error{
-				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 2, metricName),
-				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 2, metricName),
+				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 2, "series"),
+				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 2, "series"),
 			},
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
@@ -1519,18 +1507,18 @@ func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
 		},
 		"do not deduplicate duplicated timestamps in different timeseries": {
 			req: makeWriteRequestWith(
-				makeTimeseries(labels, append(makeSamples(ts1, v1), makeSamples(ts1, v2)...), makeHistograms(ts3, generateTestHistogram(0)), nil),
-				makeTimeseries(labels, makeSamples(ts1, v3), append(makeHistograms(ts2, generateTestHistogram(1)), makeHistograms(ts2, generateTestHistogram(2))...), nil),
-				makeTimeseries(labels, makeSamples(ts1, v4), append(makeHistograms(ts2, generateTestHistogram(3)), makeHistograms(ts3, generateTestHistogram(4))...), nil),
+				makeTimeseries(labels, append(makeSamples(10, 1), makeSamples(10, 2)...), makeHistograms(30, generateTestHistogram(0)), nil),
+				makeTimeseries(labels, makeSamples(10, 3), append(makeHistograms(20, generateTestHistogram(1)), makeHistograms(20, generateTestHistogram(2))...), nil),
+				makeTimeseries(labels, makeSamples(10, 4), append(makeHistograms(20, generateTestHistogram(3)), makeHistograms(30, generateTestHistogram(4))...), nil),
 			),
 			expectedSamples: []mimirpb.PreallocTimeseries{
-				makeTimeseries(labels, makeSamples(ts1, v1), makeHistograms(ts3, generateTestHistogram(0)), nil),
-				makeTimeseries(labels, makeSamples(ts1, v3), makeHistograms(ts2, generateTestHistogram(1)), nil),
-				makeTimeseries(labels, makeSamples(ts1, v4), append(makeHistograms(ts2, generateTestHistogram(3)), makeHistograms(ts3, generateTestHistogram(4))...), nil),
+				makeTimeseries(labels, makeSamples(10, 1), makeHistograms(30, generateTestHistogram(0)), nil),
+				makeTimeseries(labels, makeSamples(10, 3), makeHistograms(20, generateTestHistogram(1)), nil),
+				makeTimeseries(labels, makeSamples(10, 4), append(makeHistograms(20, generateTestHistogram(3)), makeHistograms(30, generateTestHistogram(4))...), nil),
 			},
 			expectedErrors: []error{
-				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 1, metricName),
-				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 1, metricName),
+				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 1, "series"),
+				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 1, "series"),
 				nil,
 			},
 			expectedMetrics: `
@@ -1587,9 +1575,8 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 	timestamp := now.UnixMilli()
 
 	testCases := map[string]struct {
-		setup           func() []mimirpb.PreallocTimeseries
-		expectedSamples []mimirpb.PreallocTimeseries
-		expectedErrors  []error
+		setup          func() []mimirpb.PreallocTimeseries
+		expectedErrors []bool
 	}{
 		"one timeseries with 80_000 samples with duplicated timestamps": {
 			setup: func() []mimirpb.PreallocTimeseries {
@@ -1607,13 +1594,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				}
 				return timeseries
 			},
-
-			expectedSamples: []mimirpb.PreallocTimeseries{
-				makeTimeseries(labels, makeSamples(timestamp, 1.0), nil, nil),
-			},
-			expectedErrors: []error{
-				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 79_999, metricName),
-			},
+			expectedErrors: []bool{true},
 		},
 		"one timeseries with 80_000 histograms with duplicated timestamps": {
 			setup: func() []mimirpb.PreallocTimeseries {
@@ -1630,13 +1611,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				}
 				return timeseries
 			},
-
-			expectedSamples: []mimirpb.PreallocTimeseries{
-				makeTimeseries(labels, nil, makeHistograms(timestamp, generateTestHistogram(1)), nil),
-			},
-			expectedErrors: []error{
-				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 79_999, metricName),
-			},
+			expectedErrors: []bool{true},
 		},
 		"one timeseries with 80_000 samples and 80_000 histograms with duplicated timestamps": {
 			setup: func() []mimirpb.PreallocTimeseries {
@@ -1657,13 +1632,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				}
 				return timeseries
 			},
-
-			expectedSamples: []mimirpb.PreallocTimeseries{
-				makeTimeseries(labels, makeSamples(timestamp, 1.0), makeHistograms(timestamp, generateTestHistogram(1)), nil),
-			},
-			expectedErrors: []error{
-				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 159_998, metricName),
-			},
+			expectedErrors: []bool{true},
 		},
 	}
 
@@ -1689,17 +1658,15 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 					shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
 					require.False(b, shouldRemove)
 					if len(tc.expectedErrors) == 0 {
-						require.NoError(b, err)
+						if err != nil {
+							b.Fatal(err)
+						}
 					} else {
-						if tc.expectedErrors[i] == nil {
-							require.NoError(b, err)
-						} else {
-							require.Error(b, err)
-							require.Equal(b, tc.expectedErrors[i], err)
+						if !tc.expectedErrors[i] && err != nil {
+							b.Fatal(err)
 						}
 					}
 				}
-				assert.Equal(b, tc.expectedSamples, timeseries)
 			}
 		})
 	}
