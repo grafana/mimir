@@ -589,10 +589,9 @@ const defaultIntervalForStartTimestamps = int64(300_000)
 // handleStartTime adds a zero sample at startTs only if startTs is within validIntervalForStartTimestamps of the sample timestamp.
 // The reason for doing this is that PRW v1 doesn't support Created Timestamps. After switching to PRW v2's direct CT support,
 // make use of its direct support fort Created Timestamps instead.
-// See https://github.com/prometheus/prometheus/issues/14600 for context.
 // See https://opentelemetry.io/docs/specs/otel/metrics/data-model/#resets-and-gaps to know more about how OTel handles
 // resets for cumulative metrics.
-func (c *PrometheusConverter) handleStartTime(startTs, ts int64, labels []prompb.Label, settings Settings, typ string, val float64, logger *slog.Logger) {
+func (c *PrometheusConverter) handleStartTime(startTs, ts int64, labels []prompb.Label, settings Settings, typ string, value float64, logger *slog.Logger) {
 	if !settings.EnableCreatedTimestampZeroIngestion {
 		return
 	}
@@ -614,9 +613,10 @@ func (c *PrometheusConverter) handleStartTime(startTs, ts int64, labels []prompb
 		return
 	}
 
-	logger.Debug("adding zero value at start_ts", "type", typ, "labels", labelsStringer(labels), "start_ts", startTs, "sample_ts", ts, "sample_value", val)
+	logger.Debug("adding zero value at start_ts", "type", typ, "labels", labelsStringer(labels), "start_ts", startTs, "sample_ts", ts, "sample_value", value)
 
-	c.addSample(&prompb.Sample{Timestamp: startTs, Value: math.Float64frombits(value.QuietZeroNaN)}, labels)
+	// See https://github.com/prometheus/prometheus/issues/14600 for context.
+	c.addSample(&prompb.Sample{Timestamp: startTs}, labels)
 }
 
 // handleHistogramStartTime similar to the method above but for native histograms..
