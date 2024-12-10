@@ -264,11 +264,25 @@ func TestIsRuleIndependent(t *testing.T) {
 }
 
 func TestGroupAtRisk(t *testing.T) {
-	exp, err := parser.ParseExpr("vector(1)")
-	require.NoError(t, err)
-	rule1 := rules.NewRecordingRule("test", exp, labels.Labels{})
-	rule1.SetNoDependencyRules(true)
-	rule1.SetNoDependentRules(true)
+	createRules := func() []rules.Rule {
+		exp1, err := parser.ParseExpr("vector(1)")
+		require.NoError(t, err)
+		rule1 := rules.NewRecordingRule("test_rule", exp1, labels.Labels{})
+		rule1.SetNoDependencyRules(true)
+		rule1.SetNoDependentRules(false)
+		exp2, err := parser.ParseExpr("test_rule")
+		require.NoError(t, err)
+		rule2 := rules.NewRecordingRule("test_rule2", exp2, labels.Labels{})
+		rule2.SetNoDependencyRules(false)
+		rule2.SetNoDependentRules(false)
+		exp3, err := parser.ParseExpr("test_rule2")
+		require.NoError(t, err)
+		rule3 := rules.NewRecordingRule("test_rule3", exp3, labels.Labels{})
+		rule3.SetNoDependencyRules(false)
+		rule3.SetNoDependentRules(true)
+
+		return []rules.Rule{rule1, rule2, rule3}
+	}
 
 	m := newMultiTenantConcurrencyControllerMetrics(prometheus.NewPedanticRegistry())
 	controller := &TenantConcurrencyController{
@@ -292,6 +306,7 @@ func TestGroupAtRisk(t *testing.T) {
 				g := rules.NewGroup(rules.GroupOptions{
 					Interval: -1 * time.Minute,
 					Opts:     &rules.ManagerOptions{},
+					Rules:    createRules(),
 				})
 				return g
 			}(),
@@ -302,6 +317,7 @@ func TestGroupAtRisk(t *testing.T) {
 				g := rules.NewGroup(rules.GroupOptions{
 					Interval: 1 * time.Minute,
 					Opts:     &rules.ManagerOptions{},
+					Rules:    createRules(),
 				})
 				return g
 			}(),
@@ -312,10 +328,41 @@ func TestGroupAtRisk(t *testing.T) {
 				g := rules.NewGroup(rules.GroupOptions{
 					Interval: 0 * time.Minute,
 					Opts:     &rules.ManagerOptions{},
+					Rules:    createRules(),
 				})
 				return g
 			}(),
 			expected: true,
+		},
+		"group total rule evaluation duration of last evaluation greater than threshold": {
+			group: func() *rules.Group {
+				r := createRules()
+				r[0].SetEvaluationDuration(1 * time.Minute)
+				r[1].SetEvaluationDuration(1 * time.Minute)
+				r[2].SetEvaluationDuration(1 * time.Minute)
+				g := rules.NewGroup(rules.GroupOptions{
+					Interval: 5 * time.Minute,
+					Opts:     &rules.ManagerOptions{},
+					Rules:    r,
+				})
+				return g
+			}(),
+			expected: true,
+		},
+		"group total rule evaluation duration of last evaluation less than threshold": {
+			group: func() *rules.Group {
+				r := createRules()
+				r[0].SetEvaluationDuration(30 * time.Second)
+				r[1].SetEvaluationDuration(30 * time.Second)
+				r[2].SetEvaluationDuration(30 * time.Second)
+				g := rules.NewGroup(rules.GroupOptions{
+					Interval: 5 * time.Minute,
+					Opts:     &rules.ManagerOptions{},
+					Rules:    r,
+				})
+				return g
+			}(),
+			expected: false,
 		},
 	}
 
