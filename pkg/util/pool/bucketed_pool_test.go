@@ -59,7 +59,7 @@ func TestBucketedPool_HappyPath(t *testing.T) {
 		},
 		{
 			size:        20,
-			expectedCap: 20,
+			expectedCap: 20, // Max size is 19, so we expect to get a slice with the size requested (20), not 32 (the next power of two).
 		},
 	}
 
