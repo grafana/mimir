@@ -506,6 +506,9 @@ type TenantLimits interface {
 type Overrides struct {
 	defaultLimits *Limits
 	tenantLimits  TenantLimits
+
+	// otelResourceAttributePromotionCfg, if set, specializes OTel resource attribute promotion configuration.
+	otelResourceAttributePromotionCfg OTelResourceAttributePromotionConfig
 }
 
 // NewOverrides makes a new Overrides.
@@ -1112,7 +1115,16 @@ func (o *Overrides) OTelCreatedTimestampZeroIngestionEnabled(tenantID string) bo
 }
 
 func (o *Overrides) PromoteOTelResourceAttributes(tenantID string) []string {
+	if o.otelResourceAttributePromotionCfg != nil {
+		return o.otelResourceAttributePromotionCfg.PromoteOTelResourceAttributes(tenantID)
+	}
 	return o.getOverridesForUser(tenantID).PromoteOTelResourceAttributes
+}
+
+// SpecializeResourceAttributePromotionConfig specializes OTel resource attribute promotion configuration.
+// This is to allow for plugging in a non-default method for configuring resource attribute promotion.
+func (o *Overrides) SpecializeResourceAttributePromotionConfig(specialization OTelResourceAttributePromotionConfig) {
+	o.otelResourceAttributePromotionCfg = specialization
 }
 
 func (o *Overrides) OTelKeepIdentifyingResourceAttributes(tenantID string) bool {
@@ -1145,6 +1157,12 @@ func (o *Overrides) getOverridesForUser(userID string) *Limits {
 		}
 	}
 	return o.defaultLimits
+}
+
+// OTelResourceAttributePromotionConfig contains methods for configuring OTel resource attribute promotion.
+type OTelResourceAttributePromotionConfig interface {
+	// PromoteOTelResourceAttributes returns which OTel resource attributes to promote for tenant ID.
+	PromoteOTelResourceAttributes(id string) []string
 }
 
 // AllTrueBooleansPerTenant returns true only if limit func is true for all given tenants

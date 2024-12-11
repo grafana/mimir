@@ -191,14 +191,8 @@ type Distributor struct {
 func defaultSleep(d time.Duration) { time.Sleep(d) }
 func defaultNow() time.Time        { return time.Now() }
 
-// OTelResourceAttributePromotionConfig contains methods for configuring OTel resource attribute promotion.
-type OTelResourceAttributePromotionConfig interface {
-	// PromoteOTelResourceAttributes returns which OTel resource attributes to promote for tenant ID.
-	PromoteOTelResourceAttributes(id string) []string
-}
-
 // Config contains the configuration required to
-// create a Distributor
+// create a Distributor.
 type Config struct {
 	PoolConfig PoolConfig `yaml:"pool"`
 
@@ -247,7 +241,7 @@ type Config struct {
 	ReusableIngesterPushWorkers       int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
 
 	// OTelResourceAttributePromotionConfig allows for specializing OTel resource attribute promotion.
-	OTelResourceAttributePromotionConfig OTelResourceAttributePromotionConfig `yaml:"-"`
+	OTelResourceAttributePromotionConfig validation.OTelResourceAttributePromotionConfig `yaml:"-"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
