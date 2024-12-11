@@ -32,6 +32,10 @@ func parser(ctx context.Context, r *http.Request, maxSize int, buffers *util.Req
 	spanLogger.SetTag("content_length", r.ContentLength)
 
 	ts, err, _ := influxpush.ParseInfluxLineReader(ctx, r, maxSize)
+	// TODO(alexg): one argument for splitting up the decoding and conversion is to facilitate granular timings
+	// right now since ParseInfluxLineReader() does both
+	// The otel version decodes the whole input and then processes it, the existing Influx code parses each line as it
+	// decodes it.
 	level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")
 	if err != nil {
 		level.Error(logger).Log("err", err.Error())
