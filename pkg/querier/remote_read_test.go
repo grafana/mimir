@@ -54,6 +54,10 @@ type mockQuerier struct {
 	selectFn func(ctx context.Context, sorted bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
 }
 
+func (m mockQuerier) Close() error {
+	return nil
+}
+
 func (m mockQuerier) Select(ctx context.Context, sorted bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	if m.selectFn != nil {
 		return m.selectFn(ctx, sorted, hints, matchers...)

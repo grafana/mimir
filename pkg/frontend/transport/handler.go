@@ -332,6 +332,7 @@ func (f *Handler) reportQueryStats(
 		"estimated_series_count", stats.GetEstimatedSeriesCount(),
 		"queue_time_seconds", stats.LoadQueueTime().Seconds(),
 		"encode_time_seconds", stats.LoadEncodeTime().Seconds(),
+		"samples_processed", stats.LoadSamplesProcessed(),
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {
@@ -485,6 +486,7 @@ func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Head
 		parts = append(parts, statsValue("querier_wall_time", stats.LoadWallTime()))
 		parts = append(parts, statsValue("response_time", queryResponseTime))
 		parts = append(parts, statsValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes()))
+		parts = append(parts, statsValue("samples_processed", stats.GetSamplesProcessed()))
 		headers.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
 	}
 }
