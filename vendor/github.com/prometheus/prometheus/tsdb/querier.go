@@ -255,10 +255,23 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 			// We already handled the case at the top of the function,
 			// and it is unexpected to get all postings again here.
 			return nil, errors.New("unexpected all postings")
+
 		case m.Type == labels.MatchRegexp && m.Value == ".*":
 			// .* regexp matches any string: do nothing.
 		case m.Type == labels.MatchNotRegexp && m.Value == ".*":
 			return index.EmptyPostings(), nil
+
+		case m.Type == labels.MatchRegexp && m.Value == ".+":
+			// .+ regexp matches any non-empty string: get postings for all label values.
+			it := ix.PostingsForAllLabelValues(ctx, m.Name)
+			if index.IsEmptyPostingsType(it) {
+				return index.EmptyPostings(), nil
+			}
+			its = append(its, it)
+		case m.Type == labels.MatchNotRegexp && m.Value == ".+":
+			// .+ regexp matches any non-empty string: get postings for all label values and remove them.
+			its = append(notIts, ix.PostingsForAllLabelValues(ctx, m.Name))
+
 		case labelMustBeSet[m.Name]:
 			// If this matcher must be non-empty, we can be smarter.
 			matchesEmpty := m.Matches("")
@@ -293,7 +306,7 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 					return index.EmptyPostings(), nil
 				}
 				its = append(its, it)
-			default: // l="a"
+			default: // l="a", l=~"a|b", l=~"a.b", etc.
 				// Non-Not matcher, use normal postingsForMatcher.
 				it, err := postingsForMatcher(ctx, ix, m)
 				if err != nil {
