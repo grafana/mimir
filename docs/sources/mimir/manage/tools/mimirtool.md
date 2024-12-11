@@ -80,7 +80,7 @@ For Mimirtools to interact with Grafana Mimir, Grafana Enterprise Metrics, Prome
 It is also possible to set TLS-related options with the following environment variables or CLI flags:
 
 | Environment variable             | Flag                         | Description                                                                                                            |
-|----------------------------------|------------------------------|------------------------------------------------------------------------------------------------------------------------|
+| -------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `MIMIR_TLS_CA_PATH`              | `--tls-ca-path`              | Sets the path to the CA certificate to use to verify the connection to the Grafana Mimir cluster.                      |
 | `MIMIR_TLS_CERT_PATH`            | `--tls-cert-path`            | Sets the path to the client certificate to use to authenticate to the Grafana Mimir cluster.                           |
 | `MIMIR_TLS_KEY_PATH`             | `--tls-key-path`             | Sets the path to the private key to use to authenticate to the Grafana Mimir cluster.                                  |
