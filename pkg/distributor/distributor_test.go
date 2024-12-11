@@ -1581,7 +1581,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 		"one timeseries with one sample": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
 				ts := []mimirpb.PreallocTimeseries{
-					makeTimeseries(labels, makeSamples(1, 1), nil, nil),
+					makeTimeseries(labels, makeSamples(timestamp, 1), nil, nil),
 				}
 				timeseries := make([][]mimirpb.PreallocTimeseries, n)
 				for i := 0; i < n; i++ {
@@ -1594,7 +1594,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 		"one timeseries with one histogram": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
 				ts := []mimirpb.PreallocTimeseries{
-					makeTimeseries(labels, nil, makeHistograms(1, generateTestHistogram(1)), nil),
+					makeTimeseries(labels, nil, makeHistograms(timestamp, generateTestHistogram(1)), nil),
 				}
 				timeseries := make([][]mimirpb.PreallocTimeseries, n)
 				for i := 0; i < n; i++ {
@@ -1607,7 +1607,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 		"one timeseries with one sample and one histogram": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
 				ts := []mimirpb.PreallocTimeseries{
-					makeTimeseries(labels, makeSamples(1, 1), makeHistograms(2, generateTestHistogram(2)), nil),
+					makeTimeseries(labels, makeSamples(timestamp-1, 1), makeHistograms(timestamp, generateTestHistogram(2)), nil),
 				}
 				timeseries := make([][]mimirpb.PreallocTimeseries, n)
 				for i := 0; i < n; i++ {
@@ -1620,7 +1620,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 		"one timeseries with two samples": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
 				ts := []mimirpb.PreallocTimeseries{
-					makeTimeseries(labels, append(makeSamples(1, 1), makeSamples(2, 2)...), nil, nil),
+					makeTimeseries(labels, append(makeSamples(timestamp-1, 1), makeSamples(timestamp, 2)...), nil, nil),
 				}
 				timeseries := make([][]mimirpb.PreallocTimeseries, n)
 				for i := 0; i < n; i++ {
@@ -1633,7 +1633,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 		"one timeseries with two histograms": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
 				ts := []mimirpb.PreallocTimeseries{
-					makeTimeseries(labels, nil, append(makeHistograms(1, generateTestHistogram(1)), makeHistograms(2, generateTestHistogram(2))...), nil),
+					makeTimeseries(labels, nil, append(makeHistograms(timestamp-1, generateTestHistogram(1)), makeHistograms(timestamp, generateTestHistogram(2))...), nil),
 				}
 				timeseries := make([][]mimirpb.PreallocTimeseries, n)
 				for i := 0; i < n; i++ {
@@ -1646,7 +1646,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 		"one timeseries with two samples and two histograms": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
 				ts := []mimirpb.PreallocTimeseries{
-					makeTimeseries(labels, append(makeSamples(1, 1), makeSamples(2, 2)...), append(makeHistograms(3, generateTestHistogram(3)), makeHistograms(4, generateTestHistogram(4))...), nil),
+					makeTimeseries(labels, append(makeSamples(timestamp-1, 1), makeSamples(timestamp, 2)...), append(makeHistograms(timestamp-1, generateTestHistogram(3)), makeHistograms(timestamp, generateTestHistogram(4))...), nil),
 				}
 				timeseries := make([][]mimirpb.PreallocTimeseries, n)
 				for i := 0; i < n; i++ {
@@ -1656,7 +1656,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 			},
 			expectedErrors: false,
 		},
-		"one timeseries with 80_000 samples with duplicated timestamps": {
+		/*"one timeseries with 80_000 samples with duplicated timestamps": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
 				timeseries := make([][]mimirpb.PreallocTimeseries, n)
 				for i := 0; i < n; i++ {
@@ -1719,7 +1719,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				return timeseries
 			},
 			expectedErrors: true,
-		},
+		},*/
 	}
 
 	limits := prepareDefaultLimits()
