@@ -663,21 +663,21 @@ mimir.siToBytes takes 1 argument
 */}}
 {{- define "mimir.siToBytes" -}}
     {{- if (hasSuffix "Ki" .value) -}}
-        {{- trimSuffix "Ki" .value | float64 | mul 1024 | ceil | int64 -}}
+        {{- trimSuffix "Ki" .value | float64 | mulf 1024 | ceil | int64 -}}
     {{- else if (hasSuffix "Mi" .value) -}}
-        {{- trimSuffix "Mi" .value | float64 | mul 1048576 | ceil | int64 -}}
+        {{- trimSuffix "Mi" .value | float64 | mulf 1048576 | ceil | int64 -}}
     {{- else if (hasSuffix "Gi" .value) -}}
-        {{- trimSuffix "Gi" .value | float64 | mul 1073741824 | ceil | int64 -}}
+        {{- trimSuffix "Gi" .value | float64 | mulf 1073741824 | ceil | int64 -}}
     {{- else if (hasSuffix "Ti" .value) -}}
-        {{- trimSuffix "Ti" .value | float64 | mul 1099511627776 | ceil | int64 -}}
+        {{- trimSuffix "Ti" .value | float64 | mulf 1099511627776 | ceil | int64 -}}
     {{- else if (hasSuffix "k" .value) -}}
-        {{- trimSuffix "k" .value | float64 | mul 1000 | ceil | int64 -}}
+        {{- trimSuffix "k" .value | float64 | mulf 1000 | ceil | int64 -}}
     {{- else if (hasSuffix "M" .value) -}}
-        {{- trimSuffix "M" .value | float64 | mul 1000000 | ceil | int64 -}}
+        {{- trimSuffix "M" .value | float64 | mulf 1000000 | ceil | int64 -}}
     {{- else if (hasSuffix "G" .value) -}}
-        {{- trimSuffix "G" .value | float64 | mul 1000000000 | ceil | int64 -}}
+        {{- trimSuffix "G" .value | float64 | mulf 1000000000 | ceil | int64 -}}
     {{- else if (hasSuffix "T" .value) -}}
-        {{- trimSuffix "T" .value | float64 | mul 1000000000000 | ceil | int64 -}}
+        {{- trimSuffix "T" .value | float64 | mulf 1000000000000 | ceil | int64 -}}
     {{- else if (hasSuffix "m" .value) -}}
         {{- trimSuffix "m" .value | float64 | mulf 0.001 | ceil | int64 -}}
     {{- else -}}
