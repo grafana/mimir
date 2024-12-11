@@ -335,7 +335,7 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 
 	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
 	queryStart := time.Now()
-	vector, err := t.client.Query(ctx, metricSumQuery, ts, WithResultsCacheEnabled(resultsCacheEnabled))
+	vector, err := t.client.QueryInstant(ctx, metricSumQuery, ts, WithResultsCacheEnabled(resultsCacheEnabled))
 	t.metrics.queriesLatency.WithLabelValues(typeLabel, strconv.FormatBool(resultsCacheEnabled)).Observe(time.Since(queryStart).Seconds())
 	if err != nil {
 		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
