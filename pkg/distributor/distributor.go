@@ -53,6 +53,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -737,40 +738,139 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 	return true, nil
 }
 
-// Validates a single series from a write request.
+// validateSamples validates samples of a single timeseries and removes the ones with duplicated timestamps.
 // May alter timeseries data in-place.
+// Returns an integer stating how many samples have been removed from the timeseries, and an error explaining the first validation finding.
+// If an error is returned, all samples are removed from the timeseries.
 // The returned error may retain the series labels.
-// It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
-	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation); err != nil {
-		return err
+func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) (int, error) {
+	var (
+		timestamps          map[int64]struct{}
+		currPos             = 0
+		deduplicatedSamples = 0
+		validation          func(int) error
+	)
+
+	if len(ts.Samples) == 0 {
+		return 0, nil
 	}
 
-	now := model.TimeFromUnixNano(nowt.UnixNano())
+	if len(ts.Samples) == 1 {
+		validation = func(idx int) error {
+			return validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, ts.Samples[idx])
+		}
+	} else {
+		timestamps = make(map[int64]struct{}, min(len(ts.Samples), 100))
+		validation = func(idx int) error {
+			s := ts.Samples[idx]
+			if _, ok := timestamps[s.TimestampMs]; ok {
+				deduplicatedSamples++
+				return nil
+			}
 
-	for _, s := range ts.Samples {
-		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
-			return err
+			timestamps[s.TimestampMs] = struct{}{}
+			if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
+				return err
+			}
+
+			if currPos != idx {
+				ts.Samples[currPos] = s
+			}
+			currPos++
+			return nil
+		}
+	}
+
+	for idx := range ts.Samples {
+		if err := validation(idx); err != nil {
+			l := len(ts.Samples)
+			ts.Samples = ts.Samples[:0]
+			return l, err
+		}
+	}
+
+	if deduplicatedSamples != 0 {
+		ts.Samples = ts.Samples[:currPos]
+		ts.SamplesUpdated()
+	}
+
+	return deduplicatedSamples, nil
+}
+
+// validateHistograms validates histograms of a single timeseries and removes the ones with duplicated timestamps.
+// May alter timeseries data in-place.
+// Returns an integer stating how many histograms have been removed from the timeseries, and an error explaining the first validation finding.
+// If an error is returned, all histograms are removed from the timeseries.
+// The returned error may retain the series labels.
+func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) (int, error) {
+	var (
+		timestamps             map[int64]struct{}
+		currPos                = 0
+		deduplicatedHistograms = 0
+		validation             func(int) (bool, error)
+	)
+
+	if len(ts.Histograms) == 0 {
+		return 0, nil
+	}
+
+	if len(ts.Histograms) == 1 {
+		validation = func(idx int) (bool, error) {
+			return validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx])
+		}
+	} else {
+		timestamps = make(map[int64]struct{}, min(len(ts.Histograms), 100))
+		validation = func(idx int) (bool, error) {
+			h := ts.Histograms[idx]
+			if _, ok := timestamps[h.Timestamp]; ok {
+				deduplicatedHistograms++
+				return false, nil
+			}
+
+			timestamps[h.Timestamp] = struct{}{}
+			updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx])
+			if err != nil {
+				return updated, err
+			}
+
+			if currPos != idx {
+				ts.Histograms[currPos] = h
+			}
+			currPos++
+
+			return updated, nil
 		}
 	}
 
 	histogramsUpdated := false
-	for i := range ts.Histograms {
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i])
+	for idx := range ts.Histograms {
+		updated, err := validation(idx)
 		if err != nil {
-			return err
+			l := len(ts.Histograms)
+			ts.Histograms = ts.Histograms[:0]
+			return l, err
 		}
 		histogramsUpdated = histogramsUpdated || updated
 	}
+
 	if histogramsUpdated {
 		ts.HistogramsUpdated()
 	}
 
+	if deduplicatedHistograms != 0 {
+		ts.Histograms = ts.Histograms[:currPos]
+		ts.HistogramsUpdated()
+	}
+	return deduplicatedHistograms, nil
+}
+
+// validateExemplars validates exemplars of a single timeseries.
+// May alter timeseries data in-place.
+func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID string, minExemplarTS, maxExemplarTS int64) {
 	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
 		ts.ClearExemplars()
-		return nil
+		return
 	}
-
 	allowedExemplars := d.limits.MaxExemplarsPerSeriesPerRequest(userID)
 	if allowedExemplars > 0 && len(ts.Exemplars) > allowedExemplars {
 		d.exemplarValidationMetrics.tooManyExemplars.WithLabelValues(userID).Add(float64(len(ts.Exemplars) - allowedExemplars))
@@ -802,7 +902,39 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	if !isInOrder {
 		ts.SortExemplars()
 	}
-	return nil
+}
+
+// Validates a single series from a write request.
+// May alter timeseries data in-place.
+// Returns a boolean stating if the timeseries should be removed from the request, and an error explaining the first validation finding.
+// The returned error may retain the series labels.
+// It uses the passed nowt time to observe the delay of sample timestamps.
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) (bool, error) {
+	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation); err != nil {
+		return true, err
+	}
+
+	now := model.TimeFromUnixNano(nowt.UnixNano())
+
+	deduplicatedSamples, err := d.validateSamples(now, ts, userID, group)
+	if err != nil {
+		return true, err
+	}
+
+	deduplicatedHistograms, err := d.validateHistograms(now, ts, userID, group)
+	if err != nil {
+		return true, err
+	}
+
+	d.validateExemplars(ts, userID, minExemplarTS, maxExemplarTS)
+
+	if deduplicatedSamples+deduplicatedHistograms > 0 {
+		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(deduplicatedSamples + deduplicatedHistograms))
+		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+		return false, fmt.Errorf(duplicateTimestampMsgFormat, deduplicatedSamples+deduplicatedHistograms, unsafeMetricName)
+	}
+
+	return false, nil
 }
 func (d *Distributor) labelValuesWithNewlines(labels []mimirpb.LabelAdapter) int {
 	count := 0
@@ -1084,7 +1216,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
 
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
+			shouldRemove, validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
@@ -1093,7 +1225,9 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
 					firstPartialErr = newValidationError(validationErr)
 				}
-				removeIndexes = append(removeIndexes, tsIdx)
+				if shouldRemove {
+					removeIndexes = append(removeIndexes, tsIdx)
+				}
 				continue
 			}
 
