@@ -104,11 +104,11 @@
 * [BUGFIX] Ingester: Chunks could have one unnecessary zero byte at the end. #9844
 * [BUGFIX] OTLP receiver: Preserve colons and combine multiple consecutive underscores into one when generating metric names in suffix adding mode (`-distributor.otel-metric-suffixes-enabled`). #10075
 * [BUGFIX] PromQL: Ignore native histograms in `clamp`, `clamp_max` and `clamp_min` functions. #10136
-* [BUGFIX] PromQL: Ignore native histograms in `max`, `min`, `stdvar`, `stddev` functions and instead return an info annotation. #10136
+* [BUGFIX] PromQL: Ignore native histograms in `max`, `min`, `stdvar`, `stddev` aggregation operators and instead return an info annotation. #10136
 * [BUGFIX] PromQL: Ignore native histograms when compared to float values with `==`, `!=`, `<`, `>`, `<=`, `>=` and instead return an info annotation. #10136
 * [BUGFIX] PromQL: Return an info annotation if the `quantile` function is used on a float series that does not have `le` label. #10136
-* [BUGFIX] PromQL: Fix `count_values` not taking into account native histograms. #10168
-* [BUGFIX] PromQL: Ignore native histograms in time functions `day_of_month`, `day_of_week`, `day_of_year`, `days_in_month`, `hour`, `minute`, `month` and `year`, which means they no longer any value when encountering a native histograms series. #10188
+* [BUGFIX] PromQL: Fix `count_values` to take into account native histograms. #10168
+* [BUGFIX] PromQL: Ignore native histograms in time functions `day_of_month`, `day_of_week`, `day_of_year`, `days_in_month`, `hour`, `minute`, `month` and `year`, which means they no longer yield any value when encountering a native histograms series. #10188
 * [BUGFIX] PromQL: Ignore native histograms in `topk` and `bottomk` functions and return info annotation instead. #10188
 * [BUGFIX] PromQL: Let `limitk` and `limit_ratio` include native histograms if applicable. #10188
 * [BUGFIX] PromQL: Fix `changes` and `resets` functions to count switch between float and native histograms sample type as change and reset. #10188
