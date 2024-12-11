@@ -3798,7 +3798,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 [promote_otel_resource_attributes: <string> | default = ""]
 
 # (experimental) Whether to keep identifying OTel resource attributes in the
-# target_info metric on top of converting to job and instance.
+# target_info metric on top of converting to job and instance labels.
 # CLI flag: -distributor.otel-keep-identifying-resource-attributes
 [otel_keep_identifying_resource_attributes: <boolean> | default = false]
 
