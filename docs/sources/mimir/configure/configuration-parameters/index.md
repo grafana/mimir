@@ -149,12 +149,6 @@ api:
   # CLI flag: -api.skip-label-count-validation-header-enabled
   [skip_label_count_validation_header_enabled: <boolean> | default = false]
 
-  # (deprecated) Enable GET requests to the /ingester/shutdown endpoint to
-  # trigger an ingester shutdown. This is a potentially dangerous operation and
-  # should only be enabled consciously.
-  # CLI flag: -api.get-request-for-ingester-shutdown-enabled
-  [get_request_for_ingester_shutdown_enabled: <boolean> | default = false]
-
   # (advanced) HTTP URL path under which the Alertmanager ui and api will be
   # served.
   # CLI flag: -http.alertmanager-http-prefix
@@ -804,9 +798,8 @@ ha_tracker:
   # CLI flag: -distributor.ha-tracker.failover-timeout
   [ha_tracker_failover_timeout: <duration> | default = 30s]
 
-  # Backend storage to use for the ring. Please be aware that memberlist is not
-  # supported by the HA tracker since gossip propagation is too slow for HA
-  # purposes.
+  # Backend storage to use for the ring. Note that memberlist support is
+  # experimental.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -3945,17 +3938,11 @@ kafka:
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
-  # The number of concurrent fetch requests that the ingester makes when reading
-  # data from Kafka during startup. 0 to disable.
-  # CLI flag: -ingest-storage.kafka.startup-fetch-concurrency
-  [startup_fetch_concurrency: <int> | default = 0]
-
-  # The number of concurrent fetch requests that the ingester makes when reading
-  # data continuously from Kafka after startup. Is disabled unless
-  # ingest-storage.kafka.startup-fetch-concurrency is greater than 0. 0 to
-  # disable.
-  # CLI flag: -ingest-storage.kafka.ongoing-fetch-concurrency
-  [ongoing_fetch_concurrency: <int> | default = 0]
+  # The maximum number of concurrent fetch requests that the ingester makes when
+  # reading data from Kafka during startup. Concurrent fetch requests are issued
+  # only when there is sufficient backlog of records to consume. 0 to disable.
+  # CLI flag: -ingest-storage.kafka.fetch-concurrency-max
+  [fetch_concurrency_max: <int> | default = 0]
 
   # When enabled, the fetch request MaxBytes field is computed using the
   # compressed size of previous records. When disabled, MaxBytes is computed

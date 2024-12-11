@@ -33,7 +33,11 @@
     $.querier_args +
     $.querierUseQuerySchedulerArgs(rulerQuerySchedulerName) + {
       'querier.max-concurrent': $._config.ruler_querier_max_concurrency,
+    } + if !useRulerQueryFrontend then {} else {
+      // The ruler-querier sends a query response back to the ruler-query-frontend
+      'querier.frontend-client.grpc-max-send-msg-size': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
     },
+
 
   ruler_querier_env_map:: $.querier_env_map {
     // Do not dynamically set GOMAXPROCS for ruler-querier. We don't expect ruler-querier resources
@@ -68,6 +72,8 @@
       // Result caching is of no benefit to rule evaluation, but the cache can be used for storing cardinality estimates.
       'query-frontend.cache-results': false,
 
+      // The ruler-query-frontend receives the query response back from the ruler-querier.
+      'server.grpc-max-recv-msg-size-bytes': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
       // The ruler-query-frontend sends the query response back to the ruler.
       'server.grpc-max-send-msg-size-bytes': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
     },
