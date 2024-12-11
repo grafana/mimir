@@ -874,7 +874,7 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 			Timeout:    time.Minute,
 		},
 		true,
-		offsetsReader,
+		map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: offsetsReader},
 		nil,
 	)
 	require.NoError(t, err)

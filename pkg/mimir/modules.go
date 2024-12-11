@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
@@ -70,42 +71,42 @@ import (
 
 // The various modules that make up Mimir.
 const (
-	ActivityTracker                 string = "activity-tracker"
-	API                             string = "api"
-	SanityCheck                     string = "sanity-check"
-	IngesterRing                    string = "ingester-ring"
-	IngesterPartitionRing           string = "ingester-partitions-ring"
-	RuntimeConfig                   string = "runtime-config"
-	Overrides                       string = "overrides"
-	OverridesExporter               string = "overrides-exporter"
-	Server                          string = "server"
-	ActiveGroupsCleanupService      string = "active-groups-cleanup-service"
-	Distributor                     string = "distributor"
-	DistributorService              string = "distributor-service"
-	Ingester                        string = "ingester"
-	IngesterService                 string = "ingester-service"
-	Flusher                         string = "flusher"
-	Querier                         string = "querier"
-	Queryable                       string = "queryable"
-	StoreQueryable                  string = "store-queryable"
-	QueryFrontend                   string = "query-frontend"
-	QueryFrontendCodec              string = "query-frontend-codec"
-	QueryFrontendTripperware        string = "query-frontend-tripperware"
-	QueryFrontendTopicOffsetsReader string = "query-frontend-topic-offsets-reader"
-	RulerStorage                    string = "ruler-storage"
-	Ruler                           string = "ruler"
-	AlertManager                    string = "alertmanager"
-	Compactor                       string = "compactor"
-	StoreGateway                    string = "store-gateway"
-	MemberlistKV                    string = "memberlist-kv"
-	QueryScheduler                  string = "query-scheduler"
-	Vault                           string = "vault"
-	TenantFederation                string = "tenant-federation"
-	UsageStats                      string = "usage-stats"
-	BlockBuilder                    string = "block-builder"
-	BlockBuilderScheduler           string = "block-builder-scheduler"
-	ContinuousTest                  string = "continuous-test"
-	All                             string = "all"
+	ActivityTracker                  string = "activity-tracker"
+	API                              string = "api"
+	SanityCheck                      string = "sanity-check"
+	IngesterRing                     string = "ingester-ring"
+	IngesterPartitionRing            string = "ingester-partitions-ring"
+	RuntimeConfig                    string = "runtime-config"
+	Overrides                        string = "overrides"
+	OverridesExporter                string = "overrides-exporter"
+	Server                           string = "server"
+	ActiveGroupsCleanupService       string = "active-groups-cleanup-service"
+	Distributor                      string = "distributor"
+	DistributorService               string = "distributor-service"
+	Ingester                         string = "ingester"
+	IngesterService                  string = "ingester-service"
+	Flusher                          string = "flusher"
+	Querier                          string = "querier"
+	Queryable                        string = "queryable"
+	StoreQueryable                   string = "store-queryable"
+	QueryFrontend                    string = "query-frontend"
+	QueryFrontendCodec               string = "query-frontend-codec"
+	QueryFrontendTripperware         string = "query-frontend-tripperware"
+	QueryFrontendTopicOffsetsReaders string = "query-frontend-topic-offsets-reader"
+	RulerStorage                     string = "ruler-storage"
+	Ruler                            string = "ruler"
+	AlertManager                     string = "alertmanager"
+	Compactor                        string = "compactor"
+	StoreGateway                     string = "store-gateway"
+	MemberlistKV                     string = "memberlist-kv"
+	QueryScheduler                   string = "query-scheduler"
+	Vault                            string = "vault"
+	TenantFederation                 string = "tenant-federation"
+	UsageStats                       string = "usage-stats"
+	BlockBuilder                     string = "block-builder"
+	BlockBuilderScheduler            string = "block-builder-scheduler"
+	ContinuousTest                   string = "continuous-test"
+	All                              string = "all"
 
 	// Write Read and Backend are the targets used when using the read-write deployment mode.
 	Write   string = "write"
@@ -702,9 +703,9 @@ func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 	return nil, nil
 }
 
-// initQueryFrontendTopicOffsetsReader instantiates the topic offsets reader used by the query-frontend
+// initQueryFrontendTopicOffsetsReaders instantiates the topic offsets reader used by the query-frontend
 // when the ingest storage is enabled.
-func (t *Mimir) initQueryFrontendTopicOffsetsReader() (services.Service, error) {
+func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error) {
 	if !t.Cfg.IngestStorage.Enabled {
 		return nil, nil
 	}
@@ -726,8 +727,13 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReader() (services.Service, error) 
 		return t.IngesterPartitionRingWatcher.PartitionRing().PartitionIDs(), nil
 	}
 
-	t.QueryFrontendTopicOffsetsReader = ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, getPartitionIDs, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
-	return t.QueryFrontendTopicOffsetsReader, nil
+	ingestTopicOffsetsReader := ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, getPartitionIDs, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
+
+	t.QueryFrontendTopicOffsetsReaders = map[string]*ingest.TopicOffsetsReader{
+		querierapi.ReadConsistencyOffsetsHeader: ingestTopicOffsetsReader,
+	}
+
+	return ingestTopicOffsetsReader, nil
 }
 
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
@@ -745,7 +751,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		querymiddleware.PrometheusResponseExtractor{},
 		engineOpts,
 		engineExperimentalFunctionsEnabled,
-		t.QueryFrontendTopicOffsetsReader,
+		t.QueryFrontendTopicOffsetsReaders,
 		t.Registerer,
 	)
 	if err != nil {
@@ -1149,7 +1155,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(StoreQueryable, t.initStoreQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
-	mm.RegisterModule(QueryFrontendTopicOffsetsReader, t.initQueryFrontendTopicOffsetsReader, modules.UserInvisibleModule)
+	mm.RegisterModule(QueryFrontendTopicOffsetsReaders, t.initQueryFrontendTopicOffsetsReaders, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
 	mm.RegisterModule(Ruler, t.initRuler)
@@ -1170,39 +1176,39 @@ func (t *Mimir) setupModuleManager() error {
 
 	// Add dependencies
 	deps := map[string][]string{
-		Server:                          {ActivityTracker, SanityCheck, UsageStats},
-		API:                             {Server},
-		MemberlistKV:                    {API, Vault},
-		RuntimeConfig:                   {API},
-		IngesterRing:                    {API, RuntimeConfig, MemberlistKV, Vault},
-		IngesterPartitionRing:           {MemberlistKV, IngesterRing, API},
-		Overrides:                       {RuntimeConfig},
-		OverridesExporter:               {Overrides, MemberlistKV, Vault},
-		Distributor:                     {DistributorService, API, ActiveGroupsCleanupService, Vault},
-		DistributorService:              {IngesterRing, IngesterPartitionRing, Overrides, Vault},
-		Ingester:                        {IngesterService, API, ActiveGroupsCleanupService, Vault},
-		IngesterService:                 {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
-		Flusher:                         {Overrides, API},
-		Queryable:                       {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
-		Querier:                         {TenantFederation, Vault},
-		StoreQueryable:                  {Overrides, MemberlistKV},
-		QueryFrontendTripperware:        {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReader},
-		QueryFrontend:                   {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryFrontendTopicOffsetsReader: {IngesterPartitionRing},
-		QueryScheduler:                  {API, Overrides, MemberlistKV, Vault},
-		Ruler:                           {DistributorService, StoreQueryable, RulerStorage, Vault},
-		RulerStorage:                    {Overrides},
-		AlertManager:                    {API, MemberlistKV, Overrides, Vault},
-		Compactor:                       {API, MemberlistKV, Overrides, Vault},
-		StoreGateway:                    {API, Overrides, MemberlistKV, Vault},
-		TenantFederation:                {Queryable},
-		BlockBuilder:                    {API, Overrides},
-		BlockBuilderScheduler:           {API},
-		ContinuousTest:                  {API},
-		Write:                           {Distributor, Ingester},
-		Read:                            {QueryFrontend, Querier},
-		Backend:                         {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
-		All:                             {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
+		Server:                           {ActivityTracker, SanityCheck, UsageStats},
+		API:                              {Server},
+		MemberlistKV:                     {API, Vault},
+		RuntimeConfig:                    {API},
+		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},
+		IngesterPartitionRing:            {MemberlistKV, IngesterRing, API},
+		Overrides:                        {RuntimeConfig},
+		OverridesExporter:                {Overrides, MemberlistKV, Vault},
+		Distributor:                      {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		DistributorService:               {IngesterRing, IngesterPartitionRing, Overrides, Vault},
+		Ingester:                         {IngesterService, API, ActiveGroupsCleanupService, Vault},
+		IngesterService:                  {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
+		Flusher:                          {Overrides, API},
+		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
+		Querier:                          {TenantFederation, Vault},
+		StoreQueryable:                   {Overrides, MemberlistKV},
+		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders},
+		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
+		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
+		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
+		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault},
+		RulerStorage:                     {Overrides},
+		AlertManager:                     {API, MemberlistKV, Overrides, Vault},
+		Compactor:                        {API, MemberlistKV, Overrides, Vault},
+		StoreGateway:                     {API, Overrides, MemberlistKV, Vault},
+		TenantFederation:                 {Queryable},
+		BlockBuilder:                     {API, Overrides},
+		BlockBuilderScheduler:            {API},
+		ContinuousTest:                   {API},
+		Write:                            {Distributor, Ingester},
+		Read:                             {QueryFrontend, Querier},
+		Backend:                          {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
+		All:                              {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {
