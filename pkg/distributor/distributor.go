@@ -739,129 +739,90 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 }
 
 // validateSamples validates samples of a single timeseries and removes the ones with duplicated timestamps.
+// Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
-// Returns an integer stating how many samples have been removed from the timeseries, and an error explaining the first validation finding.
-// If an error is returned, all samples are removed from the timeseries.
 // The returned error may retain the series labels.
-func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) (int, error) {
-	var (
-		timestamps          map[int64]struct{}
-		currPos             = 0
-		deduplicatedSamples = 0
-		validation          func(int) error
-	)
-
-	if len(ts.Samples) == 0 {
-		return 0, nil
-	}
-
+func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
 	if len(ts.Samples) == 1 {
-		validation = func(idx int) error {
-			return validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, ts.Samples[idx])
-		}
-	} else {
-		timestamps = make(map[int64]struct{}, min(len(ts.Samples), 100))
-		validation = func(idx int) error {
-			s := ts.Samples[idx]
-			if _, ok := timestamps[s.TimestampMs]; ok {
-				deduplicatedSamples++
-				return nil
-			}
-
-			timestamps[s.TimestampMs] = struct{}{}
-			if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
-				return err
-			}
-
-			if currPos != idx {
-				ts.Samples[currPos] = s
-			}
-			currPos++
-			return nil
-		}
+		return validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, ts.Samples[0])
 	}
 
-	for idx := range ts.Samples {
-		if err := validation(idx); err != nil {
-			l := len(ts.Samples)
-			ts.Samples = ts.Samples[:0]
-			return l, err
+	timestamps := make(map[int64]struct{}, min(len(ts.Samples), 100))
+	currPos := 0
+	duplicatesFound := false
+	for idx, s := range ts.Samples {
+		if _, ok := timestamps[s.TimestampMs]; ok {
+			// A sample with the same timestamp has already been validated, so we skip it.
+			duplicatesFound = true
+			continue
 		}
+
+		timestamps[s.TimestampMs] = struct{}{}
+		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
+			return err
+		}
+
+		if currPos != idx {
+			ts.Samples[currPos] = s
+		}
+		currPos++
 	}
 
-	if deduplicatedSamples != 0 {
+	if duplicatesFound {
 		ts.Samples = ts.Samples[:currPos]
 		ts.SamplesUpdated()
 	}
 
-	return deduplicatedSamples, nil
+	return nil
 }
 
 // validateHistograms validates histograms of a single timeseries and removes the ones with duplicated timestamps.
+// Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
-// Returns an integer stating how many histograms have been removed from the timeseries, and an error explaining the first validation finding.
-// If an error is returned, all histograms are removed from the timeseries.
 // The returned error may retain the series labels.
-func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) (int, error) {
-	var (
-		timestamps             map[int64]struct{}
-		currPos                = 0
-		deduplicatedHistograms = 0
-		validation             func(int) (bool, error)
-	)
-
-	if len(ts.Histograms) == 0 {
-		return 0, nil
-	}
-
+func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
 	if len(ts.Histograms) == 1 {
-		validation = func(idx int) (bool, error) {
-			return validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx])
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[0])
+		if updated {
+			ts.HistogramsUpdated()
 		}
-	} else {
-		timestamps = make(map[int64]struct{}, min(len(ts.Histograms), 100))
-		validation = func(idx int) (bool, error) {
-			h := ts.Histograms[idx]
-			if _, ok := timestamps[h.Timestamp]; ok {
-				deduplicatedHistograms++
-				return false, nil
-			}
-
-			timestamps[h.Timestamp] = struct{}{}
-			updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx])
-			if err != nil {
-				return updated, err
-			}
-
-			if currPos != idx {
-				ts.Histograms[currPos] = h
-			}
-			currPos++
-
-			return updated, nil
-		}
+		return err
 	}
 
+	timestamps := make(map[int64]struct{}, min(len(ts.Histograms), 100))
+	currPos := 0
 	histogramsUpdated := false
-	for idx := range ts.Histograms {
-		updated, err := validation(idx)
+	duplicatesFound := false
+	for idx, h := range ts.Histograms {
+		if _, ok := timestamps[h.Timestamp]; ok {
+			// A sample with the same timestamp has already been validated, so we skip it.
+			duplicatesFound = true
+			continue
+		}
+
+		timestamps[h.Timestamp] = struct{}{}
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &h)
 		if err != nil {
-			l := len(ts.Histograms)
-			ts.Histograms = ts.Histograms[:0]
-			return l, err
+			return err
 		}
 		histogramsUpdated = histogramsUpdated || updated
+
+		if currPos != idx {
+			ts.Histograms[currPos] = h
+		}
+		currPos++
 	}
 
 	if histogramsUpdated {
 		ts.HistogramsUpdated()
 	}
 
-	if deduplicatedHistograms != 0 {
+	if duplicatesFound {
 		ts.Histograms = ts.Histograms[:currPos]
 		ts.HistogramsUpdated()
 	}
-	return deduplicatedHistograms, nil
+
+	return nil
 }
 
 // validateExemplars validates exemplars of a single timeseries.
@@ -915,23 +876,24 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	}
 
 	now := model.TimeFromUnixNano(nowt.UnixNano())
+	totalSamplesAndHistograms := len(ts.Samples) + len(ts.Histograms)
 
-	deduplicatedSamples, err := d.validateSamples(now, ts, userID, group)
-	if err != nil {
+	if err := d.validateSamples(now, ts, userID, group); err != nil {
 		return true, err
 	}
 
-	deduplicatedHistograms, err := d.validateHistograms(now, ts, userID, group)
-	if err != nil {
+	if err := d.validateHistograms(now, ts, userID, group); err != nil {
 		return true, err
 	}
 
 	d.validateExemplars(ts, userID, minExemplarTS, maxExemplarTS)
 
-	if deduplicatedSamples+deduplicatedHistograms > 0 {
-		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(deduplicatedSamples + deduplicatedHistograms))
+	deduplicatedSamplesAndHistograms := totalSamplesAndHistograms - len(ts.Samples) - len(ts.Histograms)
+
+	if deduplicatedSamplesAndHistograms > 0 {
+		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(deduplicatedSamplesAndHistograms))
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
-		return false, fmt.Errorf(duplicateTimestampMsgFormat, deduplicatedSamples+deduplicatedHistograms, unsafeMetricName)
+		return false, fmt.Errorf(duplicateTimestampMsgFormat, deduplicatedSamplesAndHistograms, unsafeMetricName)
 	}
 
 	return false, nil
