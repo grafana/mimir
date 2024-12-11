@@ -17,6 +17,8 @@
 
 ### Mimirtool
 
+* [BUGFIX] Fix issue where `MIMIR_HTTP_PREFIX` environment variable was ignored and the value from `MIMIR_MIMIR_HTTP_PREFIX` was used instead. #10207
+
 ### Mimir Continuous Test
 
 ### Query-tee
