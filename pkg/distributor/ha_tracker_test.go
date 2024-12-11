@@ -430,7 +430,7 @@ func TestHATrackerConfig_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
-		"should fail if KV backend is set to memberlist": {
+		"should pass if KV backend is set to memberlist": {
 			cfg: func() HATrackerConfig {
 				cfg := HATrackerConfig{}
 				flagext.DefaultValues(&cfg)
@@ -438,7 +438,7 @@ func TestHATrackerConfig_Validate(t *testing.T) {
 
 				return cfg
 			}(),
-			expectedErr: errMemberlistUnsupported,
+			expectedErr: nil,
 		},
 	}
 
