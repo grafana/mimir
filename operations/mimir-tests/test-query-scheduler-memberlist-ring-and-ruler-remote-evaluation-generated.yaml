@@ -1206,7 +1206,6 @@ spec:
         - -query-scheduler.ring.store=memberlist
         - -query-scheduler.service-discovery-mode=ring
         - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc-max-send-msg-size-bytes=104857600
         - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.max-connection-age-grace=5m
