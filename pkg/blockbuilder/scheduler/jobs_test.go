@@ -15,7 +15,6 @@ import (
 )
 
 type testSpec struct {
-	id          int
 	topic       string
 	commitRecTs time.Time
 }
