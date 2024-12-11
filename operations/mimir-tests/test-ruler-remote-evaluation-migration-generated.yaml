@@ -1159,7 +1159,6 @@ spec:
         - -query-frontend.results-cache.memcached.timeout=500ms
         - -query-frontend.scheduler-address=ruler-query-scheduler-discovery.default.svc.cluster.local.:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc-max-send-msg-size-bytes=104857600
         - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.max-connection-age-grace=5m
