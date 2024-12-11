@@ -7,17 +7,26 @@
 
 ### Grafana Mimir
 
+* [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
+
+
 ### Mixin
+
+* [BUGFIX] Dashboards: fix how we switch between classic and native histograms. #10018
 
 ### Jsonnet
 
 ### Mimirtool
+
+* [BUGFIX] Fix issue where `MIMIR_HTTP_PREFIX` environment variable was ignored and the value from `MIMIR_MIMIR_HTTP_PREFIX` was used instead. #10207
 
 ### Mimir Continuous Test
 
 ### Query-tee
 
 ### Documentation
+
+* [CHANGE] Add production tips related to cache size, heavy multi-tenancy and latency spikes. #9978
 
 ### Tools
 
@@ -124,7 +133,6 @@
 * [BUGFIX] Querier: Fix stddev+stdvar aggregations to treat Infinity consistently. #9844
 * [BUGFIX] Ingester: Chunks could have one unnecessary zero byte at the end. #9844
 * [BUGFIX] OTLP receiver: Preserve colons and combine multiple consecutive underscores into one when generating metric names in suffix adding mode (`-distributor.otel-metric-suffixes-enabled`). #10075
-* [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 
 ### Mixin
 
@@ -142,7 +150,6 @@
 * [BUGFIX] Alerts: Exclude read-only replicas from `IngesterInstanceHasNoTenants` alert. #9843
 * [BUGFIX] Alerts: Use resident set memory for the `EtcdAllocatingTooMuchMemory` alert so that ephemeral file cache memory doesn't cause the alert to misfire. #9997
 * [BUGFIX] Query-frontend: support `X-Read-Consistency-Offsets` on labels queries too.
-* [BUGFIX] Dashboards: fix how we switch between classic and native histograms. #10018
 
 ### Jsonnet
 
@@ -172,7 +179,6 @@
 
 ### Documentation
 
-* [CHANGE] Add production tips related to cache size, heavy multi-tenancy and latency spikes. #9978
 * [BUGFIX] Send native histograms: update the migration guide with the corrected dashboard query for switching between classic and native histograms queries. #10052
 
 ### Tools
