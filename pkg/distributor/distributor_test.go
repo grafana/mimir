@@ -1578,6 +1578,60 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 		setup          func() []mimirpb.PreallocTimeseries
 		expectedErrors []bool
 	}{
+		"one timeseries with one sample": {
+			setup: func() []mimirpb.PreallocTimeseries {
+				timeseries := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, makeSamples(1, 1), nil, nil),
+				}
+				return timeseries
+			},
+			expectedErrors: []bool{true},
+		},
+		"one timeseries with one histogram": {
+			setup: func() []mimirpb.PreallocTimeseries {
+				timeseries := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, nil, makeHistograms(1, generateTestHistogram(1)), nil),
+				}
+				return timeseries
+			},
+			expectedErrors: []bool{true},
+		},
+		"one timeseries with one sample and one histogram": {
+			setup: func() []mimirpb.PreallocTimeseries {
+				timeseries := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, makeSamples(1, 1), makeHistograms(2, generateTestHistogram(2)), nil),
+				}
+				return timeseries
+			},
+			expectedErrors: []bool{true},
+		},
+		"one timeseries with two samples": {
+			setup: func() []mimirpb.PreallocTimeseries {
+				timeseries := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, append(makeSamples(1, 1), makeSamples(2, 2)...), nil, nil),
+				}
+				return timeseries
+			},
+			expectedErrors: []bool{true},
+		},
+		"one timeseries with two histograms": {
+			setup: func() []mimirpb.PreallocTimeseries {
+				timeseries := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, nil, append(makeHistograms(1, generateTestHistogram(1)), makeHistograms(2, generateTestHistogram(2))...), nil),
+				}
+				return timeseries
+			},
+			expectedErrors: []bool{true},
+		},
+		"one timeseries with two samples and two histograms": {
+			setup: func() []mimirpb.PreallocTimeseries {
+				timeseries := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, append(makeSamples(1, 1), makeSamples(2, 2)...), append(makeHistograms(3, generateTestHistogram(3)), makeHistograms(4, generateTestHistogram(4))...), nil),
+				}
+				return timeseries
+			},
+			expectedErrors: []bool{true},
+		},
 		"one timeseries with 80_000 samples with duplicated timestamps": {
 			setup: func() []mimirpb.PreallocTimeseries {
 				samples := make([]mimirpb.Sample, testSize)
@@ -1648,21 +1702,18 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 
 	for name, tc := range testCases {
 		b.Run(name, func(b *testing.B) {
+			timeseries := make([][]mimirpb.PreallocTimeseries, b.N)
+			for i := 0; i < b.N; i++ {
+				timeseries[i] = tc.setup()
+			}
 			b.ReportAllocs()
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
-				b.StopTimer()
-				timeseries := tc.setup()
-				b.StartTimer()
-				for i, ts := range timeseries {
+				for i, ts := range timeseries[n] {
 					shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
 					require.False(b, shouldRemove)
-					if len(tc.expectedErrors) == 0 {
+					if len(tc.expectedErrors) == 0 || !tc.expectedErrors[i] {
 						if err != nil {
-							b.Fatal(err)
-						}
-					} else {
-						if !tc.expectedErrors[i] && err != nil {
 							b.Fatal(err)
 						}
 					}
