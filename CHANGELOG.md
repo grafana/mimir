@@ -20,7 +20,7 @@
 * [CHANGE] Ingester: Replace `cortex_discarded_samples_total` label from `sample-out-of-bounds` to `sample-timestamp-too-old`. #9885
 * [CHANGE] Ruler: the `/prometheus/config/v1/rules` does not return an error anymore if a rule group is missing in the object storage after been successfully returned by listing the storage, because it could have been deleted in the meanwhile. #9936
 * [CHANGE] Querier: The `.` pattern in regular expressions in PromQL matches newline characters. With this change regular expressions like `.*` match strings that include `\n`. To maintain the old behaviour, you will have to change regular expressions by replacing all `.` patterns with `[^\n]`, e.g. `foo[^\n]*`. This upgrades PromQL compatibility from Prometheus 2.0 to 3.0. #9844
-* [CHANGE] Querier: Lookback and range selectors are left open and right closed (previously left closed and right closed). This change affects queries when the evaluation time perfectly aligns with the sample timestamps. For example assume querying a timeseries with evenly spaced samples exactly 1 minute apart. Previously, a range query with `5m` would usually return 5 samples, or 6 samples if the query evaluation aligns perfectly with a scrape. Now, queries like this will always return 5 samples. This upgrades PromQL compatibility from Prometheus 2.0 to 3.0. #9844
+* [CHANGE] Querier: Lookback and range selectors are left open and right closed (previously left closed and right closed). This change affects queries and subqueries when the evaluation time perfectly aligns with the sample timestamps. For example assume querying a timeseries with evenly spaced samples exactly 1 minute apart. Previously, a range query with `5m` would usually return 5 samples, or 6 samples if the query evaluation aligns perfectly with a scrape. Now, queries like this will always return 5 samples. This upgrades PromQL compatibility from Prometheus 2.0 to 3.0. #9844 #10188
 * [CHANGE] Querier: promql(native histograms): Introduce exponential interpolation. #9844
 * [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #10067
 * [FEATURE] Distributor: Add support for `lz4` OTLP compression. #9763
@@ -103,6 +103,15 @@
 * [BUGFIX] Querier: Fix stddev+stdvar aggregations to treat Infinity consistently. #9844
 * [BUGFIX] Ingester: Chunks could have one unnecessary zero byte at the end. #9844
 * [BUGFIX] OTLP receiver: Preserve colons and combine multiple consecutive underscores into one when generating metric names in suffix adding mode (`-distributor.otel-metric-suffixes-enabled`). #10075
+* [BUGFIX] PromQL: Ignore native histograms in `clamp`, `clamp_max` and `clamp_min` functions. #10136
+* [BUGFIX] PromQL: Ignore native histograms in `max`, `min`, `stdvar`, `stddev` functions and instead return an info annotation. #10136
+* [BUGFIX] PromQL: Ignore native histograms when compared to float values with `==`, `!=`, `<`, `>`, `<=`, `>=` and instead return an info annotation. #10136
+* [BUGFIX] PromQL: Return an info annotation if the `quantile` function is used on a float series that does not have `le` label. #10136
+* [BUGFIX] PromQL: Fix `count_values` not taking into account native histograms. #10168
+* [BUGFIX] PromQL: Ignore native histograms in time functions `day_of_month`, `day_of_week`, `day_of_year`, `days_in_month`, `hour`, `minute`, `month` and `year`, which means they no longer any value when encountering a native histograms series. #10188
+* [BUGFIX] PromQL: Ignore native histograms in `topk` and `bottomk` functions and return info annotation instead. #10188
+* [BUGFIX] PromQL: Let `limitk` and `limit_ratio` include native histograms if applicable. #10188
+* [BUGFIX] PromQL: Fix `changes` and `resets` functions to count switch between float and native histograms sample type as change and reset. #10188
 
 ### Mixin
 
