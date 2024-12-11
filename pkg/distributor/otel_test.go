@@ -53,11 +53,11 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 		"service.instance.id": "service ID",
 		"existent-attr":       "resource value",
 		// This one is for testing conflict with metric attribute.
-		"metric-attr": "resource value conflict",
+		"metric-attr": "resource value",
 		// This one is for testing conflict with auto-generated job attribute.
-		"job": "resource value conflict",
+		"job": "resource value",
 		// This one is for testing conflict with auto-generated instance attribute.
-		"instance": "resource value conflict",
+		"instance": "resource value",
 	}
 
 	md := pmetric.NewMetrics()
@@ -113,7 +113,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				},
 				{
 					Name:  "metric_attr",
-					Value: "resource value conflict",
+					Value: "resource value",
 				},
 				{
 					Name:  "job",
@@ -161,7 +161,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				},
 				{
 					Name:  "metric_attr",
-					Value: "resource value conflict",
+					Value: "resource value",
 				},
 				{
 					Name:  "job",
@@ -217,7 +217,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				},
 				{
 					Name:  "metric_attr",
-					Value: "resource value conflict",
+					Value: "resource value",
 				},
 			},
 		},
