@@ -742,12 +742,17 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
-func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string, removeIndexes []int) error {
+func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
+	if len(ts.Samples) == 0 {
+		return nil
+	}
+
 	if len(ts.Samples) == 1 {
 		return validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, ts.Samples[0])
 	}
 
 	timestamps := make(map[int64]struct{}, min(len(ts.Samples), 100))
+	removeIndexes := make([]int, 0, min(len(ts.Samples), 100))
 	for idx, s := range ts.Samples {
 		if _, ok := timestamps[s.TimestampMs]; ok {
 			// A sample with the same timestamp has already been validated, so we skip it.
@@ -773,7 +778,11 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 // Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
-func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string, removeIndexes []int) error {
+func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
+	if len(ts.Histograms) == 0 {
+		return nil
+	}
+
 	if len(ts.Histograms) == 1 {
 		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[0])
 		if updated {
@@ -783,6 +792,7 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 	}
 
 	timestamps := make(map[int64]struct{}, min(len(ts.Histograms), 100))
+	removeIndexes := make([]int, 0, min(len(ts.Histograms), 100))
 	histogramsUpdated := false
 	for idx, h := range ts.Histograms {
 		if _, ok := timestamps[h.Timestamp]; ok {
@@ -863,13 +873,12 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 
 	now := model.TimeFromUnixNano(nowt.UnixNano())
 	totalSamplesAndHistograms := len(ts.Samples) + len(ts.Histograms)
-	removeIndexes := make([]int, 0, max(1, min(len(ts.Samples), len(ts.Histograms), 100)))
 
-	if err := d.validateSamples(now, ts, userID, group, removeIndexes[:0]); err != nil {
+	if err := d.validateSamples(now, ts, userID, group); err != nil {
 		return true, err
 	}
 
-	if err := d.validateHistograms(now, ts, userID, group, removeIndexes[:0]); err != nil {
+	if err := d.validateHistograms(now, ts, userID, group); err != nil {
 		return true, err
 	}
 
