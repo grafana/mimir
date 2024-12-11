@@ -46,11 +46,10 @@
 * [CHANGE] Distributor: Drop experimental `-distributor.direct-otlp-translation-enabled` flag, since direct OTLP translation is well tested at this point. #9647
 * [CHANGE] Ingester: Change `-initial-delay` for circuit breakers to begin when the first request is received, rather than at breaker activation. #9842
 * [CHANGE] Query-frontend: apply query pruning before query sharding instead of after. #9913
-* [CHANGE] Ingester: remove experimental flags `-ingest-storage.kafka.ongoing-records-per-fetch` and `-ingest-storage.kafka.startup-records-per-fetch`. They are removed in favour of `-ingest-storage.kafka.max-buffered-bytes`. #9906
 * [CHANGE] Ingester: Replace `cortex_discarded_samples_total` label from `sample-out-of-bounds` to `sample-timestamp-too-old`. #9885
 * [CHANGE] Ruler: the `/prometheus/config/v1/rules` does not return an error anymore if a rule group is missing in the object storage after been successfully returned by listing the storage, because it could have been deleted in the meanwhile. #9936
 * [CHANGE] Querier: The `.` pattern in regular expressions in PromQL matches newline characters. With this change regular expressions like `.*` match strings that include `\n`. To maintain the old behaviour, you will have to change regular expressions by replacing all `.` patterns with `[^\n]`, e.g. `foo[^\n]*`. This upgrades PromQL compatibility from Prometheus 2.0 to 3.0. #9844
-* [CHANGE] Querier: Lookback and range selectors are left open and right closed (previously left closed and right closed). This change affects queries when the evaluation time perfectly aligns with the sample timestamps. For example assume querying a timeseries with evenly spaced samples exactly 1 minute apart. Previously, a range query with `5m` would usually return 5 samples, or 6 samples if the query evaluation aligns perfectly with a scrape. Now, queries like this will always return 5 samples. This upgrades PromQL compatibility from Prometheus 2.0 to 3.0. #9844
+* [CHANGE] Querier: Lookback and range selectors are left open and right closed (previously left closed and right closed). This change affects queries and subqueries when the evaluation time perfectly aligns with the sample timestamps. For example assume querying a timeseries with evenly spaced samples exactly 1 minute apart. Previously, a range query with `5m` would usually return 5 samples, or 6 samples if the query evaluation aligns perfectly with a scrape. Now, queries like this will always return 5 samples. This upgrades PromQL compatibility from Prometheus 2.0 to 3.0. #9844 #10188
 * [CHANGE] Querier: promql(native histograms): Introduce exponential interpolation. #9844
 * [CHANGE] Remove deprecated `api.get-request-for-ingester-shutdown-enabled` setting, which scheduled for removal in 2.15. #10197
 * [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #10067
@@ -74,6 +73,7 @@
 * [FEATURE] PromQL: Add experimental `info` function. Experimental functions are disabled by default, but can be enabled setting `-querier.promql-experimental-functions-enabled=true` in the query-frontend and querier. #9879
 * [FEATURE] Distributor: Support promotion of OTel resource attributes to labels. #8271
 * [FEATURE] Querier: Add experimental `double_exponential_smoothing` PromQL function. Experimental functions are disabled by default, but can be enabled by setting `-querier.promql-experimental-functions-enabled=true` in the query-frontend and querier. #9844
+* [FEATURE] Distributor: Add experimental `memberlist` KV store for ha_tracker. You can enable it using the `-distributor.ha-tracker.kvstore.store` flag. You can configure Memberlist parameters via the `-memberlist-*` flags. #10054
 * [ENHANCEMENT] Query Frontend: Return server-side `bytes_processed` statistics following Server-Timing format. #9645 #9985
 * [ENHANCEMENT] mimirtool: Adds bearer token support for mimirtool's analyze ruler/prometheus commands. #9587
 * [ENHANCEMENT] Ruler: Support `exclude_alerts` parameter in `<prometheus-http-prefix>/api/v1/rules` endpoint. #9300
@@ -102,7 +102,6 @@
 * [ENHANCEMENT] Compactor: refresh deletion marks when updating the bucket index concurrently. This speeds up updating the bucket index by up to 16 times when there is a lot of blocks churn (thousands of blocks churning every cleanup cycle). #9881
 * [ENHANCEMENT] PromQL: make `sort_by_label` stable. #9879
 * [ENHANCEMENT] Distributor: Initialize ha_tracker cache before ha_tracker and distributor reach running state and begin serving writes. #9826 #9976
-* [ENHANCEMENT] Ingester: `-ingest-storage.kafka.max-buffered-bytes` to limit the memory for buffered records when using concurrent fetching. #9892
 * [ENHANCEMENT] Querier: improve performance and memory consumption of queries that select many series. #9914
 * [ENHANCEMENT] Ruler: Support OAuth2 and proxies in Alertmanager client #9945 #10030
 * [ENHANCEMENT] Ingester: Add `-blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples` to build 24h blocks for out-of-order data belonging to the previous days instead of building smaller 2h blocks. This reduces pressure on compactors and ingesters when the out-of-order samples span multiple days in the past. #9844 #10033 #10035
@@ -133,6 +132,15 @@
 * [BUGFIX] Querier: Fix stddev+stdvar aggregations to treat Infinity consistently. #9844
 * [BUGFIX] Ingester: Chunks could have one unnecessary zero byte at the end. #9844
 * [BUGFIX] OTLP receiver: Preserve colons and combine multiple consecutive underscores into one when generating metric names in suffix adding mode (`-distributor.otel-metric-suffixes-enabled`). #10075
+* [BUGFIX] PromQL: Ignore native histograms in `clamp`, `clamp_max` and `clamp_min` functions. #10136
+* [BUGFIX] PromQL: Ignore native histograms in `max`, `min`, `stdvar`, `stddev` aggregation operators and instead return an info annotation. #10136
+* [BUGFIX] PromQL: Ignore native histograms when compared to float values with `==`, `!=`, `<`, `>`, `<=`, `>=` and instead return an info annotation. #10136
+* [BUGFIX] PromQL: Return an info annotation if the `quantile` function is used on a float series that does not have `le` label. #10136
+* [BUGFIX] PromQL: Fix `count_values` to take into account native histograms. #10168
+* [BUGFIX] PromQL: Ignore native histograms in time functions `day_of_month`, `day_of_week`, `day_of_year`, `days_in_month`, `hour`, `minute`, `month` and `year`, which means they no longer yield any value when encountering a native histograms series. #10188
+* [BUGFIX] PromQL: Ignore native histograms in `topk` and `bottomk` functions and return info annotation instead. #10188
+* [BUGFIX] PromQL: Let `limitk` and `limit_ratio` include native histograms if applicable. #10188
+* [BUGFIX] PromQL: Fix `changes` and `resets` functions to count switch between float and native histograms sample type as change and reset. #10188
 
 ### Mixin
 
@@ -285,7 +293,7 @@
 * [ENHANCEMENT] Update runtime configuration to read gzip-compressed files with `.gz` extension. #9074
 * [ENHANCEMENT] Ingester: add `cortex_lifecycler_read_only` metric which is set to 1 when ingester's lifecycler is set to read-only mode. #9095
 * [ENHANCEMENT] Add a new field, `encode_time_seconds` to query stats log messages, to record the amount of time it takes the query-frontend to encode a response. This does not include any serialization time for downstream components. #9062
-* [ENHANCEMENT] OTLP: If the flag `-distributor.otel-created-timestamp-zero-ingestion-enabled` is true, OTel start timestamps are converted to Prometheus zero samples to mark series start. #9131 #10053
+* [ENHANCEMENT] OTLP: If the flag `-distributor.otel-created-timestamp-zero-ingestion-enabled` is true, OTel start timestamps are converted to Prometheus zero samples to mark series start. #9131
 * [ENHANCEMENT] Querier: attach logs emitted during query consistency check to trace span for query. #9213
 * [ENHANCEMENT] Query-scheduler: Experimental `-query-scheduler.prioritize-query-components` flag enables the querier-worker queue priority algorithm to take precedence over tenant rotation when dequeuing requests. #9220
 * [ENHANCEMENT] Add application credential arguments for Openstack Swift storage backend. #9181

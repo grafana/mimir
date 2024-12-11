@@ -988,15 +988,8 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 
 	testsForBoth := []queryShardingFunctionCorrectnessTest{
 		{fn: "count_over_time", rangeQuery: true},
-		{fn: "days_in_month"},
-		{fn: "day_of_month"},
-		{fn: "day_of_week"},
-		{fn: "day_of_year"},
 		{fn: "delta", rangeQuery: true},
-		{fn: "hour"},
 		{fn: "increase", rangeQuery: true},
-		{fn: "minute"},
-		{fn: "month"},
 		{fn: "rate", rangeQuery: true},
 		{fn: "resets", rangeQuery: true},
 		{fn: "sort"},
@@ -1006,7 +999,6 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "last_over_time", rangeQuery: true},
 		{fn: "present_over_time", rangeQuery: true},
 		{fn: "timestamp"},
-		{fn: "year"},
 		{fn: "label_replace", args: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`}},
 		{fn: "label_join", args: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`}},
 	}
@@ -1018,9 +1010,14 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "clamp_max", args: []string{"5"}},
 		{fn: "clamp_min", args: []string{"5"}},
 		{fn: "changes", rangeQuery: true},
+		{fn: "days_in_month"},
+		{fn: "day_of_month"},
+		{fn: "day_of_week"},
+		{fn: "day_of_year"},
 		{fn: "deriv", rangeQuery: true},
 		{fn: "exp"},
 		{fn: "floor"},
+		{fn: "hour"},
 		{fn: "idelta", rangeQuery: true},
 		{fn: "irate", rangeQuery: true},
 		{fn: "ln"},
@@ -1028,6 +1025,8 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "log2"},
 		{fn: "max_over_time", rangeQuery: true},
 		{fn: "min_over_time", rangeQuery: true},
+		{fn: "minute"},
+		{fn: "month"},
 		{fn: "round", args: []string{"20"}},
 		{fn: "sqrt"},
 		{fn: "deg"},
@@ -1055,6 +1054,7 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		{fn: "double_exponential_smoothing", args: []string{"0.5", "0.7"}, rangeQuery: true},
 		// holt_winters is a backwards compatible alias for double_exponential_smoothing.
 		{fn: "holt_winters", args: []string{"0.5", "0.7"}, rangeQuery: true},
+		{fn: "year"},
 	}
 	testsForNativeHistogramsOnly := []queryShardingFunctionCorrectnessTest{
 		{fn: "histogram_count"},
