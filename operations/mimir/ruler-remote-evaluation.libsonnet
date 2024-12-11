@@ -34,9 +34,9 @@
     $.querierUseQuerySchedulerArgs(rulerQuerySchedulerName) + {
       'querier.max-concurrent': $._config.ruler_querier_max_concurrency,
     } + if !useRulerQueryFrontend then {} else {
-    // The ruler-querier sends a query response back to the ruler-query-frontend
-    'querier.frontend-client.grpc-max-send-msg-size': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
-  },
+      // The ruler-querier sends a query response back to the ruler-query-frontend
+      'querier.frontend-client.grpc-max-send-msg-size': $._config.ruler_remote_evaluation_max_query_response_size_bytes,
+    },
 
 
   ruler_querier_env_map:: $.querier_env_map {
