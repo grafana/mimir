@@ -188,7 +188,7 @@ func CompareCALabels(a, b []string) bool {
 	return true
 }
 
-func (m *Manager) getInactiveObservationsForUser(userID string, deadline int64) []string {
+func (m *Manager) getInactiveObservationsForUser(userID string, deadline int64) []uint64 {
 	cat := m.TrackerForUser(userID)
 	if cat == nil {
 		return nil

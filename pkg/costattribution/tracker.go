@@ -5,7 +5,6 @@ package costattribution
 import (
 	"bytes"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +20,7 @@ type Observation struct {
 	receivedSample  *atomic.Int64
 	discardSamplemu sync.RWMutex
 	discardedSample map[string]*atomic.Int64
+	labelValues     []string
 }
 
 const (
@@ -41,7 +41,7 @@ type Tracker struct {
 	overflowLabels []string
 	// obseveredMtx protects the observed map
 	obseveredMtx sync.RWMutex
-	observed     map[string]*Observation
+	observed     map[uint64]*Observation
 
 	hashBuffer       []byte
 	isOverflow       bool
@@ -65,7 +65,7 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 		caLabelMap:     caLabelMap,
 		maxCardinality: limit,
 		obseveredMtx:   sync.RWMutex{},
-		observed:       map[string]*Observation{},
+		observed:       map[uint64]*Observation{},
 		//lint:ignore faillint the metrics are registered in the mimir package
 		discardedSampleAttribution: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name:        "cortex_discarded_attributed_samples_total",
@@ -129,27 +129,31 @@ var bufferPool = sync.Pool{
 // sep is used to separate the labels in the key, it is not a valid label caracter
 const sep = rune(0x80)
 
-func (t *Tracker) cleanupTrackerAttribution(key string) {
+func (t *Tracker) cleanupTrackerAttribution(key uint64) {
 	if t == nil {
 		return
 	}
 
-	t.obseveredMtx.Lock()
-	delete(t.observed, key)
-	t.obseveredMtx.Unlock()
+	t.obseveredMtx.RLock()
+	lvs := t.observed[key].labelValues
+	t.obseveredMtx.RUnlock()
 
-	vals := strings.Split(key, string(sep))
-	vals = append(vals, t.userID)
-	t.activeSeriesPerUserAttribution.DeleteLabelValues(vals...)
-	t.receivedSamplesAttribution.DeleteLabelValues(vals...)
+	// vals := strings.Split(key, string(sep))
+	// vals = append(vals, t.userID)
+	t.activeSeriesPerUserAttribution.DeleteLabelValues(lvs...)
+	t.receivedSamplesAttribution.DeleteLabelValues(lvs...)
 
 	// except for discarded sample metrics, there is reason label that is not part of the key, we need to delete all partial matches
 	filter := prometheus.Labels{}
 	for i := 0; i < len(t.caLabels); i++ {
-		filter[t.caLabels[i]] = vals[i]
+		filter[t.caLabels[i]] = lvs[i]
 	}
 	filter[TenantLabel] = t.userID
 	t.discardedSampleAttribution.DeletePartialMatch(filter)
+
+	t.obseveredMtx.Lock()
+	delete(t.observed, key)
+	t.obseveredMtx.Unlock()
 }
 
 func (t *Tracker) cleanupTracker() {
@@ -213,37 +217,35 @@ func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncre
 		return
 	}
 
-	labelValues := make([]string, len(t.caLabels)+1)
+	labelValues := make([]string, len(t.caLabels)+2)
 	lbls.Range(func(l labels.Label) {
 		if idx, ok := t.caLabelMap[l.Name]; ok {
 			labelValues[idx] = l.Value
 		}
 	})
-	labelValues[len(labelValues)-1] = t.userID
-	for i := 0; i < len(labelValues)-1; i++ {
+
+	labelValues[len(labelValues)-2] = t.userID
+
+	for i := 0; i < len(labelValues)-2; i++ {
 		if labelValues[i] == "" {
 			labelValues[i] = missingValue
 		}
 	}
 
-	buf := bufferPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	defer bufferPool.Put(buf)
-
-	for i, value := range labelValues[:len(labelValues)-1] {
-		if i > 0 {
-			buf.WriteRune(sep)
-		}
-		buf.WriteString(value)
+	if reason != nil {
+		labelValues[len(labelValues)-1] = *reason
 	}
+
+	var stream uint64
+	stream, t.hashBuffer = lbls.HashForLabels(t.hashBuffer, t.caLabels...)
 
 	t.obseveredMtx.Lock()
 	defer t.obseveredMtx.Unlock()
 
-	t.updateOverflow(buf.String(), ts, activeSeriesIncrement, receviedSampleIncrement, discardedSampleIncrement, reason)
+	t.updateOverflow(stream, ts, activeSeriesIncrement, receviedSampleIncrement, discardedSampleIncrement, labelValues)
 }
 
-func (t *Tracker) updateOverflow(stream string, ts int64, activeSeriesIncrement, receviedSampleIncrement, discardedSampleIncrement int64, reason *string) {
+func (t *Tracker) updateOverflow(stream uint64, ts int64, activeSeriesIncrement, receviedSampleIncrement, discardedSampleIncrement int64, lvs []string) {
 	if t == nil {
 		return
 	}
@@ -258,9 +260,9 @@ func (t *Tracker) updateOverflow(stream string, ts int64, activeSeriesIncrement,
 		if receviedSampleIncrement > 0 {
 			o.receivedSample.Add(receviedSampleIncrement)
 		}
-		if discardedSampleIncrement > 0 && reason != nil {
+		if discardedSampleIncrement > 0 {
 			o.discardSamplemu.Lock()
-			o.discardedSample[*reason] = atomic.NewInt64(discardedSampleIncrement)
+			o.discardedSample[lvs[len(lvs)-1]] = atomic.NewInt64(discardedSampleIncrement)
 			o.discardSamplemu.Unlock()
 		}
 	} else if len(t.observed) < t.maxCardinality*2 {
@@ -270,10 +272,11 @@ func (t *Tracker) updateOverflow(stream string, ts int64, activeSeriesIncrement,
 			receivedSample:  atomic.NewInt64(receviedSampleIncrement),
 			discardedSample: map[string]*atomic.Int64{},
 			discardSamplemu: sync.RWMutex{},
+			labelValues:     lvs[:len(lvs)-1],
 		}
-		if discardedSampleIncrement > 0 && reason != nil {
+		if discardedSampleIncrement > 0 {
 			t.observed[stream].discardSamplemu.Lock()
-			t.observed[stream].discardedSample[*reason] = atomic.NewInt64(discardedSampleIncrement)
+			t.observed[stream].discardedSample[lvs[len(lvs)-1]] = atomic.NewInt64(discardedSampleIncrement)
 			t.observed[stream].discardSamplemu.Unlock()
 		}
 	}
@@ -287,13 +290,13 @@ func (t *Tracker) updateOverflow(stream string, ts int64, activeSeriesIncrement,
 	}
 }
 
-func (t *Tracker) GetInactiveObservations(deadline int64) []string {
+func (t *Tracker) GetInactiveObservations(deadline int64) []uint64 {
 	if t == nil {
 		return nil
 	}
 
 	// otherwise, we need to check all observations and clean up the ones that are inactive
-	var invalidKeys []string
+	var invalidKeys []uint64
 	t.obseveredMtx.RLock()
 	defer t.obseveredMtx.RUnlock()
 	for labkey, ob := range t.observed {
@@ -331,20 +334,20 @@ func (t *Tracker) updateMetrics() {
 		t.discardedSampleAttribution.WithLabelValues(t.overflowLabels...).Add(float64(1))
 	} else {
 		t.obseveredMtx.Lock()
-		for key, c := range t.observed {
+		for _, c := range t.observed {
 			if c != nil {
-				keys := strings.Split(key, string(sep))
-				keys = append(keys, t.userID)
+				// keys := strings.Split(key, string(sep))
+				// keys = append(keys, t.userID)
 				if c.activeSerie.Load() != 0 {
-					t.activeSeriesPerUserAttribution.WithLabelValues(keys...).Add(float64(c.activeSerie.Swap(0)))
+					t.activeSeriesPerUserAttribution.WithLabelValues(c.labelValues...).Add(float64(c.activeSerie.Swap(0)))
 				}
 				if c.receivedSample.Load() > 0 {
-					t.receivedSamplesAttribution.WithLabelValues(keys...).Add(float64(c.receivedSample.Swap(0)))
+					t.receivedSamplesAttribution.WithLabelValues(c.labelValues...).Add(float64(c.receivedSample.Swap(0)))
 				}
 				c.discardSamplemu.Lock()
 				for reason, cnt := range c.discardedSample {
 					if cnt.Load() > 0 {
-						t.discardedSampleAttribution.WithLabelValues(append(keys, reason)...).Add(float64(cnt.Swap(0)))
+						t.discardedSampleAttribution.WithLabelValues(append(c.labelValues, reason)...).Add(float64(cnt.Swap(0)))
 					}
 				}
 				c.discardSamplemu.Unlock()
