@@ -14,15 +14,25 @@ import (
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
+type testSpec struct {
+	id          int
+	topic       string
+	commitRecTs time.Time
+}
+
+func testSpecLess(a, b testSpec) bool {
+	return a.commitRecTs.Before(b.commitRecTs)
+}
+
 func TestAssign(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess)
 
 	j0, j0spec, err := s.assign("w0")
 	require.Empty(t, j0.id)
 	require.Zero(t, j0spec)
 	require.ErrorIs(t, err, errNoJobAvailable)
 
-	s.addOrUpdate("job1", jobSpec{topic: "hello", commitRecTs: time.Now()})
+	s.addOrUpdate("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
 	j1, j1spec, err := s.assign("w0")
 	require.NotEmpty(t, j1.id)
 	require.NotZero(t, j1spec)
@@ -34,7 +44,7 @@ func TestAssign(t *testing.T) {
 	require.Zero(t, j2spec)
 	require.ErrorIs(t, err, errNoJobAvailable)
 
-	s.addOrUpdate("job2", jobSpec{topic: "hello2", commitRecTs: time.Now()})
+	s.addOrUpdate("job2", testSpec{topic: "hello2", commitRecTs: time.Now()})
 	j3, j3spec, err := s.assign("w0")
 	require.NotZero(t, j3.id)
 	require.NotZero(t, j3spec)
@@ -43,14 +53,14 @@ func TestAssign(t *testing.T) {
 }
 
 func TestAssignComplete(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess)
 
 	{
 		err := s.completeJob(jobKey{"rando job", 965}, "w0")
 		require.ErrorIs(t, err, errJobNotFound)
 	}
 
-	s.addOrUpdate("job1", jobSpec{topic: "hello", commitRecTs: time.Now()})
+	s.addOrUpdate("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
 	jk, jspec, err := s.assign("w0")
 	require.NotZero(t, jk)
 	require.NotZero(t, jspec)
@@ -87,8 +97,8 @@ func TestAssignComplete(t *testing.T) {
 }
 
 func TestLease(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
-	s.addOrUpdate("job1", jobSpec{topic: "hello", commitRecTs: time.Now()})
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess)
+	s.addOrUpdate("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
 	jk, jspec, err := s.assign("w0")
 	require.NotZero(t, jk.id)
 	require.NotZero(t, jspec)
@@ -128,8 +138,8 @@ func TestLease(t *testing.T) {
 // TestImportJob tests the importJob method - the method that is called to learn
 // about jobs in-flight from a previous scheduler instance.
 func TestImportJob(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
-	spec := jobSpec{commitRecTs: time.Now().Add(-1 * time.Hour)}
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess)
+	spec := testSpec{commitRecTs: time.Now().Add(-1 * time.Hour)}
 	require.NoError(t, s.importJob(jobKey{"job1", 122}, "w0", spec))
 	require.NoError(t, s.importJob(jobKey{"job1", 123}, "w2", spec))
 	require.ErrorIs(t, errBadEpoch, s.importJob(jobKey{"job1", 122}, "w0", spec))
@@ -146,15 +156,15 @@ func TestImportJob(t *testing.T) {
 
 func TestMinHeap(t *testing.T) {
 	n := 517
-	jobs := make([]*job, n)
+	jobs := make([]*job[testSpec], n)
 	order := make([]int, n)
 	for i := 0; i < n; i++ {
-		jobs[i] = &job{
+		jobs[i] = &job[testSpec]{
 			key: jobKey{
 				id:    fmt.Sprintf("job%d", i),
 				epoch: 0,
 			},
-			spec: jobSpec{topic: "hello", commitRecTs: time.Unix(int64(i), 0)},
+			spec: testSpec{topic: "hello", commitRecTs: time.Unix(int64(i), 0)},
 		}
 		order[i] = i
 	}
@@ -163,17 +173,23 @@ func TestMinHeap(t *testing.T) {
 	r := rand.New(rand.NewSource(9900))
 	r.Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
 
-	h := jobHeap{}
+	h := jobHeap[*job[testSpec]]{
+		less: func(a, b *job[testSpec]) bool {
+			return testSpecLess(a.spec, b.spec)
+		},
+	}
+
 	for _, j := range order {
 		heap.Push(&h, jobs[j])
 	}
 
-	require.Len(t, h, n)
+	require.Equal(t, n, h.Len())
 
 	for i := 0; i < len(jobs); i++ {
-		p := heap.Pop(&h).(*job)
+		p := heap.Pop(&h).(*job[testSpec])
+		println(i)
 		require.Equal(t, jobs[i], p, "pop order should be in increasing commitRecTs")
 	}
 
-	require.Empty(t, h)
+	require.Zero(t, h.Len())
 }
