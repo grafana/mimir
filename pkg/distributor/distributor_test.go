@@ -1575,118 +1575,150 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 	timestamp := now.UnixMilli()
 
 	testCases := map[string]struct {
-		setup          func() []mimirpb.PreallocTimeseries
-		expectedErrors []bool
+		setup          func(int) [][]mimirpb.PreallocTimeseries
+		expectedErrors bool
 	}{
 		"one timeseries with one sample": {
-			setup: func() []mimirpb.PreallocTimeseries {
-				timeseries := []mimirpb.PreallocTimeseries{
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				ts := []mimirpb.PreallocTimeseries{
 					makeTimeseries(labels, makeSamples(1, 1), nil, nil),
 				}
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					timeseries[i] = ts
+				}
 				return timeseries
 			},
-			expectedErrors: []bool{true},
+			expectedErrors: false,
 		},
 		"one timeseries with one histogram": {
-			setup: func() []mimirpb.PreallocTimeseries {
-				timeseries := []mimirpb.PreallocTimeseries{
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				ts := []mimirpb.PreallocTimeseries{
 					makeTimeseries(labels, nil, makeHistograms(1, generateTestHistogram(1)), nil),
 				}
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					timeseries[i] = ts
+				}
 				return timeseries
 			},
-			expectedErrors: []bool{true},
+			expectedErrors: false,
 		},
 		"one timeseries with one sample and one histogram": {
-			setup: func() []mimirpb.PreallocTimeseries {
-				timeseries := []mimirpb.PreallocTimeseries{
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				ts := []mimirpb.PreallocTimeseries{
 					makeTimeseries(labels, makeSamples(1, 1), makeHistograms(2, generateTestHistogram(2)), nil),
 				}
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					timeseries[i] = ts
+				}
 				return timeseries
 			},
-			expectedErrors: []bool{true},
+			expectedErrors: false,
 		},
 		"one timeseries with two samples": {
-			setup: func() []mimirpb.PreallocTimeseries {
-				timeseries := []mimirpb.PreallocTimeseries{
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				ts := []mimirpb.PreallocTimeseries{
 					makeTimeseries(labels, append(makeSamples(1, 1), makeSamples(2, 2)...), nil, nil),
 				}
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					timeseries[i] = ts
+				}
 				return timeseries
 			},
-			expectedErrors: []bool{true},
+			expectedErrors: false,
 		},
 		"one timeseries with two histograms": {
-			setup: func() []mimirpb.PreallocTimeseries {
-				timeseries := []mimirpb.PreallocTimeseries{
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				ts := []mimirpb.PreallocTimeseries{
 					makeTimeseries(labels, nil, append(makeHistograms(1, generateTestHistogram(1)), makeHistograms(2, generateTestHistogram(2))...), nil),
 				}
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					timeseries[i] = ts
+				}
 				return timeseries
 			},
-			expectedErrors: []bool{true},
+			expectedErrors: false,
 		},
 		"one timeseries with two samples and two histograms": {
-			setup: func() []mimirpb.PreallocTimeseries {
-				timeseries := []mimirpb.PreallocTimeseries{
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				ts := []mimirpb.PreallocTimeseries{
 					makeTimeseries(labels, append(makeSamples(1, 1), makeSamples(2, 2)...), append(makeHistograms(3, generateTestHistogram(3)), makeHistograms(4, generateTestHistogram(4))...), nil),
 				}
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					timeseries[i] = ts
+				}
 				return timeseries
 			},
-			expectedErrors: []bool{true},
+			expectedErrors: false,
 		},
 		"one timeseries with 80_000 samples with duplicated timestamps": {
-			setup: func() []mimirpb.PreallocTimeseries {
-				samples := make([]mimirpb.Sample, testSize)
-				value := 0
-				for i := 0; i < testSize; i++ {
-					if i < numberOfDifferentValues {
-						value++
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					samples := make([]mimirpb.Sample, testSize)
+					value := 0
+					for i := 0; i < testSize; i++ {
+						if i < numberOfDifferentValues {
+							value++
+						}
+						samples[i].TimestampMs = timestamp
+						samples[i].Value = float64(value)
 					}
-					samples[i].TimestampMs = timestamp
-					samples[i].Value = float64(value)
-				}
-				timeseries := []mimirpb.PreallocTimeseries{
-					makeTimeseries(labels, samples, nil, nil),
+					timeseries[i] = []mimirpb.PreallocTimeseries{
+						makeTimeseries(labels, samples, nil, nil),
+					}
 				}
 				return timeseries
 			},
-			expectedErrors: []bool{true},
+			expectedErrors: true,
 		},
 		"one timeseries with 80_000 histograms with duplicated timestamps": {
-			setup: func() []mimirpb.PreallocTimeseries {
-				histograms := make([]mimirpb.Histogram, testSize)
-				value := 0
-				for i := 0; i < testSize; i++ {
-					if i < numberOfDifferentValues {
-						value++
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					histograms := make([]mimirpb.Histogram, testSize)
+					value := 0
+					for i := 0; i < testSize; i++ {
+						if i < numberOfDifferentValues {
+							value++
+						}
+						histograms[i] = makeHistograms(timestamp, generateTestHistogram(value))[0]
 					}
-					histograms[i] = makeHistograms(timestamp, generateTestHistogram(value))[0]
-				}
-				timeseries := []mimirpb.PreallocTimeseries{
-					makeTimeseries(labels, nil, histograms, nil),
+					timeseries[i] = []mimirpb.PreallocTimeseries{
+						makeTimeseries(labels, nil, histograms, nil),
+					}
 				}
 				return timeseries
 			},
-			expectedErrors: []bool{true},
+			expectedErrors: true,
 		},
 		"one timeseries with 80_000 samples and 80_000 histograms with duplicated timestamps": {
-			setup: func() []mimirpb.PreallocTimeseries {
-				samples := make([]mimirpb.Sample, testSize)
-				histograms := make([]mimirpb.Histogram, testSize)
-				value := 0
-				for i := 0; i < testSize; i++ {
-					if i < numberOfDifferentValues {
-						value++
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					samples := make([]mimirpb.Sample, testSize)
+					histograms := make([]mimirpb.Histogram, testSize)
+					value := 0
+					for i := 0; i < testSize; i++ {
+						if i < numberOfDifferentValues {
+							value++
+						}
+						samples[i].TimestampMs = timestamp
+						samples[i].Value = float64(value)
+						histograms[i] = makeHistograms(timestamp, generateTestHistogram(value))[0]
 					}
-					samples[i].TimestampMs = timestamp
-					samples[i].Value = float64(value)
-					histograms[i] = makeHistograms(timestamp, generateTestHistogram(value))[0]
-				}
-
-				timeseries := []mimirpb.PreallocTimeseries{
-					makeTimeseries(labels, samples, histograms, nil),
+					timeseries[i] = []mimirpb.PreallocTimeseries{
+						makeTimeseries(labels, samples, histograms, nil),
+					}
 				}
 				return timeseries
 			},
-			expectedErrors: []bool{true},
+			expectedErrors: true,
 		},
 	}
 
@@ -1702,20 +1734,16 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 
 	for name, tc := range testCases {
 		b.Run(name, func(b *testing.B) {
-			timeseries := make([][]mimirpb.PreallocTimeseries, b.N)
-			for i := 0; i < b.N; i++ {
-				timeseries[i] = tc.setup()
-			}
+			timeseries := tc.setup(b.N)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
-				for i, ts := range timeseries[n] {
-					shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
-					require.False(b, shouldRemove)
-					if len(tc.expectedErrors) == 0 || !tc.expectedErrors[i] {
-						if err != nil {
-							b.Fatal(err)
-						}
+				for _, ts := range timeseries[n] {
+					_, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
+					if !tc.expectedErrors && err != nil {
+						b.Fatal(err)
+					} else if tc.expectedErrors && err == nil {
+						b.Fatal("an error was expected")
 					}
 				}
 			}
