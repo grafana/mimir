@@ -4786,6 +4786,17 @@
         },
         {
           "kind": "field",
+          "name": "otel_keep_identifying_resource_attributes",
+          "required": false,
+          "desc": "Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.otel-keep-identifying-resource-attributes",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ingest_storage_read_consistency",
           "required": false,
           "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",
