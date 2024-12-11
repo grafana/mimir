@@ -35,7 +35,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -617,7 +616,7 @@ func clampMaxTime(spanLog *spanlogger.SpanLogger, maxT int64, refT int64, limitD
 		// limits equal to 0 are considered to not be enabled
 		return maxT
 	}
-	clampedT := math.Min(maxT, refT+limitDelta.Milliseconds())
+	clampedT := min(maxT, refT+limitDelta.Milliseconds())
 
 	if clampedT != maxT {
 		logClampEvent(spanLog, maxT, clampedT, "max", limitName)
@@ -640,7 +639,7 @@ func clampMinTime(spanLog *spanlogger.SpanLogger, minT int64, refT int64, limitD
 		// limits equal to 0 are considered to not be enabled
 		return minT
 	}
-	clampedT := math.Max(minT, refT+limitDelta.Milliseconds())
+	clampedT := max(minT, refT+limitDelta.Milliseconds())
 
 	if clampedT != minT {
 		logClampEvent(spanLog, minT, clampedT, "min", limitName)

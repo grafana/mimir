@@ -25,7 +25,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -68,7 +67,7 @@ func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunkEntry 
 	}
 	r.toLoad[seq] = append(r.toLoad[seq], loadIdx{
 		offset:      off,
-		length:      util_math.Max(varint.MaxLen32, length), // If the length is 0, we need to at least fetch the length of the chunk.
+		length:      max(varint.MaxLen32, length), // If the length is 0, we need to at least fetch the length of the chunk.
 		seriesEntry: seriesEntry,
 		chunkEntry:  chunkEntry,
 	})
