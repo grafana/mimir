@@ -27,6 +27,9 @@ eval range from 0 to 5m step 1m histogram_fraction(0, 2, single_histogram)
 eval range from 0 to 5m step 1m histogram_stddev(single_histogram)
 	{} 0.842629429717281 0.842629429717281 0.842629429717281 0.842629429717281 0.842629429717281 2.986282214238901
 
+eval range from 0 to 5m step 1m histogram_stdvar(single_histogram)
+	{} 0.7100243558256704 0.7100243558256704 0.7100243558256704 0.7100243558256704 0.7100243558256704 8.917881463079594
+
 # histogram_sum extracts the sum property from the histogram.
 eval range from 0 to 5m step 1m histogram_sum(single_histogram)
 	{} 5 5 5 5 5 20
@@ -52,6 +55,9 @@ eval instant at 3m histogram_fraction(0, 1, mixed_metric)
 eval instant at 4m histogram_stddev(mixed_metric)
 	{} 0.6650352854715079
 
+eval instant at 4m histogram_stdvar(mixed_metric)
+	{} 0.44227193092217004
+
 eval instant at 4m histogram_sum(mixed_metric)
 	{} 8
 
@@ -72,6 +78,9 @@ eval instant at 2m histogram_fraction(0, 1, mixed_metric)
 
 # histogram_stddev ignores any float values
 eval instant at 2m histogram_stddev(mixed_metric)
+
+# histogram_stdvar ignores any float values
+eval instant at 2m histogram_stdvar(mixed_metric)
 
 # histogram_sum ignores any float values
 eval instant at 2m histogram_sum(mixed_metric)
@@ -108,6 +117,11 @@ eval instant at 0 histogram_stddev(route)
 	{path="one"} 0.842629429717281
 	{path="two"} 0.8415900492770793
 	{path="three"} 1.1865698706402301
+
+eval instant at 0 histogram_stdvar(route)
+	{path="one"} 0.7100243558256704
+	{path="two"} 0.7082738110421968
+	{path="three"} 1.4079480579111723
 
 eval instant at 0 histogram_sum(route)
 	{path="one"} 5
@@ -148,6 +162,9 @@ eval range from 0 to 8m step 1m histogram_fraction(0, 1, mixed_metric)
 
 eval range from 0 to 8m step 1m histogram_stddev(mixed_metric)
 {} _ _ _ _ _ _ _ 0.8574122997574659 0.8574122997574659
+
+eval range from 0 to 8m step 1m histogram_stdvar(mixed_metric)
+{} _ _ _ _ _ _ _ 0.7351558517753866 0.7351558517753866
 
 eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
 {} _ _ _ _ _ _ _ 18 18
