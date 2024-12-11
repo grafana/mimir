@@ -11,7 +11,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
     name: "store-gateway-zone-a"
-    rollout-group: store-gateway
+    rollout-group: test-oss-topology-spread-constraints-values-mimir-store-gateway
     zone: zone-a
   annotations:
     rollout-max-unavailable: "50"
@@ -24,7 +24,7 @@ spec:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
       app.kubernetes.io/component: store-gateway
-      rollout-group: store-gateway
+      rollout-group: test-oss-topology-spread-constraints-values-mimir-store-gateway
       zone: zone-a
   updateStrategy:
     type: OnDelete
@@ -49,7 +49,7 @@ spec:
         app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
         name: "store-gateway-zone-a"
-        rollout-group: store-gateway
+        rollout-group: test-oss-topology-spread-constraints-values-mimir-store-gateway
         zone: zone-a
       annotations:
       namespace: "citestns"
@@ -158,7 +158,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
     name: "store-gateway-zone-b"
-    rollout-group: store-gateway
+    rollout-group: test-oss-topology-spread-constraints-values-mimir-store-gateway
     zone: zone-b
   annotations:
     rollout-max-unavailable: "50"
@@ -171,7 +171,7 @@ spec:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
       app.kubernetes.io/component: store-gateway
-      rollout-group: store-gateway
+      rollout-group: test-oss-topology-spread-constraints-values-mimir-store-gateway
       zone: zone-b
   updateStrategy:
     type: OnDelete
@@ -196,7 +196,7 @@ spec:
         app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
         name: "store-gateway-zone-b"
-        rollout-group: store-gateway
+        rollout-group: test-oss-topology-spread-constraints-values-mimir-store-gateway
         zone: zone-b
       annotations:
       namespace: "citestns"
@@ -305,7 +305,7 @@ metadata:
     app.kubernetes.io/part-of: memberlist
     app.kubernetes.io/managed-by: Helm
     name: "store-gateway-zone-c"
-    rollout-group: store-gateway
+    rollout-group: test-oss-topology-spread-constraints-values-mimir-store-gateway
     zone: zone-c
   annotations:
     rollout-max-unavailable: "50"
@@ -318,7 +318,7 @@ spec:
       app.kubernetes.io/name: mimir
       app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
       app.kubernetes.io/component: store-gateway
-      rollout-group: store-gateway
+      rollout-group: test-oss-topology-spread-constraints-values-mimir-store-gateway
       zone: zone-c
   updateStrategy:
     type: OnDelete
@@ -343,7 +343,7 @@ spec:
         app.kubernetes.io/component: store-gateway
         app.kubernetes.io/part-of: memberlist
         name: "store-gateway-zone-c"
-        rollout-group: store-gateway
+        rollout-group: test-oss-topology-spread-constraints-values-mimir-store-gateway
         zone: zone-c
       annotations:
       namespace: "citestns"

@@ -9,7 +9,7 @@ metadata:
     heritage: Helm
     release: test-enterprise-legacy-label-values
     name: "store-gateway-zone-a"
-    rollout-group: store-gateway
+    rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway
     zone: zone-a
   annotations:
     rollout-max-unavailable: "50"
@@ -21,7 +21,7 @@ spec:
     matchLabels:
       app: enterprise-metrics-store-gateway
       release: test-enterprise-legacy-label-values
-      rollout-group: store-gateway
+      rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway
       zone: zone-a
   updateStrategy:
     type: OnDelete
@@ -45,7 +45,7 @@ spec:
         target: store-gateway
         release: test-enterprise-legacy-label-values
         name: "store-gateway-zone-a"
-        rollout-group: store-gateway
+        rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway
         zone: zone-a
       annotations:
       namespace: "citestns"
@@ -143,7 +143,7 @@ metadata:
     heritage: Helm
     release: test-enterprise-legacy-label-values
     name: "store-gateway-zone-b"
-    rollout-group: store-gateway
+    rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway
     zone: zone-b
   annotations:
     rollout-max-unavailable: "50"
@@ -155,7 +155,7 @@ spec:
     matchLabels:
       app: enterprise-metrics-store-gateway
       release: test-enterprise-legacy-label-values
-      rollout-group: store-gateway
+      rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway
       zone: zone-b
   updateStrategy:
     type: OnDelete
@@ -179,7 +179,7 @@ spec:
         target: store-gateway
         release: test-enterprise-legacy-label-values
         name: "store-gateway-zone-b"
-        rollout-group: store-gateway
+        rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway
         zone: zone-b
       annotations:
       namespace: "citestns"
@@ -277,7 +277,7 @@ metadata:
     heritage: Helm
     release: test-enterprise-legacy-label-values
     name: "store-gateway-zone-c"
-    rollout-group: store-gateway
+    rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway
     zone: zone-c
   annotations:
     rollout-max-unavailable: "50"
@@ -289,7 +289,7 @@ spec:
     matchLabels:
       app: enterprise-metrics-store-gateway
       release: test-enterprise-legacy-label-values
-      rollout-group: store-gateway
+      rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway
       zone: zone-c
   updateStrategy:
     type: OnDelete
@@ -313,7 +313,7 @@ spec:
         target: store-gateway
         release: test-enterprise-legacy-label-values
         name: "store-gateway-zone-c"
-        rollout-group: store-gateway
+        rollout-group: test-enterprise-legacy-label-values-enterprise-metrics-store-gateway
         zone: zone-c
       annotations:
       namespace: "citestns"
