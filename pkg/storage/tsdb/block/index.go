@@ -218,7 +218,7 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 	indexFn := filepath.Join(blockDir, IndexFilename)
 	chunkDir := filepath.Join(blockDir, ChunksDirname)
 	// index reader
-	r, err := index.NewFileReader(indexFn)
+	r, err := index.NewFileReader(indexFn, index.DecodePostingsRaw)
 	if err != nil {
 		return stats, errors.Wrap(err, "open index file")
 	}
@@ -423,7 +423,7 @@ func Repair(ctx context.Context, logger log.Logger, dir string, id ulid.ULID, so
 		return resid, errors.New("cannot repair downsampled block")
 	}
 
-	b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), bdir, nil)
+	b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), bdir, nil, nil)
 	if err != nil {
 		return resid, errors.Wrap(err, "open block")
 	}

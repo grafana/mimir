@@ -3336,7 +3336,11 @@ func (ev *evaluator) aggregationCountValues(e *parser.AggregateExpr, grouping []
 	var buf []byte
 	for _, s := range vec {
 		enh.resetBuilder(s.Metric)
-		enh.lb.Set(valueLabel, strconv.FormatFloat(s.F, 'f', -1, 64))
+		if s.H == nil {
+			enh.lb.Set(valueLabel, strconv.FormatFloat(s.F, 'f', -1, 64))
+		} else {
+			enh.lb.Set(valueLabel, s.H.String())
+		}
 		metric := enh.lb.Labels()
 
 		// Considering the count_values()
@@ -3448,7 +3452,7 @@ func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotat
 	return nil
 }
 
-// groupingKey builds and returns the grouping key for the given metric and
+// generateGroupingKey builds and returns the grouping key for the given metric and
 // grouping labels.
 func generateGroupingKey(metric labels.Labels, grouping []string, without bool, buf []byte) (uint64, []byte) {
 	if without {

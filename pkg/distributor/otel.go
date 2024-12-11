@@ -394,8 +394,9 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
 				metric := scopeMetrics.Metrics().At(k)
 				entry := mimirpb.MetricMetadata{
-					Type:             otelMetricTypeToMimirMetricType(metric),
-					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", addSuffixes),
+					Type: otelMetricTypeToMimirMetricType(metric),
+					// TODO(krajorama): when UTF-8 is configurable from user limits, replace "false" appropriately.
+					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", addSuffixes, false),
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}

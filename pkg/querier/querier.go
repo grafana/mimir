@@ -550,7 +550,7 @@ func (mq multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesS
 	}
 
 	if len(chunks) == 0 {
-		return storage.NewMergeSeriesSet(otherSets, storage.ChainedSeriesMerge)
+		return storage.NewMergeSeriesSet(otherSets, 0, storage.ChainedSeriesMerge)
 	}
 
 	// partitionChunks returns set with sorted series, so it can be used by NewMergeSeriesSet
@@ -561,7 +561,7 @@ func (mq multiQuerier) mergeSeriesSets(sets []storage.SeriesSet) storage.SeriesS
 	}
 
 	otherSets = append(otherSets, chunksSet)
-	return storage.NewMergeSeriesSet(otherSets, storage.ChainedSeriesMerge)
+	return storage.NewMergeSeriesSet(otherSets, 0, storage.ChainedSeriesMerge)
 }
 
 type sliceSeriesSet struct {

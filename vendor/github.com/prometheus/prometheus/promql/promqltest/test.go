@@ -482,28 +482,23 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 
 type tempHistogramWrapper struct {
 	metric        labels.Labels
-	upperBounds   []float64
 	histogramByTs map[int64]convertnhcb.TempHistogram
 }
 
 func newTempHistogramWrapper() tempHistogramWrapper {
 	return tempHistogramWrapper{
-		upperBounds:   []float64{},
 		histogramByTs: map[int64]convertnhcb.TempHistogram{},
 	}
 }
 
-func processClassicHistogramSeries(m labels.Labels, suffix string, histogramMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistogramWrapper func(*tempHistogramWrapper), updateHistogram func(*convertnhcb.TempHistogram, float64)) {
-	m2 := convertnhcb.GetHistogramMetricBase(m, suffix)
+func processClassicHistogramSeries(m labels.Labels, name string, histogramMap map[uint64]tempHistogramWrapper, smpls []promql.Sample, updateHistogram func(*convertnhcb.TempHistogram, float64)) {
+	m2 := convertnhcb.GetHistogramMetricBase(m, name)
 	m2hash := m2.Hash()
 	histogramWrapper, exists := histogramMap[m2hash]
 	if !exists {
 		histogramWrapper = newTempHistogramWrapper()
 	}
 	histogramWrapper.metric = m2
-	if updateHistogramWrapper != nil {
-		updateHistogramWrapper(&histogramWrapper)
-	}
 	for _, s := range smpls {
 		if s.H != nil {
 			continue
@@ -528,24 +523,26 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 	for hash, smpls := range cmd.defs {
 		m := cmd.metrics[hash]
 		mName := m.Get(labels.MetricName)
-		switch {
-		case strings.HasSuffix(mName, "_bucket") && m.Has(labels.BucketLabel):
+		suffixType, name := convertnhcb.GetHistogramMetricBaseName(mName)
+		switch suffixType {
+		case convertnhcb.SuffixBucket:
+			if !m.Has(labels.BucketLabel) {
+				panic(fmt.Sprintf("expected bucket label in metric %s", m))
+			}
 			le, err := strconv.ParseFloat(m.Get(labels.BucketLabel), 64)
 			if err != nil || math.IsNaN(le) {
 				continue
 			}
-			processClassicHistogramSeries(m, "_bucket", histogramMap, smpls, func(histogramWrapper *tempHistogramWrapper) {
-				histogramWrapper.upperBounds = append(histogramWrapper.upperBounds, le)
-			}, func(histogram *convertnhcb.TempHistogram, f float64) {
-				histogram.BucketCounts[le] = f
+			processClassicHistogramSeries(m, name, histogramMap, smpls, func(histogram *convertnhcb.TempHistogram, f float64) {
+				_ = histogram.SetBucketCount(le, f)
 			})
-		case strings.HasSuffix(mName, "_count"):
-			processClassicHistogramSeries(m, "_count", histogramMap, smpls, nil, func(histogram *convertnhcb.TempHistogram, f float64) {
-				histogram.Count = f
+		case convertnhcb.SuffixCount:
+			processClassicHistogramSeries(m, name, histogramMap, smpls, func(histogram *convertnhcb.TempHistogram, f float64) {
+				_ = histogram.SetCount(f)
 			})
-		case strings.HasSuffix(mName, "_sum"):
-			processClassicHistogramSeries(m, "_sum", histogramMap, smpls, nil, func(histogram *convertnhcb.TempHistogram, f float64) {
-				histogram.Sum = f
+		case convertnhcb.SuffixSum:
+			processClassicHistogramSeries(m, name, histogramMap, smpls, func(histogram *convertnhcb.TempHistogram, f float64) {
+				_ = histogram.SetSum(f)
 			})
 		}
 	}
@@ -553,11 +550,12 @@ func (cmd *loadCmd) appendCustomHistogram(a storage.Appender) error {
 	// Convert the collated classic histogram data into native histograms
 	// with custom bounds and append them to the storage.
 	for _, histogramWrapper := range histogramMap {
-		upperBounds, hBase := convertnhcb.ProcessUpperBoundsAndCreateBaseHistogram(histogramWrapper.upperBounds, true)
-		fhBase := hBase.ToFloat(nil)
 		samples := make([]promql.Sample, 0, len(histogramWrapper.histogramByTs))
 		for t, histogram := range histogramWrapper.histogramByTs {
-			h, fh := convertnhcb.NewHistogram(histogram, upperBounds, hBase, fhBase)
+			h, fh, err := histogram.Convert()
+			if err != nil {
+				return err
+			}
 			if fh == nil {
 				if err := h.Validate(); err != nil {
 					return err
@@ -1103,12 +1101,16 @@ func (t *test) execRangeEval(cmd *evalCmd, engine promql.QueryEngine) error {
 	if res.Err == nil && cmd.fail {
 		return fmt.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 	}
-	countWarnings, _ := res.Warnings.CountWarningsAndInfo()
-	if !cmd.warn && countWarnings > 0 {
+	countWarnings, countInfo := res.Warnings.CountWarningsAndInfo()
+	switch {
+	case !cmd.warn && countWarnings > 0:
 		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", cmd.expr, cmd.line, res.Warnings)
-	}
-	if cmd.warn && countWarnings == 0 {
+	case cmd.warn && countWarnings == 0:
 		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
+	case !cmd.info && countInfo > 0:
+		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", cmd.expr, cmd.line, res.Warnings)
+	case cmd.info && countInfo == 0:
+		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
 	}
 	defer q.Close()
 
@@ -1154,13 +1156,14 @@ func (t *test) runInstantQuery(iq atModifierTestCase, cmd *evalCmd, engine promq
 		return fmt.Errorf("expected error evaluating query %q (line %d) but got none", iq.expr, cmd.line)
 	}
 	countWarnings, countInfo := res.Warnings.CountWarningsAndInfo()
-	if !cmd.warn && countWarnings > 0 {
+	switch {
+	case !cmd.warn && countWarnings > 0:
 		return fmt.Errorf("unexpected warnings evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
-	}
-	if cmd.warn && countWarnings == 0 {
+	case cmd.warn && countWarnings == 0:
 		return fmt.Errorf("expected warnings evaluating query %q (line %d) but got none", iq.expr, cmd.line)
-	}
-	if cmd.info && countInfo == 0 {
+	case !cmd.info && countInfo > 0:
+		return fmt.Errorf("unexpected info annotations evaluating query %q (line %d): %v", iq.expr, cmd.line, res.Warnings)
+	case cmd.info && countInfo == 0:
 		return fmt.Errorf("expected info annotations evaluating query %q (line %d) but got none", iq.expr, cmd.line)
 	}
 	err = cmd.compareResult(res.Value)

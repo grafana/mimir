@@ -863,6 +863,10 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			// When there isn't a fetch in flight the HWM will never be updated, we will dispatch the next fetchWant even if that means it's above the HWM.
 			dispatchNextWant = wants
 		}
+
+		// Periodically update our estimation, so it's exported as a metric.
+		r.estimatedBytesPerRecord.Store(int64(nextFetch.estimatedBytesPerRecord))
+
 		select {
 		case <-r.done:
 			return

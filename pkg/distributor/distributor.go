@@ -182,7 +182,14 @@ type Distributor struct {
 
 	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
 	partitionsRing *ring.PartitionInstanceRing
+
+	// For testing functionality that relies on timing without having to sleep in unit tests.
+	sleep func(time.Duration)
+	now   func() time.Time
 }
+
+func defaultSleep(d time.Duration) { time.Sleep(d) }
+func defaultNow() time.Time        { return time.Now() }
 
 // OTelResourceAttributePromotionConfig contains methods for configuring OTel resource attribute promotion.
 type OTelResourceAttributePromotionConfig interface {
@@ -437,6 +444,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}),
 
 		PushMetrics: newPushMetrics(reg),
+		now:         defaultNow,
+		sleep:       defaultSleep,
 	}
 
 	// Initialize expected rejected request labels
@@ -825,7 +834,9 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 		next = middlewares[ix](next)
 	}
 
-	return next
+	// The delay middleware must take into account total runtime of all other middlewares and the push func, hence why we wrap all others.
+	return d.outerMaybeDelayMiddleware(next)
+
 }
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
@@ -1189,6 +1200,28 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
 
 		return next(ctx, pushReq)
+	}
+}
+
+// outerMaybeDelayMiddleware is a middleware that may delay ingestion if configured.
+func (d *Distributor) outerMaybeDelayMiddleware(next PushFunc) PushFunc {
+	return func(ctx context.Context, pushReq *Request) error {
+		start := d.now()
+		// Execute the whole middleware chain.
+		err := next(ctx, pushReq)
+
+		userID, userErr := tenant.TenantID(ctx) // Log tenant ID if available.
+		if userErr == nil {
+			// Target delay - time spent processing the middleware chain including the push.
+			// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a negative value.
+			if delay := d.limits.DistributorIngestionArtificialDelay(userID) - d.now().Sub(start); delay > 0 {
+				d.sleep(util.DurationWithJitter(delay, 0.10))
+			}
+			return err
+		}
+
+		level.Warn(d.log).Log("msg", "failed to get tenant ID while trying to delay ingestion", "err", userErr)
+		return err
 	}
 }
 

@@ -35,13 +35,14 @@ import (
 )
 
 type Settings struct {
-	ExternalLabels                             map[string]string
 	Namespace                                  string
-	PromoteResourceAttributes                  []string
+	ExternalLabels                             map[string]string
 	DisableTargetInfo                          bool
 	ExportCreatedMetric                        bool
 	AddMetricSuffixes                          bool
 	SendMetadata                               bool
+	AllowUTF8                                  bool
+	PromoteResourceAttributes                  []string
 	EnableCreatedTimestampZeroIngestion        bool
 	ValidIntervalCreatedTimestampZeroIngestion time.Duration
 }
@@ -57,6 +58,7 @@ type PrometheusConverter struct {
 	unique    map[uint64]*prompb.TimeSeries
 	conflicts map[uint64][]*prompb.TimeSeries
 	everyN    everyNTimes
+	metadata  []prompb.MetricMetadata
 }
 
 func NewPrometheusConverter() *PrometheusConverter {
@@ -70,6 +72,16 @@ func NewPrometheusConverter() *PrometheusConverter {
 func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings, logger *slog.Logger) (annots annotations.Annotations, errs error) {
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
+
+	numMetrics := 0
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			numMetrics += scopeMetricsSlice.At(j).Metrics().Len()
+		}
+	}
+	c.metadata = make([]prompb.MetricMetadata, 0, numMetrics)
+
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
@@ -95,7 +107,13 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
-				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes, settings.AllowUTF8)
+				c.metadata = append(c.metadata, prompb.MetricMetadata{
+					Type:             otelMetricTypeToPromMetricType(metric),
+					MetricFamilyName: promName,
+					Help:             metric.Description(),
+					Unit:             metric.Unit(),
+				})
 
 				// handle individual metrics based on type
 				//exhaustive:enforce

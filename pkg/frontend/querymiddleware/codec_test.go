@@ -14,6 +14,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -474,13 +475,13 @@ func TestMetricsQuery_WithQuery_WithExpr_TransformConsistency(t *testing.T) {
 	}
 }
 
-func TestPrometheusCodec_EncodeLabelsQueryRequest(t *testing.T) {
-	codec := newTestPrometheusCodec()
-
+func TestPrometheusCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 	for _, testCase := range []struct {
 		name                      string
+		propagateHeaders          []string
 		url                       string
-		expectedStruct            LabelsQueryRequest
+		headers                   http.Header
+		expectedStruct            LabelsSeriesQueryRequest
 		expectedGetLabelName      string
 		expectedGetStartOrDefault int64
 		expectedGetEndOrDefault   int64
@@ -648,42 +649,81 @@ func TestPrometheusCodec_EncodeLabelsQueryRequest(t *testing.T) {
 			url:         "/api/v1/label/job/values?limit=-1",
 			expectedErr: "limit parameter must be a positive number: -1",
 		},
+		{
+			name: "propagates headers",
+			headers: http.Header{
+				"X-Special-Header": []string{"some-value"},
+			},
+			url:              "/api/v1/labels?end=1708588800&start=1708502400",
+			propagateHeaders: []string{"X-Special-Header"},
+			expectedStruct: &PrometheusLabelNamesQueryRequest{
+				Path:  "/api/v1/labels",
+				Start: 1708502400 * 1e3,
+				End:   1708588800 * 1e3,
+				Headers: httpHeadersToProm(
+					http.Header{"X-Special-Header": []string{"some-value"}},
+				),
+				LabelMatcherSets: nil,
+			},
+			expectedGetLabelName:      "",
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			for _, reqMethod := range []string{http.MethodGet, http.MethodPost} {
+				t.Run(reqMethod, func(t *testing.T) {
+					var r *http.Request
+					var err error
 
-				var r *http.Request
-				var err error
+					expectedStruct := testCase.expectedStruct
 
-				switch reqMethod {
-				case http.MethodGet:
-					r, err = http.NewRequest(reqMethod, testCase.url, nil)
+					switch reqMethod {
+					case http.MethodGet:
+						r, err = http.NewRequest(reqMethod, testCase.url, nil)
+						require.NoError(t, err)
+					case http.MethodPost:
+						parsedURL, _ := url.Parse(testCase.url)
+						r, err = http.NewRequest(reqMethod, parsedURL.Path, strings.NewReader(parsedURL.RawQuery))
+						require.NoError(t, err)
+						r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+						if expectedStruct != nil {
+							headers := append(expectedStruct.GetHeaders(), &PrometheusHeader{"Content-Type", []string{"application/x-www-form-urlencoded"}})
+
+							// Decoding headers also sorts them. We sort here to be able to make assertions on the slice of headers.
+							sort.Slice(headers, func(i, j int) bool { return headers[i].Name < headers[j].Name })
+							expectedStruct, err = expectedStruct.WithHeaders(headers)
+							require.NoError(t, err)
+						}
+					default:
+						t.Fatalf("unsupported HTTP method %q", reqMethod)
+					}
+
+					ctx := user.InjectOrgID(context.Background(), "1")
+					r = r.WithContext(ctx)
+					for k, v := range testCase.headers {
+						for _, v := range v {
+							r.Header.Add(k, v)
+						}
+					}
+
+					codec := newTestPrometheusCodecWithHeaders(testCase.propagateHeaders)
+					reqDecoded, err := codec.DecodeLabelsSeriesQueryRequest(ctx, r)
+					if err != nil || testCase.expectedErr != "" {
+						require.EqualError(t, err, testCase.expectedErr)
+						return
+					}
+
+					require.EqualValues(t, expectedStruct, reqDecoded)
+					require.EqualValues(t, testCase.expectedGetStartOrDefault, reqDecoded.GetStartOrDefault())
+					require.EqualValues(t, testCase.expectedGetEndOrDefault, reqDecoded.GetEndOrDefault())
+					require.EqualValues(t, testCase.expectedLimit, reqDecoded.GetLimit())
+
+					reqEncoded, err := codec.EncodeLabelsSeriesQueryRequest(context.Background(), reqDecoded)
 					require.NoError(t, err)
-				case http.MethodPost:
-					parsedURL, _ := url.Parse(testCase.url)
-					r, err = http.NewRequest(reqMethod, parsedURL.Path, strings.NewReader(parsedURL.RawQuery))
-					require.NoError(t, err)
-					r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-				default:
-					t.Fatalf("unsupported HTTP method %q", reqMethod)
-				}
-
-				ctx := user.InjectOrgID(context.Background(), "1")
-				r = r.WithContext(ctx)
-
-				reqDecoded, err := codec.DecodeLabelsQueryRequest(ctx, r)
-				if err != nil || testCase.expectedErr != "" {
-					require.EqualError(t, err, testCase.expectedErr)
-					return
-				}
-				require.EqualValues(t, testCase.expectedStruct, reqDecoded)
-				require.EqualValues(t, testCase.expectedGetStartOrDefault, reqDecoded.GetStartOrDefault())
-				require.EqualValues(t, testCase.expectedGetEndOrDefault, reqDecoded.GetEndOrDefault())
-				require.EqualValues(t, testCase.expectedLimit, reqDecoded.GetLimit())
-
-				reqEncoded, err := codec.EncodeLabelsQueryRequest(context.Background(), reqDecoded)
-				require.NoError(t, err)
-				require.EqualValues(t, testCase.url, reqEncoded.RequestURI)
+					require.EqualValues(t, testCase.url, reqEncoded.RequestURI)
+				})
 			}
 		})
 	}
@@ -1681,28 +1721,34 @@ func TestPrometheusCodec_DecodeEncode_Metrics(t *testing.T) {
 // TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels tests that decoding and re-encoding a
 // labels query request multiple times does not lose relevant information about the original request.
 func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
+
+	defaultHeaders := httpHeadersToProm(http.Header{
+		"Accept": {"application/json"},
+	})
 	codec := newTestPrometheusCodec().(prometheusCodec)
 	for _, tc := range []struct {
 		name     string
 		queryURL string
-		request  LabelsQueryRequest
+		request  LabelsSeriesQueryRequest
 	}{
 		{
 			name:     "label names - minimal",
 			queryURL: "/api/v1/labels?end=1708588800&start=1708502400",
 			request: &PrometheusLabelNamesQueryRequest{
-				Path:  "/api/v1/labels",
-				Start: 1708502400000,
-				End:   1708588800000,
+				Path:    "/api/v1/labels",
+				Headers: defaultHeaders,
+				Start:   1708502400000,
+				End:     1708588800000,
 			},
 		},
 		{
 			name:     "label names - all",
 			queryURL: "/api/v1/labels?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
 			request: &PrometheusLabelNamesQueryRequest{
-				Path:  "/api/v1/labels",
-				Start: 1708502400000,
-				End:   1708588800000,
+				Path:    "/api/v1/labels",
+				Headers: defaultHeaders,
+				Start:   1708502400000,
+				End:     1708588800000,
 				LabelMatcherSets: []string{
 					"go_goroutines{container=~\"quer.*\"}",
 					"go_goroutines{container!=\"query-scheduler\"}",
@@ -1715,6 +1761,7 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			queryURL: "/api/v1/label/job/values?end=1708588800&start=1708502400",
 			request: &PrometheusLabelValuesQueryRequest{
 				Path:      "/api/v1/label/job/values",
+				Headers:   defaultHeaders,
 				LabelName: "job",
 				Start:     1708502400000,
 				End:       1708588800000,
@@ -1725,6 +1772,7 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			queryURL: "/api/v1/label/job/values?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
 			request: &PrometheusLabelValuesQueryRequest{
 				Path:      "/api/v1/label/job/values",
+				Headers:   defaultHeaders,
 				LabelName: "job",
 				Start:     1708502400000,
 				End:       1708588800000,
@@ -1739,9 +1787,10 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			name:     "series - minimal",
 			queryURL: "/api/v1/series?end=1708588800&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
 			request: &PrometheusSeriesQueryRequest{
-				Path:  "/api/v1/series",
-				Start: 1708502400000,
-				End:   1708588800000,
+				Path:    "/api/v1/series",
+				Headers: defaultHeaders,
+				Start:   1708502400000,
+				End:     1708588800000,
 				LabelMatcherSets: []string{
 					"go_goroutines{container!=\"query-scheduler\"}",
 				},
@@ -1751,9 +1800,10 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			name:     "series - all",
 			queryURL: "/api/v1/series?end=1708588800&limit=10&match%5B%5D=go_goroutines%7Bcontainer%3D~%22quer.%2A%22%7D&match%5B%5D=go_goroutines%7Bcontainer%21%3D%22query-scheduler%22%7D&start=1708502400",
 			request: &PrometheusSeriesQueryRequest{
-				Path:  "/api/v1/series",
-				Start: 1708502400000,
-				End:   1708588800000,
+				Path:    "/api/v1/series",
+				Headers: defaultHeaders,
+				Start:   1708502400000,
+				End:     1708588800000,
 				LabelMatcherSets: []string{
 					"go_goroutines{container=~\"quer.*\"}",
 					"go_goroutines{container!=\"query-scheduler\"}",
@@ -1769,25 +1819,25 @@ func TestPrometheusCodec_DecodeEncodeMultipleTimes_Labels(t *testing.T) {
 			require.NoError(t, err)
 			expected.Body = http.NoBody
 			expected.Header = make(http.Header)
-			// This header is set by EncodeLabelsQueryRequest according to the codec's config, so we
+			// This header is set by EncodeLabelsSeriesQueryRequest according to the codec's config, so we
 			// should always expect it to be present on the re-encoded request.
 			expected.Header.Set("Accept", "application/json")
 			ctx := context.Background()
 
-			decoded, err := codec.DecodeLabelsQueryRequest(ctx, expected)
+			decoded, err := codec.DecodeLabelsSeriesQueryRequest(ctx, expected)
 			require.NoError(t, err)
 			assert.Equal(t, tc.request, decoded)
 
-			encoded, err := codec.EncodeLabelsQueryRequest(ctx, decoded)
+			encoded, err := codec.EncodeLabelsSeriesQueryRequest(ctx, decoded)
 			require.NoError(t, err)
 			assert.Equal(t, expected.URL, encoded.URL)
 			assert.Equal(t, expected.Header, encoded.Header)
 
-			decoded, err = codec.DecodeLabelsQueryRequest(ctx, encoded)
+			decoded, err = codec.DecodeLabelsSeriesQueryRequest(ctx, encoded)
 			require.NoError(t, err)
 			assert.Equal(t, tc.request, decoded)
 
-			encoded, err = codec.EncodeLabelsQueryRequest(ctx, decoded)
+			encoded, err = codec.EncodeLabelsSeriesQueryRequest(ctx, decoded)
 			require.NoError(t, err)
 			assert.Equal(t, expected.URL, encoded.URL)
 			assert.Equal(t, expected.Header, encoded.Header)
@@ -1848,7 +1898,11 @@ func TestPrometheusCodec_DecodeMultipleTimes(t *testing.T) {
 }
 
 func newTestPrometheusCodec() Codec {
-	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatJSON, nil)
+	return newTestPrometheusCodecWithHeaders(nil)
+}
+
+func newTestPrometheusCodecWithHeaders(propagateHeaders []string) Codec {
+	return NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, formatJSON, propagateHeaders)
 }
 
 func mustSucceed[T any](value T, err error) T {

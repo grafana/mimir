@@ -32,7 +32,7 @@ func main() {
 }
 
 func printChunks(blockDir string, chunkRefs []string) {
-	b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), blockDir, nil)
+	b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), blockDir, nil, nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to open TSDB block", blockDir, "due to error:", err)
 		os.Exit(1)

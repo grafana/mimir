@@ -98,17 +98,6 @@
         },
         {
           "kind": "field",
-          "name": "get_request_for_ingester_shutdown_enabled",
-          "required": false,
-          "desc": "Enable GET requests to the /ingester/shutdown endpoint to trigger an ingester shutdown. This is a potentially dangerous operation and should only be enabled consciously.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "api.get-request-for-ingester-shutdown-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "deprecated"
-        },
-        {
-          "kind": "field",
           "name": "alertmanager_http_prefix",
           "required": false,
           "desc": "HTTP URL path under which the Alertmanager ui and api will be served.",
@@ -6711,7 +6700,7 @@
               "kind": "field",
               "name": "auto_create_topic_enabled",
               "required": false,
-              "desc": "Enable auto-creation of Kafka topic if it doesn't exist.",
+              "desc": "Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir will fail to start.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "ingest-storage.kafka.auto-create-topic-enabled",
@@ -6721,9 +6710,9 @@
               "kind": "field",
               "name": "auto_create_topic_default_partitions",
               "required": false,
-              "desc": "When auto-creation of Kafka topic is enabled and this value is positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that the Kafka broker uses for auto-created topics. Note that this is a Kafka-cluster wide setting, and applies to any auto-created topic. If the setting of num.partitions fails, Mimir proceeds anyways, but auto-created topics could have an incorrect number of partitions.",
+              "desc": "When auto-creation of Kafka topic is enabled and this value is positive, Mimir will create the topic with this number of partitions. When the value is -1 the Kafka broker will use the default number of partitions (num.partitions configuration).",
               "fieldValue": null,
-              "fieldDefaultValue": 0,
+              "fieldDefaultValue": -1,
               "fieldFlag": "ingest-storage.kafka.auto-create-topic-default-partitions",
               "fieldType": "int"
             },
@@ -12425,6 +12414,17 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler.alertmanager-client.oauth.scopes",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "endpoint_params",
+                  "required": false,
+                  "desc": "Optional additional URL parameters to send to the token URL.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": {},
+                  "fieldFlag": "ruler.alertmanager-client.oauth.endpoint-params",
+                  "fieldType": "map of string to string",
+                  "fieldCategory": "advanced"
                 }
               ],
               "fieldValue": null,

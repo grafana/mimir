@@ -223,6 +223,13 @@ func TestReplicaDescMerge(t *testing.T) {
 			}(),
 			expectedChange: nil,
 		},
+		{
+			name:           "Merge should return no change when replica is the same",
+			rDesc1:         firstReplica(),
+			rDesc2:         firstReplica(),
+			expectedRDesc:  firstReplica(),
+			expectedChange: nil,
+		},
 	}
 
 	for _, tt := range testsMerge {
