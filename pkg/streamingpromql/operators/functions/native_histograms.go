@@ -89,51 +89,56 @@ func HistogramFraction(seriesData types.InstantVectorSeriesData, scalarArgsData 
 	return data, nil
 }
 
-// HistogramStdDev returns the estimated standard deviation of observations in a native histogram
-// Float values are ignored.
-func HistogramStdDev(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
-	fPoints, err := types.FPointSlicePool.Get(len(seriesData.Histograms), memoryConsumptionTracker)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
-	data := types.InstantVectorSeriesData{
-		Floats: fPoints,
-	}
-
-	for _, histogram := range seriesData.Histograms {
-		mean := histogram.H.Sum / histogram.H.Count
-		var variance, cVariance float64
-		it := histogram.H.AllBucketIterator()
-		for it.Next() {
-			bucket := it.At()
-			if bucket.Count == 0 {
-				continue
-			}
-			var val float64
-			if bucket.Lower <= 0 && 0 <= bucket.Upper {
-				val = 0
-			} else {
-				val = math.Sqrt(bucket.Upper * bucket.Lower)
-				if bucket.Upper < 0 {
-					val = -val
-				}
-			}
-			delta := val - mean
-			variance, cVariance = floats.KahanSumInc(bucket.Count*delta*delta, variance, cVariance)
+func HistogramStdDevStdVar(isStdDev bool) InstantVectorSeriesFunction {
+	// returns either the standard deviation, or standard variance of a native histogram.
+	// Float values are ignored.
+	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+		fPoints, err := types.FPointSlicePool.Get(len(seriesData.Histograms), memoryConsumptionTracker)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
 		}
-		variance += cVariance
-		variance /= histogram.H.Count
 
-		data.Floats = append(data.Floats, promql.FPoint{
-			T: histogram.T,
-			F: math.Sqrt(variance),
-		})
+		data := types.InstantVectorSeriesData{
+			Floats: fPoints,
+		}
+
+		for _, histogram := range seriesData.Histograms {
+			mean := histogram.H.Sum / histogram.H.Count
+			var variance, cVariance float64
+			it := histogram.H.AllBucketIterator()
+			for it.Next() {
+				bucket := it.At()
+				if bucket.Count == 0 {
+					continue
+				}
+				var val float64
+				if bucket.Lower <= 0 && 0 <= bucket.Upper {
+					val = 0
+				} else {
+					val = math.Sqrt(bucket.Upper * bucket.Lower)
+					if bucket.Upper < 0 {
+						val = -val
+					}
+				}
+				delta := val - mean
+				variance, cVariance = floats.KahanSumInc(bucket.Count*delta*delta, variance, cVariance)
+			}
+			variance += cVariance
+			variance /= histogram.H.Count
+			if isStdDev {
+				variance = math.Sqrt(variance)
+			}
+
+			data.Floats = append(data.Floats, promql.FPoint{
+				T: histogram.T,
+				F: variance,
+			})
+		}
+
+		types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
+
+		return data, nil
 	}
-
-	types.PutInstantVectorSeriesData(seriesData, memoryConsumptionTracker)
-
-	return data, nil
 }
 
 func HistogramSum(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {

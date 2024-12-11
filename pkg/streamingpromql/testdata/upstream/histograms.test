@@ -99,16 +99,14 @@ eval instant at 50m histogram_avg(testhistogram3)
 	{start="negative"} 4
 
 # Test histogram_stddev. This has no classic equivalent.
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_stddev(testhistogram3)
-#	{start="positive"} 2.8189265757336734
-#	{start="negative"} 4.182715937754936
+eval instant at 50m histogram_stddev(testhistogram3)
+	{start="positive"} 2.8189265757336734
+	{start="negative"} 4.182715937754936
 
 # Test histogram_stdvar. This has no classic equivalent.
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_stdvar(testhistogram3)
-#	{start="positive"} 7.946347039377573
-#	{start="negative"} 17.495112615949154
+eval instant at 50m histogram_stdvar(testhistogram3)
+	{start="positive"} 7.946347039377573
+	{start="negative"} 17.495112615949154
 
 # Test histogram_fraction.
 
