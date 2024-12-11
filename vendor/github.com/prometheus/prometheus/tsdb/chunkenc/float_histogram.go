@@ -976,6 +976,7 @@ func (it *floatHistogramIterator) Reset(b []byte) {
 		it.atFloatHistogramCalled = false
 		it.pBuckets, it.nBuckets = nil, nil
 		it.pSpans, it.nSpans = nil, nil
+		it.customValues = nil
 	} else {
 		it.pBuckets, it.nBuckets = it.pBuckets[:0], it.nBuckets[:0]
 	}
@@ -1103,6 +1104,13 @@ func (it *floatHistogramIterator) Next() ValueType {
 			it.nSpans = newSpans
 		} else {
 			it.nSpans = nil
+		}
+		if len(it.customValues) > 0 {
+			newCustomValues := make([]float64, len(it.customValues))
+			copy(newCustomValues, it.customValues)
+			it.customValues = newCustomValues
+		} else {
+			it.customValues = nil
 		}
 	}
 
