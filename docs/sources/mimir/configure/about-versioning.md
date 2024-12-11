@@ -90,6 +90,8 @@ The following features are currently experimental:
     - `-distributor.promote-otel-resource-attributes`
   - Add experimental `memberlist` key-value store for ha_tracker. Note that this feature is `experimental`, as the upper limits of propagation times have not yet been validated. Additionally, cleanup operations have not yet been implemented for the memberlist entries.
     - `-distributor.ha-tracker.kvstore.store`
+  - Allow keeping OpenTelemetry `service.instance.id`, `service.name` and `service.namespace` resource attributes in `target_info` on top of converting them to the `instance` and `job` labels.
+    - `-distributor.otel-keep-identifying-resource-attributes`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
