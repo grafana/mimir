@@ -3939,17 +3939,11 @@ kafka:
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
-  # The number of concurrent fetch requests that the ingester makes when reading
-  # data from Kafka during startup. 0 to disable.
-  # CLI flag: -ingest-storage.kafka.startup-fetch-concurrency
-  [startup_fetch_concurrency: <int> | default = 0]
-
-  # The number of concurrent fetch requests that the ingester makes when reading
-  # data continuously from Kafka after startup. Is disabled unless
-  # ingest-storage.kafka.startup-fetch-concurrency is greater than 0. 0 to
-  # disable.
-  # CLI flag: -ingest-storage.kafka.ongoing-fetch-concurrency
-  [ongoing_fetch_concurrency: <int> | default = 0]
+  # The maximum number of concurrent fetch requests that the ingester makes when
+  # reading data from Kafka during startup. Concurrent fetch requests are issued
+  # only when there is sufficient backlog of records to consume. 0 to disable.
+  # CLI flag: -ingest-storage.kafka.fetch-concurrency-max
+  [fetch_concurrency_max: <int> | default = 0]
 
   # When enabled, the fetch request MaxBytes field is computed using the
   # compressed size of previous records. When disabled, MaxBytes is computed
