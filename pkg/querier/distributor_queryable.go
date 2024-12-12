@@ -126,11 +126,9 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		return storage.ErrSeriesSet(err)
 	}
 
-	rcBH := series.NewRefCountedBuffersHolder(results.BufferHolders)
-
 	sets := []storage.SeriesSet(nil)
 	if len(results.Timeseries) > 0 {
-		sets = append(sets, newTimeSeriesSeriesSet(results.Timeseries, rcBH))
+		sets = append(sets, newTimeSeriesSeriesSet(results.Timeseries))
 	}
 
 	var chunkInfo *chunkinfologger.ChunkInfoLogger
@@ -167,7 +165,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	}
 
 	if len(serieses) > 0 {
-		sets = append(sets, series.NewConcreteSeriesSetFromUnsortedSeries(serieses, rcBH))
+		sets = append(sets, series.NewConcreteSeriesSetFromUnsortedSeries(serieses))
 	}
 
 	if len(results.StreamingSeries) > 0 {
@@ -191,7 +189,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 			})
 		}
 
-		sets = append(sets, series.NewConcreteSeriesSetFromSortedSeries(streamingSeries, rcBH))
+		sets = append(sets, series.NewConcreteSeriesSetFromSortedSeries(streamingSeries))
 	}
 
 	if len(sets) == 0 {
