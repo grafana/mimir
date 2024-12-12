@@ -69,7 +69,7 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 		offsetsReader := offsetsReader
 
 		errGroup.Go(func() error {
-			offsets, err := r.metrics.Observe(false, func() (map[int32]int64, error) {
+			offsets, err := r.metrics.Observe(offsetsReader.Topic(), false, func() (map[int32]int64, error) {
 				return offsetsReader.WaitNextFetchLastProducedOffset(ctx)
 			})
 			if err != nil {
@@ -103,7 +103,13 @@ func getDefaultReadConsistency(tenantIDs []string, limits Limits) string {
 	return querierapi.ReadConsistencyEventual
 }
 
-func newReadConsistencyMetrics(reg prometheus.Registerer) *ingest.StrongReadConsistencyInstrumentation[map[int32]int64] {
+func newReadConsistencyMetrics(reg prometheus.Registerer, offsetsReaders map[string]*ingest.TopicOffsetsReader) *ingest.StrongReadConsistencyInstrumentation[map[int32]int64] {
 	const component = "query-frontend"
-	return ingest.NewStrongReadConsistencyInstrumentation[map[int32]int64](component, reg)
+
+	topics := make([]string, 0, len(offsetsReaders))
+	for _, r := range offsetsReaders {
+		topics = append(topics, r.Topic())
+	}
+
+	return ingest.NewStrongReadConsistencyInstrumentation[map[int32]int64](component, reg, topics)
 }

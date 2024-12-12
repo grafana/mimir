@@ -282,7 +282,7 @@ func newQueryTripperware(
 
 		// Enforce read consistency after caching.
 		if len(ingestStorageTopicOffsetsReaders) > 0 {
-			metrics := newReadConsistencyMetrics(registerer)
+			metrics := newReadConsistencyMetrics(registerer, ingestStorageTopicOffsetsReaders)
 
 			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 			instant = newReadConsistencyRoundTripper(instant, ingestStorageTopicOffsetsReaders, limits, log, metrics)
