@@ -7,6 +7,7 @@ package lazyquery
 
 import (
 	"context"
+	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -49,13 +50,21 @@ func (l LazyQuerier) Select(ctx context.Context, selectSorted bool, params *stor
 	// make sure there is space in the buffer, to unblock the goroutine and let it die even if nobody is
 	// waiting for the result yet (or anymore).
 	future := make(chan storage.SeriesSet, 1)
+	copiedParams := copyParams(params)
 	go func() {
-		future <- l.next.Select(ctx, selectSorted, params, matchers...)
+		future <- l.next.Select(ctx, selectSorted, copiedParams, matchers...)
 	}()
 
 	return &lazySeriesSet{
 		future: future,
 	}
+}
+
+func copyParams(params *storage.SelectHints) *storage.SelectHints {
+	copiedParams := *params
+	copiedParams.Grouping = slices.Clone(params.Grouping)
+
+	return &copiedParams
 }
 
 // LabelValues implements Storage.Querier
