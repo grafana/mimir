@@ -2783,6 +2783,11 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		for _, resp := range resps {
+			resp.FreeBuffer()
+		}
+	}()
 
 	metrics := map[uint64]labels.Labels{}
 respsLoop:
@@ -2803,6 +2808,8 @@ respsLoop:
 		if err := queryLimiter.AddSeries(m); err != nil {
 			return nil, err
 		}
+		// Make safe copies of labels.
+		m.InternStrings(strings.Clone)
 		result = append(result, m)
 	}
 	return result, nil
