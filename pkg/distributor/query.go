@@ -11,6 +11,7 @@ import (
 	"context"
 	"io"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -65,6 +66,11 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 		if err != nil {
 			return err
 		}
+		defer func() {
+			for _, r := range results {
+				r.FreeBuffer()
+			}
+		}()
 
 		result = mergeExemplarQueryResponses(results)
 
@@ -195,7 +201,18 @@ func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryRespons
 
 	result := make([]mimirpb.TimeSeries, len(exemplarResults))
 	for i, k := range keys {
-		result[i] = exemplarResults[k]
+		ts := exemplarResults[k]
+		for i, l := range ts.Labels {
+			ts.Labels[i].Name = strings.Clone(l.Name)
+			ts.Labels[i].Value = strings.Clone(l.Value)
+		}
+		for i, e := range ts.Exemplars {
+			for j, l := range e.Labels {
+				ts.Exemplars[i].Labels[j].Name = strings.Clone(l.Name)
+				ts.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
+			}
+		}
+		result[i] = ts
 	}
 
 	return &ingester_client.ExemplarQueryResponse{Timeseries: result}
@@ -259,12 +276,12 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 		client, err := d.ingesterPool.GetClientForInstance(*ing)
 		if err != nil {
-			return ingesterQueryResult{}, err
+			return result, err
 		}
 
 		stream, err = client.(ingester_client.IngesterClient).QueryStream(ctx, req)
 		if err != nil {
-			return ingesterQueryResult{}, err
+			return result, err
 		}
 
 		// Why retain the batches rather than iteratively build a single slice?
@@ -281,7 +298,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
 				return result, nil
 			} else if err != nil {
-				return ingesterQueryResult{}, err
+				return result, err
 			}
 
 			result.addResponse(resp)
@@ -289,7 +306,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			if len(resp.Timeseries) > 0 {
 				for _, series := range resp.Timeseries {
 					if limitErr := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); limitErr != nil {
-						return ingesterQueryResult{}, limitErr
+						return result, limitErr
 					}
 				}
 
@@ -297,21 +314,21 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			} else if len(resp.Chunkseries) > 0 {
 				// Enforce the max chunks limits.
 				if err := queryLimiter.AddChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
-					return ingesterQueryResult{}, err
+					return result, err
 				}
 
 				if err := queryLimiter.AddEstimatedChunks(ingester_client.ChunksCount(resp.Chunkseries)); err != nil {
-					return ingesterQueryResult{}, err
+					return result, err
 				}
 
 				for _, series := range resp.Chunkseries {
 					if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(series.Labels)); err != nil {
-						return ingesterQueryResult{}, err
+						return result, err
 					}
 				}
 
 				if err := queryLimiter.AddChunkBytes(ingester_client.ChunksSize(resp.Chunkseries)); err != nil {
-					return ingesterQueryResult{}, err
+					return result, err
 				}
 
 				result.chunkseriesBatches = append(result.chunkseriesBatches, resp.Chunkseries)
@@ -321,18 +338,20 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 				for _, s := range resp.StreamingSeries {
 					l := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+					// Clone unsafe labels.
+					l.InternStrings(strings.Clone)
 
 					if err := queryLimiter.AddSeries(l); err != nil {
-						return ingesterQueryResult{}, err
+						return result, err
 					}
 
 					// We enforce the chunk count limit here, but enforce the chunk bytes limit while streaming the chunks themselves.
 					if err := queryLimiter.AddChunks(int(s.ChunkCount)); err != nil {
-						return ingesterQueryResult{}, err
+						return result, err
 					}
 
 					if err := queryLimiter.AddEstimatedChunks(int(s.ChunkCount)); err != nil {
-						return ingesterQueryResult{}, err
+						return result, err
 					}
 
 					labelsBatch = append(labelsBatch, l)
@@ -357,6 +376,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 				return result, nil
 			}
 		}
+
+		return result, nil
 	}
 
 	cleanup := func(result ingesterQueryResult) {
@@ -393,11 +414,18 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		for _, batch := range res.chunkseriesBatches {
 			for _, series := range batch {
 				key := mimirpb.FromLabelAdaptersToKeyString(series.Labels)
-				existing := hashToChunkseries[key]
-				existing.Labels = series.Labels
+				existing, exists := hashToChunkseries[key]
+				if !exists {
+					existing.Labels = make([]mimirpb.LabelAdapter, len(series.Labels))
+					// Clone unsafe labels.
+					for i, l := range series.Labels {
+						existing.Labels[i].Name = strings.Clone(l.Name)
+						existing.Labels[i].Value = strings.Clone(l.Value)
+					}
+				}
 
 				numPotentialChunks := len(existing.Chunks) + len(series.Chunks)
-				existing.Chunks = ingester_client.AccumulateChunks(existing.Chunks, series.Chunks)
+				existing.Chunks = ingester_client.AccumulateChunksSafe(existing.Chunks, series.Chunks)
 
 				deduplicatedChunks += numPotentialChunks - len(existing.Chunks)
 				totalChunks += len(series.Chunks)
@@ -409,9 +437,16 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		for _, batch := range res.timeseriesBatches {
 			for _, series := range batch {
 				key := mimirpb.FromLabelAdaptersToKeyString(series.Labels)
-				existing := hashToTimeSeries[key]
-				existing.Labels = series.Labels
-				if existing.Samples == nil {
+				existing, exists := hashToTimeSeries[key]
+				if !exists {
+					existing.Labels = make([]mimirpb.LabelAdapter, len(series.Labels))
+					// Clone unsafe labels.
+					for i, l := range series.Labels {
+						existing.Labels[i].Name = strings.Clone(l.Name)
+						existing.Labels[i].Value = strings.Clone(l.Value)
+					}
+				}
+				if len(existing.Samples) == 0 {
 					existing.Samples = series.Samples
 				} else {
 					existing.Samples = mergeSamples(existing.Samples, series.Samples)
@@ -424,6 +459,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		if res.streamingSeries.StreamReader != nil {
 			res.streamingSeries.StreamReader.StartBuffering()
 		}
+
+		res.freeBuffers()
 	}
 
 	// Now turn the accumulated maps into slices.
