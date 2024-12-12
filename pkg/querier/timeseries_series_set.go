@@ -16,37 +16,24 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/storage/series"
 )
 
 // timeSeriesSeriesSet is a wrapper around a mimirpb.TimeSeries slice to implement to SeriesSet interface
 type timeSeriesSeriesSet struct {
-	ts   []mimirpb.TimeSeries
-	i    int
-	rcBH *series.RefCountedBuffersHolder
+	ts []mimirpb.TimeSeries
+	i  int
 }
 
-func newTimeSeriesSeriesSet(series []mimirpb.TimeSeries, rcBH *series.RefCountedBuffersHolder) *timeSeriesSeriesSet {
+func newTimeSeriesSeriesSet(series []mimirpb.TimeSeries) *timeSeriesSeriesSet {
 	sort.Sort(byTimeSeriesLabels(series))
-	if rcBH != nil {
-		rcBH.Ref()
-	}
 	return &timeSeriesSeriesSet{
-		ts:   series,
-		i:    -1,
-		rcBH: rcBH,
+		ts: series,
+		i:  -1,
 	}
 }
 
 // Next implements storage.SeriesSet interface.
-func (t *timeSeriesSeriesSet) Next() bool {
-	t.i++
-	hasMore := t.i < len(t.ts)
-	if !hasMore && t.rcBH != nil {
-		t.rcBH.FreeBuffers()
-	}
-	return hasMore
-}
+func (t *timeSeriesSeriesSet) Next() bool { t.i++; return t.i < len(t.ts) }
 
 // At implements storage.SeriesSet interface.
 func (t *timeSeriesSeriesSet) At() storage.Series {

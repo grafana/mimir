@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
-	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -24,66 +23,28 @@ import (
 type ConcreteSeriesSet struct {
 	cur    int
 	series []storage.Series
-	rcBH   *RefCountedBuffersHolder
-}
-
-type RefCountedBuffersHolder struct {
-	ref           *atomic.Int32
-	bufferHolders []mimirpb.BufferHolder
-}
-
-func NewRefCountedBuffersHolder(bufferHolders []mimirpb.BufferHolder) *RefCountedBuffersHolder {
-	return &RefCountedBuffersHolder{
-		ref:           atomic.NewInt32(0),
-		bufferHolders: bufferHolders,
-	}
-}
-
-func (h *RefCountedBuffersHolder) Ref() {
-	h.ref.Inc()
-}
-
-func (h *RefCountedBuffersHolder) FreeBuffers() {
-	if h.ref.Load() == 0 {
-		return
-	}
-	if h.ref.Dec() > 0 {
-		return
-	}
-
-	for _, h := range h.bufferHolders {
-		h.FreeBuffer()
-	}
 }
 
 // NewConcreteSeriesSetFromUnsortedSeries instantiates an in-memory series set from a slice
 // of unsorted series. The series will be sorted in place by their labels.
-func NewConcreteSeriesSetFromUnsortedSeries(series []storage.Series, rcBH *RefCountedBuffersHolder) storage.SeriesSet {
+func NewConcreteSeriesSetFromUnsortedSeries(series []storage.Series) storage.SeriesSet {
 	sort.Sort(byLabels(series))
-	return NewConcreteSeriesSetFromSortedSeries(series, rcBH)
+	return NewConcreteSeriesSetFromSortedSeries(series)
 }
 
 // NewConcreteSeriesSetFromSortedSeries instantiates an in-memory series set from a slice
 // of series already sorted by their labels.
-func NewConcreteSeriesSetFromSortedSeries(series []storage.Series, rcBH *RefCountedBuffersHolder) storage.SeriesSet {
-	if rcBH != nil {
-		rcBH.Ref()
-	}
+func NewConcreteSeriesSetFromSortedSeries(series []storage.Series) storage.SeriesSet {
 	return &ConcreteSeriesSet{
 		cur:    -1,
 		series: series,
-		rcBH:   rcBH,
 	}
 }
 
 // Next iterates through a series set and implements storage.SeriesSet.
 func (c *ConcreteSeriesSet) Next() bool {
 	c.cur++
-	hasMore := c.cur < len(c.series)
-	if !hasMore && c.rcBH != nil {
-		c.rcBH.FreeBuffers()
-	}
-	return hasMore
+	return c.cur < len(c.series)
 }
 
 // At returns the current series and implements storage.SeriesSet.
@@ -316,7 +277,7 @@ func MatrixToSeriesSet(m model.Matrix) storage.SeriesSet {
 			// histograms: ss.Histograms, // cannot convert the decoded matrix form to the expected encoded format. this method is only used in tests so ignoring histogram support for now
 		})
 	}
-	return NewConcreteSeriesSetFromUnsortedSeries(series, nil)
+	return NewConcreteSeriesSetFromUnsortedSeries(series)
 }
 
 // LabelsToSeriesSet creates a storage.SeriesSet from a []labels.Labels
@@ -327,7 +288,7 @@ func LabelsToSeriesSet(ls []labels.Labels) storage.SeriesSet {
 			labels: l,
 		})
 	}
-	return NewConcreteSeriesSetFromUnsortedSeries(series, nil)
+	return NewConcreteSeriesSetFromUnsortedSeries(series)
 }
 
 func metricToLabels(m model.Metric) labels.Labels {

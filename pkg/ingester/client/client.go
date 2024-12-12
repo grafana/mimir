@@ -83,5 +83,4 @@ type CombinedQueryStreamResponse struct {
 	Chunkseries     []TimeSeriesChunk
 	Timeseries      []mimirpb.TimeSeries
 	StreamingSeries []StreamingSeries
-	BufferHolders   []mimirpb.BufferHolder
 }
