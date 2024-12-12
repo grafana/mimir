@@ -51,6 +51,7 @@ type OTLPHandlerLimits interface {
 	OTelMetricSuffixesEnabled(id string) bool
 	OTelCreatedTimestampZeroIngestionEnabled(id string) bool
 	PromoteOTelResourceAttributes(id string) []string
+	OTelKeepIdentifyingResourceAttributes(id string) bool
 }
 
 // OTLPHandler is an http.Handler accepting OTLP write requests.
@@ -174,12 +175,13 @@ func OTLPHandler(
 			resourceAttributePromotionConfig = limits
 		}
 		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
+		keepIdentifyingResourceAttributes := limits.OTelKeepIdentifyingResourceAttributes(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
 		var metrics []mimirpb.PreallocTimeseries
-		metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, enableCTZeroIngestion, promoteResourceAttributes, discardedDueToOtelParseError, spanLogger, otlpReq.Metrics())
+		metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, enableCTZeroIngestion, promoteResourceAttributes, keepIdentifyingResourceAttributes, discardedDueToOtelParseError, spanLogger, otlpReq.Metrics())
 		if err != nil {
 			return err
 		}
@@ -408,12 +410,13 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	return metadata
 }
 
-func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion bool, promoteResourceAttributes []string, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion bool, promoteResourceAttributes []string, keepIdentifyingResourceAttributes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := otlp.NewMimirConverter()
 	_, errs := converter.FromMetrics(ctx, md, otlp.Settings{
 		AddMetricSuffixes:                   addSuffixes,
 		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
 		PromoteResourceAttributes:           promoteResourceAttributes,
+		KeepIdentifyingResourceAttributes:   keepIdentifyingResourceAttributes,
 	}, utillog.SlogFromGoKit(logger))
 	mimirTS := converter.TimeSeries()
 	if errs != nil {

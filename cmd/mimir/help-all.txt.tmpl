@@ -1387,6 +1387,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis. (default true)
   -distributor.otel-created-timestamp-zero-ingestion-enabled
     	[experimental] Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.
+  -distributor.otel-keep-identifying-resource-attributes
+    	[experimental] Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.
   -distributor.otel-metric-suffixes-enabled
     	Whether to enable automatic suffixes to names of metrics ingested through OTLP.
   -distributor.otel-promote-resource-attributes comma-separated-list-of-strings
