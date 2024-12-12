@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"google.golang.org/grpc/codes"
+	io2 "github.com/influxdata/influxdb/v2/kit/io"
 
 	"github.com/grafana/mimir/pkg/distributor/influxpush"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -36,7 +36,7 @@ func parser(ctx context.Context, r *http.Request, maxSize int, buffers *util.Req
 	// right now since ParseInfluxLineReader() does both
 	// The otel version decodes the whole input and then processes it, the existing Influx code parses each line as it
 	// decodes it.
-	level.Debug(spanLogger).Log("msg", "decoding complete, starting conversion")
+	level.Debug(spanLogger).Log("msg", "decodeAndConvert complete")
 	if err != nil {
 		level.Error(logger).Log("err", err.Error())
 		// TODO(alexg): need to pass on the http.StatusBadRequest
@@ -105,30 +105,39 @@ func InfluxHandler(
 			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
+		// https://docs.influxdata.com/influxdb/cloud/api/v2/#tag/Response-codes
 		if err := push(ctx, req); err != nil {
 			if errors.Is(err, context.Canceled) {
 				level.Warn(logger).Log("msg", "push request canceled", "err", err)
-				writeErrorToHTTPResponseBody(r.Context(), w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
+				w.WriteHeader(statusClientClosedRequest)
 				return
 			}
-			// TODO(alexg): If error is from parser() we need to return http.StatusBadRequest
-			// TODO(alexg): Do we even need httpgrpc here?
+			if errors.Is(err, io2.ErrReadLimitExceeded) {
+				// TODO(alexg): One thing we have seen in the past is that telegraf clients send a batch of data
+				// if it is too big they should respond to the 413 below, but if a client doesn't understand this
+				// it just sends the next batch that is even bigger. In the past this has had to be dealt with by
+				// adding rate limits to drop the payloads.
+			}
+			// From: https://github.com/grafana/influx2cortex/blob/main/pkg/influx/errors.go
+
 			var (
 				httpCode int
-				grpcCode codes.Code
 				errorMsg string
 			)
 			if st, ok := grpcutil.ErrorToStatus(err); ok {
-				// TODO(alexg): needed? If so we need to map correct codes here not borrow OTLP funcs
+				// TODO(alexg): Hmm, still needed?
 				// This code is needed for a correct handling of errors returned by the supplier function.
 				// These errors are created by using the httpgrpc package.
-				httpCode = httpRetryableToOTLPRetryable(int(st.Code()))
-				grpcCode = st.Code()
+				httpCode = int(st.Code())
 				errorMsg = st.Message()
 			} else {
-				// TODO(alexg): needed? If so we need to map correct codes here not borrow OTLP funcs
-				grpcCode, httpCode = toOtlpGRPCHTTPStatus(err)
+				var distributorErr Error
 				errorMsg = err.Error()
+				if errors.Is(err, context.DeadlineExceeded) || !errors.As(err, &distributorErr) {
+					httpCode = http.StatusServiceUnavailable
+				} else {
+					httpCode = errorCauseToHTTPStatusCode(distributorErr.Cause(), false)
+				}
 			}
 			if httpCode != 202 {
 				// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
@@ -139,10 +148,24 @@ func InfluxHandler(
 				}
 				level.Error(logger).Log(msgs...)
 			}
+			if httpCode < 500 {
+				level.Info(logger).Log("msg", errorMsg, "response_code", httpCode, "err", tryUnwrap(err))
+			} else if httpCode >= 500 {
+				level.Warn(logger).Log("msg", errorMsg, "response_code", httpCode, "err", tryUnwrap(err))
+			}
 			addHeaders(w, err, r, httpCode, retryCfg)
-			writeErrorToHTTPResponseBody(r.Context(), w, httpCode, grpcCode, errorMsg, logger)
+			w.WriteHeader(httpCode)
 		} else {
 			w.WriteHeader(http.StatusNoContent) // Needed for Telegraf, otherwise it tries to marshal JSON and considers the write a failure.
 		}
 	})
+}
+
+// Imported from: https://github.com/grafana/influx2cortex/blob/main/pkg/influx/errors.go
+
+func tryUnwrap(err error) error {
+	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
+		return wrapped.Unwrap()
+	}
+	return err
 }

@@ -37,7 +37,6 @@ func ParseInfluxLineReader(ctx context.Context, r *http.Request, maxSize int) ([
 	encoding := r.Header.Get("Content-Encoding")
 	reader, err := batchReadCloser(r.Body, encoding, int64(maxSize))
 	if err != nil {
-
 		return nil, fmt.Errorf("gzip compression error: %w", err), 0
 	}
 	data, err := ioutil.ReadAll(reader)
