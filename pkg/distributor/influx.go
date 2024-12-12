@@ -11,8 +11,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/weaveworks/common/middleware"
 
 	"google.golang.org/grpc/codes"
 

@@ -269,9 +269,9 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		pushConfig.MaxRecvMsgSize, d.RequestBufferPool, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
 		a.cfg.SkipLabelCountValidationHeader, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
 	), true, false, "POST")
+	// TODO(alexg): hidden behind a featureflag or experimental config option?
 	a.RegisterRoute(InfluxPushEndpoint, distributor.InfluxHandler(
-		// TODO(alexg): HERE
-		pushConfig.MaxInfluxMsgSize, a.sourceIPs, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
+		pushConfig.MaxInfluxRequestSize, d.RequestBufferPool, a.sourceIPs, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
 	), true, false, "POST")
 	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(
 		pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, limits, pushConfig.OTelResourceAttributePromotionConfig,
