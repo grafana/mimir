@@ -124,7 +124,7 @@ func TestParseInfluxLineReader(t *testing.T) {
 	}
 }
 
-func TestInvalidInput(t *testing.T) {
+func TestParseInfluxInvalidInput(t *testing.T) {
 	tests := []struct {
 		name string
 		url  string
@@ -167,7 +167,7 @@ func TestInvalidInput(t *testing.T) {
 	}
 }
 
-func TestBatchReadCloser(t *testing.T) {
+func TestParseInfluxBatchReadCloser(t *testing.T) {
 	req := httptest.NewRequest("POST", "/write", bytes.NewReader([]byte("m,t1=v1 f1=2 1465839830100400200")))
 	req.Header.Add("Content-Encoding", "gzip")
 

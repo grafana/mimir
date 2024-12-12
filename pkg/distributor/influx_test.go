@@ -21,8 +21,8 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			{
 				TimeSeries: &mimirpb.TimeSeries{
 					Labels: []mimirpb.LabelAdapter{
-						{Name: "__name__", Value: "measurement_f1"},
 						{Name: "__mimir_source__", Value: "influx"},
+						{Name: "__name__", Value: "measurement_f1"},
 						{Name: "t1", Value: "v1"},
 					},
 					Samples: []mimirpb.Sample{
@@ -47,11 +47,11 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusNoContent,
 			push: func(t *testing.T) PushFunc {
-				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
-				//	assert.Equal(t, defaultExpectedWriteRequest, req)
 				return func(ctx context.Context, pushReq *Request) error {
-					assert.Equal(t, defaultExpectedWriteRequest, pushReq)
-					return nil
+					req, err := pushReq.WriteRequest()
+					assert.Equal(t, defaultExpectedWriteRequest, req)
+					assert.Nil(t, err)
+					return err
 				}
 			},
 			maxRequestSizeBytes: 1 << 20,
@@ -62,11 +62,11 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusNoContent,
 			push: func(t *testing.T) PushFunc {
-				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
-				//	assert.Equal(t, defaultExpectedWriteRequest, req)
 				return func(ctx context.Context, pushReq *Request) error {
-					assert.Equal(t, defaultExpectedWriteRequest, pushReq)
-					return nil
+					req, err := pushReq.WriteRequest()
+					assert.Equal(t, defaultExpectedWriteRequest, req)
+					assert.Nil(t, err)
+					return err
 				}
 			},
 			maxRequestSizeBytes: 1 << 20,
@@ -77,10 +77,12 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1= 1465839830100400200",
 			expectedCode: http.StatusBadRequest,
 			push: func(t *testing.T) PushFunc {
-				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
 				return func(ctx context.Context, pushReq *Request) error {
-					t.Error("Push should not be called on bad request")
-					return nil
+					req, err := pushReq.WriteRequest()
+					assert.Nil(t, req)
+					// TODO(alexg): assert on specific err
+					assert.NoError(t, err) // reminder to fix
+					return err
 				}
 			},
 			maxRequestSizeBytes: 1 << 20,
@@ -93,8 +95,11 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			push: func(t *testing.T) PushFunc {
 				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
 				return func(ctx context.Context, pushReq *Request) error {
-					t.Error("Push should not be called on bad request")
-					return nil
+					req, err := pushReq.WriteRequest()
+					assert.Nil(t, req)
+					// TODO(alexg): assert on specific err
+					assert.NoError(t, err) // reminder to fix
+					return err
 				}
 			},
 			maxRequestSizeBytes: 1 << 20,
@@ -105,8 +110,8 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusInternalServerError,
 			push: func(t *testing.T) PushFunc {
-				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
 				return func(ctx context.Context, pushReq *Request) error {
+					assert.Error(t, context.DeadlineExceeded)
 					return context.DeadlineExceeded
 				}
 			},
@@ -118,10 +123,12 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 0123456789",
 			expectedCode: http.StatusBadRequest,
 			push: func(t *testing.T) PushFunc {
-				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
 				return func(ctx context.Context, pushReq *Request) error {
-					t.Error("Push should not be called on bad request")
-					return nil
+					req, err := pushReq.WriteRequest()
+					assert.Nil(t, req)
+					// TODO(alexg): assert on specific err
+					assert.NoError(t, err) // reminder to fix
+					return err
 				}
 			},
 			maxRequestSizeBytes: 10,
