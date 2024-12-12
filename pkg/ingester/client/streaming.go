@@ -137,11 +137,13 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 		}
 
 		if len(msg.StreamingSeriesChunks) == 0 {
+			msg.FreeBuffer()
 			continue
 		}
 
 		totalSeries += len(msg.StreamingSeriesChunks)
 		if totalSeries > s.expectedSeriesCount {
+			msg.FreeBuffer()
 			return fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries)
 		}
 
@@ -157,9 +159,23 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 
 		// The chunk count limit is enforced earlier, while we're reading series labels, so we don't need to do that here.
 		if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
+			msg.FreeBuffer()
 			return err
 		}
 
+		rslt := make([]QueryStreamSeriesChunks, 0, len(msg.StreamingSeriesChunks))
+		for _, chunks := range msg.StreamingSeriesChunks {
+			safeChunks := make([]Chunk, 0, len(chunks.Chunks))
+			for _, c := range chunks.Chunks {
+				safeData := make([]byte, len(c.Data))
+				copy(safeData, c.Data)
+				c.Data = safeData
+				safeChunks = append(safeChunks, c)
+			}
+			chunks.Chunks = safeChunks
+			rslt = append(rslt, chunks)
+		}
+		msg.FreeBuffer()
 		select {
 		case <-s.ctx.Done():
 			// Why do we abort if the context is done?
@@ -175,7 +191,7 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 			// longer healthy. If that happens, we want to return the more informative error we'll get from Recv() above, not
 			// a generic 'context canceled' error.
 			return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
-		case s.seriesBatchChan <- msg.StreamingSeriesChunks:
+		case s.seriesBatchChan <- rslt:
 			// Batch enqueued successfully, nothing else to do for this batch.
 		}
 	}
