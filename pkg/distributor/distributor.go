@@ -791,10 +791,13 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 
 	if len(ts.Histograms) == 1 {
 		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[0])
+		if err != nil {
+			return err
+		}
 		if updated {
 			ts.HistogramsUpdated()
 		}
-		return err
+		return nil
 	}
 
 	timestamps := make(map[int64]struct{}, min(len(ts.Histograms), 100))
