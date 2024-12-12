@@ -95,6 +95,7 @@ func TestForget(t *testing.T) {
 	sched := &mockSchedulerClient{}
 	sched.jobs = []mockJob{
 		{key: JobKey{Id: "foo/983/585", Epoch: 4523}, spec: JobSpec{Topic: "foo", Partition: 983, StartOffset: 585}},
+		{key: JobKey{Id: "foo/4/92842", Epoch: 4524}, spec: JobSpec{Topic: "foo", Partition: 4, StartOffset: 92842}},
 	}
 
 	clii, cliErr := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 5*time.Minute, 20*time.Minute)
@@ -105,13 +106,22 @@ func TestForget(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, cli.jobs, 1)
 
+	k2, _, err2 := cli.GetJob(ctx)
+	require.NoError(t, err2)
+	require.Len(t, cli.jobs, 2)
+
 	// Forgetting with no eligible jobs should do nothing.
 	cli.completeJobForTest(k, time.Now().Add(1_000_000*time.Hour))
 	cli.forgetOldJobs()
-	require.Len(t, cli.jobs, 1, "job count should be unchanged with no eligible jobs for purging")
+	require.Len(t, cli.jobs, 2, "job count should be unchanged with no eligible jobs for purging")
 
 	// Forgetting with some eligible jobs.
 	cli.completeJobForTest(k, time.Now().Add(-1*time.Minute))
+	cli.forgetOldJobs()
+	require.Len(t, cli.jobs, 1, "job should have been purged")
+
+	// Forget the other...
+	cli.completeJobForTest(k2, time.Now().Add(-1*time.Minute))
 	cli.forgetOldJobs()
 	require.Len(t, cli.jobs, 0, "job should have been purged")
 
