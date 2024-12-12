@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"sort"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -281,6 +282,7 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 	if err != nil {
 		return translateReceivedError(err)
 	}
+	defer msg.FreeBuffer()
 
 	estimate := msg.GetStreamingChunksEstimate()
 	msg.FreeBuffer()
@@ -337,7 +339,20 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 		s.stats.AddFetchedChunks(uint64(numChunks))
 		s.stats.AddFetchedChunkBytes(uint64(chunkBytes))
 
-		if err := s.sendBatch(msg); err != nil {
+		// Memory safe copy.
+		safeSeries := make([]*storepb.StreamingChunks, 0, len(batch.Series))
+		for _, s := range batch.Series {
+			safe := *s
+			safe.Chunks = slices.Clone(s.Chunks)
+			for i, c := range safe.Chunks {
+				safe.Chunks[i].Raw.Data = slices.Clone(c.Raw.Data)
+			}
+			safeSeries = append(safeSeries, &safe)
+		}
+		batch.Series = safeSeries
+		msg.FreeBuffer()
+
+		if err := s.sendBatch(batch); err != nil {
 			return err
 		}
 	}

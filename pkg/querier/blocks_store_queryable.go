@@ -850,9 +850,33 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				if err != nil {
 					return err
 				}
-				if shouldRetry {
-					level.Warn(log).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
-					return nil
+				defer resp.FreeBuffer()
+
+				// Response may either contain series, streaming series, warning or hints.
+				if s := resp.GetSeries(); s != nil {
+					// Take a safe copy of every label.
+					for i, l := range s.Labels {
+						s.Labels[i].Name = strings.Clone(l.Name)
+						s.Labels[i].Value = strings.Clone(l.Value)
+					}
+					mySeries = append(mySeries, s)
+
+					// Add series fingerprint to query limiter; will return error if we are over the limit
+					if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(s.Labels)); err != nil {
+						return err
+					}
+
+					chunksCount, chunksSize := countChunksAndBytes(s)
+					q.metrics.chunksTotal.Add(float64(chunksCount))
+					if err := queryLimiter.AddChunkBytes(chunksSize); err != nil {
+						return err
+					}
+					if err := queryLimiter.AddChunks(chunksCount); err != nil {
+						return err
+					}
+					if err := queryLimiter.AddEstimatedChunks(chunksCount); err != nil {
+						return err
+					}
 				}
 
 				if isEOS {
@@ -861,8 +885,41 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 						util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
 					}
 
-					// We expect "end of stream" to be sent after the hints and the stats have been sent, so we can break out of the loop now.
-					break
+					ids, err := convertBlockHintsToULIDs(hints.QueriedBlocks)
+					if err != nil {
+						return errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+					}
+
+					myQueriedBlocks = append(myQueriedBlocks, ids...)
+				}
+
+				if s := resp.GetStats(); s != nil {
+					indexBytesFetched += s.FetchedIndexBytes
+				}
+
+				if ss := resp.GetStreamingSeries(); ss != nil {
+					myStreamingSeriesLabels = slices.Grow(myStreamingSeriesLabels, len(ss.Series))
+
+					for _, s := range ss.Series {
+						// Add series fingerprint to query limiter; will return error if we are over the limit
+						l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
+
+						if limitErr := queryLimiter.AddSeries(l); limitErr != nil {
+							return limitErr
+						}
+
+						myStreamingSeriesLabels = append(myStreamingSeriesLabels, l)
+					}
+
+					if ss.IsEndOfSeriesStream {
+						// If we aren't expecting any series from this stream, close it now.
+						if len(myStreamingSeriesLabels) == 0 {
+							util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
+						}
+
+						// We expect "end of stream" to be sent after the hints and the stats have been sent, so we can break out of the loop now.
+						break
+					}
 				}
 			}
 
