@@ -237,7 +237,6 @@ func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *schedulerpb.As
 		return nil, err
 	}
 
-	// TODO: eliminate jobSpec duplication.
 	return &schedulerpb.AssignJobResponse{
 		Key: &schedulerpb.JobKey{
 			Id:    key.id,

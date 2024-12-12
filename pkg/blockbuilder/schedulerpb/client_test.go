@@ -20,7 +20,8 @@ func TestGetJob(t *testing.T) {
 	sched.key = JobKey{Id: "foo/983/585", Epoch: 4523}
 	sched.spec = JobSpec{Topic: "foo", Partition: 983, StartOffset: 585}
 
-	cli := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 0, 0)
+	cli, cliErr := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 5*time.Minute, 20*time.Minute)
+	require.NoError(t, cliErr)
 	ctx := context.Background()
 	key, spec, err := cli.GetJob(ctx)
 
@@ -35,7 +36,9 @@ func TestCompleteJob(t *testing.T) {
 	sched.key = JobKey{Id: "foo/983/585", Epoch: 4523}
 	sched.spec = JobSpec{Topic: "foo", Partition: 983, StartOffset: 585}
 
-	cli := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 0, 64*time.Hour).(*schedulerClient)
+	clii, cliErr := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 5*time.Minute, 64*time.Hour)
+	require.NoError(t, cliErr)
+	cli := clii.(*schedulerClient)
 	ctx := context.Background()
 	key, _, err := cli.GetJob(ctx)
 	require.NoError(t, err)
@@ -52,7 +55,9 @@ func TestSendUpdates(t *testing.T) {
 	sched.key = JobKey{Id: "foo/983/585", Epoch: 4523}
 	sched.spec = JobSpec{Topic: "foo", Partition: 983, StartOffset: 585}
 
-	cli := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 0, 0).(*schedulerClient)
+	clii, cliErr := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 5*time.Minute, 20*time.Minute)
+	require.NoError(t, cliErr)
+	cli := clii.(*schedulerClient)
 	ctx := context.Background()
 	_, _, err := cli.GetJob(ctx)
 	require.NoError(t, err)
@@ -70,8 +75,10 @@ func TestForget(t *testing.T) {
 	sched.key = JobKey{Id: "foo/983/585", Epoch: 4523}
 	sched.spec = JobSpec{Topic: "foo", Partition: 983, StartOffset: 585}
 
-	cli := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 0, 0).(*schedulerClient)
+	clii, cliErr := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 5*time.Minute, 20*time.Minute)
+	require.NoError(t, cliErr)
 	ctx := context.Background()
+	cli := clii.(*schedulerClient)
 	_, _, err := cli.GetJob(ctx)
 	require.NoError(t, err)
 	require.Len(t, cli.jobs, 1)

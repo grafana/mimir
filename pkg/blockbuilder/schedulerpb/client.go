@@ -18,7 +18,8 @@ import (
 //   - AssignJob is polled repeatedly until a job is available.
 //   - UpdateJob is called periodically to update the status of all known jobs.
 //
-// SchedulerClient maintains a history of locally-known jobs that are expired some time after completion.
+// SchedulerClient maintains a history of locally-known jobs that are expired
+// some time after completion.
 type SchedulerClient interface {
 	Run(context.Context)
 	GetJob(context.Context) (JobKey, JobSpec, error)
@@ -43,18 +44,33 @@ type job struct {
 	forgetTime time.Time
 }
 
-func NewSchedulerClient(workerID string, srv BlockBuilderSchedulerClient, logger log.Logger,
-	updateInterval time.Duration, maxUpdateAge time.Duration) SchedulerClient {
+// NewSchedulerClient creates a new SchedulerClient around the given scheduler
+// service client. The client will inform the scheduler service about jobs once
+// per updateInterval, and will forget about jobs that have been complete for at
+// least maxUpdateAge. Thus maxUpdateAge should be at least twice
+// updateInterval.
+func NewSchedulerClient(workerID string, scheduler BlockBuilderSchedulerClient, logger log.Logger,
+	updateInterval time.Duration, maxUpdateAge time.Duration) (SchedulerClient, error) {
+
+	if updateInterval <= 0 {
+		return nil, fmt.Errorf("updateInterval must be positive")
+	}
+	if maxUpdateAge <= 0 {
+		return nil, fmt.Errorf("maxUpdateAge must be positive")
+	}
+	if maxUpdateAge < updateInterval*2 {
+		return nil, fmt.Errorf("maxUpdateAge must be at least twice the updateInterval")
+	}
 
 	return &schedulerClient{
 		workerID:       workerID,
 		updateInterval: updateInterval,
 		maxUpdateAge:   maxUpdateAge,
-		scheduler:      srv,
+		scheduler:      scheduler,
 		logger:         logger,
 
 		jobs: make(map[JobKey]*job),
-	}
+	}, nil
 }
 
 // Run periodically sends updates to the scheduler service and performs cleanup of old jobs.
@@ -123,7 +139,7 @@ func (s *schedulerClient) forgetOldJobs() {
 func (s *schedulerClient) GetJob(ctx context.Context) (JobKey, JobSpec, error) {
 	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
-		MaxBackoff: 5 * time.Second,
+		MaxBackoff: 10 * time.Second,
 		MaxRetries: 0, // retry as long as the context is valid
 	})
 	var lastErr error
@@ -145,6 +161,11 @@ func (s *schedulerClient) GetJob(ctx context.Context) (JobKey, JobSpec, error) {
 		level.Info(s.logger).Log("msg", "assigned job", "job_id", key.Id, "epoch", key.Epoch)
 
 		s.mu.Lock()
+		if _, ok := s.jobs[key]; ok {
+			// This should never happen; we'd like to see a log if it does.
+			level.Warn(s.logger).Log("msg", "job already assigned", "job_id", key.Id, "epoch", key.Epoch)
+		}
+
 		s.jobs[key] = &job{
 			spec:       spec,
 			complete:   false,
