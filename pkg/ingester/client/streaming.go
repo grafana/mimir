@@ -201,6 +201,19 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 			return err
 		}
 
+		rslt := make([]QueryStreamSeriesChunks, 0, len(msg.StreamingSeriesChunks))
+		for _, chunks := range msg.StreamingSeriesChunks {
+			safeChunks := make([]Chunk, 0, len(chunks.Chunks))
+			for _, c := range chunks.Chunks {
+				safeData := make([]byte, len(c.Data))
+				copy(safeData, c.Data)
+				c.Data = safeData
+				safeChunks = append(safeChunks, c)
+			}
+			chunks.Chunks = safeChunks
+			rslt = append(rslt, chunks)
+		}
+		msg.FreeBuffer()
 		select {
 		case <-s.ctx.Done():
 			// Why do we abort if the context is done?
@@ -217,7 +230,7 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 			// a generic 'context canceled' error.
 			msg.FreeBuffer()
 			return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
-		case s.seriesMessageChan <- msg:
+		case s.seriesBatchChan <- rslt:
 			// Batch enqueued successfully, nothing else to do for this batch.
 		}
 	}
