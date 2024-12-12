@@ -4,6 +4,7 @@ package ruler
 
 import (
 	"context"
+	"slices"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -164,7 +165,7 @@ func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Grou
 		return false
 	}
 
-	if !isRuleIndependent(rule) {
+	if !rule.NoDependentRules() {
 		return false
 	}
 
@@ -185,6 +186,20 @@ func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Grou
 	c.slotsInUse.Dec()
 	c.attemptsIncompleteTotal.Inc()
 	return false
+}
+
+var _ rules.RuleSortingController = &TenantConcurrencyController{}
+
+func (c *TenantConcurrencyController) SortRules(rulesToSort []rules.Rule) {
+	slices.SortFunc(rulesToSort, func(a, b rules.Rule) int {
+		if a.NoDependentRules() && !b.NoDependentRules() {
+			return 1
+		}
+		if !a.NoDependentRules() && b.NoDependentRules() {
+			return -1
+		}
+		return 0
+	})
 }
 
 // isGroupAtRisk checks if the rule group's last evaluation time is within the risk threshold.
