@@ -829,7 +829,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 				[]model.SamplePair{{Timestamp: model.Time(hints.End - 1), Value: 1.0}},
 				nil,
 			),
-		}, nil)
+		})
 	}
 
 	// Mock the pusher.
