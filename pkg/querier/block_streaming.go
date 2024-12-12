@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 
 	"github.com/go-kit/log"
@@ -241,6 +242,7 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 	if err != nil {
 		return translateReceivedError(err)
 	}
+	defer msg.FreeBuffer()
 
 	estimate := msg.GetStreamingChunksEstimate()
 	if estimate == nil {
@@ -260,15 +262,18 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 
 		batch := msg.GetStreamingChunks()
 		if batch == nil {
+			msg.FreeBuffer()
 			return fmt.Errorf("expected to receive streaming chunks, but got message of type %T", msg.Result)
 		}
 
 		if len(batch.Series) == 0 {
+			msg.FreeBuffer()
 			continue
 		}
 
 		totalSeries += len(batch.Series)
 		if totalSeries > s.expectedSeriesCount {
+			msg.FreeBuffer()
 			return fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries)
 		}
 
@@ -282,14 +287,29 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 		}
 		totalChunks += numChunks
 		if err := s.queryLimiter.AddChunks(numChunks); err != nil {
+			msg.FreeBuffer()
 			return err
 		}
 		if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
+			msg.FreeBuffer()
 			return err
 		}
 
 		s.stats.AddFetchedChunks(uint64(numChunks))
 		s.stats.AddFetchedChunkBytes(uint64(chunkBytes))
+
+		// Memory safe copy.
+		safeSeries := make([]*storepb.StreamingChunks, 0, len(batch.Series))
+		for _, s := range batch.Series {
+			safe := *s
+			safe.Chunks = slices.Clone(s.Chunks)
+			for i, c := range safe.Chunks {
+				safe.Chunks[i].Raw.Data = slices.Clone(c.Raw.Data)
+			}
+			safeSeries = append(safeSeries, &safe)
+		}
+		batch.Series = safeSeries
+		msg.FreeBuffer()
 
 		if err := s.sendBatch(batch); err != nil {
 			return err
