@@ -32,26 +32,6 @@ func TestGetJob(t *testing.T) {
 	require.Equal(t, 1, sched.assignCalls)
 }
 
-func TestCompleteJob(t *testing.T) {
-	sched := &mockSchedulerClient{}
-	sched.jobs = []mockJob{
-		{key: JobKey{Id: "foo/983/585", Epoch: 4523}, spec: JobSpec{Topic: "foo", Partition: 983, StartOffset: 585}},
-	}
-
-	clii, cliErr := NewSchedulerClient("worker1", sched, test.NewTestingLogger(t), 5*time.Minute, 64*time.Hour)
-	require.NoError(t, cliErr)
-	cli := clii.(*schedulerClient)
-	ctx := context.Background()
-	key, _, err := cli.GetJob(ctx)
-	require.NoError(t, err)
-
-	require.NoError(t, cli.CompleteJob(key))
-	require.True(t, cli.jobs[key].complete)
-	require.True(t, cli.jobs[key].forgetTime.After(time.Now()))
-
-	require.ErrorContains(t, cli.CompleteJob(JobKey{Id: "erroneous id"}), "not found")
-}
-
 func TestSendUpdates(t *testing.T) {
 	sched := &mockSchedulerClient{}
 	sched.jobs = []mockJob{
@@ -65,30 +45,50 @@ func TestSendUpdates(t *testing.T) {
 	ctx := context.Background()
 	k, _, err := cli.GetJob(ctx)
 	require.NoError(t, err)
-
-	require.Zero(t, sched.updateCalls)
+	require.Empty(t, sched.updates)
 
 	cli.sendUpdates(ctx)
-	require.Equal(t, 1, sched.updateCalls)
-	cli.sendUpdates(ctx)
-	require.Equal(t, 2, sched.updateCalls)
+	require.EqualValues(t, []*UpdateJobRequest{
+		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
+	}, sched.updates)
 
-	// Introduce another job.
+	cli.sendUpdates(ctx)
+	require.EqualValues(t, []*UpdateJobRequest{
+		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
+		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
+	}, sched.updates)
+
 	require.NoError(t, cli.CompleteJob(k))
 	_, _, err2 := cli.GetJob(ctx)
 	require.NoError(t, err2)
 
-	// Now we should be sending updates for two jobs.
+	// Now we have one complete job and one incomplete. We should be sending updates for both.
 	cli.sendUpdates(ctx)
-	require.Equal(t, 4, sched.updateCalls)
+	require.EqualValues(t, []*UpdateJobRequest{
+		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
+		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
+		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: true},
+		{Key: &sched.jobs[1].key, WorkerId: "worker1", Spec: &sched.jobs[1].spec, Complete: false},
+	}, sched.updates)
+
 	cli.sendUpdates(ctx)
-	require.Equal(t, 6, sched.updateCalls)
+	require.EqualValues(t, []*UpdateJobRequest{
+		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
+		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
+		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: true},
+		{Key: &sched.jobs[1].key, WorkerId: "worker1", Spec: &sched.jobs[1].spec, Complete: false},
+		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: true},
+		{Key: &sched.jobs[1].key, WorkerId: "worker1", Spec: &sched.jobs[1].spec, Complete: false},
+	}, sched.updates)
 }
 
 // a mutator for tests.
-func (c *schedulerClient) completeJobForTest(k JobKey, forgetTime time.Time) {
-	c.jobs[k].complete = true
+func (c *schedulerClient) completeJobWithForgetTime(k JobKey, forgetTime time.Time) error {
+	if err := c.CompleteJob(k); err != nil {
+		return err
+	}
 	c.jobs[k].forgetTime = forgetTime
+	return nil
 }
 
 func TestForget(t *testing.T) {
@@ -111,17 +111,17 @@ func TestForget(t *testing.T) {
 	require.Len(t, cli.jobs, 2)
 
 	// Forgetting with no eligible jobs should do nothing.
-	cli.completeJobForTest(k, time.Now().Add(1_000_000*time.Hour))
+	require.NoError(t, cli.completeJobWithForgetTime(k, time.Now().Add(1_000_000*time.Hour)))
 	cli.forgetOldJobs()
 	require.Len(t, cli.jobs, 2, "job count should be unchanged with no eligible jobs for purging")
 
 	// Forgetting with some eligible jobs.
-	cli.completeJobForTest(k, time.Now().Add(-1*time.Minute))
+	require.NoError(t, cli.completeJobWithForgetTime(k, time.Now().Add(-1*time.Minute)))
 	cli.forgetOldJobs()
 	require.Len(t, cli.jobs, 1, "job should have been purged")
 
 	// Forget the other...
-	cli.completeJobForTest(k2, time.Now().Add(-1*time.Minute))
+	require.NoError(t, cli.completeJobWithForgetTime(k2, time.Now().Add(-1*time.Minute)))
 	cli.forgetOldJobs()
 	require.Len(t, cli.jobs, 0, "job should have been purged")
 
@@ -135,7 +135,7 @@ type mockSchedulerClient struct {
 	jobs        []mockJob
 	currentJob  int
 	assignCalls int
-	updateCalls int
+	updates     []*UpdateJobRequest
 }
 
 type mockJob struct {
@@ -161,10 +161,10 @@ func (m *mockSchedulerClient) AssignJob(_ context.Context, _ *AssignJobRequest, 
 	}, nil
 }
 
-func (m *mockSchedulerClient) UpdateJob(_ context.Context, _ *UpdateJobRequest, _ ...grpc.CallOption) (*UpdateJobResponse, error) {
+func (m *mockSchedulerClient) UpdateJob(_ context.Context, r *UpdateJobRequest, _ ...grpc.CallOption) (*UpdateJobResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.updateCalls++
+	m.updates = append(m.updates, r)
 
 	return &UpdateJobResponse{}, nil
 }
