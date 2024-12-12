@@ -32,7 +32,7 @@ func partitionChunks(chunks []chunk.Chunk) storage.SeriesSet {
 		})
 	}
 
-	return seriesset.NewConcreteSeriesSetFromUnsortedSeries(series, nil)
+	return seriesset.NewConcreteSeriesSetFromUnsortedSeries(series)
 }
 
 // Implements SeriesWithChunks

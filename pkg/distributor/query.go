@@ -395,7 +395,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 	hashToTimeSeries := map[string]mimirpb.TimeSeries{}
 	streamReaderCount := 0
 
-	var holders []mimirpb.BufferHolder
 	for _, res := range results {
 		// Accumulate any chunk series
 		for _, batch := range res.chunkseriesBatches {
@@ -433,10 +432,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			res.streamingSeries.StreamReader.StartBuffering()
 			streamReaderCount++
 		}
-
-		for _, r := range res.responses {
-			holders = append(holders, r.BufferHolder)
-		}
 	}
 
 	// Now turn the accumulated maps into slices.
@@ -444,7 +439,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
 		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
 		StreamingSeries: mergeSeriesChunkStreams(results, d.estimatedIngestersPerSeries(replicationSets)),
-		BufferHolders:   holders,
 	}
 	for _, series := range hashToChunkseries {
 		resp.Chunkseries = append(resp.Chunkseries, series)
