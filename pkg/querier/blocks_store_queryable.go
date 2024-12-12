@@ -806,9 +806,15 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 					return err
 				}
+				defer resp.FreeBuffer()
 
 				// Response may either contain series, streaming series, warning or hints.
 				if s := resp.GetSeries(); s != nil {
+					// Take a safe copy of every label.
+					for i, l := range s.Labels {
+						s.Labels[i].Name = strings.Clone(l.Name)
+						s.Labels[i].Value = strings.Clone(l.Value)
+					}
 					mySeries = append(mySeries, s)
 
 					// Add series fingerprint to query limiter; will return error if we are over the limit
@@ -856,7 +862,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 
 					for _, s := range ss.Series {
 						// Add series fingerprint to query limiter; will return error if we are over the limit
-						l := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+						l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
 						if limitErr := queryLimiter.AddSeries(l); limitErr != nil {
 							return limitErr
