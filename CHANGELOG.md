@@ -1,6 +1,6 @@
 # Changelog
 
-## main / unreleased
+## 2.15.0-rc.0
 
 ### Grafana Mimir
 
@@ -22,6 +22,7 @@
 * [CHANGE] Querier: The `.` pattern in regular expressions in PromQL matches newline characters. With this change regular expressions like `.*` match strings that include `\n`. To maintain the old behaviour, you will have to change regular expressions by replacing all `.` patterns with `[^\n]`, e.g. `foo[^\n]*`. This upgrades PromQL compatibility from Prometheus 2.0 to 3.0. #9844
 * [CHANGE] Querier: Lookback and range selectors are left open and right closed (previously left closed and right closed). This change affects queries when the evaluation time perfectly aligns with the sample timestamps. For example assume querying a timeseries with evenly spaced samples exactly 1 minute apart. Previously, a range query with `5m` would usually return 5 samples, or 6 samples if the query evaluation aligns perfectly with a scrape. Now, queries like this will always return 5 samples. This upgrades PromQL compatibility from Prometheus 2.0 to 3.0. #9844
 * [CHANGE] Querier: promql(native histograms): Introduce exponential interpolation. #9844
+* [CHANGE] Remove deprecated `api.get-request-for-ingester-shutdown-enabled` setting, which scheduled for removal in 2.15. #10197
 * [FEATURE] Querier: add experimental streaming PromQL engine, enabled with `-querier.query-engine=mimir`. #10067
 * [FEATURE] Distributor: Add support for `lz4` OTLP compression. #9763
 * [FEATURE] Query-frontend: added experimental configuration options `query-frontend.cache-errors` and `query-frontend.results-cache-ttl-for-errors` to allow non-transient responses to be cached. When set to `true` error responses from hitting limits or bad data are cached for a short TTL. #9028
