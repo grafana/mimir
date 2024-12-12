@@ -91,7 +91,7 @@ func dedupeSorted(samples []mimirpb.Sample) []mimirpb.Sample {
 }
 
 func runPromQLAndGetJSONResult(t *testing.T, query string, ts mimirpb.TimeSeries, step time.Duration) string {
-	tq := &testQueryable{ts: newTimeSeriesSeriesSet([]mimirpb.TimeSeries{ts}, nil)}
+	tq := &testQueryable{ts: newTimeSeriesSeriesSet([]mimirpb.TimeSeries{ts})}
 
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:     promslog.NewNopLogger(),
