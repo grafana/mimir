@@ -10,9 +10,8 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/stretchr/testify/assert"
-
 	io2 "github.com/influxdata/influxdb/v2/kit/io"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -49,7 +48,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusNoContent,
 			push: func(t *testing.T) PushFunc {
-				return func(ctx context.Context, pushReq *Request) error {
+				return func(_ context.Context, pushReq *Request) error {
 					req, err := pushReq.WriteRequest()
 					assert.Equal(t, defaultExpectedWriteRequest, req)
 					assert.Nil(t, err)
@@ -64,7 +63,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusNoContent,
 			push: func(t *testing.T) PushFunc {
-				return func(ctx context.Context, pushReq *Request) error {
+				return func(_ context.Context, pushReq *Request) error {
 					req, err := pushReq.WriteRequest()
 					assert.Equal(t, defaultExpectedWriteRequest, req)
 					assert.Nil(t, err)
@@ -79,7 +78,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1= 1465839830100400200",
 			expectedCode: http.StatusBadRequest,
 			push: func(t *testing.T) PushFunc {
-				return func(ctx context.Context, pushReq *Request) error {
+				return func(_ context.Context, pushReq *Request) error {
 					req, err := pushReq.WriteRequest()
 					assert.Nil(t, req)
 					// TODO(alexg): assert on specific err
@@ -96,7 +95,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			expectedCode: http.StatusBadRequest,
 			push: func(t *testing.T) PushFunc {
 				// return func(ctx context.Context, req *mimirpb.WriteRequest) error {
-				return func(ctx context.Context, pushReq *Request) error {
+				return func(_ context.Context, pushReq *Request) error {
 					req, err := pushReq.WriteRequest()
 					assert.Nil(t, req)
 					// TODO(alexg): assert on specific err
@@ -112,7 +111,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 1465839830100400200",
 			expectedCode: http.StatusServiceUnavailable,
 			push: func(t *testing.T) PushFunc {
-				return func(ctx context.Context, pushReq *Request) error {
+				return func(_ context.Context, _ *Request) error {
 					assert.Error(t, context.DeadlineExceeded)
 					return context.DeadlineExceeded
 				}
@@ -125,7 +124,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			data:         "measurement,t1=v1 f1=2 0123456789",
 			expectedCode: http.StatusBadRequest,
 			push: func(t *testing.T) PushFunc {
-				return func(ctx context.Context, pushReq *Request) error {
+				return func(_ context.Context, pushReq *Request) error {
 					req, err := pushReq.WriteRequest()
 					assert.Nil(t, req)
 					assert.Error(t, io2.ErrReadLimitExceeded)

@@ -12,9 +12,8 @@ import (
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
-	"github.com/prometheus/client_golang/prometheus"
-
 	io2 "github.com/influxdata/influxdb/v2/kit/io"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/distributor/influxpush"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -23,7 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-func parser(ctx context.Context, r *http.Request, maxSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
+func parser(ctx context.Context, r *http.Request, maxSize int, _ *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 	spanLogger, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.InfluxHandler.decodeAndConvert")
 	defer spanLogger.Span.Finish()
 
@@ -31,12 +30,15 @@ func parser(ctx context.Context, r *http.Request, maxSize int, buffers *util.Req
 	spanLogger.SetTag("content_encoding", r.Header.Get("Content-Encoding"))
 	spanLogger.SetTag("content_length", r.ContentLength)
 
-	ts, err, _ := influxpush.ParseInfluxLineReader(ctx, r, maxSize)
+	ts, bytesRead, err := influxpush.ParseInfluxLineReader(ctx, r, maxSize)
 	// TODO(alexg): one argument for splitting up the decoding and conversion is to facilitate granular timings
 	// right now since ParseInfluxLineReader() does both
 	// The otel version decodes the whole input and then processes it, the existing Influx code parses each line as it
 	// decodes it.
-	level.Debug(spanLogger).Log("msg", "decodeAndConvert complete")
+	level.Debug(spanLogger).Log(
+		"msg", "decodeAndConvert complete",
+		"bytesRead", bytesRead,
+	)
 	if err != nil {
 		level.Error(logger).Log("err", err.Error())
 		// TODO(alexg): need to pass on the http.StatusBadRequest
@@ -68,8 +70,8 @@ func InfluxHandler(
 	sourceIPs *middleware.SourceIPExtractor,
 	retryCfg RetryConfig,
 	push PushFunc,
-	pushMetrics *PushMetrics,
-	reg prometheus.Registerer,
+	_ *PushMetrics, // TODO(alexg) add pushMetrics()
+	_ prometheus.Registerer, // TODO(alexg): add reg
 	logger log.Logger,
 ) http.Handler {
 	//TODO(alexg): mirror otel.go implementation where we do decoding here rather than in parser() func?
@@ -117,6 +119,10 @@ func InfluxHandler(
 				// if it is too big they should respond to the 413 below, but if a client doesn't understand this
 				// it just sends the next batch that is even bigger. In the past this has had to be dealt with by
 				// adding rate limits to drop the payloads.
+				level.Warn(logger).Log("msg", "request too large", "err", err)
+				// TODO(alexg): max size and bytes received in error?
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
 			}
 			// From: https://github.com/grafana/influx2cortex/blob/main/pkg/influx/errors.go
 

@@ -108,7 +108,7 @@ func TestParseInfluxLineReader(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest("POST", tt.url, bytes.NewReader([]byte(tt.data)))
 
-			timeSeries, err, _ := ParseInfluxLineReader(context.Background(), req, maxSize)
+			timeSeries, _, err := ParseInfluxLineReader(context.Background(), req, maxSize)
 			require.NoError(t, err)
 
 			if len(timeSeries) > 1 {
@@ -161,7 +161,7 @@ func TestParseInfluxInvalidInput(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest("POST", tt.url, bytes.NewReader([]byte(tt.data)))
 
-			_, err, _ := ParseInfluxLineReader(context.Background(), req, maxSize)
+			_, _, err := ParseInfluxLineReader(context.Background(), req, maxSize)
 			require.Error(t, err)
 		})
 	}

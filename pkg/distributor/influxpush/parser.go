@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"sort"
 	"time"
@@ -23,7 +22,7 @@ import (
 const internalLabel = "__mimir_source__"
 
 // ParseInfluxLineReader parses a Influx Line Protocol request from an io.Reader.
-func ParseInfluxLineReader(ctx context.Context, r *http.Request, maxSize int) ([]mimirpb.TimeSeries, error, int) {
+func ParseInfluxLineReader(_ context.Context, r *http.Request, maxSize int) ([]mimirpb.TimeSeries, int, error) {
 	qp := r.URL.Query()
 	precision := qp.Get("precision")
 	if precision == "" {
@@ -31,31 +30,31 @@ func ParseInfluxLineReader(ctx context.Context, r *http.Request, maxSize int) ([
 	}
 
 	if !models.ValidPrecision(precision) {
-		return nil, fmt.Errorf("precision supplied is not valid: %s", precision), 0
+		return nil, 0, fmt.Errorf("precision supplied is not valid: %s", precision)
 	}
 
 	encoding := r.Header.Get("Content-Encoding")
 	reader, err := batchReadCloser(r.Body, encoding, int64(maxSize))
 	if err != nil {
-		return nil, fmt.Errorf("gzip compression error: %w", err), 0
+		return nil, 0, fmt.Errorf("gzip compression error: %w", err)
 	}
-	data, err := ioutil.ReadAll(reader)
+	data, err := io.ReadAll(reader)
 	dataLen := len(data) // In case if something is read despite an error.
 	if err != nil {
-		return nil, fmt.Errorf("can't read body: %s", err), dataLen
+		return nil, dataLen, fmt.Errorf("can't read body: %s", err)
 	}
 
 	err = reader.Close()
 	if err != nil {
-		return nil, fmt.Errorf("problem reading body: %s", err), dataLen
+		return nil, dataLen, fmt.Errorf("problem reading body: %s", err)
 	}
 
 	points, err := models.ParsePointsWithPrecision(data, time.Now().UTC(), precision)
 	if err != nil {
-		return nil, fmt.Errorf("can't parse points: %s", err), dataLen
+		return nil, dataLen, fmt.Errorf("can't parse points: %s", err)
 	}
 	a, b := writeRequestFromInfluxPoints(points)
-	return a, b, dataLen
+	return a, dataLen, b
 }
 
 func writeRequestFromInfluxPoints(points []models.Point) ([]mimirpb.TimeSeries, error) {
