@@ -28,22 +28,34 @@ spec:
   triggers:
   - metadata:
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5"}[1m]))
-      serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }} 
+      serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}
       threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}
+      ignoreNullValues: {{ .Values.kedaAutoscaling.ignoreNullValues }}
+      unsafeSsl: {{ .Values.kedaAutoscaling.ignoreNullValues }}
     name: cortex_querier_hpa_default
     type: prometheus
+    {{- if .Values.kedaAutoscaling.authentication.enabled }}
+    authenticationRef:
+      name: {{ include "mimir.resourceName" (dict "ctx" .) }}
+    {{- end }}
   - metadata:
       query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="{{ .Release.Namespace }}"}[1m]))
-      serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }} 
+      serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}
       threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}
+      ignoreNullValues: {{ .Values.kedaAutoscaling.ignoreNullValues }}
+      unsafeSsl: {{ .Values.kedaAutoscaling.ignoreNullValues }}
     name: cortex_querier_hpa_default_requests_duration
     type: prometheus
+    {{- if .Values.kedaAutoscaling.authentication.enabled }}
+    authenticationRef:
+      name: {{ include "mimir.resourceName" (dict "ctx" .) }}
+    {{- end }}
   {{- $autoscaling := .Values.querier.kedaAutoscaling -}}
   {{- if .Values.querier.kedaAutoscaling.predictiveScalingEnabled }}
   - metadata:
@@ -53,7 +65,13 @@ spec:
       {{- if .Values.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}
+      ignoreNullValues: {{ .Values.kedaAutoscaling.ignoreNullValues }}
+      unsafeSsl: {{ .Values.kedaAutoscaling.ignoreNullValues }}
     name: cortex_querier_hpa_default_predictive
     type: prometheus
+    {{- if .Values.kedaAutoscaling.authentication.enabled }}
+    authenticationRef:
+      name: {{ include "mimir.resourceName" (dict "ctx" .) }}
+    {{- end }}
   {{- end }}
 {{- end }}

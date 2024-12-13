@@ -542,7 +542,21 @@ kedaAutoscaling:
   prometheusAddress: ""
   customHeaders: {}
   pollingInterval: 10
+  ignoreNullValues: true
+  unsafeSsl: false
 
+  # --KEDA trigger authentication settings.
+  # ref: https://keda.sh/docs/2.16/scalers/pulsar/#authentication-parameters
+  authentication:
+    enabled: false
+    authModes: ""
+    secretTargetRef: []
+    # - key: username
+    #   name: my-secret-name
+    #   parameter: username
+    # - key: password
+    #   name: my-secret-name
+    #   parameter: password
 alertmanager:
   enabled: true
   # -- Total number of replicas for the alertmanager across all availability zones
