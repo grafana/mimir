@@ -270,6 +270,8 @@ func TestGroupAtRisk(t *testing.T) {
 	createAndEvalTestGroup := func(interval time.Duration, evalConcurrently bool) *rules.Group {
 		st := teststorage.New(t)
 		defer st.Close()
+
+		// Create 100 rules that all take 1ms to evaluate.
 		var createdRules []rules.Rule
 		ruleCt := 100
 		ruleWaitTime := 1 * time.Millisecond
@@ -282,11 +284,12 @@ func TestGroupAtRisk(t *testing.T) {
 			createdRules = append(createdRules, rule)
 		}
 
+		// Create the group and evaluate it
 		opts := rules.GroupOptions{
 			Interval: interval,
 			Opts: &rules.ManagerOptions{
 				Appendable: st,
-				QueryFunc: func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
+				QueryFunc: func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
 					time.Sleep(ruleWaitTime)
 					return promql.Vector{}, nil
 				},
@@ -299,8 +302,9 @@ func TestGroupAtRisk(t *testing.T) {
 		g := rules.NewGroup(opts)
 		rules.DefaultEvalIterationFunc(context.Background(), g, time.Now())
 
+		// Sanity check that we're actually running the rules concurrently.
+		// The group should take less time than the sum of all rules if we're running them concurrently, more otherwise.
 		if evalConcurrently {
-			// Sanity check that we're actually running the rules concurrently.
 			require.Less(t, g.GetEvaluationTime(), time.Duration(ruleCt)*ruleWaitTime)
 		} else {
 			require.Greater(t, g.GetEvaluationTime(), time.Duration(ruleCt)*ruleWaitTime)
