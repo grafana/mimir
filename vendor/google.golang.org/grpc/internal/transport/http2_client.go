@@ -1090,7 +1090,7 @@ func (t *http2Client) GracefulClose() {
 
 // Write formats the data into HTTP2 data frame(s) and sends it out. The caller
 // should proceed only if Write returns nil.
-func (t *http2Client) Write(s *Stream, hdr []byte, data mem.BufferSlice, opts *Options) error {
+func (t *http2Client) write(s *ClientStream, hdr []byte, data mem.BufferSlice, opts *WriteOptions) error {
 	reader := data.Reader()
 
 	if opts.Last {
@@ -1119,6 +1119,7 @@ func (t *http2Client) Write(s *Stream, hdr []byte, data mem.BufferSlice, opts *O
 		_ = reader.Close()
 		return err
 	}
+	t.incrMsgSent()
 	return nil
 }
 

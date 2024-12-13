@@ -589,12 +589,12 @@ type replayOp struct {
 // csAttempt implements a single transport stream attempt within a
 // clientStream.
 type csAttempt struct {
-	ctx             context.Context
-	cs              *clientStream
-	transport       transport.ClientTransport
-	transportStream *transport.ClientStream
-	parser          *parser
-	pickResult      balancer.PickResult
+	ctx        context.Context
+	cs         *clientStream
+	t          transport.ClientTransport
+	s          *transport.ClientStream
+	p          *parser
+	pickResult balancer.PickResult
 
 	finished        bool
 	decompressorV0  Decompressor
@@ -998,7 +998,7 @@ func (cs *clientStream) CloseSend() error {
 	}
 	cs.sentLast = true
 	op := func(a *csAttempt) error {
-		a.transportStream.Write(nil, nil, &transport.WriteOptions{Last: true})
+		a.s.Write(nil, nil, &transport.WriteOptions{Last: true})
 		// Always return nil; io.EOF is the only error that might make sense
 		// instead, but there is no need to signal the client to call RecvMsg
 		// as the only use left for the stream after CloseSend is to call
@@ -1093,7 +1093,7 @@ func (a *csAttempt) sendMsg(m any, hdr []byte, payld mem.BufferSlice, dataLength
 		}
 		a.mu.Unlock()
 	}
-	if err := a.transportStream.Write(hdr, payld, &transport.WriteOptions{Last: !cs.desc.ClientStreams}); err != nil {
+	if err := a.s.Write(hdr, payld, &transport.WriteOptions{Last: !cs.desc.ClientStreams}); err != nil {
 		if !cs.desc.ClientStreams {
 			// For non-client-streaming RPCs, we return nil instead of EOF on error
 			// because the generated code requires it.  finish is not called; RecvMsg()
@@ -1106,9 +1106,6 @@ func (a *csAttempt) sendMsg(m any, hdr []byte, payld mem.BufferSlice, dataLength
 		for _, sh := range a.statsHandlers {
 			sh.HandleRPC(a.ctx, outPayload(true, m, dataLength, payloadLength, time.Now()))
 		}
-	}
-	if channelz.IsOn() {
-		a.t.IncrMsgSent()
 	}
 	return nil
 }
@@ -1189,9 +1186,9 @@ func (a *csAttempt) finish(err error) {
 		err = nil
 	}
 	var tr metadata.MD
-	if a.transportStream != nil {
-		a.transportStream.Close(err)
-		tr = a.transportStream.Trailer()
+	if a.s != nil {
+		a.s.Close(err)
+		tr = a.s.Trailer()
 	}
 
 	if a.pickResult.Done != nil {
@@ -1347,27 +1344,25 @@ func newNonRetryClientStream(ctx context.Context, desc *StreamDesc, method strin
 }
 
 type addrConnStream struct {
-	transportStream  *transport.ClientStream
-	ac               *addrConn
-	callHdr          *transport.CallHdr
-	cancel           context.CancelFunc
-	opts             []CallOption
-	callInfo         *callInfo
-	transport        transport.ClientTransport
-	ctx              context.Context
-	sentLast         bool
-	desc             *StreamDesc
-	codec            baseCodec
-	sendCompressorV0 Compressor
-	sendCompressorV1 encoding.Compressor
-	decompressorSet  bool
-	decompressorV0   Decompressor
-	decompressorV1   encoding.Compressor
-	parser           *parser
-
-	// mu guards finished and is held for the entire finish method.
-	mu       sync.Mutex
-	finished bool
+	s         *transport.ClientStream
+	ac        *addrConn
+	callHdr   *transport.CallHdr
+	cancel    context.CancelFunc
+	opts      []CallOption
+	callInfo  *callInfo
+	t         transport.ClientTransport
+	ctx       context.Context
+	sentLast  bool
+	desc      *StreamDesc
+	codec     baseCodec
+	cp        Compressor
+	comp      encoding.Compressor
+	decompSet bool
+	dc        Decompressor
+	decomp    encoding.Compressor
+	p         *parser
+	mu        sync.Mutex
+	finished  bool
 }
 
 func (as *addrConnStream) Header() (metadata.MD, error) {
@@ -1389,7 +1384,7 @@ func (as *addrConnStream) CloseSend() error {
 	}
 	as.sentLast = true
 
-	as.transportStream.Write(nil, nil, &transport.WriteOptions{Last: true})
+	as.s.Write(nil, nil, &transport.WriteOptions{Last: true})
 	// Always return nil; io.EOF is the only error that might make sense
 	// instead, but there is no need to signal the client to call RecvMsg
 	// as the only use left for the stream after CloseSend is to call
@@ -1439,7 +1434,7 @@ func (as *addrConnStream) SendMsg(m any) (err error) {
 		return status.Errorf(codes.ResourceExhausted, "trying to send message larger than max (%d vs. %d)", payload.Len(), *as.callInfo.maxSendMessageSize)
 	}
 
-	if err := as.t.Write(as.s, hdr, payload, &transport.Options{Last: !as.desc.ClientStreams}); err != nil {
+	if err := as.s.Write(hdr, payload, &transport.WriteOptions{Last: !as.desc.ClientStreams}); err != nil {
 		if !as.desc.ClientStreams {
 			// For non-client-streaming RPCs, we return nil instead of EOF on error
 			// because the generated code requires it.  finish is not called; RecvMsg()
@@ -1512,8 +1507,8 @@ func (as *addrConnStream) finish(err error) {
 		// Ending a stream with EOF indicates a success.
 		err = nil
 	}
-	if as.transportStream != nil {
-		as.transportStream.Close(err)
+	if as.s != nil {
+		as.s.Close(err)
 	}
 
 	if err != nil {
