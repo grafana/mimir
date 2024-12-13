@@ -44,21 +44,20 @@ import (
 
 // Group is a set of rules that have a logical relation.
 type Group struct {
-	name                  string
-	file                  string
-	interval              time.Duration
-	queryOffset           *time.Duration
-	limit                 int
-	rules                 []Rule
-	sourceTenants         []string
-	seriesInPreviousEval  []map[string]labels.Labels // One per Rule.
-	staleSeries           []labels.Labels
-	opts                  *ManagerOptions
-	mtx                   sync.Mutex
-	evaluationTime        time.Duration // Time it took to evaluate the group.
-	evaluationRuleTimeSum time.Duration // Sum of time it took to evaluate each rule in the group.
-	lastEvaluation        time.Time     // Wall-clock time of most recent evaluation.
-	lastEvalTimestamp     time.Time     // Time slot used for most recent evaluation.
+	name                 string
+	file                 string
+	interval             time.Duration
+	queryOffset          *time.Duration
+	limit                int
+	rules                []Rule
+	sourceTenants        []string
+	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
+	staleSeries          []labels.Labels
+	opts                 *ManagerOptions
+	mtx                  sync.Mutex
+	evaluationTime       time.Duration
+	lastEvaluation       time.Time // Wall-clock time of most recent evaluation.
+	lastEvalTimestamp    time.Time // Time slot used for most recent evaluation.
 
 	shouldRestore bool
 
@@ -120,7 +119,6 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.EvalFailures.WithLabelValues(key)
 	metrics.GroupLastEvalTime.WithLabelValues(key)
 	metrics.GroupLastDuration.WithLabelValues(key)
-	metrics.GroupLastRuleDurationSum.WithLabelValues(key)
 	metrics.GroupRules.WithLabelValues(key).Set(float64(len(o.Rules)))
 	metrics.GroupSamples.WithLabelValues(key)
 	metrics.GroupInterval.WithLabelValues(key).Set(o.Interval.Seconds())
@@ -380,28 +378,6 @@ func (g *Group) setEvaluationTime(dur time.Duration) {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 	g.evaluationTime = dur
-}
-
-// GetRuleEvaluationTimeSum returns the sum of the time it took to evaluate each rule in the group irrespective of concurrency.
-func (g *Group) GetRuleEvaluationTimeSum() time.Duration {
-	g.mtx.Lock()
-	defer g.mtx.Unlock()
-	return g.evaluationRuleTimeSum
-}
-
-// updateRuleEvaluationTimeSum updates evaluationRuleTimeSum which is the sum of the time it took to evaluate each rule in the group irrespective of concurrency.
-// It collects the times from the rules themselves.
-func (g *Group) updateRuleEvaluationTimeSum() {
-	var sum time.Duration
-	for _, rule := range g.rules {
-		sum += rule.GetEvaluationDuration()
-	}
-
-	g.metrics.GroupLastRuleDurationSum.WithLabelValues(GroupKey(g.file, g.name)).Set(sum.Seconds())
-
-	g.mtx.Lock()
-	defer g.mtx.Unlock()
-	g.evaluationRuleTimeSum = sum
 }
 
 // GetLastEvaluation returns the time the last evaluation of the rule group took place.
@@ -940,7 +916,6 @@ type Metrics struct {
 	GroupInterval            *prometheus.GaugeVec
 	GroupLastEvalTime        *prometheus.GaugeVec
 	GroupLastDuration        *prometheus.GaugeVec
-	GroupLastRuleDurationSum *prometheus.GaugeVec
 	GroupLastRestoreDuration *prometheus.GaugeVec
 	GroupRules               *prometheus.GaugeVec
 	GroupSamples             *prometheus.GaugeVec
@@ -1019,14 +994,6 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			},
 			[]string{"rule_group"},
 		),
-		GroupLastRuleDurationSum: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Namespace: namespace,
-				Name:      "rule_group_last_rule_duration_sum_seconds",
-				Help:      "The sum of time in seconds it took to evaluate each rule in the group regardless of concurrency. This should be higher than the group duration if rules are evaluated concurrently.",
-			},
-			[]string{"rule_group"},
-		),
 		GroupLastRestoreDuration: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -1064,7 +1031,6 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 			m.GroupInterval,
 			m.GroupLastEvalTime,
 			m.GroupLastDuration,
-			m.GroupLastRuleDurationSum,
 			m.GroupLastRestoreDuration,
 			m.GroupRules,
 			m.GroupSamples,

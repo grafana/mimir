@@ -244,8 +244,7 @@ type seriesDescription struct {
 	values []SequenceValue
 }
 
-// ParseSeriesDesc parses the description of a time series. It is only used in
-// the PromQL testing framework code.
+// ParseSeriesDesc parses the description of a time series.
 func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue, err error) {
 	p := NewParser(input)
 	p.lex.seriesDesc = true

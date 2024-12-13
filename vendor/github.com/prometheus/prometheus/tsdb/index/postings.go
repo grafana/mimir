@@ -72,7 +72,7 @@ type MemPostings struct {
 	// lvs holds the label values for each label name.
 	// lvs[name] is essentially an unsorted append-only list of all keys in m[name]
 	// mtx must be held when interacting with lvs.
-	// Since it's append-only, it is safe to read the label values slice after releasing the lock.
+	// Since it's append-only, it is safe to the label values slice after releasing the lock.
 	lvs map[string][]string
 
 	ordered bool
@@ -190,8 +190,7 @@ type PostingsStats struct {
 }
 
 // Stats calculates the cardinality statistics from postings.
-// Caller can pass in a function which computes the space required for n series with a given label.
-func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, string, uint64) uint64) *PostingsStats {
+func (p *MemPostings) Stats(label string, limit int) *PostingsStats {
 	var size uint64
 	p.mtx.RLock()
 
@@ -219,7 +218,7 @@ func (p *MemPostings) Stats(label string, limit int, labelSizeFunc func(string, 
 			}
 			seriesCnt := uint64(len(values))
 			labelValuePairs.push(Stat{Name: n + "=" + name, Count: seriesCnt})
-			size += labelSizeFunc(n, name, seriesCnt)
+			size += uint64(len(name)) * seriesCnt
 		}
 		labelValueLength.push(Stat{Name: n, Count: size})
 	}

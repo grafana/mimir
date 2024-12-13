@@ -56,10 +56,6 @@ const (
 	DefaultMaxSamplesPerQuery = 10000
 )
 
-func init() {
-	model.NameValidationScheme = model.UTF8Validation
-}
-
 type TBRun interface {
 	testing.TB
 	Run(string, func(*testing.T)) bool
@@ -70,7 +66,7 @@ var testStartTime = time.Unix(0, 0).UTC()
 // LoadedStorage returns storage with generated data using the provided load statements.
 // Non-load statements will cause test errors.
 func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
-	test, err := newTest(t, input, false, newTestStorage)
+	test, err := newTest(t, input, false)
 	require.NoError(t, err)
 
 	for _, cmd := range test.cmds {
@@ -81,7 +77,7 @@ func LoadedStorage(t testutil.T, input string) *teststorage.TestStorage {
 			t.Errorf("only 'load' commands accepted, got '%s'", cmd)
 		}
 	}
-	return test.storage.(*teststorage.TestStorage)
+	return test.storage
 }
 
 // NewTestEngine creates a promql.Engine with enablePerStepStats, lookbackDelta and maxSamples, and returns it.
@@ -112,11 +108,6 @@ func NewTestEngineWithOpts(tb testing.TB, opts promql.EngineOpts) *promql.Engine
 
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
 func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
-	RunBuiltinTestsWithStorage(t, engine, newTestStorage)
-}
-
-// RunBuiltinTestsWithStorage runs an acceptance test suite against the provided engine and storage.
-func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
 	t.Cleanup(func() { parser.EnableExperimentalFunctions = false })
 	parser.EnableExperimentalFunctions = true
 
@@ -127,29 +118,24 @@ func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage f
 		t.Run(fn, func(t *testing.T) {
 			content, err := fs.ReadFile(testsFs, fn)
 			require.NoError(t, err)
-			RunTestWithStorage(t, string(content), engine, newStorage)
+			RunTest(t, string(content), engine)
 		})
 	}
 }
 
 // RunTest parses and runs the test against the provided engine.
 func RunTest(t testutil.T, input string, engine promql.QueryEngine) {
-	RunTestWithStorage(t, input, engine, newTestStorage)
-}
-
-// RunTestWithStorage parses and runs the test against the provided engine and storage.
-func RunTestWithStorage(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage) {
-	require.NoError(t, runTest(t, input, engine, newStorage, false))
+	require.NoError(t, runTest(t, input, engine, false))
 }
 
 // testTest allows tests to be run in "test-the-test" mode (true for
 // testingMode). This is a special mode for testing test code execution itself.
 func testTest(t testutil.T, input string, engine promql.QueryEngine) error {
-	return runTest(t, input, engine, newTestStorage, true)
+	return runTest(t, input, engine, true)
 }
 
-func runTest(t testutil.T, input string, engine promql.QueryEngine, newStorage func(testutil.T) storage.Storage, testingMode bool) error {
-	test, err := newTest(t, input, testingMode, newStorage)
+func runTest(t testutil.T, input string, engine promql.QueryEngine, testingMode bool) error {
+	test, err := newTest(t, input, testingMode)
 
 	// Why do this before checking err? newTest() can create the test storage and then return an error,
 	// and we want to make sure to clean that up to avoid leaking goroutines.
@@ -189,28 +175,24 @@ type test struct {
 
 	cmds []testCommand
 
-	open    func(testutil.T) storage.Storage
-	storage storage.Storage
+	storage *teststorage.TestStorage
 
 	context   context.Context
 	cancelCtx context.CancelFunc
 }
 
 // newTest returns an initialized empty Test.
-func newTest(t testutil.T, input string, testingMode bool, newStorage func(testutil.T) storage.Storage) (*test, error) {
+func newTest(t testutil.T, input string, testingMode bool) (*test, error) {
 	test := &test{
 		T:           t,
 		cmds:        []testCommand{},
 		testingMode: testingMode,
-		open:        newStorage,
 	}
 	err := test.parse(input)
 	test.clear()
 
 	return test, err
 }
-
-func newTestStorage(t testutil.T) storage.Storage { return teststorage.New(t) }
 
 //go:embed testdata
 var testsFs embed.FS
@@ -1285,7 +1267,7 @@ func (t *test) clear() {
 	if t.cancelCtx != nil {
 		t.cancelCtx()
 	}
-	t.storage = t.open(t.T)
+	t.storage = teststorage.New(t)
 	t.context, t.cancelCtx = context.WithCancel(context.Background())
 }
 

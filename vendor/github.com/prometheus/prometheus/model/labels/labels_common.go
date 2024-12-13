@@ -51,11 +51,7 @@ func (ls Labels) String() string {
 			b.WriteByte(',')
 			b.WriteByte(' ')
 		}
-		if !model.LabelName(l.Name).IsValidLegacy() {
-			b.Write(strconv.AppendQuote(b.AvailableBuffer(), l.Name))
-		} else {
-			b.WriteString(l.Name)
-		}
+		b.WriteString(l.Name)
 		b.WriteByte('=')
 		b.Write(strconv.AppendQuote(b.AvailableBuffer(), l.Value))
 		i++

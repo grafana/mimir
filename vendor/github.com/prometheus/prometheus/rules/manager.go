@@ -82,7 +82,6 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 	timeSinceStart := time.Since(start)
 
 	g.metrics.IterationDuration.Observe(timeSinceStart.Seconds())
-	g.updateRuleEvaluationTimeSum()
 	g.setEvaluationTime(timeSinceStart)
 	g.setLastEvaluation(start)
 	g.setLastEvalTimestamp(evalTimestamp)
@@ -483,11 +482,6 @@ type ruleDependencyController struct{}
 // AnalyseRules implements RuleDependencyController.
 func (c ruleDependencyController) AnalyseRules(rules []Rule) {
 	depMap := buildDependencyMap(rules)
-
-	if depMap == nil {
-		return
-	}
-
 	for _, r := range rules {
 		r.SetNoDependentRules(depMap.dependents(r) == 0)
 		r.SetNoDependencyRules(depMap.dependencies(r) == 0)

@@ -1079,7 +1079,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string, limit int) *ind
 		return h.cardinalityCache
 	}
 	h.cardinalityCacheKey = cacheKey
-	h.cardinalityCache = h.postings.Stats(statsByLabelName, limit, labels.SizeOfLabels)
+	h.cardinalityCache = h.postings.Stats(statsByLabelName, limit)
 	h.lastPostingsStatsCall = time.Duration(time.Now().Unix()) * time.Second
 
 	return h.cardinalityCache

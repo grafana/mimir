@@ -361,7 +361,6 @@ func (sp *scrapePool) restartLoops(reuseCache bool) {
 				bodySizeLimit:        bodySizeLimit,
 				acceptHeader:         acceptHeader(sp.config.ScrapeProtocols, validationScheme),
 				acceptEncodingHeader: acceptEncodingHeader(enableCompression),
-				metrics:              sp.metrics,
 			}
 			newLoop = sp.newLoop(scrapeLoopOptions{
 				target:                   t,
