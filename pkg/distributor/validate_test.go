@@ -713,6 +713,7 @@ func TestValidUTF8Message(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, stBytes)
 
+				//lint:ignore faillint We want to explicitly use on grpcstatus.FromError()
 				grpcSt, ok := grpcstatus.FromError(httpgrpcErr)
 				require.True(t, ok)
 				stBytes, err = golangproto.Marshal(grpcSt.Proto())
