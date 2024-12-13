@@ -1462,6 +1462,9 @@ load 6m
 # eval range from 0 to 18m step 6m left == ignoring(pod) right
 #   left _ 2 7 _
 
+eval_fail range from 0 to 18m step 6m left == ignoring(pod) group_right right
+  expected_fail_regexp found duplicate series for the match group .* on the left (hand-)?side of the operation
+
 clear
 
 # Same thing as above, but with no overlapping samples on left side.
