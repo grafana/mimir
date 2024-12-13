@@ -63,6 +63,7 @@ func OTLPHandler(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	retryCfg RetryConfig,
+	enableStartTimeQuietZero bool,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
@@ -183,7 +184,7 @@ func OTLPHandler(
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
 		var metrics []mimirpb.PreallocTimeseries
-		metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, enableCTZeroIngestion, promoteResourceAttributes, keepIdentifyingResourceAttributes, discardedDueToOtelParseError, spanLogger, otlpReq.Metrics())
+		metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero, promoteResourceAttributes, keepIdentifyingResourceAttributes, discardedDueToOtelParseError, spanLogger, otlpReq.Metrics())
 		if err != nil {
 			return err
 		}
@@ -413,11 +414,12 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	return metadata
 }
 
-func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion bool, promoteResourceAttributes []string, keepIdentifyingResourceAttributes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero bool, promoteResourceAttributes []string, keepIdentifyingResourceAttributes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := otlp.NewMimirConverter()
 	_, errs := converter.FromMetrics(ctx, md, otlp.Settings{
 		AddMetricSuffixes:                   addSuffixes,
 		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
+		EnableStartTimeQuietZero:            enableStartTimeQuietZero,
 		PromoteResourceAttributes:           promoteResourceAttributes,
 		KeepIdentifyingResourceAttributes:   keepIdentifyingResourceAttributes,
 	}, utillog.SlogFromGoKit(logger))
