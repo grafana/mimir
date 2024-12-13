@@ -266,9 +266,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 				cleanup()
 			}
 
-			if err != nil {
-				result.freeBuffers()
-			}
+			result.freeBuffers()
 		}()
 
 		log.SetTag("ingester_address", ing.Addr)
@@ -460,7 +458,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			streamReaderCount++
 		}
 
-		res.freeBuffers()
+		// res.freeBuffers()
 	}
 
 	// Now turn the accumulated maps into slices.
