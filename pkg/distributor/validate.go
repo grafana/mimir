@@ -515,11 +515,11 @@ func getMetricAndEllipsis(ls []mimirpb.LabelAdapter) (string, string) {
 
 // validUTF8ErrMessage ensures that the given message contains only valid utf8 characters.
 // The presence of non-utf8 characters in some errors might break some crucial parts of distributor's logic.
-// For example, if httpgrpc.HttpServer.Handle() returns a httpgprc error containing a non-utf8 character,
-// this error will not be propagated to httpgrpc.HttpClient as a htttpgrpc error, but as a generic error,
+// For example, if httpgrpc.HTTPServer.Handle() returns a httpgprc.Error containing a non-utf8 character,
+// this error will not be propagated to httpgrpc.HTTPClient as a htttpgrpc.Error, but as a generic error,
 // which might break some of Mimir internal logic.
 // This is because golang's proto.Marshal(), which is used by gRPC internally, fails when it marshals the
-// httpgrpc error containing non-utf8 character produced by httpgrpc.HttpSeriver.Handle(), making the resulting
+// httpgrpc.Error containing non-utf8 character produced by httpgrpc.HTTPServer.Handle(), making the resulting
 // error lose some important properties.
 func validUTF8Message(msg string) string {
 	return strings.ToValidUTF8(msg, string(utf8.RuneError))
