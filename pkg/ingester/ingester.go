@@ -2964,7 +2964,7 @@ func (i *Ingester) minTsdbHeadTimestamp() float64 {
 
 	minTime := int64(math.MaxInt64)
 	for _, db := range i.tsdbs {
-		minTime = util_math.Min(minTime, db.db.Head().MinTime())
+		minTime = min(minTime, db.db.Head().MinTime())
 	}
 
 	if minTime == math.MaxInt64 {
@@ -2980,7 +2980,7 @@ func (i *Ingester) maxTsdbHeadTimestamp() float64 {
 
 	maxTime := int64(math.MinInt64)
 	for _, db := range i.tsdbs {
-		maxTime = util_math.Max(maxTime, db.db.Head().MaxTime())
+		maxTime = max(maxTime, db.db.Head().MaxTime())
 	}
 
 	if maxTime == math.MinInt64 {
@@ -3248,7 +3248,7 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 		// Estimate the number of series that would be dropped from the TSDB Head if we would
 		// compact the head up until "now - active series idle timeout".
 		totalActiveSeries, _, _ := db.activeSeries.Active()
-		estimatedSeriesReduction := util_math.Max(0, int64(userMemorySeries)-int64(totalActiveSeries))
+		estimatedSeriesReduction := max(0, int64(userMemorySeries)-int64(totalActiveSeries))
 		estimations = append(estimations, seriesReductionEstimation{
 			userID:              userID,
 			estimatedCount:      estimatedSeriesReduction,

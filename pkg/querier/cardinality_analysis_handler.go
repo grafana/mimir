@@ -19,7 +19,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/util"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -196,7 +195,7 @@ func toLabelNamesCardinalityResponse(response *ingester_client.LabelNamesAndValu
 	labelsWithValues := response.Items
 	sortByValuesCountAndName(labelsWithValues)
 	valuesCountTotal := getValuesCountTotal(labelsWithValues)
-	items := make([]*api.LabelNamesCardinalityItem, util_math.Min(len(labelsWithValues), limit))
+	items := make([]*api.LabelNamesCardinalityItem, min(len(labelsWithValues), limit))
 	for i := 0; i < len(items); i++ {
 		items[i] = &api.LabelNamesCardinalityItem{LabelName: labelsWithValues[i].LabelName, LabelValuesCount: len(labelsWithValues[i].Values)}
 	}
