@@ -242,9 +242,9 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 	if err != nil {
 		return translateReceivedError(err)
 	}
-	defer msg.FreeBuffer()
 
 	estimate := msg.GetStreamingChunksEstimate()
+	msg.FreeBuffer()
 	if estimate == nil {
 		return fmt.Errorf("expected to receive chunks estimate, but got message of type %T", msg.Result)
 	}
