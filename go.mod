@@ -348,4 +348,4 @@ replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-202410091
 
 // Pin Google GRPC to v1.69.0 as v1.66.0 has API changes and also potentially performance regressions.
 // Following https://github.com/grafana/dskit/pull/581
-replace google.golang.org/grpc => google.golang.org/grpc v1.69.0
+replace google.golang.org/grpc => google.golang.org/grpc v1.69.2
