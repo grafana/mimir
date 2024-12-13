@@ -221,7 +221,7 @@ func handler(
 				level.Error(logger).Log(msgs...)
 			}
 			addHeaders(w, err, r, code, retryCfg)
-			http.Error(w, msg, code)
+			http.Error(w, validUTF8Message(msg), code)
 		}
 	})
 }

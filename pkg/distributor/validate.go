@@ -430,7 +430,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if !skipLabelValidation && !model.LabelValue(l.Value).IsValid() {
 			m.invalidLabelValue.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name, strings.ToValidUTF8(l.Value, ""), unsafeMetricName)
+			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name, validUTF8Message(l.Value), unsafeMetricName)
 		} else if len(l.Value) > maxLabelValueLength {
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(labelValueTooLongMsgFormat, l.Name, l.Value, mimirpb.FromLabelAdaptersToString(ls))
@@ -511,4 +511,16 @@ func getMetricAndEllipsis(ls []mimirpb.LabelAdapter) (string, string) {
 		ellipsis = "\u2026"
 	}
 	return metric, ellipsis
+}
+
+// validUTF8ErrMessage ensures that the given message contains only valid utf8 characters.
+// The presence of non-utf8 characters in some errors might break some crucial parts of distributor's logic.
+// For example, if httpgrpc.HttpServer.Handle() returns a httpgprc error containing a non-utf8 character,
+// this error will not be propagated to httpgrpc.HttpClient as a htttpgrpc error, but as a generic error,
+// which might break some of Mimir internal logic.
+// This is because golang's proto.Marshal(), which is used by gRPC internally, fails when it marshals the
+// httpgrpc error containing non-utf8 character produced by httpgrpc.HttpSeriver.Handle(), making the resulting
+// error lose some important properties.
+func validUTF8Message(msg string) string {
+	return strings.ToValidUTF8(msg, string(utf8.RuneError))
 }
