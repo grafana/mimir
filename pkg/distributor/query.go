@@ -291,8 +291,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		streamingSeriesCount := 0
 
 		for {
-			// XXX: Note that while we free responses' gRPC buffers on error, we don't do the same in case of success,
-			// as the combined response retains references to gRPC buffers.
 			resp, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
