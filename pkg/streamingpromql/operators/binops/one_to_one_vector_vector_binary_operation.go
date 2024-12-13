@@ -11,6 +11,7 @@ import (
 	"sort"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -96,6 +97,11 @@ func (g *oneToOneBinaryOperationRightSide) updatePresence(timestampIdx int64, se
 
 	g.leftSidePresence[timestampIdx] = seriesIdx
 	return -1
+}
+
+type oneToOneBinaryOperationOutputSeriesWithLabels struct {
+	labels labels.Labels
+	series *oneToOneBinaryOperationOutputSeries
 }
 
 func NewOneToOneVectorVectorBinaryOperation(
@@ -227,7 +233,7 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 		group.rightSeriesIndices = append(group.rightSeriesIndices, idx)
 	}
 
-	outputSeriesMap := map[string]*oneToOneBinaryOperationOutputSeries{}
+	outputSeriesMap := map[string]oneToOneBinaryOperationOutputSeriesWithLabels{}
 
 	leftSeriesUsed, err := types.BoolSlicePool.Get(len(b.leftMetadata), b.MemoryConsumptionTracker)
 	if err != nil {
@@ -241,10 +247,12 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 
 	leftSeriesUsed = leftSeriesUsed[:len(b.leftMetadata)]
 	rightSeriesUsed = rightSeriesUsed[:len(b.rightMetadata)]
+	outputSeriesLabelsBytes := make([]byte, 0, 1024)
 
 	for leftSeriesIndex, s := range b.leftMetadata {
 		outputSeriesLabels := labelsFunc(s.Labels)
-		outputSeries, exists := outputSeriesMap[outputSeriesLabels.String()]
+		outputSeriesLabelsBytes = outputSeriesLabels.Bytes(outputSeriesLabelsBytes) // FIXME: it'd be better if we could just get the underlying byte slice without copying here
+		outputSeries, exists := outputSeriesMap[string(outputSeriesLabelsBytes)]
 
 		if !exists {
 			groupKey := groupKeyFunc(s.Labels)
@@ -266,11 +274,15 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 
 			rightSide.outputSeriesCount++
 
-			outputSeries = &oneToOneBinaryOperationOutputSeries{rightSide: rightSide}
-			outputSeriesMap[outputSeriesLabels.String()] = outputSeries
+			outputSeries = oneToOneBinaryOperationOutputSeriesWithLabels{
+				labels: outputSeriesLabels,
+				series: &oneToOneBinaryOperationOutputSeries{rightSide: rightSide},
+			}
+
+			outputSeriesMap[string(outputSeriesLabelsBytes)] = outputSeries
 		}
 
-		outputSeries.leftSeriesIndices = append(outputSeries.leftSeriesIndices, leftSeriesIndex)
+		outputSeries.series.leftSeriesIndices = append(outputSeries.series.leftSeriesIndices, leftSeriesIndex)
 		leftSeriesUsed[leftSeriesIndex] = true
 	}
 
@@ -278,9 +290,8 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	allSeries := make([]*oneToOneBinaryOperationOutputSeries, 0, len(outputSeriesMap))
 
 	for _, outputSeries := range outputSeriesMap {
-		firstSeriesLabels := b.leftMetadata[outputSeries.leftSeriesIndices[0]].Labels
-		allMetadata = append(allMetadata, types.SeriesMetadata{Labels: labelsFunc(firstSeriesLabels)})
-		allSeries = append(allSeries, outputSeries)
+		allMetadata = append(allMetadata, types.SeriesMetadata{Labels: outputSeries.labels})
+		allSeries = append(allSeries, outputSeries.series)
 	}
 
 	return allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed, nil
