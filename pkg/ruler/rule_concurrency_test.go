@@ -5,6 +5,7 @@ package ruler
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -12,8 +13,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/semaphore"
@@ -264,24 +267,46 @@ func TestIsRuleIndependent(t *testing.T) {
 }
 
 func TestGroupAtRisk(t *testing.T) {
-	createRules := func() []rules.Rule {
-		exp1, err := parser.ParseExpr("vector(1)")
-		require.NoError(t, err)
-		rule1 := rules.NewRecordingRule("test_rule", exp1, labels.Labels{})
-		rule1.SetNoDependencyRules(true)
-		rule1.SetNoDependentRules(false)
-		exp2, err := parser.ParseExpr("test_rule")
-		require.NoError(t, err)
-		rule2 := rules.NewRecordingRule("test_rule2", exp2, labels.Labels{})
-		rule2.SetNoDependencyRules(false)
-		rule2.SetNoDependentRules(false)
-		exp3, err := parser.ParseExpr("test_rule2")
-		require.NoError(t, err)
-		rule3 := rules.NewRecordingRule("test_rule3", exp3, labels.Labels{})
-		rule3.SetNoDependencyRules(false)
-		rule3.SetNoDependentRules(true)
+	createAndEvalTestGroup := func(interval time.Duration, evalConcurrently bool) *rules.Group {
+		st := teststorage.New(t)
+		defer st.Close()
+		var createdRules []rules.Rule
+		ruleCt := 100
+		ruleWaitTime := 1 * time.Millisecond
+		for i := 0; i < ruleCt; i++ {
+			q, err := parser.ParseExpr("vector(1)")
+			require.NoError(t, err)
+			rule := rules.NewRecordingRule(fmt.Sprintf("test_rule%d", i), q, labels.Labels{})
+			rule.SetNoDependencyRules(true)
+			rule.SetNoDependentRules(true)
+			createdRules = append(createdRules, rule)
+		}
 
-		return []rules.Rule{rule1, rule2, rule3}
+		opts := rules.GroupOptions{
+			Interval: interval,
+			Opts: &rules.ManagerOptions{
+				Appendable: st,
+				QueryFunc: func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
+					time.Sleep(ruleWaitTime)
+					return promql.Vector{}, nil
+				},
+			},
+			Rules: createdRules,
+		}
+		if evalConcurrently {
+			opts.Opts.RuleConcurrencyController = &allowAllConcurrencyController{}
+		}
+		g := rules.NewGroup(opts)
+		rules.DefaultEvalIterationFunc(context.Background(), g, time.Now())
+
+		if evalConcurrently {
+			// Sanity check that we're actually running the rules concurrently.
+			require.Less(t, g.GetEvaluationTime(), time.Duration(ruleCt)*ruleWaitTime)
+		} else {
+			require.Greater(t, g.GetEvaluationTime(), time.Duration(ruleCt)*ruleWaitTime)
+		}
+
+		return g
 	}
 
 	m := newMultiTenantConcurrencyControllerMetrics(prometheus.NewPedanticRegistry())
@@ -298,77 +323,48 @@ func TestGroupAtRisk(t *testing.T) {
 	}
 
 	tc := map[string]struct {
-		group    *rules.Group
-		expected bool
+		groupInterval    time.Duration
+		evalConcurrently bool
+		expected         bool
 	}{
 		"group last evaluation greater than interval": {
-			group: func() *rules.Group {
-				g := rules.NewGroup(rules.GroupOptions{
-					Interval: -1 * time.Minute,
-					Opts:     &rules.ManagerOptions{},
-					Rules:    createRules(),
-				})
-				return g
-			}(),
-			expected: true,
+			// Total runtime: 100x1ms ~ 100ms (run sequentially), > 1ms -> Not at risk
+			groupInterval:    1 * time.Millisecond,
+			evalConcurrently: false,
+			expected:         true,
 		},
 		"group last evaluation less than interval": {
-			group: func() *rules.Group {
-				g := rules.NewGroup(rules.GroupOptions{
-					Interval: 1 * time.Minute,
-					Opts:     &rules.ManagerOptions{},
-					Rules:    createRules(),
-				})
-				return g
-			}(),
-			expected: false,
-		},
-		"group last evaluation exactly at concurrency trigger threshold": {
-			group: func() *rules.Group {
-				g := rules.NewGroup(rules.GroupOptions{
-					Interval: 0 * time.Minute,
-					Opts:     &rules.ManagerOptions{},
-					Rules:    createRules(),
-				})
-				return g
-			}(),
-			expected: true,
+			// Total runtime: 100x1ms ~ 100ms (run sequentially), < 1s -> Not at risk
+			groupInterval:    1 * time.Second,
+			evalConcurrently: false,
+			expected:         false,
 		},
 		"group total rule evaluation duration of last evaluation greater than threshold": {
-			group: func() *rules.Group {
-				r := createRules()
-				r[0].SetEvaluationDuration(1 * time.Minute)
-				r[1].SetEvaluationDuration(1 * time.Minute)
-				r[2].SetEvaluationDuration(1 * time.Minute)
-				g := rules.NewGroup(rules.GroupOptions{
-					Interval: 5 * time.Minute,
-					Opts:     &rules.ManagerOptions{},
-					Rules:    r,
-				})
-				return g
-			}(),
-			expected: true,
+			// Total runtime: 100x1ms ~ 100ms, > 50ms -> Group isn't at risk for its runtime, but it is for the sum of all rules.
+			groupInterval:    50 * time.Millisecond,
+			evalConcurrently: true,
+			expected:         true,
 		},
 		"group total rule evaluation duration of last evaluation less than threshold": {
-			group: func() *rules.Group {
-				r := createRules()
-				r[0].SetEvaluationDuration(30 * time.Second)
-				r[1].SetEvaluationDuration(30 * time.Second)
-				r[2].SetEvaluationDuration(30 * time.Second)
-				g := rules.NewGroup(rules.GroupOptions{
-					Interval: 5 * time.Minute,
-					Opts:     &rules.ManagerOptions{},
-					Rules:    r,
-				})
-				return g
-			}(),
-			expected: false,
+			// Total runtime: 100x1ms ~ 100ms, < 1s -> Not at risk
+			groupInterval:    1 * time.Second,
+			evalConcurrently: true,
+			expected:         false,
 		},
 	}
 
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, tt.expected, controller.isGroupAtRisk(tt.group))
+			group := createAndEvalTestGroup(tt.groupInterval, tt.evalConcurrently)
+			require.Equal(t, tt.expected, controller.isGroupAtRisk(group))
 		})
 	}
 }
+
+type allowAllConcurrencyController struct{}
+
+func (a *allowAllConcurrencyController) Allow(_ context.Context, _ *rules.Group, _ rules.Rule) bool {
+	return true
+}
+
+func (a *allowAllConcurrencyController) Done(_ context.Context) {}

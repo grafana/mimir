@@ -192,17 +192,17 @@ func (c *TenantConcurrencyController) isGroupAtRisk(group *rules.Group) bool {
 	interval := group.Interval().Seconds()
 	runtimeThreshold := interval * c.thresholdRuleConcurrency / 100
 
-	if lastEvaluation := group.GetEvaluationTime().Seconds(); lastEvaluation >= runtimeThreshold {
+	// If the group evaluation time is greater than the threshold, the group is at risk.
+	if group.GetEvaluationTime().Seconds() >= runtimeThreshold {
 		return true
 	}
 
-	// Sum up the total duration of all rules in the group to determine if the group is at risk if rules were all run sequentially.
-	var ruleTotalDuration float64
-	for _, rule := range group.Rules() {
-		ruleTotalDuration += rule.GetEvaluationDuration().Seconds()
+	// If the total rule evaluation time is greater than the threshold, the group is at risk.
+	if group.GetRuleEvaluationTimeSum().Seconds() >= runtimeThreshold {
+		return true
 	}
 
-	return ruleTotalDuration >= runtimeThreshold
+	return false
 }
 
 // isRuleIndependent checks if the rule is independent of other rules.
