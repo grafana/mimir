@@ -21,6 +21,7 @@ import (
 
 type RangeVectorSelector struct {
 	Selector *Selector
+	Stats    *types.QueryStats
 
 	rangeMilliseconds int64
 	chunkIterator     chunkenc.Iterator
@@ -32,9 +33,10 @@ type RangeVectorSelector struct {
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
 
-func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *RangeVectorSelector {
+func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, stats *types.QueryStats) *RangeVectorSelector {
 	return &RangeVectorSelector{
 		Selector:   selector,
+		Stats:      stats,
 		floats:     types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms: types.NewHPointRingBuffer(memoryConsumptionTracker),
 		stepData:   &types.RangeVectorStepData{},
@@ -101,6 +103,8 @@ func (m *RangeVectorSelector) NextStepSamples() (*types.RangeVectorStepData, err
 	m.stepData.Histograms = m.histograms.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Histograms)
 	m.stepData.RangeStart = rangeStart
 	m.stepData.RangeEnd = rangeEnd
+
+	m.Stats.TotalSamples += int64(m.stepData.Floats.Count() + m.stepData.Histograms.Count())
 
 	return m.stepData, nil
 }

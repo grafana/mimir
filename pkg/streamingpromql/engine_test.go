@@ -2807,3 +2807,112 @@ func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
 }
+
+func TestQueryStats(t *testing.T) {
+	opts := NewTestEngineOpts()
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+	start := timestamp.Time(0)
+	end := start.Add(10 * time.Minute)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			dense_series  0 1 2 3 4 5 6 7 8 9 10
+			start_series  0 1 _ _ _ _ _ _ _ _ _
+			end_series    _ _ _ _ _ 5 6 7 8 9 10
+			sparse_series 0 _ _ _ _ _ _ 7 _ _ _
+	`)
+
+	runQueryAndGetTotalSamples := func(t *testing.T, engine promql.QueryEngine, expr string, isInstantQuery bool) int64 {
+		var q promql.Query
+		var err error
+
+		if isInstantQuery {
+			q, err = engine.NewInstantQuery(context.Background(), storage, nil, expr, end)
+		} else {
+			q, err = engine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, time.Minute)
+		}
+
+		require.NoError(t, err)
+
+		defer q.Close()
+
+		res := q.Exec(context.Background())
+		require.NoError(t, res.Err)
+
+		return q.Stats().Samples.TotalSamples
+	}
+
+	testCases := map[string]struct {
+		expr                 string
+		isInstantQuery       bool
+		expectedTotalSamples int64
+	}{
+		"instant vector selector with point at every time step": {
+			expr:                 `dense_series{}`,
+			expectedTotalSamples: 11,
+		},
+		"instant vector selector with points only in start of time range": {
+			expr:                 `start_series{}`,
+			expectedTotalSamples: 2 + 4, // 2 for original points, plus 4 for lookback to last point.
+		},
+		"instant vector selector with points only at end of time range": {
+			expr:                 `end_series{}`,
+			expectedTotalSamples: 6,
+		},
+		"instant vector selector with sparse points": {
+			expr:                 `sparse_series{}`,
+			expectedTotalSamples: 5 + 4, // 5 for first point at T=0, and 4 for second point at T=7
+		},
+
+		"raw range vector selector with single point": {
+			expr:                 `dense_series[45s]`,
+			isInstantQuery:       true,
+			expectedTotalSamples: 1,
+		},
+		"raw range vector selector with multiple points": {
+			expr:                 `dense_series[3m45s]`,
+			isInstantQuery:       true,
+			expectedTotalSamples: 4,
+		},
+
+		"range vector selector with point at every time step": {
+			expr:                 `sum_over_time(dense_series{}[30s])`,
+			expectedTotalSamples: 11,
+		},
+		"range vector selector with points only in start of time range": {
+			expr:                 `sum_over_time(start_series{}[30s])`,
+			expectedTotalSamples: 2,
+		},
+		"range vector selector with points only at end of time range": {
+			expr:                 `sum_over_time(end_series{}[30s])`,
+			expectedTotalSamples: 6,
+		},
+		"range vector selector with sparse points": {
+			expr:                 `sum_over_time(sparse_series{}[30s])`,
+			expectedTotalSamples: 2,
+		},
+		"range vector selector where range overlaps previous step's range": {
+			expr:                 `sum_over_time(dense_series{}[1m30s])`,
+			expectedTotalSamples: 21, // Each step except the first selects two points.
+		},
+
+		"expression with multiple selectors": {
+			expr:                 `dense_series{} + end_series{}`,
+			expectedTotalSamples: 11 + 6,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			prometheusCount := runQueryAndGetTotalSamples(t, prometheusEngine, testCase.expr, testCase.isInstantQuery)
+			require.Equal(t, testCase.expectedTotalSamples, prometheusCount, "invalid test case: expected samples does not match value from Prometheus' engine")
+
+			mimirCount := runQueryAndGetTotalSamples(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
+			require.Equal(t, testCase.expectedTotalSamples, mimirCount)
+		})
+	}
+}

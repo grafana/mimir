@@ -24,6 +24,7 @@ import (
 type InstantVectorSelector struct {
 	Selector                 *Selector
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	Stats                    *types.QueryStats
 
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
@@ -118,6 +119,8 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 		if value.IsStaleNaN(f) || (h != nil && value.IsStaleNaN(h.Sum)) {
 			continue
 		}
+
+		v.Stats.TotalSamples++
 
 		// if (f, h) have been set by PeekPrev, we do not know if f is 0 because that's the actual value, or because
 		// the previous value had a histogram.
