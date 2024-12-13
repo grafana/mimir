@@ -4,119 +4,132 @@ package querier
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/require"
 
 	mimir_stats "github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/storage/series"
 )
 
 func TestStatsRenderer(t *testing.T) {
 
-	testCases := []struct {
-		name    string
-		samples uint64
+	testCases := map[string]struct {
+		expr                 string
+		expectedTotalSamples uint64
 	}{
-		{name: "ZeroSamples", samples: 0},
-		{name: "OneSample", samples: 1},
-		{name: "TenSamples", samples: 10},
+		"zero_series": {
+			expr:                 `zero_series{}`,
+			expectedTotalSamples: 0,
+		},
+		"dense_series": {
+			expr:                 `dense_series{}`,
+			expectedTotalSamples: 11,
+		},
+		"start_series": {
+			expr:                 `start_series{}`,
+			expectedTotalSamples: 6,
+		},
+		"end_series": {
+			expr:                 `end_series{}`,
+			expectedTotalSamples: 6,
+		},
+		"sparse_series": {
+			expr:                 `sparse_series{}`,
+			expectedTotalSamples: 5 + 4,
+		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			engine := promql.NewEngine(promql.EngineOpts{
-				Logger:     nil,
-				MaxSamples: 100,
-				Timeout:    5 * time.Second,
-			})
+	engine := promql.NewEngine(promql.EngineOpts{
+		Logger:     nil,
+		MaxSamples: 100,
+		Timeout:    5 * time.Second,
+	})
 
-			now := model.Time(time.Now().UnixMilli())
+	start := timestamp.Time(0)
+	end := start.Add(10 * time.Minute)
+	step := 1 * time.Minute
 
-			var seriesList []storage.Series
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			dense_series  0 1 2 3 4 5 6 7 8 9 10
+			start_series  0 1 _ _ _ _ _ _ _ _ _
+			end_series    _ _ _ _ _ 5 6 7 8 9 10
+			sparse_series 0 _ _ _ _ _ _ 7 _ _ _
+	`)
+	t.Cleanup(func() { storage.Close() })
 
-			for i := 0; i < int(tc.samples); i++ {
-				seriesList = append(seriesList, series.NewConcreteSeries(
-					labels.FromStrings("__name__", "test", "serial", strconv.Itoa(i)),
-					[]model.SamplePair{{Timestamp: now, Value: model.SampleValue(i)}}, nil,
-				))
-			}
+	api := v1.NewAPI(
+		engine,
+		storage,
+		nil,
+		nil,
+		func(context.Context) v1.ScrapePoolsRetriever { return &DummyTargetRetriever{} },
+		func(context.Context) v1.TargetRetriever { return &DummyTargetRetriever{} },
+		func(context.Context) v1.AlertmanagerRetriever { return &DummyAlertmanagerRetriever{} },
+		func() config.Config { return config.Config{} },
+		map[string]string{},
+		v1.GlobalURLOptions{},
+		func(f http.HandlerFunc) http.HandlerFunc { return f },
+		nil,   // Only needed for admin APIs.
+		"",    // This is for snapshots, which is disabled when admin APIs are disabled. Hence empty.
+		false, // Disable admin APIs.
+		promslog.NewNopLogger(),
+		func(context.Context) v1.RulesRetriever { return &DummyRulesRetriever{} },
+		0, 0, 0, // Remote read samples and concurrency limit.
+		false, // Not an agent.
+		regexp.MustCompile(".*"),
+		func() (v1.RuntimeInfo, error) { return v1.RuntimeInfo{}, nil },
+		&v1.PrometheusVersion{},
+		nil,
+		nil,
+		prometheus.DefaultGatherer,
+		nil,
+		StatsRenderer,
+		false,
+		nil,
+		false,
+		false,
+		0,
+	)
+	promRouter := route.New().WithPrefix("/api/v1")
 
-			q := &mockSampleAndChunkQueryable{
-				queryableFn: func(_, _ int64) (storage.Querier, error) {
-					return &mockQuerier{
-						selectFn: func(_ context.Context, _ bool, _ *storage.SelectHints, _ ...*labels.Matcher) storage.SeriesSet {
-							return series.NewConcreteSeriesSetFromUnsortedSeries(seriesList)
-						},
-					}, nil
-				},
-			}
+	api.Register(promRouter)
 
-			api := v1.NewAPI(
-				engine,
-				q,
-				nil,
-				nil,
-				func(context.Context) v1.ScrapePoolsRetriever { return &DummyTargetRetriever{} },
-				func(context.Context) v1.TargetRetriever { return &DummyTargetRetriever{} },
-				func(context.Context) v1.AlertmanagerRetriever { return &DummyAlertmanagerRetriever{} },
-				func() config.Config { return config.Config{} },
-				map[string]string{},
-				v1.GlobalURLOptions{},
-				func(f http.HandlerFunc) http.HandlerFunc { return f },
-				nil,   // Only needed for admin APIs.
-				"",    // This is for snapshots, which is disabled when admin APIs are disabled. Hence empty.
-				false, // Disable admin APIs.
-				promslog.NewNopLogger(),
-				func(context.Context) v1.RulesRetriever { return &DummyRulesRetriever{} },
-				0, 0, 0, // Remote read samples and concurrency limit.
-				false, // Not an agent.
-				regexp.MustCompile(".*"),
-				func() (v1.RuntimeInfo, error) { return v1.RuntimeInfo{}, nil },
-				&v1.PrometheusVersion{},
-				nil,
-				nil,
-				prometheus.DefaultGatherer,
-				nil,
-				StatsRenderer,
-				false,
-				nil,
-				false,
-				false,
-				0,
-			)
+	runQuery := func(expr string) *mimir_stats.Stats {
+		rec := httptest.NewRecorder()
 
-			promRouter := route.New().WithPrefix("/api/v1")
-			api.Register(promRouter)
+		req := httptest.NewRequest("GET", fmt.Sprintf("/api/v1/query_range?query=%s&start=%d&end=%d&step=%ds", expr, start.Unix(), end.Unix(), int(step.Seconds())), nil)
+		ctx := context.Background()
+		_, ctx = mimir_stats.ContextWithEmptyStats(ctx)
+		req = req.WithContext(user.InjectOrgID(ctx, "test org"))
 
-			rec := httptest.NewRecorder()
+		promRouter.ServeHTTP(rec, req)
 
-			req := httptest.NewRequest("GET", "/api/v1/query?query=test", nil)
-			ctx := context.Background()
-			_, ctx = mimir_stats.ContextWithEmptyStats(ctx)
-			req = req.WithContext(user.InjectOrgID(ctx, "test org"))
+		require.Equal(t, http.StatusOK, rec.Code)
+		return mimir_stats.FromContext(ctx)
+	}
 
-			promRouter.ServeHTTP(rec, req)
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
 
-			require.Equal(t, http.StatusOK, rec.Code)
-			stats := mimir_stats.FromContext(ctx)
+			stats := runQuery(tc.expr)
+
 			require.NotNil(t, stats)
-			require.Equal(t, tc.samples, stats.LoadSamplesProcessed())
+			require.Equal(t, tc.expectedTotalSamples, stats.LoadSamplesProcessed())
 		})
 	}
 }
