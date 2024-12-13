@@ -78,29 +78,6 @@ func AccumulateChunks(a, b []Chunk) []Chunk {
 	return ret
 }
 
-// AccumulateChunksSafe builds a slice of chunks, eliminating duplicates.
-// This is like AccumulateChunks except that unsafe chunk data is copied.
-func AccumulateChunksSafe(a, b []Chunk) []Chunk {
-	// If a is empty, we can just return b.
-	// The loop below effectively does the same thing for the opposite scenario (if b is empty, we'll just return a unmodified).
-	if len(a) == 0 {
-		return b
-	}
-
-	ret := a
-	for j := range b {
-		if containsChunk(a, b[j]) {
-			continue
-		}
-
-		c := b[j]
-		c.Data = make([]byte, len(b[j].Data))
-		copy(c.Data, b[j].Data)
-		ret = append(ret, c)
-	}
-	return ret
-}
-
 func containsChunk(a []Chunk, b Chunk) bool {
 	for i := range a {
 		if a[i].Equal(b) {
