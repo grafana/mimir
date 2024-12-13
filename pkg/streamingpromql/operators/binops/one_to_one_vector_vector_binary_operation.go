@@ -378,17 +378,6 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 
 	thisSeries := b.remainingSeries[0]
 	b.remainingSeries = b.remainingSeries[1:]
-
-	allLeftSeries, err := b.leftBuffer.GetSeries(ctx, thisSeries.leftSeriesIndices)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
-	mergedLeftSide, err := b.mergeSingleSide(allLeftSeries, thisSeries.leftSeriesIndices, b.leftMetadata, "left")
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
 	rightSide := thisSeries.rightSide
 
 	if rightSide.rightSeriesIndices != nil {
@@ -402,25 +391,39 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 	rightSide.outputSeriesCount--
 	canMutateRightSide := rightSide.outputSeriesCount == 0
 
-	result, err := b.evaluator.computeResult(mergedLeftSide, rightSide.mergedData, true, canMutateRightSide)
+	allLeftSeries, err := b.leftBuffer.GetSeries(ctx, thisSeries.leftSeriesIndices)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	// If the right side matches to many output series, check for conflicts between those left side series.
-	if rightSide.leftSidePresence != nil {
-		seriesIdx := thisSeries.leftSeriesIndices[0] // FIXME: this isn't right, need to do this after applying early filtering
+	for i, leftSeries := range allLeftSeries {
+		isLastLeftSeries := i == len(allLeftSeries)-1
 
-		if err := b.updateLeftSidePresence(rightSide, result, seriesIdx); err != nil {
+		allLeftSeries[i], err = b.evaluator.computeResult(leftSeries, rightSide.mergedData, true, canMutateRightSide && isLastLeftSeries)
+		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		if rightSide.outputSeriesCount == 0 {
-			types.IntSlicePool.Put(rightSide.leftSidePresence, b.MemoryConsumptionTracker)
+		// If the right side matches to many output series, check for conflicts between those left side series.
+		if rightSide.leftSidePresence != nil {
+			seriesIdx := thisSeries.leftSeriesIndices[i]
+
+			if err := b.updateLeftSidePresence(rightSide, allLeftSeries[i], seriesIdx); err != nil {
+				return types.InstantVectorSeriesData{}, err
+			}
 		}
 	}
 
-	return result, nil
+	mergedResult, err := b.mergeSingleSide(allLeftSeries, thisSeries.leftSeriesIndices, b.leftMetadata, "left")
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	if rightSide.leftSidePresence != nil && rightSide.outputSeriesCount == 0 {
+		types.IntSlicePool.Put(rightSide.leftSidePresence, b.MemoryConsumptionTracker)
+	}
+
+	return mergedResult, nil
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) populateRightSide(ctx context.Context, rightSide *oneToOneBinaryOperationRightSide) error {
