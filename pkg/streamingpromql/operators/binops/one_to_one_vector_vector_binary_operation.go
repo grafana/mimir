@@ -7,13 +7,10 @@ package binops
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"sort"
-	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -48,13 +45,14 @@ type OneToOneVectorVectorBinaryOperation struct {
 
 	expressionPosition posrange.PositionRange
 	annotations        *annotations.Annotations
+	timeRange          types.QueryTimeRange
 }
 
 var _ types.InstantVectorOperator = &OneToOneVectorVectorBinaryOperation{}
 
 type oneToOneBinaryOperationOutputSeries struct {
-	leftSeriesIndices  []int
-	rightSeriesIndices []int
+	leftSeriesIndices []int
+	rightSide         *oneToOneBinaryOperationRightSide
 }
 
 // latestLeftSeries returns the index of the last series from the left source needed for this output series.
@@ -66,9 +64,38 @@ func (s oneToOneBinaryOperationOutputSeries) latestLeftSeries() int {
 
 // latestRightSeries returns the index of the last series from the right source needed for this output series.
 //
-// It assumes that rightSeriesIndices is sorted in ascending order.
+// It assumes that rightSide.rightSeriesIndices is sorted in ascending order.
 func (s oneToOneBinaryOperationOutputSeries) latestRightSeries() int {
-	return s.rightSeriesIndices[len(s.rightSeriesIndices)-1]
+	return s.rightSide.rightSeriesIndices[len(s.rightSide.rightSeriesIndices)-1]
+}
+
+type oneToOneBinaryOperationRightSide struct {
+	// If this right side is used for multiple output series and has not been populated, rightSeriesIndices will not be nil.
+	// If this right side has been populated, rightSeriesIndices will be nil.
+	rightSeriesIndices []int
+	mergedData         types.InstantVectorSeriesData
+
+	// The number of output series that use the same series from the right side.
+	// Will only be greater than 1 for comparison binary operations without the bool modifier
+	// where the input series on the left side have different metric names.
+	outputSeriesCount int
+
+	// Time steps at which we've seen samples for any left side that matches with this right side.
+	// Each value is the index of the source series of the sample, or -1 if no sample has been seen for this time step yet.
+	leftSidePresence []int
+}
+
+// updatePresence records the presence of a sample from the left side series with index seriesIdx at the timestamp with index timestampIdx.
+//
+// If there is already a sample present from another series at the same timestamp, updatePresence returns that series' index, or
+// -1 if there was no sample present at the same timestamp from another series.
+func (g *oneToOneBinaryOperationRightSide) updatePresence(timestampIdx int64, seriesIdx int) int {
+	if existing := g.leftSidePresence[timestampIdx]; existing != -1 {
+		return existing
+	}
+
+	g.leftSidePresence[timestampIdx] = seriesIdx
+	return -1
 }
 
 func NewOneToOneVectorVectorBinaryOperation(
@@ -80,6 +107,7 @@ func NewOneToOneVectorVectorBinaryOperation(
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
+	timeRange types.QueryTimeRange,
 ) (*OneToOneVectorVectorBinaryOperation, error) {
 	e, err := newVectorVectorBinaryOperationEvaluator(op, returnBool, memoryConsumptionTracker, annotations, expressionPosition)
 	if err != nil {
@@ -97,6 +125,7 @@ func NewOneToOneVectorVectorBinaryOperation(
 		evaluator:          e,
 		expressionPosition: expressionPosition,
 		annotations:        annotations,
+		timeRange:          timeRange,
 	}
 
 	return b, nil
@@ -184,60 +213,21 @@ func (b *OneToOneVectorVectorBinaryOperation) loadSeriesMetadata(ctx context.Con
 func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.SeriesMetadata, []*oneToOneBinaryOperationOutputSeries, []bool, []bool, error) {
 	labelsFunc := groupLabelsFunc(b.VectorMatching, b.Op, b.ReturnBool)
 	groupKeyFunc := vectorMatchingGroupKeyFunc(b.VectorMatching)
-	outputSeriesMap := map[string]*oneToOneBinaryOperationOutputSeries{}
+	rightSeriesGroupsMap := map[string]*oneToOneBinaryOperationRightSide{}
 
-	// Use the smaller side to populate the map of possible output series first.
-	// This should ensure we don't unnecessarily populate the output series map with series that will never match in most cases.
-	// (It's possible that all the series on the larger side all belong to the same group, but this is expected to be rare.)
-	smallerSide := b.leftMetadata
-	largerSide := b.rightMetadata
-	smallerSideIsLeftSide := len(b.leftMetadata) < len(b.rightMetadata)
-
-	if !smallerSideIsLeftSide {
-		smallerSide = b.rightMetadata
-		largerSide = b.leftMetadata
-	}
-
-	for idx, s := range smallerSide {
+	for idx, s := range b.rightMetadata {
 		groupKey := groupKeyFunc(s.Labels)
-		series, exists := outputSeriesMap[string(groupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
+		group, exists := rightSeriesGroupsMap[string(groupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
 		if !exists {
-			series = &oneToOneBinaryOperationOutputSeries{}
-			outputSeriesMap[string(groupKey)] = series
+			group = &oneToOneBinaryOperationRightSide{}
+			rightSeriesGroupsMap[string(groupKey)] = group
 		}
 
-		if smallerSideIsLeftSide {
-			series.leftSeriesIndices = append(series.leftSeriesIndices, idx)
-		} else {
-			series.rightSeriesIndices = append(series.rightSeriesIndices, idx)
-		}
+		group.rightSeriesIndices = append(group.rightSeriesIndices, idx)
 	}
 
-	for idx, s := range largerSide {
-		groupKey := groupKeyFunc(s.Labels)
-
-		// Important: don't extract the string(...) call below - passing it directly allows us to avoid allocating it.
-		if series, exists := outputSeriesMap[string(groupKey)]; exists {
-			if smallerSideIsLeftSide {
-				// Currently iterating through right side.
-				series.rightSeriesIndices = append(series.rightSeriesIndices, idx)
-			} else {
-				series.leftSeriesIndices = append(series.leftSeriesIndices, idx)
-			}
-		}
-	}
-
-	// Remove series that cannot produce samples.
-	for seriesLabels, outputSeries := range outputSeriesMap {
-		if len(outputSeries.leftSeriesIndices) == 0 || len(outputSeries.rightSeriesIndices) == 0 {
-			// No matching series on at least one side for this output series, so output series will have no samples. Remove it.
-			delete(outputSeriesMap, seriesLabels)
-		}
-	}
-
-	allMetadata := types.GetSeriesMetadataSlice(len(outputSeriesMap))
-	allSeries := make([]*oneToOneBinaryOperationOutputSeries, 0, len(outputSeriesMap))
+	outputSeriesMap := map[string]*oneToOneBinaryOperationOutputSeries{}
 
 	leftSeriesUsed, err := types.BoolSlicePool.Get(len(b.leftMetadata), b.MemoryConsumptionTracker)
 	if err != nil {
@@ -252,18 +242,45 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	leftSeriesUsed = leftSeriesUsed[:len(b.leftMetadata)]
 	rightSeriesUsed = rightSeriesUsed[:len(b.rightMetadata)]
 
+	for leftSeriesIndex, s := range b.leftMetadata {
+		outputSeriesLabels := labelsFunc(s.Labels)
+		outputSeries, exists := outputSeriesMap[outputSeriesLabels.String()]
+
+		if !exists {
+			groupKey := groupKeyFunc(s.Labels)
+
+			// Important: don't extract the string(...) call below - passing it directly allows us to avoid allocating it.
+			rightSide, exists := rightSeriesGroupsMap[string(groupKey)]
+
+			if !exists {
+				// No matching series on the right side.
+				continue
+			}
+
+			if rightSide.outputSeriesCount == 0 {
+				// First output series the right side has matched to.
+				for _, rightSeriesIndex := range rightSide.rightSeriesIndices {
+					rightSeriesUsed[rightSeriesIndex] = true
+				}
+			}
+
+			rightSide.outputSeriesCount++
+
+			outputSeries = &oneToOneBinaryOperationOutputSeries{rightSide: rightSide}
+			outputSeriesMap[outputSeriesLabels.String()] = outputSeries
+		}
+
+		outputSeries.leftSeriesIndices = append(outputSeries.leftSeriesIndices, leftSeriesIndex)
+		leftSeriesUsed[leftSeriesIndex] = true
+	}
+
+	allMetadata := types.GetSeriesMetadataSlice(len(outputSeriesMap))
+	allSeries := make([]*oneToOneBinaryOperationOutputSeries, 0, len(outputSeriesMap))
+
 	for _, outputSeries := range outputSeriesMap {
 		firstSeriesLabels := b.leftMetadata[outputSeries.leftSeriesIndices[0]].Labels
 		allMetadata = append(allMetadata, types.SeriesMetadata{Labels: labelsFunc(firstSeriesLabels)})
 		allSeries = append(allSeries, outputSeries)
-
-		for _, leftSeriesIndex := range outputSeries.leftSeriesIndices {
-			leftSeriesUsed[leftSeriesIndex] = true
-		}
-
-		for _, rightSeriesIndex := range outputSeries.rightSeriesIndices {
-			rightSeriesUsed[rightSeriesIndex] = true
-		}
 	}
 
 	return allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed, nil
@@ -361,17 +378,84 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	allRightSeries, err := b.rightBuffer.GetSeries(ctx, thisSeries.rightSeriesIndices)
+	rightSide := thisSeries.rightSide
+
+	if rightSide.rightSeriesIndices != nil {
+		// Right side hasn't been populated yet.
+		if err := b.populateRightSide(ctx, rightSide); err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+	}
+
+	// We don't need to return thisSeries.rightSide.mergedData here - computeResult will return it below if this is the last output series that references this right side.
+	rightSide.outputSeriesCount--
+	canMutateRightSide := rightSide.outputSeriesCount == 0
+
+	result, err := b.evaluator.computeResult(mergedLeftSide, rightSide.mergedData, true, canMutateRightSide)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	mergedRightSide, err := b.mergeSingleSide(allRightSeries, thisSeries.rightSeriesIndices, b.rightMetadata, "right")
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
+	// If the right side matches to many output series, check for conflicts between those left side series.
+	if rightSide.leftSidePresence != nil {
+		seriesIdx := thisSeries.leftSeriesIndices[0] // FIXME: this isn't right, need to do this after applying early filtering
+
+		if err := b.updateLeftSidePresence(rightSide, result, seriesIdx); err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+
+		if rightSide.outputSeriesCount == 0 {
+			types.IntSlicePool.Put(rightSide.leftSidePresence, b.MemoryConsumptionTracker)
+		}
 	}
 
-	return b.evaluator.computeResult(mergedLeftSide, mergedRightSide, true, true)
+	return result, nil
+}
+
+func (b *OneToOneVectorVectorBinaryOperation) populateRightSide(ctx context.Context, rightSide *oneToOneBinaryOperationRightSide) error {
+	allRightSeries, err := b.rightBuffer.GetSeries(ctx, rightSide.rightSeriesIndices)
+	if err != nil {
+		return err
+	}
+
+	rightSide.mergedData, err = b.mergeSingleSide(allRightSeries, rightSide.rightSeriesIndices, b.rightMetadata, "right")
+	if err != nil {
+		return err
+	}
+
+	if rightSide.outputSeriesCount > 1 {
+		rightSide.leftSidePresence, err = types.IntSlicePool.Get(b.timeRange.StepCount, b.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+
+		rightSide.leftSidePresence = rightSide.leftSidePresence[:b.timeRange.StepCount]
+
+		for i := range rightSide.leftSidePresence {
+			rightSide.leftSidePresence[i] = -1
+		}
+	}
+
+	// Signal that the right side has been populated.
+	rightSide.rightSeriesIndices = nil
+
+	return nil
+}
+
+func (b *OneToOneVectorVectorBinaryOperation) updateLeftSidePresence(rightSide *oneToOneBinaryOperationRightSide, leftSideData types.InstantVectorSeriesData, leftSideSeriesIdx int) error {
+	for _, p := range leftSideData.Floats {
+		if otherSeriesIdx := rightSide.updatePresence(b.timeRange.PointIndex(p.T), leftSideSeriesIdx); otherSeriesIdx != -1 {
+			return formatConflictError(otherSeriesIdx, leftSideSeriesIdx, "duplicate series", p.T, b.leftMetadata, "left", b.VectorMatching, b.Op, b.ReturnBool)
+		}
+	}
+
+	for _, p := range leftSideData.Histograms {
+		if otherSeriesIdx := rightSide.updatePresence(b.timeRange.PointIndex(p.T), leftSideSeriesIdx); otherSeriesIdx != -1 {
+			return formatConflictError(otherSeriesIdx, leftSideSeriesIdx, "duplicate series", p.T, b.leftMetadata, "left", b.VectorMatching, b.Op, b.ReturnBool)
+		}
+	}
+
+	return nil
 }
 
 // mergeSingleSide exists to handle the case where one side of an output series has different source series at different time steps.
@@ -402,30 +486,7 @@ func (b *OneToOneVectorVectorBinaryOperation) mergeSingleSide(data []types.Insta
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) mergeConflictToError(conflict *operators.MergeConflict, sourceSeriesMetadata []types.SeriesMetadata, side string) error {
-	firstConflictingSeriesLabels := sourceSeriesMetadata[conflict.FirstConflictingSeriesIndex].Labels
-	groupLabels := groupLabelsFunc(b.VectorMatching, b.Op, b.ReturnBool)(firstConflictingSeriesLabels)
-
-	if conflict.SecondConflictingSeriesIndex == -1 {
-		return fmt.Errorf(
-			"found %s for the match group %s on the %s side of the operation at timestamp %s",
-			conflict.Description,
-			groupLabels,
-			side,
-			timestamp.Time(conflict.Timestamp).Format(time.RFC3339Nano),
-		)
-	}
-
-	secondConflictingSeriesLabels := sourceSeriesMetadata[conflict.SecondConflictingSeriesIndex].Labels
-
-	return fmt.Errorf(
-		"found %s for the match group %s on the %s side of the operation at timestamp %s: %s and %s",
-		conflict.Description,
-		groupLabels,
-		side,
-		timestamp.Time(conflict.Timestamp).Format(time.RFC3339Nano),
-		firstConflictingSeriesLabels,
-		secondConflictingSeriesLabels,
-	)
+	return formatConflictError(conflict.FirstConflictingSeriesIndex, conflict.SecondConflictingSeriesIndex, conflict.Description, conflict.Timestamp, sourceSeriesMetadata, side, b.VectorMatching, b.Op, b.ReturnBool)
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) Close() {
