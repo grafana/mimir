@@ -1473,10 +1473,9 @@ load 6m
   left_side_b{env="test", pod="a"} _ _ 7 8
   right_side{env="test", pod="a"}  2 2 7 7
 
-# FIXME: MQE currently does not correctly handle this case.
-#eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == ignoring(env) right_side
-#  left_side_a{pod="a"} _ 2 _ _
-#  left_side_b{pod="a"} _ _ 7 _
+eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == ignoring(env) right_side
+  left_side_a{pod="a"} _ 2 _ _
+  left_side_b{pod="a"} _ _ 7 _
 
 eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == bool ignoring(env) right_side
   {pod="a"} 0 1 1 0

@@ -5,9 +5,11 @@ package binops
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -80,6 +82,43 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 		lb.Del(vectorMatching.MatchingLabels...)
 		return lb.Labels()
 	}
+}
+
+func formatConflictError(
+	firstConflictingSeriesIndex int,
+	secondConflictingSeriesIndex int,
+	description string,
+	ts int64,
+	sourceSeriesMetadata []types.SeriesMetadata,
+	side string,
+	vectorMatching parser.VectorMatching,
+	op parser.ItemType,
+	returnBool bool,
+) error {
+	firstConflictingSeriesLabels := sourceSeriesMetadata[firstConflictingSeriesIndex].Labels
+	groupLabels := groupLabelsFunc(vectorMatching, op, returnBool)(firstConflictingSeriesLabels)
+
+	if secondConflictingSeriesIndex == -1 {
+		return fmt.Errorf(
+			"found %s for the match group %s on the %s side of the operation at timestamp %s",
+			description,
+			groupLabels,
+			side,
+			timestamp.Time(ts).Format(time.RFC3339Nano),
+		)
+	}
+
+	secondConflictingSeriesLabels := sourceSeriesMetadata[secondConflictingSeriesIndex].Labels
+
+	return fmt.Errorf(
+		"found %s for the match group %s on the %s side of the operation at timestamp %s: %s and %s",
+		description,
+		groupLabels,
+		side,
+		timestamp.Time(ts).Format(time.RFC3339Nano),
+		firstConflictingSeriesLabels,
+		secondConflictingSeriesLabels,
+	)
 }
 
 // filterSeries returns data filtered based on the mask provided.

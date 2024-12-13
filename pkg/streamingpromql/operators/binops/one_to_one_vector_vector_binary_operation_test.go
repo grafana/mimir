@@ -230,8 +230,8 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 		"single output series": {
 			series: []*oneToOneBinaryOperationOutputSeries{
 				{
-					leftSeriesIndices:  []int{4},
-					rightSeriesIndices: []int{1},
+					leftSeriesIndices: []int{4},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
 				},
 			},
 
@@ -241,12 +241,12 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 		"two output series, both with one input series, read from both sides in same order and already sorted correctly": {
 			series: []*oneToOneBinaryOperationOutputSeries{
 				{
-					leftSeriesIndices:  []int{1},
-					rightSeriesIndices: []int{1},
+					leftSeriesIndices: []int{1},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
 				},
 				{
-					leftSeriesIndices:  []int{2},
-					rightSeriesIndices: []int{2},
+					leftSeriesIndices: []int{2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
 				},
 			},
 
@@ -256,12 +256,12 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 		"two output series, both with one input series, read from both sides in same order but sorted incorrectly": {
 			series: []*oneToOneBinaryOperationOutputSeries{
 				{
-					leftSeriesIndices:  []int{2},
-					rightSeriesIndices: []int{2},
+					leftSeriesIndices: []int{2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
 				},
 				{
-					leftSeriesIndices:  []int{1},
-					rightSeriesIndices: []int{1},
+					leftSeriesIndices: []int{1},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
 				},
 			},
 
@@ -271,12 +271,12 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 		"two output series, both with one input series, read from both sides in different order": {
 			series: []*oneToOneBinaryOperationOutputSeries{
 				{
-					leftSeriesIndices:  []int{1},
-					rightSeriesIndices: []int{2},
+					leftSeriesIndices: []int{1},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
 				},
 				{
-					leftSeriesIndices:  []int{2},
-					rightSeriesIndices: []int{1},
+					leftSeriesIndices: []int{2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
 				},
 			},
 
@@ -286,12 +286,12 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 		"two output series, both with multiple input series": {
 			series: []*oneToOneBinaryOperationOutputSeries{
 				{
-					leftSeriesIndices:  []int{1, 2},
-					rightSeriesIndices: []int{0, 3},
+					leftSeriesIndices: []int{1, 2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{0, 3}},
 				},
 				{
-					leftSeriesIndices:  []int{0, 3},
-					rightSeriesIndices: []int{1, 2},
+					leftSeriesIndices: []int{0, 3},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1, 2}},
 				},
 			},
 
@@ -301,16 +301,16 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 		"multiple output series, both with one input series, read from both sides in same order and already sorted correctly": {
 			series: []*oneToOneBinaryOperationOutputSeries{
 				{
-					leftSeriesIndices:  []int{1},
-					rightSeriesIndices: []int{1},
+					leftSeriesIndices: []int{1},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
 				},
 				{
-					leftSeriesIndices:  []int{2},
-					rightSeriesIndices: []int{2},
+					leftSeriesIndices: []int{2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
 				},
 				{
-					leftSeriesIndices:  []int{3},
-					rightSeriesIndices: []int{3},
+					leftSeriesIndices: []int{3},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{3}},
 				},
 			},
 
@@ -320,16 +320,16 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 		"multiple output series, both with one input series, read from both sides in same order but sorted incorrectly": {
 			series: []*oneToOneBinaryOperationOutputSeries{
 				{
-					leftSeriesIndices:  []int{2},
-					rightSeriesIndices: []int{2},
+					leftSeriesIndices: []int{2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
 				},
 				{
-					leftSeriesIndices:  []int{3},
-					rightSeriesIndices: []int{3},
+					leftSeriesIndices: []int{3},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{3}},
 				},
 				{
-					leftSeriesIndices:  []int{1},
-					rightSeriesIndices: []int{1},
+					leftSeriesIndices: []int{1},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
 				},
 			},
 
@@ -339,16 +339,16 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 		"multiple output series, both with one input series, read from both sides in different order": {
 			series: []*oneToOneBinaryOperationOutputSeries{
 				{
-					leftSeriesIndices:  []int{1},
-					rightSeriesIndices: []int{2},
+					leftSeriesIndices: []int{1},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
 				},
 				{
-					leftSeriesIndices:  []int{3},
-					rightSeriesIndices: []int{3},
+					leftSeriesIndices: []int{3},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{3}},
 				},
 				{
-					leftSeriesIndices:  []int{2},
-					rightSeriesIndices: []int{1},
+					leftSeriesIndices: []int{2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
 				},
 			},
 
@@ -358,16 +358,16 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 		"multiple output series, with multiple input series each": {
 			series: []*oneToOneBinaryOperationOutputSeries{
 				{
-					leftSeriesIndices:  []int{4, 5, 10},
-					rightSeriesIndices: []int{2, 20},
+					leftSeriesIndices: []int{4, 5, 10},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2, 20}},
 				},
 				{
-					leftSeriesIndices:  []int{2, 4, 15},
-					rightSeriesIndices: []int{3, 5, 50},
+					leftSeriesIndices: []int{2, 4, 15},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{3, 5, 50}},
 				},
 				{
-					leftSeriesIndices:  []int{3, 1},
-					rightSeriesIndices: []int{1, 40},
+					leftSeriesIndices: []int{3, 1},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1, 40}},
 				},
 			},
 
@@ -377,20 +377,20 @@ func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 		"multiple output series which depend on the same input series": {
 			series: []*oneToOneBinaryOperationOutputSeries{
 				{
-					leftSeriesIndices:  []int{1},
-					rightSeriesIndices: []int{2},
+					leftSeriesIndices: []int{1},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
 				},
 				{
-					leftSeriesIndices:  []int{1},
-					rightSeriesIndices: []int{1},
+					leftSeriesIndices: []int{1},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
 				},
 				{
-					leftSeriesIndices:  []int{2},
-					rightSeriesIndices: []int{2},
+					leftSeriesIndices: []int{2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{2}},
 				},
 				{
-					leftSeriesIndices:  []int{2},
-					rightSeriesIndices: []int{1},
+					leftSeriesIndices: []int{2},
+					rightSide:         &oneToOneBinaryOperationRightSide{rightSeriesIndices: []int{1}},
 				},
 			},
 
