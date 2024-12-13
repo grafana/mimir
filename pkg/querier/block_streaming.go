@@ -281,7 +281,6 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 	if err != nil {
 		return translateReceivedError(err)
 	}
-	defer msg.FreeBuffer()
 
 	estimate := msg.GetStreamingChunksEstimate()
 	msg.FreeBuffer()
