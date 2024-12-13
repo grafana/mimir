@@ -346,6 +346,6 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // - https://github.com/grafana/franz-go/pull/4
 replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937
 
-// Pin Google GRPC to v1.68.1 as v1.66.0 has API changes and also potentially performance regressions.
+// Pin Google GRPC to v1.69.0 as v1.66.0 has API changes and also potentially performance regressions.
 // Following https://github.com/grafana/dskit/pull/581
-replace google.golang.org/grpc => google.golang.org/grpc v1.68.1
+replace google.golang.org/grpc => google.golang.org/grpc v1.69.0
