@@ -687,11 +687,12 @@ func TestValidUTF8Message(t *testing.T) {
 			body:                      []byte("valid message"),
 			containsNonUTF8Characters: false,
 		},
-		"message containing only utf8 characters retruns no error": {
+		"message containing only UTF8 characters returns no error": {
 			body:                      []byte("\n\ufffd\u0016\n\ufffd\u0002\n\u001D\n\u0011container.runtime\u0012\b\n\u0006docker\n'\n\u0012container.h"),
 			containsNonUTF8Characters: false,
 		},
-		"message containing non-utf8 character returns an error": {
+		"message containing non-UTF8 character returns an error": {
+			// \xf6 and \xd3 are not valid UTF8 characters.
 			body:                      []byte("\n\xf6\x1a\n\xd3\x02\n\x1d\n\x11container.runtime\x12\x08\n\x06docker\n'\n\x12container.h"),
 			containsNonUTF8Characters: true,
 		},

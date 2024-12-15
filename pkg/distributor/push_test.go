@@ -1250,7 +1250,8 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 				Headers: []*httpgrpc.Header{
 					{Key: "Content-Type", Values: []string{"application/json"}},
 				},
-				Url:  "/otlp",
+				Url: "/otlp",
+				// \xf6 and \xd3 are not valid UTF8 characters, and they should be replaced with \UFFFD in the output.
 				Body: []byte("\n\xf6\x16\n\xd3\x02\n\x1d\n\x11container.runtime\x12\x08\n\x06docker\n'\n\x12container.h"),
 			},
 			expectedResponse: &httpgrpc.HTTPResponse{Code: 400,
