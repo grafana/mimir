@@ -2987,6 +2987,12 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ruler.query-frontend.grpc-client-config.tls-server-name string
     	Override the expected name on the server certificate.
+  -ruler.query-frontend.max-retries int
+    	Maximum number of retries for a single request. (default 3)
+  -ruler.query-frontend.max-retry-backoff duration
+    	Maximum backoff duration for retries. (default 2s)
+  -ruler.query-frontend.min-retry-backoff duration
+    	Minimum backoff duration for retries. (default 100ms)
   -ruler.query-frontend.query-result-response-format string
     	Format to use when retrieving query results from query-frontends. Supported values: json, protobuf (default "protobuf")
   -ruler.query-stats-enabled

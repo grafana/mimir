@@ -12957,6 +12957,36 @@
               "fieldType": "string"
             },
             {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Maximum number of retries for a single request.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3,
+              "fieldFlag": "ruler.query-frontend.max-retries",
+              "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "min_retry_backoff",
+              "required": false,
+              "desc": "Minimum backoff duration for retries.",
+              "fieldValue": null,
+              "fieldDefaultValue": 100000000,
+              "fieldFlag": "ruler.query-frontend.min-retry-backoff",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "max_retry_backoff",
+              "required": false,
+              "desc": "Maximum backoff duration for retries.",
+              "fieldValue": null,
+              "fieldDefaultValue": 2000000000,
+              "fieldFlag": "ruler.query-frontend.max-retry-backoff",
+              "fieldType": "duration"
+            },
+            {
               "kind": "block",
               "name": "grpc_client_config",
               "required": false,
