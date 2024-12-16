@@ -2096,6 +2096,18 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.address
   [address: <string> | default = ""]
 
+  # Maximum number of retries for a single request.
+  # CLI flag: -ruler.query-frontend.max-retries
+  [max_retries: <int> | default = 3]
+
+  # Minimum backoff duration for retries.
+  # CLI flag: -ruler.query-frontend.min-retry-backoff
+  [min_retry_backoff: <duration> | default = 100ms]
+
+  # Maximum backoff duration for retries.
+  # CLI flag: -ruler.query-frontend.max-retry-backoff
+  [max_retry_backoff: <duration> | default = 2s]
+
   # Configures the gRPC client used to communicate between the rulers and
   # query-frontends.
   # The CLI flags prefix for this block configuration is:
