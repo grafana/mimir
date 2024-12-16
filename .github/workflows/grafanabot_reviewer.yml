@@ -1,7 +1,4 @@
-# Auto-merge as documented in official Github docs
-# https://docs.github.com/en/code-security/dependabot/working-with-dependabot/automating-dependabot-with-github-actions
-
-name: Auto-review Dependabot PRs
+name: Auto-review Grafanabot PRs
 on: pull_request_target
 
 permissions:
