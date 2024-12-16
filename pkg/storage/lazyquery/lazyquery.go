@@ -61,6 +61,9 @@ func (l LazyQuerier) Select(ctx context.Context, selectSorted bool, params *stor
 }
 
 func copyParams(params *storage.SelectHints) *storage.SelectHints {
+	if params == nil {
+		return nil
+	}
 	copiedParams := *params
 	copiedParams.Grouping = slices.Clone(params.Grouping)
 
