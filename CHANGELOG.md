@@ -30,6 +30,7 @@
 ### Documentation
 
 * [CHANGE] Add production tips related to cache size, heavy multi-tenancy and latency spikes. #9978
+* [ENHANCEMENT] Update `MimirAutoscalerNotActive` and `MimirAutoscalerKedaFailing` runbooks, with an instruction to check whether Prometheus has enough CPU allocated. #10257
 
 ### Tools
 
