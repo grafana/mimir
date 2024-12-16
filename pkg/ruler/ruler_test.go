@@ -1939,7 +1939,7 @@ func TestFilterRuleGroupsByNotMissing(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			logger := log.NewNopLogger()
 
-			actual := filterRuleGroupsByNotMissing(testData.configs, testData.missing, logger)
+			actual := FilterRuleGroupsByNotMissing(testData.configs, testData.missing, logger)
 			assert.Equal(t, testData.expected, actual)
 		})
 	}

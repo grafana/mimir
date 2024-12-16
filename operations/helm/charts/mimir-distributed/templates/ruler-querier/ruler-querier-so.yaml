@@ -31,13 +31,16 @@ spec:
       {{- if .Values.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}
-      ignoreNullValues: {{ .Values.kedaAutoscaling.ignoreNullValues }}
-      unsafeSsl: {{ .Values.kedaAutoscaling.ignoreNullValues }}
+      ignoreNullValues: "{{ .Values.kedaAutoscaling.ignoreNullValues }}"
+      unsafeSsl: "{{ .Values.kedaAutoscaling.unsafeSsl }}"
+      {{- if .Values.kedaAutoscaling.authentication.enabled }}
+      authModes: "{{ .Values.kedaAutoscaling.authentication.authModes }}"
+      {{- end }}
     name: cortex_querier_hpa_default
     type: prometheus
     {{- if .Values.kedaAutoscaling.authentication.enabled }}
     authenticationRef:
-      name: {{ include "mimir.resourceName" (dict "ctx" .) }}
+      name: keda-triggger-auth
     {{- end }}
   - metadata:
       query: sum(rate(cortex_querier_request_duration_seconds_sum{container="ruler-querier",namespace="{{ .Release.Namespace }}"}[1m]))
@@ -46,13 +49,16 @@ spec:
       {{- if .Values.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}
-      ignoreNullValues: {{ .Values.kedaAutoscaling.ignoreNullValues }}
-      unsafeSsl: {{ .Values.kedaAutoscaling.ignoreNullValues }}
+      ignoreNullValues: "{{ .Values.kedaAutoscaling.ignoreNullValues }}"
+      unsafeSsl: "{{ .Values.kedaAutoscaling.unsafeSsl }}"
+      {{- if .Values.kedaAutoscaling.authentication.enabled }}
+      authModes: "{{ .Values.kedaAutoscaling.authentication.authModes }}"
+      {{- end }}
     name: cortex_querier_hpa_default_requests_duration
     type: prometheus
     {{- if .Values.kedaAutoscaling.authentication.enabled }}
     authenticationRef:
-      name: {{ include "mimir.resourceName" (dict "ctx" .) }}
+      name: keda-triggger-auth
     {{- end }}
 {{- end }}
 {{- end }}

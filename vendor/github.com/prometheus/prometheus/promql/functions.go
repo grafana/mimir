@@ -465,15 +465,15 @@ func funcSortByLabelDesc(vals []parser.Value, args parser.Expressions, enh *Eval
 	return vals[0].(Vector), nil
 }
 
-// === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
-func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
-	vec := vals[0].(Vector)
-	minVal := vals[1].(Vector)[0].F
-	maxVal := vals[2].(Vector)[0].F
+func clamp(vec Vector, minVal, maxVal float64, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	if maxVal < minVal {
 		return enh.Out, nil
 	}
 	for _, el := range vec {
+		if el.H != nil {
+			// Process only float samples.
+			continue
+		}
 		if !enh.enableDelayedNameRemoval {
 			el.Metric = el.Metric.DropMetricName()
 		}
@@ -486,38 +486,26 @@ func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	return enh.Out, nil
 }
 
+// === clamp(Vector parser.ValueTypeVector, min, max Scalar) (Vector, Annotations) ===
+func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
+	vec := vals[0].(Vector)
+	minVal := vals[1].(Vector)[0].F
+	maxVal := vals[2].(Vector)[0].F
+	return clamp(vec, minVal, maxVal, enh)
+}
+
 // === clamp_max(Vector parser.ValueTypeVector, max Scalar) (Vector, Annotations) ===
 func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
 	maxVal := vals[1].(Vector)[0].F
-	for _, el := range vec {
-		if !enh.enableDelayedNameRemoval {
-			el.Metric = el.Metric.DropMetricName()
-		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   el.Metric,
-			F:        math.Min(maxVal, el.F),
-			DropName: true,
-		})
-	}
-	return enh.Out, nil
+	return clamp(vec, math.Inf(-1), maxVal, enh)
 }
 
 // === clamp_min(Vector parser.ValueTypeVector, min Scalar) (Vector, Annotations) ===
 func funcClampMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	vec := vals[0].(Vector)
 	minVal := vals[1].(Vector)[0].F
-	for _, el := range vec {
-		if !enh.enableDelayedNameRemoval {
-			el.Metric = el.Metric.DropMetricName()
-		}
-		enh.Out = append(enh.Out, Sample{
-			Metric:   el.Metric,
-			F:        math.Max(minVal, el.F),
-			DropName: true,
-		})
-	}
-	return enh.Out, nil
+	return clamp(vec, minVal, math.Inf(+1), enh)
 }
 
 // === round(Vector parser.ValueTypeVector, toNearest=1 Scalar) (Vector, Annotations) ===
@@ -1312,7 +1300,7 @@ func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *Ev
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
-			F:        histogramFraction(lower, upper, sample.H),
+			F:        HistogramFraction(lower, upper, sample.H),
 			DropName: true,
 		})
 	}
@@ -1364,7 +1352,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			mb = &metricWithBuckets{sample.Metric, nil}
 			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
 		}
-		mb.buckets = append(mb.buckets, bucket{upperBound, sample.F})
+		mb.buckets = append(mb.buckets, Bucket{upperBound, sample.F})
 	}
 
 	// Now deal with the histograms.
@@ -1386,14 +1374,14 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		}
 		enh.Out = append(enh.Out, Sample{
 			Metric:   sample.Metric,
-			F:        histogramQuantile(q, sample.H),
+			F:        HistogramQuantile(q, sample.H),
 			DropName: true,
 		})
 	}
 
 	for _, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) > 0 {
-			res, forcedMonotonicity, _ := bucketQuantile(q, mb.buckets)
+			res, forcedMonotonicity, _ := BucketQuantile(q, mb.buckets)
 			enh.Out = append(enh.Out, Sample{
 				Metric: mb.metric,
 				F:      res,
@@ -1412,27 +1400,41 @@ func funcResets(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 	floats := vals[0].(Matrix)[0].Floats
 	histograms := vals[0].(Matrix)[0].Histograms
 	resets := 0
-
-	if len(floats) > 1 {
-		prev := floats[0].F
-		for _, sample := range floats[1:] {
-			current := sample.F
-			if current < prev {
-				resets++
-			}
-			prev = current
-		}
+	if len(floats) == 0 && len(histograms) == 0 {
+		return enh.Out, nil
 	}
 
-	if len(histograms) > 1 {
-		prev := histograms[0].H
-		for _, sample := range histograms[1:] {
-			current := sample.H
-			if current.DetectReset(prev) {
+	var prevSample, curSample Sample
+	for iFloat, iHistogram := 0, 0; iFloat < len(floats) || iHistogram < len(histograms); {
+		switch {
+		// Process a float sample if no histogram sample remains or its timestamp is earlier.
+		// Process a histogram sample if no float sample remains or its timestamp is earlier.
+		case iHistogram >= len(histograms) || iFloat < len(floats) && floats[iFloat].T < histograms[iHistogram].T:
+			curSample.F = floats[iFloat].F
+			curSample.H = nil
+			iFloat++
+		case iFloat >= len(floats) || iHistogram < len(histograms) && floats[iFloat].T > histograms[iHistogram].T:
+			curSample.H = histograms[iHistogram].H
+			iHistogram++
+		}
+		// Skip the comparison for the first sample, just initialize prevSample.
+		if iFloat+iHistogram == 1 {
+			prevSample = curSample
+			continue
+		}
+		switch {
+		case prevSample.H == nil && curSample.H == nil:
+			if curSample.F < prevSample.F {
 				resets++
 			}
-			prev = current
+		case prevSample.H != nil && curSample.H == nil, prevSample.H == nil && curSample.H != nil:
+			resets++
+		case prevSample.H != nil && curSample.H != nil:
+			if curSample.H.DetectReset(prevSample.H) {
+				resets++
+			}
 		}
+		prevSample = curSample
 	}
 
 	return append(enh.Out, Sample{F: float64(resets)}), nil
@@ -1441,20 +1443,43 @@ func funcResets(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 // === changes(Matrix parser.ValueTypeMatrix) (Vector, Annotations) ===
 func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) (Vector, annotations.Annotations) {
 	floats := vals[0].(Matrix)[0].Floats
+	histograms := vals[0].(Matrix)[0].Histograms
 	changes := 0
-
-	if len(floats) == 0 {
-		// TODO(beorn7): Only histogram values, still need to add support.
+	if len(floats) == 0 && len(histograms) == 0 {
 		return enh.Out, nil
 	}
 
-	prev := floats[0].F
-	for _, sample := range floats[1:] {
-		current := sample.F
-		if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
-			changes++
+	var prevSample, curSample Sample
+	for iFloat, iHistogram := 0, 0; iFloat < len(floats) || iHistogram < len(histograms); {
+		switch {
+		// Process a float sample if no histogram sample remains or its timestamp is earlier.
+		// Process a histogram sample if no float sample remains or its timestamp is earlier.
+		case iHistogram >= len(histograms) || iFloat < len(floats) && floats[iFloat].T < histograms[iHistogram].T:
+			curSample.F = floats[iFloat].F
+			curSample.H = nil
+			iFloat++
+		case iFloat >= len(floats) || iHistogram < len(histograms) && floats[iFloat].T > histograms[iHistogram].T:
+			curSample.H = histograms[iHistogram].H
+			iHistogram++
 		}
-		prev = current
+		// Skip the comparison for the first sample, just initialize prevSample.
+		if iFloat+iHistogram == 1 {
+			prevSample = curSample
+			continue
+		}
+		switch {
+		case prevSample.H == nil && curSample.H == nil:
+			if curSample.F != prevSample.F && !(math.IsNaN(curSample.F) && math.IsNaN(prevSample.F)) {
+				changes++
+			}
+		case prevSample.H != nil && curSample.H == nil, prevSample.H == nil && curSample.H != nil:
+			changes++
+		case prevSample.H != nil && curSample.H != nil:
+			if !curSample.H.Equals(prevSample.H) {
+				changes++
+			}
+		}
+		prevSample = curSample
 	}
 
 	return append(enh.Out, Sample{F: float64(changes)}), nil
@@ -1565,6 +1590,10 @@ func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) flo
 	}
 
 	for _, el := range vals[0].(Vector) {
+		if el.H != nil {
+			// Ignore histogram sample.
+			continue
+		}
 		t := time.Unix(int64(el.F), 0).UTC()
 		if !enh.enableDelayedNameRemoval {
 			el.Metric = el.Metric.DropMetricName()

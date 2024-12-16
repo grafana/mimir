@@ -28,7 +28,6 @@ import (
 	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -602,7 +601,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 						// Find the lowest sample written. We compact up until that timestamp.
 						writerTimesMx.Lock()
 						for _, ts := range writerTimes {
-							lowestWriterTimeMilli = util_math.Min(lowestWriterTimeMilli, ts)
+							lowestWriterTimeMilli = min(lowestWriterTimeMilli, ts)
 						}
 						writerTimesMx.Unlock()
 

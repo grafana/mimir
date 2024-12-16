@@ -21,8 +21,6 @@ package otlp
 import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
-
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -44,37 +42,4 @@ func otelMetricTypeToPromMetricType(otelMetric pmetric.Metric) mimirpb.MetricMet
 		return mimirpb.HISTOGRAM
 	}
 	return mimirpb.UNKNOWN
-}
-
-func OtelMetricsToMetadata(md pmetric.Metrics, addMetricSuffixes, allowUTF8 bool) []*mimirpb.MetricMetadata {
-	resourceMetricsSlice := md.ResourceMetrics()
-
-	metadataLength := 0
-	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
-		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			metadataLength += scopeMetricsSlice.At(j).Metrics().Len()
-		}
-	}
-
-	var metadata = make([]*mimirpb.MetricMetadata, 0, metadataLength)
-	for i := 0; i < resourceMetricsSlice.Len(); i++ {
-		resourceMetrics := resourceMetricsSlice.At(i)
-		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
-
-		for j := 0; j < scopeMetricsSlice.Len(); j++ {
-			scopeMetrics := scopeMetricsSlice.At(j)
-			for k := 0; k < scopeMetrics.Metrics().Len(); k++ {
-				metric := scopeMetrics.Metrics().At(k)
-				entry := mimirpb.MetricMetadata{
-					Type:             otelMetricTypeToPromMetricType(metric),
-					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", addMetricSuffixes, allowUTF8),
-					Help:             metric.Description(),
-				}
-				metadata = append(metadata, &entry)
-			}
-		}
-	}
-
-	return metadata
 }

@@ -53,7 +53,7 @@ func (c *labelsQueryTTL) ttl(userID string) time.Duration {
 }
 
 func (g DefaultCacheKeyGenerator) LabelValues(r *http.Request) (*GenericQueryCacheKey, error) {
-	labelValuesReq, err := g.codec.DecodeLabelsQueryRequest(r.Context(), r)
+	labelValuesReq, err := g.codec.DecodeLabelsSeriesQueryRequest(r.Context(), r)
 	if err != nil {
 		return nil, err
 	}

@@ -353,6 +353,8 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 		return "map of string to float64", true
 	case reflect.TypeOf(validation.LimitsMap[int]{}).String():
 		return "map of string to int", true
+	case reflect.TypeOf(validation.LimitsMap[string]{}).String():
+		return "map of string to string", true
 	case reflect.TypeOf(&url.URL{}).String():
 		return "url", true
 	case reflect.TypeOf(time.Duration(0)).String():
@@ -439,6 +441,8 @@ func getCustomFieldType(t reflect.Type) (string, bool) {
 		return "map of string to float64", true
 	case reflect.TypeOf(validation.LimitsMap[int]{}).String():
 		return "map of string to int", true
+	case reflect.TypeOf(validation.LimitsMap[string]{}).String():
+		return "map of string to string", true
 	case reflect.TypeOf(&url.URL{}).String():
 		return "url", true
 	case reflect.TypeOf(time.Duration(0)).String():

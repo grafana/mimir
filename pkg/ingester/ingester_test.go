@@ -70,7 +70,6 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -4978,7 +4977,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 
 	for ts := startTimestamp; ts < startTimestamp+(step*int64(numSamplesPerSeries)); ts += step {
 		for o := 0; o < numSeries; o += maxBatchSize {
-			batchSize := util_math.Min(maxBatchSize, numSeries-o)
+			batchSize := min(maxBatchSize, numSeries-o)
 
 			// Generate metrics and samples (1 for each series).
 			metrics := make([][]mimirpb.LabelAdapter, 0, batchSize)

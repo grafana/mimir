@@ -210,6 +210,25 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: ErrInvalidIngestionConcurrencyParams,
 		},
+		"should fail when auto create topic default partitions is lower than 1": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.AutoCreateTopicEnabled = true
+				cfg.KafkaConfig.AutoCreateTopicDefaultPartitions = -100
+			},
+			expectedErr: ErrInvalidAutoCreateTopicParams,
+		},
+		"should pass when auto create topic default partitions is -1 (using Kafka broker's default)": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.AutoCreateTopicEnabled = true
+				cfg.KafkaConfig.AutoCreateTopicDefaultPartitions = -1
+			},
+		},
 	}
 
 	for testName, testData := range tests {

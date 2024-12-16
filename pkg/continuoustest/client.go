@@ -20,7 +20,6 @@ import (
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/instrumentation"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
 const (
@@ -216,7 +215,7 @@ func (c *Client) WriteSeries(ctx context.Context, series []prompb.TimeSeries) (i
 
 	// Honor the batch size.
 	for len(series) > 0 {
-		end := util_math.Min(len(series), c.cfg.WriteBatchSize)
+		end := min(len(series), c.cfg.WriteBatchSize)
 		batch := series[0:end]
 		series = series[end:]
 

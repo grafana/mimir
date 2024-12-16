@@ -519,7 +519,7 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 		// so their content is empty).
 		numRuleGroupsBeforeFiltering := len(rgs)
 		tenantRuleGroups := map[string]rulespb.RuleGroupList{userID: rgs}
-		tenantRuleGroups = filterRuleGroupsByNotMissing(tenantRuleGroups, missing, a.logger)
+		tenantRuleGroups = FilterRuleGroupsByNotMissing(tenantRuleGroups, missing, a.logger)
 
 		var tenantFound bool
 		rgs, tenantFound = tenantRuleGroups[userID]

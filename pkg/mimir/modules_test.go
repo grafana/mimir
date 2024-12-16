@@ -193,6 +193,7 @@ func TestMultiKVSetup(t *testing.T) {
 
 		Distributor: func(t *testing.T, c Config) {
 			require.NotNil(t, c.Distributor.DistributorRing.Common.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Distributor.HATrackerConfig.KVStore.MemberlistKV)
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider)
 		},

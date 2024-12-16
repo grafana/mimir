@@ -478,6 +478,12 @@ lint: check-makefiles
 		"google.golang.org/grpc/metadata.{FromIncomingContext}=google.golang.org/grpc/metadata.ValueFromIncomingContext" \
 		./pkg/... ./cmd/... ./integration/...
 
+	# We don't use topic auto-creation because we don't control the num.partitions.
+	# As a result the topic can be created with the wrong number of partitions.
+	faillint -paths \
+		"github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation}" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;

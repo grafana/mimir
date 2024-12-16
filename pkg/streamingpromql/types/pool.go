@@ -9,16 +9,15 @@ import (
 )
 
 const (
-	maxExpectedSeriesPerResult  = 10_000_000 // Likewise, there's not too much science behind this number: this is the based on examining the largest queries seen at Grafana Labs.
-	seriesPerResultBucketFactor = 2
+	maxExpectedSeriesPerResult = 10_000_000 // There's not too much science behind this number: this is the based on examining the largest queries seen at Grafana Labs.
 )
 
 var (
-	matrixPool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, seriesPerResultBucketFactor, func(size int) promql.Matrix {
+	matrixPool = pool.NewBucketedPool(maxExpectedSeriesPerResult, func(size int) promql.Matrix {
 		return make(promql.Matrix, 0, size)
 	})
 
-	seriesMetadataSlicePool = pool.NewBucketedPool(1, maxExpectedSeriesPerResult, seriesPerResultBucketFactor, func(size int) []SeriesMetadata {
+	seriesMetadataSlicePool = pool.NewBucketedPool(maxExpectedSeriesPerResult, func(size int) []SeriesMetadata {
 		return make([]SeriesMetadata, 0, size)
 	})
 )

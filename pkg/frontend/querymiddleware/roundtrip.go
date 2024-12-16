@@ -140,16 +140,16 @@ type MetricsQueryHandler interface {
 }
 
 // LabelsHandlerFunc is like http.HandlerFunc, but for LabelsQueryHandler.
-type LabelsHandlerFunc func(context.Context, LabelsQueryRequest) (Response, error)
+type LabelsHandlerFunc func(context.Context, LabelsSeriesQueryRequest) (Response, error)
 
 // Do implements LabelsQueryHandler.
-func (q LabelsHandlerFunc) Do(ctx context.Context, req LabelsQueryRequest) (Response, error) {
+func (q LabelsHandlerFunc) Do(ctx context.Context, req LabelsSeriesQueryRequest) (Response, error) {
 	return q(ctx, req)
 }
 
 // LabelsQueryHandler is like http.Handler, but specifically for Prometheus label names and values calls.
 type LabelsQueryHandler interface {
-	Do(context.Context, LabelsQueryRequest) (Response, error)
+	Do(context.Context, LabelsSeriesQueryRequest) (Response, error)
 }
 
 // MetricsQueryMiddlewareFunc is like http.HandlerFunc, but for MetricsQueryMiddleware.
@@ -273,6 +273,7 @@ func newQueryTripperware(
 		activeSeries := next
 		activeNativeHistogramMetrics := next
 		labels := next
+		series := next
 
 		if cfg.ShardActiveSeriesQueries {
 			activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.UseActiveSeriesDecoder, limits, log)
@@ -289,15 +290,23 @@ func newQueryTripperware(
 			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageTopicOffsetsReader, limits, log, metrics)
 			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageTopicOffsetsReader, limits, log, metrics)
 			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			series = newReadConsistencyRoundTripper(series, ingestStorageTopicOffsetsReader, limits, log, metrics)
 			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReader, limits, log, metrics)
 			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReader, limits, log, metrics)
 		}
 
-		// Look up cache as first thing.
+		// Look up cache as first thing after validation.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
 			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
 		}
+
+		// Validate the request before any processing.
+		queryrange = NewMetricsQueryRequestValidationRoundTripper(codec, queryrange)
+		instant = NewMetricsQueryRequestValidationRoundTripper(codec, instant)
+		labels = NewLabelsQueryRequestValidationRoundTripper(codec, labels)
+		series = NewLabelsQueryRequestValidationRoundTripper(codec, series)
+		cardinality = NewCardinalityQueryRequestValidationRoundTripper(cardinality)
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
@@ -313,6 +322,8 @@ func newQueryTripperware(
 				return activeNativeHistogramMetrics.RoundTrip(r)
 			case IsLabelsQuery(r.URL.Path):
 				return labels.RoundTrip(r)
+			case IsSeriesQuery(r.URL.Path):
+				return series.RoundTrip(r)
 			case IsRemoteReadQuery(r.URL.Path):
 				return remoteRead.RoundTrip(r)
 			default:

@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -203,6 +204,7 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 		requestPath         string
 		requestMethod       string
 		backends            []mockedBackend
+		backendConfig       map[string]*BackendConfig
 		preferredBackendIdx int
 		expectedStatus      int
 		expectedRes         string
@@ -323,6 +325,29 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			expectedStatus: 200,
 			expectedRes:    querySingleMetric1,
 		},
+		"adds request headers to specific backend": {
+			requestPath:         "/api/v1/query",
+			requestMethod:       http.MethodGet,
+			preferredBackendIdx: 0,
+			backendConfig: map[string]*BackendConfig{
+				"0": {
+					RequestHeaders: map[string][]string{
+						"X-Test-Header": {"test-value"},
+					},
+				},
+			},
+			backends: []mockedBackend{
+				{handler: func(rw http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, r.Header.Get("X-Test-Header"), "test-value")
+					rw.WriteHeader(http.StatusOK)
+				}},
+				{handler: func(rw http.ResponseWriter, r *http.Request) {
+					assert.Empty(t, r.Header.Get("X-Test-Header"))
+					rw.WriteHeader(http.StatusOK)
+				}},
+			},
+			expectedStatus: http.StatusOK,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -341,6 +366,7 @@ func Test_Proxy_RequestsForwarding(t *testing.T) {
 			cfg := ProxyConfig{
 				BackendEndpoints:                   strings.Join(backendURLs, ","),
 				PreferredBackend:                   strconv.Itoa(testData.preferredBackendIdx),
+				parsedBackendConfig:                testData.backendConfig,
 				ServerHTTPServiceAddress:           "localhost",
 				ServerHTTPServicePort:              0,
 				ServerGRPCServiceAddress:           "localhost",
@@ -669,6 +695,130 @@ func TestProxyHTTPGRPC(t *testing.T) {
 		assert.Equal(t, int32(200), res.Code)
 		assert.Equal(t, querySingleMetric1, string(res.Body))
 	})
+}
+
+func Test_NewProxy_BackendConfigPath(t *testing.T) {
+	// Helper to create a temporary file with content
+	createTempFile := func(t *testing.T, content string) string {
+		tmpfile, err := os.CreateTemp("", "backend-config-*.yaml")
+		require.NoError(t, err)
+
+		defer tmpfile.Close()
+
+		_, err = tmpfile.Write([]byte(content))
+		require.NoError(t, err)
+
+		return tmpfile.Name()
+	}
+
+	tests := map[string]struct {
+		configContent  string
+		createFile     bool
+		expectedError  string
+		expectedConfig map[string]*BackendConfig
+	}{
+		"missing file": {
+			createFile:    false,
+			expectedError: "failed to read backend config file (/nonexistent/path): open /nonexistent/path: no such file or directory",
+		},
+		"empty file": {
+			createFile:     true,
+			configContent:  "",
+			expectedConfig: map[string]*BackendConfig(nil),
+		},
+		"invalid YAML structure (not a map)": {
+			createFile:    true,
+			configContent: "- item1\n- item2",
+			expectedError: "failed to parse backend YAML config:",
+		},
+		"valid configuration": {
+			createFile: true,
+			configContent: `
+              backend1:
+                request_headers:
+                  X-Custom-Header: ["value1", "value2"]
+                  Cache-Control: ["no-store"]
+              backend2:
+                request_headers:
+                  Authorization: ["Bearer token123"]
+            `,
+			expectedConfig: map[string]*BackendConfig{
+				"backend1": {
+					RequestHeaders: http.Header{
+						"X-Custom-Header": {"value1", "value2"},
+						"Cache-Control":   {"no-store"},
+					},
+				},
+				"backend2": {
+					RequestHeaders: http.Header{
+						"Authorization": {"Bearer token123"},
+					},
+				},
+			},
+		},
+		"configured backend which doesn't exist": {
+			createFile: true,
+			configContent: `
+              backend1:
+                request_headers:
+                  X-Custom-Header: ["value1", "value2"]
+                  Cache-Control: ["no-store"]
+              backend2:
+                request_headers:
+                  Authorization: ["Bearer token123"]
+              backend3:
+                request_headers:
+                  Authorization: ["Bearer token123"]
+            `,
+			expectedError: "backend3 does not exist in the list of actual backends",
+			expectedConfig: map[string]*BackendConfig{
+				"backend1": {
+					RequestHeaders: http.Header{
+						"X-Custom-Header": {"value1", "value2"},
+						"Cache-Control":   {"no-store"},
+					},
+				},
+				"backend2": {
+					RequestHeaders: http.Header{
+						"Authorization": {"Bearer token123"},
+					},
+				},
+			},
+		},
+	}
+
+	for testName, testCase := range tests {
+		t.Run(testName, func(t *testing.T) {
+			// Base config that's valid except for the backend config path
+			cfg := ProxyConfig{
+				BackendEndpoints:                   "http://backend1:9090,http://backend2:9090",
+				ServerHTTPServiceAddress:           "localhost",
+				ServerHTTPServicePort:              0,
+				ServerGRPCServiceAddress:           "localhost",
+				ServerGRPCServicePort:              0,
+				SecondaryBackendsRequestProportion: 1.0,
+			}
+
+			if !testCase.createFile {
+				cfg.BackendConfigFile = "/nonexistent/path"
+			} else {
+				tmpPath := createTempFile(t, testCase.configContent)
+				cfg.BackendConfigFile = tmpPath
+				defer os.Remove(tmpPath)
+			}
+
+			p, err := NewProxy(cfg, log.NewNopLogger(), testRoutes, nil)
+
+			if testCase.expectedError != "" {
+				assert.ErrorContains(t, err, testCase.expectedError)
+				assert.Nil(t, p)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, p)
+				assert.Equal(t, testCase.expectedConfig, p.cfg.parsedBackendConfig)
+			}
+		})
+	}
 }
 
 func mockQueryResponse(path string, status int, res string) http.HandlerFunc {
