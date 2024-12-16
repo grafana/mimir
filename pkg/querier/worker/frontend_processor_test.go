@@ -344,7 +344,6 @@ func (m mockHandlerFunc) Handle(ctx context.Context, req *httpgrpc.HTTPRequest) 
 }
 
 func TestFrontendProcessor(t *testing.T) {
-	//logger := log.NewNopLogger()
 	logger := log.NewLogfmtLogger(os.Stdout)
 
 	tests := []struct {
