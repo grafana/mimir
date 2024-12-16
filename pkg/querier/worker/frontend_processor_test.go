@@ -431,7 +431,9 @@ func TestFrontendProcessor(t *testing.T) {
 			t.Cleanup(srv.Stop)
 
 			// Create client connection
-			ctx := context.Background()
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+
 			cfg := Config{}
 			flagext.DefaultValues(&cfg)
 			if tc.customizeConfig != nil {
