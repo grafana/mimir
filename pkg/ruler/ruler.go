@@ -638,7 +638,7 @@ func (r *Ruler) loadRuleGroupsToSync(ctx context.Context, configs map[string]rul
 	// cached for a short period of time. This means that some rule groups discovered by listing
 	// the bucket (cached) may no longer exist because deleted in the meanwhile. For this reason,
 	// we filter out any missing rule group, not considering it as an hard error.
-	configs = filterRuleGroupsByNotMissing(configs, missing, r.logger)
+	configs = FilterRuleGroupsByNotMissing(configs, missing, r.logger)
 
 	return configs, nil
 }
@@ -888,11 +888,11 @@ func filterRuleGroupByEnabled(group *rulespb.RuleGroupDesc, recordingEnabled, al
 	return filtered, removedRules
 }
 
-// filterRuleGroupsByNotMissing filters out from the input configs all the rules groups which are in the missing list.
+// FilterRuleGroupsByNotMissing filters out from the input configs all the rules groups which are in the missing list.
 //
 // This function doesn't modify the input configs in place (even if it could) in order to reduce the likelihood of introducing
 // future bugs, in case the rule groups will be cached in memory.
-func filterRuleGroupsByNotMissing(configs map[string]rulespb.RuleGroupList, missing rulespb.RuleGroupList, logger log.Logger) (filtered map[string]rulespb.RuleGroupList) {
+func FilterRuleGroupsByNotMissing(configs map[string]rulespb.RuleGroupList, missing rulespb.RuleGroupList, logger log.Logger) (filtered map[string]rulespb.RuleGroupList) {
 	// Nothing to do if there are no missing rule groups.
 	if len(missing) == 0 {
 		return configs
