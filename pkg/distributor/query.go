@@ -10,8 +10,8 @@ package distributor
 import (
 	"context"
 	"io"
-	"time"
 	"slices"
+	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
