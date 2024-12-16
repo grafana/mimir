@@ -132,14 +132,16 @@ func histogramRate(isCounter, isRate bool, hCount int, hHead []promql.HPoint, hT
 		return nil
 	}
 
-	err = accumulate(hHead)
-	if err != nil {
-		return nil, err
+	if isCounter {
+		err = accumulate(hHead)
+		if err != nil {
+			return nil, err
 
-	}
-	err = accumulate(hTail)
-	if err != nil {
-		return nil, err
+		}
+		err = accumulate(hTail)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if !isCounter && (firstPoint.H.CounterResetHint != histogram.GaugeType || lastPoint.H.CounterResetHint != histogram.GaugeType) {
@@ -150,11 +152,8 @@ func histogramRate(isCounter, isRate bool, hCount int, hHead []promql.HPoint, hT
 		delta = delta.CopyToSchema(desiredSchema)
 	}
 
-	if isCounter {
-		val := calculateHistogramRate(isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
-		return val, err
-	}
-	return delta, err
+	val := calculateHistogramRate(isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
+	return val, err
 }
 
 func floatRate(isCounter, isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64) float64 {
