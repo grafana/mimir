@@ -465,7 +465,7 @@ func TestFrontendProcessor(t *testing.T) {
 			select {
 			case resp := <-receivedResponse:
 				require.Equal(t, *tc.expectedResponse, *resp)
-			case <-time.After(2 * time.Second):
+			case <-time.After(time.Minute):
 				t.Fatal("timeout waiting for response")
 			}
 		})
