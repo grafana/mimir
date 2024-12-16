@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -42,7 +43,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
 

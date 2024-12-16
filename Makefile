@@ -443,7 +443,7 @@ lint: check-makefiles
 	# Note that we don't automatically suggest replacing sort.Float64s() with slices.Sort() as the documentation for slices.Sort()
 	# at the time of writing warns that slices.Sort() may not correctly handle NaN values.
 	faillint -paths \
-		"sort.{Strings,Ints}=golang.org/x/exp/slices.Sort" \
+		"sort.{Strings,Ints}=slices.Sort" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Don't use generic ring.Read operation.
