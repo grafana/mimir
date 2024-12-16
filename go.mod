@@ -88,7 +88,7 @@ require (
 	go.opentelemetry.io/otel v1.32.0
 	go.opentelemetry.io/otel/trace v1.32.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/exp v0.0.0-20241204233417-43b7b7cde48d
+	golang.org/x/exp v0.0.0-20241215155358-4a5509556b9e
 	golang.org/x/term v0.27.0
 	google.golang.org/api v0.209.0
 	google.golang.org/protobuf v1.35.2
