@@ -11,6 +11,7 @@ import (
 	"context"
 	"io"
 	"time"
+	"slices"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
@@ -21,7 +22,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"golang.org/x/exp/slices"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"

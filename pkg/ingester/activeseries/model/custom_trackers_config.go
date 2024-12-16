@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"strings"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
-	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
 

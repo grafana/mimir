@@ -5,11 +5,11 @@ package querymiddleware
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/prometheus/promql/parser"
-	"golang.org/x/exp/slices"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 )
