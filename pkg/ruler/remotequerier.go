@@ -50,8 +50,6 @@ const (
 
 	statusError = "error"
 
-	maxRequestRetries = 3
-
 	formatJSON     = "json"
 	formatProtobuf = "protobuf"
 )
@@ -62,6 +60,11 @@ var allFormats = []string{formatJSON, formatProtobuf}
 type QueryFrontendConfig struct {
 	// Address is the address of the query-frontend to connect to.
 	Address string `yaml:"address"`
+
+	// Retry configuration.
+	MaxRetries      int           `yaml:"max_retries"`
+	MinRetryBackoff time.Duration `yaml:"min_retry_backoff"`
+	MaxRetryBackoff time.Duration `yaml:"max_retry_backoff"`
 
 	// GRPCClientConfig contains gRPC specific config options.
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the rulers and query-frontends."`
@@ -75,6 +78,9 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 		"",
 		"GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) "+
 			"to enable client side load balancing.")
+	f.IntVar(&c.MaxRetries, "ruler.query-frontend.max-retries", 3, "Maximum number of retries for a single request.")
+	f.DurationVar(&c.MinRetryBackoff, "ruler.query-frontend.min-retry-backoff", 100*time.Millisecond, "Minimum backoff duration for retries.")
+	f.DurationVar(&c.MaxRetryBackoff, "ruler.query-frontend.max-retry-backoff", 2*time.Second, "Maximum backoff duration for retries.")
 
 	c.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
@@ -115,6 +121,7 @@ type Middleware func(ctx context.Context, req *httpgrpc.HTTPRequest) error
 // RemoteQuerier executes read operations against a httpgrpc.HTTPClient.
 type RemoteQuerier struct {
 	client                             httpgrpc.HTTPClient
+	retryConfig                        backoff.Config
 	timeout                            time.Duration
 	middlewares                        []Middleware
 	promHTTPPrefix                     string
@@ -129,6 +136,7 @@ var protobufDecoderInstance = protobufDecoder{}
 // NewRemoteQuerier creates and initializes a new RemoteQuerier instance.
 func NewRemoteQuerier(
 	client httpgrpc.HTTPClient,
+	retryConfig backoff.Config,
 	timeout time.Duration,
 	preferredQueryResultResponseFormat string,
 	prometheusHTTPPrefix string,
@@ -137,6 +145,7 @@ func NewRemoteQuerier(
 ) *RemoteQuerier {
 	return &RemoteQuerier{
 		client:                             client,
+		retryConfig:                        retryConfig,
 		timeout:                            timeout,
 		middlewares:                        middlewares,
 		promHTTPPrefix:                     prometheusHTTPPrefix,
@@ -309,12 +318,7 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPRequest, logger log.Logger) (*httpgrpc.HTTPResponse, error) {
 	// Ongoing request may be cancelled during evaluation due to some transient error or server shutdown,
 	// so we'll keep retrying until we get a successful response or backoff is terminated.
-	retryConfig := backoff.Config{
-		MinBackoff: 100 * time.Millisecond,
-		MaxBackoff: 2 * time.Second,
-		MaxRetries: maxRequestRetries,
-	}
-	retry := backoff.New(ctx, retryConfig)
+	retry := backoff.New(ctx, q.retryConfig)
 
 	for {
 		resp, err := q.client.Handle(ctx, req)
