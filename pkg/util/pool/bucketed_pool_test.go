@@ -59,7 +59,7 @@ func TestBucketedPool_HappyPath(t *testing.T) {
 		},
 		{
 			size:        20,
-			expectedCap: 20, // Max size is 19, so we expect to get a slice with the size requested (20), not 32 (the next power of two).
+			expectedCap: 32, // Although max size is 19, we expect to get a slice with the next power of two back. This slice would not have come from a bucket.
 		},
 	}
 
@@ -120,7 +120,7 @@ func TestBucketedPool_PutSliceLargerThanMaximum(t *testing.T) {
 	pool.Put(s1)
 	s2 := pool.Get(101)[:101]
 	require.NotSame(t, &s1[0], &s2[0])
-	require.Equal(t, 101, cap(s2))
+	require.Equal(t, 128, cap(s2))
 }
 
 func TestBucketedPool_GetSizeCloseToMax(t *testing.T) {
@@ -131,7 +131,7 @@ func TestBucketedPool_GetSizeCloseToMax(t *testing.T) {
 	s := pool.Get(86401)
 
 	// Check that we still get a slice with the correct size.
-	require.Equal(t, 86401, cap(s))
+	require.Equal(t, 131072, cap(s))
 	require.Len(t, s, 0)
 }
 
