@@ -36,7 +36,7 @@ require (
 	github.com/prometheus/alertmanager v0.27.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/prometheus/client_model v0.6.1
-	github.com/prometheus/common v0.60.1
+	github.com/prometheus/common v0.61.0
 	github.com/prometheus/prometheus v1.99.0
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
@@ -49,7 +49,7 @@ require (
 	golang.org/x/net v0.32.0
 	golang.org/x/sync v0.10.0
 	golang.org/x/time v0.8.0
-	google.golang.org/grpc v1.67.1
+	google.golang.org/grpc v1.68.1
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -75,7 +75,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.22
 	github.com/prometheus/procfs v0.15.1
 	github.com/shirou/gopsutil/v4 v4.24.11
-	github.com/thanos-io/objstore v0.0.0-20241128114755-8d266b990716
+	github.com/thanos-io/objstore v0.0.0-20241216182809-925be8281e0c
 	github.com/tjhop/slog-gokit v0.1.2
 	github.com/twmb/franz-go v1.18.0
 	github.com/twmb/franz-go/pkg/kadm v1.14.0
@@ -285,7 +285,7 @@ require (
 )
 
 // Using a fork of Prometheus with Mimir-specific changes.
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20241210170917-0a0a41616520
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20241216154007-6ce3249dcbb8
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
