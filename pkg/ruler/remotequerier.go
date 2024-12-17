@@ -62,9 +62,9 @@ type QueryFrontendConfig struct {
 	Address string `yaml:"address"`
 
 	// Retry configuration.
-	MaxRetries      int           `yaml:"max_retries"`
-	MinRetryBackoff time.Duration `yaml:"min_retry_backoff"`
-	MaxRetryBackoff time.Duration `yaml:"max_retry_backoff"`
+	MaxRetries      int           `yaml:"max_retries" category:"experimental"`
+	MinRetryBackoff time.Duration `yaml:"min_retry_backoff" category:"experimental"`
+	MaxRetryBackoff time.Duration `yaml:"max_retry_backoff" category:"experimental"`
 
 	// GRPCClientConfig contains gRPC specific config options.
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the rulers and query-frontends."`
@@ -322,6 +322,7 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 
 	for {
 		resp, err := q.client.Handle(ctx, req)
+
 		if err == nil {
 			// Responses with status codes 4xx should always be considered erroneous.
 			// These errors shouldn't be retried because it is expected that

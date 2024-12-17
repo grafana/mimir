@@ -737,12 +737,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of rules per rule group by namespace. Value is a map, where each key is the namespace and value is the number of rules allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rules specified has the same meaning as -ruler.max-rules-per-rule-group, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rules-per-rule-group. (default {})
   -ruler.query-frontend.address string
     	GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) to enable client side load balancing.
-  -ruler.query-frontend.max-retries int
-    	Maximum number of retries for a single request. (default 3)
-  -ruler.query-frontend.max-retry-backoff duration
-    	Maximum backoff duration for retries. (default 2s)
-  -ruler.query-frontend.min-retry-backoff duration
-    	Minimum backoff duration for retries. (default 100ms)
   -ruler.query-frontend.query-result-response-format string
     	Format to use when retrieving query results from query-frontends. Supported values: json, protobuf (default "protobuf")
   -ruler.recording-rules-evaluation-enabled

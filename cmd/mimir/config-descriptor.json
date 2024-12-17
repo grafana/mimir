@@ -12964,7 +12964,8 @@
               "fieldValue": null,
               "fieldDefaultValue": 3,
               "fieldFlag": "ruler.query-frontend.max-retries",
-              "fieldType": "int"
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -12974,7 +12975,8 @@
               "fieldValue": null,
               "fieldDefaultValue": 100000000,
               "fieldFlag": "ruler.query-frontend.min-retry-backoff",
-              "fieldType": "duration"
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -12984,7 +12986,8 @@
               "fieldValue": null,
               "fieldDefaultValue": 2000000000,
               "fieldFlag": "ruler.query-frontend.max-retry-backoff",
-              "fieldType": "duration"
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "block",
