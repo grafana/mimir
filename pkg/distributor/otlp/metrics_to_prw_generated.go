@@ -50,6 +50,7 @@ type Settings struct {
 
 	// Mimir specifics.
 	EnableCreatedTimestampZeroIngestion        bool
+	EnableStartTimeQuietZero                   bool
 	ValidIntervalCreatedTimestampZeroIngestion time.Duration
 }
 
