@@ -64,9 +64,6 @@ func InfluxHandler(
 	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-	// TODO(alexg): mirror otel.go implementation where we do decoding here rather than in influxRequestParser() func?
-	// We may need to do this to get bytesRead of HTTP request to add to a histogram like pushMetrics.ObserveUncompressedBodySize() for otel,
-	// currently only available in influxRequestParser()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		logger := utillog.WithContext(ctx, logger)
