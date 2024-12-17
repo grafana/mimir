@@ -289,6 +289,40 @@ func TestLimitingBucketedPool_UnreasonableSizeRequest(t *testing.T) {
 		"Current memory consumption should remain at 0 after rejected request")
 }
 
+func TestLimitingBucketedPool_MaxExpectedPointsPerSeriesConstantIsPowerOfTwo(t *testing.T) {
+	// Although not strictly required (as the code should handle MaxExpectedPointsPerSeries not being a power of two correctly),
+	// it is best that we keep it as one for now.
+	require.True(t, isPowerOfTwo(MaxExpectedPointsPerSeries), "MaxExpectedPointsPerSeries must be a power of two")
+}
+
+func TestIsPowerOfTwo(t *testing.T) {
+	cases := []struct {
+		input    int
+		expected bool
+	}{
+		{-2, false},
+		{1, true},
+		{2, true},
+		{3, false},
+		{4, true},
+		{5, false},
+		{6, false},
+		{7, false},
+		{8, true},
+		{16, true},
+		{32, true},
+		{1023, false},
+		{1024, true},
+		{1<<12 - 1, false},
+		{1 << 12, true},
+	}
+
+	for _, c := range cases {
+		result := isPowerOfTwo(c.input)
+		require.Equalf(t, c.expected, result, "isPowerOfTwo(%d) should return %v", c.input, c.expected)
+	}
+}
+
 func assertRejectedQueryCount(t *testing.T, reg *prometheus.Registry, expectedRejectionCount int) {
 	expected := fmt.Sprintf(`
 		# TYPE %s counter
