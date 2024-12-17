@@ -75,6 +75,7 @@ The following features are currently experimental:
     - `-ruler-storage.cache.rule-group-enabled`
 - Distributor
   - Influx ingestion
+    - `/api/v1/influx/push` endpoint
     - `-distributor.max-influx-request-size`
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
