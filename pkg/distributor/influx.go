@@ -12,8 +12,8 @@ import (
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/tenant"
 	io2 "github.com/influxdata/influxdb/v2/kit/io"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/distributor/influxpush"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -30,19 +30,14 @@ func parser(ctx context.Context, r *http.Request, maxSize int, _ *util.RequestBu
 	spanLogger.SetTag("content_encoding", r.Header.Get("Content-Encoding"))
 	spanLogger.SetTag("content_length", r.ContentLength)
 
+	// TODO(alexg): need to get bytesRead back to be able to add to metrics/histogram
 	ts, bytesRead, err := influxpush.ParseInfluxLineReader(ctx, r, maxSize)
-	// TODO(alexg): one argument for splitting up the decoding and conversion is to facilitate granular timings
-	// right now since ParseInfluxLineReader() does both
-	// The otel version decodes the whole input and then processes it, the existing Influx code parses each line as it
-	// decodes it.
 	level.Debug(spanLogger).Log(
 		"msg", "decodeAndConvert complete",
 		"bytesRead", bytesRead,
 	)
 	if err != nil {
 		level.Error(logger).Log("err", err.Error())
-		// TODO(alexg): need to pass on the http.StatusBadRequest
-		// http.Error(w, err.Error(), http.StatusBadRequest)
 		return err
 	}
 
@@ -70,11 +65,12 @@ func InfluxHandler(
 	sourceIPs *middleware.SourceIPExtractor,
 	retryCfg RetryConfig,
 	push PushFunc,
-	_ *PushMetrics, // TODO(alexg) add pushMetrics()
-	_ prometheus.Registerer, // TODO(alexg): add reg
+	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-	//TODO(alexg): mirror otel.go implementation where we do decoding here rather than in parser() func?
+	// TODO(alexg): mirror otel.go implementation where we do decoding here rather than in parser() func?
+	// We may need to do this to get bytesRead of HTTP request to add to a histogram like pushMetrics.ObserveUncompressedBodySize() for otel,
+	// currently only available in Influx's parser()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		logger := utillog.WithContext(ctx, logger)
@@ -85,13 +81,20 @@ func InfluxHandler(
 			}
 		}
 
+		tenantID, err := tenant.TenantID(ctx)
+		if err != nil {
+			level.Warn(logger).Log("msg", "unable to obtain tenantID", "err", tryUnwrap(err))
+			return
+		}
+
+		pushMetrics.IncOTLPRequest(tenantID)
+
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
 
 			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
-				// TODO(alexg): Do we even need httpgrpc here?
-				// Check for httpgrpc error, default to client error if parsing failed
+				// Check for httpgrpc error, default to client error if parsing failed.
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
 					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
 				}
@@ -131,7 +134,6 @@ func InfluxHandler(
 				errorMsg string
 			)
 			if st, ok := grpcutil.ErrorToStatus(err); ok {
-				// TODO(alexg): Hmm, still needed?
 				// This code is needed for a correct handling of errors returned by the supplier function.
 				// These errors are created by using the httpgrpc package.
 				httpCode = int(st.Code())
@@ -147,12 +149,7 @@ func InfluxHandler(
 			}
 			if httpCode != 202 {
 				// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
-				msgs := []interface{}{"msg", "detected an error while ingesting Influx metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", err}
-				if httpCode/100 == 4 {
-					// TODO(alexg): what is this?
-					msgs = append(msgs, "insight", true)
-				}
-				level.Error(logger).Log(msgs...)
+				level.Error(logger).Log("msg", "detected an error while ingesting Influx metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", err)
 			}
 			if httpCode < 500 {
 				level.Info(logger).Log("msg", errorMsg, "response_code", httpCode, "err", tryUnwrap(err))

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/user"
 	io2 "github.com/influxdata/influxdb/v2/kit/io"
 	"github.com/stretchr/testify/assert"
 
@@ -137,8 +138,12 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			handler := InfluxHandler(tt.maxRequestSizeBytes, nil, nil, RetryConfig{}, tt.push(t), nil, nil, log.NewNopLogger())
+			handler := InfluxHandler(tt.maxRequestSizeBytes, nil, nil, RetryConfig{}, tt.push(t), nil, log.NewNopLogger())
 			req := httptest.NewRequest("POST", tt.url, bytes.NewReader([]byte(tt.data)))
+			const tenantID = "test"
+			req.Header.Set("X-Scope-OrgID", tenantID)
+			ctx := user.InjectOrgID(context.Background(), tenantID)
+			req = req.WithContext(ctx)
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 			assert.Equal(t, tt.expectedCode, rec.Code)
