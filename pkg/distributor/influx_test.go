@@ -82,8 +82,8 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 				return func(_ context.Context, pushReq *Request) error {
 					req, err := pushReq.WriteRequest()
 					assert.Nil(t, req)
-					// TODO(alexg): assert on specific err
-					// assert.NoError(t, err) // reminder to fix
+					assert.ErrorContains(t, err, "unable to parse")
+					assert.ErrorContains(t, err, "missing field value")
 					return err
 				}
 			},
@@ -99,8 +99,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 				return func(_ context.Context, pushReq *Request) error {
 					req, err := pushReq.WriteRequest()
 					assert.Nil(t, req)
-					// TODO(alexg): assert on specific err
-					// assert.NoError(t, err) // reminder to fix
+					assert.ErrorContains(t, err, "precision supplied is not valid")
 					return err
 				}
 			},
