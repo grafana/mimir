@@ -51,11 +51,11 @@ func (p *BucketedPool[T, E]) Get(size int) T {
 		return nil
 	}
 
-	if uint(size) > p.maxSize {
+	bucketIndex := bits.Len(uint(size - 1))
+	if bucketIndex >= len(p.buckets) {
 		return p.make(size)
 	}
 
-	bucketIndex := bits.Len(uint(size - 1))
 	s := p.buckets[bucketIndex].Get()
 
 	if s == nil {

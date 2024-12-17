@@ -122,3 +122,15 @@ func TestBucketedPool_PutSliceLargerThanMaximum(t *testing.T) {
 	require.NotSame(t, &s1[0], &s2[0])
 	require.Equal(t, 101, cap(s2))
 }
+
+func TestBucketedPool_GetSizeCloseToMax(t *testing.T) {
+	maxSize := 100000
+	pool := NewBucketedPool(uint(maxSize), makeFunc)
+
+	// Request a size that triggers the last bucket boundary.
+	s := pool.Get(86401)
+
+	// Check that we still get a slice with the correct size.
+	require.Equal(t, 86401, cap(s))
+	require.Len(t, s, 0)
+}
