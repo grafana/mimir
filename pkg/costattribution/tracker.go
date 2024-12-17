@@ -42,6 +42,7 @@ type Tracker struct {
 	activeSeriesPerUserAttribution *prometheus.Desc
 	receivedSamplesAttribution     *prometheus.Desc
 	discardedSampleAttribution     *prometheus.Desc
+	failedActiveSeriesDecrement    *prometheus.Desc
 	overflowLabels                 []string
 	obseveredMtx                   sync.RWMutex
 	observed                       map[string]*Observation
@@ -49,6 +50,7 @@ type Tracker struct {
 	state                          TrackerState
 	overflowCounter                *Observation
 	cooldownUntil                  *atomic.Int64
+	totalFailedActiveSeries        *atomic.Float64
 	cooldownDuration               int64
 	logger                         log.Logger
 }
@@ -70,15 +72,16 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 	overflowLabels[len(trackedLabels)+1] = overflowValue
 
 	tracker := &Tracker{
-		userID:           userID,
-		caLabels:         trackedLabels,
-		caLabelMap:       caLabelMap,
-		maxCardinality:   limit,
-		observed:         make(map[string]*Observation),
-		hashBuffer:       make([]byte, 0, 1024),
-		cooldownDuration: int64(cooldown.Seconds()),
-		logger:           logger,
-		overflowLabels:   overflowLabels,
+		userID:                  userID,
+		caLabels:                trackedLabels,
+		caLabelMap:              caLabelMap,
+		maxCardinality:          limit,
+		observed:                make(map[string]*Observation),
+		hashBuffer:              make([]byte, 0, 1024),
+		cooldownDuration:        int64(cooldown.Seconds()),
+		logger:                  logger,
+		overflowLabels:          overflowLabels,
+		totalFailedActiveSeries: atomic.NewFloat64(0),
 	}
 
 	tracker.discardedSampleAttribution = prometheus.NewDesc("cortex_discarded_attributed_samples_total",
@@ -94,7 +97,9 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 	tracker.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",
 		"The total number of active series per user and attribution.", append(trackedLabels, TenantLabel),
 		prometheus.Labels{TrackerLabel: defaultTrackerName})
-
+	tracker.failedActiveSeriesDecrement = prometheus.NewDesc("cortex_ingester_attributed_active_series_failure",
+		"The total number of failed active series decrement per user and tracker.", []string{TenantLabel},
+		prometheus.Labels{TrackerLabel: defaultTrackerName})
 	return tracker
 }
 
@@ -149,11 +154,11 @@ func (t *Tracker) IncrementActiveSeries(lbs labels.Labels, now time.Time) {
 	t.updateCounters(lbs, now.Unix(), 1, 0, 0, nil)
 }
 
-func (t *Tracker) DecrementActiveSeries(lbs labels.Labels, now time.Time) {
+func (t *Tracker) DecrementActiveSeries(lbs labels.Labels) {
 	if t == nil {
 		return
 	}
-	t.updateCounters(lbs, now.Unix(), -1, 0, 0, nil)
+	t.updateCounters(lbs, -1, -1, 0, 0, nil)
 }
 
 func (t *Tracker) Collect(out chan<- prometheus.Metric) {
@@ -182,6 +187,9 @@ func (t *Tracker) Collect(out chan<- prometheus.Metric) {
 			o.discardSamplemtx.Unlock()
 		}
 	}
+	if t.totalFailedActiveSeries.Load() > 0 {
+		out <- prometheus.MustNewConstMetric(t.failedActiveSeriesDecrement, prometheus.CounterValue, t.totalFailedActiveSeries.Load(), t.userID)
+	}
 }
 
 func (t *Tracker) IncrementDiscardedSamples(lbs labels.Labels, value float64, reason string, now time.Time) {
@@ -196,6 +204,13 @@ func (t *Tracker) IncrementReceivedSamples(lbs labels.Labels, value float64, now
 		return
 	}
 	t.updateCounters(lbs, now.Unix(), 0, value, 0, nil)
+}
+
+func (t *Tracker) IncrementActiveSeriesFailure(value float64) {
+	if t == nil {
+		return
+	}
+	t.totalFailedActiveSeries.Add(value)
 }
 
 func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
@@ -248,8 +263,11 @@ func (t *Tracker) handleObservation(stream string, ts int64, activeSeriesIncreme
 			o.discardSamplemtx.Unlock()
 		}
 	} else if len(t.observed) < t.maxCardinality*2 {
-		// Create a new observation for the stream
-		t.createNewObservation(stream, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
+		// If the ts is negative, it means that the method is called from DecrementActiveSeries, when key doesn't exist we should ignore the call
+		// Otherwise create a new observation for the stream
+		if ts >= 0 {
+			t.createNewObservation(stream, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
+		}
 	}
 }
 

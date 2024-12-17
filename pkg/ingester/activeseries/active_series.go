@@ -49,8 +49,9 @@ type ActiveSeries struct {
 	// configMutex protects matchers and lastMatchersUpdate. it used by both matchers and cat
 	configMutex      sync.RWMutex
 	matchers         *asmodel.Matchers
-	cat              *costattribution.Tracker
 	lastConfigUpdate time.Time
+
+	cat *costattribution.Tracker
 
 	// The duration after which series become inactive.
 	// Also used to determine if enough time has passed since configuration reload for valid results.
@@ -67,7 +68,6 @@ type seriesStripe struct {
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
 	// without holding the lock -- hence the atomic).
 	oldestEntryTs                        atomic.Int64
-	cat                                  *costattribution.Tracker
 	mu                                   sync.RWMutex
 	refs                                 map[storage.SeriesRef]seriesEntry
 	active                               uint32   // Number of active entries in this stripe. Only decreased during purge or clear.
@@ -76,6 +76,8 @@ type seriesStripe struct {
 	activeMatchingNativeHistograms       []uint32 // Number of active entries (only native histograms) in this stripe matching each matcher of the configured Matchers.
 	activeNativeHistogramBuckets         uint32   // Number of buckets in active native histogram entries in this stripe. Only decreased during purge or clear.
 	activeMatchingNativeHistogramBuckets []uint32 // Number of buckets in active native histogram entries in this stripe matching each matcher of the configured Matchers.
+
+	cat *costattribution.Tracker
 }
 
 // seriesEntry holds a timestamp for single series.
@@ -87,14 +89,8 @@ type seriesEntry struct {
 	deleted bool // This series was marked as deleted, so before purging we need to remove the refence to it from the deletedSeries.
 }
 
-func NewActiveSeries(
-	asm *asmodel.Matchers,
-	timeout time.Duration,
-	cat *costattribution.Tracker,
-) *ActiveSeries {
-	c := &ActiveSeries{
-		matchers: asm, timeout: timeout, cat: cat,
-	}
+func NewActiveSeries(asm *asmodel.Matchers, timeout time.Duration, cat *costattribution.Tracker) *ActiveSeries {
+	c := &ActiveSeries{matchers: asm, timeout: timeout, cat: cat}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numStripes; i++ {
@@ -112,8 +108,7 @@ func (c *ActiveSeries) CurrentMatcherNames() []string {
 
 func (c *ActiveSeries) ConfigDiffers(ctCfg asmodel.CustomTrackersConfig, caCfg *costattribution.Tracker) bool {
 	currentCTC, currentCAT := c.CurrentConfig()
-	// TODO: I think here to check the pointer is not equal is already enough, if we recreate tracker, it is for a good reason, otherwise, nothing changed
-	return ctCfg.String() != currentCTC.String() || caCfg != currentCAT //|| !costattribution.CompareCALabels(caCfg.CALabels(), currentCAT.CALabels())
+	return ctCfg.String() != currentCTC.String() || caCfg != currentCAT
 }
 
 func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
@@ -137,6 +132,7 @@ func (c *ActiveSeries) CurrentConfig() (asmodel.CustomTrackersConfig, *costattri
 // Pass -1 in numNativeHistogramBuckets if the series is not a native histogram series.
 func (c *ActiveSeries) UpdateSeries(series labels.Labels, ref storage.SeriesRef, now time.Time, numNativeHistogramBuckets int, idx tsdb.IndexReader) {
 	stripeID := ref % numStripes
+
 	created := c.stripes[stripeID].updateSeriesTimestamp(now, series, ref, numNativeHistogramBuckets)
 	if created {
 		if deleted, ok := c.deleted.find(series); ok {
@@ -408,8 +404,6 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 		numNativeHistogramBuckets: numNativeHistogramBuckets,
 	}
 
-	// here if we have a cost attribution label, we can split the serie count based on the value of the label
-	// we also set the reference to the value of the label in the entry, so when remove, we can decrease the counter accordingly
 	s.cat.IncrementActiveSeries(series, time.Unix(0, nowNanos))
 	s.refs[ref] = e
 	return e.nanos, true
@@ -432,11 +426,7 @@ func (s *seriesStripe) clear() {
 }
 
 // Reinitialize assigns new matchers and corresponding size activeMatching slices.
-func (s *seriesStripe) reinitialize(
-	asm *asmodel.Matchers,
-	deleted *deletedSeries,
-	cat *costattribution.Tracker,
-) {
+func (s *seriesStripe) reinitialize(asm *asmodel.Matchers, deleted *deletedSeries, cat *costattribution.Tracker) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deleted = deleted
@@ -474,16 +464,19 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 	for ref, entry := range s.refs {
 		ts := entry.nanos.Load()
 		if ts < keepUntilNanos {
+			// cost attribution is enabled, if it's not nil, we need to decrement the active series count, otherwise means received error when get idx,
+			// we need to increment the active series failure count.
+			if s.cat != nil {
+				if idx == nil {
+					s.cat.IncrementActiveSeriesFailure(1)
+				} else if err := idx.Series(ref, &buf, nil); err != nil {
+					s.cat.IncrementActiveSeriesFailure(1)
+				} else {
+					s.cat.DecrementActiveSeries(buf.Labels())
+				}
+			}
 			if entry.deleted {
 				s.deleted.purge(ref)
-			}
-
-			if idx != nil {
-				if err := idx.Series(ref, &buf, nil); err != nil {
-					//TODO: think about what to do here
-					_ = err
-				}
-				s.cat.DecrementActiveSeries(buf.Labels(), keepUntil)
 			}
 			delete(s.refs, ref)
 			continue
@@ -532,13 +525,17 @@ func (s *seriesStripe) remove(ref storage.SeriesRef, idx tsdb.IndexReader) {
 	}
 
 	s.active--
-	if idx != nil {
-		buf := labels.NewScratchBuilder(10)
-		if err := idx.Series(ref, &buf, nil); err != nil {
-			//TODO: think about what to do here
-			_ = err
+	if s.cat != nil {
+		if idx == nil {
+			s.cat.IncrementActiveSeriesFailure(1)
+		} else {
+			buf := labels.NewScratchBuilder(128)
+			if err := idx.Series(ref, &buf, nil); err != nil {
+				s.cat.IncrementActiveSeriesFailure(1)
+			} else {
+				s.cat.DecrementActiveSeries(buf.Labels())
+			}
 		}
-		s.cat.DecrementActiveSeries(buf.Labels(), time.Now())
 	}
 	if entry.numNativeHistogramBuckets >= 0 {
 		s.activeNativeHistograms--

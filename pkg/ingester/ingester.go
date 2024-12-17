@@ -371,9 +371,8 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		limits: limits,
 		logger: logger,
 
-		tsdbs:         make(map[string]*userTSDB),
-		usersMetadata: make(map[string]*userMetricsMetadata),
-
+		tsdbs:               make(map[string]*userTSDB),
+		usersMetadata:       make(map[string]*userMetricsMetadata),
 		bucket:              bucketClient,
 		tsdbMetrics:         newTSDBMetrics(registerer, logger),
 		shipperMetrics:      newShipperMetrics(registerer),
@@ -793,7 +792,12 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			i.replaceMatchers(asmodel.NewMatchers(newMatchersConfig), userDB, now)
 		}
 
-		idx, _ := userDB.Head().Index()
+		// If the userDB idx is unavailable, pass nil pointer to Purge methode, and record it as a failure in metrics when decrementing active series.
+		idx, err := userDB.Head().Index()
+		if err != nil {
+			level.Warn(i.logger).Log("msg", "failed to get the index of the TSDB head", "user", userID, "err", err)
+			idx = nil
+		}
 		valid := userDB.activeSeries.Purge(now, idx)
 		if !valid {
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
@@ -1167,6 +1171,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// Note that we don't .Finish() the span in this method on purpose
 	spanlog := spanlogger.FromContext(ctx, i.logger)
 	spanlog.DebugLog("event", "acquired append lock")
+
 	var (
 		startAppend = time.Now()
 
@@ -1411,8 +1416,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	var nonCopiedLabels labels.Labels
 
 	// idx is used to decrease active series count in case of error for cost attribution.
-	idx, _ := i.getTSDB(userID).Head().Index()
-	// TODO: deal with the error here
+	idx, err := i.getTSDB(userID).Head().Index()
+	if err != nil {
+		idx = nil
+	}
 
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
@@ -1429,7 +1436,6 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 				allOutOfBoundsHistograms(ts.Histograms, minAppendTime) {
 
 				stats.failedSamplesCount += len(ts.Samples) + len(ts.Histograms)
-
 				stats.sampleTimestampTooOldCount += len(ts.Samples) + len(ts.Histograms)
 				i.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ts.Labels), float64(len(ts.Samples)+len(ts.Histograms)), reasonSampleTimestampTooOld, startAppend)
 				var firstTimestamp int64
@@ -2666,12 +2672,8 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	}
 
 	userDB := &userTSDB{
-		userID: userID,
-		activeSeries: activeseries.NewActiveSeries(
-			asmodel.NewMatchers(matchersConfig),
-			i.cfg.ActiveSeriesMetrics.IdleTimeout,
-			i.costAttributionMgr.TrackerForUser(userID),
-		),
+		userID:                  userID,
+		activeSeries:            activeseries.NewActiveSeries(asmodel.NewMatchers(matchersConfig), i.cfg.ActiveSeriesMetrics.IdleTimeout, i.costAttributionMgr.TrackerForUser(userID)),
 		seriesInMetric:          newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:      util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples:     util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
@@ -3274,7 +3276,7 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 		idx, err := db.Head().Index()
 		if err != nil {
 			level.Warn(i.logger).Log("msg", "failed to get the index of the TSDB head", "user", userID, "err", err)
-			continue
+			idx = nil
 		}
 		db.activeSeries.Purge(now, idx)
 

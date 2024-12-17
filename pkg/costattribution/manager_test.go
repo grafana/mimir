@@ -93,7 +93,8 @@ func Test_CreateDeleteTracker(t *testing.T) {
 	})
 
 	t.Run("Purge inactive attributions", func(t *testing.T) {
-		manager.purgeInactiveAttributionsUntil(time.Unix(10, 0).Unix())
+		err := manager.purgeInactiveAttributionsUntil(time.Unix(10, 0).Unix())
+		assert.NoError(t, err)
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
@@ -103,8 +104,10 @@ func Test_CreateDeleteTracker(t *testing.T) {
 	})
 
 	t.Run("Disabling user cost attribution", func(t *testing.T) {
-		manager.limits, _ = getMockLimits(1)
-		manager.purgeInactiveAttributionsUntil(time.Unix(11, 0).Unix())
+		var err error
+		manager.limits, err = getMockLimits(1)
+		assert.NoError(t, err)
+		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(11, 0).Unix()))
 		assert.Equal(t, 1, len(manager.trackersByUserID))
 
 		expectedMetrics := `
@@ -116,8 +119,10 @@ func Test_CreateDeleteTracker(t *testing.T) {
 	})
 
 	t.Run("Updating user cardinality and labels", func(t *testing.T) {
-		manager.limits, _ = getMockLimits(2)
-		manager.purgeInactiveAttributionsUntil(time.Unix(12, 0).Unix())
+		var err error
+		manager.limits, err = getMockLimits(2)
+		assert.NoError(t, err)
+		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(12, 0).Unix()))
 		assert.Equal(t, 1, len(manager.trackersByUserID))
 		assert.True(t, manager.TrackerForUser("user3").CompareCALabels([]string{"feature", "team"}))
 
@@ -151,7 +156,7 @@ func Test_PurgeInactiveAttributionsUntil(t *testing.T) {
 	manager.TrackerForUser("user3").IncrementDiscardedSamples(labels.FromStrings("department", "foo", "service", "bar"), 1, "out-of-window", time.Unix(10, 0))
 
 	t.Run("Purge before inactive timeout", func(t *testing.T) {
-		manager.purgeInactiveAttributionsUntil(time.Unix(0, 0).Unix())
+		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(0, 0).Unix()))
 		assert.Equal(t, 2, len(manager.trackersByUserID))
 
 		expectedMetrics := `
@@ -166,7 +171,7 @@ func Test_PurgeInactiveAttributionsUntil(t *testing.T) {
 	t.Run("Purge after inactive timeout", func(t *testing.T) {
 		// disable cost attribution for user1 to test purging
 		manager.limits, _ = getMockLimits(1)
-		manager.purgeInactiveAttributionsUntil(time.Unix(5, 0).Unix())
+		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(5, 0).Unix()))
 
 		// User3's tracker should remain since it's active, user1's tracker should be removed
 		assert.Equal(t, 1, len(manager.trackersByUserID), "Expected one active tracker after purging")
@@ -182,7 +187,7 @@ func Test_PurgeInactiveAttributionsUntil(t *testing.T) {
 
 	t.Run("Purge all trackers", func(t *testing.T) {
 		// Trigger a purge that should remove all inactive trackers
-		manager.purgeInactiveAttributionsUntil(time.Unix(20, 0).Unix())
+		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(20, 0).Unix()))
 
 		// Tracker would stay at 1 since user1's tracker is disabled
 		assert.Equal(t, 1, len(manager.trackersByUserID), "Expected one active tracker after full purge")

@@ -35,11 +35,11 @@ func Test_CreateCleanupTracker(t *testing.T) {
 
 	cat.IncrementActiveSeries(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "1"), time.Unix(1, 0))
 	cat.IncrementActiveSeries(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "2"), time.Unix(2, 0))
-	cat.DecrementActiveSeries(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "3"), time.Unix(3, 0))
+	cat.DecrementActiveSeries(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "3"))
 	cat.IncrementReceivedSamples(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "1"), 5, time.Unix(4, 0))
 	cat.IncrementDiscardedSamples(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "1"), 2, "sample-out-of-order", time.Unix(4, 0))
-
 	cat.IncrementActiveSeries(labels.FromStrings("platform", "bar", "tenant", "user4", "team", "2"), time.Unix(6, 0))
+	cat.IncrementActiveSeriesFailure(1)
 
 	expectedMetrics := `
 	# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
@@ -49,6 +49,9 @@ func Test_CreateCleanupTracker(t *testing.T) {
     # TYPE cortex_ingester_attributed_active_series gauge
 	cortex_ingester_attributed_active_series{platform="bar",tenant="user4",tracker="cost-attribution"} 1
     cortex_ingester_attributed_active_series{platform="foo",tenant="user4",tracker="cost-attribution"} 1
+	# HELP cortex_ingester_attributed_active_series_failure The total number of failed active series decrement per user and tracker.
+    # TYPE cortex_ingester_attributed_active_series_failure counter
+    cortex_ingester_attributed_active_series_failure{tenant="user4",tracker="cost-attribution"} 1
     # HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
     # TYPE cortex_received_attributed_samples_total counter
     cortex_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 5
@@ -58,15 +61,19 @@ func Test_CreateCleanupTracker(t *testing.T) {
 		"cortex_discarded_attributed_samples_total",
 		"cortex_received_attributed_samples_total",
 		"cortex_ingester_attributed_active_series",
+		"cortex_ingester_attributed_active_series_failure",
 	}
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
 	assert.Equal(t, []string{"foo"}, cat.InactiveObservations(5))
-	tManager.purgeInactiveAttributionsUntil(5)
+	assert.NoError(t, tManager.purgeInactiveAttributionsUntil(5))
 
 	expectedMetrics = `
 	# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
 	cortex_ingester_attributed_active_series{platform="bar",tenant="user4",tracker="cost-attribution"} 1
+	# HELP cortex_ingester_attributed_active_series_failure The total number of failed active series decrement per user and tracker.
+    # TYPE cortex_ingester_attributed_active_series_failure counter
+    cortex_ingester_attributed_active_series_failure{tenant="user4",tracker="cost-attribution"} 1
 	`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
 	tManager.deleteUserTracker("user4")

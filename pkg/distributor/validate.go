@@ -443,6 +443,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 			m.labelNameTooLong.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if !skipLabelValidation && !model.LabelValue(l.Value).IsValid() {
+			cat.IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(ls), 1, reasonInvalidLabelValue, ts)
 			m.invalidLabelValue.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name, strings.ToValidUTF8(l.Value, ""), unsafeMetricName)
 		} else if len(l.Value) > maxLabelValueLength {

@@ -157,16 +157,15 @@ func (m *Manager) inactiveObservationsForUser(userID string, deadline int64) []s
 		m.trackersByUserID[userID] = cat
 		m.mtx.Unlock()
 		return nil
-	} else {
-		maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
-		if cat.MaxCardinality() != maxCardinality {
-			cat.UpdateMaxCardinality(maxCardinality)
-		}
+	}
+	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
+	if cat.MaxCardinality() != maxCardinality {
+		cat.UpdateMaxCardinality(maxCardinality)
+	}
 
-		cooldown := int64(m.limits.CostAttributionCooldown(userID).Seconds())
-		if cooldown != cat.CooldownDuration() {
-			cat.UpdateCooldownDuration(cooldown)
-		}
+	cooldown := int64(m.limits.CostAttributionCooldown(userID).Seconds())
+	if cooldown != cat.CooldownDuration() {
+		cat.UpdateCooldownDuration(cooldown)
 	}
 
 	return cat.InactiveObservations(deadline)

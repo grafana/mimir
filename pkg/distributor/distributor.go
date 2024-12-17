@@ -34,6 +34,19 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
+	"github.com/opentracing/opentracing-go"
+	"github.com/opentracing/opentracing-go/ext"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/scrape"
+	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/costattribution"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -48,18 +61,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
-	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/relabel"
-	"github.com/prometheus/prometheus/scrape"
-	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
-	"golang.org/x/sync/errgroup"
 )
 
 func init() {
@@ -745,15 +746,14 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
 
-func (d *Distributor) validateSamples(tnow model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
+func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
 	if len(ts.Samples) == 0 {
 		return nil
 	}
 
 	cat := d.costAttributionMgr.TrackerForUser(userID)
-
 	if len(ts.Samples) == 1 {
-		return validateSample(d.sampleValidationMetrics, tnow, d.limits, userID, group, ts.Labels, ts.Samples[0], cat)
+		return validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, ts.Samples[0], cat)
 	}
 
 	timestamps := make(map[int64]struct{}, min(len(ts.Samples), 100))
@@ -767,7 +767,7 @@ func (d *Distributor) validateSamples(tnow model.Time, ts *mimirpb.PreallocTimes
 		}
 
 		timestamps[s.TimestampMs] = struct{}{}
-		if err := validateSample(d.sampleValidationMetrics, tnow, d.limits, userID, group, ts.Labels, s, cat); err != nil {
+		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s, cat); err != nil {
 			return err
 		}
 
@@ -787,14 +787,14 @@ func (d *Distributor) validateSamples(tnow model.Time, ts *mimirpb.PreallocTimes
 // Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
-func (d *Distributor) validateHistograms(tnow model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
+func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
 	if len(ts.Histograms) == 0 {
 		return nil
 	}
 
 	cat := d.costAttributionMgr.TrackerForUser(userID)
 	if len(ts.Histograms) == 1 {
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, tnow, d.limits, userID, group, ts.Labels, &ts.Histograms[0], cat)
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[0], cat)
 		if err != nil {
 			return err
 		}
@@ -807,7 +807,6 @@ func (d *Distributor) validateHistograms(tnow model.Time, ts *mimirpb.PreallocTi
 	timestamps := make(map[int64]struct{}, min(len(ts.Histograms), 100))
 	currPos := 0
 	histogramsUpdated := false
-
 	for idx := range ts.Histograms {
 		if _, ok := timestamps[ts.Histograms[idx].Timestamp]; ok {
 			// A sample with the same timestamp has already been validated, so we skip it.
@@ -816,7 +815,7 @@ func (d *Distributor) validateHistograms(tnow model.Time, ts *mimirpb.PreallocTi
 		}
 
 		timestamps[ts.Histograms[idx].Timestamp] = struct{}{}
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, tnow, d.limits, userID, group, ts.Labels, &ts.Histograms[idx], cat)
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx], cat)
 		if err != nil {
 			return err
 		}
@@ -884,6 +883,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt); err != nil {
 		return true, err
 	}
+
 	now := model.TimeFromUnixNano(nowt.UnixNano())
 	totalSamplesAndHistograms := len(ts.Samples) + len(ts.Histograms)
 
@@ -973,8 +973,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		numSamples := 0
-		tnow := time.Now()
-		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), tnow)
+		now := time.Now()
+		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
 		for _, ts := range req.Timeseries {
 			numSamples += len(ts.Samples) + len(ts.Histograms)
 		}
@@ -988,7 +988,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 
 			if errors.As(err, &tooManyClustersError{}) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				d.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels), float64(numSamples), reasonTooManyHAClusters, tnow)
+				d.costAttributionMgr.TrackerForUser(userID).IncrementDiscardedSamples(mimirpb.FromLabelAdaptersToLabels(req.Timeseries[0].Labels), float64(numSamples), reasonTooManyHAClusters, now)
 			}
 
 			return err
@@ -1829,7 +1829,6 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
 	var receivedSamples, receivedExemplars, receivedMetadata int
-
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
