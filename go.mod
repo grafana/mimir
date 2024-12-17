@@ -25,6 +25,7 @@ require (
 	github.com/grafana/dskit v0.0.0-20241212153328-e27df29220ea
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
+	github.com/influxdata/influxdb/v2 v2.7.11
 	github.com/json-iterator/go v1.1.12
 	github.com/minio/minio-go/v7 v7.0.82
 	github.com/mitchellh/go-wordwrap v1.0.1
