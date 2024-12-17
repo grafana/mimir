@@ -74,6 +74,8 @@ The following features are currently experimental:
   - Cache rule group contents.
     - `-ruler-storage.cache.rule-group-enabled`
 - Distributor
+  - Influx ingestion
+    - `-distributor.max-influx-request-size`
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
   - Using status code 529 instead of 429 upon rate limit exhaustion.
