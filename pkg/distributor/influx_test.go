@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
-	io2 "github.com/influxdata/influxdb/v2/kit/io"
+	influxio "github.com/influxdata/influxdb/v2/kit/io"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -128,7 +128,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 				return func(_ context.Context, pushReq *Request) error {
 					req, err := pushReq.WriteRequest()
 					assert.Nil(t, req)
-					assert.Error(t, io2.ErrReadLimitExceeded)
+					assert.Error(t, influxio.ErrReadLimitExceeded)
 					return err
 				}
 			},

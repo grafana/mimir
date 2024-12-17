@@ -53,8 +53,8 @@ func ParseInfluxLineReader(_ context.Context, r *http.Request, maxSize int) ([]m
 	if err != nil {
 		return nil, dataLen, fmt.Errorf("can't parse points: %s", err)
 	}
-	a, b := writeRequestFromInfluxPoints(points)
-	return a, dataLen, b
+	ts, err := writeRequestFromInfluxPoints(points)
+	return ts, dataLen, err
 }
 
 func writeRequestFromInfluxPoints(points []models.Point) ([]mimirpb.TimeSeries, error) {

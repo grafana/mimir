@@ -13,7 +13,7 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
-	io2 "github.com/influxdata/influxdb/v2/kit/io"
+	influxio "github.com/influxdata/influxdb/v2/kit/io"
 
 	"github.com/grafana/mimir/pkg/distributor/influxpush"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-func parser(ctx context.Context, r *http.Request, maxSize int, _ *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
+func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, _ *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
 	spanLogger, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.InfluxHandler.decodeAndConvert")
 	defer spanLogger.Span.Finish()
 
@@ -32,12 +32,9 @@ func parser(ctx context.Context, r *http.Request, maxSize int, _ *util.RequestBu
 
 	// TODO(alexg): need to get bytesRead back to be able to add to metrics/histogram
 	ts, bytesRead, err := influxpush.ParseInfluxLineReader(ctx, r, maxSize)
-	level.Debug(spanLogger).Log(
-		"msg", "decodeAndConvert complete",
-		"bytesRead", bytesRead,
-	)
+	level.Debug(spanLogger).Log("msg", "decodeAndConvert complete", "bytesRead", bytesRead)
 	if err != nil {
-		level.Error(logger).Log("err", err.Error())
+		level.Error(logger).Log("msg", "failed to parse Influx push request", "err", err)
 		return err
 	}
 
@@ -68,9 +65,9 @@ func InfluxHandler(
 	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) http.Handler {
-	// TODO(alexg): mirror otel.go implementation where we do decoding here rather than in parser() func?
+	// TODO(alexg): mirror otel.go implementation where we do decoding here rather than in influxRequestParser() func?
 	// We may need to do this to get bytesRead of HTTP request to add to a histogram like pushMetrics.ObserveUncompressedBodySize() for otel,
-	// currently only available in Influx's parser()
+	// currently only available in influxRequestParser()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		logger := utillog.WithContext(ctx, logger)
@@ -93,12 +90,8 @@ func InfluxHandler(
 			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
 
-			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
-				// Check for httpgrpc error, default to client error if parsing failed.
-				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
-					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
-				}
-
+			if err := influxRequestParser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+				err = httpgrpc.Error(http.StatusBadRequest, err.Error())
 				rb.CleanUp()
 				return nil, nil, err
 			}
@@ -117,7 +110,7 @@ func InfluxHandler(
 				w.WriteHeader(statusClientClosedRequest)
 				return
 			}
-			if errors.Is(err, io2.ErrReadLimitExceeded) {
+			if errors.Is(err, influxio.ErrReadLimitExceeded) {
 				// TODO(alexg): One thing we have seen in the past is that telegraf clients send a batch of data
 				// if it is too big they should respond to the 413 below, but if a client doesn't understand this
 				// it just sends the next batch that is even bigger. In the past this has had to be dealt with by
@@ -149,11 +142,16 @@ func InfluxHandler(
 			}
 			if httpCode != 202 {
 				// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
-				level.Error(logger).Log("msg", "detected an error while ingesting Influx metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", err)
+				msgs := []interface{}{"msg", "detected an error while ingesting Influx metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", err}
+				if httpCode/100 == 4 {
+					// This tag makes the error message visible for our Grafana Cloud customers.
+					msgs = append(msgs, "insight", true)
+				}
+				level.Error(logger).Log(msgs...)
 			}
 			if httpCode < 500 {
 				level.Info(logger).Log("msg", errorMsg, "response_code", httpCode, "err", tryUnwrap(err))
-			} else if httpCode >= 500 {
+			} else {
 				level.Warn(logger).Log("msg", errorMsg, "response_code", httpCode, "err", tryUnwrap(err))
 			}
 			addHeaders(w, err, r, httpCode, retryCfg)
