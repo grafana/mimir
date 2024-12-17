@@ -27,7 +27,7 @@ spec:
     kind: Deployment
   triggers:
   - metadata:
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5"}[1m]))
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5"{{- if .Values.kedaAutoscaling.customLabelFilter }}, {{ include "customLabelFilter" .Values.kedaAutoscaling.customLabelFilter }}{{- end }}}[1m]))
       serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}
       threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}
@@ -42,7 +42,7 @@ spec:
       name: {{ include "mimir.resourceName" (dict "ctx" .) }}
     {{- end }}
   - metadata:
-      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="{{ .Release.Namespace }}"}[1m]))
+      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="{{ .Release.Namespace }}"{{- if .Values.kedaAutoscaling.customLabelFilter }}, {{ include "customLabelFilter" .Values.kedaAutoscaling.customLabelFilter }}{{- end }}}[1m]))
       serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}
       threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}
@@ -59,7 +59,7 @@ spec:
   {{- $autoscaling := .Values.querier.kedaAutoscaling -}}
   {{- if .Values.querier.kedaAutoscaling.predictiveScalingEnabled }}
   - metadata:
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5"}[{{$autoscaling.predictiveScalingLookback}}] offset {{$autoscaling.predictiveScalingPeriod}}))
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5"{{- if .Values.kedaAutoscaling.customLabelFilter }}, {{ include "customLabelFilter" .Values.kedaAutoscaling.customLabelFilter }}{{- end }}}[{{$autoscaling.predictiveScalingLookback}}] offset {{$autoscaling.predictiveScalingPeriod}}))
       serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}
       threshold: {{ $autoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}

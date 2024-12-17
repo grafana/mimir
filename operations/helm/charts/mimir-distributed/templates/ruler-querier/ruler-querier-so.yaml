@@ -25,7 +25,7 @@ spec:
     kind: Deployment
   triggers:
   - metadata:
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5"}[1m]))
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5"{{- if .Values.kedaAutoscaling.customLabelFilter }}, {{ include "customLabelFilter" .Values.kedaAutoscaling.customLabelFilter }}{{- end }}}[1m]))
       serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}
       threshold: {{ .Values.ruler_querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}
@@ -40,7 +40,7 @@ spec:
       name: {{ include "mimir.resourceName" (dict "ctx" .) }}
     {{- end }}
   - metadata:
-      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="ruler-querier",namespace="{{ .Release.Namespace }}"}[1m]))
+      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="ruler-querier",namespace="{{ .Release.Namespace }}"{{- if .Values.kedaAutoscaling.customLabelFilter }}, {{ include "customLabelFilter" .Values.kedaAutoscaling.customLabelFilter }}{{- end }}}[1m]))
       serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}
       threshold: {{ .Values.ruler_querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}
