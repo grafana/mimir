@@ -79,8 +79,14 @@ func (p *BucketedPool[T, E]) Put(s T) {
 	}
 
 	bucketIndex := bits.Len(size - 1)
+	if bucketIndex >= len(p.buckets) {
+		return // Ignore slices larger than the largest bucket
+	}
+
+	// Ignore slices that do not align to the current power of 2
+	// (this will only happen where a slice did not originally come from the pool).
 	if size != (1 << bucketIndex) {
-		bucketIndex--
+		return
 	}
 
 	p.buckets[bucketIndex].Put(s[0:0])

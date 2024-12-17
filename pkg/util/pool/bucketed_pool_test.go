@@ -159,3 +159,21 @@ func TestBucketedPool_AlwaysReturnsPowerOfTwoCapacities(t *testing.T) {
 		pool.Put(slice)
 	}
 }
+
+func TestBucketedPool_PutSizeCloseToMax(t *testing.T) {
+	maxSize := 100000
+	pool := NewBucketedPool(uint(maxSize), makeFunc)
+
+	// Create a slice with capacity that triggers the upper edge case
+	s := make([]int, 0, 65_000) // 86401 is close to maxSize but not aligned to power of 2
+
+	// Ensure Put does not panic when adding this slice
+	require.NotPanics(t, func() {
+		pool.Put(s)
+	}, "Put should not panic for sizes close to maxSize")
+
+	// Validate that a subsequent Get for a smaller size works fine
+	ret := pool.Get(1)
+	require.Equal(t, 1, cap(ret))
+	require.Len(t, ret, 0)
+}
