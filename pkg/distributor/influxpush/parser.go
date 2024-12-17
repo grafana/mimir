@@ -157,7 +157,7 @@ func replaceInvalidChars(in *string) {
 		}
 	}
 	// prefix with _ if first char is 0-9
-	if int((*in)[0]) >= 48 && int((*in)[0]) <= 57 {
+	if len(*in) > 0 && int((*in)[0]) >= 48 && int((*in)[0]) <= 57 {
 		*in = "_" + *in
 	}
 }
