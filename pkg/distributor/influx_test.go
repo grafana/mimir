@@ -83,7 +83,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 					req, err := pushReq.WriteRequest()
 					assert.Nil(t, req)
 					// TODO(alexg): assert on specific err
-					// assert.NoError(t) // reminder to fix
+					// assert.NoError(t, err) // reminder to fix
 					return err
 				}
 			},
