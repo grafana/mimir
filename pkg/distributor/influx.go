@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, _ *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error {
+func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, _ *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) (int, error) {
 	spanLogger, ctx := spanlogger.NewWithLogger(ctx, logger, "Distributor.InfluxHandler.decodeAndConvert")
 	defer spanLogger.Span.Finish()
 
@@ -30,12 +30,11 @@ func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, _ *u
 	spanLogger.SetTag("content_encoding", r.Header.Get("Content-Encoding"))
 	spanLogger.SetTag("content_length", r.ContentLength)
 
-	// TODO(alexg): need to get bytesRead back to be able to add to metrics/histogram
 	ts, bytesRead, err := influxpush.ParseInfluxLineReader(ctx, r, maxSize)
 	level.Debug(spanLogger).Log("msg", "decodeAndConvert complete", "bytesRead", bytesRead)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to parse Influx push request", "err", err)
-		return err
+		return bytesRead, err
 	}
 
 	// Sigh, a write API optimisation needs me to jump through hoops.
@@ -52,7 +51,7 @@ func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, _ *u
 	)
 
 	req.Timeseries = pts
-	return nil
+	return bytesRead, nil
 }
 
 // InfluxHandler is a http.Handler which accepts Influx Line protocol and converts it to WriteRequests.
@@ -86,11 +85,13 @@ func InfluxHandler(
 
 		pushMetrics.IncOTLPRequest(tenantID)
 
+		var bytesRead int
+
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
 
-			if err := influxRequestParser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+			if bytesRead, err = influxRequestParser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
 				err = httpgrpc.Error(http.StatusBadRequest, err.Error())
 				rb.CleanUp()
 				return nil, nil, err
@@ -102,6 +103,9 @@ func InfluxHandler(
 			}
 			return &req.WriteRequest, cleanup, nil
 		}
+
+		pushMetrics.ObserveInfluxUncompressedBodySize(tenantID, float64(bytesRead))
+
 		req := newRequest(supplier)
 		// https://docs.influxdata.com/influxdb/cloud/api/v2/#tag/Response-codes
 		if err := push(ctx, req); err != nil {
@@ -115,8 +119,7 @@ func InfluxHandler(
 				// if it is too big they should respond to the 413 below, but if a client doesn't understand this
 				// it just sends the next batch that is even bigger. In the past this has had to be dealt with by
 				// adding rate limits to drop the payloads.
-				level.Warn(logger).Log("msg", "request too large", "err", err)
-				// TODO(alexg): max size and bytes received in error?
+				level.Warn(logger).Log("msg", "request too large", "err", err, "bytesRead", bytesRead, "maxMsgSize", maxRecvMsgSize)
 				w.WriteHeader(http.StatusRequestEntityTooLarge)
 				return
 			}

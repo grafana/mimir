@@ -286,7 +286,8 @@ const (
 
 type PushMetrics struct {
 	// Influx metrics.
-	influxRequestCounter *prometheus.CounterVec
+	influxRequestCounter       *prometheus.CounterVec
+	influxUncompressedBodySize *prometheus.HistogramVec
 	// TODO(alexg): more influx metrics here?
 	// OTLP metrics.
 	otlpRequestCounter   *prometheus.CounterVec
@@ -298,6 +299,14 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 		influxRequestCounter: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_influx_requests_total",
 			Help: "The total number of Influx requests that have come in to the distributor.",
+		}, []string{"user"}),
+		// TODO(alexg): separate from uncompressedBodySize?
+		influxUncompressedBodySize: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_influx_uncompressed_request_body_size_bytes",
+			Help:                            "Size of uncompressed request body in bytes.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
 		}, []string{"user"}),
 		otlpRequestCounter: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_otlp_requests_total",
@@ -319,6 +328,12 @@ func (m *PushMetrics) IncInfluxRequest(user string) {
 	}
 }
 
+func (m *PushMetrics) ObserveInfluxUncompressedBodySize(user string, size float64) {
+	if m != nil {
+		m.influxUncompressedBodySize.WithLabelValues(user).Observe(size)
+	}
+}
+
 func (m *PushMetrics) IncOTLPRequest(user string) {
 	if m != nil {
 		m.otlpRequestCounter.WithLabelValues(user).Inc()
@@ -333,6 +348,7 @@ func (m *PushMetrics) ObserveUncompressedBodySize(user string, size float64) {
 
 func (m *PushMetrics) deleteUserMetrics(user string) {
 	m.influxRequestCounter.DeleteLabelValues(user)
+	m.influxUncompressedBodySize.DeleteLabelValues(user)
 	m.otlpRequestCounter.DeleteLabelValues(user)
 	m.uncompressedBodySize.DeleteLabelValues(user)
 }
