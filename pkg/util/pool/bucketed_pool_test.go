@@ -134,3 +134,28 @@ func TestBucketedPool_GetSizeCloseToMax(t *testing.T) {
 	require.Equal(t, 86401, cap(s))
 	require.Len(t, s, 0)
 }
+
+func TestBucketedPool_AlwaysReturnsPowerOfTwoCapacities(t *testing.T) {
+	pool := NewBucketedPool(100_000, makeFunc)
+
+	cases := []struct {
+		requestedSize int
+		expectedCap   int
+	}{
+		{3, 4},
+		{5, 8},
+		{10, 16},
+		{20, 32},
+		{65_000, 65_536},
+		{100_001, 131_072}, // Exceeds max bucket: next power of two is 131,072
+	}
+
+	for _, c := range cases {
+		slice := pool.Get(c.requestedSize)
+
+		require.Equal(t, c.expectedCap, cap(slice),
+			"BucketedPool.Get() returned slice with capacity %d; expected %d", cap(slice), c.expectedCap)
+
+		pool.Put(slice)
+	}
+}

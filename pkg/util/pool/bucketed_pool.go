@@ -42,6 +42,8 @@ func NewBucketedPool[T ~[]E, E any](maxSize uint, makeFunc func(int) T) *Buckete
 }
 
 // Get returns a new slice with capacity greater than or equal to size.
+// If no bucket large enough exists, a slice larger than the requested size
+// of the next power of two is returned.
 func (p *BucketedPool[T, E]) Get(size int) T {
 	if size < 0 {
 		panic(fmt.Sprintf("BucketedPool.Get with negative size %v", size))
@@ -53,7 +55,8 @@ func (p *BucketedPool[T, E]) Get(size int) T {
 
 	bucketIndex := bits.Len(uint(size - 1))
 	if bucketIndex >= len(p.buckets) {
-		return p.make(size)
+		nextPowerOfTwo := 1 << bucketIndex
+		return p.make(nextPowerOfTwo)
 	}
 
 	s := p.buckets[bucketIndex].Get()
