@@ -12,6 +12,8 @@ package mimirpb
 //
 // The returned partial WriteRequests are NOT a deep copy of the input one; they contain references to slices
 // and data from the original WriteRequest.
+//
+// The returned requests may still retain references to fields in the original WriteRequest, i.e. they are tied to its lifecycle.
 func SplitWriteRequestByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*WriteRequest {
 	if reqSize <= maxSize {
 		return []*WriteRequest{req}

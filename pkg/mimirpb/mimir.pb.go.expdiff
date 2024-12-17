@@ -1,8 +1,18 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index 2fcc5ccde1..0688358568 100644
+index dcc3cf60c..068835856 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
-@@ -243,9 +243,6 @@ type WriteRequest struct {
+@@ -236,9 +236,6 @@ func (QueryResponse_ErrorType) EnumDescriptor() ([]byte, []int) {
+ }
+ 
+ type WriteRequest struct {
+-	// Keep reference to buffer for unsafe references.
+-	BufferHolder
+-
+ 	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3,customtype=PreallocTimeseries" json:"timeseries"`
+ 	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3,enum=cortexpb.WriteRequest_SourceEnum" json:"Source,omitempty"`
+ 	Metadata   []*MetricMetadata       `protobuf:"bytes,3,rep,name=metadata,proto3" json:"metadata,omitempty"`
+@@ -246,9 +243,6 @@ type WriteRequest struct {
  	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
  	// Skip label count validation.
  	SkipLabelCountValidation bool `protobuf:"varint,1001,opt,name=skip_label_count_validation,json=skipLabelCountValidation,proto3" json:"skip_label_count_validation,omitempty"`
@@ -12,7 +22,7 @@ index 2fcc5ccde1..0688358568 100644
  }
  
  func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
-@@ -392,9 +389,6 @@ type TimeSeries struct {
+@@ -395,9 +389,6 @@ type TimeSeries struct {
  	Samples    []Sample    `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
  	Exemplars  []Exemplar  `protobuf:"bytes,3,rep,name=exemplars,proto3" json:"exemplars"`
  	Histograms []Histogram `protobuf:"bytes,4,rep,name=histograms,proto3" json:"histograms"`
@@ -22,7 +32,7 @@ index 2fcc5ccde1..0688358568 100644
  }
  
  func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
-@@ -6212,7 +6206,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+@@ -6215,7 +6206,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
  				return io.ErrUnexpectedEOF
  			}
  			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
@@ -30,7 +40,7 @@ index 2fcc5ccde1..0688358568 100644
  			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
  				return err
  			}
-@@ -6585,11 +6578,9 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
+@@ -6588,11 +6578,9 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
