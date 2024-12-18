@@ -30,7 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -345,7 +344,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		prevTotalShards := totalShards
 		// If an estimate for query cardinality is available, use it to limit the number
 		// of shards based on linear interpolation.
-		totalShards = util_math.Min(totalShards, int(seriesCount.EstimatedSeriesCount/s.maxSeriesPerShard)+1)
+		totalShards = min(totalShards, int(seriesCount.EstimatedSeriesCount/s.maxSeriesPerShard)+1)
 
 		if prevTotalShards != totalShards {
 			spanLog.DebugLog(
@@ -380,7 +379,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		}
 
 		prevTotalShards := totalShards
-		totalShards = util_math.Max(1, util_math.Min(totalShards, (maxShardedQueries/int(hints.TotalQueries))/numShardableLegs))
+		totalShards = max(1, min(totalShards, (maxShardedQueries/int(hints.TotalQueries))/numShardableLegs))
 
 		if prevTotalShards != totalShards {
 			spanLog.DebugLog(
@@ -498,7 +497,7 @@ func longestRegexpMatcherBytes(expr parser.Expr) int {
 				continue
 			}
 
-			longest = util_math.Max(longest, len(matcher.Value))
+			longest = max(longest, len(matcher.Value))
 		}
 	}
 

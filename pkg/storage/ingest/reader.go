@@ -39,6 +39,9 @@ const (
 	// This is usually used when there aren't enough records available to fulfil MinBytes, so the broker waits for more records to be produced.
 	// Warpstream clamps this between 5s and 30s.
 	defaultMinBytesMaxWaitTime = 5 * time.Second
+
+	// ReaderMetricsPrefix is the reader metrics prefix used by the ingest storage.
+	ReaderMetricsPrefix = "cortex_ingest_storage_reader"
 )
 
 var (
@@ -1032,7 +1035,7 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 		}),
 		strongConsistencyInstrumentation: NewStrongReadConsistencyInstrumentation[struct{}](component, reg),
 		lastConsumedOffset:               lastConsumedOffset,
-		kprom:                            NewKafkaReaderClientMetrics(component, reg),
+		kprom:                            NewKafkaReaderClientMetrics(ReaderMetricsPrefix, component, reg),
 		missedRecords: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingest_storage_reader_missed_records_total",
 			Help: "The number of offsets that were never consumed by the reader because they weren't fetched.",

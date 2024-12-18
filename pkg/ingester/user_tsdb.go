@@ -261,7 +261,7 @@ func nextForcedHeadCompactionRange(blockDuration, headMinTime, headMaxTime, forc
 
 	// By default we try to compact the whole head, honoring the forcedMaxTime.
 	minTime = headMinTime
-	maxTime = util_math.Min(headMaxTime, forcedMaxTime)
+	maxTime = min(headMaxTime, forcedMaxTime)
 
 	// Due to the forcedMaxTime, the range may be empty. In that case we just skip it.
 	if maxTime < minTime {

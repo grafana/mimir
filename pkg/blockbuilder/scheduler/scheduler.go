@@ -60,7 +60,7 @@ func New(
 func (s *BlockBuilderScheduler) starting(ctx context.Context) error {
 	kc, err := ingest.NewKafkaReaderClient(
 		s.cfg.Kafka,
-		ingest.NewKafkaReaderClientMetrics("block-builder-scheduler", s.register),
+		ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "block-builder-scheduler", s.register),
 		s.logger,
 	)
 	if err != nil {

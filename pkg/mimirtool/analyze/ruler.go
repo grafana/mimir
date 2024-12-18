@@ -6,11 +6,12 @@
 package analyze
 
 import (
+	"slices"
+
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )

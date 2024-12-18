@@ -25,6 +25,7 @@ type ManagerMetrics struct {
 	GroupInterval            *prometheus.Desc
 	GroupLastEvalTime        *prometheus.Desc
 	GroupLastDuration        *prometheus.Desc
+	GroupLastRuleDurationSum *prometheus.Desc
 	GroupLastRestoreDuration *prometheus.Desc
 	GroupRules               *prometheus.Desc
 	GroupLastEvalSamples     *prometheus.Desc
@@ -89,6 +90,12 @@ func NewManagerMetrics(logger log.Logger) *ManagerMetrics {
 			[]string{"user", "rule_group"},
 			nil,
 		),
+		GroupLastRuleDurationSum: prometheus.NewDesc(
+			"cortex_prometheus_rule_group_last_rule_duration_sum_seconds",
+			"The sum of time in seconds it took to evaluate each rule in the group regardless of concurrency. This should be higher than the group duration if rules are evaluated concurrently.",
+			[]string{"user", "rule_group"},
+			nil,
+		),
 		GroupLastRestoreDuration: prometheus.NewDesc(
 			"cortex_prometheus_rule_group_last_restore_duration_seconds",
 			"The duration of the last alert rules alerts restoration using the `ALERTS_FOR_STATE` series across all rule groups.",
@@ -131,6 +138,7 @@ func (m *ManagerMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- m.GroupInterval
 	out <- m.GroupLastEvalTime
 	out <- m.GroupLastDuration
+	out <- m.GroupLastRuleDurationSum
 	out <- m.GroupLastRestoreDuration
 	out <- m.GroupRules
 	out <- m.GroupLastEvalSamples
@@ -156,6 +164,7 @@ func (m *ManagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfGaugesPerTenant(out, m.GroupInterval, "prometheus_rule_group_interval_seconds", dskit_metrics.WithLabels("rule_group"))
 	data.SendSumOfGaugesPerTenant(out, m.GroupLastEvalTime, "prometheus_rule_group_last_evaluation_timestamp_seconds", dskit_metrics.WithLabels("rule_group"))
 	data.SendSumOfGaugesPerTenant(out, m.GroupLastDuration, "prometheus_rule_group_last_duration_seconds", dskit_metrics.WithLabels("rule_group"))
+	data.SendSumOfGaugesPerTenant(out, m.GroupLastRuleDurationSum, "prometheus_rule_group_last_rule_duration_sum_seconds", dskit_metrics.WithLabels("rule_group"))
 	data.SendSumOfGaugesPerTenant(out, m.GroupRules, "prometheus_rule_group_rules", dskit_metrics.WithLabels("rule_group"))
 	data.SendSumOfGaugesPerTenant(out, m.GroupLastEvalSamples, "prometheus_rule_group_last_evaluation_samples", dskit_metrics.WithLabels("rule_group"))
 }
