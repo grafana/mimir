@@ -54,12 +54,10 @@
     container.new('rollout-operator', $._images.rollout_operator) +
     container.withArgsMixin($.util.mapToFlags($.rollout_operator_args)) +
     container.withPorts(
+      [$.core.v1.containerPort.new('http-metrics', 8001)] +
       if $._config.enable_rollout_operator_webhook then
-        [
-          $.core.v1.containerPort.new('http-metrics', 8001),
-          $.core.v1.containerPort.new('https', 8443),
-        ]
-      else [$.core.v1.containerPort.new('http-metrics', 8001)],
+        [$.core.v1.containerPort.new('https', 8443)]
+      else []
     ) +
     $.util.resourcesRequests('100m', '100Mi') +
     $.util.resourcesLimits(null, '200Mi') +
