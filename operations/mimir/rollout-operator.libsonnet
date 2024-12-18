@@ -57,7 +57,7 @@
       if $._config.enable_rollout_operator_webhook then
         [
           $.core.v1.containerPort.new('http-metrics', 8001),
-          $.core.v1.containerPort.new('https', 8443)
+          $.core.v1.containerPort.new('https', 8443),
         ]
       else [$.core.v1.containerPort.new('http-metrics', 8001)],
     ) +
