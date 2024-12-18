@@ -79,7 +79,12 @@
     $.newMimirNodeAffinityMatchers($.rollout_operator_node_affinity_matchers),
 
   rollout_operator_service: if !rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
-    $.util.serviceFor($.rollout_operator_deployment, $._config.service_ignored_labels),
+    service.new(
+      'rollout-operator',
+      { name: 'rollout-operator' },
+      servicePort.newNamed('https', 443, 8443) +
+      servicePort.withProtocol('TCP'),
+    ),
 
   rollout_operator_role: if !rollout_operator_enabled then null else
     role.new('rollout-operator-role') +
@@ -196,7 +201,7 @@
             name: 'rollout-operator',
             namespace: $._config.namespace,
             path: '/admission/no-downscale',
-            port: 8443,
+            port: 443,
           },
         },
       },
@@ -235,7 +240,7 @@
             name: 'rollout-operator',
             namespace: $._config.namespace,
             path: '/admission/prepare-downscale',
-            port: 8443,
+            port: 443,
           },
         },
       },
