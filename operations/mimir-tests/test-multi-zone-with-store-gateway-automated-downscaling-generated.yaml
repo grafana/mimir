@@ -623,13 +623,17 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
+  labels:
+    name: rollout-operator
   name: rollout-operator
   namespace: default
 spec:
   ports:
-  - name: https
-    port: 443
-    protocol: TCP
+  - name: rollout-operator-http-metrics
+    port: 8001
+    targetPort: 8001
+  - name: rollout-operator-https
+    port: 8443
     targetPort: 8443
   selector:
     name: rollout-operator
@@ -1110,6 +1114,8 @@ spec:
         ports:
         - containerPort: 8001
           name: http-metrics
+        - containerPort: 8443
+          name: https
         readinessProbe:
           httpGet:
             path: /ready
@@ -2497,7 +2503,7 @@ webhooks:
       name: rollout-operator
       namespace: default
       path: /admission/prepare-downscale
-      port: 443
+      port: 8443
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: prepare-downscale-default.grafana.com
@@ -2533,7 +2539,7 @@ webhooks:
       name: rollout-operator
       namespace: default
       path: /admission/no-downscale
-      port: 443
+      port: 8443
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: no-downscale-default.grafana.com

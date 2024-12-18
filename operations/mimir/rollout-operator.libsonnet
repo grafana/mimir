@@ -53,9 +53,14 @@
   rollout_operator_container::
     container.new('rollout-operator', $._images.rollout_operator) +
     container.withArgsMixin($.util.mapToFlags($.rollout_operator_args)) +
-    container.withPorts([
-      $.core.v1.containerPort.new('http-metrics', 8001),
-    ]) +
+    container.withPorts(
+      if $._config.enable_rollout_operator_webhook then
+        [
+          $.core.v1.containerPort.new('http-metrics', 8001),
+          $.core.v1.containerPort.new('https', 8443)
+        ]
+      else [$.core.v1.containerPort.new('http-metrics', 8001)],
+    ) +
     $.util.resourcesRequests('100m', '100Mi') +
     $.util.resourcesLimits(null, '200Mi') +
     container.mixin.readinessProbe.httpGet.withPath('/ready') +
@@ -74,12 +79,7 @@
     $.newMimirNodeAffinityMatchers($.rollout_operator_node_affinity_matchers),
 
   rollout_operator_service: if !rollout_operator_enabled || !$._config.enable_rollout_operator_webhook then null else
-    service.new(
-      'rollout-operator',
-      { name: 'rollout-operator' },
-      servicePort.newNamed('https', 443, 8443) +
-      servicePort.withProtocol('TCP'),
-    ),
+    $.util.serviceFor($.rollout_operator_deployment, $._config.service_ignored_labels),
 
   rollout_operator_role: if !rollout_operator_enabled then null else
     role.new('rollout-operator-role') +
@@ -196,7 +196,7 @@
             name: 'rollout-operator',
             namespace: $._config.namespace,
             path: '/admission/no-downscale',
-            port: 443,
+            port: 8443,
           },
         },
       },
@@ -235,7 +235,7 @@
             name: 'rollout-operator',
             namespace: $._config.namespace,
             path: '/admission/prepare-downscale',
-            port: 443,
+            port: 8443,
           },
         },
       },
