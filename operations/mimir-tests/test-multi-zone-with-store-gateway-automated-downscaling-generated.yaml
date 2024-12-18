@@ -1110,6 +1110,8 @@ spec:
         ports:
         - containerPort: 8001
           name: http-metrics
+        - containerPort: 8443
+          name: https
         readinessProbe:
           httpGet:
             path: /ready
