@@ -147,11 +147,10 @@ func influxPointToTimeseries(pt models.Point) ([]mimirpb.TimeSeries, error) {
 // analog of invalidChars = regexp.MustCompile("[^a-zA-Z0-9_]")
 func replaceInvalidChars(in *string) {
 	for charIndex, char := range *in {
-		charInt := int(char)
-		if !((charInt >= 'a' && charInt <= 'z') || // a-z
-			(charInt >= 'A' && charInt <= 'Z') || // A-Z
-			(charInt >= '0' && charInt <= '9') || // 0-9
-			charInt == '_') { // _
+		if !((char >= 'a' && char <= 'z') || // a-z
+			(char >= 'A' && char <= 'Z') || // A-Z
+			(char >= '0' && char <= '9') || // 0-9
+			char == '_') { // _
 
 			*in = (*in)[:charIndex] + "_" + (*in)[charIndex+1:]
 		}
