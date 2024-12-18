@@ -146,7 +146,6 @@ receivers:
   - name: "example_receiver"
 templates:
   - example_alertmanager_template.tpl
-  
 ```
 
 `./example_alertmanager_template.tpl`:
