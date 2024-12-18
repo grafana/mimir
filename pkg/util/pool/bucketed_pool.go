@@ -54,23 +54,10 @@ func (p *BucketedPool[T, E]) Get(size int) T {
 		return nil
 	}
 
-	// Enforce Go's maximum slice size limitation.
-	// Go slices are limited to (1<<31)-1 elements due to runtime constraints.
-	const maxSliceSize = (1 << 31) - 1
-	if size > maxSliceSize {
-		panic(fmt.Sprintf("Cannot allocate slice with size (%d) as it exceeds Go's maximum slice size (%d)", size, maxSliceSize))
-	}
-
 	bucketIndex := bits.Len(uint(size - 1))
 
 	// If bucketIndex exceeds the number of available buckets, return a slice of the next power of two.
 	if bucketIndex >= len(p.buckets) {
-		// Check for wrap around case when bucketIndex equals or exceeds the bit size limit.
-		if bucketIndex >= bits.UintSize {
-			// This should not occur due to the above slice size check.
-			panic(fmt.Sprintf("Cannot allocate slice with size (%d) as it exceeds the system limit", size))
-		}
-
 		nextPowerOfTwo := 1 << bucketIndex
 		return p.make(nextPowerOfTwo)
 	}
