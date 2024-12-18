@@ -59,7 +59,7 @@ func TestBucketedPool_HappyPath(t *testing.T) {
 		},
 		{
 			size:        20,
-			expectedCap: 20, // Max size is 19, so we expect to get a slice with the size requested (20), not 32 (the next power of two).
+			expectedCap: 32, // Although max size is 19, we expect to get a slice with the next power of two back. This slice would not have come from a bucket.
 		},
 	}
 
@@ -120,5 +120,60 @@ func TestBucketedPool_PutSliceLargerThanMaximum(t *testing.T) {
 	pool.Put(s1)
 	s2 := pool.Get(101)[:101]
 	require.NotSame(t, &s1[0], &s2[0])
-	require.Equal(t, 101, cap(s2))
+	require.Equal(t, 128, cap(s2))
+}
+
+func TestBucketedPool_GetSizeCloseToMax(t *testing.T) {
+	maxSize := 100000
+	pool := NewBucketedPool(uint(maxSize), makeFunc)
+
+	// Request a size that triggers the last bucket boundary.
+	s := pool.Get(86401)
+
+	// Check that we still get a slice with the correct size.
+	require.Equal(t, 131072, cap(s))
+	require.Len(t, s, 0)
+}
+
+func TestBucketedPool_AlwaysReturnsPowerOfTwoCapacities(t *testing.T) {
+	pool := NewBucketedPool(100_000, makeFunc)
+
+	cases := []struct {
+		requestedSize int
+		expectedCap   int
+	}{
+		{3, 4},
+		{5, 8},
+		{10, 16},
+		{20, 32},
+		{65_000, 65_536},
+		{100_001, 131_072}, // Exceeds max bucket: next power of two is 131,072
+	}
+
+	for _, c := range cases {
+		slice := pool.Get(c.requestedSize)
+
+		require.Equal(t, c.expectedCap, cap(slice),
+			"BucketedPool.Get() returned slice with capacity %d; expected %d", cap(slice), c.expectedCap)
+
+		pool.Put(slice)
+	}
+}
+
+func TestBucketedPool_PutSizeCloseToMax(t *testing.T) {
+	maxSize := 100000
+	pool := NewBucketedPool(uint(maxSize), makeFunc)
+
+	// Create a slice with capacity that triggers the upper edge case
+	s := make([]int, 0, 65_000) // 86401 is close to maxSize but not aligned to power of 2
+
+	// Ensure Put does not panic when adding this slice
+	require.NotPanics(t, func() {
+		pool.Put(s)
+	}, "Put should not panic for sizes close to maxSize")
+
+	// Validate that a subsequent Get for a smaller size works fine
+	ret := pool.Get(1)
+	require.Equal(t, 1, cap(ret))
+	require.Len(t, ret, 0)
 }
