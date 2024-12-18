@@ -20,11 +20,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/prometheus/prometheus/model/value"
 
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -1020,6 +1023,11 @@ func AllSortedPostings(ctx context.Context, reader IndexReader) index.Postings {
 
 type DefaultBlockPopulator struct{}
 
+const (
+	RemoveQuietZeroNaNsHint  = "remove-quiet-zero-nans"
+	QuietZeroNaNsRemovedHint = "quiet-zero-nans-removed"
+)
+
 // PopulateBlock fills the index and chunk writers with new data gathered as the union
 // of the provided blocks. It returns meta information for the new block.
 // It expects sorted blocks input by mint.
@@ -1152,6 +1160,16 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 		set = storage.NewMergeChunkSeriesSet(sets, mergeFunc)
 	}
 
+	// If any input blocks contain a hint to remove quiet zero NaNs, remove them from samples merged from all blocks.
+	// The meta.json of corrupted blocks should have this hint added.
+	shouldRemoveQuietZeroNaNs := false
+	for _, b := range blocks {
+		compaction := b.Meta().Compaction
+		if (&compaction).containsHint(RemoveQuietZeroNaNsHint) {
+			shouldRemoveQuietZeroNaNs = true
+		}
+	}
+
 	// Iterate over all sorted chunk series.
 	for set.Next() {
 		select {
@@ -1167,7 +1185,19 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 			// We are not iterating in a streaming way over chunks as
 			// it's more efficient to do bulk write for index and
 			// chunk file purposes.
-			chks = append(chks, chksIter.At())
+			chk := chksIter.At()
+			if shouldRemoveQuietZeroNaNs {
+				updatedChunk, chunkCreated, err := removeQuietZeroNaNs(chk)
+				if err != nil {
+					return fmt.Errorf("error when removing quiet zero NaNs: %w", err)
+				}
+				if !chunkCreated {
+					continue
+				}
+				chk = updatedChunk
+			}
+
+			chks = append(chks, chk)
 		}
 		if err := chksIter.Err(); err != nil {
 			return fmt.Errorf("chunk iter: %w", err)
@@ -1205,9 +1235,50 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 		}
 
 		outBlocks[ix].meta.Stats = stats
+		if shouldRemoveQuietZeroNaNs {
+			outBlocks[ix].meta.Compaction.AddHint(QuietZeroNaNsRemovedHint)
+		}
 	}
 
 	return nil
+}
+
+func removeQuietZeroNaNs(c chunks.Meta) (chunks.Meta, bool, error) {
+	if c.Chunk == nil {
+		// c.Chunk should never be nil at this point as the block writer used afterward always expected a non-nil
+		// Chunk field. But returning an error just in case.
+		return chunks.Meta{}, false, errors.New("unexpected nil chunk when removing quiet zero NaNs")
+	}
+	if c.Chunk.Encoding() != chunkenc.EncXOR {
+		return c, true, nil
+	}
+	it := c.Chunk.Iterator(nil)
+
+	minTime, maxTime := int64(math.MinInt64), int64(math.MinInt64)
+	newChunk := chunkenc.NewXORChunk()
+	app, err := newChunk.Appender()
+	if err != nil {
+		return chunks.Meta{}, false, err
+	}
+	chunkCreated := false
+	for vt := it.Next(); vt != chunkenc.ValNone; vt = it.Next() {
+		t, v := it.At()
+		if value.QuietZeroNaN != math.Float64bits(v) {
+			app.Append(t, v)
+			if !chunkCreated {
+				minTime = t
+				chunkCreated = true
+			}
+			maxTime = t
+		}
+	}
+	if !chunkCreated {
+		return chunks.Meta{}, false, nil
+	}
+	c.MinTime = minTime
+	c.MaxTime = maxTime
+	c.Chunk = newChunk
+	return c, true, nil
 }
 
 // How many symbols we buffer in memory per output block.

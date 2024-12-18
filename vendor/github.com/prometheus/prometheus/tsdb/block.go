@@ -249,6 +249,14 @@ func (bm *BlockMetaCompaction) FromOutOfOrder() bool {
 	return bm.containsHint(CompactionHintFromOutOfOrder)
 }
 
+func (bm *BlockMetaCompaction) AddHint(hint string) {
+	if bm.containsHint(hint) {
+		return
+	}
+	bm.Hints = append(bm.Hints, hint)
+	slices.Sort(bm.Hints)
+}
+
 func (bm *BlockMetaCompaction) containsHint(hint string) bool {
 	for _, h := range bm.Hints {
 		if h == hint {
