@@ -23,6 +23,7 @@
 ### Jsonnet
 
 * [CHANGE] Update rollout-operator version to 0.22.0. #10229
+* [BUGFIX] Ports used in rollout-operator and its webhooks
 
 ### Mimirtool
 
