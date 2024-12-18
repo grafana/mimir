@@ -120,8 +120,6 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			continue
 		}
 
-		v.Stats.TotalSamples++
-
 		// if (f, h) have been set by PeekPrev, we do not know if f is 0 because that's the actual value, or because
 		// the previous value had a histogram.
 		// PeekPrev will set the histogram to nil, or the value to 0 if the other type exists.
@@ -146,6 +144,12 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
 			lastHistogramT = t
 			lastHistogram = h
+
+			// For consistency with PromQL engine:
+			// h.Size() returns the size of the histogram in bytes,
+			// add 8 bytes to account for the timestamp,
+			// and divide by 16 to get the number of samples.
+			v.Stats.TotalSamples += int64((h.Size() + 8) / 16)
 		} else {
 			// Only create the slice once we know the series is a histogram or not.
 			if len(data.Floats) == 0 {
@@ -157,6 +161,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				}
 			}
 			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
+			v.Stats.TotalSamples++
 		}
 	}
 

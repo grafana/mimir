@@ -2824,6 +2824,8 @@ func TestQueryStats(t *testing.T) {
 			start_series  0 1 _ _ _ _ _ _ _ _ _
 			end_series    _ _ _ _ _ 5 6 7 8 9 10
 			sparse_series 0 _ _ _ _ _ _ 7 _ _ _
+			nan_series    NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
+			native_histogram_series {{schema:0 sum:2 count:4 buckets:[1 2 1]}} {{sum:2 count:4 buckets:[1 2 1]}}
 	`)
 
 	runQueryAndGetTotalSamples := func(t *testing.T, engine promql.QueryEngine, expr string, isInstantQuery bool) int64 {
@@ -2903,6 +2905,23 @@ func TestQueryStats(t *testing.T) {
 		"expression with multiple selectors": {
 			expr:                 `dense_series{} + end_series{}`,
 			expectedTotalSamples: 11 + 6,
+		},
+		"instant vector selector with NaNs": {
+			expr:                 `nan_series{}`,
+			isInstantQuery:       true,
+			expectedTotalSamples: 1,
+		},
+		"range vector selector with NaNs": {
+			expr:                 `sum_over_time(nan_series{}[1m])`,
+			expectedTotalSamples: 11,
+		},
+		"instant vector selector with native histograms": {
+			expr:                 `native_histogram_series{}`,
+			expectedTotalSamples: 78,
+		},
+		"range vector selector with native histograms": {
+			expr:                 `sum_over_time(native_histogram_series{}[1m])`,
+			expectedTotalSamples: 26,
 		},
 	}
 
