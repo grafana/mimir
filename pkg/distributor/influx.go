@@ -30,24 +30,16 @@ func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, _ *u
 	spanLogger.SetTag("content_encoding", r.Header.Get("Content-Encoding"))
 	spanLogger.SetTag("content_length", r.ContentLength)
 
-	ts, bytesRead, err := influxpush.ParseInfluxLineReader(ctx, r, maxSize)
+	pts, bytesRead, err := influxpush.ParseInfluxLineReader(ctx, r, maxSize)
 	level.Debug(spanLogger).Log("msg", "decodeAndConvert complete", "bytesRead", bytesRead)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to parse Influx push request", "err", err)
 		return bytesRead, err
 	}
 
-	// Sigh, a write API optimisation needs me to jump through hoops.
-	pts := make([]mimirpb.PreallocTimeseries, 0, len(ts))
-	for i := range ts {
-		pts = append(pts, mimirpb.PreallocTimeseries{
-			TimeSeries: &ts[i],
-		})
-	}
-
 	level.Debug(spanLogger).Log(
 		"msg", "Influx to Prometheus conversion complete",
-		"metric_count", len(ts),
+		"metric_count", len(pts),
 	)
 
 	req.Timeseries = pts
