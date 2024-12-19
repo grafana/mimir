@@ -117,20 +117,6 @@ func (t *Tracker) CompareLabels(currentLabels []string) bool {
 	return true
 }
 
-func (t *Tracker) MaxCardinality() int {
-	if t == nil {
-		return 0
-	}
-	return t.maxCardinality
-}
-
-func (t *Tracker) CooldownDuration() int64 {
-	if t == nil {
-		return 0
-	}
-	return t.cooldownDuration
-}
-
 var bufferPool = sync.Pool{
 	New: func() interface{} {
 		return new(bytes.Buffer)
@@ -352,18 +338,4 @@ func (t *Tracker) inactiveObservations(deadline int64) []string {
 	}
 
 	return invalidKeys
-}
-
-func (t *Tracker) UpdateMaxCardinality(limit int) {
-	if t == nil {
-		return
-	}
-	t.maxCardinality = limit
-}
-
-func (t *Tracker) UpdateCooldownDuration(cooldownDuration int64) {
-	if t == nil {
-		return
-	}
-	t.cooldownDuration = cooldownDuration
 }

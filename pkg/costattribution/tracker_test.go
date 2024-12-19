@@ -20,11 +20,6 @@ func Test_GetCALabels(t *testing.T) {
 	assert.True(t, tracker.CompareLabels([]string{"team"}), "Expected cost attribution labels mismatch")
 }
 
-func Test_GetMaxCardinality(t *testing.T) {
-	tracker := newTestManager().Tracker("user1")
-	assert.Equal(t, 5, tracker.MaxCardinality(), "Expected max cardinality mismatch")
-}
-
 func Test_CreateCleanupTracker(t *testing.T) {
 	tManager := newTestManager()
 	tracker := tManager.Tracker("user4")
@@ -134,13 +129,6 @@ func Test_GetInactiveObservations(t *testing.T) {
 	assert.ElementsMatch(t, []string{"foo", "bar", "baz"}, purged)
 }
 
-func Test_UpdateMaxCardinality(t *testing.T) {
-	// user1 original max cardinality is 5
-	tracker := newTestManager().Tracker("user1")
-	tracker.UpdateMaxCardinality(2)
-	assert.Equal(t, 2, tracker.MaxCardinality(), "Expected max cardinality update to 2")
-}
-
 func Test_Concurrency(t *testing.T) {
 	m := newTestManager()
 	tracker := m.Tracker("user1")
@@ -158,7 +146,7 @@ func Test_Concurrency(t *testing.T) {
 
 	// Verify no data races or inconsistencies
 	assert.True(t, len(tracker.observed) > 0, "Observed set should not be empty after concurrent updates")
-	assert.LessOrEqual(t, len(tracker.observed), 2*tracker.MaxCardinality(), "Observed count should not exceed 2 times of max cardinality")
+	assert.LessOrEqual(t, len(tracker.observed), 2*tracker.maxCardinality, "Observed count should not exceed 2 times of max cardinality")
 	assert.Equal(t, Overflow, tracker.state, "Expected state to be Overflow")
 
 	expectedMetrics := `

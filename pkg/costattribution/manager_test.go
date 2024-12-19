@@ -65,14 +65,14 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		user1Tracker := manager.Tracker("user1")
 		assert.NotNil(t, user1Tracker)
 		assert.True(t, user1Tracker.CompareLabels([]string{"team"}))
-		assert.Equal(t, 5, user1Tracker.MaxCardinality())
+		assert.Equal(t, 5, user1Tracker.maxCardinality)
 
 		assert.Nil(t, manager.Tracker("user2"))
 
 		user3Tracker := manager.Tracker("user3")
 		assert.NotNil(t, user3Tracker)
 		assert.True(t, user3Tracker.CompareLabels([]string{"department", "service"}))
-		assert.Equal(t, 2, user3Tracker.MaxCardinality())
+		assert.Equal(t, 2, user3Tracker.maxCardinality)
 	})
 
 	t.Run("Metrics tracking", func(t *testing.T) {

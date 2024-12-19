@@ -129,13 +129,13 @@ func (m *Manager) updateTracker(userID string) *Tracker {
 	}
 
 	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
-	if t.MaxCardinality() != maxCardinality {
-		t.UpdateMaxCardinality(maxCardinality)
+	if t.maxCardinality != maxCardinality {
+		t.maxCardinality = maxCardinality
 	}
 
 	cooldown := int64(m.limits.CostAttributionCooldown(userID).Seconds())
-	if cooldown != t.CooldownDuration() {
-		t.UpdateCooldownDuration(cooldown)
+	if cooldown != t.cooldownDuration {
+		t.cooldownDuration = cooldown
 	}
 	return t
 }
