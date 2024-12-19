@@ -277,6 +277,8 @@ load 5m
 	http_requests{job="app-server", instance="1", group="production"}	0+60x10
 	http_requests{job="app-server", instance="0", group="canary"}		0+70x10
 	http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+	http_requests_histogram{job="app-server", instance="2", group="canary"}		{{schema:0 sum:10 count:10}}x11
+	http_requests_histogram{job="api-server", instance="3", group="production"}	{{schema:0 sum:20 count:20}}x11
 	foo 3+0x10
 
 # Unsupported by streaming engine.
@@ -356,6 +358,59 @@ load 5m
 # 	http_requests{group="canary", instance="0", job="app-server"} 700
 # 	http_requests{group="production", instance="1", job="app-server"} 600
 
+# Tests for histogram: should ignore histograms.
+# Unsupported by streaming engine.
+# eval_info instant at 50m topk(100, http_requests_histogram)
+#     #empty
+
+# Unsupported by streaming engine.
+# eval_info range from 0 to 50m step 5m topk(100, http_requests_histogram)
+#     #empty
+
+# Unsupported by streaming engine.
+# eval_info instant at 50m topk(1, {__name__=~"http_requests(_histogram)?"})
+#     {__name__="http_requests", group="canary", instance="1", job="app-server"} 800
+
+# Unsupported by streaming engine.
+# eval_info instant at 50m count(topk(1000, {__name__=~"http_requests(_histogram)?"}))
+#     {} 9
+
+# Unsupported by streaming engine.
+# eval_info range from 0 to 50m step 5m count(topk(1000, {__name__=~"http_requests(_histogram)?"}))
+#     {} 9x10
+
+# Unsupported by streaming engine.
+# eval_info instant at 50m topk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
+#     {__name__="http_requests", group="canary", instance="0", job="app-server"} 700
+#     {__name__="http_requests", group="canary", instance="1", job="app-server"} 800
+#     {__name__="http_requests", group="production", instance="2", job="api-server"} NaN
+
+# Unsupported by streaming engine.
+# eval_info instant at 50m bottomk(100, http_requests_histogram)
+#     #empty
+
+# Unsupported by streaming engine.
+# eval_info range from 0 to 50m step 5m bottomk(100, http_requests_histogram)
+#     #empty
+
+# Unsupported by streaming engine.
+# eval_info instant at 50m bottomk(1, {__name__=~"http_requests(_histogram)?"})
+#     {__name__="http_requests", group="production", instance="0", job="api-server"} 100
+
+# Unsupported by streaming engine.
+# eval_info instant at 50m count(bottomk(1000, {__name__=~"http_requests(_histogram)?"}))
+#     {} 9
+
+# Unsupported by streaming engine.
+# eval_info range from 0 to 50m step 5m count(bottomk(1000, {__name__=~"http_requests(_histogram)?"}))
+#     {} 9x10
+
+# Unsupported by streaming engine.
+# eval_info instant at 50m bottomk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
+#     {__name__="http_requests", group="production", instance="0", job="api-server"} 100
+#     {__name__="http_requests", group="production", instance="1", job="api-server"} 200
+#     {__name__="http_requests", group="production", instance="2", job="api-server"} NaN
+
 clear
 
 # Tests for count_values.
@@ -369,20 +424,22 @@ load 5m
 	version{job="app-server", instance="1", group="production"}	6
 	version{job="app-server", instance="0", group="canary"}		7
 	version{job="app-server", instance="1", group="canary"}		7
+	version{job="app-server", instance="2", group="canary"}		{{schema:0 sum:10 count:20 z_bucket_w:0.001 z_bucket:2 buckets:[1 2] n_buckets:[1 2]}}
+	version{job="app-server", instance="3", group="canary"}		{{schema:0 sum:10 count:20 z_bucket_w:0.001 z_bucket:2 buckets:[1 2] n_buckets:[1 2]}}
 
 # Unsupported by streaming engine.
 # eval instant at 1m count_values("version", version)
 # 	{version="6"} 5
 # 	{version="7"} 2
 # 	{version="8"} 2
-
+#     {version="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}"} 2
 
 # Unsupported by streaming engine.
 # eval instant at 1m count_values(((("version"))), version)
-#        {version="6"} 5
-#        {version="7"} 2
-#        {version="8"} 2
-
+#     {version="6"} 5
+#     {version="7"} 2
+#     {version="8"} 2
+#     {version="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}"} 2
 
 # Unsupported by streaming engine.
 # eval instant at 1m count_values without (instance)("version", version)
@@ -390,6 +447,7 @@ load 5m
 # 	{job="api-server", group="canary", version="8"} 2
 # 	{job="app-server", group="production", version="6"} 2
 # 	{job="app-server", group="canary", version="7"} 2
+#     {job="app-server", group="canary", version="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}"} 2
 
 # Overwrite label with output. Don't do this.
 # Unsupported by streaming engine.
@@ -397,6 +455,7 @@ load 5m
 # 	{job="6", group="production"} 5
 # 	{job="8", group="canary"} 2
 # 	{job="7", group="canary"} 2
+#     {job="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}", group="canary"} 2
 
 # Overwrite label with output. Don't do this.
 # Unsupported by streaming engine.
@@ -404,7 +463,7 @@ load 5m
 # 	{job="6", group="production"} 5
 # 	{job="8", group="canary"} 2
 # 	{job="7", group="canary"} 2
-
+#     {job="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}", group="canary"} 2
 
 # Tests for quantile.
 clear
@@ -470,12 +529,14 @@ load 10s
 	data{test="uneven samples",point="a"} 0
 	data{test="uneven samples",point="b"} 1
 	data{test="uneven samples",point="c"} 4
+	data{test="histogram sample",point="c"} {{schema:0 sum:0 count:0}}
 	foo .8
 
 eval instant at 1m group without(point)(data)
 	{test="two samples"} 1
 	{test="three samples"} 1
 	{test="uneven samples"} 1
+    {test="histogram sample"} 1
 
 eval instant at 1m group(foo)
 	{} 1
@@ -523,6 +584,7 @@ load 10s
 	data{test="bigzero",point="b"} -9.988465674311579e+307
 	data{test="bigzero",point="c"} 9.988465674311579e+307
 	data{test="bigzero",point="d"} 9.988465674311579e+307
+	data{test="value is nan"} NaN
 
 eval instant at 1m avg(data{test="ten"})
 	{} 10
@@ -556,6 +618,10 @@ eval instant at 1m avg(data{test="-big"})
 
 eval instant at 1m avg(data{test="bigzero"})
 	{} 0
+
+# If NaN is in the mix, the result is NaN.
+eval instant at 1m avg(data)
+	{} NaN
 
 # Test summing and averaging extreme values.
 clear
@@ -647,11 +713,11 @@ eval_info instant at 0m stddev({label="c"})
 
 eval_info instant at 0m stdvar({label="c"})
 
-eval instant at 0m stddev by (label) (series)
+eval_info instant at 0m stddev by (label) (series)
 	{label="a"} 0
 	{label="b"} 0
 
-eval instant at 0m stdvar by (label) (series)
+eval_info instant at 0m stdvar by (label) (series)
 	{label="a"} 0
 	{label="b"} 0
 
@@ -662,17 +728,17 @@ load 5m
 	series{label="b"} 1
 	series{label="c"} 2
 
-eval instant at 0m stddev(series)
+eval_info instant at 0m stddev(series)
 	{} 0.5
 
-eval instant at 0m stdvar(series)
+eval_info instant at 0m stdvar(series)
 	{} 0.25
 
-eval instant at 0m stddev by (label) (series)
+eval_info instant at 0m stddev by (label) (series)
 	{label="b"} 0
 	{label="c"} 0
 
-eval instant at 0m stdvar by (label) (series)
+eval_info instant at 0m stdvar by (label) (series)
 	{label="b"} 0
 	{label="c"} 0
 

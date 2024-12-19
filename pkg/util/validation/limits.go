@@ -126,6 +126,7 @@ type Limits struct {
 	MetricRelabelConfigs                        []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
 	MetricRelabelingEnabled                     bool                `yaml:"metric_relabeling_enabled" json:"metric_relabeling_enabled" category:"experimental"`
 	ServiceOverloadStatusCodeOnRateLimitEnabled bool                `yaml:"service_overload_status_code_on_rate_limit_enabled" json:"service_overload_status_code_on_rate_limit_enabled" category:"experimental"`
+	IngestionArtificialDelay                    model.Duration      `yaml:"ingestion_artificial_delay" json:"ingestion_artificial_delay" category:"experimental" doc:"hidden"`
 	// Ingester enforced limits.
 	// Series
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
@@ -242,6 +243,7 @@ type Limits struct {
 	OTelMetricSuffixesEnabled                bool                   `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
 	OTelCreatedTimestampZeroIngestionEnabled bool                   `yaml:"otel_created_timestamp_zero_ingestion_enabled" json:"otel_created_timestamp_zero_ingestion_enabled" category:"experimental"`
 	PromoteOTelResourceAttributes            flagext.StringSliceCSV `yaml:"promote_otel_resource_attributes" json:"promote_otel_resource_attributes" category:"experimental"`
+	OTelKeepIdentifyingResourceAttributes    bool                   `yaml:"otel_keep_identifying_resource_attributes" json:"otel_keep_identifying_resource_attributes" category:"experimental"`
 
 	// Ingest storage.
 	IngestStorageReadConsistency       string `yaml:"ingest_storage_read_consistency" json:"ingest_storage_read_consistency" category:"experimental"`
@@ -280,6 +282,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.OTelMetricSuffixesEnabled, "distributor.otel-metric-suffixes-enabled", false, "Whether to enable automatic suffixes to names of metrics ingested through OTLP.")
 	f.BoolVar(&l.OTelCreatedTimestampZeroIngestionEnabled, "distributor.otel-created-timestamp-zero-ingestion-enabled", false, "Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.")
 	f.Var(&l.PromoteOTelResourceAttributes, "distributor.otel-promote-resource-attributes", "Optionally specify OTel resource attributes to promote to labels.")
+	f.BoolVar(&l.OTelKeepIdentifyingResourceAttributes, "distributor.otel-keep-identifying-resource-attributes", false, "Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.")
+	f.Var(&l.IngestionArtificialDelay, "distributor.ingestion-artificial-delay", "Target ingestion delay. If set to a non-zero value, the distributor will artificially delay ingestion time-frame by the specified duration by computing the difference between actual ingestion and the target. There is no delay on actual ingestion of samples, it is only the response back to the client.")
 
 	f.IntVar(&l.MaxGlobalSeriesPerUser, MaxSeriesPerUserFlag, 150000, "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, MaxSeriesPerMetricFlag, 0, "The maximum number of in-memory series per metric name, across the cluster before replication. 0 to disable.")
@@ -898,7 +902,7 @@ func (o *Overrides) RulerTenantShardSize(userID string) int {
 func (o *Overrides) RulerMaxRulesPerRuleGroup(userID, namespace string) int {
 	u := o.getOverridesForUser(userID)
 
-	if namespaceLimit, ok := u.RulerMaxRulesPerRuleGroupByNamespace.data[namespace]; ok {
+	if namespaceLimit, ok := u.RulerMaxRulesPerRuleGroupByNamespace.Read()[namespace]; ok {
 		return namespaceLimit
 	}
 
@@ -914,7 +918,7 @@ func (o *Overrides) RulerMaxRulesPerRuleGroup(userID, namespace string) int {
 func (o *Overrides) RulerMaxRuleGroupsPerTenant(userID, namespace string) int {
 	u := o.getOverridesForUser(userID)
 
-	if namespaceLimit, ok := u.RulerMaxRuleGroupsPerTenantByNamespace.data[namespace]; ok {
+	if namespaceLimit, ok := u.RulerMaxRuleGroupsPerTenantByNamespace.Read()[namespace]; ok {
 		return namespaceLimit
 	}
 
@@ -990,7 +994,7 @@ func (o *Overrides) AlertmanagerReceiversBlockPrivateAddresses(user string) bool
 // 4. default limits
 func (o *Overrides) getNotificationLimitForUser(user, integration string) float64 {
 	u := o.getOverridesForUser(user)
-	if n, ok := u.NotificationRateLimitPerIntegration.data[integration]; ok {
+	if n, ok := u.NotificationRateLimitPerIntegration.Read()[integration]; ok {
 		return n
 	}
 
@@ -1109,6 +1113,15 @@ func (o *Overrides) OTelCreatedTimestampZeroIngestionEnabled(tenantID string) bo
 
 func (o *Overrides) PromoteOTelResourceAttributes(tenantID string) []string {
 	return o.getOverridesForUser(tenantID).PromoteOTelResourceAttributes
+}
+
+func (o *Overrides) OTelKeepIdentifyingResourceAttributes(tenantID string) bool {
+	return o.getOverridesForUser(tenantID).OTelKeepIdentifyingResourceAttributes
+}
+
+// DistributorIngestionArtificialDelay returns the artificial ingestion latency for a given use.
+func (o *Overrides) DistributorIngestionArtificialDelay(tenantID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(tenantID).IngestionArtificialDelay)
 }
 
 func (o *Overrides) AlignQueriesWithStep(userID string) bool {

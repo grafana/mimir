@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -16,7 +17,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
 
 func TestLabelAdapter_Marshal(t *testing.T) {

@@ -356,20 +356,20 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		}
 	}
 
+	s.Lock()
 	if value.IsStaleNaN(v) {
-		// This is not thread safe as we should be holding the lock for "s".
 		// TODO(krajorama): reorganize Commit() to handle samples in append order
 		// not floats first and then histograms. Then we could do this conversion
 		// in commit. This code should move into Commit().
 		switch {
 		case s.lastHistogramValue != nil:
+			s.Unlock()
 			return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v}, nil)
 		case s.lastFloatHistogramValue != nil:
+			s.Unlock()
 			return a.AppendHistogram(ref, lset, t, nil, &histogram.FloatHistogram{Sum: v})
 		}
 	}
-
-	s.Lock()
 
 	defer s.Unlock()
 	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
@@ -497,7 +497,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			if s.lastHistogramValue != nil || s.lastFloatHistogramValue != nil {
 				return false, 0, storage.NewDuplicateHistogramToFloatErr(t, v)
 			}
-			if math.Float64bits(s.lastValue) != math.Float64bits(v) && math.Float64bits(v) != value.QuietZeroNaN {
+			if math.Float64bits(s.lastValue) != math.Float64bits(v) {
 				return false, 0, storage.NewDuplicateFloatErr(t, s.lastValue, v)
 			}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
@@ -1141,10 +1141,6 @@ func (a *headAppender) commitSamples(acc *appenderCommitContext) {
 			handleAppendableError(err, &acc.floatsAppended, &acc.floatOOORejected, &acc.floatOOBRejected, &acc.floatTooOldRejected)
 		}
 
-		if math.Float64bits(s.V) == value.QuietZeroNaN {
-			s.V = 0
-		}
-
 		switch {
 		case err != nil:
 			// Do nothing here.
@@ -1521,7 +1517,7 @@ type chunkOpts struct {
 // append adds the sample (t, v) to the series. The caller also has to provide
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
-// It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
+// Series lock must be held when calling.
 func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sampleInOrder, chunkCreated bool) {
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncXOR, o)
 	if !sampleInOrder {

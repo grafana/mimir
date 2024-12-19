@@ -200,7 +200,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		return sets[0]
 	}
 	// Sets need to be sorted. Both series.NewConcreteSeriesSetFromUnsortedSeries and newTimeSeriesSeriesSet take care of that.
-	return storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+	return storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
 }
 
 func (q *distributorQuerier) LabelValues(ctx context.Context, name string, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {

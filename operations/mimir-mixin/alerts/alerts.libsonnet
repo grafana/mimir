@@ -202,16 +202,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         {
           alert: $.alertName('CacheRequestErrors'),
-          // Specifically exclude "add" operations which are used for cache invalidation and "locking" since
-          // they are expected to sometimes fail in normal operation (such as when a "lock" already exists).
+          // Specifically exclude "add" and "delete" operations which are used for cache invalidation and "locking"
+          // since they are expected to sometimes fail in normal operation (such as when a "lock" already exists or
+          // key being invalidated does not exist).
           expr: |||
             (
               sum by(%(group_by)s, name, operation) (
-                rate(thanos_cache_operation_failures_total{operation!="add"}[%(range_interval)s])
+                rate(thanos_cache_operation_failures_total{operation!~"add|delete"}[%(range_interval)s])
               )
               /
               sum by(%(group_by)s, name, operation) (
-                rate(thanos_cache_operations_total{operation!="add"}[%(range_interval)s])
+                rate(thanos_cache_operations_total{operation!~"add|delete"}[%(range_interval)s])
               )
             ) * 100 > 5
           ||| % {

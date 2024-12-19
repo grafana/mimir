@@ -338,95 +338,133 @@ func avgHistograms(head, tail []promql.HPoint) (*histogram.FloatHistogram, error
 
 var Changes = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               changes,
-}
-
-func changes(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	fHead, fTail := step.Floats.UnsafePoints()
-
-	haveFloats := len(fHead) > 0 || len(fTail) > 0
-
-	if !haveFloats {
-		// Prometheus' engine doesn't support histogram for `changes` function yet,
-		// therefore we won't add that yet too.
-		return 0, false, nil, nil
-	}
-
-	if len(fHead) == 0 && len(fTail) == 0 {
-		return 0, true, nil, nil
-	}
-
-	changes := 0.0
-	prev := fHead[0].F
-
-	// Comparing the point with the point before it.
-	accumulate := func(points []promql.FPoint) {
-		for _, sample := range points {
-			current := sample.F
-			if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
-				changes++
-			}
-			prev = current
-		}
-	}
-
-	accumulate(fHead[1:])
-	accumulate(fTail)
-
-	return changes, true, nil, nil
+	StepFunc:               resetsChanges(false),
 }
 
 var Resets = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               resets,
+	StepFunc:               resetsChanges(true),
 }
 
-func resets(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	fHead, fTail := step.Floats.UnsafePoints()
-	hHead, hTail := step.Histograms.UnsafePoints()
+func resetsChanges(isReset bool) RangeVectorStepFunction {
+	return func(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+		fHead, fTail := step.Floats.UnsafePoints()
+		hHead, hTail := step.Histograms.UnsafePoints()
 
-	// There is no need to check xTail length because xHead slice will always be populated first if there is at least 1 point.
-	haveFloats := len(fHead) > 0
-	haveHistograms := len(hHead) > 0
+		if len(fHead) == 0 && len(hHead) == 0 {
+			// No points, nothing to do
+			return 0, false, nil, nil
+		}
 
-	if !haveFloats && !haveHistograms {
-		return 0, false, nil, nil
-	}
+		count := 0.0
+		var prevFloat float64
+		var prevHist *histogram.FloatHistogram
 
-	resets := 0.0
+		fIdx, hIdx := 0, 0
 
-	if haveFloats {
-		prev := fHead[0].F
-		accumulate := func(points []promql.FPoint) {
-			for _, sample := range points {
-				current := sample.F
-				if current < prev {
-					resets++
-				}
-				prev = current
+		loadFloat := func(idx int) (float64, int64, bool, int) {
+			if idx < len(fHead) {
+				point := fHead[idx]
+				return point.F, point.T, true, idx + 1
+			} else if idx-len(fHead) < len(fTail) {
+				point := fTail[idx-len(fHead)]
+				return point.F, point.T, true, idx + 1
+			}
+			return 0, 0, false, idx
+		}
+
+		loadHist := func(idx int) (*histogram.FloatHistogram, int64, bool, int) {
+			if idx < len(hHead) {
+				point := hHead[idx]
+				return point.H, point.T, true, idx + 1
+			} else if idx-len(hHead) < len(hTail) {
+				point := hTail[idx-len(hHead)]
+				return point.H, point.T, true, idx + 1
+			}
+			return nil, 0, false, idx
+		}
+
+		var fValue float64
+		var hValue *histogram.FloatHistogram
+		var fTime, hTime int64
+		var fOk, hOk bool
+
+		fValue, fTime, fOk, fIdx = loadFloat(fIdx)
+		hValue, hTime, hOk, hIdx = loadHist(hIdx)
+
+		if fOk && hOk {
+			if fTime <= hTime {
+				prevFloat = fValue
+				prevHist = nil
+			} else {
+				prevHist = hValue
+				prevFloat = 0
+			}
+		} else if fOk {
+			prevFloat = fValue
+			prevHist = nil
+		} else if hOk {
+			prevHist = hValue
+			prevFloat = 0
+		} else {
+			return 0, false, nil, nil
+		}
+
+		for fOk || hOk {
+			var currentFloat float64
+			var currentHist *histogram.FloatHistogram
+
+			if fOk && (!hOk || fTime <= hTime) {
+				currentFloat = fValue
+				currentHist = nil
+				fValue, fTime, fOk, fIdx = loadFloat(fIdx)
+			} else if hOk {
+				currentHist = hValue
+				currentFloat = 0
+				hValue, hTime, hOk, hIdx = loadHist(hIdx)
 			}
 
-		}
-		accumulate(fHead[1:])
-		accumulate(fTail)
-	}
-
-	if haveHistograms {
-		prev := hHead[0].H
-		accumulate := func(points []promql.HPoint) {
-			for _, sample := range points {
-				current := sample.H
-				if current.DetectReset(prev) {
-					resets++
+			if prevHist == nil {
+				if currentHist == nil {
+					if isReset {
+						if currentFloat < prevFloat {
+							count++
+						}
+					} else {
+						if currentFloat != prevFloat && !(math.IsNaN(currentFloat) && math.IsNaN(prevFloat)) {
+							count++
+						}
+					}
+				} else {
+					count++ // Type change from float to histogram
 				}
-				prev = current
+			} else {
+				if currentHist == nil {
+					count++ // Type change from histogram to float
+				} else {
+					if isReset {
+						if currentHist.DetectReset(prevHist) {
+							count++
+						}
+					} else {
+						if !currentHist.Equals(prevHist) {
+							count++
+						}
+					}
+				}
+			}
+
+			if currentHist == nil {
+				prevFloat = currentFloat
+				prevHist = nil
+			} else {
+				prevHist = currentHist
+				prevFloat = 0
 			}
 		}
-		accumulate(hHead[1:])
-		accumulate(hTail)
-	}
 
-	return resets, true, nil, nil
+		return count, true, nil, nil
+	}
 }
 
 var Deriv = FunctionOverRangeVectorDefinition{

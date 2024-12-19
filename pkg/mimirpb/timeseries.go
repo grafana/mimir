@@ -8,6 +8,7 @@ package mimirpb
 import (
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/zeropool"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -179,6 +179,10 @@ func (p *PreallocTimeseries) ResizeExemplars(newSize int) {
 		}
 	}
 	p.Exemplars = p.Exemplars[:newSize]
+	p.clearUnmarshalData()
+}
+
+func (p *PreallocTimeseries) SamplesUpdated() {
 	p.clearUnmarshalData()
 }
 

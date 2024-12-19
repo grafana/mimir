@@ -30,14 +30,14 @@ import (
 // Labels that start with non-letter rune will be prefixed with "key_".
 // An exception is made for double-underscores which are allowed.
 func NormalizeLabel(label string) string {
-	// Trivial case
+	// Trivial case.
 	if len(label) == 0 {
 		return label
 	}
 
 	label = strutil.SanitizeLabelName(label)
 
-	// If label starts with a number, prepend with "key_"
+	// If label starts with a number, prepend with "key_".
 	if unicode.IsDigit(rune(label[0])) {
 		label = "key_" + label
 	} else if strings.HasPrefix(label, "_") && !strings.HasPrefix(label, "__") {

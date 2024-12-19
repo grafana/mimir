@@ -8,12 +8,12 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirtool/config"
 )

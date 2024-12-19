@@ -106,7 +106,7 @@ type seriesWithStats struct {
 }
 
 func printBlockIndex(ctx context.Context, blockDir string, printChunks bool, seriesStats bool, matchers []*labels.Matcher, minTime time.Time, maxTime time.Time, jsonOutput bool) {
-	block, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), blockDir, nil)
+	block, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), blockDir, nil, nil)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to open block", "dir", blockDir, "err", err)
 		return

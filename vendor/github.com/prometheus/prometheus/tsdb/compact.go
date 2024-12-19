@@ -95,6 +95,7 @@ type LeveledCompactor struct {
 	maxBlockChunkSegmentSize    int64
 	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
 	postingsEncoder             index.PostingsEncoder
+	postingsDecoderFactory      PostingsDecoderFactory
 	enableOverlappingCompaction bool
 	concurrencyOpts             LeveledCompactorConcurrencyOptions
 }
@@ -167,6 +168,9 @@ type LeveledCompactorOptions struct {
 	// PE specifies the postings encoder. It is called when compactor is writing out the postings for a label name/value pair during compaction.
 	// If it is nil then the default encoder is used. At the moment that is the "raw" encoder. See index.EncodePostingsRaw for more.
 	PE index.PostingsEncoder
+	// PD specifies the postings decoder factory to return different postings decoder based on BlockMeta. It is called when opening a block or opening the index file.
+	// If it is nil then a default decoder is used, compatible with Prometheus v2.
+	PD PostingsDecoderFactory
 	// MaxBlockChunkSegmentSize is the max block chunk segment size. If it is 0 then the default chunks.DefaultChunkSegmentSize is used.
 	MaxBlockChunkSegmentSize int64
 	// MergeFunc is used for merging series together in vertical compaction. By default storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge) is used.
@@ -174,6 +178,12 @@ type LeveledCompactorOptions struct {
 	// EnableOverlappingCompaction enables compaction of overlapping blocks. In Prometheus it is always enabled.
 	// It is useful for downstream projects like Mimir, Cortex, Thanos where they have a separate component that does compaction.
 	EnableOverlappingCompaction bool
+}
+
+type PostingsDecoderFactory func(meta *BlockMeta) index.PostingsDecoder
+
+func DefaultPostingsDecoderFactory(_ *BlockMeta) index.PostingsDecoder {
+	return index.DecodePostingsRaw
 }
 
 func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
@@ -222,6 +232,7 @@ func NewLeveledCompactorWithOptions(ctx context.Context, r prometheus.Registerer
 		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
 		mergeFunc:                   mergeFunc,
 		postingsEncoder:             pe,
+		postingsDecoderFactory:      opts.PD,
 		enableOverlappingCompaction: opts.EnableOverlappingCompaction,
 		concurrencyOpts:             DefaultLeveledCompactorConcurrencyOptions(),
 	}, nil
@@ -514,7 +525,7 @@ func (c *LeveledCompactor) CompactWithBlockPopulator(dest string, dirs []string,
 
 	start := time.Now()
 
-	bs, blocksToClose, err := openBlocksForCompaction(dirs, open, c.logger, c.chunkPool, c.concurrencyOpts.MaxOpeningBlocks)
+	bs, blocksToClose, err := openBlocksForCompaction(dirs, open, c.logger, c.chunkPool, c.postingsDecoderFactory, c.concurrencyOpts.MaxOpeningBlocks)
 	for _, b := range blocksToClose {
 		defer b.Close()
 	}
@@ -1138,7 +1149,7 @@ func (c DefaultBlockPopulator) PopulateBlock(ctx context.Context, metrics *Compa
 	if len(sets) > 1 {
 		// Merge series using specified chunk series merger.
 		// The default one is the compacting series merger.
-		set = storage.NewMergeChunkSeriesSet(sets, mergeFunc)
+		set = storage.NewMergeChunkSeriesSet(sets, 0, mergeFunc)
 	}
 
 	// Iterate over all sorted chunk series.
@@ -1227,7 +1238,7 @@ func populateSymbols(ctx context.Context, mergeFunc storage.VerticalChunkSeriesM
 
 	seriesSet := sets[0]
 	if len(sets) > 1 {
-		seriesSet = storage.NewMergeChunkSeriesSet(sets, mergeFunc)
+		seriesSet = storage.NewMergeChunkSeriesSet(sets, 0, mergeFunc)
 	}
 
 	for seriesSet.Next() {
@@ -1318,7 +1329,7 @@ func populateSymbols(ctx context.Context, mergeFunc storage.VerticalChunkSeriesM
 }
 
 // Returns opened blocks, and blocks that should be closed (also returned in case of error).
-func openBlocksForCompaction(dirs []string, open []*Block, logger *slog.Logger, pool chunkenc.Pool, concurrency int) (blocks, blocksToClose []*Block, _ error) {
+func openBlocksForCompaction(dirs []string, open []*Block, logger *slog.Logger, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, concurrency int) (blocks, blocksToClose []*Block, _ error) {
 	blocks = make([]*Block, 0, len(dirs))
 	blocksToClose = make([]*Block, 0, len(dirs))
 
@@ -1372,7 +1383,7 @@ func openBlocksForCompaction(dirs []string, open []*Block, logger *slog.Logger, 
 					return
 				}
 
-				b, err := OpenBlock(logger, d, pool)
+				b, err := OpenBlock(logger, d, pool, postingsDecoderFactory)
 				openResultCh <- openResult{b: b, err: err}
 
 				if err != nil {

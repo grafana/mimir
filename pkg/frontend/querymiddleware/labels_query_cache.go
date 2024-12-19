@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +18,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -53,7 +53,7 @@ func (c *labelsQueryTTL) ttl(userID string) time.Duration {
 }
 
 func (g DefaultCacheKeyGenerator) LabelValues(r *http.Request) (*GenericQueryCacheKey, error) {
-	labelValuesReq, err := g.codec.DecodeLabelsQueryRequest(r.Context(), r)
+	labelValuesReq, err := g.codec.DecodeLabelsSeriesQueryRequest(r.Context(), r)
 	if err != nil {
 		return nil, err
 	}

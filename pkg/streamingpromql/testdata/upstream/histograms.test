@@ -99,16 +99,14 @@ eval instant at 50m histogram_avg(testhistogram3)
 	{start="negative"} 4
 
 # Test histogram_stddev. This has no classic equivalent.
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_stddev(testhistogram3)
-#	{start="positive"} 2.8189265757336734
-#	{start="negative"} 4.182715937754936
+eval instant at 50m histogram_stddev(testhistogram3)
+	{start="positive"} 2.8189265757336734
+	{start="negative"} 4.182715937754936
 
 # Test histogram_stdvar. This has no classic equivalent.
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_stdvar(testhistogram3)
-#	{start="positive"} 7.946347039377573
-#	{start="negative"} 17.495112615949154
+eval instant at 50m histogram_stdvar(testhistogram3)
+	{start="positive"} 7.946347039377573
+	{start="negative"} 17.495112615949154
 
 # Test histogram_fraction.
 
@@ -459,14 +457,14 @@ load 5m
     nonmonotonic_bucket{le="1000"}  0+9x10
     nonmonotonic_bucket{le="+Inf"}  0+8x10
 
-# Nonmonotonic buckets
-eval instant at 50m histogram_quantile(0.01, nonmonotonic_bucket)
+# Nonmonotonic buckets, triggering an info annotation.
+eval_info instant at 50m histogram_quantile(0.01, nonmonotonic_bucket)
     {} 0.0045
 
-eval instant at 50m histogram_quantile(0.5, nonmonotonic_bucket)
+eval_info instant at 50m histogram_quantile(0.5, nonmonotonic_bucket)
     {} 8.5
 
-eval instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
+eval_info instant at 50m histogram_quantile(0.99, nonmonotonic_bucket)
     {} 979.75
 
 # Buckets with different representations of the same upper bound.

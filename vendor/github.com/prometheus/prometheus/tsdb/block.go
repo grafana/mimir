@@ -351,12 +351,12 @@ type Block struct {
 
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
-func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool) (pb *Block, err error) {
-	return OpenBlockWithOptions(logger, dir, pool, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce)
+func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory) (pb *Block, err error) {
+	return OpenBlockWithOptions(logger, dir, pool, postingsDecoderFactory, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce)
 }
 
 // OpenBlockWithOptions is like OpenBlock but allows to pass a cache provider and sharding function.
-func OpenBlockWithOptions(logger *slog.Logger, dir string, pool chunkenc.Pool, cache index.ReaderCacheProvider, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool) (pb *Block, err error) {
+func OpenBlockWithOptions(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, cache index.ReaderCacheProvider, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool) (pb *Block, err error) {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
@@ -377,7 +377,11 @@ func OpenBlockWithOptions(logger *slog.Logger, dir string, pool chunkenc.Pool, c
 	}
 	closers = append(closers, cr)
 
-	indexReader, err := index.NewFileReaderWithOptions(filepath.Join(dir, indexFilename), cache)
+	decoder := index.DecodePostingsRaw
+	if postingsDecoderFactory != nil {
+		decoder = postingsDecoderFactory(meta)
+	}
+	indexReader, err := index.NewFileReaderWithOptions(filepath.Join(dir, indexFilename), decoder, cache)
 	if err != nil {
 		return nil, err
 	}
