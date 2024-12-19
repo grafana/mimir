@@ -100,6 +100,12 @@ func init() {
 	}
 }
 
+type queryRecordingRuleFunc func(metricName, rangeVectorDuration string) string
+
+func queryRecordingRule(metricName, rangeVectorDuration string) string {
+	return fmt.Sprintf("%s[%s]", metricName, rangeVectorDuration)
+}
+
 type querySumFunc func(metricName string) string
 
 func querySumFloat(metricName string) string {
