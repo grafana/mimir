@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"sort"
 	"time"
+	"unsafe"
 
 	io2 "github.com/influxdata/influxdb/v2/kit/io"
 	"github.com/influxdata/influxdb/v2/models"
@@ -127,7 +128,7 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 			replaceInvalidChars(&key)
 			lbls = append(lbls, mimirpb.LabelAdapter{
 				Name:  key,
-				Value: string(tag.Value),
+				Value: yoloString(tag.Value),
 			})
 		}
 		sort.Slice(lbls, func(i, j int) bool {
@@ -183,4 +184,9 @@ func batchReadCloser(rc io.ReadCloser, encoding string, maxBatchSizeBytes int64)
 		rc = io2.NewLimitedReadCloser(rc, maxBatchSizeBytes)
 	}
 	return rc, nil
+}
+
+// yoloString to create strings that are guaranteed not to be referenced again.
+func yoloString(b []byte) string {
+        return *((*string)(unsafe.Pointer(&b)))
 }
