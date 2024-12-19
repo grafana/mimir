@@ -133,7 +133,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		chkReader, err := chunks.NewDirReader(filepath.Join(outDir, blockID, block.ChunksDirname), nil)
 		require.NoError(t, err)
 
-		ixReader, err := index.NewFileReader(filepath.Join(outDir, blockID, block.IndexFilename))
+		ixReader, err := index.NewFileReader(filepath.Join(outDir, blockID, block.IndexFilename), index.DecodePostingsRaw)
 		require.NoError(t, err)
 
 		n, v := index.AllPostingsKey()

@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/embedded"
+	"go.uber.org/atomic"
 )
 
 type OpenTelemetryProviderBridge struct {
@@ -143,6 +144,9 @@ type OpenTelemetrySpanBridge struct {
 
 	span     opentracing.Span
 	provider trace.TracerProvider
+
+	// ended allows us to provide idempotency for End. See the OTEL spec for End: https://github.com/open-telemetry/opentelemetry-specification/blob/50027a1036746dce293ee0a8592639f131fc1fb8/specification/trace/api.md#end
+	ended atomic.Bool
 }
 
 func NewOpenTelemetrySpanBridge(span opentracing.Span, provider trace.TracerProvider) *OpenTelemetrySpanBridge {
@@ -157,6 +161,9 @@ func NewOpenTelemetrySpanBridge(span opentracing.Span, provider trace.TracerProv
 // is called. Therefore, updates to the Span are not allowed after this
 // method has been called.
 func (s *OpenTelemetrySpanBridge) End(options ...trace.SpanEndOption) {
+	if !s.ended.CompareAndSwap(false, true) {
+		return
+	}
 	if len(options) == 0 {
 		s.span.Finish()
 		return

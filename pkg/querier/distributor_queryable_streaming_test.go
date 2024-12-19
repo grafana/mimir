@@ -128,7 +128,7 @@ func TestStreamingChunkSeries_CreateIteratorTwice(t *testing.T) {
 
 	iterator = series.Iterator(iterator)
 	require.NotNil(t, iterator)
-	require.EqualError(t, iterator.Err(), `can't create iterator multiple times for the one streaming series ({the-name="the-value"})`)
+	require.EqualError(t, iterator.Err(), `can't create iterator multiple times for the one streaming series ({"the-name"="the-value"})`)
 }
 
 func createTestChunk(t *testing.T, time int64, value float64) client.Chunk {

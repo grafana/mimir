@@ -351,9 +351,9 @@ func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 
 func maxRSSInBytes(usage *syscall.Rusage) int64 {
 	switch runtime.GOOS {
-	case "Linux":
+	case "linux":
 		return usage.Maxrss * 1024 // Maxrss is returned in kilobytes on Linux.
-	case "Darwin":
+	case "darwin":
 		return usage.Maxrss // Maxrss is already in bytes on macOS.
 	default:
 		panic(fmt.Sprintf("unknown GOOS '%v'", runtime.GOOS))

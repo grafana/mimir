@@ -516,8 +516,12 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	converter := otlptranslator.NewPrometheusConverter()
 	annots, err := converter.FromMetrics(r.Context(), req.Metrics(), otlptranslator.Settings{
-		AddMetricSuffixes:                          true,
-		PromoteResourceAttributes:                  otlpCfg.PromoteResourceAttributes,
+		AddMetricSuffixes:                 true,
+		AllowUTF8:                         otlpCfg.TranslationStrategy == config.NoUTF8EscapingWithSuffixes,
+		PromoteResourceAttributes:         otlpCfg.PromoteResourceAttributes,
+		KeepIdentifyingResourceAttributes: otlpCfg.KeepIdentifyingResourceAttributes,
+
+		// Mimir specifics.
 		EnableCreatedTimestampZeroIngestion:        h.enableCTZeroIngestion,
 		ValidIntervalCreatedTimestampZeroIngestion: h.validIntervalCTZeroIngestion,
 	}, h.logger)
@@ -531,6 +535,7 @@ func (h *otlpWriteHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	err = h.rwHandler.write(r.Context(), &prompb.WriteRequest{
 		Timeseries: converter.TimeSeries(),
+		Metadata:   converter.Metadata(),
 	})
 
 	switch {

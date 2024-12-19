@@ -53,7 +53,7 @@ const (
 	createdSuffix = "_created"
 	// maxExemplarRunes is the maximum number of UTF-8 exemplar characters
 	// according to the prometheus specification
-	// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars
+	// https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#exemplars
 	maxExemplarRunes = 128
 	// Trace and Span id keys are defined as part of the spec:
 	// https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification%2Fmetrics%2Fdatamodel.md#exemplars-2
@@ -160,7 +160,10 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	// map ensures no duplicate label names.
 	l := make(map[string]string, maxLabelCount)
 	for _, label := range labels {
-		var finalKey = prometheustranslator.NormalizeLabel(label.Name)
+		finalKey := label.Name
+		if !settings.AllowUTF8 {
+			finalKey = prometheustranslator.NormalizeLabel(finalKey)
+		}
 		if existingValue, alreadyExists := l[finalKey]; alreadyExists {
 			l[finalKey] = existingValue + ";" + label.Value
 		} else {
@@ -169,7 +172,10 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	}
 
 	for _, lbl := range promotedAttrs {
-		normalized := prometheustranslator.NormalizeLabel(lbl.Name)
+		normalized := lbl.Name
+		if !settings.AllowUTF8 {
+			normalized = prometheustranslator.NormalizeLabel(normalized)
+		}
 		if _, exists := l[normalized]; !exists {
 			l[normalized] = lbl.Value
 		}
@@ -207,7 +213,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 			log.Println("label " + name + " is overwritten. Check if Prometheus reserved labels are used.")
 		}
 		// internal labels should be maintained
-		if !(len(name) > 4 && name[:2] == "__" && name[len(name)-2:] == "__") {
+		if !settings.AllowUTF8 && !(len(name) > 4 && name[:2] == "__" && name[len(name)-2:] == "__") {
 			name = prometheustranslator.NormalizeLabel(name)
 		}
 		l[name] = extras[i+1]
@@ -591,10 +597,9 @@ const defaultIntervalForStartTimestamps = int64(300_000)
 // handleStartTime adds a zero sample at startTs only if startTs is within validIntervalForStartTimestamps of the sample timestamp.
 // The reason for doing this is that PRW v1 doesn't support Created Timestamps. After switching to PRW v2's direct CT support,
 // make use of its direct support fort Created Timestamps instead.
-// See https://github.com/prometheus/prometheus/issues/14600 for context.
 // See https://opentelemetry.io/docs/specs/otel/metrics/data-model/#resets-and-gaps to know more about how OTel handles
 // resets for cumulative metrics.
-func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.LabelAdapter, settings Settings, typ string, val float64, logger *slog.Logger) {
+func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.LabelAdapter, settings Settings, typ string, value float64, logger *slog.Logger) {
 	if !settings.EnableCreatedTimestampZeroIngestion {
 		return
 	}
@@ -616,9 +621,10 @@ func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.Lab
 		return
 	}
 
-	logger.Debug("adding zero value at start_ts", "type", typ, "labels", labelsStringer(labels), "start_ts", startTs, "sample_ts", ts, "sample_value", val)
+	logger.Debug("adding zero value at start_ts", "type", typ, "labels", labelsStringer(labels), "start_ts", startTs, "sample_ts", ts, "sample_value", value)
 
-	c.addSample(&mimirpb.Sample{TimestampMs: startTs, Value: math.Float64frombits(value.QuietZeroNaN)}, labels)
+	// See https://github.com/prometheus/prometheus/issues/14600 for context.
+	c.addSample(&mimirpb.Sample{TimestampMs: startTs}, labels)
 }
 
 // handleHistogramStartTime similar to the method above but for native histograms..
@@ -677,6 +683,10 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 	}
 
 	settings.PromoteResourceAttributes = nil
+	if settings.KeepIdentifyingResourceAttributes {
+		// Do not pass identifying attributes as ignoreAttrs below.
+		identifyingAttrs = nil
+	}
 	labels := createAttributes(resource, attributes, settings, identifyingAttrs, false, model.MetricNameLabel, name)
 	haveIdentifier := false
 	for _, l := range labels {

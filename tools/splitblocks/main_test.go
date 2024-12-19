@@ -201,14 +201,14 @@ func buildSeriesSpec(startOfDay time.Time) []*block.SeriesSpec {
 }
 
 func listSeriesAndChunksFromBlock(t *testing.T, blockDir string) []*block.SeriesSpec {
-	blk, err := tsdb.OpenBlock(promslog.NewNopLogger(), blockDir, nil)
+	blk, err := tsdb.OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
 	require.NoError(t, err)
 	chunkReader, err := blk.Chunks()
 	require.NoError(t, err)
 	defer require.NoError(t, chunkReader.Close())
 
 	allKey, allValue := index.AllPostingsKey()
-	r, err := index.NewFileReader(filepath.Join(blockDir, block.IndexFilename))
+	r, err := index.NewFileReader(filepath.Join(blockDir, block.IndexFilename), index.DecodePostingsRaw)
 	require.NoError(t, err)
 	defer runutil.CloseWithErrCapture(&err, r, "gather index issue file reader")
 	it, err := r.Postings(context.Background(), allKey, allValue)

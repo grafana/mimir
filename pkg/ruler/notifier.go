@@ -27,6 +27,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
@@ -51,10 +52,11 @@ func (cfg *NotifierConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 type OAuth2Config struct {
-	ClientID     string                 `yaml:"client_id"`
-	ClientSecret flagext.Secret         `yaml:"client_secret"`
-	TokenURL     string                 `yaml:"token_url"`
-	Scopes       flagext.StringSliceCSV `yaml:"scopes,omitempty"`
+	ClientID       string                       `yaml:"client_id"`
+	ClientSecret   flagext.Secret               `yaml:"client_secret"`
+	TokenURL       string                       `yaml:"token_url"`
+	Scopes         flagext.StringSliceCSV       `yaml:"scopes,omitempty"`
+	EndpointParams validation.LimitsMap[string] `yaml:"endpoint_params" category:"advanced"`
 }
 
 func (cfg *OAuth2Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -62,6 +64,10 @@ func (cfg *OAuth2Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet)
 	f.Var(&cfg.ClientSecret, prefix+"client_secret", "OAuth2 client secret.")
 	f.StringVar(&cfg.TokenURL, prefix+"token_url", "", "Endpoint used to fetch access token.")
 	f.Var(&cfg.Scopes, prefix+"scopes", "Optional scopes to include with the token request.")
+	if !cfg.EndpointParams.IsInitialized() {
+		cfg.EndpointParams = validation.NewLimitsMap[string](nil)
+	}
+	f.Var(&cfg.EndpointParams, prefix+"endpoint-params", "Optional additional URL parameters to send to the token URL.")
 }
 
 func (cfg *OAuth2Config) IsEnabled() bool {
@@ -224,6 +230,10 @@ func amConfigWithSD(rulerConfig *Config, url *url.URL, sdConfig discovery.Config
 			ClientSecret: config_util.Secret(rulerConfig.Notifier.OAuth2.ClientSecret.String()),
 			TokenURL:     rulerConfig.Notifier.OAuth2.TokenURL,
 			Scopes:       rulerConfig.Notifier.OAuth2.Scopes,
+		}
+
+		if rulerConfig.Notifier.OAuth2.EndpointParams.IsInitialized() {
+			amConfig.HTTPClientConfig.OAuth2.EndpointParams = rulerConfig.Notifier.OAuth2.EndpointParams.Read()
 		}
 
 		if rulerConfig.Notifier.ProxyURL != "" {

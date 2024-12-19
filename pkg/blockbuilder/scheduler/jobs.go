@@ -19,39 +19,48 @@ var (
 	errBadEpoch       = errors.New("bad epoch")
 )
 
-type jobQueue struct {
+type jobQueue[T any] struct {
 	leaseExpiry time.Duration
 	logger      log.Logger
 
 	mu         sync.Mutex
 	epoch      int64
-	jobs       map[string]*job
-	unassigned jobHeap
+	jobs       map[string]*job[T]
+	unassigned jobHeap[*job[T]]
 }
 
-func newJobQueue(leaseExpiry time.Duration, logger log.Logger) *jobQueue {
-	return &jobQueue{
+func newJobQueue[T any](leaseExpiry time.Duration, logger log.Logger, lessFunc func(T, T) bool) *jobQueue[T] {
+	return &jobQueue[T]{
 		leaseExpiry: leaseExpiry,
 		logger:      logger,
 
-		jobs: make(map[string]*job),
+		jobs: make(map[string]*job[T]),
+
+		unassigned: jobHeap[*job[T]]{
+			h: make([]*job[T], 0),
+			less: func(a, b *job[T]) bool {
+				// Call into the provided lessFunc to compare the job specs.
+				return lessFunc(a.spec, b.spec)
+			},
+		},
 	}
 }
 
 // assign assigns the highest-priority unassigned job to the given worker.
-func (s *jobQueue) assign(workerID string) (jobKey, jobSpec, error) {
+func (s *jobQueue[T]) assign(workerID string) (jobKey, T, error) {
+	var empty T
 	if workerID == "" {
-		return jobKey{}, jobSpec{}, errors.New("workerID cannot be empty")
+		return jobKey{}, empty, errors.New("workerID cannot be empty")
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.unassigned.Len() == 0 {
-		return jobKey{}, jobSpec{}, errNoJobAvailable
+		return jobKey{}, empty, errNoJobAvailable
 	}
 
-	j := heap.Pop(&s.unassigned).(*job)
+	j := heap.Pop(&s.unassigned).(*job[T])
 	j.key.epoch = s.epoch
 	s.epoch++
 	j.assignee = workerID
@@ -62,7 +71,7 @@ func (s *jobQueue) assign(workerID string) (jobKey, jobSpec, error) {
 // importJob imports a job with the given ID and spec into the jobQueue. This is
 // meant to be used during recovery, when we're reconstructing the jobQueue from
 // worker updates.
-func (s *jobQueue) importJob(key jobKey, workerID string, spec jobSpec) error {
+func (s *jobQueue[T]) importJob(key jobKey, workerID string, spec T) error {
 	if key.id == "" {
 		return errors.New("jobID cannot be empty")
 	}
@@ -92,7 +101,7 @@ func (s *jobQueue) importJob(key jobKey, workerID string, spec jobSpec) error {
 			j.spec = spec
 		}
 	} else {
-		s.jobs[key.id] = &job{
+		s.jobs[key.id] = &job[T]{
 			key:         key,
 			assignee:    workerID,
 			leaseExpiry: time.Now().Add(s.leaseExpiry),
@@ -104,7 +113,7 @@ func (s *jobQueue) importJob(key jobKey, workerID string, spec jobSpec) error {
 }
 
 // addOrUpdate adds a new job or updates an existing job with the given spec.
-func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
+func (s *jobQueue[T]) addOrUpdate(id string, spec T) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -118,7 +127,7 @@ func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 	}
 
 	// Otherwise, add a new job.
-	j := &job{
+	j := &job[T]{
 		key: jobKey{
 			id:    id,
 			epoch: 0,
@@ -136,7 +145,7 @@ func (s *jobQueue) addOrUpdate(id string, spec jobSpec) {
 
 // renewLease renews the lease of the job with the given ID for the given
 // worker.
-func (s *jobQueue) renewLease(key jobKey, workerID string) error {
+func (s *jobQueue[T]) renewLease(key jobKey, workerID string) error {
 	if key.id == "" {
 		return errors.New("jobID cannot be empty")
 	}
@@ -167,7 +176,7 @@ func (s *jobQueue) renewLease(key jobKey, workerID string) error {
 
 // completeJob completes the job with the given ID for the given worker,
 // removing it from the jobQueue.
-func (s *jobQueue) completeJob(key jobKey, workerID string) error {
+func (s *jobQueue[T]) completeJob(key jobKey, workerID string) error {
 	if key.id == "" {
 		return errors.New("jobID cannot be empty")
 	}
@@ -197,7 +206,7 @@ func (s *jobQueue) completeJob(key jobKey, workerID string) error {
 
 // clearExpiredLeases unassigns jobs whose leases have expired, making them
 // eligible for reassignment.
-func (s *jobQueue) clearExpiredLeases() {
+func (s *jobQueue[T]) clearExpiredLeases() {
 	now := time.Now()
 
 	s.mu.Lock()
@@ -214,15 +223,15 @@ func (s *jobQueue) clearExpiredLeases() {
 	}
 }
 
-type job struct {
+type job[T any] struct {
 	key jobKey
 
 	assignee    string
 	leaseExpiry time.Time
 	failCount   int
 
-	// job payload details. We can make this generic later for reuse.
-	spec jobSpec
+	// spec contains the job payload details disseminated to the worker.
+	spec T
 }
 
 type jobKey struct {
@@ -232,38 +241,26 @@ type jobKey struct {
 	epoch int64
 }
 
-type jobSpec struct {
-	topic          string
-	partition      int32
-	startOffset    int64
-	endOffset      int64
-	commitRecTs    time.Time
-	lastSeenOffset int64
-	lastBlockEndTs time.Time
+type jobHeap[T any] struct {
+	h    []T
+	less func(T, T) bool
 }
 
-func (a *jobSpec) less(b *jobSpec) bool {
-	return a.commitRecTs.Before(b.commitRecTs)
+// Implement the heap.Interface for jobHeap's `h` field.
+func (h jobHeap[T]) Len() int           { return len(h.h) }
+func (h jobHeap[T]) Less(i, j int) bool { return h.less(h.h[i], h.h[j]) }
+func (h jobHeap[T]) Swap(i, j int)      { h.h[i], h.h[j] = h.h[j], h.h[i] }
+
+func (h *jobHeap[T]) Push(x any) {
+	h.h = append(h.h, x.(T))
 }
 
-type jobHeap []*job
-
-// Implement the heap.Interface for jobHeap.
-func (h jobHeap) Len() int           { return len(h) }
-func (h jobHeap) Less(i, j int) bool { return h[i].spec.less(&h[j].spec) }
-func (h jobHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-
-func (h *jobHeap) Push(x interface{}) {
-	*h = append(*h, x.(*job))
-}
-
-func (h *jobHeap) Pop() interface{} {
-	old := *h
+func (h *jobHeap[T]) Pop() any {
+	old := h.h
 	n := len(old)
 	x := old[n-1]
-	old[n-1] = nil
-	*h = old[0 : n-1]
+	h.h = old[0 : n-1]
 	return x
 }
 
-var _ heap.Interface = (*jobHeap)(nil)
+var _ heap.Interface = (*jobHeap[int])(nil)

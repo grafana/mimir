@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -36,6 +37,10 @@ import (
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 )
 
+// DefaultChunkedReadLimit is the default value for the maximum size of the protobuf frame client allows.
+// 50MB is the default. This is equivalent to ~100k full XOR chunks and average labelset.
+const DefaultChunkedReadLimit = 5e+7
+
 type RemoteReadCommand struct {
 	address        string
 	remoteReadPath string
@@ -46,9 +51,10 @@ type RemoteReadCommand struct {
 	readTimeout time.Duration
 	tsdbPath    string
 
-	selector string
-	from     string
-	to       string
+	selector      string
+	from          string
+	to            string
+	readSizeLimit uint64
 }
 
 func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
@@ -88,6 +94,9 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 		cmd.Flag("to", "End of the time window to select metrics.").
 			Default(now.Format(time.RFC3339)).
 			StringVar(&c.to)
+		cmd.Flag("read-size-limit", "Maximum number of bytes to read.").
+			Default(strconv.Itoa(DefaultChunkedReadLimit)).
+			Uint64Var(&c.readSizeLimit)
 	}
 
 	exportCmd.Flag("tsdb-path", "Path to the folder where to store the TSDB blocks, if not set a new directory in $TEMP is created.").
@@ -200,6 +209,7 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 				Password: config_util.Secret(c.apiKey),
 			},
 		},
+		ChunkedReadLimit: c.readSizeLimit,
 		Headers: map[string]string{
 			"User-Agent": client.UserAgent(),
 		},
@@ -315,6 +325,10 @@ func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
 		}
 	}
 
+	if err := timeseries.Err(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -381,6 +395,10 @@ func (c *RemoteReadCommand) stats(_ *kingpin.ParseContext) error {
 				num.StaleNaNValues++
 			}
 		}
+	}
+
+	if err := timeseries.Err(); err != nil {
+		return err
 	}
 
 	output := bytes.NewBuffer(nil)

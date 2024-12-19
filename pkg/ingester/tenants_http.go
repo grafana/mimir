@@ -8,11 +8,11 @@ import (
 	"html/template"
 	"math"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/prometheus/tsdb"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/util"
 )

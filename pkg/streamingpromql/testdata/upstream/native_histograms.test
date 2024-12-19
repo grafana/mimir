@@ -317,13 +317,11 @@ clear
 load 10m
    histogram_stddev_stdvar_1 {{schema:2 count:4 sum:10 buckets:[1 0 0 0 1 0 0 1 1]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_1)
-#     {} 1.0787993180043811
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_1)
+    {} 1.0787993180043811
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_1)
-#     {} 1.163807968526718
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_1)
+    {} 1.163807968526718
 
 clear
 
@@ -331,13 +329,11 @@ clear
 load 10m
    histogram_stddev_stdvar_2 {{schema:8 count:10 sum:10 buckets:[1 2 3 4]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_2)
-#     {} 0.0048960313898237465
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_2)
+    {} 0.0048960313898237465
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_2)
-#     {} 2.3971123370139447e-05
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_2)
+    {} 2.3971123370139447e-05
 
 clear
 
@@ -345,13 +341,11 @@ clear
 load 10m
    histogram_stddev_stdvar_3 {{schema:3 count:7 sum:62 z_bucket:1 buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ] n_buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_3)
-#     {} 42.947236400258
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_3)
+    {} 42.947236400258
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_3)
-#     {} 1844.4651144196398
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_3)
+    {} 1844.4651144196398
 
 clear
 
@@ -359,13 +353,11 @@ clear
 load 10m
    histogram_stddev_stdvar_4 {{schema:0 count:10 sum:-112946 z_bucket:0 n_buckets:[0 0 1 1 1 0 1 1 0 0 3 0 0 0 1 0 0 1]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_4)
-#     {} 27556.344499842
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_4)
+    {} 27556.344499842
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_4)
-#     {} 759352122.1939945
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_4)
+    {} 759352122.1939945
 
 clear
 
@@ -373,13 +365,11 @@ clear
 load 10m
    histogram_stddev_stdvar_5 {{schema:0 count:10 sum:-100 z_bucket:0 n_buckets:[0 0 0 0 10]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_5)
-#     {} 1.3137084989848
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_5)
+    {} 1.3137084989848
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_5)
-#     {} 1.725830020304794
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_5)
+    {} 1.725830020304794
 
 clear
 
@@ -387,13 +377,11 @@ clear
 load 10m
    histogram_stddev_stdvar_6 {{schema:3 count:7 sum:NaN z_bucket:1 buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ] n_buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_6)
-#     {} NaN
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_6)
+    {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_6)
-#     {} NaN
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_6)
+    {} NaN
 
 clear
 
@@ -401,13 +389,11 @@ clear
 load 10m
    histogram_stddev_stdvar_7 {{schema:3 count:7 sum:Inf z_bucket:1 buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ] n_buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_7)
-#     {} Inf
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_7)
+    {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_7)
-#     {} Inf
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_7)
+    {} Inf
 
 clear
 
@@ -1105,14 +1091,12 @@ eval instant at 5m histogram_quantile(1.0, rate(const_histogram[5m]))
     {} NaN
 
 # Zero buckets mean no observations, so there is no standard deviation.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_stddev(rate(const_histogram[5m]))
-#     {} NaN
+eval instant at 5m histogram_stddev(rate(const_histogram[5m]))
+    {} NaN
 
 # Zero buckets mean no observations, so there is no standard variance.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_stdvar(rate(const_histogram[5m]))
-#     {} NaN
+eval instant at 5m histogram_stdvar(rate(const_histogram[5m]))
+    {} NaN
 
 clear
 
@@ -1205,5 +1189,25 @@ eval instant at 3m sum_over_time(histogram_sum_over_time[4m:1m])
 
 eval instant at 3m avg_over_time(histogram_sum_over_time[4m:1m])
     {} {{schema:0 count:26.75 sum:1172.8 z_bucket:3.5 z_bucket_w:0.001 buckets:[0.75 2 0.5 1.25 0.75 0.5 0.5] n_buckets:[0.5 1.5 2 1 3.75 2.25 0 0 0 2.5 2.5 1]}}
+
+clear
+
+# Test native histograms with sub operator.
+load 10m
+    histogram_sub_1{idx="0"} {{schema:0 count:41 sum:2345.6 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}}x1
+    histogram_sub_1{idx="1"} {{schema:0 count:11 sum:1234.5 z_bucket:3 z_bucket_w:0.001 buckets:[0 2 1] n_buckets:[0 0 3 2]}}x1
+    histogram_sub_2{idx="0"} {{schema:0 count:41 sum:2345.6 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}}x1
+    histogram_sub_2{idx="1"} {{schema:1 count:11 sum:1234.5 z_bucket:3 z_bucket_w:0.001 buckets:[0 2 1] n_buckets:[0 0 3 2]}}x1
+    histogram_sub_3{idx="0"} {{schema:1 count:11 sum:1234.5 z_bucket:3 z_bucket_w:0.001 buckets:[0 2 1] n_buckets:[0 0 3 2]}}x1
+    histogram_sub_3{idx="1"} {{schema:0 count:41 sum:2345.6 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}}x1
+
+eval instant at 10m histogram_sub_1{idx="0"} - ignoring(idx) histogram_sub_1{idx="1"}
+    {} {{schema:0 count:30 sum:1111.1 z_bucket:2 z_bucket_w:0.001 buckets:[1 1 0 2 1 1 1] n_buckets:[0 1 1 0 7 0 0 0 0 5 5 2]}}
+
+eval instant at 10m histogram_sub_2{idx="0"} - ignoring(idx) histogram_sub_2{idx="1"}
+    {} {{schema:0 count:30 sum:1111.1 z_bucket:2 z_bucket_w:0.001 buckets:[1 0 1 2 1 1 1] n_buckets:[0 -2 2 2 7 0 0 0 0 5 5 2]}}
+
+eval instant at 10m histogram_sub_3{idx="0"} - ignoring(idx) histogram_sub_3{idx="1"}
+    {} {{schema:0 count:-30 sum:-1111.1 z_bucket:-2 z_bucket_w:0.001 buckets:[-1 0 -1 -2 -1 -1 -1] n_buckets:[0 2 -2 -2 -7 0 0 0 0 -5 -5 -2]}}
 
 clear
