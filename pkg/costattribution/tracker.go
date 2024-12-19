@@ -306,9 +306,8 @@ func (t *Tracker) shouldDelete(deadline int64) bool {
 	if t.cooldownUntil != nil && t.cooldownUntil.Load() < deadline {
 		if len(t.observed) <= t.maxCardinality {
 			return true
-		} else {
-			t.cooldownUntil.Store(deadline + t.cooldownDuration)
 		}
+		t.cooldownUntil.Store(deadline + t.cooldownDuration)
 	}
 	return false
 }
