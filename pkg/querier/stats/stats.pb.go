@@ -51,7 +51,6 @@ type Stats struct {
 	// The time spent at the frontend encoding the query's final results. Does not include time spent serializing results at the querier.
 	EncodeTime time.Duration `protobuf:"bytes,10,opt,name=encode_time,json=encodeTime,proto3,stdduration" json:"encode_time"`
 	// TotalSamples represents the total number of samples scanned while evaluating a query.
-	// This value is taken from the Prometheus engine github.com/prometheus/prometheus/util/stats/query_stats.go
 	SamplesProcessed uint64 `protobuf:"varint,11,opt,name=samples_processed,json=samplesProcessed,proto3" json:"samples_processed,omitempty"`
 }
 
