@@ -5,7 +5,6 @@ package querier
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/common/model"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/route"
 	"github.com/prometheus/prometheus/config"
