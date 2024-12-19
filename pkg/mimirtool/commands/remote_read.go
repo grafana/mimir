@@ -37,6 +37,10 @@ import (
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 )
 
+// DefaultChunkedReadLimit is the default value for the maximum size of the protobuf frame client allows.
+// 50MB is the default. This is equivalent to ~100k full XOR chunks and average labelset.
+const DefaultChunkedReadLimit = 5e+7
+
 type RemoteReadCommand struct {
 	address        string
 	remoteReadPath string
@@ -91,7 +95,7 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 			Default(now.Format(time.RFC3339)).
 			StringVar(&c.to)
 		cmd.Flag("read-size-limit", "Maximum number of bytes to read.").
-			Default(strconv.Itoa(int(math.Pow(1024, 2)))). // 1MiB
+			Default(strconv.Itoa(DefaultChunkedReadLimit)). // 1MiB
 			Uint64Var(&c.readSizeLimit)
 	}
 
