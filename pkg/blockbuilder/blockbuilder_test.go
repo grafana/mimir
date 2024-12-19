@@ -833,7 +833,7 @@ type mockSchedulerClient struct {
 	completeJobCalls int
 }
 
-func (m *mockSchedulerClient) Run(ctx context.Context) {
+func (m *mockSchedulerClient) Run(_ context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.runCalls++
