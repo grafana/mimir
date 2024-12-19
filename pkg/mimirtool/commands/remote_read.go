@@ -393,6 +393,10 @@ func (c *RemoteReadCommand) stats(_ *kingpin.ParseContext) error {
 		}
 	}
 
+	if err := timeseries.Err(); err != nil {
+		return err
+	}
+
 	output := bytes.NewBuffer(nil)
 	tw := tabwriter.NewWriter(output, 13, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "MIN TIME\tMAX TIME\tDURATION\tNUM SAMPLES\tNUM SERIES\tNUM STALE NAN VALUES\tNUM NAN VALUES")
