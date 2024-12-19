@@ -45,7 +45,17 @@ We do not guarantee backwards compatibility for experimental features and flags.
 Experimental configuration and flags are subject to change.
 
 The following features are currently experimental:
-
+- Cost attribution
+  - Configure labels for cost attribution
+    - `-validation.cost-attribution-labels`
+  - Configure cost attribution limits, such as label cardinality and the maximum number of cost attribution labels
+    - `-validation.max-cost-attribution-labels-per-user`
+    - `-validation.max-cost-attribution-cardinality-per-user`
+  - Configure cooldown periods and eviction intervals for cost attribution
+    - `-validation.cost-attribution-cooldown`
+    - `-cost-attribution.eviction-interval`
+  - Configure the metrics endpoint dedicated to cost attribution
+    - `-cost-attribution.registry-path`
 - Alertmanager
   - Enable a set of experimental API endpoints to help support the migration of the Grafana Alertmanager to the Mimir Alertmanager.
     - `-alertmanager.grafana-alertmanager-compatibility-enabled`
