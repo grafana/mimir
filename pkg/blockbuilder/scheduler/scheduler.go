@@ -247,7 +247,6 @@ func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *schedulerpb.As
 }
 
 // assignJob returns an assigned job for the given workerID.
-// (This is a temporary method for unit tests until we have RPCs.)
 func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.JobSpec, error) {
 	s.mu.Lock()
 	doneObserving := s.observationComplete
