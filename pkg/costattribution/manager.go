@@ -123,17 +123,17 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
 		}
 
 		invalidKeys := m.inactiveObservationsForUser(userID, deadline)
-		cat := m.Tracker(userID)
+		t := m.Tracker(userID)
 		for _, key := range invalidKeys {
-			cat.cleanupTrackerAttribution(key)
+			t.cleanupTrackerAttribution(key)
 		}
 
-		if cat != nil && cat.cooldownUntil != nil && cat.cooldownUntil.Load() < deadline {
-			if len(cat.observed) <= cat.MaxCardinality() {
-				cat.state = OverflowComplete
+		if t != nil && t.cooldownUntil != nil && t.cooldownUntil.Load() < deadline {
+			if len(t.observed) <= t.MaxCardinality() {
+				t.state = OverflowComplete
 				m.deleteTracker(userID)
 			} else {
-				cat.cooldownUntil.Store(deadline + cat.cooldownDuration)
+				t.cooldownUntil.Store(deadline + t.cooldownDuration)
 			}
 		}
 	}
@@ -141,28 +141,28 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
 }
 
 func (m *Manager) inactiveObservationsForUser(userID string, deadline int64) []string {
-	cat := m.Tracker(userID)
+	t := m.Tracker(userID)
 	newTrackedLabels := m.limits.CostAttributionLabels(userID)
 	sort.Slice(newTrackedLabels, func(i, j int) bool {
 		return newTrackedLabels[i] < newTrackedLabels[j]
 	})
 
-	if !cat.CompareCALabels(newTrackedLabels) {
+	if !t.CompareCALabels(newTrackedLabels) {
 		m.mtx.Lock()
-		cat = newTracker(userID, newTrackedLabels, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
-		m.trackersByUserID[userID] = cat
+		t = newTracker(userID, newTrackedLabels, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
+		m.trackersByUserID[userID] = t
 		m.mtx.Unlock()
 		return nil
 	}
 	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
-	if cat.MaxCardinality() != maxCardinality {
-		cat.UpdateMaxCardinality(maxCardinality)
+	if t.MaxCardinality() != maxCardinality {
+		t.UpdateMaxCardinality(maxCardinality)
 	}
 
 	cooldown := int64(m.limits.CostAttributionCooldown(userID).Seconds())
-	if cooldown != cat.CooldownDuration() {
-		cat.UpdateCooldownDuration(cooldown)
+	if cooldown != t.CooldownDuration() {
+		t.UpdateCooldownDuration(cooldown)
 	}
 
-	return cat.InactiveObservations(deadline)
+	return t.InactiveObservations(deadline)
 }
