@@ -37,17 +37,6 @@ func TestMain(m *testing.M) {
 	test.VerifyNoLeakTestMain(m)
 }
 
-func TestNewLazyBinaryReader_ShouldFailIfUnableToBuildIndexHeader(t *testing.T) {
-	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
-
-	testLazyBinaryReader(t, bkt, tmpDir, ulid.ULID{}, func(t *testing.T, _ *LazyBinaryReader, err error) {
-		require.Error(t, err)
-	})
-}
-
 func TestNewLazyBinaryReader_ShouldBuildIndexHeaderFromBucket(t *testing.T) {
 	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
 
@@ -177,7 +166,8 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 }
 
 func initBucketAndBlocksForTest(t testing.TB) (string, *filesystem.Bucket, ulid.ULID) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
 
 	tmpDir := filepath.Join(t.TempDir(), "test-indexheader")
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
@@ -196,13 +186,15 @@ func initBucketAndBlocksForTest(t testing.TB) (string, *filesystem.Bucket, ulid.
 }
 
 func testLazyBinaryReader(t *testing.T, bkt objstore.BucketReader, dir string, id ulid.ULID, test func(t *testing.T, r *LazyBinaryReader, err error)) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
 	logger := log.NewNopLogger()
 	factory := func() (Reader, error) {
 		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, 3, NewStreamBinaryReaderMetrics(nil), Config{})
 	}
 
-	reader, err := NewLazyBinaryReader(ctx, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+	reader, err := NewLazyBinaryReader(ctx, logger, factory, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, reader.Close()) })
 	}
@@ -213,7 +205,7 @@ func testLazyBinaryReader(t *testing.T, bkt objstore.BucketReader, dir string, i
 // concurrent loads such that it doesn't pass the configured maximum.
 func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 	t.Parallel()
-	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+	_, _, blockID := initBucketAndBlocksForTest(t)
 
 	logger := log.NewNopLogger()
 
@@ -246,7 +238,7 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 
 	for i := 0; i < numLazyReader; i++ {
 		var err error
-		lazyReaders[i], err = NewLazyBinaryReader(context.Background(), factory, logger, bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+		lazyReaders[i], err = NewLazyBinaryReader(context.Background(), logger, factory, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 		require.NoError(t, err)
 		readerToClose := lazyReaders[i]
 		t.Cleanup(func() { require.NoError(t, readerToClose.Close()) })
@@ -270,7 +262,7 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 }
 
 func TestLazyBinaryReader_ConcurrentLoadingOfSameIndexReader(t *testing.T) {
-	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+	_, _, blockID := initBucketAndBlocksForTest(t)
 
 	const (
 		maxLazyLoadConcurrency = 1
@@ -280,7 +272,7 @@ func TestLazyBinaryReader_ConcurrentLoadingOfSameIndexReader(t *testing.T) {
 	factory := func() (Reader, error) { return nil, errors.New("error") }
 
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
-	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+	lazyReader, err := NewLazyBinaryReader(context.Background(), log.NewNopLogger(), factory, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, lazyReader.Close()) })
 
@@ -352,7 +344,7 @@ func (m mockReader) LabelNames(context.Context) ([]string, error) {
 }
 
 func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading(t *testing.T) {
-	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+	_, _, blockID := initBucketAndBlocksForTest(t)
 
 	const (
 		maxLazyLoadConcurrency = 1
@@ -373,7 +365,7 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading(t
 	}
 
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
-	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+	lazyReader, err := NewLazyBinaryReader(context.Background(), log.NewNopLogger(), factory, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, lazyReader.Close()) })
 
@@ -401,7 +393,7 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading(t
 }
 
 func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_LoadingReturnsAnError(t *testing.T) {
-	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+	_, _, blockID := initBucketAndBlocksForTest(t)
 
 	const (
 		maxLazyLoadConcurrency = 1
@@ -420,7 +412,7 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_L
 	}
 
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
-	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+	lazyReader, err := NewLazyBinaryReader(context.Background(), log.NewNopLogger(), factory, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 	require.NoError(t, err)
 
 	t.Cleanup(func() { require.NoError(t, lazyReader.Close()) })
@@ -458,7 +450,7 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_L
 func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_NoZombieReaders(t *testing.T) {
 	// This test makes sure that if we requested a reader, but then gave up, then the reader is properly closed and
 	// isn't open forever.
-	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
+	_, _, blockID := initBucketAndBlocksForTest(t)
 
 	const (
 		maxLazyLoadConcurrency = 1
@@ -473,7 +465,7 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_N
 	}
 
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
-	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+	lazyReader, err := NewLazyBinaryReader(context.Background(), log.NewNopLogger(), factory, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 	t.Cleanup(func() { require.NoError(t, lazyReader.Close()) })
 
 	require.NoError(t, err)
@@ -534,7 +526,7 @@ func TestLazyBinaryReader_SymbolReaderAndUnload(t *testing.T) {
 }
 
 func BenchmarkNewLazyBinaryReader(b *testing.B) {
-	tmpDir, bkt, blockID := initBucketAndBlocksForTest(b)
+	_, _, blockID := initBucketAndBlocksForTest(b)
 
 	factory := func() (Reader, error) {
 		reader := mockReader{
@@ -543,7 +535,7 @@ func BenchmarkNewLazyBinaryReader(b *testing.B) {
 		return reader, nil
 	}
 
-	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+	lazyReader, err := NewLazyBinaryReader(context.Background(), log.NewNopLogger(), factory, blockID, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 	if err != nil {
 		b.Fatal(err)
 	}
