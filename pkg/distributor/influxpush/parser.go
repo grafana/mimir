@@ -71,7 +71,7 @@ func writeRequestFromInfluxPoints(points []models.Point) ([]mimirpb.PreallocTime
 	}
 	for _, pt := range points {
 		var err error
-		err, returnTs = influxPointToTimeseries(pt, returnTs)
+		returnTs, err = influxPointToTimeseries(pt, returnTs)
 		if err != nil {
 			return nil, err
 		}
@@ -81,11 +81,11 @@ func writeRequestFromInfluxPoints(points []models.Point) ([]mimirpb.PreallocTime
 }
 
 // Points to Prometheus is heavily inspired from https://github.com/prometheus/influxdb_exporter/blob/a1dc16ad596a990d8854545ea39a57a99a3c7c43/main.go#L148-L211
-func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeseries) (error, []mimirpb.PreallocTimeseries) {
+func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeseries) ([]mimirpb.PreallocTimeseries, error) {
 
 	fields, err := pt.Fields()
 	if err != nil {
-		return fmt.Errorf("can't get fields from point: %w", err), returnTs
+		return returnTs, fmt.Errorf("can't get fields from point: %w", err)
 	}
 	for field, v := range fields {
 		var value float64
@@ -146,7 +146,7 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 		returnTs = append(returnTs, mimirpb.PreallocTimeseries{TimeSeries: &ts})
 	}
 
-	return nil, returnTs
+	return returnTs, nil
 }
 
 // analog of invalidChars = regexp.MustCompile("[^a-zA-Z0-9_]")
