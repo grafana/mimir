@@ -64,14 +64,14 @@ func Test_CreateDeleteTracker(t *testing.T) {
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
 		user1Tracker := manager.Tracker("user1")
 		assert.NotNil(t, user1Tracker)
-		assert.True(t, user1Tracker.CompareCALabels([]string{"team"}))
+		assert.True(t, user1Tracker.CompareLabels([]string{"team"}))
 		assert.Equal(t, 5, user1Tracker.MaxCardinality())
 
 		assert.Nil(t, manager.Tracker("user2"))
 
 		user3Tracker := manager.Tracker("user3")
 		assert.NotNil(t, user3Tracker)
-		assert.True(t, user3Tracker.CompareCALabels([]string{"department", "service"}))
+		assert.True(t, user3Tracker.CompareLabels([]string{"department", "service"}))
 		assert.Equal(t, 2, user3Tracker.MaxCardinality())
 	})
 
@@ -124,7 +124,7 @@ func Test_CreateDeleteTracker(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(12, 0).Unix()))
 		assert.Equal(t, 1, len(manager.trackersByUserID))
-		assert.True(t, manager.Tracker("user3").CompareCALabels([]string{"feature", "team"}))
+		assert.True(t, manager.Tracker("user3").CompareLabels([]string{"feature", "team"}))
 
 		manager.Tracker("user3").IncrementDiscardedSamples(labels.FromStrings("team", "foo"), 1, "invalid-metrics-name", time.Unix(13, 0))
 		expectedMetrics := `

@@ -35,8 +35,8 @@ type Observation struct {
 
 type Tracker struct {
 	userID                         string
-	caLabels                       []string
-	caLabelMap                     map[string]int
+	labels                         []string
+	index                          map[string]int
 	maxCardinality                 int
 	activeSeriesPerUserAttribution *prometheus.Desc
 	receivedSamplesAttribution     *prometheus.Desc
@@ -60,10 +60,10 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 	})
 
 	// Create a map for fast lookup, and overflow labels to export when overflow happens
-	caLabelMap := make(map[string]int, len(trackedLabels))
+	index := make(map[string]int, len(trackedLabels))
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i, label := range trackedLabels {
-		caLabelMap[label] = i
+		index[label] = i
 		overflowLabels[i] = overflowValue
 	}
 
@@ -72,8 +72,8 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 
 	tracker := &Tracker{
 		userID:                  userID,
-		caLabels:                trackedLabels,
-		caLabelMap:              caLabelMap,
+		labels:                  trackedLabels,
+		index:                   index,
 		maxCardinality:          limit,
 		observed:                make(map[string]*Observation),
 		hashBuffer:              make([]byte, 0, 1024),
@@ -102,15 +102,15 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 	return tracker
 }
 
-func (t *Tracker) CompareCALabels(currentLabels []string) bool {
+func (t *Tracker) CompareLabels(currentLabels []string) bool {
 	if t == nil {
 		return len(currentLabels) == 0
 	}
-	if len(t.caLabels) != len(currentLabels) {
+	if len(t.labels) != len(currentLabels) {
 		return false
 	}
 	for _, v := range currentLabels {
-		if _, exists := t.caLabelMap[v]; !exists {
+		if _, exists := t.index[v]; !exists {
 			return false
 		}
 	}
@@ -213,9 +213,9 @@ func (t *Tracker) IncrementActiveSeriesFailure(value float64) {
 }
 
 func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
-	labelValues := make([]string, len(t.caLabels))
+	labelValues := make([]string, len(t.labels))
 	lbls.Range(func(l labels.Label) {
-		if idx, ok := t.caLabelMap[l.Name]; ok {
+		if idx, ok := t.index[l.Name]; ok {
 			labelValues[idx] = l.Value
 		}
 	})

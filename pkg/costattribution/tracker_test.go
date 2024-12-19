@@ -17,7 +17,7 @@ import (
 
 func Test_GetCALabels(t *testing.T) {
 	tracker := newTestManager().Tracker("user1")
-	assert.True(t, tracker.CompareCALabels([]string{"team"}), "Expected cost attribution labels mismatch")
+	assert.True(t, tracker.CompareLabels([]string{"team"}), "Expected cost attribution labels mismatch")
 }
 
 func Test_GetMaxCardinality(t *testing.T) {
