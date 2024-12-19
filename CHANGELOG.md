@@ -16,6 +16,7 @@
 * [BUGFIX] Ruler: fix indeterminate rules being always run concurrently (instead of never) when `-ruler.max-independent-rule-evaluation-concurrency` is set. https://github.com/prometheus/prometheus/pull/15560 #10258
 * [BUGFIX] PromQL: Fix various UTF-8 bugs related to quoting. https://github.com/prometheus/prometheus/pull/15531 #10258
 * [BUGFIX] Ruler: Fixed an issue when using the experimental `-ruler.max-independent-rule-evaluation-concurrency` feature, where if a rule group was eligible for concurrency, it would flap between running concurrently or not based on the time it took after running concurrently. #9726 #10189
+* [BUGFIX] Mimirtool: `remote-read` commands will now return data. #10286
 
 ### Mixin
 
