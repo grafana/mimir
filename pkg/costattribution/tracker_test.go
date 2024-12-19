@@ -16,18 +16,18 @@ import (
 )
 
 func Test_GetCALabels(t *testing.T) {
-	cat := newTestManager().TrackerForUser("user1")
+	cat := newTestManager().Tracker("user1")
 	assert.True(t, cat.CompareCALabels([]string{"team"}), "Expected cost attribution labels mismatch")
 }
 
 func Test_GetMaxCardinality(t *testing.T) {
-	cat := newTestManager().TrackerForUser("user1")
+	cat := newTestManager().Tracker("user1")
 	assert.Equal(t, 5, cat.MaxCardinality(), "Expected max cardinality mismatch")
 }
 
 func Test_CreateCleanupTracker(t *testing.T) {
 	tManager := newTestManager()
-	cat := tManager.TrackerForUser("user4")
+	cat := tManager.Tracker("user4")
 
 	reg := prometheus.NewRegistry()
 	err := reg.Register(tManager)
@@ -81,7 +81,7 @@ func Test_CreateCleanupTracker(t *testing.T) {
 }
 
 func Test_UpdateCounters(t *testing.T) {
-	cat := newTestManager().TrackerForUser("user3")
+	cat := newTestManager().Tracker("user3")
 	lbls1 := labels.FromStrings("department", "foo", "service", "bar")
 	lbls2 := labels.FromStrings("department", "bar", "service", "baz")
 	lbls3 := labels.FromStrings("department", "baz", "service", "foo")
@@ -103,7 +103,7 @@ func Test_UpdateCounters(t *testing.T) {
 
 func Test_GetInactiveObservations(t *testing.T) {
 	// Setup the test environment: create a tracker for user1 with a "team" label and max cardinality of 5.
-	cat := newTestManager().TrackerForUser("user1")
+	cat := newTestManager().Tracker("user1")
 
 	// Create two observations with different last update timestamps.
 	observations := []labels.Labels{
@@ -136,14 +136,14 @@ func Test_GetInactiveObservations(t *testing.T) {
 
 func Test_UpdateMaxCardinality(t *testing.T) {
 	// user1 original max cardinality is 5
-	cat := newTestManager().TrackerForUser("user1")
+	cat := newTestManager().Tracker("user1")
 	cat.UpdateMaxCardinality(2)
 	assert.Equal(t, 2, cat.MaxCardinality(), "Expected max cardinality update to 2")
 }
 
 func Test_Concurrency(t *testing.T) {
 	m := newTestManager()
-	cat := m.TrackerForUser("user1")
+	cat := m.Tracker("user1")
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {

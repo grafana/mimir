@@ -66,7 +66,7 @@ func (m *Manager) EnabledForUser(userID string) bool {
 	return len(m.limits.CostAttributionLabels(userID)) > 0
 }
 
-func (m *Manager) TrackerForUser(userID string) *Tracker {
+func (m *Manager) Tracker(userID string) *Tracker {
 	if !m.EnabledForUser(userID) {
 		return nil
 	}
@@ -115,7 +115,7 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
 		}
 
 		invalidKeys := m.inactiveObservationsForUser(userID, deadline)
-		cat := m.TrackerForUser(userID)
+		cat := m.Tracker(userID)
 		for _, key := range invalidKeys {
 			cat.cleanupTrackerAttribution(key)
 		}
@@ -133,7 +133,7 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
 }
 
 func (m *Manager) inactiveObservationsForUser(userID string, deadline int64) []string {
-	cat := m.TrackerForUser(userID)
+	cat := m.Tracker(userID)
 	newTrackedLabels := m.limits.CostAttributionLabels(userID)
 	sort.Slice(newTrackedLabels, func(i, j int) bool {
 		return newTrackedLabels[i] < newTrackedLabels[j]
