@@ -4165,7 +4165,7 @@ graphite:
         [default]
         pattern = .*
         intervals = 0:1s
-        retentions = 10s:8d,10min:1y
+        retentions = 10s:8d,10m:1y
       storageAggregations: |-
         [default]
         aggregationMethod = avg
