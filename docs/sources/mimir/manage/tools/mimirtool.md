@@ -144,6 +144,8 @@ route:
   group_by: ["example_groupby"]
 receivers:
   - name: "example_receiver"
+templates:
+  - example_template.tpl
 ```
 
 `./example_alertmanager_template.tpl`:
