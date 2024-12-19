@@ -95,7 +95,7 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 			Default(now.Format(time.RFC3339)).
 			StringVar(&c.to)
 		cmd.Flag("read-size-limit", "Maximum number of bytes to read.").
-			Default(strconv.Itoa(DefaultChunkedReadLimit)). // 1MiB
+			Default(strconv.Itoa(DefaultChunkedReadLimit)).
 			Uint64Var(&c.readSizeLimit)
 	}
 
