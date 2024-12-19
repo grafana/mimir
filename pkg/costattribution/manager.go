@@ -120,7 +120,7 @@ func (m *Manager) updateTracker(userID string) *Tracker {
 		return newTrackedLabels[i] < newTrackedLabels[j]
 	})
 
-	if !t.CompareLabels(newTrackedLabels) {
+	if !t.hasSameLabels(newTrackedLabels) {
 		m.mtx.Lock()
 		t = newTracker(userID, newTrackedLabels, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
 		m.trackersByUserID[userID] = t

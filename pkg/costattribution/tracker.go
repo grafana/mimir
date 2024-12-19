@@ -102,14 +102,14 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 	return tracker
 }
 
-func (t *Tracker) CompareLabels(currentLabels []string) bool {
+func (t *Tracker) hasSameLabels(labels []string) bool {
 	if t == nil {
-		return len(currentLabels) == 0
+		return len(labels) == 0
 	}
-	if len(t.labels) != len(currentLabels) {
+	if len(t.labels) != len(labels) {
 		return false
 	}
-	for _, v := range currentLabels {
+	for _, v := range labels {
 		if _, exists := t.index[v]; !exists {
 			return false
 		}
