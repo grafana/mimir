@@ -26,12 +26,12 @@ const (
 const sep = rune(0x80)
 
 type observation struct {
-	lastUpdate       *atomic.Int64
-	activeSerie      atomic.Float64
-	receivedSample   atomic.Float64
-	discardSamplemtx sync.Mutex
-	discardedSample  map[string]atomic.Float64
-	totalDiscarded   atomic.Float64
+	lastUpdate         *atomic.Int64
+	activeSerie        atomic.Float64
+	receivedSample     atomic.Float64
+	discardedSampleMtx sync.Mutex
+	discardedSample    map[string]atomic.Float64
+	totalDiscarded     atomic.Float64
 }
 
 type Tracker struct {
@@ -152,11 +152,11 @@ func (t *Tracker) Collect(out chan<- prometheus.Metric) {
 			if o.receivedSample.Load() > 0 {
 				out <- prometheus.MustNewConstMetric(t.receivedSamplesAttribution, prometheus.CounterValue, o.receivedSample.Load(), keys...)
 			}
-			o.discardSamplemtx.Lock()
+			o.discardedSampleMtx.Lock()
 			for reason, discarded := range o.discardedSample {
 				out <- prometheus.MustNewConstMetric(t.discardedSampleAttribution, prometheus.CounterValue, discarded.Load(), append(keys, reason)...)
 			}
-			o.discardSamplemtx.Unlock()
+			o.discardedSampleMtx.Unlock()
 		}
 	}
 	if t.totalFailedActiveSeries.Load() > 0 {
@@ -230,9 +230,9 @@ func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement
 			o.receivedSample.Add(receivedSampleIncrement)
 		}
 		if discardedSampleIncrement > 0 && reason != nil {
-			o.discardSamplemtx.Lock()
+			o.discardedSampleMtx.Lock()
 			o.discardedSample[*reason] = *atomic.NewFloat64(discardedSampleIncrement)
-			o.discardSamplemtx.Unlock()
+			o.discardedSampleMtx.Unlock()
 		}
 	} else if len(t.observed) < t.maxCardinality*2 {
 		// If the ts is negative, it means that the method is called from DecrementActiveSeries, when key doesn't exist we should ignore the call
@@ -283,16 +283,16 @@ func (t *Tracker) updateState(ts int64, activeSeriesIncrement, receivedSampleInc
 // createNewObservation creates a new observation in the 'observed' map.
 func (t *Tracker) createNewObservation(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
 	t.observed[string(key)] = &observation{
-		lastUpdate:       atomic.NewInt64(ts),
-		activeSerie:      *atomic.NewFloat64(activeSeriesIncrement),
-		receivedSample:   *atomic.NewFloat64(receivedSampleIncrement),
-		discardedSample:  map[string]atomic.Float64{},
-		discardSamplemtx: sync.Mutex{},
+		lastUpdate:         atomic.NewInt64(ts),
+		activeSerie:        *atomic.NewFloat64(activeSeriesIncrement),
+		receivedSample:     *atomic.NewFloat64(receivedSampleIncrement),
+		discardedSample:    map[string]atomic.Float64{},
+		discardedSampleMtx: sync.Mutex{},
 	}
 	if discardedSampleIncrement > 0 && reason != nil {
-		t.observed[string(key)].discardSamplemtx.Lock()
+		t.observed[string(key)].discardedSampleMtx.Lock()
 		t.observed[string(key)].discardedSample[*reason] = *atomic.NewFloat64(discardedSampleIncrement)
-		t.observed[string(key)].discardSamplemtx.Unlock()
+		t.observed[string(key)].discardedSampleMtx.Unlock()
 	}
 }
 
