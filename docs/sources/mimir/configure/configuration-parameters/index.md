@@ -463,8 +463,8 @@ overrides_exporter:
 [cost_attribution_eviction_interval: <duration> | default = 20m]
 
 # (experimental) Defines a custom path for the registry. When specified, Mimir
-# will expose cost attribution metrics through this custom path, if not
-# specified, cost attribution metrics won't be exposed.
+# exposes cost attribution metrics through this custom path. If not specified,
+# cost attribution metrics aren't exposed.
 # CLI flag: -cost-attribution.registry-path
 [cost_attribution_registry_path: <string> | default = ""]
 ```
@@ -3581,9 +3581,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
 
-# (experimental) Defines labels for cost attribution, applied to metrics like
-# cortex_distributor_attributed_received_samples_total. Set to an empty string
-# to disable. Example: 'team,service' will produce metrics such as
+# (experimental) Defines labels for cost attribution. Applies to metrics like
+# cortex_distributor_attributed_received_samples_total. To disable, set to an
+# empty string. For example, 'team,service' produces metrics such as
 # cortex_distributor_attributed_received_samples_total{team='frontend',
 # service='api'}.
 # CLI flag: -validation.cost-attribution-labels
@@ -3600,11 +3600,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) Cooldown period for cost attribution labels. Specifies the
 # duration the cost attribution remains in overflow before attempting a reset.
-# If the cardinality remains above the limit after this period, the system will
-# stay in overflow mode and extend the cooldown. Setting this value to 0
-# disables the cooldown, causing the system to continuously check whether the
-# cardinality has dropped below the limit. A reset will occur once the
-# cardinality falls below the limit.
+# If the cardinality remains above the limit after this period, the system stays
+# in overflow mode and extends the cooldown. Setting this value to 0 disables
+# the cooldown, causing the system to continuously check whether the cardinality
+# has dropped below the limit. A reset occurs when the cardinality falls below
+# the limit.
 # CLI flag: -validation.cost-attribution-cooldown
 [cost_attribution_cooldown: <duration> | default = 0s]
 
