@@ -54,6 +54,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -2114,7 +2115,7 @@ func mkLabels(n int, extra ...string) []mimirpb.LabelAdapter {
 		ret[i+1] = mimirpb.LabelAdapter{Name: fmt.Sprintf("name_%d", i), Value: fmt.Sprintf("value_%d", i)}
 	}
 	for i := 0; i < len(extra); i += 2 {
-		ret[i+n+1] = mimirpb.LabelAdapter{Name: extra[i], Value: extra[i+1]}
+		ret[i/2+n+1] = mimirpb.LabelAdapter{Name: extra[i], Value: extra[i+1]}
 	}
 	slices.SortFunc(ret, func(a, b mimirpb.LabelAdapter) int {
 		switch {
@@ -2147,7 +2148,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					metrics[i] = mkLabels(10)
+					metrics[i] = mkLabels(10, "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -2168,7 +2169,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					metrics[i] = mkLabels(10)
+					metrics[i] = mkLabels(10, "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -2188,7 +2189,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					metrics[i] = mkLabels(31)
+					metrics[i] = mkLabels(30, "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -2209,7 +2210,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				for i := 0; i < numSeriesPerRequest; i++ {
 					// Add a label with a very long name.
-					metrics[i] = mkLabels(10, fmt.Sprintf("xxx_%0.200d", 1), "xxx")
+					metrics[i] = mkLabels(10, fmt.Sprintf("xxx_%0.200d", 1), "xxx", "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -2230,7 +2231,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				for i := 0; i < numSeriesPerRequest; i++ {
 					// Add a label with a very long value.
-					metrics[i] = mkLabels(10, "xxx", fmt.Sprintf("xxx_%0.200d", 1))
+					metrics[i] = mkLabels(10, "xxx", fmt.Sprintf("xxx_%0.200d", 1), "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -2250,7 +2251,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					metrics[i] = mkLabels(10)
+					metrics[i] = mkLabels(10, "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().Add(time.Hour).UnixNano() / int64(time.Millisecond),
@@ -2261,7 +2262,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			},
 			expectedErr: "received a sample whose timestamp is too far in the future",
 		},
-		"all samples go to metric_relabel_configs": {
+		"all samples go to metric relabel configs": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MetricRelabelConfigs = []*relabel.Config{
 					{
@@ -2278,7 +2279,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					metrics[i] = mkLabels(10)
+					metrics[i] = mkLabels(10, "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -2291,78 +2292,110 @@ func BenchmarkDistributor_Push(b *testing.B) {
 		},
 	}
 
-	for testName, testData := range tests {
-		b.Run(testName, func(b *testing.B) {
-			// Create an in-memory KV store for the ring with 1 ingester registered.
-			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-			b.Cleanup(func() { assert.NoError(b, closer.Close()) })
+	costAttributionCases := []struct {
+		state          string
+		customRegistry *prometheus.Registry
+		cfg            func(limits *validation.Limits)
+	}{
+		{
+			state:          "disabled",
+			customRegistry: nil,
+			cfg:            func(_ *validation.Limits) {},
+		},
+		{
+			state:          "enabled",
+			customRegistry: prometheus.NewRegistry(),
+			cfg: func(limits *validation.Limits) {
+				limits.CostAttributionLabels = []string{"team"}
+				limits.MaxCostAttributionCardinalityPerUser = 100
+			},
+		},
+	}
 
-			err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
-				func(_ interface{}) (interface{}, bool, error) {
-					d := &ring.Desc{}
-					d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
-					return d, true, nil
-				},
-			)
-			require.NoError(b, err)
+	for _, caCase := range costAttributionCases {
+		b.Run(fmt.Sprintf("cost_attribution=%s", caCase.state), func(b *testing.B) {
+			for testName, testData := range tests {
+				b.Run(fmt.Sprintf("scenario=%s", testName), func(b *testing.B) {
+					// Create an in-memory KV store for the ring with 1 ingester registered.
+					kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+					b.Cleanup(func() { assert.NoError(b, closer.Close()) })
 
-			ingestersRing, err := ring.New(ring.Config{
-				KVStore:           kv.Config{Mock: kvStore},
-				HeartbeatTimeout:  60 * time.Minute,
-				ReplicationFactor: 1,
-			}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
-			require.NoError(b, err)
-			require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingestersRing))
-			b.Cleanup(func() {
-				require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingestersRing))
-			})
+					err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
+						func(_ interface{}) (interface{}, bool, error) {
+							d := &ring.Desc{}
+							d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
+							return d, true, nil
+						},
+					)
+					require.NoError(b, err)
 
-			test.Poll(b, time.Second, 1, func() interface{} {
-				return ingestersRing.InstancesCount()
-			})
+					ingestersRing, err := ring.New(ring.Config{
+						KVStore:           kv.Config{Mock: kvStore},
+						HeartbeatTimeout:  60 * time.Minute,
+						ReplicationFactor: 1,
+					}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
+					require.NoError(b, err)
+					require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingestersRing))
+					b.Cleanup(func() {
+						require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingestersRing))
+					})
 
-			// Prepare the distributor configuration.
-			var distributorCfg Config
-			var clientConfig client.Config
-			limits := validation.Limits{}
-			flagext.DefaultValues(&distributorCfg, &clientConfig, &limits)
-			distributorCfg.DistributorRing.Common.KVStore.Store = "inmemory"
+					test.Poll(b, time.Second, 1, func() interface{} {
+						return ingestersRing.InstancesCount()
+					})
 
-			limits.IngestionRate = float64(rate.Inf) // Unlimited.
-			testData.prepareConfig(&limits)
+					// Prepare the distributor configuration.
+					var distributorCfg Config
+					var clientConfig client.Config
+					limits := validation.Limits{}
+					flagext.DefaultValues(&distributorCfg, &clientConfig, &limits)
+					distributorCfg.DistributorRing.Common.KVStore.Store = "inmemory"
 
-			distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
-				return &noopIngester{}, nil
-			})
+					limits.IngestionRate = float64(rate.Inf) // Unlimited.
+					testData.prepareConfig(&limits)
 
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(b, err)
+					distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
+						return &noopIngester{}, nil
+					})
 
-			// Start the distributor.
-			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
-			require.NoError(b, err)
-			require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
+					caCase.cfg(&limits)
+					overrides, err := validation.NewOverrides(limits, nil)
+					require.NoError(b, err)
 
-			b.Cleanup(func() {
-				require.NoError(b, services.StopAndAwaitTerminated(context.Background(), distributor))
-			})
+					// Initialize the cost attribution manager
+					var cam *costattribution.Manager
+					if caCase.customRegistry != nil {
+						cam, err = costattribution.NewManager(5*time.Second, time.Second, 10*time.Second, nil, overrides, caCase.customRegistry)
+						require.NoError(b, err)
+					}
 
-			// Prepare the series to remote write before starting the benchmark.
-			metrics, samples := testData.prepareSeries()
+					// Start the distributor.
+					distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, true, nil, log.NewNopLogger())
+					require.NoError(b, err)
+					require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
-			// Run the benchmark.
-			b.ReportAllocs()
-			b.ResetTimer()
+					b.Cleanup(func() {
+						require.NoError(b, services.StopAndAwaitTerminated(context.Background(), distributor))
+					})
 
-			for n := 0; n < b.N; n++ {
-				_, err := distributor.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
+					// Prepare the series to remote write before starting the benchmark.
+					metrics, samples := testData.prepareSeries()
 
-				if testData.expectedErr == "" && err != nil {
-					b.Fatalf("no error expected but got %v", err)
-				}
-				if testData.expectedErr != "" && (err == nil || !strings.Contains(err.Error(), testData.expectedErr)) {
-					b.Fatalf("expected %v error but got %v", testData.expectedErr, err)
-				}
+					// Run the benchmark.
+					b.ReportAllocs()
+					b.ResetTimer()
+
+					for n := 0; n < b.N; n++ {
+						_, err := distributor.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
+
+						if testData.expectedErr == "" && err != nil {
+							b.Fatalf("no error expected but got %v", err)
+						}
+						if testData.expectedErr != "" && (err == nil || !strings.Contains(err.Error(), testData.expectedErr)) {
+							b.Fatalf("expected %v error but got %v", testData.expectedErr, err)
+						}
+					}
+				})
 			}
 		})
 	}
@@ -5627,7 +5660,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		require.NoError(t, err)
 
 		reg := prometheus.NewPedanticRegistry()
-		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, partitionsRing, true, reg, log.NewNopLogger())
+		d, err := New(distributorCfg, clientConfig, overrides, nil, nil, ingestersRing, partitionsRing, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, d))
 		t.Cleanup(func() {
@@ -8263,7 +8296,7 @@ func TestCheckStartedMiddleware(t *testing.T) {
 	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)
 
-	distributor, err := New(distributorConfig, clientConfig, overrides, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
+	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), "user")

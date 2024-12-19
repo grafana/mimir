@@ -1283,6 +1283,10 @@ Usage of ./cmd/mimir/mimir:
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
     	Configuration file to load.
+  -cost-attribution.eviction-interval duration
+    	[experimental] Time interval at which inactive cost attributions are evicted from the counter, ensuring they are not included in the cost attribution cardinality per user limit. (default 20m0s)
+  -cost-attribution.registry-path string
+    	[experimental] Defines a custom path for the registry. When specified, Mimir will expose cost attribution metrics through this custom path, if not specified, cost attribution metrics won't be exposed.
   -debug.block-profile-rate int
     	Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.
   -debug.mutex-profile-fraction int
@@ -3317,10 +3321,18 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -validation.cost-attribution-cooldown duration
+    	[experimental] Cooldown period for cost attribution labels. Specifies the duration the cost attribution remains in overflow before attempting a reset. If the cardinality remains above the limit after this period, the system will stay in overflow mode and extend the cooldown. Setting this value to 0 disables the cooldown, causing the system to continuously check whether the cardinality has dropped below the limit. A reset will occur once the cardinality falls below the limit.
+  -validation.cost-attribution-labels comma-separated-list-of-strings
+    	[experimental] Defines labels for cost attribution, applied to metrics like cortex_distributor_attributed_received_samples_total. Set to an empty string to disable. Example: 'team,service' will produce metrics such as cortex_distributor_attributed_received_samples_total{team='frontend', service='api'}.
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name
     	Enforce every metadata has a metric name. (default true)
+  -validation.max-cost-attribution-cardinality-per-user int
+    	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 10000)
+  -validation.max-cost-attribution-labels-per-user int
+    	[experimental] Maximum number of cost attribution labels allowed per user. (default 2)
   -validation.max-label-names-per-info-series int
     	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int
