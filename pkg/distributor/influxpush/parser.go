@@ -188,5 +188,5 @@ func batchReadCloser(rc io.ReadCloser, encoding string, maxBatchSizeBytes int64)
 
 // yoloString to create strings that are guaranteed not to be referenced again.
 func yoloString(b []byte) string {
-        return *((*string)(unsafe.Pointer(&b)))
+	return *((*string)(unsafe.Pointer(&b)))
 }

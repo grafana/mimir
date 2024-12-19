@@ -114,8 +114,8 @@ func InfluxHandler(
 			}
 			// From: https://github.com/grafana/influx2cortex/blob/main/pkg/influx/errors.go
 
-			httpCode := http.StatusInternalServerError
-			errorMsg := "unknown error"
+			var httpCode int
+			var errorMsg string
 
 			if st, ok := grpcutil.ErrorToStatus(err); ok {
 				// This code is needed for a correct handling of errors returned by the supplier function.
