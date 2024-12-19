@@ -102,7 +102,7 @@ func (m *Manager) Describe(chan<- *prometheus.Desc) {
 	// For more details, refer to the documentation: https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#hdr-Custom_Collectors_and_constant_Metrics
 }
 
-func (m *Manager) deleteUserTracker(userID string) {
+func (m *Manager) deleteTracker(userID string) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	delete(m.trackersByUserID, userID)
@@ -118,7 +118,7 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
 
 	for _, userID := range userIDs {
 		if !m.EnabledForUser(userID) {
-			m.deleteUserTracker(userID)
+			m.deleteTracker(userID)
 			continue
 		}
 
@@ -131,7 +131,7 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
 		if cat != nil && cat.cooldownUntil != nil && cat.cooldownUntil.Load() < deadline {
 			if len(cat.observed) <= cat.MaxCardinality() {
 				cat.state = OverflowComplete
-				m.deleteUserTracker(userID)
+				m.deleteTracker(userID)
 			} else {
 				cat.cooldownUntil.Store(deadline + cat.cooldownDuration)
 			}

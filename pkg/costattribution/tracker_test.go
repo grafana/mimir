@@ -76,7 +76,7 @@ func Test_CreateCleanupTracker(t *testing.T) {
     cortex_ingester_attributed_active_series_failure{tenant="user4",tracker="cost-attribution"} 1
 	`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
-	tManager.deleteUserTracker("user4")
+	tManager.deleteTracker("user4")
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), metricNames...))
 }
 
