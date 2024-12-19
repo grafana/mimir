@@ -108,38 +108,12 @@ func (m *Manager) deleteTracker(userID string) {
 	delete(m.trackersByUserID, userID)
 }
 
-func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
-	m.mtx.RLock()
-	userIDs := make([]string, 0, len(m.trackersByUserID))
-	for userID := range m.trackersByUserID {
-		userIDs = append(userIDs, userID)
+func (m *Manager) updateTracker(userID string) *Tracker {
+	if !m.EnabledForUser(userID) {
+		m.deleteTracker(userID)
+		return nil
 	}
-	m.mtx.RUnlock()
 
-	for _, userID := range userIDs {
-		if !m.EnabledForUser(userID) {
-			m.deleteTracker(userID)
-			continue
-		}
-
-		t, invalidKeys := m.inactiveObservationsForUser(userID, deadline)
-		for _, key := range invalidKeys {
-			t.cleanupTrackerAttribution(key)
-		}
-
-		if t != nil && t.cooldownUntil != nil && t.cooldownUntil.Load() < deadline {
-			if len(t.observed) <= t.MaxCardinality() {
-				t.state = OverflowComplete
-				m.deleteTracker(userID)
-			} else {
-				t.cooldownUntil.Store(deadline + t.cooldownDuration)
-			}
-		}
-	}
-	return nil
-}
-
-func (m *Manager) inactiveObservationsForUser(userID string, deadline int64) (*Tracker, []string) {
 	t := m.Tracker(userID)
 	newTrackedLabels := m.limits.CostAttributionLabels(userID)
 	sort.Slice(newTrackedLabels, func(i, j int) bool {
@@ -151,8 +125,9 @@ func (m *Manager) inactiveObservationsForUser(userID string, deadline int64) (*T
 		t = newTracker(userID, newTrackedLabels, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
 		m.trackersByUserID[userID] = t
 		m.mtx.Unlock()
-		return t, nil
+		return t
 	}
+
 	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
 	if t.MaxCardinality() != maxCardinality {
 		t.UpdateMaxCardinality(maxCardinality)
@@ -162,6 +137,36 @@ func (m *Manager) inactiveObservationsForUser(userID string, deadline int64) (*T
 	if cooldown != t.CooldownDuration() {
 		t.UpdateCooldownDuration(cooldown)
 	}
+	return t
+}
 
-	return t, t.InactiveObservations(deadline)
+func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
+	m.mtx.RLock()
+	userIDs := make([]string, 0, len(m.trackersByUserID))
+	for userID := range m.trackersByUserID {
+		userIDs = append(userIDs, userID)
+	}
+	m.mtx.RUnlock()
+
+	for _, userID := range userIDs {
+		t := m.updateTracker(userID)
+		if t == nil {
+			continue
+		}
+
+		invalidKeys := t.inactiveObservations(deadline)
+		for _, key := range invalidKeys {
+			t.cleanupTrackerAttribution(key)
+		}
+
+		if t.cooldownUntil != nil && t.cooldownUntil.Load() < deadline {
+			if len(t.observed) <= t.MaxCardinality() {
+				t.state = OverflowComplete
+				m.deleteTracker(userID)
+			} else {
+				t.cooldownUntil.Store(deadline + t.cooldownDuration)
+			}
+		}
+	}
+	return nil
 }

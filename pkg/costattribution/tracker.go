@@ -330,11 +330,7 @@ func (t *Tracker) createNewObservation(stream string, ts int64, activeSeriesIncr
 	}
 }
 
-func (t *Tracker) InactiveObservations(deadline int64) []string {
-	if t == nil {
-		return nil
-	}
-
+func (t *Tracker) inactiveObservations(deadline int64) []string {
 	// otherwise, we need to check all observations and clean up the ones that are inactive
 	var invalidKeys []string
 	t.obseveredMtx.RLock()

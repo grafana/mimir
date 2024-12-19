@@ -64,7 +64,7 @@ func Test_CreateCleanupTracker(t *testing.T) {
 		"cortex_ingester_attributed_active_series_failure",
 	}
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
-	assert.Equal(t, []string{"foo"}, tracker.InactiveObservations(5))
+	assert.Equal(t, []string{"foo"}, tracker.inactiveObservations(5))
 	assert.NoError(t, tManager.purgeInactiveAttributionsUntil(5))
 
 	expectedMetrics = `
@@ -120,17 +120,17 @@ func Test_GetInactiveObservations(t *testing.T) {
 	require.Len(t, tracker.observed, 3)
 
 	// Purge observations that haven't been updated in the last 10 seconds.
-	purged := tracker.InactiveObservations(0)
+	purged := tracker.inactiveObservations(0)
 	require.Len(t, purged, 0)
 
-	purged = tracker.InactiveObservations(10)
+	purged = tracker.inactiveObservations(10)
 	assert.ElementsMatch(t, []string{"foo"}, purged)
 
-	purged = tracker.InactiveObservations(15)
+	purged = tracker.inactiveObservations(15)
 	assert.ElementsMatch(t, []string{"foo", "bar"}, purged)
 
 	// Check that the purged observation matches the expected details.
-	purged = tracker.InactiveObservations(25)
+	purged = tracker.inactiveObservations(25)
 	assert.ElementsMatch(t, []string{"foo", "bar", "baz"}, purged)
 }
 
