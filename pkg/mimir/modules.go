@@ -1105,6 +1105,7 @@ func (t *Mimir) initBlockBuilderScheduler() (services.Service, error) {
 		return nil, errors.Wrap(err, "block-builder-scheduler init")
 	}
 	t.BlockBuilderScheduler = s
+	t.API.RegisterBlockBuilderScheduler(s)
 	return s, nil
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
 
+	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -66,40 +67,40 @@ func TestStartup(t *testing.T) {
 	now := time.Now()
 
 	// Some jobs that ostensibly exist, but scheduler doesn't know about.
-	j1 := job{
+	j1 := job[schedulerpb.JobSpec]{
 		key: jobKey{
 			id:    "ingest/64/1000",
 			epoch: 10,
 		},
-		spec: jobSpec{
-			topic:       "ingest",
-			partition:   64,
-			startOffset: 1000,
-			commitRecTs: now.Add(-1 * time.Hour),
+		spec: schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   64,
+			StartOffset: 1000,
+			CommitRecTs: now.Add(-1 * time.Hour),
 		},
 	}
-	j2 := job{
+	j2 := job[schedulerpb.JobSpec]{
 		key: jobKey{
 			id:    "ingest/65/256",
 			epoch: 11,
 		},
-		spec: jobSpec{
-			topic:       "ingest",
-			partition:   65,
-			startOffset: 256,
-			commitRecTs: now.Add(-2 * time.Hour),
+		spec: schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   65,
+			StartOffset: 256,
+			CommitRecTs: now.Add(-2 * time.Hour),
 		},
 	}
-	j3 := job{
+	j3 := job[schedulerpb.JobSpec]{
 		key: jobKey{
 			id:    "ingest/66/57",
 			epoch: 12,
 		},
-		spec: jobSpec{
-			topic:       "ingest",
-			partition:   66,
-			startOffset: 57,
-			commitRecTs: now.Add(-3 * time.Hour),
+		spec: schedulerpb.JobSpec{
+			Topic:       "ingest",
+			Partition:   66,
+			StartOffset: 57,
+			CommitRecTs: now.Add(-3 * time.Hour),
 		},
 	}
 
@@ -140,12 +141,12 @@ func TestStartup(t *testing.T) {
 	}
 
 	// And we can resume normal operation:
-	sched.jobs.addOrUpdate("ingest/65/256", jobSpec{
-		topic:       "ingest",
-		partition:   65,
-		startOffset: 256,
-		endOffset:   9111,
-		commitRecTs: now.Add(-1 * time.Hour),
+	sched.jobs.addOrUpdate("ingest/65/256", schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   65,
+		StartOffset: 256,
+		EndOffset:   9111,
+		CommitRecTs: now.Add(-1 * time.Hour),
 	})
 
 	a1key, a1spec, err := sched.assignJob("w0")
@@ -189,7 +190,7 @@ func TestObservations(t *testing.T) {
 	}
 
 	{
-		nq := newJobQueue(988*time.Hour, test.NewTestingLogger(t))
+		nq := newJobQueue(988*time.Hour, test.NewTestingLogger(t), specLessThan)
 		sched.jobs = nq
 		sched.finalizeObservations()
 		require.Len(t, nq.jobs, 0, "No observations, no jobs")
@@ -197,7 +198,7 @@ func TestObservations(t *testing.T) {
 
 	type observation struct {
 		key       jobKey
-		spec      jobSpec
+		spec      schedulerpb.JobSpec
 		workerID  string
 		complete  bool
 		expectErr error
@@ -211,11 +212,11 @@ func TestObservations(t *testing.T) {
 	mkJob := func(isComplete bool, worker string, partition int32, id string, epoch int64, commitRecTs time.Time, endOffset int64, expectErr error) {
 		clientData = append(clientData, observation{
 			key: jobKey{id: id, epoch: epoch},
-			spec: jobSpec{
-				topic:       "ingest",
-				partition:   partition,
-				commitRecTs: commitRecTs,
-				endOffset:   endOffset,
+			spec: schedulerpb.JobSpec{
+				Topic:       "ingest",
+				Partition:   partition,
+				CommitRecTs: commitRecTs,
+				EndOffset:   endOffset,
 			},
 			workerID:  worker,
 			complete:  isComplete,
