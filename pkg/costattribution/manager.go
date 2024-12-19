@@ -71,14 +71,20 @@ func (m *Manager) Tracker(userID string) *Tracker {
 		return nil
 	}
 
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-
-	if tracker, exists := m.trackersByUserID[userID]; exists {
+	// Check if the tracker already exists, if exists return it. Otherwise lock and create a new tracker.
+	m.mtx.RLock()
+	tracker, exists := m.trackersByUserID[userID]
+	m.mtx.RUnlock()
+	if exists {
 		return tracker
 	}
 
-	tracker := newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	if tracker, exists = m.trackersByUserID[userID]; exists {
+		return tracker
+	}
+	tracker = newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
 	m.trackersByUserID[userID] = tracker
 	return tracker
 }
