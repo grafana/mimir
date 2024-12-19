@@ -122,8 +122,7 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
 			continue
 		}
 
-		invalidKeys := m.inactiveObservationsForUser(userID, deadline)
-		t := m.Tracker(userID)
+		t, invalidKeys := m.inactiveObservationsForUser(userID, deadline)
 		for _, key := range invalidKeys {
 			t.cleanupTrackerAttribution(key)
 		}
@@ -140,7 +139,7 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
 	return nil
 }
 
-func (m *Manager) inactiveObservationsForUser(userID string, deadline int64) []string {
+func (m *Manager) inactiveObservationsForUser(userID string, deadline int64) (*Tracker, []string) {
 	t := m.Tracker(userID)
 	newTrackedLabels := m.limits.CostAttributionLabels(userID)
 	sort.Slice(newTrackedLabels, func(i, j int) bool {
@@ -152,7 +151,7 @@ func (m *Manager) inactiveObservationsForUser(userID string, deadline int64) []s
 		t = newTracker(userID, newTrackedLabels, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
 		m.trackersByUserID[userID] = t
 		m.mtx.Unlock()
-		return nil
+		return t, nil
 	}
 	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
 	if t.MaxCardinality() != maxCardinality {
@@ -164,5 +163,5 @@ func (m *Manager) inactiveObservationsForUser(userID string, deadline int64) []s
 		t.UpdateCooldownDuration(cooldown)
 	}
 
-	return t.InactiveObservations(deadline)
+	return t, t.InactiveObservations(deadline)
 }
