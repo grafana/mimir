@@ -48,27 +48,15 @@ func NewManager(cleanupInterval, exportInterval, inactiveTimeout time.Duration, 
 		metricsExportInterval: exportInterval,
 	}
 
-	m.Service = services.NewBasicService(nil, m.running, nil).WithName("cost attribution manager")
+	m.Service = services.NewTimerService(cleanupInterval, nil, m.iteration, nil).WithName("cost attribution manager")
 	if err := reg.Register(m); err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-func (m *Manager) running(ctx context.Context) error {
-	t := time.NewTicker(m.cleanupInterval)
-	defer t.Stop()
-
-	for {
-		select {
-		case <-t.C:
-			if err := m.purgeInactiveAttributionsUntil(time.Now().Add(-m.inactiveTimeout).Unix()); err != nil {
-				return err
-			}
-		case <-ctx.Done():
-			return nil
-		}
-	}
+func (m *Manager) iteration(_ context.Context) error {
+	return m.purgeInactiveAttributionsUntil(time.Now().Add(-m.inactiveTimeout).Unix())
 }
 
 func (m *Manager) EnabledForUser(userID string) bool {
