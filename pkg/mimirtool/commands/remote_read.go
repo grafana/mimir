@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -46,9 +47,10 @@ type RemoteReadCommand struct {
 	readTimeout time.Duration
 	tsdbPath    string
 
-	selector string
-	from     string
-	to       string
+	selector      string
+	from          string
+	to            string
+	readSizeLimit uint64
 }
 
 func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
@@ -88,6 +90,9 @@ func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNam
 		cmd.Flag("to", "End of the time window to select metrics.").
 			Default(now.Format(time.RFC3339)).
 			StringVar(&c.to)
+		cmd.Flag("read-size-limit", "Maximum number of bytes to read.").
+			Default(strconv.Itoa(int(math.Pow(1024, 2)))). // 1MiB
+			Uint64Var(&c.readSizeLimit)
 	}
 
 	exportCmd.Flag("tsdb-path", "Path to the folder where to store the TSDB blocks, if not set a new directory in $TEMP is created.").
@@ -200,6 +205,7 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 				Password: config_util.Secret(c.apiKey),
 			},
 		},
+		ChunkedReadLimit: c.readSizeLimit,
 		Headers: map[string]string{
 			"User-Agent": client.UserAgent(),
 		},
@@ -313,6 +319,10 @@ func (c *RemoteReadCommand) dump(_ *kingpin.ParseContext) error {
 				panic("unreachable")
 			}
 		}
+	}
+
+	if err := timeseries.Err(); err != nil {
+		return err
 	}
 
 	return nil
