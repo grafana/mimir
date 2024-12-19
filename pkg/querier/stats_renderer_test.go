@@ -5,6 +5,7 @@ package querier
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/common/model"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -24,6 +25,11 @@ import (
 
 	mimir_stats "github.com/grafana/mimir/pkg/querier/stats"
 )
+
+// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
+func init() {
+	model.NameValidationScheme = model.LegacyValidation
+}
 
 func TestStatsRenderer(t *testing.T) {
 
