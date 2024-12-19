@@ -383,7 +383,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		if userID == 0 && cfg.queryStatsEnabled {
 			res, _, err := c.QueryRaw("{instance=~\"hello.*\"}")
 			require.NoError(t, err)
-			require.Regexp(t, "querier_wall_time;dur=[0-9.]*, response_time;dur=[0-9.]*, bytes_processed;val=[0-9.]*$", res.Header.Values("Server-Timing")[0])
+			require.Regexp(t, "querier_wall_time;dur=[0-9.]*, response_time;dur=[0-9.]*, bytes_processed;val=[0-9.]*, samples_processed;val=[0-9.]*$", res.Header.Values("Server-Timing")[0])
 		}
 
 		// Beyond the range of -querier.query-ingesters-within should return nothing. No need to repeat it for each user.
@@ -786,8 +786,7 @@ func TestQueryFrontendWithQueryShardingAndTooLargeEntityRequest(t *testing.T) {
 			querySchedulerEnabled: false,
 			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 				flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-					// Set the maximum entity size to 100 bytes.
-					// The query result payload is 107 bytes, so it will be too large for the configured limit.
+					// The query result payload is 202 bytes, so it will be too large for the configured limit.
 					"-querier.frontend-client.grpc-max-send-msg-size": "100",
 				})
 

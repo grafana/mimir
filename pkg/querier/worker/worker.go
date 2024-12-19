@@ -25,7 +25,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
-	"github.com/grafana/mimir/pkg/util/math"
 )
 
 type Config struct {
@@ -353,7 +352,7 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 	)
 
 	// new adjusted minimum to ensure that each in-use instance has at least MinConcurrencyPerRequestQueue connections.
-	maxConcurrentWithMinPerInstance := math.Max(
+	maxConcurrentWithMinPerInstance := max(
 		w.maxConcurrentRequests, MinConcurrencyPerRequestQueue*numInUse,
 	)
 	if maxConcurrentWithMinPerInstance > w.maxConcurrentRequests {

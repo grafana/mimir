@@ -35,7 +35,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -139,7 +138,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	queryables = append(queryables, TimeRangeQueryable{
 		Queryable:   NewDistributorQueryable(distributor, limits, queryMetrics, logger),
 		StorageName: "ingester",
-		IsApplicable: func(tenantID string, now time.Time, _, queryMaxT int64) bool {
+		IsApplicable: func(tenantID string, now time.Time, _, queryMaxT int64, _ ...*labels.Matcher) bool {
 			return ShouldQueryIngesters(limits.QueryIngestersWithin(tenantID), now, queryMaxT)
 		},
 	})
@@ -235,7 +234,7 @@ func newQueryable(
 // TimeRangeQueryable is a Queryable that is aware of when it is applicable.
 type TimeRangeQueryable struct {
 	storage.Queryable
-	IsApplicable func(tenantID string, now time.Time, queryMinT, queryMaxT int64) bool
+	IsApplicable func(tenantID string, now time.Time, queryMinT, queryMaxT int64, matchers ...*labels.Matcher) bool
 	StorageName  string
 }
 
@@ -243,7 +242,7 @@ func NewStoreGatewayTimeRangeQueryable(q storage.Queryable, querierConfig Config
 	return TimeRangeQueryable{
 		Queryable:   q,
 		StorageName: "store-gateway",
-		IsApplicable: func(_ string, now time.Time, queryMinT, _ int64) bool {
+		IsApplicable: func(_ string, now time.Time, queryMinT, _ int64, _ ...*labels.Matcher) bool {
 			return ShouldQueryBlockStore(querierConfig.QueryStoreAfter, now, queryMinT)
 		},
 	}
@@ -261,7 +260,7 @@ type multiQuerier struct {
 	logger log.Logger
 }
 
-func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []storage.Querier, error) {
+func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matcher) (context.Context, []storage.Querier, error) {
 	now := time.Now()
 
 	tenantID, err := tenant.TenantID(ctx)
@@ -284,7 +283,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context) (context.Context, []stor
 
 	var queriers []storage.Querier
 	for _, queryable := range mq.queryables {
-		if queryable.IsApplicable(tenantID, now, mq.minT, mq.maxT) {
+		if queryable.IsApplicable(tenantID, now, mq.minT, mq.maxT, matchers...) {
 			q, err := queryable.Querier(mq.minT, mq.maxT)
 			if err != nil {
 				return nil, nil, err
@@ -304,7 +303,7 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "querier.Select")
 	defer spanLog.Span.Finish()
 
-	ctx, queriers, err := mq.getQueriers(ctx)
+	ctx, queriers, err := mq.getQueriers(ctx, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
 		return storage.EmptySeriesSet()
 	}
@@ -428,7 +427,7 @@ func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, 
 
 // LabelValues implements storage.Querier.
 func (mq multiQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ctx, queriers, err := mq.getQueriers(ctx)
+	ctx, queriers, err := mq.getQueriers(ctx, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
 	}
@@ -473,7 +472,7 @@ func (mq multiQuerier) LabelValues(ctx context.Context, name string, hints *stor
 }
 
 func (mq multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	ctx, queriers, err := mq.getQueriers(ctx)
+	ctx, queriers, err := mq.getQueriers(ctx, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
 	}
@@ -617,7 +616,7 @@ func clampMaxTime(spanLog *spanlogger.SpanLogger, maxT int64, refT int64, limitD
 		// limits equal to 0 are considered to not be enabled
 		return maxT
 	}
-	clampedT := math.Min(maxT, refT+limitDelta.Milliseconds())
+	clampedT := min(maxT, refT+limitDelta.Milliseconds())
 
 	if clampedT != maxT {
 		logClampEvent(spanLog, maxT, clampedT, "max", limitName)
@@ -640,7 +639,7 @@ func clampMinTime(spanLog *spanlogger.SpanLogger, minT int64, refT int64, limitD
 		// limits equal to 0 are considered to not be enabled
 		return minT
 	}
-	clampedT := math.Max(minT, refT+limitDelta.Milliseconds())
+	clampedT := max(minT, refT+limitDelta.Milliseconds())
 
 	if clampedT != minT {
 		logClampEvent(spanLog, minT, clampedT, "min", limitName)

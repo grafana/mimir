@@ -12,6 +12,7 @@ import (
 	"math"
 	"math/rand"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -28,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"golang.org/x/exp/slices"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -723,8 +723,8 @@ func rewrite(
 
 	// Sort the series, if labels are re-ordered then the ordering of series
 	// will be different.
-	sort.Slice(series, func(i, j int) bool {
-		return labels.Compare(series[i].lset, series[j].lset) < 0
+	slices.SortFunc(series, func(i, j seriesRepair) int {
+		return labels.Compare(i.lset, j.lset)
 	})
 
 	lastSet := labels.Labels{}

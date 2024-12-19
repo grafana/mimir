@@ -1148,7 +1148,7 @@ spec:
         - -kubernetes.namespace=default
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.20.0
+        image: grafana/rollout-operator:v0.22.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:

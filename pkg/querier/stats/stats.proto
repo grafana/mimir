@@ -36,4 +36,6 @@ message Stats {
   google.protobuf.Duration queue_time = 9 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   // The time spent at the frontend encoding the query's final results. Does not include time spent serializing results at the querier.
   google.protobuf.Duration encode_time = 10 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  // TotalSamples represents the total number of samples scanned while evaluating a query.
+  uint64 samples_processed = 11;
 }

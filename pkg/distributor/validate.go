@@ -43,6 +43,7 @@ var (
 	reasonDuplicateLabelNames          = globalerror.SeriesWithDuplicateLabelNames.LabelValue()
 	reasonTooFarInFuture               = globalerror.SampleTooFarInFuture.LabelValue()
 	reasonTooFarInPast                 = globalerror.SampleTooFarInPast.LabelValue()
+	reasonDuplicateTimestamp           = globalerror.SampleDuplicateTimestamp.LabelValue()
 
 	// Discarded exemplars reasons.
 	reasonExemplarLabelsMissing               = globalerror.ExemplarLabelsMissing.LabelValue()
@@ -98,6 +99,7 @@ var (
 		"received a sample whose timestamp is too far in the past, timestamp: %d series: '%.200s'",
 		validation.PastGracePeriodFlag,
 	)
+	duplicateTimestampMsgFormat  = globalerror.SampleDuplicateTimestamp.Message("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s'")
 	exemplarEmptyLabelsMsgFormat = globalerror.ExemplarLabelsMissing.Message(
 		"received an exemplar with no valid labels, timestamp: %d series: %s labels: %s",
 	)
@@ -143,6 +145,7 @@ type sampleValidationMetrics struct {
 	duplicateLabelNames          *prometheus.CounterVec
 	tooFarInFuture               *prometheus.CounterVec
 	tooFarInPast                 *prometheus.CounterVec
+	duplicateTimestamp           *prometheus.CounterVec
 }
 
 func (m *sampleValidationMetrics) deleteUserMetrics(userID string) {
@@ -160,6 +163,7 @@ func (m *sampleValidationMetrics) deleteUserMetrics(userID string) {
 	m.duplicateLabelNames.DeletePartialMatch(filter)
 	m.tooFarInFuture.DeletePartialMatch(filter)
 	m.tooFarInPast.DeletePartialMatch(filter)
+	m.duplicateTimestamp.DeletePartialMatch(filter)
 }
 
 func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string) {
@@ -176,6 +180,7 @@ func (m *sampleValidationMetrics) deleteUserMetricsForGroup(userID, group string
 	m.duplicateLabelNames.DeleteLabelValues(userID, group)
 	m.tooFarInFuture.DeleteLabelValues(userID, group)
 	m.tooFarInPast.DeleteLabelValues(userID, group)
+	m.duplicateTimestamp.DeleteLabelValues(userID, group)
 }
 
 func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetrics {
@@ -193,6 +198,7 @@ func newSampleValidationMetrics(r prometheus.Registerer) *sampleValidationMetric
 		duplicateLabelNames:          validation.DiscardedSamplesCounter(r, reasonDuplicateLabelNames),
 		tooFarInFuture:               validation.DiscardedSamplesCounter(r, reasonTooFarInFuture),
 		tooFarInPast:                 validation.DiscardedSamplesCounter(r, reasonTooFarInPast),
+		duplicateTimestamp:           validation.DiscardedSamplesCounter(r, reasonDuplicateTimestamp),
 	}
 }
 
@@ -424,7 +430,7 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if !skipLabelValidation && !model.LabelValue(l.Value).IsValid() {
 			m.invalidLabelValue.WithLabelValues(userID, group).Inc()
-			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name, strings.ToValidUTF8(l.Value, ""), unsafeMetricName)
+			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name, validUTF8Message(l.Value), unsafeMetricName)
 		} else if len(l.Value) > maxLabelValueLength {
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(labelValueTooLongMsgFormat, l.Name, l.Value, mimirpb.FromLabelAdaptersToString(ls))
@@ -505,4 +511,16 @@ func getMetricAndEllipsis(ls []mimirpb.LabelAdapter) (string, string) {
 		ellipsis = "\u2026"
 	}
 	return metric, ellipsis
+}
+
+// validUTF8ErrMessage ensures that the given message contains only valid utf8 characters.
+// The presence of non-utf8 characters in some errors might break some crucial parts of distributor's logic.
+// For example, if httpgrpc.HTTPServer.Handle() returns a httpgprc.Error containing a non-utf8 character,
+// this error will not be propagated to httpgrpc.HTTPClient as a htttpgrpc.Error, but as a generic error,
+// which might break some of Mimir internal logic.
+// This is because golang's proto.Marshal(), which is used by gRPC internally, fails when it marshals the
+// httpgrpc.Error containing non-utf8 character produced by httpgrpc.HTTPServer.Handle(), making the resulting
+// error lose some important properties.
+func validUTF8Message(msg string) string {
+	return strings.ToValidUTF8(msg, string(utf8.RuneError))
 }
