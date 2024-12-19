@@ -44,7 +44,7 @@ type Tracker struct {
 	discardedSampleAttribution     *prometheus.Desc
 	failedActiveSeriesDecrement    *prometheus.Desc
 	overflowLabels                 []string
-	obseveredMtx                   sync.RWMutex
+	observedMtx                    sync.RWMutex
 	observed                       map[string]*observation
 	hashBuffer                     []byte
 	state                          TrackerState
@@ -114,8 +114,8 @@ var bufferPool = sync.Pool{
 }
 
 func (t *Tracker) cleanupTrackerAttribution(key string) {
-	t.obseveredMtx.Lock()
-	defer t.obseveredMtx.Unlock()
+	t.observedMtx.Lock()
+	defer t.observedMtx.Unlock()
 	delete(t.observed, key)
 }
 
@@ -141,8 +141,8 @@ func (t *Tracker) Collect(out chan<- prometheus.Metric) {
 		out <- prometheus.MustNewConstMetric(t.discardedSampleAttribution, prometheus.CounterValue, t.overflowCounter.totalDiscarded.Load(), t.overflowLabels...)
 	case Normal:
 		// Collect metrics for all observed keys
-		t.obseveredMtx.RLock()
-		defer t.obseveredMtx.RUnlock()
+		t.observedMtx.RLock()
+		defer t.observedMtx.RUnlock()
 		for key, o := range t.observed {
 			keys := strings.Split(key, string(sep))
 			keys = append(keys, t.userID)
@@ -209,8 +209,8 @@ func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncre
 		buf.WriteString(value)
 	}
 
-	t.obseveredMtx.Lock()
-	defer t.obseveredMtx.Unlock()
+	t.observedMtx.Lock()
+	defer t.observedMtx.Unlock()
 
 	t.updateObservations(buf.Bytes(), ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
 	t.updateState(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
@@ -309,8 +309,8 @@ func (t *Tracker) shouldDelete(deadline int64) bool {
 func (t *Tracker) inactiveObservations(deadline int64) []string {
 	// otherwise, we need to check all observations and clean up the ones that are inactive
 	var invalidKeys []string
-	t.obseveredMtx.RLock()
-	defer t.obseveredMtx.RUnlock()
+	t.observedMtx.RLock()
+	defer t.observedMtx.RUnlock()
 	for labkey, ob := range t.observed {
 		if ob != nil && ob.lastUpdate != nil && ob.lastUpdate.Load() <= deadline {
 			invalidKeys = append(invalidKeys, labkey)
