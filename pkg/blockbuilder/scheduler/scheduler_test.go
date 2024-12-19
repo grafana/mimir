@@ -13,6 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -342,4 +343,12 @@ func TestMonitor(t *testing.T) {
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="2"} 2
 		cortex_blockbuilder_scheduler_partition_end_offset{partition="3"} 3
 	`), "cortex_blockbuilder_scheduler_partition_end_offset"))
+}
+
+func TestLessThan(t *testing.T) {
+	now := time.Now()
+	oneHourAgo := now.Add(-1 * time.Hour)
+	assert.True(t, specLessThan(schedulerpb.JobSpec{CommitRecTs: oneHourAgo}, schedulerpb.JobSpec{CommitRecTs: now}))
+	assert.False(t, specLessThan(schedulerpb.JobSpec{CommitRecTs: now}, schedulerpb.JobSpec{CommitRecTs: oneHourAgo}))
+	assert.False(t, specLessThan(schedulerpb.JobSpec{CommitRecTs: now}, schedulerpb.JobSpec{CommitRecTs: now}))
 }

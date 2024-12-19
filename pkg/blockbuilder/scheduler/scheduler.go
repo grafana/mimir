@@ -384,7 +384,7 @@ type observation struct {
 
 var _ schedulerpb.BlockBuilderSchedulerServer = (*BlockBuilderScheduler)(nil)
 
-// specLessThan defines whether spec a should come before b in job scheduling.
+// specLessThan determines whether spec a should come before b in job scheduling.
 func specLessThan(a, b schedulerpb.JobSpec) bool {
-	return a.StartOffset < b.StartOffset
+	return a.CommitRecTs.Before(b.CommitRecTs)
 }
