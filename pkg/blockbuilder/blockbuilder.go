@@ -92,7 +92,7 @@ func (b *BlockBuilder) starting(context.Context) (err error) {
 
 	b.kafkaClient, err = ingest.NewKafkaReaderClient(
 		b.cfg.Kafka,
-		ingest.NewKafkaReaderClientMetrics("block-builder", b.register),
+		ingest.NewKafkaReaderClientMetrics(ingest.ReaderMetricsPrefix, "block-builder", b.register),
 		b.logger,
 	)
 	if err != nil {

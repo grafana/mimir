@@ -73,3 +73,16 @@ eval range from 0 to 7m step 1m some_metric
   some_metric{env="prod", cluster="eu"} _ _ _ 0 1 2 3 4
   some_metric{env="prod", cluster="us"} _ _ _ 0 2 4 6 8
   some_metric{env="prod", cluster="au"} _ _ _ {{count:5}} {{count:10}} {{count:15}} {{count:20}} {{count:25}}
+
+clear
+
+load 1s
+  metric_total 0+2x86400
+
+# Test our bucket pool can get more than the max points
+eval instant at 24h rate(metric_total[24h])
+  {} 2
+
+# Make sure the ring buffer Use and Append work with power of two pools
+eval instant at 24h rate(metric_total[1d:1s])
+  {} 2

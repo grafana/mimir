@@ -13,6 +13,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -44,7 +45,6 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/cardinality"
@@ -1133,12 +1133,12 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
 		for _, ts := range req.Timeseries {
 			for _, s := range ts.Samples {
-				earliestSampleTimestampMs = util_math.Min(earliestSampleTimestampMs, s.TimestampMs)
-				latestSampleTimestampMs = util_math.Max(latestSampleTimestampMs, s.TimestampMs)
+				earliestSampleTimestampMs = min(earliestSampleTimestampMs, s.TimestampMs)
+				latestSampleTimestampMs = max(latestSampleTimestampMs, s.TimestampMs)
 			}
 			for _, h := range ts.Histograms {
-				earliestSampleTimestampMs = util_math.Min(earliestSampleTimestampMs, h.Timestamp)
-				latestSampleTimestampMs = util_math.Max(latestSampleTimestampMs, h.Timestamp)
+				earliestSampleTimestampMs = min(earliestSampleTimestampMs, h.Timestamp)
+				latestSampleTimestampMs = max(latestSampleTimestampMs, h.Timestamp)
 			}
 		}
 		// Update this metric even in case of errors.

@@ -253,9 +253,12 @@ func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 			Help: "The total number of reelections for a user ID/cluster, from the KVStore.",
 		}, []string{"user", "cluster"}),
 		electedReplicaPropagationTime: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ha_tracker_elected_replica_change_propagation_time_seconds",
-			Help:    "The time it for the distributor to update the replica change.",
-			Buckets: prometheus.DefBuckets,
+			Name:                            "cortex_ha_tracker_elected_replica_change_propagation_time_seconds",
+			Help:                            "The time it for the distributor to update the replica change.",
+			Buckets:                         prometheus.DefBuckets,
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
 		}),
 		kvCASCalls: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ha_tracker_kv_store_cas_total",

@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,7 +47,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -64,7 +64,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -960,7 +959,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 				var expectedIngesters int
 				if shuffleShardSize > 0 {
-					expectedIngesters = util_math.Min(shuffleShardSize, numIngesters)
+					expectedIngesters = min(shuffleShardSize, numIngesters)
 				} else {
 					expectedIngesters = numIngesters
 				}

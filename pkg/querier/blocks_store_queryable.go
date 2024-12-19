@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/thanos-io/objstore"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
@@ -613,8 +612,8 @@ type storeConsistencyCheckFailedErr struct {
 
 func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) *storeConsistencyCheckFailedErr {
 	// Sort the blocks, so it's easier to test the error strings.
-	sort.Slice(remainingBlocks, func(i, j int) bool {
-		return remainingBlocks[i].Compare(remainingBlocks[j]) < 0
+	slices.SortFunc(remainingBlocks, func(i, j ulid.ULID) int {
+		return i.Compare(j)
 	})
 
 	return &storeConsistencyCheckFailedErr{
