@@ -273,7 +273,7 @@
         },
         {
           alert: $.alertName('BlockBuilderLagging'),
-          'for': '140m', // 2h20m. Indicating the lag did not come down for ~2 consumption cycles.
+          'for': '140m',  // 2h20m. Indicating the lag did not come down for ~2 consumption cycles.
           expr: |||
             max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_blockbuilder_consumer_lag_records[10m])) > 4e6
           ||| % $._config,
