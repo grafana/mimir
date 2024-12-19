@@ -3405,17 +3405,6 @@
         },
         {
           "kind": "field",
-          "name": "log_utilization_based_limiter_cpu_samples",
-          "required": false,
-          "desc": "Enable logging of utilization based limiter CPU samples.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "ingester.log-utilization-based-limiter-cpu-samples",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "error_sample_rate",
           "required": false,
           "desc": "Each error will be logged once in this many times. Use 0 to log all of them.",
