@@ -41,6 +41,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Fix how `fullnameOverride` is reflected in generated manifests. #9564
 * [BUGFIX] Fix `extraObjects` linting with helm lint by padding with an extra new line. #9863
 * [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler, also for zone aware Alertmanager #9851
+* [CHANGE] Update rollout-operator version to 0.22.0. #10241
 
 ## 5.5.1
 * [BUGFIX] Fix incorrect use of topology spread constraints in `GrafanaAgent` CRD of metamonitoring. #9669
