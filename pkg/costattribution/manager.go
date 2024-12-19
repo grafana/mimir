@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	TrackerLabel       = "tracker"
-	TenantLabel        = "tenant"
+	trackerLabel       = "tracker"
+	tenantLabel        = "tenant"
 	defaultTrackerName = "cost-attribution"
 	missingValue       = "__missing__"
 	overflowValue      = "__overflow__"

@@ -86,20 +86,20 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 
 	tracker.discardedSampleAttribution = prometheus.NewDesc("cortex_discarded_attributed_samples_total",
 		"The total number of samples that were discarded per attribution.",
-		append(trackedLabels, TenantLabel, "reason"),
-		prometheus.Labels{TrackerLabel: defaultTrackerName})
+		append(trackedLabels, tenantLabel, "reason"),
+		prometheus.Labels{trackerLabel: defaultTrackerName})
 
 	tracker.receivedSamplesAttribution = prometheus.NewDesc("cortex_received_attributed_samples_total",
 		"The total number of samples that were received per attribution.",
-		append(trackedLabels, TenantLabel),
-		prometheus.Labels{TrackerLabel: defaultTrackerName})
+		append(trackedLabels, tenantLabel),
+		prometheus.Labels{trackerLabel: defaultTrackerName})
 
 	tracker.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",
-		"The total number of active series per user and attribution.", append(trackedLabels, TenantLabel),
-		prometheus.Labels{TrackerLabel: defaultTrackerName})
+		"The total number of active series per user and attribution.", append(trackedLabels, tenantLabel),
+		prometheus.Labels{trackerLabel: defaultTrackerName})
 	tracker.failedActiveSeriesDecrement = prometheus.NewDesc("cortex_ingester_attributed_active_series_failure",
-		"The total number of failed active series decrement per user and tracker.", []string{TenantLabel},
-		prometheus.Labels{TrackerLabel: defaultTrackerName})
+		"The total number of failed active series decrement per user and tracker.", []string{tenantLabel},
+		prometheus.Labels{trackerLabel: defaultTrackerName})
 	return tracker
 }
 
