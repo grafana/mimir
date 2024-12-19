@@ -1399,6 +1399,43 @@ alertmanager_max_grafana_state_size_bytes: "0"
 	}
 }
 
+func TestOverrides_PromoteOTelResourceAttributes(t *testing.T) {
+	const tenant = "tenant"
+
+	t.Run("default implementation", func(t *testing.T) {
+		overrides, err := NewOverrides(
+			Limits{PromoteOTelResourceAttributes: []string{"default.attribute"}},
+			NewMockTenantLimits(map[string]*Limits{}),
+		)
+		require.NoError(t, err)
+
+		attrs := overrides.PromoteOTelResourceAttributes(tenant)
+		require.Equal(t, []string{"default.attribute"}, attrs)
+	})
+
+	t.Run("specialized implementation", func(t *testing.T) {
+		overrides, err := NewOverrides(
+			Limits{PromoteOTelResourceAttributes: []string{"default.attribute"}},
+			NewMockTenantLimits(map[string]*Limits{}),
+		)
+		require.NoError(t, err)
+
+		overrides.SpecializeResourceAttributePromotionConfig(fakeOTelResourceAttributePromotionConfig{
+			resourceAttrs: map[string][]string{tenant: {"specialized.attribute"}},
+		})
+		attrs := overrides.PromoteOTelResourceAttributes(tenant)
+		require.Equal(t, []string{"specialized.attribute"}, attrs)
+	})
+}
+
+type fakeOTelResourceAttributePromotionConfig struct {
+	resourceAttrs map[string][]string
+}
+
+func (c fakeOTelResourceAttributePromotionConfig) PromoteOTelResourceAttributes(tenant string) []string {
+	return c.resourceAttrs[tenant]
+}
+
 func getDefaultLimits() Limits {
 	limits := Limits{}
 	flagext.DefaultValues(&limits)
