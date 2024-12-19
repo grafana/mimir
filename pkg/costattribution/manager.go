@@ -109,12 +109,13 @@ func (m *Manager) deleteTracker(userID string) {
 }
 
 func (m *Manager) updateTracker(userID string) *Tracker {
-	if !m.EnabledForUser(userID) {
+	t := m.Tracker(userID)
+
+	if t == nil {
 		m.deleteTracker(userID)
 		return nil
 	}
 
-	t := m.Tracker(userID)
 	newTrackedLabels := m.limits.CostAttributionLabels(userID)
 
 	// sort the labels to ensure the order is consistent

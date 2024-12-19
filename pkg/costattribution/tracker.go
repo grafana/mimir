@@ -104,9 +104,6 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 }
 
 func (t *Tracker) hasSameLabels(labels []string) bool {
-	if t == nil {
-		return len(labels) == 0
-	}
 	return slices.Equal(t.labels, labels)
 }
 
@@ -117,9 +114,6 @@ var bufferPool = sync.Pool{
 }
 
 func (t *Tracker) cleanupTrackerAttribution(key string) {
-	if t == nil {
-		return
-	}
 	t.obseveredMtx.Lock()
 	defer t.obseveredMtx.Unlock()
 	delete(t.observed, key)
