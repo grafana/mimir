@@ -25,7 +25,7 @@ const (
 
 const sep = rune(0x80)
 
-type Observation struct {
+type observation struct {
 	lastUpdate       *atomic.Int64
 	activeSerie      *atomic.Float64
 	receivedSample   *atomic.Float64
@@ -45,10 +45,10 @@ type Tracker struct {
 	failedActiveSeriesDecrement    *prometheus.Desc
 	overflowLabels                 []string
 	obseveredMtx                   sync.RWMutex
-	observed                       map[string]*Observation
+	observed                       map[string]*observation
 	hashBuffer                     []byte
 	state                          TrackerState
-	overflowCounter                *Observation
+	overflowCounter                *observation
 	cooldownUntil                  *atomic.Int64
 	totalFailedActiveSeries        *atomic.Float64
 	cooldownDuration               int64
@@ -76,7 +76,7 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 		labels:                  trackedLabels,
 		index:                   index,
 		maxCardinality:          limit,
-		observed:                make(map[string]*Observation),
+		observed:                make(map[string]*observation),
 		hashBuffer:              make([]byte, 0, 1024),
 		cooldownDuration:        int64(cooldown.Seconds()),
 		logger:                  logger,
@@ -250,7 +250,7 @@ func (t *Tracker) updateState(ts int64, activeSeriesIncrement, receivedSampleInc
 	if t.state == Normal && len(t.observed) > t.maxCardinality {
 		t.state = Overflow
 		// Initialize the overflow counter.
-		t.overflowCounter = &Observation{
+		t.overflowCounter = &observation{
 			lastUpdate:     atomic.NewInt64(ts),
 			activeSerie:    atomic.NewFloat64(0),
 			receivedSample: atomic.NewFloat64(0),
@@ -282,7 +282,7 @@ func (t *Tracker) updateState(ts int64, activeSeriesIncrement, receivedSampleInc
 
 // createNewObservation creates a new observation in the 'observed' map.
 func (t *Tracker) createNewObservation(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
-	t.observed[string(key)] = &Observation{
+	t.observed[string(key)] = &observation{
 		lastUpdate:       atomic.NewInt64(ts),
 		activeSerie:      atomic.NewFloat64(activeSeriesIncrement),
 		receivedSample:   atomic.NewFloat64(receivedSampleIncrement),
