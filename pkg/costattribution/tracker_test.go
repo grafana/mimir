@@ -15,12 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_GetCALabels(t *testing.T) {
+func TestTracker_hasSameLabels(t *testing.T) {
 	tracker := newTestManager().Tracker("user1")
 	assert.True(t, tracker.hasSameLabels([]string{"team"}), "Expected cost attribution labels mismatch")
 }
 
-func Test_CreateCleanupTracker(t *testing.T) {
+func TestTracker_CreateDelete(t *testing.T) {
 	tManager := newTestManager()
 	tracker := tManager.Tracker("user4")
 
@@ -75,7 +75,7 @@ func Test_CreateCleanupTracker(t *testing.T) {
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), metricNames...))
 }
 
-func Test_UpdateCounters(t *testing.T) {
+func TestTracker_updateCounters(t *testing.T) {
 	tracker := newTestManager().Tracker("user3")
 	lbls1 := labels.FromStrings("department", "foo", "service", "bar")
 	lbls2 := labels.FromStrings("department", "bar", "service", "baz")
@@ -96,7 +96,7 @@ func Test_UpdateCounters(t *testing.T) {
 	assert.Equal(t, int64(3+tracker.cooldownDuration), tracker.cooldownUntil.Load(), "CooldownUntil should be updated correctly")
 }
 
-func Test_GetInactiveObservations(t *testing.T) {
+func TestTracker_inactiveObservations(t *testing.T) {
 	// Setup the test environment: create a tracker for user1 with a "team" label and max cardinality of 5.
 	tracker := newTestManager().Tracker("user1")
 
@@ -129,7 +129,7 @@ func Test_GetInactiveObservations(t *testing.T) {
 	assert.ElementsMatch(t, []string{"foo", "bar", "baz"}, purged)
 }
 
-func Test_Concurrency(t *testing.T) {
+func TestTracker_Concurrency(t *testing.T) {
 	m := newTestManager()
 	tracker := m.Tracker("user1")
 

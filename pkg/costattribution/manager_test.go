@@ -51,14 +51,14 @@ func newTestManager() *Manager {
 	return manager
 }
 
-func Test_NewManager(t *testing.T) {
+func TestManager_New(t *testing.T) {
 	manager := newTestManager()
 	assert.NotNil(t, manager)
 	assert.NotNil(t, manager.trackersByUserID)
 	assert.Equal(t, 10*time.Second, manager.inactiveTimeout)
 }
 
-func Test_CreateDeleteTracker(t *testing.T) {
+func TestManager_CreateDeleteTracker(t *testing.T) {
 	manager := newTestManager()
 
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
@@ -148,7 +148,7 @@ func Test_CreateDeleteTracker(t *testing.T) {
 	})
 }
 
-func Test_PurgeInactiveAttributionsUntil(t *testing.T) {
+func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 	manager := newTestManager()
 
 	manager.Tracker("user1").IncrementReceivedSamples(labels.FromStrings("team", "foo"), 1, time.Unix(1, 0))
