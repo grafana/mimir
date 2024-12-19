@@ -201,7 +201,6 @@ func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncre
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufferPool.Put(buf)
-
 	// Build the stream key
 	for i, value := range labelValues {
 		if i > 0 {
@@ -213,12 +212,13 @@ func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncre
 	t.obseveredMtx.Lock()
 	defer t.obseveredMtx.Unlock()
 
-	t.updateOverflow(buf.String(), ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
+	t.updateObservations(buf.Bytes(), ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
+	t.updateState(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
 }
 
-// handleObservation updates or creates a new stream observation in the 'observed' map.
-func (t *Tracker) handleObservation(stream string, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
-	if o, known := t.observed[stream]; known && o.lastUpdate != nil {
+// updateObservations updates or creates a new stream observation in the 'observed' map.
+func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
+	if o, known := t.observed[string(key)]; known && o.lastUpdate != nil {
 		// Update the timestamp if needed
 		if o.lastUpdate.Load() < ts {
 			o.lastUpdate.Store(ts)
@@ -238,19 +238,13 @@ func (t *Tracker) handleObservation(stream string, ts int64, activeSeriesIncreme
 		// If the ts is negative, it means that the method is called from DecrementActiveSeries, when key doesn't exist we should ignore the call
 		// Otherwise create a new observation for the stream
 		if ts >= 0 {
-			t.createNewObservation(stream, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
+			t.createNewObservation(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
 		}
 	}
 }
 
-func (t *Tracker) updateOverflow(stream string, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
-	// Update the stream in the observed map
-	t.handleObservation(stream, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
-	t.handleOverflow(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
-}
-
-// handleOverflow checks if the tracker has exceeded its max cardinality and updates overflow state if necessary.
-func (t *Tracker) handleOverflow(ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64) {
+// updateState checks if the tracker has exceeded its max cardinality and updates overflow state if necessary.
+func (t *Tracker) updateState(ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64) {
 	// Transition to overflow mode if maximum cardinality is exceeded.
 	previousState := t.state
 	if t.state == Normal && len(t.observed) > t.maxCardinality {
@@ -287,8 +281,8 @@ func (t *Tracker) handleOverflow(ts int64, activeSeriesIncrement, receivedSample
 }
 
 // createNewObservation creates a new observation in the 'observed' map.
-func (t *Tracker) createNewObservation(stream string, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
-	t.observed[stream] = &Observation{
+func (t *Tracker) createNewObservation(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
+	t.observed[string(key)] = &Observation{
 		lastUpdate:       atomic.NewInt64(ts),
 		activeSerie:      atomic.NewFloat64(activeSeriesIncrement),
 		receivedSample:   atomic.NewFloat64(receivedSampleIncrement),
@@ -296,9 +290,9 @@ func (t *Tracker) createNewObservation(stream string, ts int64, activeSeriesIncr
 		discardSamplemtx: sync.Mutex{},
 	}
 	if discardedSampleIncrement > 0 && reason != nil {
-		t.observed[stream].discardSamplemtx.Lock()
-		t.observed[stream].discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
-		t.observed[stream].discardSamplemtx.Unlock()
+		t.observed[string(key)].discardSamplemtx.Lock()
+		t.observed[string(key)].discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
+		t.observed[string(key)].discardSamplemtx.Unlock()
 	}
 }
 
