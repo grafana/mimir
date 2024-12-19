@@ -27,11 +27,11 @@ const sep = rune(0x80)
 
 type observation struct {
 	lastUpdate       *atomic.Int64
-	activeSerie      *atomic.Float64
-	receivedSample   *atomic.Float64
+	activeSerie      atomic.Float64
+	receivedSample   atomic.Float64
 	discardSamplemtx sync.Mutex
-	discardedSample  map[string]*atomic.Float64
-	totalDiscarded   *atomic.Float64
+	discardedSample  map[string]atomic.Float64
+	totalDiscarded   atomic.Float64
 }
 
 type Tracker struct {
@@ -231,7 +231,7 @@ func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement
 		}
 		if discardedSampleIncrement > 0 && reason != nil {
 			o.discardSamplemtx.Lock()
-			o.discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
+			o.discardedSample[*reason] = *atomic.NewFloat64(discardedSampleIncrement)
 			o.discardSamplemtx.Unlock()
 		}
 	} else if len(t.observed) < t.maxCardinality*2 {
@@ -252,9 +252,9 @@ func (t *Tracker) updateState(ts int64, activeSeriesIncrement, receivedSampleInc
 		// Initialize the overflow counter.
 		t.overflowCounter = &observation{
 			lastUpdate:     atomic.NewInt64(ts),
-			activeSerie:    atomic.NewFloat64(0),
-			receivedSample: atomic.NewFloat64(0),
-			totalDiscarded: atomic.NewFloat64(0),
+			activeSerie:    *atomic.NewFloat64(0),
+			receivedSample: *atomic.NewFloat64(0),
+			totalDiscarded: *atomic.NewFloat64(0),
 		}
 
 		// Aggregate active series from all keys into the overflow counter.
@@ -284,14 +284,14 @@ func (t *Tracker) updateState(ts int64, activeSeriesIncrement, receivedSampleInc
 func (t *Tracker) createNewObservation(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
 	t.observed[string(key)] = &observation{
 		lastUpdate:       atomic.NewInt64(ts),
-		activeSerie:      atomic.NewFloat64(activeSeriesIncrement),
-		receivedSample:   atomic.NewFloat64(receivedSampleIncrement),
-		discardedSample:  map[string]*atomic.Float64{},
+		activeSerie:      *atomic.NewFloat64(activeSeriesIncrement),
+		receivedSample:   *atomic.NewFloat64(receivedSampleIncrement),
+		discardedSample:  map[string]atomic.Float64{},
 		discardSamplemtx: sync.Mutex{},
 	}
 	if discardedSampleIncrement > 0 && reason != nil {
 		t.observed[string(key)].discardSamplemtx.Lock()
-		t.observed[string(key)].discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
+		t.observed[string(key)].discardedSample[*reason] = *atomic.NewFloat64(discardedSampleIncrement)
 		t.observed[string(key)].discardSamplemtx.Unlock()
 	}
 }
