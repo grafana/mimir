@@ -316,12 +316,12 @@ func TestOffsetMovement(t *testing.T) {
 	}
 	sched.completeObservationMode()
 
-	spec := jobSpec{
-		topic:       "ingest",
-		partition:   1,
-		commitRecTs: time.Unix(200, 0),
-		startOffset: 5000,
-		endOffset:   6000,
+	spec := schedulerpb.JobSpec{
+		Topic:       "ingest",
+		Partition:   1,
+		CommitRecTs: time.Unix(200, 0),
+		StartOffset: 5000,
+		EndOffset:   6000,
 	}
 
 	sched.jobs.addOrUpdate("ingest/1/5524", spec)

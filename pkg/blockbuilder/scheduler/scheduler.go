@@ -133,6 +133,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	}
 }
 
+// completeObservationMode transitions the scheduler from observation mode to normal operation.
 func (s *BlockBuilderScheduler) completeObservationMode() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -331,7 +332,7 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 	}
 
 	if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, j.Partition); ok {
-		if j.StartOffset <= c.At {
+		if j.EndOffset <= c.At {
 			// Update of a completed/committed job. Ignore.
 			level.Debug(logger).Log("msg", "ignored historical job")
 			return nil
