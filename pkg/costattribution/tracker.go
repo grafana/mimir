@@ -140,7 +140,7 @@ func (t *Tracker) Collect(out chan<- prometheus.Metric) {
 		out <- prometheus.MustNewConstMetric(t.receivedSamplesAttribution, prometheus.CounterValue, t.overflowCounter.receivedSample.Load(), t.overflowLabels[:len(t.overflowLabels)-1]...)
 		out <- prometheus.MustNewConstMetric(t.discardedSampleAttribution, prometheus.CounterValue, t.overflowCounter.totalDiscarded.Load(), t.overflowLabels...)
 	case Normal:
-		// Collect metrics for all observed streams
+		// Collect metrics for all observed keys
 		t.obseveredMtx.RLock()
 		defer t.obseveredMtx.RUnlock()
 		for key, o := range t.observed {
@@ -201,7 +201,7 @@ func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncre
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufferPool.Put(buf)
-	// Build the stream key
+	// Build the observation key
 	for i, value := range labelValues {
 		if i > 0 {
 			buf.WriteRune(sep)
@@ -216,7 +216,7 @@ func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncre
 	t.updateState(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
 }
 
-// updateObservations updates or creates a new stream observation in the 'observed' map.
+// updateObservations updates or creates a new observation in the 'observed' map.
 func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
 	if o, known := t.observed[string(key)]; known && o.lastUpdate != nil {
 		// Update the timestamp if needed
@@ -236,7 +236,7 @@ func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement
 		}
 	} else if len(t.observed) < t.maxCardinality*2 {
 		// If the ts is negative, it means that the method is called from DecrementActiveSeries, when key doesn't exist we should ignore the call
-		// Otherwise create a new observation for the stream
+		// Otherwise create a new observation for the key
 		if ts >= 0 {
 			t.createNewObservation(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
 		}
@@ -257,7 +257,7 @@ func (t *Tracker) updateState(ts int64, activeSeriesIncrement, receivedSampleInc
 			totalDiscarded: atomic.NewFloat64(0),
 		}
 
-		// Aggregate active series from all streams into the overflow counter.
+		// Aggregate active series from all keys into the overflow counter.
 		for _, o := range t.observed {
 			if o != nil {
 				t.overflowCounter.activeSerie.Add(o.activeSerie.Load())
