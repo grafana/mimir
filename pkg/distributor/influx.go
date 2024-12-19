@@ -68,7 +68,7 @@ func InfluxHandler(
 
 		tenantID, err := tenant.TenantID(ctx)
 		if err != nil {
-			level.Warn(logger).Log("msg", "unable to obtain tenantID", "err", tryUnwrap(err))
+			level.Warn(logger).Log("msg", "unable to obtain tenantID", "err", err)
 			return
 		}
 
@@ -141,9 +141,9 @@ func InfluxHandler(
 				level.Error(logger).Log(msgs...)
 			}
 			if httpCode < 500 {
-				level.Info(logger).Log("msg", errorMsg, "response_code", httpCode, "err", tryUnwrap(err))
+				level.Info(logger).Log("msg", errorMsg, "response_code", httpCode, "err", err)
 			} else {
-				level.Warn(logger).Log("msg", errorMsg, "response_code", httpCode, "err", tryUnwrap(err))
+				level.Warn(logger).Log("msg", errorMsg, "response_code", httpCode, "err", err)
 			}
 			addHeaders(w, err, r, httpCode, retryCfg)
 			w.WriteHeader(httpCode)
@@ -151,13 +151,4 @@ func InfluxHandler(
 			w.WriteHeader(http.StatusNoContent) // Needed for Telegraf, otherwise it tries to marshal JSON and considers the write a failure.
 		}
 	})
-}
-
-// Imported from: https://github.com/grafana/influx2cortex/blob/main/pkg/influx/errors.go
-
-func tryUnwrap(err error) error {
-	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
-		return wrapped.Unwrap()
-	}
-	return err
 }
