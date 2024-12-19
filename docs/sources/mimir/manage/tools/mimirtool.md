@@ -70,12 +70,13 @@ chmod +x mimirtool
 
 For Mimirtools to interact with Grafana Mimir, Grafana Enterprise Metrics, Prometheus, or Grafana, set the following environment variables or CLI flags.
 
-| Environment variable | Flag        | Description                                                                                                                                                                                      |
-| -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `MIMIR_ADDRESS`      | `--address` | Sets the address of the API of the Grafana Mimir cluster.                                                                                                                                        |
-| `MIMIR_API_USER`     | `--user`    | Sets the basic auth username. If this variable is empty and `MIMIR_API_KEY` is set, the system uses `MIMIR_TENANT_ID` instead. If you're using Grafana Cloud, this variable is your instance ID. |
-| `MIMIR_API_KEY`      | `--key`     | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.                                                                                                      |
-| `MIMIR_TENANT_ID`    | `--id`      | Sets the tenant ID of the Grafana Mimir instance that Mimirtools interacts with.                                                                                                                 |
+| Environment variable  | Flag              | Description                                                                                                                                                                                                |
+| --------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MIMIR_ADDRESS`       | `--address`       | Sets the address of the API of the Grafana Mimir cluster.                                                                                                                                                  |
+| `MIMIR_API_USER`      | `--user`          | Sets the basic authentication username. If this variable is empty and `MIMIR_API_KEY` is set, the system uses `MIMIR_TENANT_ID` instead. If you're using Grafana Cloud, this variable is your instance ID. |
+| `MIMIR_API_KEY`       | `--key`           | Sets the basic authentication password. If you're using Grafana Cloud, this variable is your API key.                                                                                                      |
+| `MIMIR_TENANT_ID`     | `--id`            | Sets the tenant ID of the Grafana Mimir instance that Mimirtool interacts with.                                                                                                                            |
+| `MIMIR_EXTRA_HEADERS` | `--extra-headers` | Extra headers to add to the requests in header=value format. You can specify this flag multiple times. You must newline separate environment values.                                                       |
 
 It is also possible to set TLS-related options with the following environment variables or CLI flags:
 
@@ -309,10 +310,9 @@ For more information, refer to the [documentation of Mimirtool Github Action](ht
 
 Configuration options relevant to rules commands:
 
-| Flag              | Description                                                                               |
-| ----------------- | ----------------------------------------------------------------------------------------- |
-| `--auth-token`    | Authentication token for bearer token or JWT auth.                                        |
-| `--extra-headers` | Extra headers to add to the requests in header=value format. (Can specify multiple times) |
+| Flag           | Description                                        |
+| -------------- | -------------------------------------------------- |
+| `--auth-token` | Authentication token for bearer token or JWT auth. |
 
 #### List rules
 
