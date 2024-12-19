@@ -72,7 +72,7 @@ func InfluxHandler(
 			return
 		}
 
-		pushMetrics.IncOTLPRequest(tenantID)
+		pushMetrics.IncInfluxRequest(tenantID)
 
 		var bytesRead int
 
