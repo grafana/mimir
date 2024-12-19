@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/storage"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCopyParamsDeepCopy(t *testing.T) {
@@ -23,7 +23,7 @@ func TestCopyParamsDeepCopy(t *testing.T) {
 	copied := copyParams(original)
 
 	// First verify the structs themselves are different
-	require.NotSame(t, original, copied)
+	assert.NotSame(t, original, copied)
 
 	// Then check each field is a different pointer
 	originalVal := reflect.ValueOf(original).Elem()
@@ -34,15 +34,16 @@ func TestCopyParamsDeepCopy(t *testing.T) {
 		copiedField := copiedVal.Field(i)
 
 		// Check if values are equal
-		require.Equal(t, originalField.Interface(), copiedField.Interface(), "Field %s has different values", typ.Field(i).Name)
+		assert.Equal(t, originalField.Interface(), copiedField.Interface(), "Field %s has different values", typ.Field(i).Name)
 
+		switch originalField.Kind() {
 		// For reference types, ensure they point to different memory
-		if originalField.Kind() == reflect.Slice ||
-			originalField.Kind() == reflect.Map ||
-			originalField.Kind() == reflect.Ptr {
+		case reflect.Slice, reflect.Map, reflect.Ptr:
 			if !originalField.IsNil() {
-				require.NotEqual(t, originalField.UnsafePointer(), copiedField.UnsafePointer(), "Field %s shares memory between original and copy", typ.Field(i).Name)
+				assert.NotEqual(t, originalField.UnsafePointer(), copiedField.UnsafePointer(), "Field %s shares memory between original and copy", typ.Field(i).Name)
 			}
+		default:
+			// Any other types are copied by value, so the assert.Equal above is enough.
 		}
 	}
 }
