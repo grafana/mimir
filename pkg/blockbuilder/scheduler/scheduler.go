@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/blockbuilder"
+	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
@@ -26,13 +27,15 @@ type BlockBuilderScheduler struct {
 	services.Service
 
 	adminClient *kadm.Client
-	jobs        *jobQueue
+	jobs        *jobQueue[schedulerpb.JobSpec]
 	cfg         Config
 	logger      log.Logger
 	register    prometheus.Registerer
 	metrics     schedulerMetrics
 
-	mu                  sync.Mutex
+	mu sync.Mutex
+	// committed is our local notion of the committed offsets.
+	// It is learned from Kafka at startup, but only updated by the completion of jobs.
 	committed           kadm.Offsets
 	observations        obsMap
 	observationComplete bool
@@ -114,7 +117,10 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	for {
 		select {
 		case <-updateTick.C:
+			// These tasks are not prerequisites to updating the schedule, but
+			// we do them here rather than creating a ton of update tickers.
 			s.jobs.clearExpiredLeases()
+
 			s.updateSchedule(ctx)
 		case <-ctx.Done():
 			return nil
@@ -130,7 +136,7 @@ func (s *BlockBuilderScheduler) completeObservationMode() {
 		return
 	}
 
-	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, s.logger)
+	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, s.logger, specLessThan)
 	s.finalizeObservations()
 	s.observations = nil
 	s.observationComplete = true
@@ -178,14 +184,14 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 				// The job is uniquely identified by {topic, partition, consumption start offset}.
 				jobID := fmt.Sprintf("%s/%d/%d", o.Topic, o.Partition, l.Commit.At)
 				partState := blockbuilder.PartitionStateFromLag(s.logger, l, 0)
-				s.jobs.addOrUpdate(jobID, jobSpec{
-					topic:          o.Topic,
-					partition:      o.Partition,
-					startOffset:    l.Commit.At,
-					endOffset:      l.End.Offset,
-					commitRecTs:    partState.CommitRecordTimestamp,
-					lastSeenOffset: partState.LastSeenOffset,
-					lastBlockEndTs: partState.LastBlockEnd,
+				s.jobs.addOrUpdate(jobID, schedulerpb.JobSpec{
+					Topic:          o.Topic,
+					Partition:      o.Partition,
+					StartOffset:    l.Commit.At,
+					EndOffset:      l.End.Offset,
+					CommitRecTs:    partState.CommitRecordTimestamp,
+					LastSeenOffset: partState.LastSeenOffset,
+					LastBlockEndTs: partState.LastBlockEnd,
 				})
 			}
 		}
@@ -224,39 +230,68 @@ func commitOffsetsFromLag(lag kadm.GroupLag) kadm.Offsets {
 	return offsets
 }
 
+// AssignJob returns an assigned job for the given workerID.
+func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *schedulerpb.AssignJobRequest) (*schedulerpb.AssignJobResponse, error) {
+	key, spec, err := s.assignJob(req.WorkerId)
+	if err != nil {
+		return nil, err
+	}
+
+	return &schedulerpb.AssignJobResponse{
+		Key: &schedulerpb.JobKey{
+			Id:    key.id,
+			Epoch: key.epoch,
+		},
+		Spec: &spec,
+	}, err
+}
+
 // assignJob returns an assigned job for the given workerID.
-// (This is a temporary method for unit tests until we have RPCs.)
-func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, jobSpec, error) {
+func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.JobSpec, error) {
 	s.mu.Lock()
 	doneObserving := s.observationComplete
 	s.mu.Unlock()
 
 	if !doneObserving {
-		return jobKey{}, jobSpec{}, status.Error(codes.Unavailable, "observation period not complete")
+		var empty schedulerpb.JobSpec
+		return jobKey{}, empty, status.Error(codes.Unavailable, "observation period not complete")
 	}
 
 	return s.jobs.assign(workerID)
 }
 
-// updateJob takes a job update from the client and records it, if necessary.
-// (This is a temporary method for unit tests until we have RPCs.)
-func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete bool, j jobSpec) error {
+// UpdateJob takes a job update from the client and records it, if necessary.
+func (s *BlockBuilderScheduler) UpdateJob(_ context.Context, req *schedulerpb.UpdateJobRequest) (*schedulerpb.UpdateJobResponse, error) {
+	k := jobKey{
+		id:    req.Key.Id,
+		epoch: req.Key.Epoch,
+	}
+	if err := s.updateJob(k, req.WorkerId, req.Complete, *req.Spec); err != nil {
+		return nil, err
+	}
+	return &schedulerpb.UpdateJobResponse{}, nil
+}
+
+func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete bool, j schedulerpb.JobSpec) error {
+	logger := log.With(s.logger, "job_id", key.id, "epoch", key.epoch, "worker", workerID)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if !s.observationComplete {
+		// We're still in observation mode. Record the observation.
 		if err := s.updateObservation(key, workerID, complete, j); err != nil {
 			return fmt.Errorf("observe update: %w", err)
 		}
 
-		s.logger.Log("msg", "recovered job", "key", key, "worker", workerID)
+		logger.Log("msg", "recovered job")
 		return nil
 	}
 
-	if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, j.partition); ok {
-		if j.startOffset <= c.At {
+	if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, j.Partition); ok {
+		if j.StartOffset <= c.At {
 			// Update of a completed/committed job. Ignore.
-			s.logger.Log("msg", "ignored historical job", "key", key, "worker", workerID)
+			level.Debug(logger).Log("msg", "ignored historical job")
 			return nil
 		}
 	}
@@ -271,18 +306,18 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 
 		// TODO: Push forward the local notion of the committed offset.
 
-		s.logger.Log("msg", "completed job", "key", key, "worker", workerID)
+		logger.Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
 		if err := s.jobs.renewLease(key, workerID); err != nil {
 			return fmt.Errorf("renew lease: %w", err)
 		}
-		s.logger.Log("msg", "renewed lease", "key", key, "worker", workerID)
+		logger.Log("msg", "renewed lease")
 	}
 	return nil
 }
 
-func (s *BlockBuilderScheduler) updateObservation(key jobKey, workerID string, complete bool, j jobSpec) error {
+func (s *BlockBuilderScheduler) updateObservation(key jobKey, workerID string, complete bool, j schedulerpb.JobSpec) error {
 	rj, ok := s.observations[key.id]
 	if !ok {
 		s.observations[key.id] = &observation{
@@ -313,18 +348,18 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 	for _, rj := range s.observations {
 		if rj.complete {
 			// Completed.
-			if o, ok := s.committed.Lookup(rj.spec.topic, rj.spec.partition); ok {
-				if rj.spec.endOffset > o.At {
+			if o, ok := s.committed.Lookup(rj.spec.Topic, rj.spec.Partition); ok {
+				if rj.spec.EndOffset > o.At {
 					// Completed jobs can push forward the offsets we've learned from Kafka.
-					o.At = rj.spec.endOffset
+					o.At = rj.spec.EndOffset
 					o.Metadata = "{}" // TODO: take the new meta from the completion message.
-					s.committed[rj.spec.topic][rj.spec.partition] = o
+					s.committed[rj.spec.Topic][rj.spec.Partition] = o
 				}
 			} else {
 				s.committed.Add(kadm.Offset{
-					Topic:     rj.spec.topic,
-					Partition: rj.spec.partition,
-					At:        rj.spec.endOffset,
+					Topic:     rj.spec.Topic,
+					Partition: rj.spec.Partition,
+					At:        rj.spec.EndOffset,
 					Metadata:  "{}", // TODO: take the new meta from the completion message.
 				})
 			}
@@ -332,7 +367,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 			// An in-progress job.
 			// These don't affect offsets (yet), they just get added to the job queue.
 			if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
-				level.Warn(s.logger).Log("msg", "failed to import job", "key", rj.key, "worker", rj.workerID, "err", err)
+				level.Warn(s.logger).Log("msg", "failed to import job", "job_id", rj.key.id, "epoch", rj.key.epoch, "worker", rj.workerID, "err", err)
 			}
 		}
 	}
@@ -342,7 +377,14 @@ type obsMap map[string]*observation
 
 type observation struct {
 	key      jobKey
-	spec     jobSpec
+	spec     schedulerpb.JobSpec
 	workerID string
 	complete bool
+}
+
+var _ schedulerpb.BlockBuilderSchedulerServer = (*BlockBuilderScheduler)(nil)
+
+// specLessThan determines whether spec a should come before b in job scheduling.
+func specLessThan(a, b schedulerpb.JobSpec) bool {
+	return a.CommitRecTs.Before(b.CommitRecTs)
 }
