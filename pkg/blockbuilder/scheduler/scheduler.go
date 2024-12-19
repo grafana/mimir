@@ -262,17 +262,14 @@ func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.
 
 // UpdateJob takes a job update from the client and records it, if necessary.
 func (s *BlockBuilderScheduler) UpdateJob(_ context.Context, req *schedulerpb.UpdateJobRequest) (*schedulerpb.UpdateJobResponse, error) {
-	if err := s.updateJob(keyFromProtoKey(req.Key), req.WorkerId, req.Complete, *req.Spec); err != nil {
+	k := jobKey{
+		id:    req.Key.Id,
+		epoch: req.Key.Epoch,
+	}
+	if err := s.updateJob(k, req.WorkerId, req.Complete, *req.Spec); err != nil {
 		return nil, err
 	}
 	return &schedulerpb.UpdateJobResponse{}, nil
-}
-
-func keyFromProtoKey(k *schedulerpb.JobKey) jobKey {
-	return jobKey{
-		id:    k.Id,
-		epoch: k.Epoch,
-	}
 }
 
 func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete bool, j schedulerpb.JobSpec) error {
