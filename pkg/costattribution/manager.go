@@ -116,6 +116,8 @@ func (m *Manager) updateTracker(userID string) *Tracker {
 
 	t := m.Tracker(userID)
 	newTrackedLabels := m.limits.CostAttributionLabels(userID)
+
+	// sort the labels to ensure the order is consistent
 	sort.Slice(newTrackedLabels, func(i, j int) bool {
 		return newTrackedLabels[i] < newTrackedLabels[j]
 	})

@@ -4,6 +4,7 @@ package costattribution
 
 import (
 	"bytes"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -106,15 +107,7 @@ func (t *Tracker) hasSameLabels(labels []string) bool {
 	if t == nil {
 		return len(labels) == 0
 	}
-	if len(t.labels) != len(labels) {
-		return false
-	}
-	for _, v := range labels {
-		if _, exists := t.index[v]; !exists {
-			return false
-		}
-	}
-	return true
+	return slices.Equal(t.labels, labels)
 }
 
 var bufferPool = sync.Pool{
