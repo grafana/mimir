@@ -159,13 +159,8 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
 			t.cleanupTrackerAttribution(key)
 		}
 
-		if t.cooldownUntil != nil && t.cooldownUntil.Load() < deadline {
-			if len(t.observed) <= t.MaxCardinality() {
-				t.state = OverflowComplete
-				m.deleteTracker(userID)
-			} else {
-				t.cooldownUntil.Store(deadline + t.cooldownDuration)
-			}
+		if t.shouldDelete(deadline) {
+			m.deleteTracker(userID)
 		}
 	}
 	return nil

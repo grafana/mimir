@@ -20,7 +20,6 @@ type TrackerState int
 const (
 	Normal TrackerState = iota
 	Overflow
-	OverflowComplete
 )
 
 const sep = rune(0x80)
@@ -328,6 +327,17 @@ func (t *Tracker) createNewObservation(stream string, ts int64, activeSeriesIncr
 		t.observed[stream].discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
 		t.observed[stream].discardSamplemtx.Unlock()
 	}
+}
+
+func (t *Tracker) shouldDelete(deadline int64) bool {
+	if t.cooldownUntil != nil && t.cooldownUntil.Load() < deadline {
+		if len(t.observed) <= t.maxCardinality {
+			return true
+		} else {
+			t.cooldownUntil.Store(deadline + t.cooldownDuration)
+		}
+	}
+	return false
 }
 
 func (t *Tracker) inactiveObservations(deadline int64) []string {
