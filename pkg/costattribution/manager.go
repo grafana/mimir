@@ -98,6 +98,8 @@ func (m *Manager) Collect(out chan<- prometheus.Metric) {
 }
 
 func (m *Manager) Describe(chan<- *prometheus.Desc) {
+	// Describe is not implemented because the metrics include dynamic labels. The Manager functions as an unchecked exporter.
+	// For more details, refer to the documentation: https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#hdr-Custom_Collectors_and_constant_Metrics
 }
 
 func (m *Manager) deleteUserTracker(userID string) {
