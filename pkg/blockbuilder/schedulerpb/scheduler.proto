@@ -26,6 +26,8 @@ message JobSpec {
     google.protobuf.Timestamp commitRecTs = 5  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
 	int64 lastSeenOffset = 6;
     google.protobuf.Timestamp lastBlockEndTs = 7  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
+    int64 cycle_end_offset = 8;
+    google.protobuf.Timestamp cycleEndTs = 9  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
 }
 
 service BlockBuilderScheduler {
