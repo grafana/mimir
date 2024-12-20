@@ -367,6 +367,89 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 	}
 }
 
+func TestBlockBuilder_WithMultipleTenants_Scheduler(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+
+	kafkaClient := mustKafkaClient(t, kafkaAddr)
+	kafkaClient.AddConsumeTopics(testTopic)
+
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
+	cfg.SchedulerConfig = SchedulerConfig{
+		Address:        "localhost:099", // Trigger pull mode initialization.
+		UpdateInterval: 20 * time.Millisecond,
+		MaxUpdateAge:   1 * time.Second,
+	}
+
+	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeInterval)
+	firstTime := kafkaRecTime
+
+	scheduler := &mockSchedulerClient{}
+	scheduler.addJob(
+		schedulerpb.JobKey{
+			Id:    "test-job-4898",
+			Epoch: 84823,
+		},
+		schedulerpb.JobSpec{
+			Topic:          testTopic,
+			Partition:      0,
+			StartOffset:    0,
+			EndOffset:      30,
+			CommitRecTs:    firstTime,
+			LastSeenOffset: 0,
+			LastBlockEndTs: firstTime.Add(-1 * time.Minute),
+			CycleEndTs:     cycleEndStartup,
+			CycleEndOffset: 29,
+		},
+	)
+
+	producedPerTenantSamples := make(map[string][]mimirpb.Sample, 0)
+	tenants := []string{"1", "2", "3"}
+
+	// Producing some records for multiple tenants
+	for range 10 {
+		for _, tenant := range tenants {
+			samples := produceSamples(ctx, t, kafkaClient, kafkaRecTime, tenant, kafkaRecTime)
+			producedPerTenantSamples[tenant] = append(producedPerTenantSamples[tenant], samples...)
+		}
+
+		kafkaRecTime = kafkaRecTime.Add(15 * time.Second)
+	}
+
+	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+	})
+
+	// Wait for end of the cycles. We expect at least several cycles because of how the pushed records were structured.
+	require.Eventually(t, func() bool {
+		_, _, completeJobCalls := scheduler.counts()
+		return completeJobCalls > 0
+	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
+
+	for _, tenant := range tenants {
+		bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
+		db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+		compareQuery(t,
+			db,
+			producedPerTenantSamples[tenant],
+			nil,
+			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+		)
+	}
+}
+
 func TestBlockBuilder_WithNonMonotonicRecordTimestamps(t *testing.T) {
 	t.Parallel()
 
@@ -847,7 +930,7 @@ func (m *mockSchedulerClient) CompleteJob(schedulerpb.JobKey) error {
 	defer m.mu.Unlock()
 	m.completeJobCalls++
 
-	// Do nothing
+	// Do nothing.
 	return nil
 }
 
