@@ -130,10 +130,6 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 	return r, nil
 }
 
-func (r *PartitionReader) Topic() string {
-	return r.kafkaCfg.Topic
-}
-
 // Stop implements fetcher
 func (r *PartitionReader) Stop() {
 	// Given the partition reader has no concurrency it doesn't support stopping anything.
