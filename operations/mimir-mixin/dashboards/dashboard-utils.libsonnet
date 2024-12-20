@@ -1574,12 +1574,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
       local description = |||
         <p>
-          The query scheduler can optionally create subqueues
-          in order to enforce round-robin query queuing fairness
-          across additional queue dimensions beyond the default.
+          The query scheduler creates subqueues
+          broken out by which query components (ingester, store-gateway, or both)
+          the querier is expected to fetch data from to service the query.
 
-          By default, query queuing fairness is only applied by tenant ID.
-          Queries without additional queue dimensions are labeled 'none'.
+          Queries which have not had an expected query component determined are labeled 'unknown'.
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_queue_duration_seconds';
@@ -1588,15 +1587,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       local labelReplaceArgSets = [
         {
           dstLabel: 'additional_queue_dimensions',
-          replacement: 'none',
+          replacement: 'unknown',
           srcLabel:
             'additional_queue_dimensions',
           regex: '^$',
         },
       ];
-      $.row($.capitalize(rowTitlePrefix + 'query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions'))
+      $.row($.capitalize(rowTitlePrefix + 'query-scheduler Latency (Time in Queue) Breakout by Expected Query Component'))
       .addPanel(
-        local title = '99th Percentile Latency by Queue Dimension';
+        local title = '99th Percentile Latency by Expected Query Component';
         $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanelLabelBreakout(
@@ -1609,7 +1608,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
       .addPanel(
-        local title = '50th Percentile Latency by Queue Dimension';
+        local title = '50th Percentile Latency by Expected Query Component';
         $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanelLabelBreakout(
@@ -1622,7 +1621,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
       .addPanel(
-        local title = 'Average Latency by Queue Dimension';
+        local title = 'Average Latency by Expected Query Component';
         $.timeseriesPanel(title) +
         $.panelDescription(title, description) +
         $.latencyPanelLabelBreakout(
@@ -1632,6 +1631,46 @@ local utils = import 'mixin-utils/utils.libsonnet';
           includeAverage=true,
           labels=labels,
           labelReplaceArgSets=labelReplaceArgSets,
+        )
+      ),
+      local description = |||
+        <p>
+          The query scheduler tracks query requests inflight
+          between the scheduler and the connected queriers,
+          broken out by which query component (ingester, store-gateway)
+          the querier is expected to fetch data from to service the query.
+
+          Queries which require data from both ingesters and store-gateways
+          are counted in each category, so the sum of the two categories
+          may exceed the true total number of queries inflight.
+        </p>
+      |||;
+      local metricName = 'cortex_query_scheduler_querier_inflight_requests';
+      local selector = '{%s}' % $.jobMatcher(querySchedulerJobName);
+      local labels = ['additional_queue_dimensions'];
+      local labelReplaceArgSets = [
+        {
+          dstLabel: 'additional_queue_dimensions',
+          replacement: 'none',
+          srcLabel:
+            'additional_queue_dimensions',
+          regex: '^$',
+        },
+      ];
+      $.row($.capitalize(rowTitlePrefix + 'query-scheduler <-> Querier Inflight Requests'))
+      .addPanel(
+        local title = $.capitalize('99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers');
+        $.timeseriesPanel(title) +
+        $.panelDescription(title, description) +
+        $.queryPanel(
+          [
+            'sum by(query_component) (cortex_query_scheduler_querier_inflight_requests{quantile="0.99", %s})' % [$.jobMatcher(querySchedulerJobName)],
+            'cortex_query_scheduler_connected_querier_clients',
+          ],
+          [
+            '99th Percentile Inflight Requests: {{query_component}}',
+            'Total Connected Queriers',
+          ]
         )
       ),
     ] +
