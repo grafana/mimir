@@ -748,12 +748,12 @@ func TestPullMode(t *testing.T) {
 		MaxUpdateAge:   1 * time.Second,
 	}
 
-	startTime := time.Now().Add(-2 * time.Hour)
+	startTime := time.Date(2024, 12, 20, 6, 10, 0, 0, time.UTC)
 	var expSamples []mimirpb.Sample
 
 	for i := range 5 {
 		expSamples = append(expSamples, produceSamples(ctx, t, kafkaClient, startTime, "1",
-			startTime.Add(time.Duration(i)*time.Minute),
+			startTime.Add(time.Duration(i)*time.Hour),
 		)...)
 	}
 
@@ -767,11 +767,11 @@ func TestPullMode(t *testing.T) {
 			Topic:          testTopic,
 			Partition:      0,
 			StartOffset:    0,
-			EndOffset:      5,
-			CommitRecTs:    startTime,
+			EndOffset:      6,
+			CommitRecTs:    startTime.Add(-1 * time.Minute),
 			LastSeenOffset: 0,
-			LastBlockEndTs: startTime,
-			CycleEndTs:     startTime.Add(5 * time.Minute),
+			LastBlockEndTs: startTime.Add(-1 * time.Minute),
+			CycleEndTs:     startTime.Add(6 * time.Hour),
 			CycleEndOffset: 5,
 		},
 	)
