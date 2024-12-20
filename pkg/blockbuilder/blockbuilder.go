@@ -212,17 +212,13 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, _ schedulerpb.JobKey, job
 			Topic:     jobSpec.Topic,
 			Partition: jobSpec.Partition,
 			At:        jobSpec.StartOffset,
-			Metadata:  "{}", // FIXME. This and other fields need to be plumbed in via the scheduler RPC layer.
 		},
 		CommitRecordTimestamp: jobSpec.CommitRecTs,
 		LastSeenOffset:        jobSpec.LastSeenOffset,
 		LastBlockEnd:          jobSpec.LastBlockEndTs,
 	}
 
-	cycleEndTime := jobSpec.LastBlockEndTs // ???
-	cycleEndOffset := jobSpec.EndOffset    // ???
-
-	return b.consumePartition(ctx, jobSpec.Partition, state, cycleEndTime, cycleEndOffset)
+	return b.consumePartition(ctx, jobSpec.Partition, state, jobSpec.CycleEndTs, jobSpec.CycleEndOffset)
 }
 
 // runningStandaloneMode is a service `running` function for standalone mode,
