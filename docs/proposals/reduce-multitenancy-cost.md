@@ -1,22 +1,24 @@
 ---
-title: "XXXX: Tenancy multiplexing"
+title: "0003: Tenancy multiplexing"
 description: "Tenancy multiplexing"
 draft: true
 ---
 
-# XXXX: Tenancy multiplexing
+# 0003: Tenancy multiplexing
 
 **Authors:** @wilfriedroset @vaxvms @bubu11e
 
 **Date:** 09/2024
 
-**Sponsor(s):** @username of maintainer(s) willing to shepherd this MID
+**Sponsor(s):** @dimitarvdimitrov
 
 **Type:** Feature
 
-**Status:** Draft
+**Status:** Accepted
 
 **Related issues/PRs:**
+
+- https://github.com/grafana/mimir/pull/9978
 
 ---
 
