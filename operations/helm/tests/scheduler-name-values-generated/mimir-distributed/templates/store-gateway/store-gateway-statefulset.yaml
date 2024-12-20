@@ -133,7 +133,7 @@ spec:
             - name: "GOMAXPROCS"
               value: "5"
             - name: "GOMEMLIMIT"
-              value: 483183820
+              value: "536870912"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
 ---
@@ -271,7 +271,7 @@ spec:
             - name: "GOMAXPROCS"
               value: "5"
             - name: "GOMEMLIMIT"
-              value: 483183820
+              value: "536870912"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
 ---
@@ -409,6 +409,6 @@ spec:
             - name: "GOMAXPROCS"
               value: "5"
             - name: "GOMEMLIMIT"
-              value: 483183820
+              value: "536870912"
             - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
               value: "1000"
