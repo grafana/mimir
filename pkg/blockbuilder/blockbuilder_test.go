@@ -178,6 +178,100 @@ func TestBlockBuilder_StartWithExistingCommit(t *testing.T) {
 	)
 }
 
+func TestBlockBuilder_StartWithExistingCommit_PullMode(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	kafkaClient := mustKafkaClient(t, kafkaAddr)
+	kafkaClient.AddConsumeTopics(testTopic)
+
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
+	cfg.SchedulerConfig = SchedulerConfig{
+		Address:        "localhost:099", // Trigger pull mode initialization.
+		UpdateInterval: 20 * time.Millisecond,
+		MaxUpdateAge:   1 * time.Second,
+	}
+
+	// Producing some records
+	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+
+	var producedSamples []mimirpb.Sample
+	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
+	for kafkaRecTime.Before(cycleEndStartup) {
+		samples := produceSamples(ctx, t, kafkaClient, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
+		producedSamples = append(producedSamples, samples...)
+
+		kafkaRecTime = kafkaRecTime.Add(cfg.ConsumeInterval / 2)
+	}
+	require.NotEmpty(t, producedSamples)
+
+	// Fetch all the records that were produced to choose one to commit.
+	var recs []*kgo.Record
+	for len(recs) < len(producedSamples) {
+		fetches := kafkaClient.PollFetches(ctx)
+		require.NoError(t, fetches.Err())
+		recs = append(recs, fetches.Records()...)
+	}
+	require.Len(t, recs, len(producedSamples))
+
+	// Choosing the midpoint record to commit and as the last seen record as well.
+	commitRec := recs[len(recs)/2]
+	require.NotNil(t, commitRec)
+
+	lastRec := commitRec
+	blockEnd := commitRec.Timestamp.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval)
+
+	scheduler := &mockSchedulerClient{}
+	scheduler.addJob(
+		schedulerpb.JobKey{
+			Id:    "test-job-4898",
+			Epoch: 84823,
+		},
+		schedulerpb.JobSpec{
+			Topic:          testTopic,
+			Partition:      0,
+			StartOffset:    commitRec.Offset + 1,
+			EndOffset:      3000000,
+			CommitRecTs:    commitRec.Timestamp,
+			LastSeenOffset: lastRec.Offset,
+			LastBlockEndTs: blockEnd,
+			CycleEndTs:     cycleEndStartup,
+			CycleEndOffset: int64(len(producedSamples)),
+		},
+	)
+
+	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+	})
+
+	// Wait for end of the cycles. We expect at least several cycles because of how the pushed records were structured.
+	require.Eventually(t, func() bool {
+		_, _, completeJobCalls := scheduler.counts()
+		return completeJobCalls > 0
+	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
+
+	// Because there is a commit, on startup, block-builder must consume samples only after the commit.
+	expSamples := producedSamples[1+(len(producedSamples)/2):]
+
+	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
+	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	compareQuery(t,
+		db,
+		expSamples,
+		nil,
+		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+	)
+}
+
 // When there is no commit on startup, and the first cycleEnd is at T, and all the samples are from before T-lookback, then
 // the first consumption cycle skips all the records.
 func TestBlockBuilder_StartWithLookbackOnNoCommit(t *testing.T) {
@@ -367,7 +461,7 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 	}
 }
 
-func TestBlockBuilder_WithMultipleTenants_Scheduler(t *testing.T) {
+func TestBlockBuilder_WithMultipleTenants_PullMode(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancel := context.WithCancelCause(context.Background())
@@ -402,9 +496,9 @@ func TestBlockBuilder_WithMultipleTenants_Scheduler(t *testing.T) {
 			EndOffset:      30,
 			CommitRecTs:    firstTime,
 			LastSeenOffset: 0,
-			LastBlockEndTs: firstTime.Add(-1 * time.Minute),
+			LastBlockEndTs: firstTime,
 			CycleEndTs:     cycleEndStartup,
-			CycleEndOffset: 29,
+			CycleEndOffset: 30,
 		},
 	)
 
