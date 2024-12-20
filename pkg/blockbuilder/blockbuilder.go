@@ -21,6 +21,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
@@ -43,6 +44,9 @@ type BlockBuilder struct {
 	bucket      objstore.Bucket
 	scheduler   schedulerpb.SchedulerClient
 	committer   stateCommitter
+
+	// the current job iteration number. For tests.
+	jobIteration atomic.Int64
 
 	assignedPartitionIDs []int32
 	// fallbackOffsetMillis is the milliseconds timestamp after which a partition that doesn't have a commit will be consumed from.
@@ -202,6 +206,8 @@ func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
 		if err := b.scheduler.CompleteJob(key); err != nil {
 			level.Error(b.logger).Log("msg", "failed to complete job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 		}
+
+		b.jobIteration.Inc()
 	}
 }
 
