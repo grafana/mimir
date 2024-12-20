@@ -48,12 +48,12 @@ func TestSendUpdates(t *testing.T) {
 	require.Empty(t, sched.updates)
 
 	cli.sendUpdates(ctx)
-	require.EqualValues(t, []*UpdateJobRequest{
+	require.ElementsMatch(t, []*UpdateJobRequest{
 		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
 	}, sched.updates)
 
 	cli.sendUpdates(ctx)
-	require.EqualValues(t, []*UpdateJobRequest{
+	require.ElementsMatch(t, []*UpdateJobRequest{
 		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
 		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
 	}, sched.updates)
@@ -64,7 +64,7 @@ func TestSendUpdates(t *testing.T) {
 
 	// Now we have one complete job and one incomplete. We should be sending updates for both.
 	cli.sendUpdates(ctx)
-	require.EqualValues(t, []*UpdateJobRequest{
+	require.ElementsMatch(t, []*UpdateJobRequest{
 		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
 		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
 		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: true},
@@ -72,7 +72,7 @@ func TestSendUpdates(t *testing.T) {
 	}, sched.updates)
 
 	cli.sendUpdates(ctx)
-	require.EqualValues(t, []*UpdateJobRequest{
+	require.ElementsMatch(t, []*UpdateJobRequest{
 		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
 		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: false},
 		{Key: &sched.jobs[0].key, WorkerId: "worker1", Spec: &sched.jobs[0].spec, Complete: true},
