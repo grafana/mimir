@@ -41,7 +41,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Fix how `fullnameOverride` is reflected in generated manifests. #9564
 * [BUGFIX] Fix `extraObjects` linting with helm lint by padding with an extra new line. #9863
 * [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler, also for zone aware Alertmanager #9851
-* [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics, also multiply the memory request by 0.9 for store-gateway `GOMEMLIMIT` #10044
+* [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
 
 ## 5.5.1
 * [BUGFIX] Fix incorrect use of topology spread constraints in `GrafanaAgent` CRD of metamonitoring. #9669
