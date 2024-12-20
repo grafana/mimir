@@ -729,9 +729,10 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 
 	ingestTopicOffsetsReader := ingest.NewTopicOffsetsReader(kafkaClient, t.Cfg.IngestStorage.KafkaConfig.Topic, getPartitionIDs, t.Cfg.IngestStorage.KafkaConfig.LastProducedOffsetPollInterval, t.Registerer, util_log.Logger)
 
-	t.QueryFrontendTopicOffsetsReaders = map[string]*ingest.TopicOffsetsReader{
-		querierapi.ReadConsistencyOffsetsHeader: ingestTopicOffsetsReader,
+	if t.QueryFrontendTopicOffsetsReaders == nil {
+		t.QueryFrontendTopicOffsetsReaders = make(map[string]*ingest.TopicOffsetsReader)
 	}
+	t.QueryFrontendTopicOffsetsReaders[querierapi.ReadConsistencyOffsetsHeader] = ingestTopicOffsetsReader
 
 	return ingestTopicOffsetsReader, nil
 }
