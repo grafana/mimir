@@ -48,9 +48,10 @@ const (
 )
 
 type OTLPHandlerLimits interface {
+	validation.OTelResourceAttributePromotionConfig
+
 	OTelMetricSuffixesEnabled(id string) bool
 	OTelCreatedTimestampZeroIngestionEnabled(id string) bool
-	PromoteOTelResourceAttributes(id string) []string
 	OTelKeepIdentifyingResourceAttributes(id string) bool
 }
 
@@ -60,7 +61,6 @@ func OTLPHandler(
 	requestBufferPool util.Pool,
 	sourceIPs *middleware.SourceIPExtractor,
 	limits OTLPHandlerLimits,
-	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	retryCfg RetryConfig,
 	push PushFunc,
 	pushMetrics *PushMetrics,
@@ -171,10 +171,7 @@ func OTLPHandler(
 		}
 		addSuffixes := limits.OTelMetricSuffixesEnabled(tenantID)
 		enableCTZeroIngestion := limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID)
-		if resourceAttributePromotionConfig == nil {
-			resourceAttributePromotionConfig = limits
-		}
-		promoteResourceAttributes := resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID)
+		promoteResourceAttributes := limits.PromoteOTelResourceAttributes(tenantID)
 		keepIdentifyingResourceAttributes := limits.OTelKeepIdentifyingResourceAttributes(tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
