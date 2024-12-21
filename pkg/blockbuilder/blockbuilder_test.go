@@ -1102,13 +1102,17 @@ func TestPullMode(t *testing.T) {
 		expSamples = append(expSamples, produceSamples(ctx, t, kafkaClient, 0, startTime, "1",
 			startTime.Add(time.Duration(i)*time.Hour),
 		)...)
+		expSamples = append(expSamples, produceSamples(ctx, t, kafkaClient, 1, startTime, "1",
+			// Shift slightly to avoid duplicate timestamps.
+			startTime.Add(time.Duration(i)*time.Hour).Add(1*time.Minute),
+		)...)
 	}
 
 	scheduler := &mockSchedulerClient{}
 	scheduler.addJob(
 		schedulerpb.JobKey{
-			Id:    "test-job-4898",
-			Epoch: 84823,
+			Id:    "test-job-p0-0",
+			Epoch: 220,
 		},
 		schedulerpb.JobSpec{
 			Topic:          testTopic,
@@ -1122,7 +1126,23 @@ func TestPullMode(t *testing.T) {
 			CycleEndOffset: 5,
 		},
 	)
-	// TODO: multiple jobs.
+	scheduler.addJob(
+		schedulerpb.JobKey{
+			Id:    "test-job-p1-0",
+			Epoch: 233,
+		},
+		schedulerpb.JobSpec{
+			Topic:          testTopic,
+			Partition:      1,
+			StartOffset:    0,
+			EndOffset:      6,
+			CommitRecTs:    startTime.Add(-1 * time.Minute),
+			LastSeenOffset: 0,
+			LastBlockEndTs: startTime.Add(-1 * time.Minute),
+			CycleEndTs:     startTime.Add(6 * time.Hour),
+			CycleEndOffset: 5,
+		},
+	)
 
 	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
 	require.NoError(t, err)
@@ -1133,9 +1153,9 @@ func TestPullMode(t *testing.T) {
 	})
 
 	require.Eventually(t, func() bool {
-		runCalls, getJobCalls, completeJobCalls := scheduler.counts()
-		return runCalls > 0 && getJobCalls > 0 && completeJobCalls > 0
-	}, 5*time.Second, 100*time.Millisecond, "expected scheduler interaction")
+		_, _, completeJobCalls := scheduler.counts()
+		return completeJobCalls == 2
+	}, 5*time.Second, 100*time.Millisecond, "expected to complete two jobs")
 
 	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
 	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
