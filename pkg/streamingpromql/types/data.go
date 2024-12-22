@@ -187,3 +187,9 @@ func NewRangeQueryTimeRange(start time.Time, end time.Time, interval time.Durati
 func (q *QueryTimeRange) PointIndex(t int64) int64 {
 	return (t - q.StartT) / q.IntervalMilliseconds
 }
+
+// IndexTime returns the timestamp that the point index, p, falls on.
+// p must be less than StepCount
+func (q *QueryTimeRange) IndexTime(p int64) int64 {
+	return q.StartT + p*q.IntervalMilliseconds
+}

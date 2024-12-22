@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,7 +23,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
@@ -140,16 +140,16 @@ type MetricsQueryHandler interface {
 }
 
 // LabelsHandlerFunc is like http.HandlerFunc, but for LabelsQueryHandler.
-type LabelsHandlerFunc func(context.Context, LabelsQueryRequest) (Response, error)
+type LabelsHandlerFunc func(context.Context, LabelsSeriesQueryRequest) (Response, error)
 
 // Do implements LabelsQueryHandler.
-func (q LabelsHandlerFunc) Do(ctx context.Context, req LabelsQueryRequest) (Response, error) {
+func (q LabelsHandlerFunc) Do(ctx context.Context, req LabelsSeriesQueryRequest) (Response, error) {
 	return q(ctx, req)
 }
 
 // LabelsQueryHandler is like http.Handler, but specifically for Prometheus label names and values calls.
 type LabelsQueryHandler interface {
-	Do(context.Context, LabelsQueryRequest) (Response, error)
+	Do(context.Context, LabelsSeriesQueryRequest) (Response, error)
 }
 
 // MetricsQueryMiddlewareFunc is like http.HandlerFunc, but for MetricsQueryMiddleware.
@@ -207,10 +207,10 @@ func NewTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	engineExperimentalFunctionsEnabled bool,
-	ingestStorageTopicOffsetsReader *ingest.TopicOffsetsReader,
+	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, engineExperimentalFunctionsEnabled, ingestStorageTopicOffsetsReader, registerer)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, engineExperimentalFunctionsEnabled, ingestStorageTopicOffsetsReaders, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +228,7 @@ func newQueryTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	engineExperimentalFunctionsEnabled bool,
-	ingestStorageTopicOffsetsReader *ingest.TopicOffsetsReader,
+	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
 	// Disable concurrency limits for sharded queries.
@@ -273,6 +273,7 @@ func newQueryTripperware(
 		activeSeries := next
 		activeNativeHistogramMetrics := next
 		labels := next
+		series := next
 
 		if cfg.ShardActiveSeriesQueries {
 			activeSeries = newShardActiveSeriesMiddleware(activeSeries, cfg.UseActiveSeriesDecoder, limits, log)
@@ -280,24 +281,32 @@ func newQueryTripperware(
 		}
 
 		// Enforce read consistency after caching.
-		if ingestStorageTopicOffsetsReader != nil {
-			metrics := newReadConsistencyMetrics(registerer)
+		if len(ingestStorageTopicOffsetsReaders) > 0 {
+			metrics := newReadConsistencyMetrics(registerer, ingestStorageTopicOffsetsReaders)
 
-			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			instant = newReadConsistencyRoundTripper(instant, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			instant = newReadConsistencyRoundTripper(instant, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			series = newReadConsistencyRoundTripper(series, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 		}
 
-		// Look up cache as first thing.
+		// Look up cache as first thing after validation.
 		if cfg.CacheResults {
 			cardinality = newCardinalityQueryCacheRoundTripper(c, cacheKeyGenerator, limits, cardinality, log, registerer)
 			labels = newLabelsQueryCacheRoundTripper(c, cacheKeyGenerator, limits, labels, log, registerer)
 		}
+
+		// Validate the request before any processing.
+		queryrange = NewMetricsQueryRequestValidationRoundTripper(codec, queryrange)
+		instant = NewMetricsQueryRequestValidationRoundTripper(codec, instant)
+		labels = NewLabelsQueryRequestValidationRoundTripper(codec, labels)
+		series = NewLabelsQueryRequestValidationRoundTripper(codec, series)
+		cardinality = NewCardinalityQueryRequestValidationRoundTripper(cardinality)
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
@@ -313,6 +322,8 @@ func newQueryTripperware(
 				return activeNativeHistogramMetrics.RoundTrip(r)
 			case IsLabelsQuery(r.URL.Path):
 				return labels.RoundTrip(r)
+			case IsSeriesQuery(r.URL.Path):
+				return series.RoundTrip(r)
 			case IsRemoteReadQuery(r.URL.Path):
 				return remoteRead.RoundTrip(r)
 			default:

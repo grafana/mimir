@@ -215,7 +215,7 @@ func main() {
 func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, matchers []*labels.Matcher) (blockGapStats, error) {
 	var blockStats blockGapStats
 	blockStats.BlockID = blockDir
-	b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), blockDir, nil)
+	b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), blockDir, nil, nil)
 	if err != nil {
 		return blockStats, fmt.Errorf("failed to open block: %w", err)
 	}

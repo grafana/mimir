@@ -746,7 +746,12 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 	ctx := r.Context()
 	name := route.Param(ctx, "name")
 
-	if !model.LabelNameRE.MatchString(name) {
+	if strings.HasPrefix(name, "U__") {
+		name = model.UnescapeName(name, model.ValueEncodingEscaping)
+	}
+
+	label := model.LabelName(name)
+	if !label.IsValid() {
 		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("invalid label name: %q", name)}, nil, nil}
 	}
 
@@ -919,7 +924,7 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 			s := q.Select(ctx, true, hints, mset...)
 			sets = append(sets, s)
 		}
-		set = storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+		set = storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
 	} else {
 		// At this point at least one match exists.
 		set = q.Select(ctx, false, hints, matcherSets[0]...)
@@ -1376,7 +1381,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 // RuleDiscovery has info for all rules.
 type RuleDiscovery struct {
 	RuleGroups     []*RuleGroup `json:"groups"`
-	GroupNextToken string       `json:"groupNextToken:omitempty"`
+	GroupNextToken string       `json:"groupNextToken,omitempty"`
 }
 
 // RuleGroup has info for rules which are part of a group.
@@ -1608,7 +1613,7 @@ func parseListRulesPaginationRequest(r *http.Request) (int64, string, *apiFuncRe
 	nextToken := r.URL.Query().Get("group_next_token")
 
 	if nextToken != "" && maxGroups == "" {
-		errResult := invalidParamError(fmt.Errorf("group_limit needs to be present in order to paginate over the groups"), "group_next_token")
+		errResult := invalidParamError(errors.New("group_limit needs to be present in order to paginate over the groups"), "group_next_token")
 		return -1, "", &errResult
 	}
 
@@ -1619,7 +1624,7 @@ func parseListRulesPaginationRequest(r *http.Request) (int64, string, *apiFuncRe
 			return -1, "", &errResult
 		}
 		if parsedMaxGroups <= 0 {
-			errResult := invalidParamError(fmt.Errorf("group_limit needs to be greater than 0"), "group_limit")
+			errResult := invalidParamError(errors.New("group_limit needs to be greater than 0"), "group_limit")
 			return -1, "", &errResult
 		}
 	}

@@ -149,12 +149,6 @@ api:
   # CLI flag: -api.skip-label-count-validation-header-enabled
   [skip_label_count_validation_header_enabled: <boolean> | default = false]
 
-  # (deprecated) Enable GET requests to the /ingester/shutdown endpoint to
-  # trigger an ingester shutdown. This is a potentially dangerous operation and
-  # should only be enabled consciously.
-  # CLI flag: -api.get-request-for-ingester-shutdown-enabled
-  [get_request_for_ingester_shutdown_enabled: <boolean> | default = false]
-
   # (advanced) HTTP URL path under which the Alertmanager ui and api will be
   # served.
   # CLI flag: -http.alertmanager-http-prefix
@@ -804,9 +798,8 @@ ha_tracker:
   # CLI flag: -distributor.ha-tracker.failover-timeout
   [ha_tracker_failover_timeout: <duration> | default = 30s]
 
-  # Backend storage to use for the ring. Please be aware that memberlist is not
-  # supported by the HA tracker since gossip propagation is too slow for HA
-  # purposes.
+  # Backend storage to use for the ring. Note that memberlist support is
+  # experimental.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -1502,43 +1495,46 @@ store_gateway_client:
 [promql_experimental_functions_enabled: <boolean> | default = false]
 
 mimir_query_engine:
-  # (experimental) Enable support for aggregation operations in Mimir's query
-  # engine. Only applies if the Mimir query engine is in use.
+  # (experimental) Enable support for aggregation operations in the Mimir query
+  # engine. Only applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-aggregation-operations
   [enable_aggregation_operations: <boolean> | default = true]
 
   # (experimental) Enable support for binary comparison operations between two
-  # vectors in Mimir's query engine. Only applies if the Mimir query engine is
-  # in use.
+  # vectors in the Mimir query engine. Only applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
   [enable_vector_vector_binary_comparison_operations: <boolean> | default = true]
 
   # (experimental) Enable support for binary comparison operations between a
-  # vector and a scalar in Mimir's query engine. Only applies if the Mimir query
-  # engine is in use.
+  # vector and a scalar in the Mimir query engine. Only applies if the MQE is in
+  # use.
   # CLI flag: -querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations
   [enable_vector_scalar_binary_comparison_operations: <boolean> | default = true]
 
   # (experimental) Enable support for binary comparison operations between two
-  # scalars in Mimir's query engine. Only applies if the Mimir query engine is
-  # in use.
+  # scalars in the Mimir query engine. Only applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
   [enable_scalar_scalar_binary_comparison_operations: <boolean> | default = true]
 
-  # (experimental) Enable support for binary logical operations in Mimir's query
-  # engine. Only applies if the Mimir query engine is in use.
+  # (experimental) Enable support for binary logical operations in the Mimir
+  # query engine. Only applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-binary-logical-operations
   [enable_binary_logical_operations: <boolean> | default = true]
 
-  # (experimental) Enable support for scalars in Mimir's query engine. Only
-  # applies if the Mimir query engine is in use.
+  # (experimental) Enable support for scalars in the Mimir query engine. Only
+  # applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-scalars
   [enable_scalars: <boolean> | default = true]
 
-  # (experimental) Enable support for subqueries in Mimir's query engine. Only
-  # applies if the Mimir query engine is in use.
+  # (experimental) Enable support for subqueries in the Mimir query engine. Only
+  # applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-subqueries
   [enable_subqueries: <boolean> | default = true]
+
+  # (experimental) Enable support for the histogram_quantile function in the
+  # Mimir query engine. Only applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-histogram-quantile-function
+  [enable_histogram_quantile_function: <boolean> | default = true]
 ```
 
 ### frontend
@@ -1968,6 +1964,10 @@ alertmanager_client:
     # Optional scopes to include with the token request.
     # CLI flag: -ruler.alertmanager-client.oauth.scopes
     [scopes: <string> | default = ""]
+
+    # (advanced) Optional additional URL parameters to send to the token URL.
+    # CLI flag: -ruler.alertmanager-client.oauth.endpoint-params
+    [endpoint_params: <map of string to string> | default = {}]
 
   # (advanced) Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route
   # requests through. Applies to all requests, including auxiliary traffic, such
@@ -3797,6 +3797,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.otel-promote-resource-attributes
 [promote_otel_resource_attributes: <string> | default = ""]
 
+# (experimental) Whether to keep identifying OTel resource attributes in the
+# target_info metric on top of converting to job and instance labels.
+# CLI flag: -distributor.otel-keep-identifying-resource-attributes
+[otel_keep_identifying_resource_attributes: <boolean> | default = false]
+
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
 # CLI flag: -ingest-storage.read-consistency
@@ -3907,20 +3912,18 @@ kafka:
   # CLI flag: -ingest-storage.kafka.max-consumer-lag-at-startup
   [max_consumer_lag_at_startup: <duration> | default = 15s]
 
-  # Enable auto-creation of Kafka topic if it doesn't exist.
+  # Enable auto-creation of Kafka topic on startup if it doesn't exist. If
+  # creating the topic fails and the topic doesn't already exist, Mimir will
+  # fail to start.
   # CLI flag: -ingest-storage.kafka.auto-create-topic-enabled
   [auto_create_topic_enabled: <boolean> | default = true]
 
   # When auto-creation of Kafka topic is enabled and this value is positive,
-  # Kafka's num.partitions configuration option is set on Kafka brokers with
-  # this value when Mimir component that uses Kafka starts. This configuration
-  # option specifies the default number of partitions that the Kafka broker uses
-  # for auto-created topics. Note that this is a Kafka-cluster wide setting, and
-  # applies to any auto-created topic. If the setting of num.partitions fails,
-  # Mimir proceeds anyways, but auto-created topics could have an incorrect
-  # number of partitions.
+  # Mimir will create the topic with this number of partitions. When the value
+  # is -1 the Kafka broker will use the default number of partitions
+  # (num.partitions configuration).
   # CLI flag: -ingest-storage.kafka.auto-create-topic-default-partitions
-  [auto_create_topic_default_partitions: <int> | default = 0]
+  [auto_create_topic_default_partitions: <int> | default = -1]
 
   # The maximum size of a Kafka record data that should be generated by the
   # producer. An incoming write request larger than this size is split into
@@ -3940,17 +3943,11 @@ kafka:
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
 
-  # The number of concurrent fetch requests that the ingester makes when reading
-  # data from Kafka during startup. 0 to disable.
-  # CLI flag: -ingest-storage.kafka.startup-fetch-concurrency
-  [startup_fetch_concurrency: <int> | default = 0]
-
-  # The number of concurrent fetch requests that the ingester makes when reading
-  # data continuously from Kafka after startup. Is disabled unless
-  # ingest-storage.kafka.startup-fetch-concurrency is greater than 0. 0 to
-  # disable.
-  # CLI flag: -ingest-storage.kafka.ongoing-fetch-concurrency
-  [ongoing_fetch_concurrency: <int> | default = 0]
+  # The maximum number of concurrent fetch requests that the ingester makes when
+  # reading data from Kafka during startup. Concurrent fetch requests are issued
+  # only when there is sufficient backlog of records to consume. 0 to disable.
+  # CLI flag: -ingest-storage.kafka.fetch-concurrency-max
+  [fetch_concurrency_max: <int> | default = 0]
 
   # When enabled, the fetch request MaxBytes field is computed using the
   # compressed size of previous records. When disabled, MaxBytes is computed

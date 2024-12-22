@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -25,10 +26,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -602,7 +601,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_Concurrency(t *testing.T) 
 						// Find the lowest sample written. We compact up until that timestamp.
 						writerTimesMx.Lock()
 						for _, ts := range writerTimes {
-							lowestWriterTimeMilli = util_math.Min(lowestWriterTimeMilli, ts)
+							lowestWriterTimeMilli = min(lowestWriterTimeMilli, ts)
 						}
 						writerTimesMx.Unlock()
 
@@ -692,7 +691,7 @@ func listBlocksInDir(t *testing.T, dir string) (ids []ulid.ULID) {
 }
 
 func readMetricSamplesFromBlockDir(t *testing.T, blockDir string, metricName string) (results model.Matrix) {
-	block, err := tsdb.OpenBlock(promslog.NewNopLogger(), blockDir, nil)
+	block, err := tsdb.OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, block.Close())

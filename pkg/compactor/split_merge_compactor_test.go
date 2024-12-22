@@ -775,7 +775,7 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 	for _, actualMeta := range actualMetas {
 		expectedSeriesIDs := expectedSeriesIDByShard[actualMeta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]]
 
-		b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), filepath.Join(storageDir, userID, actualMeta.ULID.String()), nil)
+		b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), filepath.Join(storageDir, userID, actualMeta.ULID.String()), nil, nil)
 		require.NoError(t, err)
 
 		indexReader, err := b.Index()

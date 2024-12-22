@@ -4,6 +4,7 @@ package testutils
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -11,21 +12,22 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 // Why do we do this rather than require.Equal(t, expected, actual)?
 // It's possible that floating point values are slightly different due to imprecision, but require.Equal doesn't allow us to set an allowable difference.
-func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Result) {
+func RequireEqualResults(t testing.TB, expr string, expected, actual *promql.Result, skipAnnotationComparison bool) {
 	require.Equal(t, expected.Err, actual.Err)
 	require.Equal(t, expected.Value.Type(), actual.Value.Type())
 
-	expectedWarnings, expectedInfos := expected.Warnings.AsStrings(expr, 0, 0)
-	actualWarnings, actualInfos := actual.Warnings.AsStrings(expr, 0, 0)
-	require.ElementsMatch(t, expectedWarnings, actualWarnings)
-	require.ElementsMatch(t, expectedInfos, actualInfos)
+	if !skipAnnotationComparison {
+		expectedWarnings, expectedInfos := expected.Warnings.AsStrings(expr, 0, 0)
+		actualWarnings, actualInfos := actual.Warnings.AsStrings(expr, 0, 0)
+		require.ElementsMatch(t, expectedWarnings, actualWarnings)
+		require.ElementsMatch(t, expectedInfos, actualInfos)
+	}
 
 	switch expected.Value.Type() {
 	case parser.ValueTypeVector:

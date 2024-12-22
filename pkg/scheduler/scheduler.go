@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
@@ -508,6 +509,11 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 			QueueTimeNanos:  queueTime.Nanoseconds(),
 		})
 
+		if grpcutil.IsCanceled(err) {
+			// The querier abruptly closing the connection should be the only reason we'd get a cancellation error here.
+			err = fmt.Errorf("querier disconnected ungracefully")
+		}
+
 		if err != nil {
 			errCh <- fmt.Errorf("failed to send query to querier '%v': %w", querierID, err)
 			span.LogFields(otlog.Message("sending query to querier failed"), otlog.Error(err))
@@ -519,6 +525,12 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 		span.Finish()
 
 		_, err = querier.Recv()
+
+		if grpcutil.IsCanceled(err) {
+			// The querier abruptly closing the connection should be the only reason we'd get a cancellation error here.
+			err = fmt.Errorf("querier disconnected ungracefully")
+		}
+
 		if err != nil {
 			errCh <- fmt.Errorf("failed to receive response from querier '%v': %w", querierID, err)
 			return

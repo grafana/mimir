@@ -16,17 +16,14 @@ eval instant at 1m histogram_count(empty_histogram)
 eval instant at 1m histogram_sum(empty_histogram)
 	{} 0
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_avg(empty_histogram)
-# 	{} NaN
+eval instant at 1m histogram_avg(empty_histogram)
+	{} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(-Inf, +Inf, empty_histogram)
-# 	{} NaN
+eval instant at 1m histogram_fraction(-Inf, +Inf, empty_histogram)
+	{} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(0, 8, empty_histogram)
-# 	{} NaN
+eval instant at 1m histogram_fraction(0, 8, empty_histogram)
+	{} NaN
 
 clear
 
@@ -43,27 +40,23 @@ eval instant at 1m histogram_sum(single_histogram)
 	{} 5
 
 # histogram_avg calculates the average from sum and count properties.
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_avg(single_histogram)
-# 	{} 1.25
+eval instant at 1m histogram_avg(single_histogram)
+	{} 1.25
 
 # We expect half of the values to fall in the range 1 < x <= 2.
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(1, 2, single_histogram)
-# 	{} 0.5
+eval instant at 1m histogram_fraction(1, 2, single_histogram)
+	{} 0.5
 
 # We expect all values to fall in the range 0 < x <= 8.
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(0, 8, single_histogram)
-# 	{} 1
+eval instant at 1m histogram_fraction(0, 8, single_histogram)
+	{} 1
 
 # Median is 1.414213562373095 (2**2**-1, or sqrt(2)) due to
 # exponential interpolation, i.e. the "midpoint" within range 1 < x <=
 # 2 is assumed where the bucket boundary would be if we increased the
 # resolution of the histogram by one step.
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_quantile(0.5, single_histogram)
-# 	{} 1.414213562373095
+eval instant at 1m histogram_quantile(0.5, single_histogram)
+	{} 1.414213562373095
 
 clear
 
@@ -77,18 +70,15 @@ eval instant at 5m histogram_count(multi_histogram)
 eval instant at 5m histogram_sum(multi_histogram)
 	{} 5
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_avg(multi_histogram)
-# 	{} 1.25
+eval instant at 5m histogram_avg(multi_histogram)
+	{} 1.25
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_fraction(1, 2, multi_histogram)
-# 	{} 0.5
+eval instant at 5m histogram_fraction(1, 2, multi_histogram)
+	{} 0.5
 
 # See explanation for exponential interpolation above.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_quantile(0.5, multi_histogram)
-# 	{} 1.414213562373095
+eval instant at 5m histogram_quantile(0.5, multi_histogram)
+	{} 1.414213562373095
 
 
 # Each entry should look the same as the first.
@@ -98,18 +88,15 @@ eval instant at 50m histogram_count(multi_histogram)
 eval instant at 50m histogram_sum(multi_histogram)
 	{} 5
 
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_avg(multi_histogram)
-# 	{} 1.25
+eval instant at 50m histogram_avg(multi_histogram)
+	{} 1.25
 
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_fraction(1, 2, multi_histogram)
-# 	{} 0.5
+eval instant at 50m histogram_fraction(1, 2, multi_histogram)
+	{} 0.5
 
 # See explanation for exponential interpolation above.
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_quantile(0.5, multi_histogram)
-# 	{} 1.414213562373095
+eval instant at 50m histogram_quantile(0.5, multi_histogram)
+	{} 1.414213562373095
 
 clear
 
@@ -125,19 +112,16 @@ eval instant at 5m histogram_count(incr_histogram)
 eval instant at 5m histogram_sum(incr_histogram)
 	{} 6
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_avg(incr_histogram)
-# 	{} 1.2
+eval instant at 5m histogram_avg(incr_histogram)
+	{} 1.2
 
 # We expect 3/5ths of the values to fall in the range 1 < x <= 2.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_fraction(1, 2, incr_histogram)
-# 	{} 0.6
+eval instant at 5m histogram_fraction(1, 2, incr_histogram)
+	{} 0.6
 
 # See explanation for exponential interpolation above.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_quantile(0.5, incr_histogram)
-# 	{} 1.414213562373095
+eval instant at 5m histogram_quantile(0.5, incr_histogram)
+	{} 1.414213562373095
 
 
 eval instant at 50m incr_histogram
@@ -149,19 +133,16 @@ eval instant at 50m histogram_count(incr_histogram)
 eval instant at 50m histogram_sum(incr_histogram)
 	{} 24
 
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_avg(incr_histogram)
-#     {} 1.7142857142857142
+eval instant at 50m histogram_avg(incr_histogram)
+    {} 1.7142857142857142
 
 # We expect 12/14ths of the values to fall in the range 1 < x <= 2.
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_fraction(1, 2, incr_histogram)
-# 	{} 0.8571428571428571
+eval instant at 50m histogram_fraction(1, 2, incr_histogram)
+	{} 0.8571428571428571
 
 # See explanation for exponential interpolation above.
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_quantile(0.5, incr_histogram)
-# 	{} 1.414213562373095
+eval instant at 50m histogram_quantile(0.5, incr_histogram)
+	{} 1.414213562373095
 
 # Per-second average rate of increase should be 1/(5*60) for count and buckets, then 2/(5*60) for sum.
 eval instant at 50m rate(incr_histogram[10m])
@@ -169,9 +150,8 @@ eval instant at 50m rate(incr_histogram[10m])
 
 # Calculate the 50th percentile of observations over the last 10m.
 # See explanation for exponential interpolation above.
-# Unsupported by streaming engine.
-# eval instant at 50m histogram_quantile(0.5, rate(incr_histogram[10m]))
-# 	{} 1.414213562373095
+eval instant at 50m histogram_quantile(0.5, rate(incr_histogram[10m]))
+	{} 1.414213562373095
 
 clear
 
@@ -192,14 +172,12 @@ eval instant at 5m histogram_count(low_res_histogram)
 eval instant at 5m histogram_sum(low_res_histogram)
 	{} 8
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_avg(low_res_histogram)
-# 	{} 1.6
+eval instant at 5m histogram_avg(low_res_histogram)
+	{} 1.6
 
 # We expect all values to fall into the lower-resolution bucket with the range 1 < x <= 4.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_fraction(1, 4, low_res_histogram)
-# 	{} 1
+eval instant at 5m histogram_fraction(1, 4, low_res_histogram)
+	{} 1
 
 clear
 
@@ -214,21 +192,18 @@ eval instant at 1m histogram_count(single_zero_histogram)
 eval instant at 1m histogram_sum(single_zero_histogram)
 	{} 0.25
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_avg(single_zero_histogram)
-# 	{} 0.25
+eval instant at 1m histogram_avg(single_zero_histogram)
+	{} 0.25
 
 # When only the zero bucket is populated, or there are negative buckets, the distribution is assumed to be equally
 # distributed around zero; i.e. that there are an equal number of positive and negative observations. Therefore the
 # entire distribution must lie within the full range of the zero bucket, in this case: -0.5 < x <= +0.5.
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(-0.5, 0.5, single_zero_histogram)
-# 	{} 1
+eval instant at 1m histogram_fraction(-0.5, 0.5, single_zero_histogram)
+	{} 1
 
 # Half of the observations are estimated to be zero, as this is the midpoint between -0.5 and +0.5.
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_quantile(0.5, single_zero_histogram)
-# 	{} 0
+eval instant at 1m histogram_quantile(0.5, single_zero_histogram)
+	{} 0
 
 clear
 
@@ -242,19 +217,16 @@ eval instant at 1m histogram_count(negative_histogram)
 eval instant at 1m histogram_sum(negative_histogram)
 	{} -5
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_avg(negative_histogram)
-# 	{} -1.25
+eval instant at 1m histogram_avg(negative_histogram)
+	{} -1.25
 
 # We expect half of the values to fall in the range -2 < x <= -1.
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(-2, -1, negative_histogram)
-# 	{} 0.5
+eval instant at 1m histogram_fraction(-2, -1, negative_histogram)
+	{} 0.5
 
 # Exponential interpolation works the same as for positive buckets, just mirrored.
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_quantile(0.5, negative_histogram)
-# 	{} -1.414213562373095
+eval instant at 1m histogram_quantile(0.5, negative_histogram)
+	{} -1.414213562373095
 
 clear
 
@@ -269,18 +241,15 @@ eval instant at 5m histogram_count(two_samples_histogram)
 eval instant at 5m histogram_sum(two_samples_histogram)
 	{} -4
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_avg(two_samples_histogram)
-# 	{} -1
+eval instant at 5m histogram_avg(two_samples_histogram)
+	{} -1
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_fraction(-2, -1, two_samples_histogram)
-# 	{} 0.5
+eval instant at 5m histogram_fraction(-2, -1, two_samples_histogram)
+	{} 0.5
 
 # See explanation for exponential interpolation above.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_quantile(0.5, two_samples_histogram)
-# 	{} -1.414213562373095
+eval instant at 5m histogram_quantile(0.5, two_samples_histogram)
+	{} -1.414213562373095
 
 clear
 
@@ -294,19 +263,16 @@ eval instant at 5m histogram_count(balanced_histogram)
 eval instant at 5m histogram_sum(balanced_histogram)
 	{} 0
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_avg(balanced_histogram)
-# 	{} 0
+eval instant at 5m histogram_avg(balanced_histogram)
+	{} 0
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_fraction(0, 4, balanced_histogram)
-# 	{} 0.5
+eval instant at 5m histogram_fraction(0, 4, balanced_histogram)
+	{} 0.5
 
 # If the quantile happens to be located in a span of empty buckets, the actually returned value is the lower bound of
 # the first populated bucket after the span of empty buckets.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_quantile(0.5, balanced_histogram)
-# 	{} 0.5
+eval instant at 5m histogram_quantile(0.5, balanced_histogram)
+	{} 0.5
 
 clear
 
@@ -351,13 +317,11 @@ clear
 load 10m
    histogram_stddev_stdvar_1 {{schema:2 count:4 sum:10 buckets:[1 0 0 0 1 0 0 1 1]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_1)
-#     {} 1.0787993180043811
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_1)
+    {} 1.0787993180043811
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_1)
-#     {} 1.163807968526718
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_1)
+    {} 1.163807968526718
 
 clear
 
@@ -365,13 +329,11 @@ clear
 load 10m
    histogram_stddev_stdvar_2 {{schema:8 count:10 sum:10 buckets:[1 2 3 4]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_2)
-#     {} 0.0048960313898237465
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_2)
+    {} 0.0048960313898237465
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_2)
-#     {} 2.3971123370139447e-05
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_2)
+    {} 2.3971123370139447e-05
 
 clear
 
@@ -379,13 +341,11 @@ clear
 load 10m
    histogram_stddev_stdvar_3 {{schema:3 count:7 sum:62 z_bucket:1 buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ] n_buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_3)
-#     {} 42.947236400258
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_3)
+    {} 42.947236400258
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_3)
-#     {} 1844.4651144196398
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_3)
+    {} 1844.4651144196398
 
 clear
 
@@ -393,13 +353,11 @@ clear
 load 10m
    histogram_stddev_stdvar_4 {{schema:0 count:10 sum:-112946 z_bucket:0 n_buckets:[0 0 1 1 1 0 1 1 0 0 3 0 0 0 1 0 0 1]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_4)
-#     {} 27556.344499842
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_4)
+    {} 27556.344499842
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_4)
-#     {} 759352122.1939945
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_4)
+    {} 759352122.1939945
 
 clear
 
@@ -407,13 +365,11 @@ clear
 load 10m
    histogram_stddev_stdvar_5 {{schema:0 count:10 sum:-100 z_bucket:0 n_buckets:[0 0 0 0 10]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_5)
-#     {} 1.3137084989848
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_5)
+    {} 1.3137084989848
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_5)
-#     {} 1.725830020304794
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_5)
+    {} 1.725830020304794
 
 clear
 
@@ -421,13 +377,11 @@ clear
 load 10m
    histogram_stddev_stdvar_6 {{schema:3 count:7 sum:NaN z_bucket:1 buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ] n_buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_6)
-#     {} NaN
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_6)
+    {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_6)
-#     {} NaN
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_6)
+    {} NaN
 
 clear
 
@@ -435,13 +389,11 @@ clear
 load 10m
    histogram_stddev_stdvar_7 {{schema:3 count:7 sum:Inf z_bucket:1 buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ] n_buckets:[0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 ]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stddev(histogram_stddev_stdvar_7)
-#     {} Inf
+eval instant at 10m histogram_stddev(histogram_stddev_stdvar_7)
+    {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_7)
-#     {} Inf
+eval instant at 10m histogram_stdvar(histogram_stddev_stdvar_7)
+    {} Inf
 
 clear
 
@@ -449,45 +401,36 @@ clear
 load 10m
     histogram_quantile_1 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 buckets:[2 3 0 1 4]}}x1
 
-# Unsupported by streaming engine.
-# eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_1)
-#     {} Inf
+eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_1)
+    {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(1, histogram_quantile_1)
-#     {} 16
+eval instant at 10m histogram_quantile(1, histogram_quantile_1)
+    {} 16
 
 # The following quantiles are within a bucket. Exponential
 # interpolation is applied (rather than linear, as it is done for
 # classic histograms), leading to slightly different quantile values.
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.99, histogram_quantile_1)
-#     {} 15.67072476139083
+eval instant at 10m histogram_quantile(0.99, histogram_quantile_1)
+    {} 15.67072476139083
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.9, histogram_quantile_1)
-#     {} 12.99603834169977
+eval instant at 10m histogram_quantile(0.9, histogram_quantile_1)
+    {} 12.99603834169977
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.6, histogram_quantile_1)
-#     {} 4.594793419988138
+eval instant at 10m histogram_quantile(0.6, histogram_quantile_1)
+    {} 4.594793419988138
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.5, histogram_quantile_1)
-#     {} 1.5874010519681994
+eval instant at 10m histogram_quantile(0.5, histogram_quantile_1)
+    {} 1.5874010519681994
 
 # Linear interpolation within the zero bucket after all.
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.1, histogram_quantile_1)
-#     {} 0.0006
+eval instant at 10m histogram_quantile(0.1, histogram_quantile_1)
+    {} 0.0006
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0, histogram_quantile_1)
-#     {} 0
+eval instant at 10m histogram_quantile(0, histogram_quantile_1)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_1)
-#     {} -Inf
+eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_1)
+    {} -Inf
 
 clear
 
@@ -495,40 +438,32 @@ clear
 load 10m
     histogram_quantile_2 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 n_buckets:[2 3 0 1 4]}}x1
 
-# Unsupported by streaming engine.
-# eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_2)
-#     {} Inf
+eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_2)
+    {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(1, histogram_quantile_2)
-#     {} 0
+eval instant at 10m histogram_quantile(1, histogram_quantile_2)
+    {} 0
 
 # Again, the quantile values here are slightly different from what
 # they would be with linear interpolation. Note that quantiles
 # ending up in the zero bucket are linearly interpolated after all.
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.99, histogram_quantile_2)
-#     {} -0.00006
+eval instant at 10m histogram_quantile(0.99, histogram_quantile_2)
+    {} -0.00006
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.9, histogram_quantile_2)
-#     {} -0.0006
+eval instant at 10m histogram_quantile(0.9, histogram_quantile_2)
+    {} -0.0006
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.5, histogram_quantile_2)
-#     {} -1.5874010519681996
+eval instant at 10m histogram_quantile(0.5, histogram_quantile_2)
+    {} -1.5874010519681996
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.1, histogram_quantile_2)
-#     {} -12.996038341699768
+eval instant at 10m histogram_quantile(0.1, histogram_quantile_2)
+    {} -12.996038341699768
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0, histogram_quantile_2)
-#     {} -16
+eval instant at 10m histogram_quantile(0, histogram_quantile_2)
+    {} -16
 
-# Unsupported by streaming engine.
-# eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_2)
-#     {} -Inf
+eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_2)
+    {} -Inf
 
 clear
 
@@ -538,60 +473,47 @@ clear
 load 10m
     histogram_quantile_3 {{schema:0 count:24 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[2 3 0 1 4] n_buckets:[2 3 0 1 4]}}x1
 
-# Unsupported by streaming engine.
-# eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_3)
-#     {} Inf
+eval_warn instant at 10m histogram_quantile(1.001, histogram_quantile_3)
+    {} Inf
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(1, histogram_quantile_3)
-#     {} 16
+eval instant at 10m histogram_quantile(1, histogram_quantile_3)
+    {} 16
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.99, histogram_quantile_3)
-#     {} 15.34822590920423
+eval instant at 10m histogram_quantile(0.99, histogram_quantile_3)
+    {} 15.34822590920423
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.9, histogram_quantile_3)
-#     {} 10.556063286183155
+eval instant at 10m histogram_quantile(0.9, histogram_quantile_3)
+    {} 10.556063286183155
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.7, histogram_quantile_3)
-#     {} 1.2030250360821164
+eval instant at 10m histogram_quantile(0.7, histogram_quantile_3)
+    {} 1.2030250360821164
 
 # Linear interpolation in the zero bucket, symmetrically centered around
 # the zero point.
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.55, histogram_quantile_3)
-#     {} 0.0006
+eval instant at 10m histogram_quantile(0.55, histogram_quantile_3)
+    {} 0.0006
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.5, histogram_quantile_3)
-#     {} 0
+eval instant at 10m histogram_quantile(0.5, histogram_quantile_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.45, histogram_quantile_3)
-#     {} -0.0006
+eval instant at 10m histogram_quantile(0.45, histogram_quantile_3)
+    {} -0.0006
 
 # Finally negative buckets with mirrored exponential interpolation.
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.3, histogram_quantile_3)
-#     {} -1.2030250360821169
+eval instant at 10m histogram_quantile(0.3, histogram_quantile_3)
+    {} -1.2030250360821169
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.1, histogram_quantile_3)
-#     {} -10.556063286183155
+eval instant at 10m histogram_quantile(0.1, histogram_quantile_3)
+    {} -10.556063286183155
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.01, histogram_quantile_3)
-#     {} -15.34822590920423
+eval instant at 10m histogram_quantile(0.01, histogram_quantile_3)
+    {} -15.34822590920423
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0, histogram_quantile_3)
-#     {} -16
+eval instant at 10m histogram_quantile(0, histogram_quantile_3)
+    {} -16
 
-# Unsupported by streaming engine.
-# eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_3)
-#     {} -Inf
+eval_warn instant at 10m histogram_quantile(-1, histogram_quantile_3)
+    {} -Inf
 
 clear
 
@@ -602,23 +524,19 @@ load 1m
     var_res_histogram{schema="0"}  {{schema:0 sum:4 count:5 buckets:[0 5]}}
     var_res_histogram{schema="+1"} {{schema:1 sum:4 count:5 buckets:[0 5]}}
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_quantile(0.5, var_res_histogram)
-#     {schema="-1"}  2.0
-#     {schema="0"}   1.4142135623730951
-#     {schema="+1"}  1.189207
+eval instant at 1m histogram_quantile(0.5, var_res_histogram)
+    {schema="-1"}  2.0
+    {schema="0"}   1.4142135623730951
+    {schema="+1"}  1.189207
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(0, 2, var_res_histogram{schema="-1"})
-#     {schema="-1"}  0.5
+eval instant at 1m histogram_fraction(0, 2, var_res_histogram{schema="-1"})
+    {schema="-1"}  0.5
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(0, 1.4142135623730951, var_res_histogram{schema="0"})
-#     {schema="0"}  0.5
+eval instant at 1m histogram_fraction(0, 1.4142135623730951, var_res_histogram{schema="0"})
+    {schema="0"}  0.5
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(0, 1.189207, var_res_histogram{schema="+1"})
-#     {schema="+1"}  0.5
+eval instant at 1m histogram_fraction(0, 1.189207, var_res_histogram{schema="+1"})
+    {schema="+1"}  0.5
 
 # The same as above, but one bucket "further to the right".
 clear
@@ -627,23 +545,19 @@ load 1m
     var_res_histogram{schema="0"}  {{schema:0 sum:4 count:5 buckets:[0 0 5]}}
     var_res_histogram{schema="+1"} {{schema:1 sum:4 count:5 buckets:[0 0 5]}}
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_quantile(0.5, var_res_histogram)
-#     {schema="-1"}  8.0
-#     {schema="0"}   2.82842712474619
-#     {schema="+1"}  1.6817928305074292
+eval instant at 1m histogram_quantile(0.5, var_res_histogram)
+    {schema="-1"}  8.0
+    {schema="0"}   2.82842712474619
+    {schema="+1"}  1.6817928305074292
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(0, 8, var_res_histogram{schema="-1"})
-#     {schema="-1"}  0.5
+eval instant at 1m histogram_fraction(0, 8, var_res_histogram{schema="-1"})
+    {schema="-1"}  0.5
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(0, 2.82842712474619, var_res_histogram{schema="0"})
-#     {schema="0"}  0.5
+eval instant at 1m histogram_fraction(0, 2.82842712474619, var_res_histogram{schema="0"})
+    {schema="0"}  0.5
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(0, 1.6817928305074292, var_res_histogram{schema="+1"})
-#     {schema="+1"}  0.5
+eval instant at 1m histogram_fraction(0, 1.6817928305074292, var_res_histogram{schema="+1"})
+    {schema="+1"}  0.5
 
 # And everything again but for negative buckets.
 clear
@@ -652,23 +566,19 @@ load 1m
     var_res_histogram{schema="0"}  {{schema:0 sum:4 count:5 n_buckets:[0 5]}}
     var_res_histogram{schema="+1"} {{schema:1 sum:4 count:5 n_buckets:[0 5]}}
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_quantile(0.5, var_res_histogram)
-#     {schema="-1"}  -2.0
-#     {schema="0"}   -1.4142135623730951
-#     {schema="+1"}  -1.189207
+eval instant at 1m histogram_quantile(0.5, var_res_histogram)
+    {schema="-1"}  -2.0
+    {schema="0"}   -1.4142135623730951
+    {schema="+1"}  -1.189207
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(-2, 0, var_res_histogram{schema="-1"})
-#     {schema="-1"}  0.5
+eval instant at 1m histogram_fraction(-2, 0, var_res_histogram{schema="-1"})
+    {schema="-1"}  0.5
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(-1.4142135623730951, 0, var_res_histogram{schema="0"})
-#     {schema="0"}  0.5
+eval instant at 1m histogram_fraction(-1.4142135623730951, 0, var_res_histogram{schema="0"})
+    {schema="0"}  0.5
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(-1.189207, 0, var_res_histogram{schema="+1"})
-#     {schema="+1"}  0.5
+eval instant at 1m histogram_fraction(-1.189207, 0, var_res_histogram{schema="+1"})
+    {schema="+1"}  0.5
 
 clear
 load 1m
@@ -676,32 +586,27 @@ load 1m
     var_res_histogram{schema="0"}  {{schema:0 sum:4 count:5 n_buckets:[0 0 5]}}
     var_res_histogram{schema="+1"} {{schema:1 sum:4 count:5 n_buckets:[0 0 5]}}
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_quantile(0.5, var_res_histogram)
-#     {schema="-1"}  -8.0
-#     {schema="0"}   -2.82842712474619
-#     {schema="+1"}  -1.6817928305074292
+eval instant at 1m histogram_quantile(0.5, var_res_histogram)
+    {schema="-1"}  -8.0
+    {schema="0"}   -2.82842712474619
+    {schema="+1"}  -1.6817928305074292
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(-8, 0, var_res_histogram{schema="-1"})
-#     {schema="-1"}  0.5
+eval instant at 1m histogram_fraction(-8, 0, var_res_histogram{schema="-1"})
+    {schema="-1"}  0.5
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(-2.82842712474619, 0, var_res_histogram{schema="0"})
-#     {schema="0"}  0.5
+eval instant at 1m histogram_fraction(-2.82842712474619, 0, var_res_histogram{schema="0"})
+    {schema="0"}  0.5
 
-# Unsupported by streaming engine.
-# eval instant at 1m histogram_fraction(-1.6817928305074292, 0, var_res_histogram{schema="+1"})
-#     {schema="+1"}  0.5
+eval instant at 1m histogram_fraction(-1.6817928305074292, 0, var_res_histogram{schema="+1"})
+    {schema="+1"}  0.5
 
 
 # Apply fraction function to empty histogram.
 load 10m
     histogram_fraction_1 {{}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(3.1415, 42, histogram_fraction_1)
-#     {} NaN
+eval instant at 10m histogram_fraction(3.1415, 42, histogram_fraction_1)
+    {} NaN
 
 clear
 
@@ -709,257 +614,197 @@ clear
 load 10m
     histogram_fraction_2 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 buckets:[2 3 0 1 4]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0, +Inf, histogram_fraction_2)
-#     {} 1
+eval instant at 10m histogram_fraction(0, +Inf, histogram_fraction_2)
+    {} 1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-Inf, 0, histogram_fraction_2)
-#     {} 0
+eval instant at 10m histogram_fraction(-Inf, 0, histogram_fraction_2)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-0.001, 0, histogram_fraction_2)
-#     {} 0
+eval instant at 10m histogram_fraction(-0.001, 0, histogram_fraction_2)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0, 0.001, histogram_fraction_2)
-#     {} 0.16666666666666666
+eval instant at 10m histogram_fraction(0, 0.001, histogram_fraction_2)
+    {} 0.16666666666666666
 
 # Note that this result and the one above add up to 1.
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0.001, inf, histogram_fraction_2)
-#     {} 0.8333333333333334
+eval instant at 10m histogram_fraction(0.001, inf, histogram_fraction_2)
+    {} 0.8333333333333334
 
 # We are in the zero bucket, resulting in linear interpolation
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0, 0.0005, histogram_fraction_2)
-#     {} 0.08333333333333333
+eval instant at 10m histogram_fraction(0, 0.0005, histogram_fraction_2)
+    {} 0.08333333333333333
 
 # Demonstrate that the inverse operation with histogram_quantile yields
 # the original value with the non-trivial result above.
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.08333333333333333, histogram_fraction_2)
-#     {} 0.0005
+eval instant at 10m histogram_quantile(0.08333333333333333, histogram_fraction_2)
+    {} 0.0005
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-inf, -0.001, histogram_fraction_2)
-#     {} 0
+eval instant at 10m histogram_fraction(-inf, -0.001, histogram_fraction_2)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1, 2, histogram_fraction_2)
-#     {} 0.25
+eval instant at 10m histogram_fraction(1, 2, histogram_fraction_2)
+    {} 0.25
 
 # More non-trivial results with interpolation involved below, including
 # some round-trips via histogram_quantile to prove that the inverse
 # operation leads to the same results.
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0, 1.5, histogram_fraction_2)
-#     {} 0.4795739585136224
+eval instant at 10m histogram_fraction(0, 1.5, histogram_fraction_2)
+    {} 0.4795739585136224
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1.5, 2, histogram_fraction_2)
-#     {} 0.10375937481971091
+eval instant at 10m histogram_fraction(1.5, 2, histogram_fraction_2)
+    {} 0.10375937481971091
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1, 8, histogram_fraction_2)
-#     {} 0.3333333333333333
+eval instant at 10m histogram_fraction(1, 8, histogram_fraction_2)
+    {} 0.3333333333333333
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0, 6, histogram_fraction_2)
-#     {} 0.6320802083934297
+eval instant at 10m histogram_fraction(0, 6, histogram_fraction_2)
+    {} 0.6320802083934297
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.6320802083934297, histogram_fraction_2)
-#     {} 6
+eval instant at 10m histogram_quantile(0.6320802083934297, histogram_fraction_2)
+    {} 6
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1, 6, histogram_fraction_2)
-#     {} 0.29874687506009634
+eval instant at 10m histogram_fraction(1, 6, histogram_fraction_2)
+    {} 0.29874687506009634
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1.5, 6, histogram_fraction_2)
-#     {} 0.15250624987980724
+eval instant at 10m histogram_fraction(1.5, 6, histogram_fraction_2)
+    {} 0.15250624987980724
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-2, -1, histogram_fraction_2)
-#     {} 0
+eval instant at 10m histogram_fraction(-2, -1, histogram_fraction_2)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-2, -1.5, histogram_fraction_2)
-#     {} 0
+eval instant at 10m histogram_fraction(-2, -1.5, histogram_fraction_2)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-8, -1, histogram_fraction_2)
-#     {} 0
+eval instant at 10m histogram_fraction(-8, -1, histogram_fraction_2)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-6, -1, histogram_fraction_2)
-#     {} 0
+eval instant at 10m histogram_fraction(-6, -1, histogram_fraction_2)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-6, -1.5, histogram_fraction_2)
-#     {} 0
+eval instant at 10m histogram_fraction(-6, -1.5, histogram_fraction_2)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(42, 3.1415, histogram_fraction_2)
-#     {} 0
+eval instant at 10m histogram_fraction(42, 3.1415, histogram_fraction_2)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0, 0, histogram_fraction_2)
-#     {} 0
+eval instant at 10m histogram_fraction(0, 0, histogram_fraction_2)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0.000001, 0.000001, histogram_fraction_2)
-#     {} 0
+eval instant at 10m histogram_fraction(0.000001, 0.000001, histogram_fraction_2)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(42, 42, histogram_fraction_2)
-#     {} 0
+eval instant at 10m histogram_fraction(42, 42, histogram_fraction_2)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-3.1, -3.1, histogram_fraction_2)
-#     {} 0
+eval instant at 10m histogram_fraction(-3.1, -3.1, histogram_fraction_2)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(3.1415, NaN, histogram_fraction_2)
-#     {} NaN
+eval instant at 10m histogram_fraction(3.1415, NaN, histogram_fraction_2)
+    {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(NaN, 42, histogram_fraction_2)
-#     {} NaN
+eval instant at 10m histogram_fraction(NaN, 42, histogram_fraction_2)
+    {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(NaN, NaN, histogram_fraction_2)
-#     {} NaN
+eval instant at 10m histogram_fraction(NaN, NaN, histogram_fraction_2)
+    {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-Inf, +Inf, histogram_fraction_2)
-#     {} 1
+eval instant at 10m histogram_fraction(-Inf, +Inf, histogram_fraction_2)
+    {} 1
 
 # Apply fraction function to histogram with negative and zero buckets.
 load 10m
     histogram_fraction_3 {{schema:0 count:12 sum:100 z_bucket:2 z_bucket_w:0.001 n_buckets:[2 3 0 1 4]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0, +Inf, histogram_fraction_3)
-#     {} 0
+eval instant at 10m histogram_fraction(0, +Inf, histogram_fraction_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-Inf, 0, histogram_fraction_3)
-#     {} 1
+eval instant at 10m histogram_fraction(-Inf, 0, histogram_fraction_3)
+    {} 1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-0.001, 0, histogram_fraction_3)
-#     {} 0.16666666666666666
+eval instant at 10m histogram_fraction(-0.001, 0, histogram_fraction_3)
+    {} 0.16666666666666666
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0, 0.001, histogram_fraction_3)
-#     {} 0
+eval instant at 10m histogram_fraction(0, 0.001, histogram_fraction_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-0.0005, 0, histogram_fraction_3)
-#     {} 0.08333333333333333
+eval instant at 10m histogram_fraction(-0.0005, 0, histogram_fraction_3)
+    {} 0.08333333333333333
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-inf, -0.0005, histogram_fraction_3)
-#     {} 0.9166666666666666
+eval instant at 10m histogram_fraction(-inf, -0.0005, histogram_fraction_3)
+    {} 0.9166666666666666
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.9166666666666666, histogram_fraction_3)
-#     {} -0.0005
+eval instant at 10m histogram_quantile(0.9166666666666666, histogram_fraction_3)
+    {} -0.0005
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0.001, inf, histogram_fraction_3)
-#     {} 0
+eval instant at 10m histogram_fraction(0.001, inf, histogram_fraction_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-inf, -0.001, histogram_fraction_3)
-#     {} 0.8333333333333334
+eval instant at 10m histogram_fraction(-inf, -0.001, histogram_fraction_3)
+    {} 0.8333333333333334
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1, 2, histogram_fraction_3)
-#     {} 0
+eval instant at 10m histogram_fraction(1, 2, histogram_fraction_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1.5, 2, histogram_fraction_3)
-#     {} 0
+eval instant at 10m histogram_fraction(1.5, 2, histogram_fraction_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1, 8, histogram_fraction_3)
-#     {} 0
+eval instant at 10m histogram_fraction(1, 8, histogram_fraction_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1, 6, histogram_fraction_3)
-#     {} 0
+eval instant at 10m histogram_fraction(1, 6, histogram_fraction_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1.5, 6, histogram_fraction_3)
-#     {} 0
+eval instant at 10m histogram_fraction(1.5, 6, histogram_fraction_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-2, -1, histogram_fraction_3)
-#     {} 0.25
+eval instant at 10m histogram_fraction(-2, -1, histogram_fraction_3)
+    {} 0.25
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-2, -1.5, histogram_fraction_3)
-#     {} 0.10375937481971091
+eval instant at 10m histogram_fraction(-2, -1.5, histogram_fraction_3)
+    {} 0.10375937481971091
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-8, -1, histogram_fraction_3)
-#     {} 0.3333333333333333
+eval instant at 10m histogram_fraction(-8, -1, histogram_fraction_3)
+    {} 0.3333333333333333
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-inf, -6, histogram_fraction_3)
-#     {} 0.36791979160657035
+eval instant at 10m histogram_fraction(-inf, -6, histogram_fraction_3)
+    {} 0.36791979160657035
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.36791979160657035, histogram_fraction_3)
-#     {} -6
+eval instant at 10m histogram_quantile(0.36791979160657035, histogram_fraction_3)
+    {} -6
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-6, -1, histogram_fraction_3)
-#     {} 0.29874687506009634
+eval instant at 10m histogram_fraction(-6, -1, histogram_fraction_3)
+    {} 0.29874687506009634
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-6, -1.5, histogram_fraction_3)
-#     {} 0.15250624987980724
+eval instant at 10m histogram_fraction(-6, -1.5, histogram_fraction_3)
+    {} 0.15250624987980724
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(42, 3.1415, histogram_fraction_3)
-#     {} 0
+eval instant at 10m histogram_fraction(42, 3.1415, histogram_fraction_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0, 0, histogram_fraction_3)
-#     {} 0
+eval instant at 10m histogram_fraction(0, 0, histogram_fraction_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0.000001, 0.000001, histogram_fraction_3)
-#     {} 0
+eval instant at 10m histogram_fraction(0.000001, 0.000001, histogram_fraction_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(42, 42, histogram_fraction_3)
-#     {} 0
+eval instant at 10m histogram_fraction(42, 42, histogram_fraction_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-3.1, -3.1, histogram_fraction_3)
-#     {} 0
+eval instant at 10m histogram_fraction(-3.1, -3.1, histogram_fraction_3)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(3.1415, NaN, histogram_fraction_3)
-#     {} NaN
+eval instant at 10m histogram_fraction(3.1415, NaN, histogram_fraction_3)
+    {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(NaN, 42, histogram_fraction_3)
-#     {} NaN
+eval instant at 10m histogram_fraction(NaN, 42, histogram_fraction_3)
+    {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(NaN, NaN, histogram_fraction_3)
-#     {} NaN
+eval instant at 10m histogram_fraction(NaN, NaN, histogram_fraction_3)
+    {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-Inf, +Inf, histogram_fraction_3)
-#     {} 1
+eval instant at 10m histogram_fraction(-Inf, +Inf, histogram_fraction_3)
+    {} 1
 
 clear
 
@@ -967,129 +812,98 @@ clear
 load 10m
     histogram_fraction_4 {{schema:0 count:24 sum:100 z_bucket:4 z_bucket_w:0.001 buckets:[2 3 0 1 4] n_buckets:[2 3 0 1 4]}}x1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0, +Inf, histogram_fraction_4)
-#     {} 0.5
+eval instant at 10m histogram_fraction(0, +Inf, histogram_fraction_4)
+    {} 0.5
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-Inf, 0, histogram_fraction_4)
-#     {} 0.5
+eval instant at 10m histogram_fraction(-Inf, 0, histogram_fraction_4)
+    {} 0.5
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-0.001, 0, histogram_fraction_4)
-#     {} 0.08333333333333333
+eval instant at 10m histogram_fraction(-0.001, 0, histogram_fraction_4)
+    {} 0.08333333333333333
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0, 0.001, histogram_fraction_4)
-#     {} 0.08333333333333333
+eval instant at 10m histogram_fraction(0, 0.001, histogram_fraction_4)
+    {} 0.08333333333333333
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-0.0005, 0.0005, histogram_fraction_4)
-#     {} 0.08333333333333333
+eval instant at 10m histogram_fraction(-0.0005, 0.0005, histogram_fraction_4)
+    {} 0.08333333333333333
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-inf, 0.0005, histogram_fraction_4)
-#     {} 0.5416666666666666
+eval instant at 10m histogram_fraction(-inf, 0.0005, histogram_fraction_4)
+    {} 0.5416666666666666
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.5416666666666666, histogram_fraction_4)
-#     {} 0.0005
+eval instant at 10m histogram_quantile(0.5416666666666666, histogram_fraction_4)
+    {} 0.0005
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-inf, -0.0005, histogram_fraction_4)
-#     {} 0.4583333333333333
+eval instant at 10m histogram_fraction(-inf, -0.0005, histogram_fraction_4)
+    {} 0.4583333333333333
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_quantile(0.4583333333333333, histogram_fraction_4)
-#     {} -0.0005
+eval instant at 10m histogram_quantile(0.4583333333333333, histogram_fraction_4)
+    {} -0.0005
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0.001, inf, histogram_fraction_4)
-#     {} 0.4166666666666667
+eval instant at 10m histogram_fraction(0.001, inf, histogram_fraction_4)
+    {} 0.4166666666666667
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-inf, -0.001, histogram_fraction_4)
-#     {} 0.4166666666666667
+eval instant at 10m histogram_fraction(-inf, -0.001, histogram_fraction_4)
+    {} 0.4166666666666667
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1, 2, histogram_fraction_4)
-#     {} 0.125
+eval instant at 10m histogram_fraction(1, 2, histogram_fraction_4)
+    {} 0.125
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1.5, 2, histogram_fraction_4)
-#     {} 0.051879687409855414
+eval instant at 10m histogram_fraction(1.5, 2, histogram_fraction_4)
+    {} 0.051879687409855414
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1, 8, histogram_fraction_4)
-#     {} 0.16666666666666666
+eval instant at 10m histogram_fraction(1, 8, histogram_fraction_4)
+    {} 0.16666666666666666
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1, 6, histogram_fraction_4)
-#     {} 0.14937343753004825
+eval instant at 10m histogram_fraction(1, 6, histogram_fraction_4)
+    {} 0.14937343753004825
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(1.5, 6, histogram_fraction_4)
-#     {} 0.07625312493990366
+eval instant at 10m histogram_fraction(1.5, 6, histogram_fraction_4)
+    {} 0.07625312493990366
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-2, -1, histogram_fraction_4)
-#     {} 0.125
+eval instant at 10m histogram_fraction(-2, -1, histogram_fraction_4)
+    {} 0.125
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-2, -1.5, histogram_fraction_4)
-#     {} 0.051879687409855456
+eval instant at 10m histogram_fraction(-2, -1.5, histogram_fraction_4)
+    {} 0.051879687409855456
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-8, -1, histogram_fraction_4)
-#     {} 0.16666666666666666
+eval instant at 10m histogram_fraction(-8, -1, histogram_fraction_4)
+    {} 0.16666666666666666
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-6, -1, histogram_fraction_4)
-#     {} 0.14937343753004817
+eval instant at 10m histogram_fraction(-6, -1, histogram_fraction_4)
+    {} 0.14937343753004817
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-6, -1.5, histogram_fraction_4)
-#     {} 0.07625312493990362
+eval instant at 10m histogram_fraction(-6, -1.5, histogram_fraction_4)
+    {} 0.07625312493990362
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(42, 3.1415, histogram_fraction_4)
-#     {} 0
+eval instant at 10m histogram_fraction(42, 3.1415, histogram_fraction_4)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0, 0, histogram_fraction_4)
-#     {} 0
+eval instant at 10m histogram_fraction(0, 0, histogram_fraction_4)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(0.000001, 0.000001, histogram_fraction_4)
-#     {} 0
+eval instant at 10m histogram_fraction(0.000001, 0.000001, histogram_fraction_4)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(42, 42, histogram_fraction_4)
-#     {} 0
+eval instant at 10m histogram_fraction(42, 42, histogram_fraction_4)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-3.1, -3.1, histogram_fraction_4)
-#     {} 0
+eval instant at 10m histogram_fraction(-3.1, -3.1, histogram_fraction_4)
+    {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(3.1415, NaN, histogram_fraction_4)
-#     {} NaN
+eval instant at 10m histogram_fraction(3.1415, NaN, histogram_fraction_4)
+    {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(NaN, 42, histogram_fraction_4)
-#     {} NaN
+eval instant at 10m histogram_fraction(NaN, 42, histogram_fraction_4)
+    {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(NaN, NaN, histogram_fraction_4)
-#     {} NaN
+eval instant at 10m histogram_fraction(NaN, NaN, histogram_fraction_4)
+    {} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_fraction(-Inf, +Inf, histogram_fraction_4)
-#     {} 1
+eval instant at 10m histogram_fraction(-Inf, +Inf, histogram_fraction_4)
+    {} 1
 
-# Unsupported by streaming engine.
-# eval instant at 10m histogram_sum(scalar(histogram_fraction(-Inf, +Inf, sum(histogram_fraction_4))) * histogram_fraction_4)
-#     {} 100
+eval instant at 10m histogram_sum(scalar(histogram_fraction(-Inf, +Inf, sum(histogram_fraction_4))) * histogram_fraction_4)
+    {} 100
 
 # Apply multiplication and division operator to histogram.
 load 10m
@@ -1193,13 +1007,11 @@ clear
 load 5m
     custom_buckets_histogram {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}x10
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_fraction(5, 10, custom_buckets_histogram)
-#     {} 0.5
+eval instant at 5m histogram_fraction(5, 10, custom_buckets_histogram)
+    {} 0.5
 
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_quantile(0.5, custom_buckets_histogram)
-#     {} 7.5
+eval instant at 5m histogram_quantile(0.5, custom_buckets_histogram)
+    {} 7.5
 
 eval instant at 5m sum(custom_buckets_histogram)
     {} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
@@ -1253,9 +1065,8 @@ eval instant at 5m rate(const_histogram[5m])
 
 # Zero buckets mean no observations, thus the denominator in the average is 0
 # leading to 0/0, which is NaN.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_avg(rate(const_histogram[5m]))
-#     {} NaN
+eval instant at 5m histogram_avg(rate(const_histogram[5m]))
+    {} NaN
 
 # Zero buckets mean no observations, so count is 0.
 eval instant at 5m histogram_count(rate(const_histogram[5m]))
@@ -1267,30 +1078,25 @@ eval instant at 5m histogram_sum(rate(const_histogram[5m]))
 
 # Zero buckets mean no observations, thus the denominator in the fraction is 0,
 # leading to 0/0, which is NaN.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_fraction(0.0, 1.0, rate(const_histogram[5m]))
-#     {} NaN
+eval instant at 5m histogram_fraction(0.0, 1.0, rate(const_histogram[5m]))
+    {} NaN
 
 # Workaround to calculate the observation count corresponding to NaN fraction.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_count(rate(const_histogram[5m])) == 0.0 or histogram_fraction(0.0, 1.0, rate(const_histogram[5m])) * histogram_count(rate(const_histogram[5m]))
-#     {} 0.0
+eval instant at 5m histogram_count(rate(const_histogram[5m])) == 0.0 or histogram_fraction(0.0, 1.0, rate(const_histogram[5m])) * histogram_count(rate(const_histogram[5m]))
+    {} 0.0
 
 # Zero buckets mean no observations, so there is no value that observations fall below,
 # which means that any quantile is a NaN.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_quantile(1.0, rate(const_histogram[5m]))
-#     {} NaN
+eval instant at 5m histogram_quantile(1.0, rate(const_histogram[5m]))
+    {} NaN
 
 # Zero buckets mean no observations, so there is no standard deviation.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_stddev(rate(const_histogram[5m]))
-#     {} NaN
+eval instant at 5m histogram_stddev(rate(const_histogram[5m]))
+    {} NaN
 
 # Zero buckets mean no observations, so there is no standard variance.
-# Unsupported by streaming engine.
-# eval instant at 5m histogram_stdvar(rate(const_histogram[5m]))
-#     {} NaN
+eval instant at 5m histogram_stdvar(rate(const_histogram[5m]))
+    {} NaN
 
 clear
 
@@ -1383,5 +1189,25 @@ eval instant at 3m sum_over_time(histogram_sum_over_time[4m:1m])
 
 eval instant at 3m avg_over_time(histogram_sum_over_time[4m:1m])
     {} {{schema:0 count:26.75 sum:1172.8 z_bucket:3.5 z_bucket_w:0.001 buckets:[0.75 2 0.5 1.25 0.75 0.5 0.5] n_buckets:[0.5 1.5 2 1 3.75 2.25 0 0 0 2.5 2.5 1]}}
+
+clear
+
+# Test native histograms with sub operator.
+load 10m
+    histogram_sub_1{idx="0"} {{schema:0 count:41 sum:2345.6 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}}x1
+    histogram_sub_1{idx="1"} {{schema:0 count:11 sum:1234.5 z_bucket:3 z_bucket_w:0.001 buckets:[0 2 1] n_buckets:[0 0 3 2]}}x1
+    histogram_sub_2{idx="0"} {{schema:0 count:41 sum:2345.6 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}}x1
+    histogram_sub_2{idx="1"} {{schema:1 count:11 sum:1234.5 z_bucket:3 z_bucket_w:0.001 buckets:[0 2 1] n_buckets:[0 0 3 2]}}x1
+    histogram_sub_3{idx="0"} {{schema:1 count:11 sum:1234.5 z_bucket:3 z_bucket_w:0.001 buckets:[0 2 1] n_buckets:[0 0 3 2]}}x1
+    histogram_sub_3{idx="1"} {{schema:0 count:41 sum:2345.6 z_bucket:5 z_bucket_w:0.001 buckets:[1 3 1 2 1 1 1] n_buckets:[0 1 4 2 7 0 0 0 0 5 5 2]}}x1
+
+eval instant at 10m histogram_sub_1{idx="0"} - ignoring(idx) histogram_sub_1{idx="1"}
+    {} {{schema:0 count:30 sum:1111.1 z_bucket:2 z_bucket_w:0.001 buckets:[1 1 0 2 1 1 1] n_buckets:[0 1 1 0 7 0 0 0 0 5 5 2]}}
+
+eval instant at 10m histogram_sub_2{idx="0"} - ignoring(idx) histogram_sub_2{idx="1"}
+    {} {{schema:0 count:30 sum:1111.1 z_bucket:2 z_bucket_w:0.001 buckets:[1 0 1 2 1 1 1] n_buckets:[0 -2 2 2 7 0 0 0 0 5 5 2]}}
+
+eval instant at 10m histogram_sub_3{idx="0"} - ignoring(idx) histogram_sub_3{idx="1"}
+    {} {{schema:0 count:-30 sum:-1111.1 z_bucket:-2 z_bucket_w:0.001 buckets:[-1 0 -1 -2 -1 -1 -1] n_buckets:[0 2 -2 -2 -7 0 0 0 0 -5 -5 -2]}}
 
 clear

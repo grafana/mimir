@@ -57,7 +57,7 @@ func main() {
 
 		blockDirs = append(blockDirs, d)
 
-		b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), d, nil)
+		b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), d, nil, nil)
 		if err != nil {
 			log.Fatalln("failed to open block:", d, err)
 		}

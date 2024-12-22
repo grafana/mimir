@@ -21,6 +21,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/codec"
+	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -33,7 +34,6 @@ import (
 var (
 	errNegativeUpdateTimeoutJitterMax = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 	errInvalidFailoverTimeout         = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
-	errMemberlistUnsupported          = errors.New("memberlist is not supported by the HA tracker since gossip propagation is too slow for HA purposes")
 )
 
 type haTrackerLimits interface {
@@ -60,6 +60,82 @@ func NewReplicaDesc() *ReplicaDesc {
 	return &ReplicaDesc{}
 }
 
+// Merge merges other ReplicaDesc into this one.
+// The decision is made based on the ReceivedAt timestamp, if the Replica name is the same and at the ElectedAt if the
+// Replica name is different
+func (r *ReplicaDesc) Merge(other memberlist.Mergeable, _ bool) (change memberlist.Mergeable, error error) {
+	return r.mergeWithTime(other)
+}
+
+func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable) (memberlist.Mergeable, error) {
+	if mergeable == nil {
+		return nil, nil
+	}
+
+	other, ok := mergeable.(*ReplicaDesc)
+	if !ok {
+		return nil, fmt.Errorf("expected *distributor.ReplicaDesc, got %T", mergeable)
+	}
+
+	if other == nil {
+		return nil, nil
+	}
+
+	changed := false
+	if other.Replica == r.Replica {
+		// Keeping the one with the most recent receivedAt timestamp
+		if other.ReceivedAt > r.ReceivedAt {
+			*r = *other
+			changed = true
+		} else if r.ReceivedAt == other.ReceivedAt && r.DeletedAt == 0 && other.DeletedAt != 0 {
+			*r = *other
+			changed = true
+		}
+	} else {
+		// keep the most recent ElectedAt to reach consistency
+		if other.ElectedAt > r.ElectedAt {
+			*r = *other
+			changed = true
+		} else if other.ElectedAt == r.ElectedAt {
+			// if the timestamps are equal we compare ReceivedAt
+			if other.ReceivedAt > r.ReceivedAt {
+				*r = *other
+				changed = true
+			}
+		}
+	}
+
+	// No changes
+	if !changed {
+		return nil, nil
+	}
+
+	out := NewReplicaDesc()
+	*out = *r
+	return out, nil
+}
+
+// MergeContent describes content of this Mergeable.
+// Given that ReplicaDesc can have only one instance at a time, it returns the ReplicaDesc it contains. By doing this we choose
+// to not make use of the subset invalidation feature of memberlist
+func (r *ReplicaDesc) MergeContent() []string {
+	result := []string(nil)
+	if len(r.Replica) != 0 {
+		result = append(result, r.String())
+	}
+	return result
+}
+
+// RemoveTombstones is noOp because we will handle replica deletions outside the context of memberlist.
+func (r *ReplicaDesc) RemoveTombstones(_ time.Time) (total, removed int) {
+	return
+}
+
+// Clone returns a deep copy of the ReplicaDesc.
+func (r *ReplicaDesc) Clone() memberlist.Mergeable {
+	return proto.Clone(r).(*ReplicaDesc)
+}
+
 // HATrackerConfig contains the configuration required to
 // create an HA Tracker.
 type HATrackerConfig struct {
@@ -75,7 +151,7 @@ type HATrackerConfig struct {
 	// more than this duration
 	FailoverTimeout time.Duration `yaml:"ha_tracker_failover_timeout" category:"advanced"`
 
-	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the ring. Please be aware that memberlist is not supported by the HA tracker since gossip propagation is too slow for HA purposes."`
+	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the ring. Note that memberlist support is experimental."`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -101,10 +177,6 @@ func (cfg *HATrackerConfig) Validate() error {
 	minFailureTimeout := cfg.UpdateTimeout + cfg.UpdateTimeoutJitterMax + time.Second
 	if cfg.FailoverTimeout < minFailureTimeout {
 		return fmt.Errorf(errInvalidFailoverTimeout, cfg.FailoverTimeout, minFailureTimeout)
-	}
-
-	if cfg.KVStore.Store == "memberlist" {
-		return errMemberlistUnsupported
 	}
 
 	return nil
@@ -181,9 +253,12 @@ func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 			Help: "The total number of reelections for a user ID/cluster, from the KVStore.",
 		}, []string{"user", "cluster"}),
 		electedReplicaPropagationTime: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ha_tracker_elected_replica_change_propagation_time_seconds",
-			Help:    "The time it for the distributor to update the replica change.",
-			Buckets: prometheus.DefBuckets,
+			Name:                            "cortex_ha_tracker_elected_replica_change_propagation_time_seconds",
+			Help:                            "The time it for the distributor to update the replica change.",
+			Buckets:                         prometheus.DefBuckets,
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
 		}),
 		kvCASCalls: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ha_tracker_kv_store_cas_total",

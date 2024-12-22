@@ -64,7 +64,7 @@ func (b *FPointRingBuffer) Append(p promql.FPoint) error {
 		if !isPowerOfTwo(cap(newSlice)) {
 			// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
 			// If we can guarantee that newSlice has a capacity that is a power of two in the future, then we can drop this check.
-			panic(fmt.Sprintf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize))
+			return fmt.Errorf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize)
 		}
 
 		newSlice = newSlice[:cap(newSlice)]
@@ -147,10 +147,10 @@ func (b *FPointRingBuffer) Release() {
 // s will be returned to the pool when Close is called, Use is called again, or the buffer needs to expand, so callers
 // should not return s to the pool themselves.
 // s must have a capacity that is a power of two.
-func (b *FPointRingBuffer) Use(s []promql.FPoint) {
+func (b *FPointRingBuffer) Use(s []promql.FPoint) error {
 	if !isPowerOfTwo(cap(s)) {
 		// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
-		panic(fmt.Sprintf("slice capacity must be a power of two, but is %v", cap(s)))
+		return fmt.Errorf("slice capacity must be a power of two, but is %v", cap(s))
 	}
 
 	putFPointSliceForRingBuffer(b.points, b.memoryConsumptionTracker)
@@ -159,6 +159,7 @@ func (b *FPointRingBuffer) Use(s []promql.FPoint) {
 	b.firstIndex = 0
 	b.size = len(s)
 	b.pointsIndexMask = cap(s) - 1
+	return nil
 }
 
 // Close releases any resources associated with this buffer.

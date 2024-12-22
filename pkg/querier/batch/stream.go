@@ -20,6 +20,10 @@ type batchStream struct {
 	batches    []chunk.Batch
 	batchesBuf []chunk.Batch
 
+	// prevIteratorID is the iterator id of the last sample appended to the batchStream from the last merge() call.
+	// This helps reduce the number of hints that are set to unknown across merge calls.
+	prevIteratorID int
+
 	hPool  *zeropool.Pool[*histogram.Histogram]
 	fhPool *zeropool.Pool[*histogram.FloatHistogram]
 }
@@ -28,10 +32,11 @@ func newBatchStream(size int, hPool *zeropool.Pool[*histogram.Histogram], fhPool
 	batches := make([]chunk.Batch, 0, size)
 	batchesBuf := make([]chunk.Batch, size)
 	return &batchStream{
-		batches:    batches,
-		batchesBuf: batchesBuf,
-		hPool:      hPool,
-		fhPool:     fhPool,
+		batches:        batches,
+		batchesBuf:     batchesBuf,
+		prevIteratorID: -1,
+		hPool:          hPool,
+		fhPool:         fhPool,
 	}
 }
 
@@ -58,6 +63,7 @@ func (bs *batchStream) empty() {
 		bs.putPointerValuesToThePool(&bs.batches[i])
 	}
 	bs.batches = bs.batches[:0]
+	bs.prevIteratorID = -1
 }
 
 func (bs *batchStream) len() int {
@@ -92,7 +98,7 @@ func (bs *batchStream) curr() *chunk.Batch {
 // merge merges this streams of chunk.Batch objects and the given chunk.Batch of the same series over time.
 // Samples are simply merged by time when they are the same type (float/histogram/...), with the left stream taking precedence if the timestamps are equal.
 // When sample are different type, batches are not merged. In case of equal timestamps, histograms take precedence since they have more information.
-func (bs *batchStream) merge(batch *chunk.Batch, size int) {
+func (bs *batchStream) merge(batch *chunk.Batch, size int, iteratorID int) {
 	// We store this at the beginning to avoid additional allocations.
 	// Namely, the merge method will go through all the batches from bs.batch,
 	// check whether their elements should be kept (and copy them to the result)
@@ -129,7 +135,9 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 		b.ValueType = valueType
 	}
 
-	populate := func(batch *chunk.Batch, valueType chunkenc.ValueType) {
+	prevIteratorID := bs.prevIteratorID
+
+	populate := func(batch *chunk.Batch, valueType chunkenc.ValueType, itID int) {
 		if b.Index == 0 {
 			// Starting to write this Batch, it is safe to set the value type
 			b.ValueType = valueType
@@ -144,26 +152,51 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 			b.Timestamps[b.Index], b.Values[b.Index] = batch.At()
 		case chunkenc.ValHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtHistogram()
+			if itID == -1 { // This means the sample is already in the batch stream. We get its original iterator id.
+				itID = batch.GetIteratorID()
+			}
+			if prevIteratorID != itID && prevIteratorID != -1 {
+				// We switched non overlapping iterators, so if the next sample coming
+				// from a different place or time we should reset the hint.
+				h := (*histogram.Histogram)(b.PointerValues[b.Index])
+				if h.CounterResetHint != histogram.GaugeType && h.CounterResetHint != histogram.UnknownCounterReset {
+					h.CounterResetHint = histogram.UnknownCounterReset
+				}
+			}
+			b.SetIteratorID(itID)
 		case chunkenc.ValFloatHistogram:
 			b.Timestamps[b.Index], b.PointerValues[b.Index] = batch.AtFloatHistogram()
+			if itID == -1 { // This means the sample is already in the batch stream. We get its original iterator id.
+				itID = batch.GetIteratorID()
+			}
+			if prevIteratorID != itID && prevIteratorID != -1 {
+				// We switched non overlapping iterators, so if the next sample coming
+				// from a different place or time we should reset the hint.
+				h := (*histogram.FloatHistogram)(b.PointerValues[b.Index])
+				if h.CounterResetHint != histogram.GaugeType && h.CounterResetHint != histogram.UnknownCounterReset {
+					h.CounterResetHint = histogram.UnknownCounterReset
+				}
+			}
+			b.SetIteratorID(itID)
 		}
+		prevIteratorID = itID
 		b.Index++
 	}
 
 	for lt, rt := bs.hasNext(), batch.HasNext(); lt != chunkenc.ValNone && rt != chunkenc.ValNone; lt, rt = bs.hasNext(), batch.HasNext() {
 		t1, t2 := bs.curr().AtTime(), batch.AtTime()
 		if t1 < t2 {
-			populate(bs.curr(), lt)
+			populate(bs.curr(), lt, -1)
 			bs.next()
 		} else if t1 > t2 {
-			populate(batch, rt)
+			populate(batch, rt, iteratorID)
 			batch.Next()
 		} else {
 			if (rt == chunkenc.ValHistogram || rt == chunkenc.ValFloatHistogram) && lt == chunkenc.ValFloat {
 				// Prefer histograms than floats. Take left side if both have histograms.
-				populate(batch, rt)
+				populate(batch, rt, iteratorID)
 			} else {
-				populate(bs.curr(), lt)
+				populate(bs.curr(), lt, -1)
 				// if bs.hPool is not nil, we put there the discarded histogram.Histogram object from batch, so it can be reused.
 				if rt == chunkenc.ValHistogram && bs.hPool != nil {
 					_, h := batch.AtHistogram()
@@ -181,18 +214,21 @@ func (bs *batchStream) merge(batch *chunk.Batch, size int) {
 	}
 
 	for t := bs.hasNext(); t != chunkenc.ValNone; t = bs.hasNext() {
-		populate(bs.curr(), t)
+		populate(bs.curr(), t, -1)
 		bs.next()
 	}
 
 	for t := batch.HasNext(); t != chunkenc.ValNone; t = batch.HasNext() {
-		populate(batch, t)
+		populate(batch, t, iteratorID)
 		batch.Next()
 	}
 
 	// The Index is the place at which new sample
 	// has to be appended, hence it tells the length.
 	b.Length = b.Index
+
+	// Store the last iterator id.
+	bs.prevIteratorID = prevIteratorID
 
 	bs.batches = append(origBatches, bs.batchesBuf[:resultLen]...)
 	bs.reset()

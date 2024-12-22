@@ -231,7 +231,7 @@ func TestQuerier(t *testing.T) {
 			db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), q.valueType)
 			dbQueryable := TimeRangeQueryable{
 				Queryable: db,
-				IsApplicable: func(_ string, _ time.Time, _, _ int64) bool {
+				IsApplicable: func(_ string, _ time.Time, _, _ int64, _ ...*labels.Matcher) bool {
 					return true
 				},
 			}
@@ -277,7 +277,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 						mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
 						mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
 						mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 1},
-					}),
+					}, false),
 				},
 				// Series with data points before and after queryStart, but before queryEnd.
 				{
@@ -295,7 +295,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 						mimirpb.Sample{TimestampMs: queryStart.Add(+0*time.Minute).Unix() * 1000, Value: 29},
 						mimirpb.Sample{TimestampMs: queryStart.Add(+1*time.Minute).Unix() * 1000, Value: 31},
 						mimirpb.Sample{TimestampMs: queryStart.Add(+2*time.Minute).Unix() * 1000, Value: 37},
-					}),
+					}, false),
 				},
 				// Series with data points after queryEnd.
 				{
@@ -305,7 +305,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 						mimirpb.Sample{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
 						mimirpb.Sample{TimestampMs: queryStart.Add(+6*time.Minute).Unix() * 1000, Value: 47},
 						mimirpb.Sample{TimestampMs: queryStart.Add(+7*time.Minute).Unix() * 1000, Value: 53},
-					}),
+					}, false),
 				},
 			},
 		},
@@ -374,8 +374,8 @@ func TestBatchMergeChunks(t *testing.T) {
 		}
 	}
 
-	c1 := convertToChunks(t, samplesToInterface(s1))
-	c2 := convertToChunks(t, samplesToInterface(s2))
+	c1 := convertToChunks(t, samplesToInterface(s1), false)
+	c2 := convertToChunks(t, samplesToInterface(s2), false)
 	chunks12 := []client.Chunk{}
 	chunks12 = append(chunks12, c1...)
 	chunks12 = append(chunks12, c2...)

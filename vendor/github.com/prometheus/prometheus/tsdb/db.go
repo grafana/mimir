@@ -54,6 +54,9 @@ const (
 	// DefaultBlockDuration in milliseconds.
 	DefaultBlockDuration = int64(2 * time.Hour / time.Millisecond)
 
+	// DefaultCompactionDelayMaxPercent in percentage.
+	DefaultCompactionDelayMaxPercent = 10
+
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
 	// because in error case you still can recover meta.json from the block content within local TSDB dir.
@@ -88,7 +91,9 @@ func DefaultOptions() *Options {
 		EnableOverlappingCompaction: true,
 		EnableSharding:              false,
 		EnableDelayedCompaction:     false,
+		CompactionDelayMaxPercent:   DefaultCompactionDelayMaxPercent,
 		CompactionDelay:             time.Duration(0),
+		PostingsDecoderFactory:      DefaultPostingsDecoderFactory,
 
 		HeadChunksEndTimeVariance:             0,
 		HeadPostingsForMatchersCacheTTL:       DefaultPostingsForMatchersCacheTTL,
@@ -229,6 +234,8 @@ type Options struct {
 	// CompactionDelay delays the start time of auto compactions.
 	// It can be increased by up to one minute if the DB does not commit too often.
 	CompactionDelay time.Duration
+	// CompactionDelayMaxPercent is the upper limit for CompactionDelay, specified as a percentage of the head chunk range.
+	CompactionDelayMaxPercent int
 
 	// NewCompactorFunc is a function that returns a TSDB compactor.
 	NewCompactorFunc NewCompactorFunc
@@ -277,6 +284,10 @@ type Options struct {
 
 	// BlockChunkQuerierFunc is a function to return storage.ChunkQuerier from a BlockReader.
 	BlockChunkQuerierFunc BlockChunkQuerierFunc
+
+	// PostingsDecoderFactory allows users to customize postings decoders based on BlockMeta.
+	// By default, DefaultPostingsDecoderFactory will be used to create raw posting decoder.
+	PostingsDecoderFactory PostingsDecoderFactory
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -691,7 +702,7 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 		return nil, ErrClosed
 	default:
 	}
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce)
 	if err != nil {
 		return nil, err
 	}
@@ -789,7 +800,7 @@ func (db *DBReadOnly) LastBlockID() (string, error) {
 }
 
 // Block returns a block reader by given block id.
-func (db *DBReadOnly) Block(blockID string) (BlockReader, error) {
+func (db *DBReadOnly) Block(blockID string, postingsDecoderFactory PostingsDecoderFactory) (BlockReader, error) {
 	select {
 	case <-db.closed:
 		return nil, ErrClosed
@@ -801,7 +812,7 @@ func (db *DBReadOnly) Block(blockID string) (BlockReader, error) {
 		return nil, fmt.Errorf("invalid block ID %s", blockID)
 	}
 
-	block, err := OpenBlock(db.logger, filepath.Join(db.dir, blockID), nil)
+	block, err := OpenBlock(db.logger, filepath.Join(db.dir, blockID), nil, postingsDecoderFactory)
 	if err != nil {
 		return nil, err
 	}
@@ -963,6 +974,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		db.compactor, err = NewLeveledCompactorWithOptions(ctx, r, l, rngs, db.chunkPool, LeveledCompactorOptions{
 			MaxBlockChunkSegmentSize:    opts.MaxBlockChunkSegmentSize,
 			EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
+			PD:                          opts.PostingsDecoderFactory,
 		})
 	}
 	if err != nil {
@@ -1673,7 +1685,7 @@ func (db *DB) reloadBlocks() (err error) {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.SeriesHashCache, db.opts.BlockPostingsForMatchersCacheTTL, db.opts.BlockPostingsForMatchersCacheMaxItems, db.opts.BlockPostingsForMatchersCacheMaxBytes, db.opts.BlockPostingsForMatchersCacheForce)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory, db.opts.SeriesHashCache, db.opts.BlockPostingsForMatchersCacheTTL, db.opts.BlockPostingsForMatchersCacheMaxItems, db.opts.BlockPostingsForMatchersCacheMaxBytes, db.opts.BlockPostingsForMatchersCacheForce)
 	if err != nil {
 		return err
 	}
@@ -1768,7 +1780,7 @@ func (db *DB) reloadBlocks() (err error) {
 	return nil
 }
 
-func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, cache *hashcache.SeriesHashCache, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
+func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, cache *hashcache.SeriesHashCache, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
 	bDirs, err := blockDirs(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("find blocks: %w", err)
@@ -1790,7 +1802,7 @@ func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.
 				cacheProvider = cache.GetBlockCacheProvider(meta.ULID.String())
 			}
 
-			block, err = OpenBlockWithOptions(l, bDir, chunkPool, cacheProvider, postingsCacheTTL, postingsCacheMaxItems, postingsCacheMaxBytes, postingsCacheForce)
+			block, err = OpenBlockWithOptions(l, bDir, chunkPool, postingsDecoderFactory, cacheProvider, postingsCacheTTL, postingsCacheMaxItems, postingsCacheMaxBytes, postingsCacheForce)
 			if err != nil {
 				corrupted[meta.ULID] = err
 				continue
@@ -2102,8 +2114,7 @@ func (db *DB) EnableCompactions() {
 }
 
 func (db *DB) generateCompactionDelay() time.Duration {
-	// Up to 10% of the head's chunkRange.
-	return time.Duration(rand.Int63n(db.head.chunkRange.Load()/10)) * time.Millisecond
+	return time.Duration(rand.Int63n(db.head.chunkRange.Load()*int64(db.opts.CompactionDelayMaxPercent)/100)) * time.Millisecond
 }
 
 // ForceHeadMMap is intended for use only in tests and benchmarks.
@@ -2115,10 +2126,10 @@ func (db *DB) ForceHeadMMap() {
 // will create a new block containing all data that's currently in the memory buffer/WAL.
 func (db *DB) Snapshot(dir string, withHead bool) error {
 	if dir == db.dir {
-		return fmt.Errorf("cannot snapshot into base directory")
+		return errors.New("cannot snapshot into base directory")
 	}
 	if _, err := ulid.ParseStrict(dir); err == nil {
-		return fmt.Errorf("dir must not be a valid ULID")
+		return errors.New("dir must not be a valid ULID")
 	}
 
 	db.cmtx.Lock()

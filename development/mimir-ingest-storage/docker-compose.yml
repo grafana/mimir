@@ -162,6 +162,66 @@
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
+  "mimir-block-builder-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder -activity-tracker.filepath=/activity/mimir-block-builder-1"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=block-builder"
+    "hostname": "mimir-block-builder-1"
+    "image": "mimir"
+    "ports":
+      - "8008:8080"
+      - "11008:11008"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
+  "mimir-block-builder-scheduler-1":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=block-builder-scheduler -activity-tracker.filepath=/activity/mimir-block-builder-scheduler-1"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=block-builder-scheduler"
+    "hostname": "mimir-block-builder-scheduler-1"
+    "image": "mimir"
+    "ports":
+      - "8019:8080"
+      - "11019:11019"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
   "mimir-read-1":
     "build":
       "context": "."
@@ -322,7 +382,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/mimir-write-zone-c-61 -ingester.ring.instance-availability-zone=zone-c -ingester.ring.instance-id=ingester-zone-c-61 -ingester.partition-ring.prefix=exclusive-prefix -ingester.ring.prefix=exclusive-prefix -ingest-storage.kafka.consume-from-position-at-startup=end -ingest-storage.kafka.consume-from-timestamp-at-startup=0 -ingest-storage.kafka.startup-fetch-concurrency=15 -ingest-storage.kafka.ongoing-fetch-concurrency=2 -ingest-storage.kafka.ingestion-concurrency-max=2 -ingest-storage.kafka.ingestion-concurrency-batch-size=150"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=ingester -activity-tracker.filepath=/activity/mimir-write-zone-c-61 -ingester.ring.instance-availability-zone=zone-c -ingester.ring.instance-id=ingester-zone-c-61 -ingester.partition-ring.prefix=exclusive-prefix -ingester.ring.prefix=exclusive-prefix -ingest-storage.kafka.consume-from-position-at-startup=end -ingest-storage.kafka.consume-from-timestamp-at-startup=0 -ingest-storage.kafka.fetch-concurrency-max=2 -ingest-storage.kafka.ingestion-concurrency-max=2 -ingest-storage.kafka.ingestion-concurrency-batch-size=150"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"

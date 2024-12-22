@@ -13,12 +13,25 @@ eval instant at 5m single_histogram
 eval range from 0 to 5m step 1m single_histogram
 	{__name__="single_histogram"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:20 count:7 buckets:[9 10 1]}}
 
+# histogram_avg is sum / count.
+eval range from 0 to 5m step 1m histogram_avg(single_histogram)
+	{} 1.25 1.25 1.25 1.25 1.25 2.857142857142857
+
 # histogram_count extracts the count property from the histogram.
-eval range from 0 to 5m step 1m  histogram_count(single_histogram)
+eval range from 0 to 5m step 1m histogram_count(single_histogram)
 	{} 4 4 4 4 4 7
 
+eval range from 0 to 5m step 1m histogram_fraction(0, 2, single_histogram)
+	{} 0.75 0.75 0.75 0.75 0.75 1
+
+eval range from 0 to 5m step 1m histogram_stddev(single_histogram)
+	{} 0.842629429717281 0.842629429717281 0.842629429717281 0.842629429717281 0.842629429717281 2.986282214238901
+
+eval range from 0 to 5m step 1m histogram_stdvar(single_histogram)
+	{} 0.7100243558256704 0.7100243558256704 0.7100243558256704 0.7100243558256704 0.7100243558256704 8.917881463079594
+
 # histogram_sum extracts the sum property from the histogram.
-eval range from 0 to 5m step 1m  histogram_sum(single_histogram)
+eval range from 0 to 5m step 1m histogram_sum(single_histogram)
 	{} 5 5 5 5 5 20
 
 clear
@@ -30,8 +43,20 @@ load 1m
 eval range from 0 to 5m step 1m mixed_metric
 	{__name__="mixed_metric"} 1 2 3 {{count:4 sum:5 buckets:[1 2 1]}} {{count:6 sum:8 buckets:[1 4 1]}} {{count:6 sum:8 buckets:[1 4 1]}}
 
+eval instant at 3m histogram_avg(mixed_metric)
+	{} 1.25
+
 eval instant at 3m histogram_count(mixed_metric)
 	{} 4
+
+eval instant at 3m histogram_fraction(0, 1, mixed_metric)
+	{} 0.25
+
+eval instant at 4m histogram_stddev(mixed_metric)
+	{} 0.6650352854715079
+
+eval instant at 4m histogram_stdvar(mixed_metric)
+	{} 0.44227193092217004
 
 eval instant at 4m histogram_sum(mixed_metric)
 	{} 8
@@ -42,8 +67,20 @@ eval range from 0 to 5m step 1m histogram_count(mixed_metric)
 eval range from 0 to 5m step 1m histogram_sum(mixed_metric)
 	{} _ _ _ 5 8 8
 
+# histogram_avg ignores any float values
+eval instant at 2m histogram_avg(mixed_metric)
+
 # histogram_count ignores any float values
 eval instant at 2m histogram_count(mixed_metric)
+
+# histogram_fraction ignores any float values
+eval instant at 2m histogram_fraction(0, 1, mixed_metric)
+
+# histogram_stddev ignores any float values
+eval instant at 2m histogram_stddev(mixed_metric)
+
+# histogram_stdvar ignores any float values
+eval instant at 2m histogram_stdvar(mixed_metric)
 
 # histogram_sum ignores any float values
 eval instant at 2m histogram_sum(mixed_metric)
@@ -61,10 +98,30 @@ eval instant at 0 route
 	route{path="two"} {{schema:0 sum:10 count:20 buckets:[9 10 1]}}
 	route{path="three"} {{schema:0 sum:12 count:10 buckets:[3 2 5]}}
 
+eval instant at 0 histogram_avg(route)
+	{path="one"} 1.25
+	{path="two"} 0.5
+	{path="three"} 1.2
+
 eval instant at 0 histogram_count(route)
 	{path="one"} 4
 	{path="two"} 20
 	{path="three"} 10
+
+eval instant at 0 histogram_fraction(-10, 20, route)
+	{path="one"} 1
+	{path="two"} 1
+	{path="three"} 1
+
+eval instant at 0 histogram_stddev(route)
+	{path="one"} 0.842629429717281
+	{path="two"} 0.8415900492770793
+	{path="three"} 1.1865698706402301
+
+eval instant at 0 histogram_stdvar(route)
+	{path="one"} 0.7100243558256704
+	{path="two"} 0.7082738110421968
+	{path="three"} 1.4079480579111723
 
 eval instant at 0 histogram_sum(route)
 	{path="one"} 5
@@ -94,8 +151,20 @@ load 1m
 eval range from 0 to 8m step 1m mixed_metric
 	{__name__="mixed_metric"} 1 2 3 3 3 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
 
+eval range from 0 to 8m step 1m histogram_avg(mixed_metric)
+{} _ _ _ _ _ _ _ 1.8 1.8
+
 eval range from 0 to 8m step 1m histogram_count(mixed_metric)
 {} _ _ _ _ _ _ _ 10 10
+
+eval range from 0 to 8m step 1m histogram_fraction(0, 1, mixed_metric)
+{} _ _ _ _ _ _ _ 0.3 0.3
+
+eval range from 0 to 8m step 1m histogram_stddev(mixed_metric)
+{} _ _ _ _ _ _ _ 0.8574122997574659 0.8574122997574659
+
+eval range from 0 to 8m step 1m histogram_stdvar(mixed_metric)
+{} _ _ _ _ _ _ _ 0.7351558517753866 0.7351558517753866
 
 eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
 {} _ _ _ _ _ _ _ 18 18
@@ -129,16 +198,16 @@ clear
 
 # Test mixed metrics and range query
 load 1m
-	incr_histogram	1 2 {{schema:3 sum:4 count:4 buckets:[1 2 1]}}+{{schema:5 sum:2 count:1 buckets:[1] offset:1}}x3
+	incr_histogram_sum	1 2 {{schema:3 sum:4 count:4 buckets:[1 2 1]}}+{{schema:5 sum:2 count:1 buckets:[1] offset:1}}x3
 
 # - The first value isn't enough to calculate a rate/increase
 # - The second value is a rate/increase from two floats
 # - The third value is a rate/increase across a float and histogram (so no value returned)
 # - The remaining values contain the rate/increase across two histograms in the vector
-eval_warn range from 0 to 4m step 1m rate(incr_histogram[1m1s])
+eval_warn range from 0 to 4m step 1m rate(incr_histogram_sum[1m1s])
 	{} _ 0.016666666666666666 _ {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}} {{schema:3 count:0.016666666666666666 sum:0.03333333333333333 offset:1 buckets:[0.016666666666666666]}}
 
-eval_warn range from 0 to 4m step 1m increase(incr_histogram[1m1s])
+eval_warn range from 0 to 4m step 1m increase(incr_histogram_sum[1m1s])
 	{} _ 1.0166666666666666 _ {{schema:3 count:1.0166666666666666 sum:2.033333333333333 offset:1 buckets:[1.0166666666666666]}} {{schema:3 count:1.0166666666666666 sum:2.033333333333333 offset:1 buckets:[1.0166666666666666]}}
 
 clear

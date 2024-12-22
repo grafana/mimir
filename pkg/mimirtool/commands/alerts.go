@@ -95,6 +95,8 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	for _, cmd := range []*kingpin.CmdClause{getAlertsCmd, deleteCmd, loadalertCmd} {
 		cmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
 		cmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+". Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided.").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
+		a.ClientConfig.ExtraHeaders = map[string]string{}
+		cmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&a.ClientConfig.ExtraHeaders)
 	}
 
 	migrateCmd := alertCmd.Command("migrate-utf8", "Migrate the Alertmanager tenant configuration for UTF-8.").Action(a.migrateConfig)
@@ -270,6 +272,8 @@ func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames, r
 	alertCmd.Flag("user", fmt.Sprintf("Basic auth username to use when contacting Grafana Mimir, alternatively set %s. If empty, %s will be used instead. ", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
 	alertCmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&a.ClientConfig.Key)
 	alertCmd.Flag("auth-token", "Authentication token for bearer token or JWT auth, alternatively set "+envVars.AuthToken+".").Default("").Envar(envVars.AuthToken).StringVar(&a.ClientConfig.AuthToken)
+	a.ClientConfig.ExtraHeaders = map[string]string{}
+	alertCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&a.ClientConfig.ExtraHeaders)
 
 	verifyAlertsCmd := alertCmd.Command("verify", "Verifies whether or not alerts in an Alertmanager cluster are deduplicated; useful for verifying correct configuration when transferring from Prometheus to Grafana Mimir alert evaluation.").Action(a.verifyConfig)
 	verifyAlertsCmd.Flag("ignore-alerts", "A comma separated list of Alert names to ignore in deduplication checks.").StringVar(&a.IgnoreString)
