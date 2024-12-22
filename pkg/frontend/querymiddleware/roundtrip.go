@@ -48,6 +48,8 @@ const (
 	queryTypeActiveSeries                 = "active_series"
 	queryTypeActiveNativeHistogramMetrics = "active_native_histogram_metrics"
 	queryTypeOther                        = "other"
+
+	fullRangeHandlerContextKey = "fullRangeHandler"
 )
 
 var (
@@ -254,14 +256,15 @@ func newQueryTripperware(
 		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
 
-	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, registerer)
+	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, engineOpts.NoStepSubqueryIntervalFn, registerer)
 
 	return func(next http.RoundTripper) http.RoundTripper {
 		// IMPORTANT: roundtrippers are executed in *reverse* order because they are wrappers.
 		// It means that the first roundtrippers defined in this function will be the last to be
 		// executed.
 
-		queryrange := NewLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		queryrangeInitial := NewLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		queryrange := queryrangeInitial
 		instant := NewLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...)
 		remoteRead := NewRemoteReadRoundTripper(next, remoteReadMiddleware...)
 
@@ -309,6 +312,9 @@ func newQueryTripperware(
 		cardinality = NewCardinalityQueryRequestValidationRoundTripper(cardinality)
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			var fullRangeHandler MetricsQueryHandler = queryrangeInitial.(limitedParallelismRoundTripper)
+			r = r.WithContext(context.WithValue(r.Context(), fullRangeHandlerContextKey, fullRangeHandler))
+
 			switch {
 			case IsRangeQuery(r.URL.Path):
 				return queryrange.RoundTrip(r)
@@ -344,6 +350,7 @@ func newQueryMiddlewares(
 	cacheKeyGenerator CacheKeyGenerator,
 	cacheExtractor Extractor,
 	engine *promql.Engine,
+	defaultStepFunc func(rangeMillis int64) int64,
 	registerer prometheus.Registerer,
 ) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
 	// Metric used to keep track of each middleware execution duration.
@@ -429,6 +436,7 @@ func newQueryMiddlewares(
 		queryshardingMiddleware := newQueryShardingMiddleware(
 			log,
 			engine,
+			defaultStepFunc,
 			limits,
 			cfg.TargetSeriesPerShard,
 			registerer,
@@ -494,12 +502,16 @@ func NewQueryDetailsStartEndRoundTripper(next http.RoundTripper) http.RoundTripp
 		if details := QueryDetailsFromContext(req.Context()); details != nil {
 			if startMs, _ := util.ParseTime(params.Get("start")); startMs != 0 {
 				details.Start = time.UnixMilli(startMs)
-				details.MinT = details.Start
+				if details.Start.Before(details.MinT) {
+					details.MinT = details.Start
+				}
 			}
 
 			if endMs, _ := util.ParseTime(params.Get("end")); endMs != 0 {
 				details.End = time.UnixMilli(endMs)
-				details.MaxT = details.End
+				if details.End.After(details.MaxT) {
+					details.MaxT = details.End
+				}
 			}
 		}
 		return next.RoundTrip(req)

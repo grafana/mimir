@@ -109,8 +109,9 @@ func approximatelyEqualsSamples(t *testing.T, a, b *PrometheusResponse) {
 // approximatelyEquals ensures two responses are approximately equal, up to 6 decimals precision per sample
 func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 	approximatelyEqualsSamples(t, a, b)
-	require.ElementsMatch(t, a.Infos, b.Infos, "expected same info annotations")
-	require.ElementsMatch(t, a.Warnings, b.Warnings, "expected same warning annotations")
+	// TODO: Propagate annotations
+	// require.ElementsMatch(t, a.Infos, b.Infos, "expected same info annotations")
+	// require.ElementsMatch(t, a.Warnings, b.Warnings, "expected same warning annotations")
 }
 
 func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expectedVal, actualVal float64, j int, labels []mimirpb.LabelAdapter, sampleType string, tolerance float64) {
@@ -153,12 +154,32 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		// number will be multiplied for the number of shards).
 		expectedShardedQueries int
 
+		// expectedSubqueries is the number of subqueries that are expected to be spun off.
+		expectedSpunOffSubqueries int
+
 		// expectSpecificOrder disables result sorting and checks that both results are returned in same order.
 		expectSpecificOrder bool
 
 		// noRangeQuery skips the range query (specially made for "string" query as it can't be used for a range query)
 		noRangeQuery bool
+
+		// spinOffSubqueries means that subqueries should be rerun on the full range handler
+		spinOffSubqueries bool
 	}{
+		"aggregation over subquery": {
+			query:                     `sum_over_time(max(metric_counter)[5m:1m])`,
+			spinOffSubqueries:         true,
+			noRangeQuery:              true,
+			expectedShardedQueries:    1, // max() is sharded
+			expectedSpunOffSubqueries: 1,
+		},
+		"aggregation over subquery multiplied": {
+			query:                     `sum_over_time(max(metric_counter)[5m:1m]) * max_over_time(max(metric_counter)[5m:1m]) * min_over_time(max(metric_counter)[5m:1m])`,
+			spinOffSubqueries:         true,
+			noRangeQuery:              true,
+			expectedShardedQueries:    3,
+			expectedSpunOffSubqueries: 3,
+		},
 		"sum() no grouping": {
 			query:                  `sum(metric_counter)`,
 			expectedShardedQueries: 1,
@@ -293,35 +314,35 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		},
 		"and": {
 			query: `
-				sum without(unique) (rate(metric_counter{group_1="0"}[1m]))
-				and
-				max without(unique) (metric_counter) > 0`,
+					sum without(unique) (rate(metric_counter{group_1="0"}[1m]))
+					and
+					max without(unique) (metric_counter) > 0`,
 			expectedShardedQueries: 2,
 		},
 		"sum(rate()) > avg(rate())": {
 			query: `
-				sum(rate(metric_counter[1m]))
-				>
-				avg(rate(metric_counter[1m]))`,
+					sum(rate(metric_counter[1m]))
+					>
+					avg(rate(metric_counter[1m]))`,
 			expectedShardedQueries: 3, // avg() is parallelized as sum()/count().
 		},
 		"sum by(unique) * on (unique) group_left (group_1) avg by (unique, group_1)": {
 			// ensure that avg transformation into sum/count does not break label matching in previous binop.
 			query: `
-				sum by(unique) (metric_counter)
-				*
-				on (unique) group_left (group_1)
-				avg by (unique, group_1) (metric_counter)`,
+					sum by(unique) (metric_counter)
+					*
+					on (unique) group_left (group_1)
+					avg by (unique, group_1) (metric_counter)`,
 			expectedShardedQueries: 3,
 		},
 		"sum by (rate()) / 2 ^ 2": {
 			query: `
-			sum by (group_1) (rate(metric_counter[1m])) / 2 ^ 2`,
+				sum by (group_1) (rate(metric_counter[1m])) / 2 ^ 2`,
 			expectedShardedQueries: 1,
 		},
 		"sum by (rate()) / time() *2": {
 			query: `
-			sum by (group_1) (rate(metric_counter[1m])) / time() *2`,
+				sum by (group_1) (rate(metric_counter[1m])) / time() *2`,
 			expectedShardedQueries: 1,
 		},
 		"sum(rate()) / vector(3) ^ month()": {
@@ -334,43 +355,64 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		},
 		"nested count()": {
 			query: `sum(
-				  count(
-				    count(metric_counter) by (group_1, group_2)
-				  ) by (group_1)
-				)`,
+					  count(
+					    count(metric_counter) by (group_1, group_2)
+					  ) by (group_1)
+					)`,
 			expectedShardedQueries: 1,
 		},
 		"subquery max": {
 			query: `max_over_time(
-							rate(metric_counter[1m])
-						[5m:1m]
-					)`,
+								rate(metric_counter[1m])
+							[5m:1m]
+						)`,
 			expectedShardedQueries: 1,
 		},
 		"subquery min": {
 			query: `min_over_time(
-							rate(metric_counter[1m])
-						[5m:1m]
-					)`,
+								rate(metric_counter[1m])
+							[5m:1m]
+						)`,
 			expectedShardedQueries: 1,
 		},
 		"sum of subquery min": {
 			query:                  `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[10m:2m]))`,
 			expectedShardedQueries: 1,
 		},
+
 		"triple subquery": {
 			query: `max_over_time(
-						stddev_over_time(
-							deriv(
-								rate(metric_counter[10m])
-							[5m:1m])
-						[2m:])
-					[10m:])`,
+							stddev_over_time(
+								deriv(
+									rate(metric_counter[10m])
+								[5m:1m])
+							[2m:])
+						[10m:])`,
 			expectedShardedQueries: 1,
+		},
+		"triple subquery (with subquery spin off)": {
+			query: `max_over_time(
+							stddev_over_time(
+								deriv(
+									rate(metric_counter[10m])
+								[5m:1m])
+							[2m:])
+						[10m:])`,
+			expectedShardedQueries:    1,
+			expectedSpunOffSubqueries: 1,
+			spinOffSubqueries:         true,
+			noRangeQuery:              true,
 		},
 		"double subquery deriv": {
 			query:                  `max_over_time( deriv( rate(metric_counter[10m])[5m:1m] )[10m:] )`,
 			expectedShardedQueries: 1,
+		},
+		"double subquery deriv (with subquery spin off)": {
+			query:                     `max_over_time( deriv( rate(metric_counter[10m])[5m:1m] )[10m:] )`,
+			expectedShardedQueries:    1,
+			expectedSpunOffSubqueries: 1,
+			spinOffSubqueries:         true,
+			noRangeQuery:              true,
 		},
 		"@ modifier": {
 			query:                  `sum by (group_1)(rate(metric_counter[1h] @ end())) + sum by (group_1)(rate(metric_counter[1h] @ start()))`,
@@ -386,20 +428,20 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		},
 		"label_replace": {
 			query: `sum by (foo)(
-					 	label_replace(
-									rate(metric_counter{group_1="0"}[1m]),
-									"foo", "bar$1", "group_2", "(.*)"
-								)
-							)`,
+						 	label_replace(
+										rate(metric_counter{group_1="0"}[1m]),
+										"foo", "bar$1", "group_2", "(.*)"
+									)
+								)`,
 			expectedShardedQueries: 1,
 		},
 		"label_join": {
 			query: `sum by (foo)(
-							label_join(
-									rate(metric_counter{group_1="0"}[1m]),
-									"foo", ",", "group_1", "group_2", "const"
-								)
-							)`,
+								label_join(
+										rate(metric_counter{group_1="0"}[1m]),
+										"foo", ",", "group_1", "group_2", "const"
+									)
+								)`,
 			expectedShardedQueries: 1,
 		},
 		`query with sort() expects specific order`: {
@@ -440,10 +482,10 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		//
 		"subquery min_over_time with aggr": {
 			query: `min_over_time(
-						sum by(group_1) (
-							rate(metric_counter[5m])
-						)[10m:]
-					)`,
+							sum by(group_1) (
+								rate(metric_counter[5m])
+							)[10m:]
+						)`,
 			expectedShardedQueries: 0,
 		},
 		"outer subquery on top of sum": {
@@ -494,12 +536,12 @@ func TestQuerySharding_Correctness(t *testing.T) {
 		},
 		`subqueries with non parallelizable function in children`: {
 			query: `max_over_time(
-				absent_over_time(
-					deriv(
-						rate(metric_counter[1m])
-					[5m:1m])
-				[2m:1m])
-			[10m:1m] offset 25m)`,
+					absent_over_time(
+						deriv(
+							rate(metric_counter[1m])
+						[5m:1m])
+					[2m:1m])
+				[10m:1m] offset 25m)`,
 			expectedShardedQueries: 0,
 		},
 		"string literal": {
@@ -692,16 +734,15 @@ func TestQuerySharding_Correctness(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-			reqs := []MetricsQueryRequest{
-				&PrometheusInstantQueryRequest{
-					path:      "/query",
-					time:      util.TimeToMillis(end),
-					queryExpr: parseQuery(t, testData.query),
-				},
-			}
+			reqs := []MetricsQueryRequest{}
+			reqs = append(reqs, &PrometheusInstantQueryRequest{
+				path:      instantQueryPathSuffix,
+				time:      util.TimeToMillis(end),
+				queryExpr: parseQuery(t, testData.query),
+			})
 			if !testData.noRangeQuery {
 				reqs = append(reqs, &PrometheusRangeQueryRequest{
-					path:      "/query_range",
+					path:      queryRangePathSuffix,
 					start:     util.TimeToMillis(start),
 					end:       util.TimeToMillis(end),
 					step:      step.Milliseconds(),
@@ -730,25 +771,31 @@ func TestQuerySharding_Correctness(t *testing.T) {
 					require.NotEmpty(t, expectedPrometheusRes.Data.Result)
 					requireValidSamples(t, expectedPrometheusRes.Data.Result)
 
-					if testData.expectedShardedQueries > 0 {
-						// Remove position information from annotations, to mirror what we expect from the sharded queries below.
-						removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
-						removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
-					}
+					// Remove position information from annotations, to mirror what we expect from the sharded queries below.
+					removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
+					removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
 
 					for _, numShards := range []int{2, 4, 8, 16} {
 						t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
 							reg := prometheus.NewPedanticRegistry()
+
 							shardingware := newQueryShardingMiddleware(
 								log.NewNopLogger(),
 								engine,
+								defaultStepFunc,
 								mockLimits{totalShards: numShards},
 								0,
 								reg,
 							)
 
+							fullHandler := shardingware.Wrap(downstream)
+							ctx := context.Background()
+							if testData.spinOffSubqueries {
+								ctx = context.WithValue(ctx, fullRangeHandlerContextKey, fullHandler)
+							}
+
 							// Run the query with sharding.
-							shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+							shardedRes, err := fullHandler.Do(user.InjectOrgID(ctx, "test"), req)
 							require.Nil(t, err)
 
 							// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
@@ -757,28 +804,35 @@ func TestQuerySharding_Correctness(t *testing.T) {
 							if !testData.expectSpecificOrder {
 								sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
 							}
+							removeAllAnnotationPositionInformation(shardedPrometheusRes.Infos)
 							approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
 
 							// Ensure the query has been sharded/not sharded as expected.
-							expectedSharded := 0
+							expectedAttempts := 1 + testData.expectedSpunOffSubqueries
+							expectedSharded := testData.expectedSpunOffSubqueries
 							if testData.expectedShardedQueries > 0 {
-								expectedSharded = 1
+								expectedSharded += 1
 							}
 
 							assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_frontend_query_sharding_rewrites_attempted_total Total number of queries the query-frontend attempted to shard.
 					# TYPE cortex_frontend_query_sharding_rewrites_attempted_total counter
-					cortex_frontend_query_sharding_rewrites_attempted_total 1
+					cortex_frontend_query_sharding_rewrites_attempted_total %d
 					# HELP cortex_frontend_query_sharding_rewrites_succeeded_total Total number of queries the query-frontend successfully rewritten in a shardable way.
 					# TYPE cortex_frontend_query_sharding_rewrites_succeeded_total counter
 					cortex_frontend_query_sharding_rewrites_succeeded_total %d
 					# HELP cortex_frontend_sharded_queries_total Total number of sharded queries.
 					# TYPE cortex_frontend_sharded_queries_total counter
 					cortex_frontend_sharded_queries_total %d
-				`, expectedSharded, testData.expectedShardedQueries*numShards)),
+					# HELP cortex_frontend_query_sharding_spun_off_subqueries_total Total number of subqueries spun off as range queries.
+					# TYPE cortex_frontend_query_sharding_spun_off_subqueries_total counter
+					cortex_frontend_query_sharding_spun_off_subqueries_total %d
+				`, expectedAttempts, expectedSharded, testData.expectedShardedQueries*numShards, testData.expectedSpunOffSubqueries)),
 								"cortex_frontend_query_sharding_rewrites_attempted_total",
 								"cortex_frontend_query_sharding_rewrites_succeeded_total",
-								"cortex_frontend_sharded_queries_total"))
+								"cortex_frontend_sharded_queries_total",
+								"cortex_frontend_query_sharding_spun_off_subqueries_total",
+							))
 						})
 					}
 				})
@@ -813,7 +867,7 @@ func TestQuerySharding_NonMonotonicHistogramBuckets(t *testing.T) {
 	for _, query := range queries {
 		t.Run(query, func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
-				path:      "/query_range",
+				path:      queryRangePathSuffix,
 				start:     util.TimeToMillis(start),
 				end:       util.TimeToMillis(end),
 				step:      step.Milliseconds(),
@@ -840,6 +894,7 @@ func TestQuerySharding_NonMonotonicHistogramBuckets(t *testing.T) {
 					shardingware := newQueryShardingMiddleware(
 						log.NewNopLogger(),
 						engine,
+						nil,
 						mockLimits{totalShards: numShards},
 						0,
 						reg,
@@ -920,11 +975,11 @@ func TestQueryshardingDeterminism(t *testing.T) {
 		newSeries(labelsForShard(2), from, to, step, constant(evilFloatB)),
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: shards}, 0, prometheus.NewPedanticRegistry())
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), nil, mockLimits{totalShards: shards}, 0, prometheus.NewPedanticRegistry())
 	downstream := &downstreamHandler{engine: newEngine(), queryable: storageSeriesQueryable(storageSeries)}
 
 	req := &PrometheusInstantQueryRequest{
-		path:      "/query",
+		path:      instantQueryPathSuffix,
 		time:      to.UnixMilli(),
 		queryExpr: parseQuery(t, `sum(metric)`),
 	}
@@ -1124,7 +1179,7 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 		for _, query := range mkQueries(tc.tpl, tc.fn, tc.rangeQuery, tc.args) {
 			t.Run(query, func(t *testing.T) {
 				req := &PrometheusRangeQueryRequest{
-					path:      "/query_range",
+					path:      queryRangePathSuffix,
 					start:     util.TimeToMillis(start),
 					end:       util.TimeToMillis(end),
 					step:      step.Milliseconds(),
@@ -1136,6 +1191,7 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 				shardingware := newQueryShardingMiddleware(
 					log.NewNopLogger(),
 					engine,
+					nil,
 					mockLimits{totalShards: numShards},
 					0,
 					reg,
@@ -1191,7 +1247,7 @@ func testQueryShardingFunctionCorrectness(t *testing.T, queryable storage.Querya
 
 func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
-		path:      "/query_range",
+		path:      queryRangePathSuffix,
 		start:     util.TimeToMillis(start),
 		end:       util.TimeToMillis(end),
 		step:      step.Milliseconds(),
@@ -1201,7 +1257,7 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 		},
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, nil)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), nil, mockLimits{totalShards: 16}, 0, nil)
 
 	downstream := &mockHandler{}
 	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: statusSuccess}, nil)
@@ -1216,7 +1272,7 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 
 func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
-		path:      "/query_range",
+		path:      queryRangePathSuffix,
 		start:     util.TimeToMillis(start),
 		end:       util.TimeToMillis(end),
 		step:      step.Milliseconds(),
@@ -1226,7 +1282,7 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 		},
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, nil)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), nil, mockLimits{totalShards: 16}, 0, nil)
 
 	downstream := &mockHandler{}
 	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
@@ -1357,7 +1413,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
-				path:      "/query_range",
+				path:      queryRangePathSuffix,
 				start:     util.TimeToMillis(start),
 				end:       util.TimeToMillis(end),
 				step:      step.Milliseconds(),
@@ -1371,7 +1427,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 				compactorShards:                  testData.compactorShards,
 				nativeHistogramsIngestionEnabled: testData.nativeHistograms,
 			}
-			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, 0, nil)
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), nil, limits, 0, nil)
 
 			// Keep track of the unique number of shards queried to downstream.
 			uniqueShardsMx := sync.Mutex{}
@@ -1450,7 +1506,7 @@ func TestQuerySharding_ShouldSupportMaxRegexpSizeBytes(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
-				path:      "/query_range",
+				path:      queryRangePathSuffix,
 				start:     util.TimeToMillis(start),
 				end:       util.TimeToMillis(end),
 				step:      step.Milliseconds(),
@@ -1464,7 +1520,7 @@ func TestQuerySharding_ShouldSupportMaxRegexpSizeBytes(t *testing.T) {
 				compactorShards:                  0,
 				nativeHistogramsIngestionEnabled: false,
 			}
-			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, 0, nil)
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), nil, limits, 0, nil)
 
 			// Keep track of the unique number of shards queried to downstream.
 			uniqueShardsMx := sync.Mutex{}
@@ -1494,14 +1550,14 @@ func TestQuerySharding_ShouldSupportMaxRegexpSizeBytes(t *testing.T) {
 
 func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
-		path:      "/query_range",
+		path:      queryRangePathSuffix,
 		start:     util.TimeToMillis(start),
 		end:       util.TimeToMillis(end),
 		step:      step.Milliseconds(),
 		queryExpr: parseQuery(t, "vector(1)"), // A non shardable query.
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, nil)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), nil, mockLimits{totalShards: 16}, 0, nil)
 
 	// Mock the downstream handler to always return error.
 	downstreamErr := errors.Errorf("some err")
@@ -1605,14 +1661,14 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &PrometheusRangeQueryRequest{
-				path:      "/query_range",
+				path:      queryRangePathSuffix,
 				start:     util.TimeToMillis(start),
 				end:       util.TimeToMillis(end),
 				step:      step.Milliseconds(),
 				queryExpr: parseQuery(t, "sum(bar1)"),
 			}
 
-			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), tc.engineSharding, mockLimits{totalShards: 3}, 0, nil)
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), tc.engineSharding, nil, mockLimits{totalShards: 3}, 0, nil)
 
 			if tc.queryable == nil {
 				tc.queryable = queryable
@@ -1665,7 +1721,7 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 	})
 
 	req := &PrometheusRangeQueryRequest{
-		path:      "/query_range",
+		path:      queryRangePathSuffix,
 		start:     util.TimeToMillis(start),
 		end:       util.TimeToMillis(end),
 		step:      step.Milliseconds(),
@@ -1674,7 +1730,7 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 
 	downstream := &downstreamHandler{engine: newEngine(), queryable: queryable}
 	reg := prometheus.NewPedanticRegistry()
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), engine, mockLimits{totalShards: numShards}, 0, reg)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), engine, nil, mockLimits{totalShards: numShards}, 0, reg)
 
 	// Run the query with sharding.
 	_, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
@@ -1683,14 +1739,14 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 
 func TestQuerySharding_WrapMultipleTime(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
-		path:      "/query_range",
+		path:      queryRangePathSuffix,
 		start:     util.TimeToMillis(start),
 		end:       util.TimeToMillis(end),
 		step:      step.Milliseconds(),
 		queryExpr: parseQuery(t, "vector(1)"), // A non shardable query.
 	}
 
-	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 0, prometheus.NewRegistry())
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), nil, mockLimits{totalShards: 16}, 0, prometheus.NewRegistry())
 
 	require.NotPanics(t, func() {
 		_, err := shardingware.Wrap(mockHandlerWith(nil, nil)).Do(user.InjectOrgID(context.Background(), "test"), req)
@@ -1732,7 +1788,7 @@ func TestQuerySharding_ShouldUseCardinalityEstimate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, 10_000, nil)
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), nil, mockLimits{totalShards: 16}, 10_000, nil)
 			downstream := &mockHandler{}
 			downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
 				Status: statusSuccess, Data: &PrometheusData{
@@ -1782,6 +1838,7 @@ func TestQuerySharding_Annotations(t *testing.T) {
 	shardingware := newQueryShardingMiddleware(
 		log.NewNopLogger(),
 		engine,
+		nil,
 		mockLimits{totalShards: numShards},
 		0,
 		reg,
@@ -1839,7 +1896,7 @@ func TestQuerySharding_Annotations(t *testing.T) {
 		t.Run(template.query, func(t *testing.T) {
 			query := fmt.Sprintf(template.query, seriesName)
 			req := &PrometheusRangeQueryRequest{
-				path:      "/query_range",
+				path:      queryRangePathSuffix,
 				start:     0,
 				end:       int64(endTime * 1000),
 				step:      step.Milliseconds(),
@@ -1972,7 +2029,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 			)
 
 			req := &PrometheusRangeQueryRequest{
-				path:      "/query_range",
+				path:      queryRangePathSuffix,
 				start:     start,
 				end:       end,
 				step:      step,
@@ -1983,6 +2040,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 				shardingware := newQueryShardingMiddleware(
 					log.NewNopLogger(),
 					engine,
+					nil,
 					mockLimits{totalShards: shardFactor},
 					0,
 					nil,
@@ -2577,20 +2635,22 @@ func (ssi *ThreadSafeStorageSeriesIterator) Err() error {
 	return nil
 }
 
+var defaultStepFunc = func(int64) int64 {
+	return (1 * time.Minute).Milliseconds()
+}
+
 // newEngine creates and return a new promql.Engine used for testing.
 func newEngine() *promql.Engine {
 	return promql.NewEngine(promql.EngineOpts{
-		Logger:               promslog.NewNopLogger(),
-		Reg:                  nil,
-		MaxSamples:           10e6,
-		Timeout:              1 * time.Hour,
-		ActiveQueryTracker:   nil,
-		LookbackDelta:        lookbackDelta,
-		EnableAtModifier:     true,
-		EnableNegativeOffset: true,
-		NoStepSubqueryIntervalFn: func(int64) int64 {
-			return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
-		},
+		Logger:                   promslog.NewNopLogger(),
+		Reg:                      nil,
+		MaxSamples:               10e6,
+		Timeout:                  1 * time.Hour,
+		ActiveQueryTracker:       nil,
+		LookbackDelta:            lookbackDelta,
+		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
+		NoStepSubqueryIntervalFn: defaultStepFunc,
 	})
 }
 

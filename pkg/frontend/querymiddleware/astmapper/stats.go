@@ -3,7 +3,8 @@
 package astmapper
 
 type MapperStats struct {
-	shardedQueries int
+	shardedQueries    int
+	spunOffSubqueries int
 }
 
 func NewMapperStats() *MapperStats {
@@ -18,4 +19,14 @@ func (s *MapperStats) AddShardedQueries(num int) {
 // GetShardedQueries returns the number of sharded queries.
 func (s *MapperStats) GetShardedQueries() int {
 	return s.shardedQueries
+}
+
+// AddSpunOffSubqueries add num spun off subqueries to the counter.
+func (s *MapperStats) AddSpunOffSubquery() {
+	s.spunOffSubqueries += 1
+}
+
+// GetSpunOffSubqueries returns the number of spun off subqueries.
+func (s *MapperStats) GetSpunOffSubqueries() int {
+	return s.spunOffSubqueries
 }

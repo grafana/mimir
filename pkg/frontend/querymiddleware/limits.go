@@ -214,18 +214,7 @@ func NewLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limi
 	}
 }
 
-func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	ctx, cancel := context.WithCancelCause(r.Context())
-	defer cancel(errExecutingParallelQueriesFinished)
-
-	request, err := rt.codec.DecodeMetricsQueryRequest(ctx, r)
-	if err != nil {
-		return nil, err
-	}
-
-	if span := opentracing.SpanFromContext(ctx); span != nil {
-		request.AddSpanTags(span)
-	}
+func (rt limitedParallelismRoundTripper) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -238,7 +227,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	// Wraps middlewares with a final handler, which will receive sub-requests in
 	// parallel from upstream handlers and ensure that no more than MaxQueryParallelism
 	// sub-requests run in parallel.
-	response, err := rt.middleware.Wrap(
+	fullHandler := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 			if err := sem.Acquire(ctx, 1); err != nil {
 				return nil, fmt.Errorf("could not acquire work: %w", err)
@@ -246,7 +235,24 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 			defer sem.Release(1)
 
 			return rt.downstream.Do(ctx, r)
-		})).Do(ctx, request)
+		}))
+	return fullHandler.Do(ctx, r)
+}
+
+func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	ctx, cancel := context.WithCancelCause(r.Context())
+	defer cancel(errExecutingParallelQueriesFinished)
+
+	request, err := rt.codec.DecodeMetricsQueryRequest(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+
+	if span := opentracing.SpanFromContext(ctx); span != nil {
+		request.AddSpanTags(span)
+	}
+
+	response, err := rt.Do(ctx, request)
 	if err != nil {
 		return nil, err
 	}

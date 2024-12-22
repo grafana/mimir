@@ -24,253 +24,292 @@ func TestShardSummer(t *testing.T) {
 		in                     string
 		out                    string
 		expectedShardedQueries int
+		spinOffSubqueries      bool
 	}{
+
 		{
-			`quantile(0.9,foo)`,
-			concat(`quantile(0.9,foo)`),
-			0,
+			in:                     `max_over_time((max(hello) > max(hello2))[5m:1m])`,
+			out:                    `max_over_time(__aggregated_subquery__{__aggregated_subquery__="(max(hello) > max(hello2))[5m:1m]"}[5m])`,
+			expectedShardedQueries: 0,
+			spinOffSubqueries:      true,
 		},
 		{
-			`absent(foo)`,
-			concat(`absent(foo)`),
-			0,
+			in:                     `max_over_time((max by (job) (kube_state_metrics_total_shards) * max by (job) (kube_state_metrics_watch_total))[2w:1m])`,
+			out:                    `max_over_time(__aggregated_subquery__{__aggregated_subquery__="(max by (job) (kube_state_metrics_total_shards) * max by (job) (kube_state_metrics_watch_total))[2w:1m]"}[2w])`,
+			expectedShardedQueries: 0,
+			spinOffSubqueries:      true,
 		},
 		{
-			`absent_over_time(foo[1m])`,
-			concat(`absent_over_time(foo[1m])`),
-			0,
+			in: "max_over_time(hello[5m:1m]) * " +
+				"max_over_time(hello[5m:1m]) / " +
+				"(1 - max_over_time(hello[5m:1m]))",
+			out: `max_over_time(__aggregated_subquery__{__aggregated_subquery__="hello[5m:1m]"}[5m]) * ` +
+				`max_over_time(__aggregated_subquery__{__aggregated_subquery__="hello[5m:1m]"}[5m]) / ` +
+				`(1 - max_over_time(__aggregated_subquery__{__aggregated_subquery__="hello[5m:1m]"}[5m]))`,
+			expectedShardedQueries: 0,
+			spinOffSubqueries:      true,
+		},
+		{
+			in: `1 - grafana_slo_sli_6h{grafana_slo_uuid="q97zal7potjxfz38y6xcs"} > 1 * 0.050000000000000044 and 1 - grafana_slo_sli_3d{grafana_slo_uuid="q97zal7potjxfz38y6xcs"} > 1 * 0.050000000000000044 and 300 * (sum_over_time((grafana_slo_total_rate_5m{grafana_slo_uuid="q97zal7potjxfz38y6xcs"} < 1e+308)[3d:5m]) - sum_over_time((grafana_slo_success_rate_5m{grafana_slo_uuid="q97zal7potjxfz38y6xcs"} < 1e+308)[3d:5m])) > 4`,
+			out: concat(`1 - grafana_slo_sli_6h{grafana_slo_uuid="q97zal7potjxfz38y6xcs"} > 1 * 0.050000000000000044 and 1 - grafana_slo_sli_3d{grafana_slo_uuid="q97zal7potjxfz38y6xcs"} > 1 * 0.050000000000000044`) +
+				"and 300 * " +
+				`(sum_over_time(__aggregated_subquery__{__aggregated_subquery__="(grafana_slo_total_rate_5m{grafana_slo_uuid=\"q97zal7potjxfz38y6xcs\"} < 1e+308)[3d:5m]"}[3d]) - ` +
+				`sum_over_time(__aggregated_subquery__{__aggregated_subquery__="(grafana_slo_success_rate_5m{grafana_slo_uuid=\"q97zal7potjxfz38y6xcs\"} < 1e+308)[3d:5m]"}[3d])) > 4`,
+			expectedShardedQueries: 0,
+			spinOffSubqueries:      true,
+		},
+		{
+			in:                     `min by (asserts_env, asserts_site, namespace) (1 - avg_over_time(((asserts:latency:p99{asserts_request_context!~"/v1/stack/(sanity|vendor-integration)",asserts_request_type=~"inbound|outbound",job="api-server"}) > bool 12)[1d:]))`,
+			out:                    `min by (asserts_env,asserts_site,namespace) (1 - avg_over_time(__aggregated_subquery__{__aggregated_subquery__="((asserts:latency:p99{asserts_request_context!~\"/v1/stack/(sanity|vendor-integration)\",asserts_request_type=~\"inbound|outbound\",job=\"api-server\"}) > bool 12)[1d:]"}[1d]))`,
+			expectedShardedQueries: 0,
+			spinOffSubqueries:      true,
+		},
+		{
+			in:                     `quantile(0.9,foo)`,
+			out:                    concat(`quantile(0.9,foo)`),
+			expectedShardedQueries: 0,
+		},
+		{
+			in:                     `absent(foo)`,
+			out:                    concat(`absent(foo)`),
+			expectedShardedQueries: 0,
+		},
+		{
+			in:                     `absent_over_time(foo[1m])`,
+			out:                    concat(`absent_over_time(foo[1m])`),
+			expectedShardedQueries: 0,
 		},
 		{
 
-			`histogram_quantile(0.5, rate(bar1{baz="blip"}[30s]))`,
-			concat(
+			in: `histogram_quantile(0.5, rate(bar1{baz="blip"}[30s]))`,
+			out: concat(
 				`histogram_quantile(0.5, rate(bar1{baz="blip"}[30s]))`,
 			),
-			0,
+			expectedShardedQueries: 0,
 		},
 		{
-			`sum by (foo) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m])))`,
-			concat(
+			in: `sum by (foo) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m])))`,
+			out: concat(
 				`sum by (foo) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m])))`,
 			),
-			0,
+			expectedShardedQueries: 0,
 		},
 		{
-			`sum by (foo,bar) (min_over_time(bar1{baz="blip"}[1m]))`,
-			`sum by(foo, bar) (` +
+			in: `sum by (foo,bar) (min_over_time(bar1{baz="blip"}[1m]))`,
+			out: `sum by(foo, bar) (` +
 				concatShards(3, `sum by (foo,bar) (min_over_time(bar1{__query_shard__="x_of_y",baz="blip"}[1m]))`) +
 				`)`,
-			3,
+			expectedShardedQueries: 3,
 		},
 		{
 			// This query is not parallelized because the leg "rate(bar2[1m])" is not aggregated and
 			// could result in high cardinality results.
-			`sum(rate(bar1[1m])) or rate(bar2[1m])`,
-			concat(`sum(rate(bar1[1m])) or rate(bar2[1m])`),
-			0,
+			in:                     `sum(rate(bar1[1m])) or rate(bar2[1m])`,
+			out:                    concat(`sum(rate(bar1[1m])) or rate(bar2[1m])`),
+			expectedShardedQueries: 0,
 		},
 		{
-			"sum(rate(bar1[1m])) or sum(rate(bar2[1m]))",
-			`sum(` + concatShards(3, `sum(rate(bar1{__query_shard__="x_of_y"}[1m]))`) + `)` +
+			in: "sum(rate(bar1[1m])) or sum(rate(bar2[1m]))",
+			out: `sum(` + concatShards(3, `sum(rate(bar1{__query_shard__="x_of_y"}[1m]))`) + `)` +
 				` or sum(` + concatShards(3, `sum(rate(bar2{__query_shard__="x_of_y"}[1m]))`) + `)`,
-			6,
+			expectedShardedQueries: 6,
 		},
 		{
-			`histogram_quantile(0.5, sum(rate(cortex_cache_value_size_bytes_bucket[5m])) by (le))`,
-			`histogram_quantile(0.5,sum  by (le) (` + concatShards(3, `sum  by (le) (rate(cortex_cache_value_size_bytes_bucket{__query_shard__="x_of_y"}[5m]))`) + `))`,
-			3,
+			in:                     `histogram_quantile(0.5, sum(rate(cortex_cache_value_size_bytes_bucket[5m])) by (le))`,
+			out:                    `histogram_quantile(0.5,sum  by (le) (` + concatShards(3, `sum  by (le) (rate(cortex_cache_value_size_bytes_bucket{__query_shard__="x_of_y"}[5m]))`) + `))`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum(
+			in: `sum(
 				  count(
 				    count(
 				      bar1
 				    )  by (drive,instance)
 				  )  by (instance)
 				)`,
-			`sum(
+			out: `sum(
 				count(
 				  sum(` + concatShards(3, `count(bar1{__query_shard__="x_of_y"})  by (drive,instance)`) + `
 				  )  by (drive,instance)
 				)  by (instance)
 			  )`,
-			3,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum(rate(foo[1m]))`,
-			`sum(` + concatShards(3, `sum(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
-			3,
+			in:                     `sum(rate(foo[1m]))`,
+			out:                    `sum(` + concatShards(3, `sum(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`count(rate(foo[1m]))`,
-			`sum(` +
+			in: `count(rate(foo[1m]))`,
+			out: `sum(` +
 				concatShards(3, `count(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
-			3,
+			expectedShardedQueries: 3,
 		},
 		{
-			`count(up)`,
-			`sum(` + concatShards(3, `count(up{__query_shard__="x_of_y"})`) + `)`,
-			3,
+			in:                     `count(up)`,
+			out:                    `sum(` + concatShards(3, `count(up{__query_shard__="x_of_y"})`) + `)`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`avg(count(test))`,
-			`avg(sum(` + concatShards(3, `count(test{__query_shard__="x_of_y"})`) + `))`,
-			3,
+			in:                     `avg(count(test))`,
+			out:                    `avg(sum(` + concatShards(3, `count(test{__query_shard__="x_of_y"})`) + `))`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`count by (foo) (rate(foo[1m]))`,
-			`sum by (foo) (` + concatShards(3, `count by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
-			3,
+			in:                     `count by (foo) (rate(foo[1m]))`,
+			out:                    `sum by (foo) (` + concatShards(3, `count by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`count without (foo) (rate(foo[1m]))`,
-			`sum without (foo) (` + concatShards(3, `count without (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
-			3,
+			in:                     `count without (foo) (rate(foo[1m]))`,
+			out:                    `sum without (foo) (` + concatShards(3, `count without (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`max(rate(foo[1m]))`,
-			`max(` + concatShards(3, `max(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
-			3,
+			in:                     `max(rate(foo[1m]))`,
+			out:                    `max(` + concatShards(3, `max(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`max by (foo) (rate(foo[1m]))`,
-			`max by (foo) (` + concatShards(3, `max by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
-			3,
+			in:                     `max by (foo) (rate(foo[1m]))`,
+			out:                    `max by (foo) (` + concatShards(3, `max by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`max without (foo) (rate(foo[1m]))`,
-			`max without (foo) (` + concatShards(3, `max without (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
-			3,
+			in:                     `max without (foo) (rate(foo[1m]))`,
+			out:                    `max without (foo) (` + concatShards(3, `max without (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum by (foo) (rate(foo[1m]))`,
-			`sum by (foo) (` + concatShards(3, `sum by  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
-			3,
+			in:                     `sum by (foo) (rate(foo[1m]))`,
+			out:                    `sum by (foo) (` + concatShards(3, `sum by  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum without (foo) (rate(foo[1m]))`,
-			`sum without (foo) (` + concatShards(3, `sum without  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
-			3,
+			in:                     `sum without (foo) (rate(foo[1m]))`,
+			out:                    `sum without (foo) (` + concatShards(3, `sum without  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `)`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`avg without (foo) (rate(foo[1m]))`,
-			`(sum without (foo) (` + concatShards(3, `sum without  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) ` +
+			in: `avg without (foo) (rate(foo[1m]))`,
+			out: `(sum without (foo) (` + concatShards(3, `sum without  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) ` +
 				`/ sum without (foo) (` + concatShards(3, `count without  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `))`,
-			6,
+			expectedShardedQueries: 6,
 		},
 		{
-			`avg by (foo) (rate(foo[1m]))`,
-			`(sum by (foo)(` + concatShards(3, `sum by  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) ` +
+			in: `avg by (foo) (rate(foo[1m]))`,
+			out: `(sum by (foo)(` + concatShards(3, `sum by  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) ` +
 				`/ sum by (foo) (` + concatShards(3, `count by  (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `))`,
-			6,
+			expectedShardedQueries: 6,
 		},
 		{
-			`avg(rate(foo[1m]))`,
-			`(sum(` + concatShards(3, `sum(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) / ` +
+			in: `avg(rate(foo[1m]))`,
+			out: `(sum(` + concatShards(3, `sum(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) / ` +
 				`sum(` + concatShards(3, `count(rate(foo{__query_shard__="x_of_y"}[1m]))`) + `))`,
-			6,
+			expectedShardedQueries: 6,
 		},
 		{
-			`topk(10,avg by (foo)(rate(foo[1m])))`,
-			`topk(10, (sum by (foo)(` +
+			in: `topk(10,avg by (foo)(rate(foo[1m])))`,
+			out: `topk(10, (sum by (foo)(` +
 				concatShards(3, `sum by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `) / ` +
 				`sum by (foo)(` + concatShards(3, `count by (foo) (rate(foo{__query_shard__="x_of_y"}[1m]))`) + `))` +
 				`)`,
-			6,
+			expectedShardedQueries: 6,
 		},
 		{
-			`min_over_time(metric_counter[5m])`,
-			concat(`min_over_time(metric_counter[5m])`),
-			0,
+			in:                     `min_over_time(metric_counter[5m])`,
+			out:                    concat(`min_over_time(metric_counter[5m])`),
+			expectedShardedQueries: 0,
 		},
 		{
-			`sum by (user, cluster, namespace) (quantile_over_time(0.99, cortex_ingester_active_series[7d]))`,
-			`sum by (user, cluster, namespace)(` +
+			in: `sum by (user, cluster, namespace) (quantile_over_time(0.99, cortex_ingester_active_series[7d]))`,
+			out: `sum by (user, cluster, namespace)(` +
 				concatShards(3, `sum by (user, cluster, namespace) (quantile_over_time(0.99, cortex_ingester_active_series{__query_shard__="x_of_y"}[7d]))`) +
 				`)`,
-			3,
+			expectedShardedQueries: 3,
 		},
 		{
-			`min_over_time(
+			in: `min_over_time(
 				sum by(group_1) (
 					rate(metric_counter[5m])
 				)[10m:2m]
 			)`,
-			concat(
+			out: concat(
 				`min_over_time(
 					sum by(group_1) (
 						rate(metric_counter[5m])
 					)[10m:2m]
 				)`,
 			),
-			0,
+			expectedShardedQueries: 0,
 		},
 		{
-			`max_over_time(
+			in: `max_over_time(
 				stddev_over_time(
 					deriv(
 						rate(metric_counter[10m])
 					[5m:1m])
 				[2m:])
 			[10m:])`,
-			concatShards(3, `max_over_time(
+			out: concatShards(3, `max_over_time(
 					stddev_over_time(
 						deriv(
 							rate(metric_counter{__query_shard__="x_of_y"}[10m])
 						[5m:1m])
 					[2m:])
 				[10m:])`),
-			3,
+			expectedShardedQueries: 3,
 		},
 		{
 			// Parenthesis expression between the parallelizeable function call and the subquery.
-			`max_over_time((
+			in: `max_over_time((
 				stddev_over_time(
 					deriv(
 						rate(metric_counter[10m])
 					[5m:1m])
 				[2m:])
 			[10m:]))`,
-			concatShards(3, `max_over_time((
+			out: concatShards(3, `max_over_time((
 					stddev_over_time(
 						deriv(
 							rate(metric_counter{__query_shard__="x_of_y"}[10m])
 						[5m:1m])
 					[2m:])
 				[10m:]))`),
-			3,
+			expectedShardedQueries: 3,
 		},
 		{
-			`rate(
+			in: `rate(
 				sum by(group_1) (
 					rate(metric_counter[5m])
 				)[10m:]
 			)`,
-			concat(
+			out: concat(
 				`rate(
 						sum by(group_1) (
 							rate(metric_counter[5m])
 						)[10m:]
 					)`,
 			),
-			0,
+			expectedShardedQueries: 0,
 		},
 		{
-			`absent_over_time(rate(metric_counter[5m])[10m:])`,
-			concat(
+			in: `absent_over_time(rate(metric_counter[5m])[10m:])`,
+			out: concat(
 				`absent_over_time(rate(metric_counter[5m])[10m:])`,
 			),
-			0,
+			expectedShardedQueries: 0,
 		},
 		{
-			`max_over_time(
+			in: `max_over_time(
 				stddev_over_time(
 					deriv(
 						sort(metric_counter)
 					[5m:1m])
 				[2m:])
 			[10m:])`,
-			concat(
+			out: concat(
 				`max_over_time(
 					stddev_over_time(
 						deriv(
@@ -279,17 +318,17 @@ func TestShardSummer(t *testing.T) {
 					[2m:])
 				[10m:])`,
 			),
-			0,
+			expectedShardedQueries: 0,
 		},
 		{
-			`max_over_time(
+			in: `max_over_time(
 				absent_over_time(
 					deriv(
 						rate(metric_counter[1m])
 					[5m:1m])
 				[2m:])
 			[10m:])`,
-			concat(
+			out: concat(
 				`max_over_time(
 					absent_over_time(
 						deriv(
@@ -298,168 +337,168 @@ func TestShardSummer(t *testing.T) {
 					[2m:])
 				[10m:])`,
 			),
-			0,
+			expectedShardedQueries: 0,
 		},
 		{
-			`quantile_over_time(0.99, cortex_ingester_active_series[1w])`,
-			concat(
+			in: `quantile_over_time(0.99, cortex_ingester_active_series[1w])`,
+			out: concat(
 				`quantile_over_time(0.99, cortex_ingester_active_series{}[1w])`,
 			),
-			0,
+			expectedShardedQueries: 0,
 		},
 		{
-			`ceil(sum by (foo) (rate(cortex_ingester_active_series[1w])))`,
-			`ceil(sum by (foo) (` + concatShards(3, `sum by (foo) (rate(cortex_ingester_active_series{__query_shard__="x_of_y"}[1w]))`) + `))`,
-			3,
+			in:                     `ceil(sum by (foo) (rate(cortex_ingester_active_series[1w])))`,
+			out:                    `ceil(sum by (foo) (` + concatShards(3, `sum by (foo) (rate(cortex_ingester_active_series{__query_shard__="x_of_y"}[1w]))`) + `))`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`ln(bar) - resets(foo[1d])`,
-			concat(`ln(bar) - resets(foo[1d]) `),
-			0,
+			in:                     `ln(bar) - resets(foo[1d])`,
+			out:                    concat(`ln(bar) - resets(foo[1d]) `),
+			expectedShardedQueries: 0,
 		},
 		{
-			`predict_linear(foo[10m],3600)`,
-			concat(`predict_linear(foo[10m],3600)`),
-			0,
+			in:                     `predict_linear(foo[10m],3600)`,
+			out:                    concat(`predict_linear(foo[10m],3600)`),
+			expectedShardedQueries: 0,
 		},
 		{
-			`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
-			concat(`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`),
-			0,
+			in:                     `label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+			out:                    concat(`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`),
+			expectedShardedQueries: 0,
 		},
 		{
-			`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
-			concat(`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`),
-			0,
+			in:                     `ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
+			out:                    concat(`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`),
+			expectedShardedQueries: 0,
 		},
 		{
-			`ln(
+			in: `ln(
 				label_replace(
 					sum by (cluster) (up{job="api-server",service="a:c"})
 				, "foo", "$1", "service", "(.*):.*")
 			)`,
-			`ln(
+			out: `ln(
 				label_replace(
 					sum by (cluster) ( ` +
 				concatShards(3, `sum by (cluster) (up{__query_shard__="x_of_y",job="api-server",service="a:c"})`) + `)
 				, "foo", "$1", "service", "(.*):.*")
 			)`,
-			3,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum by (job)(rate(http_requests_total[1h] @ end()))`,
-			`sum by (job)(` + concatShards(3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] @ end()))`) + `)`,
-			3,
+			in:                     `sum by (job)(rate(http_requests_total[1h] @ end()))`,
+			out:                    `sum by (job)(` + concatShards(3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] @ end()))`) + `)`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum by (job)(rate(http_requests_total[1h] offset 1w @ 10))`,
-			`sum by (job)(` + concatShards(3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] offset 1w @ 10))`) + `)`,
-			3,
+			in:                     `sum by (job)(rate(http_requests_total[1h] offset 1w @ 10))`,
+			out:                    `sum by (job)(` + concatShards(3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] offset 1w @ 10))`) + `)`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum by (job)(rate(http_requests_total[1h] offset 1w @ 10)) / 2`,
-			`sum by (job)(` + concatShards(3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] offset 1w @ 10))`) + `) / 2`,
-			3,
+			in:                     `sum by (job)(rate(http_requests_total[1h] offset 1w @ 10)) / 2`,
+			out:                    `sum by (job)(` + concatShards(3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] offset 1w @ 10))`) + `) / 2`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum by (job)(rate(http_requests_total[1h] offset 1w @ 10)) / 2 ^ 2`,
-			`sum by (job)(` + concatShards(3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] offset 1w @ 10))`) + `) / 2 ^ 2`,
-			3,
+			in:                     `sum by (job)(rate(http_requests_total[1h] offset 1w @ 10)) / 2 ^ 2`,
+			out:                    `sum by (job)(` + concatShards(3, `sum by (job)(rate(http_requests_total{__query_shard__="x_of_y"}[1h] offset 1w @ 10))`) + `) / 2 ^ 2`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum by (group_1) (rate(metric_counter[1m]) / time() * 2)`,
-			`sum by (group_1) (` + concatShards(3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]) / time() * 2)`) + `)`,
-			3,
+			in:                     `sum by (group_1) (rate(metric_counter[1m]) / time() * 2)`,
+			out:                    `sum by (group_1) (` + concatShards(3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]) / time() * 2)`) + `)`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum by (group_1) (rate(metric_counter[1m])) / time() *2`,
-			`sum by (group_1) (` + concatShards(3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]))`) + `) / time() *2`,
-			3,
+			in:                     `sum by (group_1) (rate(metric_counter[1m])) / time() *2`,
+			out:                    `sum by (group_1) (` + concatShards(3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]))`) + `) / time() *2`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum by (group_1) (rate(metric_counter[1m])) / time()`,
-			`sum by (group_1) (` + concatShards(3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]))`) + `) / time()`,
-			3,
+			in:                     `sum by (group_1) (rate(metric_counter[1m])) / time()`,
+			out:                    `sum by (group_1) (` + concatShards(3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]))`) + `) / time()`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum by (group_1) (rate(metric_counter[1m])) / vector(3) ^ month()`,
-			`sum by (group_1) (` + concatShards(3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]))`) + `)` +
+			in: `sum by (group_1) (rate(metric_counter[1m])) / vector(3) ^ month()`,
+			out: `sum by (group_1) (` + concatShards(3, `sum by (group_1) (rate(metric_counter{__query_shard__="x_of_y"}[1m]))`) + `)` +
 				`/ vector(3) ^ month()`,
-			3,
+			expectedShardedQueries: 3,
 		},
 		{
-			`vector(3) ^ month()`,
-			`vector(3) ^ month()`,
-			0,
+			in:                     `vector(3) ^ month()`,
+			out:                    `vector(3) ^ month()`,
+			expectedShardedQueries: 0,
 		},
 		{
 			// This query is not parallelized because the leg "year(foo)" could result in high cardinality results.
-			`sum(rate(metric_counter[1m])) / vector(3) ^ year(foo)`,
-			concat(`sum(rate(metric_counter[1m])) / vector(3) ^ year(foo)`),
-			0,
+			in:                     `sum(rate(metric_counter[1m])) / vector(3) ^ year(foo)`,
+			out:                    concat(`sum(rate(metric_counter[1m])) / vector(3) ^ year(foo)`),
+			expectedShardedQueries: 0,
 		},
 		{
 			// can't shard foo > bar,
 			// because foo{__query_shard__="1_of_3"} won't have the matching labels in bar{__query_shard__="1_of_3"}
-			`foo > bar`,
-			concat(`foo > bar`),
-			0,
+			in:                     `foo > bar`,
+			out:                    concat(`foo > bar`),
+			expectedShardedQueries: 0,
 		},
 		{
 			// we could shard foo * 2, but since it doesn't reduce the data set, we don't.
-			`foo * 2`,
-			concat(`foo * 2`),
-			0,
+			in:                     `foo * 2`,
+			out:                    concat(`foo * 2`),
+			expectedShardedQueries: 0,
 		},
 		{
-			`foo > 0`,
-			concatShards(3, `foo{__query_shard__="x_of_y"} > 0`),
-			3,
+			in:                     `foo > 0`,
+			out:                    concatShards(3, `foo{__query_shard__="x_of_y"} > 0`),
+			expectedShardedQueries: 3,
 		},
 		{
-			`0 <= foo`,
-			concatShards(3, `0 <= foo{__query_shard__="x_of_y"}`),
-			3,
+			in:                     `0 <= foo`,
+			out:                    concatShards(3, `0 <= foo{__query_shard__="x_of_y"}`),
+			expectedShardedQueries: 3,
 		},
 		{
-			`foo > (2 * 2)`,
-			concatShards(3, `foo{__query_shard__="x_of_y"} > (2 * 2)`),
-			3,
+			in:                     `foo > (2 * 2)`,
+			out:                    concatShards(3, `foo{__query_shard__="x_of_y"} > (2 * 2)`),
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum by (label) (foo > 0)`,
-			`sum by(label) (` + concatShards(3, `sum by (label) (foo{__query_shard__="x_of_y"} > 0)`) + `)`,
-			3,
+			in:                     `sum by (label) (foo > 0)`,
+			out:                    `sum by(label) (` + concatShards(3, `sum by (label) (foo{__query_shard__="x_of_y"} > 0)`) + `)`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum by (label) (foo > 0) > 0`,
-			`sum by (label) (` + concatShards(3, `sum by (label) (foo{__query_shard__="x_of_y"} > 0)`) + `) > 0`,
-			3,
+			in:                     `sum by (label) (foo > 0) > 0`,
+			out:                    `sum by (label) (` + concatShards(3, `sum by (label) (foo{__query_shard__="x_of_y"} > 0)`) + `) > 0`,
+			expectedShardedQueries: 3,
 		},
 		{
-			`sum_over_time(foo[1m]) > (2 * 2)`,
-			concatShards(3, `sum_over_time(foo{__query_shard__="x_of_y"}[1m]) > (2 * 2)`),
-			3,
-		},
-		{
-			// This query is not parallelized because the leg "foo" is not aggregated and
-			// could result in high cardinality results.
-			`foo > sum(bar)`,
-			concat(`foo > sum(bar)`),
-			0,
+			in:                     `sum_over_time(foo[1m]) > (2 * 2)`,
+			out:                    concatShards(3, `sum_over_time(foo{__query_shard__="x_of_y"}[1m]) > (2 * 2)`),
+			expectedShardedQueries: 3,
 		},
 		{
 			// This query is not parallelized because the leg "foo" is not aggregated and
 			// could result in high cardinality results.
-			`foo > scalar(sum(bar))`,
-			concat(`foo > scalar(sum(bar))`),
-			0,
+			in:                     `foo > sum(bar)`,
+			out:                    concat(`foo > sum(bar)`),
+			expectedShardedQueries: 0,
 		},
 		{
-			`scalar(min(foo)) > bool scalar(sum(bar))`,
-			`scalar(min(` + concatShards(3, `min(foo{__query_shard__="x_of_y"})`) + `)) ` +
+			// This query is not parallelized because the leg "foo" is not aggregated and
+			// could result in high cardinality results.
+			in:                     `foo > scalar(sum(bar))`,
+			out:                    concat(`foo > scalar(sum(bar))`),
+			expectedShardedQueries: 0,
+		},
+		{
+			in: `scalar(min(foo)) > bool scalar(sum(bar))`,
+			out: `scalar(min(` + concatShards(3, `min(foo{__query_shard__="x_of_y"})`) + `)) ` +
 				`> bool scalar(sum(` + concatShards(3, `sum(bar{__query_shard__="x_of_y"})`) + `))`,
-			6,
+			expectedShardedQueries: 6,
 		},
 		{
 			// This query is not parallelized because the leg "foo" is not aggregated and
@@ -482,15 +521,15 @@ func TestShardSummer(t *testing.T) {
 			// This query is not parallelized because the leg "pod:container_cpu_usage:sum" is not aggregated and
 			// could result in high cardinality results.
 			in: `max by(pod) (
-                    max without(prometheus_replica, instance, node) (kube_pod_labels{namespace="test"})
-                    *
-                    on(cluster, pod, namespace) group_right() pod:container_cpu_usage:sum
-            )`,
+		            max without(prometheus_replica, instance, node) (kube_pod_labels{namespace="test"})
+		            *
+		            on(cluster, pod, namespace) group_right() pod:container_cpu_usage:sum
+		    )`,
 			out: concat(`max by(pod) (
-                    max without(prometheus_replica, instance, node) (kube_pod_labels{namespace="test"})
-                    *
-                    on(cluster, pod, namespace) group_right() pod:container_cpu_usage:sum
-            )`),
+		            max without(prometheus_replica, instance, node) (kube_pod_labels{namespace="test"})
+		            *
+		            on(cluster, pod, namespace) group_right() pod:container_cpu_usage:sum
+		    )`),
 			expectedShardedQueries: 0,
 		},
 		{
@@ -525,11 +564,17 @@ func TestShardSummer(t *testing.T) {
 			stats := NewMapperStats()
 			summer, err := NewQueryShardSummer(context.Background(), 3, VectorSquasher, log.NewNopLogger(), stats)
 			require.NoError(t, err)
-			mapper := NewSharding(summer)
+
+			var subqueryMapper ASTMapper
+			if tt.spinOffSubqueries {
+				subqueryMapper = NewSubqueryMapper(stats)
+			}
+
+			mapper := NewSharding(summer, subqueryMapper)
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
 			out, err := parser.ParseExpr(tt.out)
-			require.NoError(t, err)
+			require.NoError(t, err, tt.out)
 
 			mapped, err := mapper.Map(expr)
 			require.NoError(t, err)

@@ -133,6 +133,10 @@ func (r *PrometheusRangeQueryRequest) GetQuery() string {
 	return ""
 }
 
+func (r *PrometheusRangeQueryRequest) GetLookbackDelta() time.Duration {
+	return r.lookbackDelta
+}
+
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 // as determined from the start timestamp and any range vector or offset in the query.
 func (r *PrometheusRangeQueryRequest) GetMinT() int64 {
@@ -311,6 +315,10 @@ func (r *PrometheusInstantQueryRequest) GetQuery() string {
 		return r.queryExpr.String()
 	}
 	return ""
+}
+
+func (r *PrometheusInstantQueryRequest) GetLookbackDelta() time.Duration {
+	return r.lookbackDelta
 }
 
 func (r *PrometheusInstantQueryRequest) GetStart() int64 {

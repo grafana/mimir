@@ -49,7 +49,7 @@ func (f *subtreeFolder) MapExpr(expr parser.Expr) (mapped parser.Expr, finished 
 func hasEmbeddedQueries(node parser.Node) (bool, error) {
 	switch n := node.(type) {
 	case *parser.VectorSelector:
-		if n.Name == EmbeddedQueriesMetricName {
+		if n.Name == EmbeddedQueriesMetricName || n.Name == AggregatedSubqueryMetricName {
 			return true, nil
 		}
 	}

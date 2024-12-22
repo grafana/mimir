@@ -152,6 +152,7 @@ type MetricsQueryRequest interface {
 	WithEstimatedSeriesCountHint(uint64) (MetricsQueryRequest, error)
 	// AddSpanTags writes information about this request to an OpenTracing span
 	AddSpanTags(opentracing.Span)
+	GetLookbackDelta() time.Duration
 }
 
 // LabelsSeriesQueryRequest represents a label names, label values, or series query request that can be process by middlewares.
@@ -883,7 +884,7 @@ func (c prometheusCodec) DecodeMetricsQueryResponse(ctx context.Context, r *http
 
 	formatter := findFormatter(contentType)
 	if formatter == nil {
-		return nil, apierror.Newf(apierror.TypeInternal, "unknown response content type '%v'", contentType)
+		return nil, apierror.Newf(apierror.TypeInternal, "unknown response content type '%v', Content: %s", contentType, string(buf))
 	}
 
 	start := time.Now()

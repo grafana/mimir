@@ -8,6 +8,7 @@ package astmapper
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
@@ -18,12 +19,17 @@ import (
 )
 
 // NewSharding creates a new query sharding mapper.
-func NewSharding(shardSummer ASTMapper) ASTMapper {
-	subtreeFolder := newSubtreeFolder()
-	return NewMultiMapper(
-		shardSummer,
-		subtreeFolder,
-	)
+func NewSharding(shardSummer ASTMapper, subqueryMapper ASTMapper) ASTMapper {
+	mappers := []ASTMapper{}
+	if subqueryMapper != nil {
+		mappers = append(mappers, subqueryMapper)
+	}
+	mappers = append(mappers, shardSummer, newSubtreeFolder())
+	return NewMultiMapper(mappers...)
+}
+
+func NewSubqueryMapper(stats *MapperStats) ASTMapper {
+	return NewASTExprMapper(&subqueryMapper{stats: stats})
 }
 
 type Squasher = func(...EmbeddedQuery) (parser.Expr, error)
@@ -48,6 +54,34 @@ func (lbl *queryShardLabeller) GetLabelMatcher(shard int) (*labels.Matcher, erro
 
 func (lbl *queryShardLabeller) GetParams(_ int) map[string]string {
 	return nil
+}
+
+type subqueryMapper struct {
+	stats *MapperStats
+}
+
+func (s *subqueryMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
+	switch e := expr.(type) {
+	case *parser.Call:
+		if strings.HasSuffix(e.Func.Name, "_over_time") && len(e.Args) == 1 {
+			sq := e.Args[0].(*parser.SubqueryExpr)
+			selector := &parser.VectorSelector{
+				Name: AggregatedSubqueryMetricName,
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, AggregatedSubqueryMetricName, sq.String()),
+				},
+			}
+
+			e.Args[0] = &parser.MatrixSelector{
+				VectorSelector: selector,
+				Range:          sq.Range,
+			}
+
+			s.stats.AddSpunOffSubquery()
+			return e, true, nil
+		}
+	}
+	return expr, false, nil
 }
 
 // NewQueryShardSummer instantiates an ASTMapper which will fan out sum queries by shard.
@@ -122,6 +156,9 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
+		if strings.Contains(e.String(), AggregatedSubqueryMetricName) { // Do not shard subqueries.
+			return e, true, nil
+		}
 		if summer.currentShard != nil {
 			return e, false, nil
 		}

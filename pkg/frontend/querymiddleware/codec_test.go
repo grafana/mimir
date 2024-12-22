@@ -978,12 +978,12 @@ func TestPrometheusCodec_DecodeResponse_ContentTypeHandling(t *testing.T) {
 		{
 			name:            "unknown content type in response",
 			responseHeaders: http.Header{"Content-Type": []string{"something/else"}},
-			expectedErr:     apierror.New(apierror.TypeInternal, "unknown response content type 'something/else'"),
+			expectedErr:     apierror.New(apierror.TypeInternal, "unknown response content type 'something/else', Content: {\"status\":\"\"}"),
 		},
 		{
 			name:            "no content type in response",
 			responseHeaders: http.Header{},
-			expectedErr:     apierror.New(apierror.TypeInternal, "unknown response content type ''"),
+			expectedErr:     apierror.New(apierror.TypeInternal, "unknown response content type '', Content: {\"status\":\"\"}"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
