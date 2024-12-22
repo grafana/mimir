@@ -29,6 +29,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
+
 ## 5.6.0-rc.0
 
 * [CHANGE] Update rollout-operator version to 0.20.0. #9995
@@ -43,7 +45,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Fix how `fullnameOverride` is reflected in generated manifests. #9564
 * [BUGFIX] Fix `extraObjects` linting with helm lint by padding with an extra new line. #9863
 * [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler, also for zone aware Alertmanager #9851
-* [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
 
 ## 5.5.1
 * [BUGFIX] Fix incorrect use of topology spread constraints in `GrafanaAgent` CRD of metamonitoring. #9669
