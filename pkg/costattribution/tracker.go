@@ -80,6 +80,7 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 		logger:                  logger,
 		overflowLabels:          overflowLabels,
 		totalFailedActiveSeries: atomic.NewFloat64(0),
+		cooldownUntil:           0,
 	}
 
 	tracker.discardedSampleAttribution = prometheus.NewDesc("cortex_discarded_attributed_samples_total",
@@ -329,7 +330,7 @@ func (t *Tracker) createNewObservation(key []byte, ts int64, activeSeriesIncreme
 
 func (t *Tracker) recoverFromOverflow(deadline int64) bool {
 	t.observedMtx.RLock()
-	if t.cooldownUntil != 0 && t.cooldownUntil < deadline {
+	if t.cooldownUntil > 0 && t.cooldownUntil < deadline {
 		if len(t.observed) <= t.maxCardinality {
 			t.observedMtx.RUnlock()
 			return true

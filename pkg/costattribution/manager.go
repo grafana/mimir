@@ -109,16 +109,16 @@ func (m *Manager) deleteTracker(userID string) {
 }
 
 func (m *Manager) updateTracker(userID string) *Tracker {
-	t := m.Tracker(userID)
-
-	if t == nil {
+	if !m.EnabledForUser(userID) {
 		m.deleteTracker(userID)
 		return nil
 	}
 
+	t := m.Tracker(userID)
+
 	lbls := m.limits.CostAttributionLabels(userID)
 
-	newTrackedLabels := make([]string, 0, len(lbls))
+	newTrackedLabels := make([]string, len(lbls))
 	copy(newTrackedLabels, lbls)
 
 	// sort the labels to ensure the order is consistent

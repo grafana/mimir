@@ -1203,10 +1203,10 @@ func (t *Mimir) setupModuleManager() error {
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
 		Distributor:                      {DistributorService, API, ActiveGroupsCleanupService, Vault},
-		DistributorService:              {IngesterRing, IngesterPartitionRing, Overrides, Vault, CostAttributionService},
-		CostAttributionService:          {API, Overrides},
+		DistributorService:               {IngesterRing, IngesterPartitionRing, Overrides, Vault, CostAttributionService},
+		CostAttributionService:           {API, Overrides},
 		Ingester:                         {IngesterService, API, ActiveGroupsCleanupService, Vault},
-		IngesterService:                 {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV, CostAttributionService},
+		IngesterService:                  {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV, CostAttributionService},
 		Flusher:                          {Overrides, API},
 		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
 		Querier:                          {TenantFederation, Vault},
@@ -1228,7 +1228,6 @@ func (t *Mimir) setupModuleManager() error {
 		Read:                             {QueryFrontend, Querier},
 		Backend:                          {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
 		All:                              {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
->>>>>>> origin/r322
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {
