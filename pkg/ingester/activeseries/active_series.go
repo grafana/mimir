@@ -107,8 +107,9 @@ func (c *ActiveSeries) CurrentMatcherNames() []string {
 }
 
 func (c *ActiveSeries) ConfigDiffers(ctCfg asmodel.CustomTrackersConfig, caCfg *costattribution.Tracker) bool {
-	currentCTC, currentCAT := c.CurrentConfig()
-	return ctCfg.String() != currentCTC.String() || caCfg != currentCAT
+	c.configMutex.RLock()
+	defer c.configMutex.RUnlock()
+	return ctCfg.String() != c.matchers.Config().String() || caCfg != c.cat
 }
 
 func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
@@ -120,12 +121,6 @@ func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
 	}
 	c.matchers = asm
 	c.lastConfigUpdate = now
-}
-
-func (c *ActiveSeries) CurrentConfig() (asmodel.CustomTrackersConfig, *costattribution.Tracker) {
-	c.configMutex.RLock()
-	defer c.configMutex.RUnlock()
-	return c.matchers.Config(), c.cat
 }
 
 // UpdateSeries updates series timestamp to 'now'. Function is called to make a copy of labels if entry doesn't exist yet.
