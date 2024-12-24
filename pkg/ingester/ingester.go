@@ -792,13 +792,10 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 			i.replaceMatchers(asmodel.NewMatchers(newMatchersConfig), userDB, now)
 		}
 
-		// If the userDB idx is unavailable, pass nil pointer to Purge methode, and record it as a failure in metrics when decrementing active series.
-		idx, err := userDB.Head().Index()
-		if err != nil {
-			level.Warn(i.logger).Log("msg", "failed to get the index of the TSDB head", "user", userID, "err", err)
-			idx = nil
-		}
+		idx := userDB.Head().MustIndex()
 		valid := userDB.activeSeries.Purge(now, idx)
+		idx.Close()
+
 		if !valid {
 			// Active series config has been reloaded, exposing loading metric until MetricsIdleTimeout passes.
 			i.metrics.activeSeriesLoading.WithLabelValues(userID).Set(1)
@@ -1416,10 +1413,8 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	var nonCopiedLabels labels.Labels
 
 	// idx is used to decrease active series count in case of error for cost attribution.
-	idx, err := i.getTSDB(userID).Head().Index()
-	if err != nil {
-		idx = nil
-	}
+	idx := i.getTSDB(userID).Head().MustIndex()
+	defer idx.Close()
 
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
@@ -3273,12 +3268,9 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 		}
 
 		// Purge the active series so that the next call to Active() will return the up-to-date count.
-		idx, err := db.Head().Index()
-		if err != nil {
-			level.Warn(i.logger).Log("msg", "failed to get the index of the TSDB head", "user", userID, "err", err)
-			idx = nil
-		}
+		idx := db.Head().MustIndex()
 		db.activeSeries.Purge(now, idx)
+		idx.Close()
 
 		// Estimate the number of series that would be dropped from the TSDB Head if we would
 		// compact the head up until "now - active series idle timeout".

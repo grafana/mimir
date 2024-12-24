@@ -619,10 +619,8 @@ func (u *userTSDB) computeOwnedSeries() int {
 	}
 
 	count := 0
-	idx, err := u.Head().Index()
-	if err != nil {
-		idx = nil
-	}
+	idx := u.Head().MustIndex()
+	defer idx.Close()
 
 	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
 		for i, sh := range secondaryHashes {

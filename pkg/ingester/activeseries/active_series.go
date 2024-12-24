@@ -459,12 +459,8 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 	for ref, entry := range s.refs {
 		ts := entry.nanos.Load()
 		if ts < keepUntilNanos {
-			// cost attribution is enabled, if it's not nil, we need to decrement the active series count, otherwise means received error when get idx,
-			// we need to increment the active series failure count.
 			if s.cat != nil {
-				if idx == nil {
-					s.cat.IncrementActiveSeriesFailure()
-				} else if err := idx.Series(ref, &buf, nil); err != nil {
+				if err := idx.Series(ref, &buf, nil); err != nil {
 					s.cat.IncrementActiveSeriesFailure()
 				} else {
 					s.cat.DecrementActiveSeries(buf.Labels())
@@ -521,15 +517,11 @@ func (s *seriesStripe) remove(ref storage.SeriesRef, idx tsdb.IndexReader) {
 
 	s.active--
 	if s.cat != nil {
-		if idx == nil {
+		buf := labels.NewScratchBuilder(128)
+		if err := idx.Series(ref, &buf, nil); err != nil {
 			s.cat.IncrementActiveSeriesFailure()
 		} else {
-			buf := labels.NewScratchBuilder(128)
-			if err := idx.Series(ref, &buf, nil); err != nil {
-				s.cat.IncrementActiveSeriesFailure()
-			} else {
-				s.cat.DecrementActiveSeries(buf.Labels())
-			}
+			s.cat.DecrementActiveSeries(buf.Labels())
 		}
 	}
 	if entry.numNativeHistogramBuckets >= 0 {

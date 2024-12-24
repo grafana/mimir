@@ -142,7 +142,11 @@ func (t *Tracker) Collect(out chan<- prometheus.Metric) {
 		t.observedMtx.RLock()
 		defer t.observedMtx.RUnlock()
 		for key, o := range t.observed {
+			if key == "" {
+				continue
+			}
 			keys := strings.Split(key, string(sep))
+
 			keys = append(keys, t.userID)
 			if o.activeSerie.Load() > 0 {
 				out <- prometheus.MustNewConstMetric(t.activeSeriesPerUserAttribution, prometheus.GaugeValue, o.activeSerie.Load(), keys...)
