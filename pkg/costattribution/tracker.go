@@ -219,10 +219,7 @@ func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncre
 // updateObservations updates or creates a new observation in the 'observed' map.
 func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
 	if o, known := t.observed[string(key)]; known && o.lastUpdate != nil {
-		// Update the timestamp if needed
-		if o.lastUpdate.Load() < ts {
-			o.lastUpdate.Store(ts)
-		}
+		o.lastUpdate.Store(ts)
 		if activeSeriesIncrement != 0 {
 			o.activeSerie.Add(activeSeriesIncrement)
 		}
