@@ -14,7 +14,7 @@ jobs:
           # Pull Request Settings
           days-before-pr-stale: 150
           days-before-pr-close: 30
-          stale-pr-message: 'Thank you for your contribution. This pull request has been marked as stale because it has had no activity in the last 150 days. It will be closed in 30 days if there is no further activity. If you need more time, you can remove the "stale" label.'
+          stale-pr-message: 'Thank you for your contribution. This pull request has been marked as stale because it has had no activity in the last 150 days. It will be closed in 30 days if there is no further activity. If you need more time, you can add a comment to the PR.'
           close-pr-message: 'This pull request has been closed because it has been stale for 30 days with no activity. Feel free to reopen if you want to continue working on this.'
           stale-pr-label: 'stale'
 
