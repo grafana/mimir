@@ -94,7 +94,7 @@ func TestTracker_updateCounters(t *testing.T) {
 	tracker.updateCounters(lbls3, 4, 1, 0, 0, nil, true)
 	assert.Equal(t, Overflow, tracker.state, "Fourth observation, should stay overflow")
 
-	assert.Equal(t, int64(3+tracker.cooldownDuration), tracker.cooldownUntil.Load(), "CooldownUntil should be updated correctly")
+	assert.Equal(t, int64(3+tracker.cooldownDuration), tracker.cooldownUntil, "CooldownUntil should be updated correctly")
 }
 
 func TestTracker_inactiveObservations(t *testing.T) {

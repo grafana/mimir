@@ -45,12 +45,12 @@ type Tracker struct {
 	discardedSampleAttribution     *prometheus.Desc
 	failedActiveSeriesDecrement    *prometheus.Desc
 	overflowLabels                 []string
-	observedMtx                    sync.RWMutex
 	observed                       map[string]*observation
+	observedMtx                    sync.RWMutex
+	cooldownUntil                  int64
 	hashBuffer                     []byte
 	state                          TrackerState
 	overflowCounter                *observation
-	cooldownUntil                  *atomic.Int64
 	totalFailedActiveSeries        *atomic.Float64
 	cooldownDuration               int64
 	logger                         log.Logger
@@ -293,7 +293,7 @@ func (t *Tracker) updateState(ts int64, activeSeriesIncrement, receivedSampleInc
 				t.overflowCounter.activeSerie.Add(o.activeSerie.Load())
 			}
 		}
-		t.cooldownUntil = atomic.NewInt64(ts + t.cooldownDuration)
+		t.cooldownUntil = ts + t.cooldownDuration
 	}
 
 	if t.state == Overflow {
@@ -326,12 +326,25 @@ func (t *Tracker) createNewObservation(key []byte, ts int64, activeSeriesIncreme
 	}
 }
 
-func (t *Tracker) shouldDelete(deadline int64) bool {
-	if t.cooldownUntil != nil && t.cooldownUntil.Load() < deadline {
+func (t *Tracker) recoverFromOverflow(deadline int64) bool {
+	t.observedMtx.RLock()
+	if t.cooldownUntil != 0 && t.cooldownUntil < deadline {
 		if len(t.observed) <= t.maxCardinality {
+			t.observedMtx.RUnlock()
 			return true
 		}
-		t.cooldownUntil.Store(deadline + t.cooldownDuration)
+		t.observedMtx.RUnlock()
+
+		// Increase the cooldown duration if the number of observations is still above the max cardinality
+		t.observedMtx.Lock()
+		if len(t.observed) <= t.maxCardinality {
+			t.observedMtx.Unlock()
+			return true
+		}
+		t.cooldownUntil = deadline + t.cooldownDuration
+		t.observedMtx.Unlock()
+	} else {
+		t.observedMtx.RUnlock()
 	}
 	return false
 }
