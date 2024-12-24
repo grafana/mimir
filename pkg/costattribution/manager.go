@@ -155,7 +155,7 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
 			t.cleanupTrackerAttribution(key)
 		}
 
-		if t.recoverFromOverflow(deadline) {
+		if t.recoveredFromOverflow(deadline) {
 			m.deleteTracker(userID)
 		}
 	}

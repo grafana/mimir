@@ -328,7 +328,7 @@ func (t *Tracker) createNewObservation(key []byte, ts int64, activeSeriesIncreme
 	}
 }
 
-func (t *Tracker) recoverFromOverflow(deadline int64) bool {
+func (t *Tracker) recoveredFromOverflow(deadline int64) bool {
 	t.observedMtx.RLock()
 	if t.cooldownUntil > 0 && t.cooldownUntil < deadline {
 		if len(t.observed) <= t.maxCardinality {
