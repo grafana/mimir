@@ -10,10 +10,11 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 type TrackerState int

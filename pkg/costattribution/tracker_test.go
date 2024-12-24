@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestTracker_hasSameLabels(t *testing.T) {
