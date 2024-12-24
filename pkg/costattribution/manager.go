@@ -123,7 +123,8 @@ func (m *Manager) updateTracker(userID string) *Tracker {
 		return newTrackedLabels[i] < newTrackedLabels[j]
 	})
 
-	if !t.hasSameLabels(newTrackedLabels) {
+	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker
+	if !t.hasSameLabels(newTrackedLabels) || t.maxCardinality != m.limits.MaxCostAttributionCardinalityPerUser(userID) || t.cooldownDuration != int64(m.limits.CostAttributionCooldown(userID).Seconds()) {
 		m.mtx.Lock()
 		t = newTracker(userID, newTrackedLabels, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
 		m.trackersByUserID[userID] = t
@@ -131,15 +132,6 @@ func (m *Manager) updateTracker(userID string) *Tracker {
 		return t
 	}
 
-	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
-	if t.maxCardinality != maxCardinality {
-		t.maxCardinality = maxCardinality
-	}
-
-	cooldown := int64(m.limits.CostAttributionCooldown(userID).Seconds())
-	if cooldown != t.cooldownDuration {
-		t.cooldownDuration = cooldown
-	}
 	return t
 }
 
