@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
@@ -31,8 +32,8 @@ func TestTracker_CreateDelete(t *testing.T) {
 	tracker.IncrementActiveSeries(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "1"), time.Unix(1, 0))
 	tracker.IncrementActiveSeries(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "2"), time.Unix(2, 0))
 	tracker.DecrementActiveSeries(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "3"))
-	tracker.IncrementReceivedSamples(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "1"), 5, time.Unix(4, 0))
-	tracker.IncrementDiscardedSamples(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "1"), 2, "sample-out-of-order", time.Unix(4, 0))
+	tracker.IncrementReceivedSamples([]mimirpb.LabelAdapter{{Name: "platform", Value: "foo"}, {Name: "team", Value: "1"}}, 5, time.Unix(4, 0))
+	tracker.IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "platform", Value: "foo"}, {Name: "team", Value: "1"}}, 2, "sample-out-of-order", time.Unix(4, 0))
 	tracker.IncrementActiveSeries(labels.FromStrings("platform", "bar", "tenant", "user4", "team", "2"), time.Unix(6, 0))
 	tracker.IncrementActiveSeriesFailure(1)
 
@@ -101,10 +102,10 @@ func TestTracker_inactiveObservations(t *testing.T) {
 	tracker := newTestManager().Tracker("user1")
 
 	// Create two observations with different last update timestamps.
-	observations := []labels.Labels{
-		labels.FromStrings("team", "foo"),
-		labels.FromStrings("team", "bar"),
-		labels.FromStrings("team", "baz"),
+	observations := [][]mimirpb.LabelAdapter{
+		{{Name: "team", Value: "foo"}},
+		{{Name: "team", Value: "bar"}},
+		{{Name: "team", Value: "baz"}},
 	}
 	// Simulate samples discarded with different timestamps.
 	tracker.IncrementDiscardedSamples(observations[0], 1, "invalid-metrics-name", time.Unix(1, 0))

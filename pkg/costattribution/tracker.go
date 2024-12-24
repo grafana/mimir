@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
@@ -164,18 +165,18 @@ func (t *Tracker) Collect(out chan<- prometheus.Metric) {
 	}
 }
 
-func (t *Tracker) IncrementDiscardedSamples(lbs labels.Labels, value float64, reason string, now time.Time) {
+func (t *Tracker) IncrementDiscardedSamples(lbs []mimirpb.LabelAdapter, value float64, reason string, now time.Time) {
 	if t == nil {
 		return
 	}
-	t.updateCounters(lbs, now.Unix(), 0, 0, value, &reason, true)
+	t.updateCountersWithLabelAdapter(lbs, now.Unix(), 0, 0, value, &reason, true)
 }
 
-func (t *Tracker) IncrementReceivedSamples(lbs labels.Labels, value float64, now time.Time) {
+func (t *Tracker) IncrementReceivedSamples(lbs []mimirpb.LabelAdapter, value float64, now time.Time) {
 	if t == nil {
 		return
 	}
-	t.updateCounters(lbs, now.Unix(), 0, value, 0, nil, true)
+	t.updateCountersWithLabelAdapter(lbs, now.Unix(), 0, value, 0, nil, true)
 }
 
 func (t *Tracker) IncrementActiveSeriesFailure(value float64) {
@@ -185,23 +186,55 @@ func (t *Tracker) IncrementActiveSeriesFailure(value float64) {
 	t.totalFailedActiveSeries.Add(value)
 }
 
-func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
-	labelValues := make([]string, len(t.labels))
-	lbls.Range(func(l labels.Label) {
-		if idx, ok := t.index[l.Name]; ok {
-			labelValues[idx] = l.Value
+func (t *Tracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
+	extractValues := func() []string {
+		labelValues := make([]string, len(t.labels))
+		for _, l := range lbls {
+			if idx, ok := t.index[l.Name]; ok {
+				labelValues[idx] = l.Value
+			}
 		}
-	})
+		return labelValues
+	}
+	t.updateCountersCommon(extractValues, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
+}
+
+func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
+	extractValues := func() []string {
+		labelValues := make([]string, len(t.labels))
+		lbls.Range(func(l labels.Label) {
+			if idx, ok := t.index[l.Name]; ok {
+				labelValues[idx] = l.Value
+			}
+		})
+		return labelValues
+	}
+	t.updateCountersCommon(extractValues, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
+}
+
+func (t *Tracker) updateCountersCommon(
+	extractValues func() []string,
+	ts int64,
+	activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64,
+	reason *string,
+	createIfDoesNotExist bool,
+) {
+	// Extract label values
+	labelValues := extractValues()
+
+	// Fill missing label values
 	for i := 0; i < len(labelValues); i++ {
 		if labelValues[i] == "" {
 			labelValues[i] = missingValue
 		}
 	}
 
+	// Reuse buffer from pool for building the observation key
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufferPool.Put(buf)
-	// Build the observation key
+
+	// Construct the observation key by joining label values
 	for i, value := range labelValues {
 		if i > 0 {
 			buf.WriteRune(sep)
@@ -209,9 +242,11 @@ func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncre
 		buf.WriteString(value)
 	}
 
+	// Lock access to the observation map
 	t.observedMtx.Lock()
 	defer t.observedMtx.Unlock()
 
+	// Update observations and state
 	t.updateObservations(buf.Bytes(), ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
 	t.updateState(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
 }
