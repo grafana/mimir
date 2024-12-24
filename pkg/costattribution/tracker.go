@@ -5,7 +5,6 @@ package costattribution
 import (
 	"bytes"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -57,9 +56,7 @@ type Tracker struct {
 }
 
 func newTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration, logger log.Logger) *Tracker {
-	sort.Slice(trackedLabels, func(i, j int) bool {
-		return trackedLabels[i] < trackedLabels[j]
-	})
+	slices.Sort(trackedLabels)
 
 	// Create a map for fast lookup, and overflow labels to export when overflow happens
 	index := make(map[string]int, len(trackedLabels))

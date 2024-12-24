@@ -4,7 +4,7 @@ package costattribution
 
 import (
 	"context"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 
@@ -119,9 +119,7 @@ func (m *Manager) updateTracker(userID string) *Tracker {
 	newTrackedLabels := m.limits.CostAttributionLabels(userID)
 
 	// sort the labels to ensure the order is consistent
-	sort.Slice(newTrackedLabels, func(i, j int) bool {
-		return newTrackedLabels[i] < newTrackedLabels[j]
-	})
+	slices.Sort(newTrackedLabels)
 
 	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker
 	if !t.hasSameLabels(newTrackedLabels) || t.maxCardinality != m.limits.MaxCostAttributionCardinalityPerUser(userID) || t.cooldownDuration != int64(m.limits.CostAttributionCooldown(userID).Seconds()) {
