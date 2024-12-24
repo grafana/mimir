@@ -81,16 +81,16 @@ func TestTracker_updateCounters(t *testing.T) {
 	lbls2 := labels.FromStrings("department", "bar", "service", "baz")
 	lbls3 := labels.FromStrings("department", "baz", "service", "foo")
 
-	tracker.updateCounters(lbls1, 1, 1, 0, 0, nil)
+	tracker.updateCounters(lbls1, 1, 1, 0, 0, nil, true)
 	assert.Equal(t, Normal, tracker.state, "First observation, should not overflow")
 
-	tracker.updateCounters(lbls2, 2, 1, 0, 0, nil)
+	tracker.updateCounters(lbls2, 2, 1, 0, 0, nil, true)
 	assert.Equal(t, Normal, tracker.state, "Second observation, should not overflow")
 
-	tracker.updateCounters(lbls3, 3, 1, 0, 0, nil)
+	tracker.updateCounters(lbls3, 3, 1, 0, 0, nil, true)
 	assert.Equal(t, Overflow, tracker.state, "Third observation, should overflow")
 
-	tracker.updateCounters(lbls3, 4, 1, 0, 0, nil)
+	tracker.updateCounters(lbls3, 4, 1, 0, 0, nil, true)
 	assert.Equal(t, Overflow, tracker.state, "Fourth observation, should stay overflow")
 
 	assert.Equal(t, int64(3+tracker.cooldownDuration), tracker.cooldownUntil.Load(), "CooldownUntil should be updated correctly")
@@ -139,7 +139,7 @@ func TestTracker_Concurrency(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			lbls := labels.FromStrings("team", string(rune('A'+(i%26))))
-			tracker.updateCounters(lbls, int64(i), 1, 0, 0, nil)
+			tracker.updateCounters(lbls, int64(i), 1, 0, 0, nil, true)
 		}(i)
 	}
 	wg.Wait()

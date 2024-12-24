@@ -123,14 +123,14 @@ func (t *Tracker) IncrementActiveSeries(lbs labels.Labels, now time.Time) {
 	if t == nil {
 		return
 	}
-	t.updateCounters(lbs, now.Unix(), 1, 0, 0, nil)
+	t.updateCounters(lbs, now.Unix(), 1, 0, 0, nil, true)
 }
 
 func (t *Tracker) DecrementActiveSeries(lbs labels.Labels) {
 	if t == nil {
 		return
 	}
-	t.updateCounters(lbs, -1, -1, 0, 0, nil)
+	t.updateCounters(lbs, -1, -1, 0, 0, nil, false)
 }
 
 func (t *Tracker) Collect(out chan<- prometheus.Metric) {
@@ -168,14 +168,14 @@ func (t *Tracker) IncrementDiscardedSamples(lbs labels.Labels, value float64, re
 	if t == nil {
 		return
 	}
-	t.updateCounters(lbs, now.Unix(), 0, 0, value, &reason)
+	t.updateCounters(lbs, now.Unix(), 0, 0, value, &reason, true)
 }
 
 func (t *Tracker) IncrementReceivedSamples(lbs labels.Labels, value float64, now time.Time) {
 	if t == nil {
 		return
 	}
-	t.updateCounters(lbs, now.Unix(), 0, value, 0, nil)
+	t.updateCounters(lbs, now.Unix(), 0, value, 0, nil, true)
 }
 
 func (t *Tracker) IncrementActiveSeriesFailure(value float64) {
@@ -185,7 +185,7 @@ func (t *Tracker) IncrementActiveSeriesFailure(value float64) {
 	t.totalFailedActiveSeries.Add(value)
 }
 
-func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
+func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
 	labelValues := make([]string, len(t.labels))
 	lbls.Range(func(l labels.Label) {
 		if idx, ok := t.index[l.Name]; ok {
@@ -212,12 +212,12 @@ func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncre
 	t.observedMtx.Lock()
 	defer t.observedMtx.Unlock()
 
-	t.updateObservations(buf.Bytes(), ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
+	t.updateObservations(buf.Bytes(), ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
 	t.updateState(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
 }
 
 // updateObservations updates or creates a new observation in the 'observed' map.
-func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
+func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
 	if o, known := t.observed[string(key)]; known && o.lastUpdate != nil {
 		o.lastUpdate.Store(ts)
 		if activeSeriesIncrement != 0 {
@@ -231,12 +231,10 @@ func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement
 			o.discardedSample[*reason] = *atomic.NewFloat64(discardedSampleIncrement)
 			o.discardedSampleMtx.Unlock()
 		}
-	} else if len(t.observed) < t.maxCardinality*2 {
-		// If the ts is negative, it means that the method is called from DecrementActiveSeries, when key doesn't exist we should ignore the call
+	} else if len(t.observed) < t.maxCardinality*2 && createIfDoesNotExist {
+		// When createIfDoesNotExist is false, it means that the method is called from DecrementActiveSeries, when key doesn't exist we should ignore the call
 		// Otherwise create a new observation for the key
-		if ts >= 0 {
-			t.createNewObservation(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
-		}
+		t.createNewObservation(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
 	}
 }
 
