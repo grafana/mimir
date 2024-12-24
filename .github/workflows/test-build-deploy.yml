@@ -117,7 +117,7 @@ jobs:
       - name: Run doc-validator tool (mimir)
         run: >
           doc-validator
-          '--skip-checks=^canonical-does-not-match-pretty-URL$'
+          '--skip-checks=^canonical-does-not-match-pretty-URL|image.+$'
           docs/sources/mimir
           /docs/mimir/latest
           | reviewdog

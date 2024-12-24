@@ -228,6 +228,101 @@ func TestLimitingPool_Mangling(t *testing.T) {
 	require.Equal(t, []int{123, 123, 123, 123}, s, "returned slice should be mangled when mangling is enabled")
 }
 
+func TestLimitingBucketedPool_PowerOfTwoCapacities(t *testing.T) {
+	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+
+	pool := NewLimitingBucketedPool(
+		pool.NewBucketedPool(100_000, func(size int) []int { return make([]int, 0, size) }),
+		1,
+		false,
+		nil,
+	)
+
+	cases := []struct {
+		requestedSize int
+		expectedCap   int
+	}{
+		{3, 4},
+		{5, 8},
+		{10, 16},
+		{65_000, 65_536},
+		{100_001, 131_072}, // Exceeds max, expect next power of two
+	}
+
+	for _, c := range cases {
+		slice, err := pool.Get(c.requestedSize, memoryConsumptionTracker)
+		require.NoError(t, err, "Unexpected error when requesting size %d", c.requestedSize)
+		require.Equal(t, c.expectedCap, cap(slice),
+			"LimitingBucketedPool.Get() returned slice with capacity %d; expected %d", cap(slice), c.expectedCap)
+		pool.Put(slice, memoryConsumptionTracker)
+	}
+}
+
+func TestLimitingBucketedPool_UnreasonableSizeRequest(t *testing.T) {
+	const maxMemoryLimit = 1_000_000 * FPointSize
+
+	reg, metric := createRejectedMetric()
+	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(uint64(maxMemoryLimit), metric)
+
+	pool := NewLimitingBucketedPool(
+		pool.NewBucketedPool(100_000, func(size int) []int { return make([]int, 0, size) }),
+		1,
+		false,
+		nil,
+	)
+
+	// Request a reasonable size
+	slice, err := pool.Get(500_000, memoryConsumptionTracker)
+	require.NoError(t, err, "Expected to succeed for reasonable size request")
+	require.Equal(t, 524_288, cap(slice), "Capacity should be next power of two")
+	assertRejectedQueryCount(t, reg, 0)
+
+	pool.Put(slice, memoryConsumptionTracker)
+
+	// Request an unreasonable size
+	_, err = pool.Get(10_000_000, memoryConsumptionTracker)
+	require.Error(t, err, "Expected an error for unreasonably large size request")
+	require.Contains(t, err.Error(), "exceeded", "Error message should indicate memory consumption limit exceeded")
+	assertRejectedQueryCount(t, reg, 1)
+
+	require.Equal(t, uint64(0), memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes,
+		"Current memory consumption should remain at 0 after rejected request")
+}
+
+func TestLimitingBucketedPool_MaxExpectedPointsPerSeriesConstantIsPowerOfTwo(t *testing.T) {
+	// Although not strictly required (as the code should handle MaxExpectedPointsPerSeries not being a power of two correctly),
+	// it is best that we keep it as one for now.
+	require.True(t, isPowerOfTwo(MaxExpectedPointsPerSeries), "MaxExpectedPointsPerSeries must be a power of two")
+}
+
+func TestIsPowerOfTwo(t *testing.T) {
+	cases := []struct {
+		input    int
+		expected bool
+	}{
+		{-2, false},
+		{1, true},
+		{2, true},
+		{3, false},
+		{4, true},
+		{5, false},
+		{6, false},
+		{7, false},
+		{8, true},
+		{16, true},
+		{32, true},
+		{1023, false},
+		{1024, true},
+		{1<<12 - 1, false},
+		{1 << 12, true},
+	}
+
+	for _, c := range cases {
+		result := isPowerOfTwo(c.input)
+		require.Equalf(t, c.expected, result, "isPowerOfTwo(%d) should return %v", c.input, c.expected)
+	}
+}
+
 func assertRejectedQueryCount(t *testing.T, reg *prometheus.Registry, expectedRejectionCount int) {
 	expected := fmt.Sprintf(`
 		# TYPE %s counter

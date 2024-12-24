@@ -13,6 +13,8 @@ std.manifestYamlDoc({
     self.kafka_2 +
     self.kafka_3 +
     self.jaeger +
+    self.blockbuilder +
+    self.blockbuilderscheduler +
     {},
 
   write:: {
@@ -88,6 +90,22 @@ std.manifestYamlDoc({
     }),
   },
 
+  blockbuilder:: {
+    'mimir-block-builder-1': mimirService({
+      name: 'mimir-block-builder-1',
+      target: 'block-builder',
+      publishedHttpPort: 8008,
+    }),
+  },
+
+  blockbuilderscheduler:: {
+    'mimir-block-builder-scheduler-1': mimirService({
+      name: 'mimir-block-builder-scheduler-1',
+      target: 'block-builder-scheduler',
+      publishedHttpPort: 8019,
+    }),
+  },
+
   nginx:: {
     nginx: {
       hostname: 'nginx',
@@ -156,8 +174,6 @@ std.manifestYamlDoc({
       },
     },
   },
-
-
   kafka_2:: {
     kafka_2: {
       image: 'confluentinc/cp-kafka:latest',
