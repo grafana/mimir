@@ -116,7 +116,10 @@ func (m *Manager) updateTracker(userID string) *Tracker {
 		return nil
 	}
 
-	newTrackedLabels := m.limits.CostAttributionLabels(userID)
+	lbls := m.limits.CostAttributionLabels(userID)
+
+	newTrackedLabels := make([]string, 0, len(lbls))
+	copy(newTrackedLabels, lbls)
 
 	// sort the labels to ensure the order is consistent
 	slices.Sort(newTrackedLabels)
