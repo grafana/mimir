@@ -463,9 +463,9 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 			// we need to increment the active series failure count.
 			if s.cat != nil {
 				if idx == nil {
-					s.cat.IncrementActiveSeriesFailure(1)
+					s.cat.IncrementActiveSeriesFailure()
 				} else if err := idx.Series(ref, &buf, nil); err != nil {
-					s.cat.IncrementActiveSeriesFailure(1)
+					s.cat.IncrementActiveSeriesFailure()
 				} else {
 					s.cat.DecrementActiveSeries(buf.Labels())
 				}
@@ -522,11 +522,11 @@ func (s *seriesStripe) remove(ref storage.SeriesRef, idx tsdb.IndexReader) {
 	s.active--
 	if s.cat != nil {
 		if idx == nil {
-			s.cat.IncrementActiveSeriesFailure(1)
+			s.cat.IncrementActiveSeriesFailure()
 		} else {
 			buf := labels.NewScratchBuilder(128)
 			if err := idx.Series(ref, &buf, nil); err != nil {
-				s.cat.IncrementActiveSeriesFailure(1)
+				s.cat.IncrementActiveSeriesFailure()
 			} else {
 				s.cat.DecrementActiveSeries(buf.Labels())
 			}

@@ -179,11 +179,11 @@ func (t *Tracker) IncrementReceivedSamples(lbs []mimirpb.LabelAdapter, value flo
 	t.updateCountersWithLabelAdapter(lbs, now.Unix(), 0, value, 0, nil, true)
 }
 
-func (t *Tracker) IncrementActiveSeriesFailure(value float64) {
+func (t *Tracker) IncrementActiveSeriesFailure() {
 	if t == nil {
 		return
 	}
-	t.totalFailedActiveSeries.Add(value)
+	t.totalFailedActiveSeries.Add(1)
 }
 
 func (t *Tracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {

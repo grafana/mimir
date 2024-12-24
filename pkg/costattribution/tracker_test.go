@@ -35,7 +35,7 @@ func TestTracker_CreateDelete(t *testing.T) {
 	tracker.IncrementReceivedSamples([]mimirpb.LabelAdapter{{Name: "platform", Value: "foo"}, {Name: "team", Value: "1"}}, 5, time.Unix(4, 0))
 	tracker.IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "platform", Value: "foo"}, {Name: "team", Value: "1"}}, 2, "sample-out-of-order", time.Unix(4, 0))
 	tracker.IncrementActiveSeries(labels.FromStrings("platform", "bar", "tenant", "user4", "team", "2"), time.Unix(6, 0))
-	tracker.IncrementActiveSeriesFailure(1)
+	tracker.IncrementActiveSeriesFailure()
 
 	expectedMetrics := `
 	# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
