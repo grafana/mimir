@@ -435,7 +435,7 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, emptyMimirConfig, am.cfgs["user4"])
+	require.EqualExportedValues(t, emptyMimirConfig, am.cfgs["user4"])
 
 	// Ensure the Grafana config is used when it's promoted again.
 	userGrafanaCfg.Promoted = true
@@ -478,7 +478,7 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, defaultConfig, am.cfgs["user4"])
+	require.EqualExportedValues(t, defaultConfig, am.cfgs["user4"])
 
 	// Ensure the Grafana config is ignored when it's empty.
 	userGrafanaCfg.Default = false
@@ -487,7 +487,7 @@ templates:
 
 	err = am.loadAndSyncConfigs(context.Background(), reasonPeriodic)
 	require.NoError(t, err)
-	require.Equal(t, defaultConfig, am.cfgs["user4"])
+	require.EqualExportedValues(t, defaultConfig, am.cfgs["user4"])
 
 	// Test Delete User, ensure config is removed and the resources are freed.
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user3"))
