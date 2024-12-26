@@ -66,7 +66,7 @@ func newStoreGatewayTestServer(t testing.TB, store storegatewaypb.StoreGatewaySe
 
 // Series calls the store server's Series() endpoint via gRPC and returns the responses collected
 // via the gRPC stream.
-func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storepb.Series, warnings annotations.Annotations, hints hintspb.SeriesResponseHints, estimatedChunks uint64, err error) {
+func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest) (seriesSet []*storepb.CustomSeries, warnings annotations.Annotations, hints hintspb.SeriesResponseHints, estimatedChunks uint64, err error) {
 	var (
 		conn               *grpc.ClientConn
 		stream             storegatewaypb.StoreGateway_SeriesClient
@@ -133,7 +133,7 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 				return
 			}
 
-			copiedSeries := &storepb.Series{}
+			copiedSeries := &storepb.CustomSeries{}
 			if err = copiedSeries.Unmarshal(recvSeriesData); err != nil {
 				err = errors.Wrap(err, "unmarshal received series")
 				return
@@ -232,9 +232,11 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 					return
 				}
 
-				seriesSet = append(seriesSet, &storepb.Series{
-					Labels: streamingSeriesSet[idx].Labels,
-					Chunks: copiedChunks.Chunks,
+				seriesSet = append(seriesSet, &storepb.CustomSeries{
+					Series: &storepb.Series{
+						Labels: streamingSeriesSet[idx].Labels,
+						Chunks: copiedChunks.Chunks,
+					},
 				})
 			}
 		}

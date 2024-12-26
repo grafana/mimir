@@ -262,28 +262,42 @@ func TestStoreGatewayStreamReader_HappyPaths(t *testing.T) {
 		"single series per batch": {
 			messages: batchesToMessages(
 				40,
-				storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: series0}}},
-				storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: series1}}},
-				storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: series2}}},
-				storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 3, Chunks: series3}}},
-				storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 4, Chunks: series4}}},
+				storepb.CustomStreamingChunksBatch{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: series0}}},
+				},
+				storepb.CustomStreamingChunksBatch{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: series1}}},
+				},
+				storepb.CustomStreamingChunksBatch{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: series2}}},
+				},
+				storepb.CustomStreamingChunksBatch{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 3, Chunks: series3}}},
+				},
+				storepb.CustomStreamingChunksBatch{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{Series: []*storepb.StreamingChunks{{SeriesIndex: 4, Chunks: series4}}},
+				},
 			),
 			expectedChunksEstimate: 40,
 		},
 		"multiple series per batch": {
 			messages: batchesToMessages(
 				40,
-				storepb.StreamingChunksBatch{
-					Series: []*storepb.StreamingChunks{
-						{SeriesIndex: 0, Chunks: series0},
-						{SeriesIndex: 1, Chunks: series1},
-						{SeriesIndex: 2, Chunks: series2},
+				storepb.CustomStreamingChunksBatch{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{
+						Series: []*storepb.StreamingChunks{
+							{SeriesIndex: 0, Chunks: series0},
+							{SeriesIndex: 1, Chunks: series1},
+							{SeriesIndex: 2, Chunks: series2},
+						},
 					},
 				},
-				storepb.StreamingChunksBatch{
-					Series: []*storepb.StreamingChunks{
-						{SeriesIndex: 3, Chunks: series3},
-						{SeriesIndex: 4, Chunks: series4},
+				storepb.CustomStreamingChunksBatch{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{
+						Series: []*storepb.StreamingChunks{
+							{SeriesIndex: 3, Chunks: series3},
+							{SeriesIndex: 4, Chunks: series4},
+						},
 					},
 				},
 			),
@@ -292,21 +306,29 @@ func TestStoreGatewayStreamReader_HappyPaths(t *testing.T) {
 		"empty batches": {
 			messages: batchesToMessages(
 				40,
-				storepb.StreamingChunksBatch{
-					Series: []*storepb.StreamingChunks{
-						{SeriesIndex: 0, Chunks: series0},
-						{SeriesIndex: 1, Chunks: series1},
-						{SeriesIndex: 2, Chunks: series2},
+				storepb.CustomStreamingChunksBatch{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{
+						Series: []*storepb.StreamingChunks{
+							{SeriesIndex: 0, Chunks: series0},
+							{SeriesIndex: 1, Chunks: series1},
+							{SeriesIndex: 2, Chunks: series2},
+						},
 					},
 				},
-				storepb.StreamingChunksBatch{},
-				storepb.StreamingChunksBatch{
-					Series: []*storepb.StreamingChunks{
-						{SeriesIndex: 3, Chunks: series3},
-						{SeriesIndex: 4, Chunks: series4},
+				storepb.CustomStreamingChunksBatch{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{},
+				},
+				storepb.CustomStreamingChunksBatch{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{
+						Series: []*storepb.StreamingChunks{
+							{SeriesIndex: 3, Chunks: series3},
+							{SeriesIndex: 4, Chunks: series4},
+						},
 					},
 				},
-				storepb.StreamingChunksBatch{},
+				storepb.CustomStreamingChunksBatch{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{},
+				},
 			),
 			expectedChunksEstimate: 40,
 		},
@@ -378,10 +400,19 @@ func TestStoreGatewayStreamReader_AbortsWhenParentContextCancelled(t *testing.T)
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			// Create multiple batches to ensure that the buffering goroutine becomes blocked waiting to send further chunks to GetChunks().
-			batches := []storepb.StreamingChunksBatch{
-				{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}}}},
-				{Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 4.56)}}}},
-				{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}}}},
+			batches := []storepb.CustomStreamingChunksBatch{
+				{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{
+						Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}}}},
+				},
+				{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{
+						Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 4.56)}}}},
+				},
+				{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{
+						Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}}}},
+				},
 			}
 
 			streamCtx := context.Background()
@@ -407,10 +438,19 @@ func TestStoreGatewayStreamReader_DoesNotAbortWhenStreamContextCancelled(t *test
 	test.VerifyNoLeak(t)
 
 	// Create multiple batches to ensure that the buffering goroutine becomes blocked waiting to send further chunks to GetChunks().
-	batches := []storepb.StreamingChunksBatch{
-		{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}}}},
-		{Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 4.56)}}}},
-		{Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}}}},
+	batches := []storepb.CustomStreamingChunksBatch{
+		{
+			StreamingChunksBatch: &storepb.StreamingChunksBatch{
+				Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}}}},
+		},
+		{
+			StreamingChunksBatch: &storepb.StreamingChunksBatch{
+				Series: []*storepb.StreamingChunks{{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 4.56)}}}},
+		},
+		{
+			StreamingChunksBatch: &storepb.StreamingChunksBatch{
+				Series: []*storepb.StreamingChunks{{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}}}},
+		},
 	}
 
 	streamCtx, cancel := context.WithCancel(context.Background())
@@ -437,8 +477,11 @@ func TestStoreGatewayStreamReader_DoesNotAbortWhenStreamContextCancelled(t *test
 }
 
 func TestStoreGatewayStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
-	batches := []storepb.StreamingChunksBatch{
-		{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}}}},
+	batches := []storepb.CustomStreamingChunksBatch{
+		{
+			StreamingChunksBatch: &storepb.StreamingChunksBatch{
+				Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}}}},
+		},
 	}
 
 	ctx := context.Background()
@@ -456,8 +499,11 @@ func TestStoreGatewayStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
 
 func TestStoreGatewayStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 	firstSeries := []storepb.AggrChunk{createChunk(t, 1000, 1.23)}
-	batches := []storepb.StreamingChunksBatch{
-		{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: firstSeries}}},
+	batches := []storepb.CustomStreamingChunksBatch{
+		{
+			StreamingChunksBatch: &storepb.StreamingChunksBatch{
+				Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: firstSeries}}},
+		},
 	}
 
 	ctx := context.Background()
@@ -486,8 +532,11 @@ func TestStoreGatewayStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 
 func TestStoreGatewayStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) {
 	firstSeries := []storepb.AggrChunk{createChunk(t, 1000, 1.23)}
-	batches := []storepb.StreamingChunksBatch{
-		{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: firstSeries}}},
+	batches := []storepb.CustomStreamingChunksBatch{
+		{
+			StreamingChunksBatch: &storepb.StreamingChunksBatch{
+				Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: firstSeries}}},
+		},
 	}
 
 	ctx := context.Background()
@@ -518,26 +567,32 @@ func TestStoreGatewayStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 }
 
 func TestStoreGatewayStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
-	testCases := map[string][]storepb.StreamingChunksBatch{
+	testCases := map[string][]storepb.CustomStreamingChunksBatch{
 		"extra series received as part of batch for last expected series": {
 			{
-				Series: []*storepb.StreamingChunks{
-					{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}},
-					{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 4.56)}},
-					{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}},
+				StreamingChunksBatch: &storepb.StreamingChunksBatch{
+					Series: []*storepb.StreamingChunks{
+						{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}},
+						{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 4.56)}},
+						{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}},
+					},
 				},
 			},
 		},
 		"extra series received as part of batch after batch containing last expected series": {
 			{
-				Series: []*storepb.StreamingChunks{
-					{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}},
+				StreamingChunksBatch: &storepb.StreamingChunksBatch{
+					Series: []*storepb.StreamingChunks{
+						{SeriesIndex: 0, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 1.23)}},
+					},
 				},
 			},
 			{
-				Series: []*storepb.StreamingChunks{
-					{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 4.56)}},
-					{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}},
+				StreamingChunksBatch: &storepb.StreamingChunksBatch{
+					Series: []*storepb.StreamingChunks{
+						{SeriesIndex: 1, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 4.56)}},
+						{SeriesIndex: 2, Chunks: []storepb.AggrChunk{createChunk(t, 1000, 7.89)}},
+					},
 				},
 			},
 		},
@@ -606,12 +661,15 @@ func TestStoreGatewayStreamReader_QueryAndChunksLimits(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			batches := []storepb.StreamingChunksBatch{
-				{Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: []storepb.AggrChunk{
-					createChunk(t, 1000, 1.23),
-					createChunk(t, 1100, 1.23),
-					createChunk(t, 1200, 1.23),
-				}}}},
+			batches := []storepb.CustomStreamingChunksBatch{
+				{
+					StreamingChunksBatch: &storepb.StreamingChunksBatch{
+						Series: []*storepb.StreamingChunks{{SeriesIndex: 0, Chunks: []storepb.AggrChunk{
+							createChunk(t, 1000, 1.23),
+							createChunk(t, 1100, 1.23),
+							createChunk(t, 1200, 1.23),
+						}}}},
+				},
 			}
 
 			ctx := context.Background()
@@ -671,13 +729,13 @@ func createChunk(t *testing.T, time int64, value float64) storepb.AggrChunk {
 	}
 }
 
-func batchesToMessages(estimatedChunks uint64, batches ...storepb.StreamingChunksBatch) []*storepb.SeriesResponse {
+func batchesToMessages(estimatedChunks uint64, batches ...storepb.CustomStreamingChunksBatch) []*storepb.SeriesResponse {
 	messages := make([]*storepb.SeriesResponse, len(batches)+1)
 
 	messages[0] = storepb.NewStreamingChunksEstimate(estimatedChunks)
 
 	for i, b := range batches {
-		messages[i+1] = storepb.NewStreamingChunksResponse(&b)
+		messages[i+1] = storepb.NewStreamingChunksResponse(b)
 	}
 
 	return messages
