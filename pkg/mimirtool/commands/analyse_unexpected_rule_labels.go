@@ -59,7 +59,7 @@ func AnalyzeUnexpectedLabels(c client.Config, trace bool) (map[string]string, er
 	for ns := range rules {
 		for _, rg := range rules[ns] {
 			for _, r := range rg.Rules {
-				if r.Record.Value != "grafana_slo_sli_30m" {
+				if r.Record.Value != "grafana_slo_sli_1d" {
 					continue
 				}
 				sloUUID, ok := r.Labels["grafana_slo_uuid"]
