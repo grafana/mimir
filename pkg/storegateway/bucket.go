@@ -772,8 +772,10 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 	for i := range seriesBuffer {
 		seriesBuffer[i] = &storepb.StreamingSeries{}
 	}
-	seriesBatch := &storepb.StreamingSeriesBatch{
-		Series: seriesBuffer[:0],
+	seriesBatch := storepb.CustomStreamingSeriesBatch{
+		StreamingSeriesBatch: &storepb.StreamingSeriesBatch{
+			Series: seriesBuffer[:0],
+		},
 	}
 	// TODO: can we send this in parallel while we start fetching the chunks below?
 	for seriesSet.Next() {
@@ -839,7 +841,11 @@ func (s *BucketStore) sendStreamingChunks(
 		chunksBuffer[i] = &storepb.StreamingChunks{}
 	}
 	haveSentEstimatedChunks := false
-	chunksBatch := &storepb.StreamingChunksBatch{Series: chunksBuffer[:0]}
+	chunksBatch := storepb.CustomStreamingChunksBatch{
+		StreamingChunksBatch: &storepb.StreamingChunksBatch{
+			Series: chunksBuffer[:0],
+		},
+	}
 	for it.Next() {
 		set := it.At()
 
@@ -944,8 +950,10 @@ func (s *BucketStore) sendSeriesChunks(
 		// because the subsequent call to seriesSet.Next() may release it. But it is safe to hold
 		// onto lset because the labels are not released.
 		lset, chks := seriesSet.At()
-		series := storepb.Series{
-			Labels: mimirpb.FromLabelsToLabelAdapters(lset),
+		series := storepb.CustomSeries{
+			Series: &storepb.Series{
+				Labels: mimirpb.FromLabelsToLabelAdapters(lset),
+			},
 		}
 		if !req.SkipChunks {
 			series.Chunks = chks
@@ -953,7 +961,7 @@ func (s *BucketStore) sendSeriesChunks(
 			s.metrics.chunkSizeBytes.Observe(float64(chunksSize(chks)))
 		}
 
-		err := s.sendMessage("series", srv, storepb.NewSeriesResponse(&series), &encodeDuration, &sendDuration)
+		err := s.sendMessage("series", srv, storepb.NewSeriesResponse(series), &encodeDuration, &sendDuration)
 		if err != nil {
 			return err
 		}

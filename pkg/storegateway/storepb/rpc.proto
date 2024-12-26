@@ -82,7 +82,7 @@ message Stats {
 message SeriesResponse {
   oneof result {
     /// series contains 1 response series. The series labels are sorted by name.
-    Series series = 1;
+    Series series = 1 [(gogoproto.customtype) = "CustomSeries"];
 
     /// warning is considered an information piece in place of series for warning purposes.
     /// It is used to warn store API user about suspicious cases or partial response (if enabled).
@@ -102,14 +102,14 @@ message SeriesResponse {
     /// streaming_series is a list of series labels sent as part of a streaming Series call.
     /// These are populated only when streaming_chunks_batch_size > 0 in the series request.
     /// Series are sent in batches because sending one at a time has additional CPU overhead for not much memory gains.
-    StreamingSeriesBatch streaming_series = 5;
+    StreamingSeriesBatch streaming_series = 5 [(gogoproto.customtype) = "CustomStreamingSeriesBatch"];
 
     /// streaming_chunks is a list of chunks sent as part of a streaming Series request.
     /// They are associated with series labels sent as streaming_series earlier in the same Series request.
     /// These are populated only when streaming_chunks_batch_size > 0 in the series request.
     /// Chunks are sent in batches because sending one series' chunks at a time has additional
     /// CPU overhead for not much memory gains.
-    StreamingChunksBatch streaming_chunks = 6;
+    StreamingChunksBatch streaming_chunks = 6 [(gogoproto.customtype) = "CustomStreamingChunksBatch"];
 
     /// streaming_chunks_estimate contains an estimate of the number of chunks expected to be sent as part a streaming
     /// Series call.

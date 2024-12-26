@@ -48,7 +48,7 @@ func convertMatchersToLabelMatcher(matchers []*labels.Matcher) []storepb.LabelMa
 
 // Implementation of storage.SeriesSet, based on individual responses from store client.
 type blockQuerierSeriesSet struct {
-	series []*storepb.Series
+	series []*storepb.CustomSeries
 
 	// next response to process
 	next int
@@ -60,6 +60,10 @@ func (bqss *blockQuerierSeriesSet) Next() bool {
 	bqss.currSeries = nil
 
 	if bqss.next >= len(bqss.series) {
+		for _, s := range bqss.series {
+			s.Release()
+		}
+		bqss.series = nil
 		return false
 	}
 
@@ -134,7 +138,9 @@ func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, 
 				return chunk.ErrorIterator(fmt.Sprintf("cannot create new chunk for series %s: %s", lbls.String(), err.Error()))
 			}
 
-			if err := ch.UnmarshalFromBuf(c.Raw.Data); err != nil {
+			err = ch.UnmarshalFromBuf(c.Raw.Data)
+			storepb.ReleaseChunk(&c.Raw)
+			if err != nil {
 				return chunk.ErrorIterator(fmt.Sprintf("cannot unmarshal chunk for series %s: %s", lbls.String(), err.Error()))
 			}
 

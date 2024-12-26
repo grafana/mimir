@@ -1586,8 +1586,14 @@ func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup fu
 			return next(ctx, req)
 		},
 		func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
+			if !cleanupInDefer {
+				return
+			}
+
+			req, _ := pushReq.WriteRequest()
+			pushReq.CleanUp()
+			if req != nil {
+				req.FreeBuffer()
 			}
 		}
 }
