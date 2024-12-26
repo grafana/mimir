@@ -1,6 +1,6 @@
 module github.com/grafana/mimir
 
-go 1.22.7
+go 1.23
 
 // Please note that this directive is ignored when building with the Mimir build image,
 // that will always use its bundled toolchain.

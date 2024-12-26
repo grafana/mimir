@@ -3235,16 +3235,20 @@ func mockSeriesResponseWithFloatHistogramSamples(lbls labels.Labels, samples ...
 func mockSeriesResponseWithChunks(lbls labels.Labels, chunks ...storepb.AggrChunk) *storepb.SeriesResponse {
 	return &storepb.SeriesResponse{
 		Result: &storepb.SeriesResponse_Series{
-			Series: &storepb.Series{
-				Labels: mimirpb.FromLabelsToLabelAdapters(lbls),
-				Chunks: chunks,
+			Series: &storepb.CustomSeries{
+				Series: &storepb.Series{
+					Labels: mimirpb.FromLabelsToLabelAdapters(lbls),
+					Chunks: chunks,
+				},
 			},
 		},
 	}
 }
 
 func mockStreamingSeriesBatchResponse(endOfStream bool, lbls ...[]mimirpb.LabelAdapter) *storepb.SeriesResponse {
-	res := &storepb.StreamingSeriesBatch{}
+	res := &storepb.CustomStreamingSeriesBatch{
+		StreamingSeriesBatch: &storepb.StreamingSeriesBatch{},
+	}
 	for _, l := range lbls {
 		res.Series = append(res.Series, &storepb.StreamingSeries{Labels: l})
 	}
@@ -3259,11 +3263,13 @@ func mockStreamingSeriesBatchResponse(endOfStream bool, lbls ...[]mimirpb.LabelA
 func mockStreamingSeriesChunksResponse(index uint64, chks []storepb.AggrChunk) *storepb.SeriesResponse {
 	return &storepb.SeriesResponse{
 		Result: &storepb.SeriesResponse_StreamingChunks{
-			StreamingChunks: &storepb.StreamingChunksBatch{
-				Series: []*storepb.StreamingChunks{
-					{
-						SeriesIndex: index,
-						Chunks:      chks,
+			StreamingChunks: &storepb.CustomStreamingChunksBatch{
+				StreamingChunksBatch: &storepb.StreamingChunksBatch{
+					Series: []*storepb.StreamingChunks{
+						{
+							SeriesIndex: index,
+							Chunks:      chks,
+						},
 					},
 				},
 			},

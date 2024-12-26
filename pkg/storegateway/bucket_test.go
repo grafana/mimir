@@ -1382,7 +1382,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 
 	var (
 		logger                = log.NewNopLogger()
-		series                []*storepb.Series
+		series                []*storepb.CustomSeries
 		expectedQueriesBlocks []hintspb.Block
 		random                = rand.New(rand.NewSource(120))
 	)
@@ -1584,7 +1584,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 	var (
 		ctx              = context.Background()
 		logger           = log.NewNopLogger()
-		expectedSeries   []*storepb.Series
+		expectedSeries   []*storepb.CustomSeries
 		expectedBlockIDs []string
 		random           = rand.New(rand.NewSource(120))
 		tmpDir           = t.TempDir()
@@ -1909,7 +1909,7 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 }
 
 func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
-	newTestCases := func(seriesSet1 []*storepb.Series, seriesSet2 []*storepb.Series, block1 ulid.ULID, block2 ulid.ULID) []*seriesCase {
+	newTestCases := func(seriesSet1 []*storepb.CustomSeries, seriesSet2 []*storepb.CustomSeries, block1 ulid.ULID, block2 ulid.ULID) []*seriesCase {
 		return []*seriesCase{
 			{
 				Name: "querying a range containing 1 block should return 1 block in the response hints",
@@ -1935,7 +1935,7 @@ func TestBucketStore_Series_RequestAndResponseHints(t *testing.T) {
 						{Type: storepb.LabelMatcher_EQ, Name: "foo", Value: "bar"},
 					},
 				},
-				ExpectedSeries: append(append([]*storepb.Series{}, seriesSet1...), seriesSet2...),
+				ExpectedSeries: append(append([]*storepb.CustomSeries{}, seriesSet1...), seriesSet2...),
 				ExpectedHints: hintspb.SeriesResponseHints{
 					QueriedBlocks: []hintspb.Block{
 						{Id: block1.String()},
@@ -2560,7 +2560,7 @@ func mustMarshalAny(pb proto.Message) *types.Any {
 	return out
 }
 
-func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketStoreOption) (test.TB, *BucketStore, []*storepb.Series, []*storepb.Series, ulid.ULID, ulid.ULID, func()) {
+func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketStoreOption) (test.TB, *BucketStore, []*storepb.CustomSeries, []*storepb.CustomSeries, ulid.ULID, ulid.ULID, func()) {
 	tb := test.NewTB(t)
 
 	cleanupFuncs := []func(){}
@@ -2705,7 +2705,7 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 				End:   3,
 			},
 			expectedNames: labelNamesFromSeriesSet(
-				append(append([]*storepb.Series{}, seriesSet1...), seriesSet2...),
+				append(append([]*storepb.CustomSeries{}, seriesSet1...), seriesSet2...),
 			),
 			expectedNamesHints: hintspb.LabelNamesResponseHints{
 				QueriedBlocks: []hintspb.Block{
@@ -2847,7 +2847,7 @@ func TestLabelValues_Cancelled(t *testing.T) {
 	assert.Equal(t, codes.Canceled, s.Code())
 }
 
-func labelNamesFromSeriesSet(series []*storepb.Series) []string {
+func labelNamesFromSeriesSet(series []*storepb.CustomSeries) []string {
 	labelsMap := map[string]struct{}{}
 
 	for _, s := range series {
@@ -2881,7 +2881,7 @@ type headGenOptions struct {
 // Each series looks as follows:
 // {foo=bar,i=000001aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd} <random value> where number indicate sample number from 0.
 // Returned series are framed in the same way as remote read would frame them.
-func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head, []*storepb.Series) {
+func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head, []*storepb.CustomSeries) {
 	if opts.SamplesPerSeries < 1 || opts.Series < 1 {
 		t.Fatal("samples and series has to be 1 or more")
 	}
@@ -2946,14 +2946,18 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 
 	var (
 		chunkMetas []chunks.Meta
-		expected   = make([]*storepb.Series, 0, opts.Series)
+		expected   = make([]*storepb.CustomSeries, 0, opts.Series)
 	)
 
 	var builder labels.ScratchBuilder
 	all := allPostings(t, ir)
 	for all.Next() {
 		assert.NoError(t, ir.Series(all.At(), &builder, &chunkMetas))
-		expected = append(expected, &storepb.Series{Labels: mimirpb.FromLabelsToLabelAdapters(builder.Labels())})
+		expected = append(expected, &storepb.CustomSeries{
+			Series: &storepb.Series{
+				Labels: mimirpb.FromLabelsToLabelAdapters(builder.Labels()),
+			},
+		})
 
 		if opts.SkipChunks {
 			continue
@@ -3013,7 +3017,7 @@ type seriesCase struct {
 	Req  *storepb.SeriesRequest
 
 	// Exact expectations are checked only for tests. For benchmarks only length is assured.
-	ExpectedSeries   []*storepb.Series
+	ExpectedSeries   []*storepb.CustomSeries
 	ExpectedWarnings []string
 	ExpectedHints    hintspb.SeriesResponseHints
 }

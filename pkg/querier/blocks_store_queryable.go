@@ -780,7 +780,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			}
 
 			// A storegateway client will only fill either of mySeries or myStreamingSeriesLabels, and not both.
-			mySeries := []*storepb.Series(nil)
+			mySeries := []*storepb.CustomSeries(nil)
 			myStreamingSeriesLabels := []labels.Labels(nil)
 			var myWarnings annotations.Annotations
 			myQueriedBlocks := []ulid.ULID(nil)
@@ -804,10 +804,16 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					break
 				}
 				if err != nil {
+					for _, s := range mySeries {
+						s.Release()
+					}
 					return err
 				}
 				if shouldRetry {
 					level.Warn(log).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
+					for _, s := range mySeries {
+						s.Release()
+					}
 					return nil
 				}
 
@@ -926,7 +932,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 	return seriesSets, queriedBlocks, warnings, startStreamingChunks, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
 }
 
-func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, mySeries []*storepb.Series, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) ([]*storepb.Series, annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
+func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, mySeries []*storepb.CustomSeries, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) ([]*storepb.CustomSeries, annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -939,15 +945,9 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 
 		return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
 	}
-	defer resp.FreeBuffer()
 
 	// Response may either contain series, streaming series, warning or hints.
 	if s := resp.GetSeries(); s != nil {
-		// Take a safe copy of every label.
-		for i, l := range s.Labels {
-			s.Labels[i].Name = strings.Clone(l.Name)
-			s.Labels[i].Value = strings.Clone(l.Value)
-		}
 		mySeries = append(mySeries, s)
 
 		// Add series fingerprint to query limiter; will return error if we are over the limit
@@ -993,16 +993,23 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 	if ss := resp.GetStreamingSeries(); ss != nil {
 		myStreamingSeriesLabels = slices.Grow(myStreamingSeriesLabels, len(ss.Series))
 
+		var lb labels.ScratchBuilder
 		for _, s := range ss.Series {
-			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
+			// TODO: Use pooling enabled ScratchBuilder.
+			lb = labels.NewScratchBuilder(len(s.Labels))
+			for _, l := range s.Labels {
+				lb.Add(l.Name, l.Value)
+			}
+			lbls := lb.Labels()
 
 			// Add series fingerprint to query limiter; will return error if we are over the limit
-			if limitErr := queryLimiter.AddSeries(l); limitErr != nil {
+			if limitErr := queryLimiter.AddSeries(lbls); limitErr != nil {
 				return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, limitErr
 			}
 
-			myStreamingSeriesLabels = append(myStreamingSeriesLabels, l)
+			myStreamingSeriesLabels = append(myStreamingSeriesLabels, lbls)
 		}
+		defer ss.Release()
 
 		if ss.IsEndOfSeriesStream {
 			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, true, false, nil
@@ -1295,7 +1302,7 @@ func convertBlockHintsToULIDs(hints []hintspb.Block) ([]ulid.ULID, error) {
 }
 
 // countChunksAndBytes returns the number of chunks and size of the chunks making up the provided series in bytes
-func countChunksAndBytes(series ...*storepb.Series) (chunks, bytes int) {
+func countChunksAndBytes(series ...*storepb.CustomSeries) (chunks, bytes int) {
 	for _, s := range series {
 		chunks += len(s.Chunks)
 		for _, c := range s.Chunks {
