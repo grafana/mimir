@@ -9,17 +9,25 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/costattribution"
+	catestutils "github.com/grafana/mimir/pkg/costattribution/testutils"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 )
 
@@ -225,6 +233,154 @@ func TestActiveSeries_ContainsRef(t *testing.T) {
 			}
 		})
 	}
+}
+
+type mockIndex struct {
+	mock.Mock
+	tsdb.IndexReader
+	existingLabels map[storage.SeriesRef]labels.Labels
+}
+
+func (m *mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
+	if ls, ok := m.existingLabels[ref]; ok {
+		builder.Assign(ls)
+		return nil
+	}
+	return fmt.Errorf("no labels found for ref %d", ref)
+}
+
+func TestActiveSeries_UpdateSeries_WithCostAttribution(t *testing.T) {
+	limits, _ := catestutils.GetMockCostAttributionLimits(0)
+	reg := prometheus.NewRegistry()
+	manager, err := costattribution.NewManager(5*time.Second, time.Second, 10*time.Second, log.NewNopLogger(), limits, reg)
+	require.NoError(t, err)
+	c := NewActiveSeries(&asmodel.Matchers{}, DefaultTimeout, manager.Tracker("user5"))
+	testCostAttributionUpdateSeries(t, c, reg)
+}
+
+func testCostAttributionUpdateSeries(t *testing.T, c *ActiveSeries, reg *prometheus.Registry) {
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
+	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3")
+	ref4, ls4 := storage.SeriesRef(4), labels.FromStrings("a", "4")
+	ref5, ls5 := storage.SeriesRef(5), labels.FromStrings("a", "5")
+	ref6 := storage.SeriesRef(6) // same as ls2
+	ref7, ls7 := storage.SeriesRef(7), labels.FromStrings("a", "2", "b", "1")
+	idx := mockIndex{existingLabels: map[storage.SeriesRef]labels.Labels{ref1: ls1, ref2: ls2, ref3: ls3, ref4: ls4, ref5: ls5, ref7: ls7}}
+	valid := c.Purge(time.Now(), &idx)
+	assert.True(t, valid)
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), "cortex_ingester_attributed_active_series"))
+
+	c.UpdateSeries(ls1, ref1, time.Now(), -1, &idx)
+	valid = c.Purge(time.Now(), &idx)
+	assert.True(t, valid)
+	expectedMetrics := `
+    # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_series gauge
+    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+
+	c.UpdateSeries(ls2, ref2, time.Now(), -1, &idx)
+	valid = c.Purge(time.Now(), &idx)
+	assert.True(t, valid)
+	expectedMetrics = `
+    # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_series gauge
+    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 1
+	`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+
+	c.UpdateSeries(ls3, ref3, time.Now(), -1, &idx)
+	valid = c.Purge(time.Now(), &idx)
+	assert.True(t, valid)
+	expectedMetrics = `
+    # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_series gauge
+    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="3",tenant="user5",tracker="cost-attribution"} 1
+	`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+
+	// ref7 has the same cost attribution labels as ref2, but it's a different series.
+	c.UpdateSeries(ls7, ref7, time.Now(), -1, &idx)
+	valid = c.Purge(time.Now(), &idx)
+	assert.True(t, valid)
+	expectedMetrics = `
+    # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_series gauge
+    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 2
+	cortex_ingester_attributed_active_series{a="3",tenant="user5",tracker="cost-attribution"} 1
+	`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+
+	c.UpdateSeries(ls4, ref4, time.Now(), 3, &idx)
+	valid = c.Purge(time.Now(), &idx)
+	assert.True(t, valid)
+	expectedMetrics = `
+    # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_series gauge
+    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 2
+	cortex_ingester_attributed_active_series{a="3",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="4",tenant="user5",tracker="cost-attribution"} 1
+	`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+
+	c.UpdateSeries(ls5, ref5, time.Now(), 5, &idx)
+	valid = c.Purge(time.Now(), &idx)
+	assert.True(t, valid)
+	expectedMetrics = `
+    # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_series gauge
+    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 2
+	cortex_ingester_attributed_active_series{a="3",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="4",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="5",tenant="user5",tracker="cost-attribution"} 1
+	`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+
+	// changing a metric from float to histogram
+	c.UpdateSeries(ls3, ref3, time.Now(), 6, &idx)
+	valid = c.Purge(time.Now(), &idx)
+	assert.True(t, valid)
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+
+	// fewer (zero) buckets for a histogram
+	c.UpdateSeries(ls4, ref4, time.Now(), 0, &idx)
+	valid = c.Purge(time.Now(), &idx)
+	assert.True(t, valid)
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+
+	// ref2 is deleted from the head, but still active.
+	c.PostDeletion(map[chunks.HeadSeriesRef]labels.Labels{
+		chunks.HeadSeriesRef(ref2): ls2,
+	})
+	// Numbers don't change.
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+
+	// Don't change after purging.
+	valid = c.Purge(time.Now(), &idx)
+	assert.True(t, valid)
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+
+	// // ls2 is pushed again, this time with ref6
+	c.UpdateSeries(ls2, ref6, time.Now(), -1, &idx)
+	// Numbers don't change.
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+
+	// Don't change after purging.
+	valid = c.Purge(time.Now(), &idx)
+	assert.True(t, valid)
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+
+	// Make sure deleted is empty, so we're not leaking.
+	assert.Empty(t, c.deleted.refs)
+	assert.Empty(t, c.deleted.keys)
 }
 
 func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
