@@ -110,6 +110,39 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 		Envar(envVars.ExtraHeaders).
 		StringMapVar(&raCmd.ClientConfig.ExtraHeaders)
 
+	ulaCmd := &UnexpectedLabelsAnalyzeCommand{}
+	unexpectedLabelsRulesAnalyzeCmd := analyzeCmd.Command("unexpected-labels", "Analyze rules with unexpected label values.").
+		Action(ulaCmd.run)
+	unexpectedLabelsRulesAnalyzeCmd.Flag("address", "Address of the Prometheus or Grafana Mimir instance; alternatively, set "+envVars.Address+".").
+		Envar(envVars.Address).
+		Required().
+		StringVar(&ulaCmd.ClientConfig.Address)
+	unexpectedLabelsRulesAnalyzeCmd.Flag("id", "Mimir tenant id, alternatively set "+envVars.TenantID+". Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided.").
+		Envar(envVars.TenantID).
+		Default("").
+		StringVar(&ulaCmd.ClientConfig.ID)
+	unexpectedLabelsRulesAnalyzeCmd.Flag("user", fmt.Sprintf("Basic auth username to use when contacting Prometheus or Grafana Mimir, alternatively set %s. If empty, %s will be used instead. ", envVars.APIUser, envVars.TenantID)).
+		Envar(envVars.APIUser).
+		Default("").
+		StringVar(&ulaCmd.ClientConfig.User)
+	unexpectedLabelsRulesAnalyzeCmd.Flag("key", "Basic auth password to use when contacting Prometheus or Grafana Mimir; alternatively, set "+envVars.APIKey+".").
+		Envar(envVars.APIKey).
+		Default("").
+		StringVar(&ulaCmd.ClientConfig.Key)
+	unexpectedLabelsRulesAnalyzeCmd.Flag("output", "The path for the output file").
+		Default("metrics-in-ruler.json").
+		StringVar(&ulaCmd.outputFile)
+	unexpectedLabelsRulesAnalyzeCmd.Flag("trace", "Enable trace logging").
+		BoolVar(&ulaCmd.trace)
+	unexpectedLabelsRulesAnalyzeCmd.Flag("auth-token", "Authentication token bearer authentication; alternatively, set "+envVars.AuthToken+".").
+		Default("").
+		Envar(envVars.AuthToken).
+		StringVar(&ulaCmd.ClientConfig.AuthToken)
+	ulaCmd.ClientConfig.ExtraHeaders = map[string]string{}
+	unexpectedLabelsRulesAnalyzeCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").
+		Envar(envVars.ExtraHeaders).
+		StringMapVar(&ulaCmd.ClientConfig.ExtraHeaders)
+
 	daCmd := &DashboardAnalyzeCommand{}
 	dashboardAnalyzeCmd := analyzeCmd.Command("dashboard", "Analyze and output the metrics used in Grafana dashboard files").Action(daCmd.run)
 	dashboardAnalyzeCmd.Arg("files", "Dashboard files").
