@@ -1,3 +1,5 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if and .Values.ruler.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 {{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "ruler" "memberlist" true) }}
 {{- end -}}
+{{- end }}

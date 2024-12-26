@@ -1,3 +1,5 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if and .Values.overrides_exporter.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 {{- include "mimir.lib.serviceMonitor" (dict "ctx" $ "component" "overrides-exporter") }}
 {{- end -}}
+{{- end }}
