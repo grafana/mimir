@@ -439,12 +439,12 @@ func (bs *LabelAdapter) Size() (n int) {
 }
 
 // Equal implements proto.Equaler.
-func (bs *LabelAdapter) Equal(other LabelAdapter) bool {
+func (bs *LabelAdapter) Equal(other *LabelAdapter) bool {
 	return bs.Name == other.Name && bs.Value == other.Value
 }
 
 // Compare implements proto.Comparer.
-func (bs *LabelAdapter) Compare(other LabelAdapter) int {
+func (bs *LabelAdapter) Compare(other *LabelAdapter) int {
 	if c := strings.Compare(bs.Name, other.Name); c != 0 {
 		return c
 	}
