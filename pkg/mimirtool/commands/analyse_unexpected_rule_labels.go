@@ -136,7 +136,7 @@ func AnalyzeUnexpectedLabels(c client.Config, trace bool) (map[string]string, er
 							m,
 						},
 					}
-					query := fmt.Sprintf("present_over_time(%s[5m])", q)
+					query := fmt.Sprintf("present_over_time(%s[30m])", q)
 					queries = append(queries, query)
 					fmt.Printf("  %s\n", query)
 				}
