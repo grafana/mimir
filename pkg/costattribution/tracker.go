@@ -57,22 +57,23 @@ type Tracker struct {
 }
 
 func newTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration, logger log.Logger) *Tracker {
-	slices.Sort(trackedLabels)
+	orderedLables := slices.Clone(trackedLabels)
+	slices.Sort(orderedLables)
 
 	// Create a map for fast lookup, and overflow labels to export when overflow happens
-	index := make(map[string]int, len(trackedLabels))
-	overflowLabels := make([]string, len(trackedLabels)+2)
-	for i, label := range trackedLabels {
+	index := make(map[string]int, len(orderedLables))
+	overflowLabels := make([]string, len(orderedLables)+2)
+	for i, label := range orderedLables {
 		index[label] = i
 		overflowLabels[i] = overflowValue
 	}
 
-	overflowLabels[len(trackedLabels)] = userID
-	overflowLabels[len(trackedLabels)+1] = overflowValue
+	overflowLabels[len(orderedLables)] = userID
+	overflowLabels[len(orderedLables)+1] = overflowValue
 
 	tracker := &Tracker{
 		userID:                  userID,
-		labels:                  trackedLabels,
+		labels:                  orderedLables,
 		index:                   index,
 		maxCardinality:          limit,
 		observed:                make(map[string]*observation),
@@ -84,18 +85,20 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 		cooldownUntil:           0,
 	}
 
+	variableLabels := slices.Clone(orderedLables)
+	variableLabels = append(variableLabels, tenantLabel, "reason")
 	tracker.discardedSampleAttribution = prometheus.NewDesc("cortex_discarded_attributed_samples_total",
 		"The total number of samples that were discarded per attribution.",
-		append(trackedLabels, tenantLabel, "reason"),
+		variableLabels,
 		prometheus.Labels{trackerLabel: defaultTrackerName})
 
 	tracker.receivedSamplesAttribution = prometheus.NewDesc("cortex_received_attributed_samples_total",
 		"The total number of samples that were received per attribution.",
-		append(trackedLabels, tenantLabel),
+		variableLabels[:len(variableLabels)-1],
 		prometheus.Labels{trackerLabel: defaultTrackerName})
 
 	tracker.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",
-		"The total number of active series per user and attribution.", append(trackedLabels, tenantLabel),
+		"The total number of active series per user and attribution.", variableLabels[:len(variableLabels)-1],
 		prometheus.Labels{trackerLabel: defaultTrackerName})
 	tracker.failedActiveSeriesDecrement = prometheus.NewDesc("cortex_ingester_attributed_active_series_failure",
 		"The total number of failed active series decrement per user and tracker.", []string{tenantLabel},
