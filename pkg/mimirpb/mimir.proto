@@ -13,6 +13,7 @@ package cortexpb;
 option go_package = "mimirpb";
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "mimir_extra.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -58,7 +59,7 @@ message ErrorDetails {
 }
 
 message TimeSeries {
-  repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
+  repeated LabelAdapter labels = 1 [(gogoproto.nullable) = false];
   // Sorted by time, oldest sample first.
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
@@ -95,12 +96,12 @@ message MetricMetadata {
 }
 
 message Metric {
-  repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
+  repeated LabelAdapter labels = 1 [(gogoproto.nullable) = false];
 }
 
 message Exemplar {
   // Exemplar labels, different than series labels
-  repeated LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "LabelAdapter"];
+  repeated LabelAdapter labels = 1 [(gogoproto.nullable) = false];
   double value = 2;
   int64 timestamp_ms = 3;
 }
