@@ -136,14 +136,15 @@ func AnalyzeUnexpectedLabels(c client.Config, trace bool) (map[string]string, er
 							m,
 						},
 					}
-					queries = append(queries, q.String())
-					fmt.Printf("  %s\n", q)
+					query := fmt.Sprintf("present_over_time(%s[5m])", q)
+					queries = append(queries, query)
+					fmt.Printf("  %s\n", query)
 				}
 				fmt.Printf("\n")
 			}
 		}
 	}
-	fmt.Printf("ALL:count by (grafana_slo_uuid) (\n%s\n)\n", strings.Join(queries, "\nor\n"))
+	fmt.Printf("ALL:\n======================\ncount by (grafana_slo_uuid) (\n%s\n)\n", strings.Join(queries, "\nor\n"))
 
 	return map[string]string{}, nil
 }
