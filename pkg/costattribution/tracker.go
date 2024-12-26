@@ -269,7 +269,12 @@ func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement
 		}
 		if discardedSampleIncrement > 0 && reason != nil {
 			o.discardedSampleMtx.Lock()
-			o.discardedSample[*reason] = *atomic.NewFloat64(discardedSampleIncrement)
+			if v, ok := o.discardedSample[*reason]; ok {
+				v.Add(discardedSampleIncrement)
+				o.discardedSample[*reason] = v
+			} else {
+				o.discardedSample[*reason] = *atomic.NewFloat64(discardedSampleIncrement)
+			}
 			o.discardedSampleMtx.Unlock()
 		}
 	} else if len(t.observed) < t.maxCardinality*2 && createIfDoesNotExist {

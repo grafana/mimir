@@ -241,7 +241,7 @@ type mockIndex struct {
 	existingLabels map[storage.SeriesRef]labels.Labels
 }
 
-func (m *mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
+func (m *mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, _ *[]chunks.Meta) error {
 	if ls, ok := m.existingLabels[ref]; ok {
 		builder.Assign(ls)
 		return nil
@@ -250,7 +250,7 @@ func (m *mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder
 }
 
 func TestActiveSeries_UpdateSeries_WithCostAttribution(t *testing.T) {
-	limits, _ := catestutils.GetMockCostAttributionLimits(0)
+	limits, _ := catestutils.NewMockCostAttributionLimits(0)
 	reg := prometheus.NewRegistry()
 	manager, err := costattribution.NewManager(5*time.Second, time.Second, 10*time.Second, log.NewNopLogger(), limits, reg)
 	require.NoError(t, err)

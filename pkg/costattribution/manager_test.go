@@ -18,7 +18,7 @@ import (
 
 func newTestManager() *Manager {
 	logger := log.NewNopLogger()
-	limits, _ := testutils.GetMockCostAttributionLimits(0)
+	limits, _ := testutils.NewMockCostAttributionLimits(0)
 	reg := prometheus.NewRegistry()
 	manager, err := NewManager(5*time.Second, time.Second, 10*time.Second, logger, limits, reg)
 	if err != nil {
@@ -81,7 +81,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 
 	t.Run("Disabling user cost attribution", func(t *testing.T) {
 		var err error
-		manager.limits, err = testutils.GetMockCostAttributionLimits(1)
+		manager.limits, err = testutils.NewMockCostAttributionLimits(1)
 		assert.NoError(t, err)
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(11, 0).Unix()))
 		assert.Equal(t, 1, len(manager.trackersByUserID))
@@ -96,7 +96,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 
 	t.Run("Updating user cardinality and labels", func(t *testing.T) {
 		var err error
-		manager.limits, err = testutils.GetMockCostAttributionLimits(2)
+		manager.limits, err = testutils.NewMockCostAttributionLimits(2)
 		assert.NoError(t, err)
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(12, 0).Unix()))
 		assert.Equal(t, 1, len(manager.trackersByUserID))
@@ -147,7 +147,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 
 	t.Run("Purge after inactive timeout", func(t *testing.T) {
 		// disable cost attribution for user1 to test purging
-		manager.limits, _ = testutils.GetMockCostAttributionLimits(1)
+		manager.limits, _ = testutils.NewMockCostAttributionLimits(1)
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(5, 0).Unix()))
 
 		// User3's tracker should remain since it's active, user1's tracker should be removed
