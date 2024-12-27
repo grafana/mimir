@@ -57,6 +57,8 @@ The following features are currently experimental:
     - `-cost-attribution.eviction-interval`
   - Configure the metrics endpoint dedicated to cost attribution
     - `-cost-attribution.registry-path`
+  - Configure the cost attribution cleanup process run interval
+    - `-cost-attribution.cleanup-interval`
 - Alertmanager
   - Enable a set of experimental API endpoints to help support the migration of the Grafana Alertmanager to the Mimir Alertmanager.
     - `-alertmanager.grafana-alertmanager-compatibility-enabled`

@@ -180,7 +180,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.TimeseriesUnmarshalCachingOptimizationEnabled, "timeseries-unmarshal-caching-optimization-enabled", true, "Enables optimized marshaling of timeseries.")
 	f.StringVar(&c.CostAttributionRegistryPath, "cost-attribution.registry-path", "", "Defines a custom path for the registry. When specified, Mimir exposes cost attribution metrics through this custom path. If not specified, cost attribution metrics aren't exposed.")
 	f.DurationVar(&c.CostAttributionEvictionInterval, "cost-attribution.eviction-interval", 20*time.Minute, "Time interval at which inactive cost attributions are evicted from the counter, ensuring they are not included in the cost attribution cardinality per user limit.")
-	f.DurationVar(&c.CostAttributionCleanupInterval, "cleanup-interval", 3*time.Minute, "Time interval at which the cost attribution cleanup process runs, ensuring inactive cost attribution entries are purged.")
+	f.DurationVar(&c.CostAttributionCleanupInterval, "cost-attribution.cleanup-interval", 3*time.Minute, "Time interval at which the cost attribution cleanup process runs, ensuring inactive cost attribution entries are purged.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)

@@ -470,7 +470,7 @@ overrides_exporter:
 
 # (experimental) Time interval at which the cost attribution cleanup process
 # runs, ensuring inactive cost attribution entries are purged.
-# CLI flag: -cleanup-interval
+# CLI flag: -cost-attribution.cleanup-interval
 [cost_attribution_cleanup_interval: <duration> | default = 3m]
 ```
 
