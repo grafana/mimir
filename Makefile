@@ -324,7 +324,11 @@ GENERATE_FILES ?= true
 
 %.pb.go: %.proto
 ifeq ($(GENERATE_FILES),true)
-	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
+	if case "$@" in *_custom_types.pb.go) false ;; *) true ;; esac; then \
+		protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@); \
+	else \
+		echo "Skipping $@"; \
+	fi
 else
 	@echo "Warning: generating files has been disabled, but the following file needs to be regenerated: $@"
 	@echo "If this is unexpected, check if the last modified timestamps on $@ and $(patsubst %.pb.go,%.proto,$@) are correct."
