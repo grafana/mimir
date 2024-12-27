@@ -38,7 +38,6 @@ type observation struct {
 type Tracker struct {
 	userID                         string
 	labels                         []string
-	index                          map[string]int
 	maxCardinality                 int
 	activeSeriesPerUserAttribution *prometheus.Desc
 	receivedSamplesAttribution     *prometheus.Desc
@@ -60,11 +59,9 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 	orderedLables := slices.Clone(trackedLabels)
 	slices.Sort(orderedLables)
 
-	// Create a map for fast lookup, and overflow labels to export when overflow happens
-	index := make(map[string]int, len(orderedLables))
+	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(orderedLables)+2)
-	for i, label := range orderedLables {
-		index[label] = i
+	for i := range orderedLables {
 		overflowLabels[i] = overflowValue
 	}
 
@@ -74,7 +71,6 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 	tracker := &Tracker{
 		userID:                  userID,
 		labels:                  orderedLables,
-		index:                   index,
 		maxCardinality:          limit,
 		observed:                make(map[string]*observation),
 		hashBuffer:              make([]byte, 0, 1024),
@@ -195,9 +191,15 @@ func (t *Tracker) IncrementActiveSeriesFailure() {
 func (t *Tracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
 	extractValues := func() []string {
 		labelValues := make([]string, len(t.labels))
-		for _, l := range lbls {
-			if idx, ok := t.index[l.Name]; ok {
-				labelValues[idx] = l.Value
+		for idx, cal := range t.labels {
+			for _, l := range lbls {
+				if l.Name == cal {
+					labelValues[idx] = l.Value
+					break
+				}
+			}
+			if labelValues[idx] == "" {
+				labelValues[idx] = missingValue
 			}
 		}
 		return labelValues
@@ -208,11 +210,12 @@ func (t *Tracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts
 func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
 	extractValues := func() []string {
 		labelValues := make([]string, len(t.labels))
-		lbls.Range(func(l labels.Label) {
-			if idx, ok := t.index[l.Name]; ok {
-				labelValues[idx] = l.Value
+		for idx, cal := range t.labels {
+			labelValues[idx] = lbls.Get(cal)
+			if labelValues[idx] == "" {
+				labelValues[idx] = missingValue
 			}
-		})
+		}
 		return labelValues
 	}
 	t.updateCountersCommon(extractValues, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
@@ -227,13 +230,6 @@ func (t *Tracker) updateCountersCommon(
 ) {
 	// Extract label values
 	labelValues := extractValues()
-
-	// Fill missing label values
-	for i := 0; i < len(labelValues); i++ {
-		if labelValues[i] == "" {
-			labelValues[i] = missingValue
-		}
-	}
 
 	// Reuse buffer from pool for building the observation key
 	buf := bufferPool.Get().(*bytes.Buffer)
