@@ -154,6 +154,10 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
 		}
 
 		if t.recoveredFromOverflow(deadline) {
+			// We delete the current tracker here,
+			// this will cause the creation of a new one later.
+			// ActiveSeries tracker compares the pointer of the tracker,
+			// and this change will cause a reload there.
 			m.deleteTracker(userID)
 		}
 	}
