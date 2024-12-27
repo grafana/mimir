@@ -13,6 +13,7 @@ import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/mimirpb/mimir_custom_types.proto";
 import "github.com/grafana/mimir/pkg/ruler/rulespb/rules.proto";
 
 
@@ -76,14 +77,8 @@ message RuleStateDesc {
 
 message AlertStateDesc {
   string state = 1;
-  repeated cortexpb.LabelPair labels = 2 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
-  repeated cortexpb.LabelPair annotations = 3 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
+  repeated cortexpb.LabelAdapter labels = 2 [(gogoproto.nullable) = false];
+  repeated cortexpb.LabelAdapter annotations = 3 [(gogoproto.nullable) = false];
   double value = 4;
   google.protobuf.Timestamp active_at = 5
       [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
