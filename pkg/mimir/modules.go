@@ -654,7 +654,7 @@ func (t *Mimir) initCostAttributionService() (services.Service, error) {
 	if t.Cfg.CostAttributionRegistryPath != "" {
 		reg := prometheus.NewRegistry()
 		var err error
-		t.CostAttributionManager, err = costattribution.NewManager(3*time.Minute, time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides, reg)
+		t.CostAttributionManager, err = costattribution.NewManager(3*time.Minute, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides, reg)
 		t.API.RegisterCostAttribution(t.Cfg.CostAttributionRegistryPath, reg)
 		return t.CostAttributionManager, err
 	}

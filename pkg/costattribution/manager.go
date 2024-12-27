@@ -29,23 +29,21 @@ type Manager struct {
 	inactiveTimeout time.Duration
 	limits          *validation.Overrides
 
-	mtx                   sync.RWMutex
-	trackersByUserID      map[string]*Tracker
-	reg                   *prometheus.Registry
-	cleanupInterval       time.Duration
-	metricsExportInterval time.Duration
+	mtx              sync.RWMutex
+	trackersByUserID map[string]*Tracker
+	reg              *prometheus.Registry
+	cleanupInterval  time.Duration
 }
 
-func NewManager(cleanupInterval, exportInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg *prometheus.Registry) (*Manager, error) {
+func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg *prometheus.Registry) (*Manager, error) {
 	m := &Manager{
-		trackersByUserID:      make(map[string]*Tracker),
-		limits:                limits,
-		mtx:                   sync.RWMutex{},
-		inactiveTimeout:       inactiveTimeout,
-		logger:                logger,
-		reg:                   reg,
-		cleanupInterval:       cleanupInterval,
-		metricsExportInterval: exportInterval,
+		trackersByUserID: make(map[string]*Tracker),
+		limits:           limits,
+		mtx:              sync.RWMutex{},
+		inactiveTimeout:  inactiveTimeout,
+		logger:           logger,
+		reg:              reg,
+		cleanupInterval:  cleanupInterval,
 	}
 
 	m.Service = services.NewTimerService(cleanupInterval, nil, m.iteration, nil).WithName("cost attribution manager")

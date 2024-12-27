@@ -20,7 +20,7 @@ func newTestManager() *Manager {
 	logger := log.NewNopLogger()
 	limits, _ := testutils.NewMockCostAttributionLimits(0)
 	reg := prometheus.NewRegistry()
-	manager, err := NewManager(5*time.Second, time.Second, 10*time.Second, logger, limits, reg)
+	manager, err := NewManager(5*time.Second, 10*time.Second, logger, limits, reg)
 	if err != nil {
 		panic(err)
 	}
