@@ -10,6 +10,7 @@ option go_package = "storepb";
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/mimirpb/mimir_custom_types.proto";
 
 option (gogoproto.sizer_all) = true;
 option (gogoproto.marshaler_all) = true;
@@ -33,12 +34,12 @@ message Chunk {
 }
 
 message Series {
-  repeated cortexpb.LabelPair labels      = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  repeated cortexpb.LabelAdapter labels      = 1 [(gogoproto.nullable) = false];
   repeated AggrChunk chunks  = 2 [(gogoproto.nullable) = false];
 }
 
 message StreamingSeries {
-  repeated cortexpb.LabelPair labels  = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  repeated cortexpb.LabelAdapter labels  = 1 [(gogoproto.nullable) = false];
 }
 
 message StreamingSeriesBatch {

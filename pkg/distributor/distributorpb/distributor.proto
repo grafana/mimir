@@ -11,6 +11,7 @@ option go_package = "distributorpb";
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/mimirpb/mimir_custom_types.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
