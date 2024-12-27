@@ -19705,6 +19705,17 @@
       "fieldFlag": "cost-attribution.registry-path",
       "fieldType": "string",
       "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_cleanup_interval",
+      "required": false,
+      "desc": "Time interval at which the cost attribution cleanup process runs, ensuring inactive cost attribution entries are purged.",
+      "fieldValue": null,
+      "fieldDefaultValue": 180000000000,
+      "fieldFlag": "cleanup-interval",
+      "fieldType": "duration",
+      "fieldCategory": "experimental"
     }
   ],
   "fieldValue": null,

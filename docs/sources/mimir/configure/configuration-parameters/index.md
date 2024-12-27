@@ -467,6 +467,11 @@ overrides_exporter:
 # cost attribution metrics aren't exposed.
 # CLI flag: -cost-attribution.registry-path
 [cost_attribution_registry_path: <string> | default = ""]
+
+# (experimental) Time interval at which the cost attribution cleanup process
+# runs, ensuring inactive cost attribution entries are purged.
+# CLI flag: -cleanup-interval
+[cost_attribution_cleanup_interval: <duration> | default = 3m]
 ```
 
 ### common
