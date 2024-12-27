@@ -325,7 +325,7 @@ GENERATE_FILES ?= true
 %.pb.go: %.proto
 ifeq ($(GENERATE_FILES),true)
 	if case "$@" in *_custom_types.pb.go) false ;; *) true ;; esac; then \
-		protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@); \
+		protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb:./pkg/mimirpb --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@); \
 	else \
 		echo "Skipping $@"; \
 	fi
