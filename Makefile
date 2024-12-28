@@ -240,7 +240,7 @@ images: ## Print all image names.
 	@echo > /dev/null
 
 # Generating proto code is automated.
-PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
+PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*_custom_types.proto' -prune -o -name '*.proto' -print)
 PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 
 # Generating OTLP translation code is automated.
@@ -325,7 +325,10 @@ GENERATE_FILES ?= true
 %.pb.go: %.proto
 ifeq ($(GENERATE_FILES),true)
 	if case "$@" in *_custom_types.pb.go) false ;; *) true ;; esac; then \
-		protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb:./pkg/mimirpb --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@); \
+		protoc \
+			-I ./vendor -I ./ -I ./vendor/github.com/gogo/protobuf \
+			--gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types:. \
+			./$(patsubst %.pb.go,%.proto,$@); \
 	else \
 		echo "Skipping $@"; \
 	fi

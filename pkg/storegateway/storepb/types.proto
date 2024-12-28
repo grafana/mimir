@@ -8,9 +8,8 @@ package thanos;
 
 option go_package = "storepb";
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
-import "github.com/grafana/mimir/pkg/mimirpb/mimir_custom_types.proto";
+import "gogoproto/gogo.proto";
+import "pkg/mimirpb/mimir_custom_types.proto";
 
 option (gogoproto.sizer_all) = true;
 option (gogoproto.marshaler_all) = true;

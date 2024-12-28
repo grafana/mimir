@@ -10,9 +10,9 @@ package queryrange;
 
 option go_package = "querymiddleware";
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
-import "github.com/grafana/mimir/pkg/mimirpb/mimir_custom_types.proto";
+import "gogoproto/gogo.proto";
+import "pkg/mimirpb/mimir.proto";
+import "pkg/mimirpb/mimir_custom_types.proto";
 import "google/protobuf/any.proto";
 
 option (gogoproto.marshaler_all) = true;

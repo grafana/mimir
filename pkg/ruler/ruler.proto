@@ -9,12 +9,12 @@
 syntax = "proto3";
 package ruler;
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
-import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
-import "github.com/grafana/mimir/pkg/mimirpb/mimir_custom_types.proto";
-import "github.com/grafana/mimir/pkg/ruler/rulespb/rules.proto";
+import "pkg/mimirpb/mimir.proto";
+import "pkg/mimirpb/mimir_custom_types.proto";
+import "pkg/ruler/rulespb/rules.proto";
 
 
 option (gogoproto.marshaler_all) = true;

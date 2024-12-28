@@ -6,9 +6,9 @@
 syntax = "proto3";
 package thanos;
 
-import "types.proto";
-import "github.com/grafana/mimir/pkg/mimirpb/mimir_custom_types.proto";
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "pkg/storegateway/storepb/types.proto";
+import "pkg/mimirpb/mimir_custom_types.proto";
+import "gogoproto/gogo.proto";
 import "google/protobuf/any.proto";
 
 option go_package = "storepb";

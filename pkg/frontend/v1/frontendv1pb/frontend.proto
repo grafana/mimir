@@ -7,13 +7,13 @@ syntax = "proto3";
 
 // Protobuf package should not be changed when moving around go packages
 // in order to not break backward compatibility.
-package frontend;
+package frontendv1pb;
 
 option go_package = "frontendv1pb";
 
 import "gogoproto/gogo.proto";
 import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
-import "github.com/grafana/mimir/pkg/querier/stats/stats.proto";
+import "pkg/querier/stats/stats.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;

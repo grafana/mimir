@@ -6,7 +6,7 @@
 syntax = "proto3";
 package gatewaypb;
 
-import "github.com/grafana/mimir/pkg/storegateway/storepb/rpc.proto";
+import "pkg/storegateway/storepb/rpc.proto";
 
 option go_package = "storegatewaypb";
 
