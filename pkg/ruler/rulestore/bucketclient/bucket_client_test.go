@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
@@ -156,7 +156,7 @@ func TestLoadRules(t *testing.T) {
 				{
 					For:           5 * time.Minute,
 					KeepFiringFor: 2 * time.Minute,
-					Labels:        []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}},
+					Labels:        []mimirpb_custom.LabelAdapter{{Name: "label1", Value: "value1"}},
 				},
 			}},
 			{User: "user1", Namespace: "hello", Name: "second testGroup", Interval: 2 * time.Minute},

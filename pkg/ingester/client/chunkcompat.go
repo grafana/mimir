@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util/modelutil"
 )
@@ -21,7 +22,7 @@ import (
 // StreamsToMatrix converts a slice of QueryStreamResponse to a model.Matrix.
 func StreamsToMatrix(from, through model.Time, responses []*QueryStreamResponse) (model.Matrix, error) {
 	result := model.Matrix{}
-	streamingSeries := [][]mimirpb.LabelAdapter{}
+	streamingSeries := [][]mimirpb_custom.LabelAdapter{}
 	haveReachedEndOfStreamingSeriesLabels := false
 
 	for _, response := range responses {

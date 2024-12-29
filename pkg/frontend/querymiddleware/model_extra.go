@@ -24,6 +24,7 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 )
 
 var (
@@ -873,7 +874,7 @@ func (sss *stringSampleStreams) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*sss = []SampleStream{{
-		Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: sv.Value}},
+		Labels:  []mimirpb_custom.LabelAdapter{{Name: "value", Value: sv.Value}},
 		Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp)}},
 	}}
 	return nil

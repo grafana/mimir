@@ -44,6 +44,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -1078,7 +1079,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 				actual := seriesSet[seriesID]
 
 				// Ensure Mimir external labels have been removed.
-				assert.Equal(t, []mimirpb.LabelAdapter{{Name: "series_id", Value: strconv.Itoa(seriesID)}}, actual.Labels)
+				assert.Equal(t, []mimirpb_custom.LabelAdapter{{Name: "series_id", Value: strconv.Itoa(seriesID)}}, actual.Labels)
 
 				// Ensure samples have been correctly queried. The store-gateway doesn't deduplicate chunks,
 				// so the same sample is returned twice because in this test we query two identical blocks.

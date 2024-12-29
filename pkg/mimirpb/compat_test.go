@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -179,7 +180,7 @@ func TestMetricMetadataToMetricTypeToMetricType(t *testing.T) {
 }
 
 func TestFromLabelAdaptersToLabels(t *testing.T) {
-	input := []LabelAdapter{{Name: "hello", Value: "world"}}
+	input := []mimirpb_custom.LabelAdapter{{Name: "hello", Value: "world"}}
 	expected := labels.FromStrings("hello", "world")
 	actual := FromLabelAdaptersToLabels(input)
 
@@ -187,7 +188,7 @@ func TestFromLabelAdaptersToLabels(t *testing.T) {
 }
 
 func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
-	input := []LabelAdapter{{Name: "hello", Value: "world"}}
+	input := []mimirpb_custom.LabelAdapter{{Name: "hello", Value: "world"}}
 	expected := labels.FromStrings("hello", "world")
 	actual := FromLabelAdaptersToLabelsWithCopy(input)
 
@@ -199,7 +200,7 @@ func TestFromLabelAdaptersToLabelsWithCopy(t *testing.T) {
 }
 
 func BenchmarkFromLabelAdaptersToLabelsWithCopy(b *testing.B) {
-	input := []LabelAdapter{
+	input := []mimirpb_custom.LabelAdapter{
 		{Name: "hello", Value: "world"},
 		{Name: "some label", Value: "and its value"},
 		{Name: "long long long long long label name", Value: "perhaps even longer label value, but who's counting anyway?"}}
@@ -265,7 +266,7 @@ func BenchmarkFromHPointsToHistograms(b *testing.B) {
 func TestPreallocatingMetric(t *testing.T) {
 	t.Run("should be unmarshallable from the bytes of a default Metric", func(t *testing.T) {
 		metric := Metric{
-			Labels: []LabelAdapter{
+			Labels: []mimirpb_custom.LabelAdapter{
 				{Name: "l1", Value: "v1"},
 				{Name: "l2", Value: "v2"},
 				{Name: "l3", Value: "v3"},
@@ -289,7 +290,7 @@ func TestPreallocatingMetric(t *testing.T) {
 
 	t.Run("should correctly preallocate Labels slice", func(t *testing.T) {
 		metric := Metric{
-			Labels: []LabelAdapter{
+			Labels: []mimirpb_custom.LabelAdapter{
 				{Name: "l1", Value: "v1"},
 				{Name: "l2", Value: "v2"},
 				{Name: "l3", Value: "v3"},
@@ -310,7 +311,7 @@ func TestPreallocatingMetric(t *testing.T) {
 
 	t.Run("should not allocate a slice when there are 0 Labels (same as Metric's behaviour)", func(t *testing.T) {
 		metric := Metric{
-			Labels: []LabelAdapter{},
+			Labels: []mimirpb_custom.LabelAdapter{},
 		}
 
 		metricBytes, err := metric.Marshal()
@@ -324,7 +325,7 @@ func TestPreallocatingMetric(t *testing.T) {
 
 	t.Run("should marshal to the same bytes as Metric", func(t *testing.T) {
 		preallocMetric := &PreallocatingMetric{Metric{
-			Labels: []LabelAdapter{
+			Labels: []mimirpb_custom.LabelAdapter{
 				{Name: "l1", Value: "v1"},
 				{Name: "l2", Value: "v2"},
 				{Name: "l3", Value: "v3"},
@@ -334,7 +335,7 @@ func TestPreallocatingMetric(t *testing.T) {
 		}}
 
 		metric := Metric{
-			Labels: []LabelAdapter{
+			Labels: []mimirpb_custom.LabelAdapter{
 				{Name: "l1", Value: "v1"},
 				{Name: "l2", Value: "v2"},
 				{Name: "l3", Value: "v3"},
@@ -632,7 +633,7 @@ func TestPrometheusSampleHistogramInSyncWithMimirPbSampleHistogram(t *testing.T)
 // and https://go.dev/ref/spec#Assignability
 // More strict than necessary but is checked in compile time.
 func TestPrometheusLabelsInSyncWithMimirPbLabelAdapter(_ *testing.T) {
-	_ = labels.Label(LabelAdapter{})
+	_ = labels.Label(mimirpb_custom.LabelAdapter{})
 }
 
 // Check that Prometheus histogram.Span and MimirPb BucketSpan types
@@ -642,65 +643,65 @@ func TestPrometheusHistogramSpanInSyncWithMimirPbBucketSpan(_ *testing.T) {
 }
 
 func TestCompareLabelAdapters(t *testing.T) {
-	labels := []LabelAdapter{
+	labels := []mimirpb_custom.LabelAdapter{
 		{Name: "aaa", Value: "111"},
 		{Name: "bbb", Value: "222"},
 	}
 
 	tests := []struct {
-		compared []LabelAdapter
+		compared []mimirpb_custom.LabelAdapter
 		expected int
 	}{
 		{
-			compared: []LabelAdapter{
+			compared: []mimirpb_custom.LabelAdapter{
 				{Name: "aaa", Value: "110"},
 				{Name: "bbb", Value: "222"},
 			},
 			expected: 1,
 		},
 		{
-			compared: []LabelAdapter{
+			compared: []mimirpb_custom.LabelAdapter{
 				{Name: "aaa", Value: "111"},
 				{Name: "bbb", Value: "233"},
 			},
 			expected: -1,
 		},
 		{
-			compared: []LabelAdapter{
+			compared: []mimirpb_custom.LabelAdapter{
 				{Name: "aaa", Value: "111"},
 				{Name: "bar", Value: "222"},
 			},
 			expected: 1,
 		},
 		{
-			compared: []LabelAdapter{
+			compared: []mimirpb_custom.LabelAdapter{
 				{Name: "aaa", Value: "111"},
 				{Name: "bbc", Value: "222"},
 			},
 			expected: -1,
 		},
 		{
-			compared: []LabelAdapter{
+			compared: []mimirpb_custom.LabelAdapter{
 				{Name: "aaa", Value: "111"},
 				{Name: "bb", Value: "222"},
 			},
 			expected: 1,
 		},
 		{
-			compared: []LabelAdapter{
+			compared: []mimirpb_custom.LabelAdapter{
 				{Name: "aaa", Value: "111"},
 				{Name: "bbbb", Value: "222"},
 			},
 			expected: -1,
 		},
 		{
-			compared: []LabelAdapter{
+			compared: []mimirpb_custom.LabelAdapter{
 				{Name: "aaa", Value: "111"},
 			},
 			expected: 1,
 		},
 		{
-			compared: []LabelAdapter{
+			compared: []mimirpb_custom.LabelAdapter{
 				{Name: "aaa", Value: "111"},
 				{Name: "bbb", Value: "222"},
 				{Name: "ccc", Value: "333"},
@@ -709,14 +710,14 @@ func TestCompareLabelAdapters(t *testing.T) {
 			expected: -2,
 		},
 		{
-			compared: []LabelAdapter{
+			compared: []mimirpb_custom.LabelAdapter{
 				{Name: "aaa", Value: "111"},
 				{Name: "bbb", Value: "222"},
 			},
 			expected: 0,
 		},
 		{
-			compared: []LabelAdapter{},
+			compared: []mimirpb_custom.LabelAdapter{},
 			expected: 1,
 		},
 	}
@@ -773,10 +774,10 @@ func benchmarkSeriesMap(numSeries int, b *testing.B) {
 	}
 }
 
-func makeSeries(n int) [][]LabelAdapter {
-	series := make([][]LabelAdapter, 0, n)
+func makeSeries(n int) [][]mimirpb_custom.LabelAdapter {
+	series := make([][]mimirpb_custom.LabelAdapter, 0, n)
 	for i := 0; i < n; i++ {
-		series = append(series, []LabelAdapter{
+		series = append(series, []mimirpb_custom.LabelAdapter{
 			{Name: "label0", Value: "value0"},
 			{Name: "label1", Value: "value1"},
 			{Name: "label2", Value: "value2"},

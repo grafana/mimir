@@ -12,6 +12,7 @@ option go_package = "client";
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "github.com/grafana/mimir/pkg/mimirpb_custom/mimir_custom_types.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -123,7 +124,7 @@ message QueryStreamResponse {
 }
 
 message QueryStreamSeries {
-  repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  repeated cortexpb_custom.LabelAdapter labels = 1 [(gogoproto.nullable) = false];
   int64 chunk_count = 2;
 }
 
@@ -207,7 +208,7 @@ message ActiveSeriesResponse {
 message TimeSeriesChunk {
   string from_ingester_id = 1;
   string user_id = 2;
-  repeated cortexpb.LabelPair labels = 3 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+  repeated cortexpb_custom.LabelAdapter labels = 3 [(gogoproto.nullable) = false];
   repeated Chunk chunks = 4 [(gogoproto.nullable) = false];
 }
 

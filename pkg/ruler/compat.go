@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/querier"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -43,9 +44,9 @@ type PusherAppender struct {
 
 	ctx             context.Context
 	pusher          Pusher
-	labels          [][]mimirpb.LabelAdapter
+	labels          [][]mimirpb_custom.LabelAdapter
 	samples         []mimirpb.Sample
-	histogramLabels [][]mimirpb.LabelAdapter
+	histogramLabels [][]mimirpb_custom.LabelAdapter
 	histograms      []mimirpb.Histogram
 	userID          string
 }

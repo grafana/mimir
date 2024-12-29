@@ -27,6 +27,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util"
@@ -439,7 +440,7 @@ func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
 	case promql.String:
 		return []SampleStream{
 			{
-				Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: v.V}},
+				Labels:  []mimirpb_custom.LabelAdapter{{Name: "value", Value: v.V}},
 				Samples: []mimirpb.Sample{{TimestampMs: v.T}},
 			},
 		}, nil

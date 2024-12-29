@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -31,7 +32,7 @@ func TestMarshall(t *testing.T) {
 		for i := 0; i < numSeries; i++ {
 			req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
 				TimeSeries: &mimirpb.TimeSeries{
-					Labels: []mimirpb.LabelAdapter{
+					Labels: []mimirpb_custom.LabelAdapter{
 						{Name: "foo", Value: strconv.Itoa(i)},
 					},
 					Samples: []mimirpb.Sample{

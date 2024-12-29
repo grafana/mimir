@@ -25,6 +25,7 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -561,8 +562,8 @@ func TestMergeExemplars(t *testing.T) {
 	exemplar3 := mimirpb.Exemplar{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("traceID", "trace-3")), TimestampMs: now + 4, Value: 3}
 	exemplar4 := mimirpb.Exemplar{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("traceID", "trace-4")), TimestampMs: now + 8, Value: 7}
 	exemplar5 := mimirpb.Exemplar{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("traceID", "trace-4")), TimestampMs: now, Value: 7}
-	labels1 := []mimirpb.LabelAdapter{{Name: "label1", Value: "foo1"}}
-	labels2 := []mimirpb.LabelAdapter{{Name: "label1", Value: "foo2"}}
+	labels1 := []mimirpb_custom.LabelAdapter{{Name: "label1", Value: "foo1"}}
+	labels2 := []mimirpb_custom.LabelAdapter{{Name: "label1", Value: "foo2"}}
 
 	for i, c := range []struct {
 		seriesA       []mimirpb.TimeSeries
@@ -638,7 +639,7 @@ func makeExemplarQueryResponse(numSeries int) *ingester_client.ExemplarQueryResp
 		}
 		ts[i].Labels = mimirpb.FromLabelsToLabelAdapters(lbls.Labels())
 		ts[i].Exemplars = []mimirpb.Exemplar{{
-			Labels:      []mimirpb.LabelAdapter{{Name: "traceid", Value: "trace1"}},
+			Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceid", Value: "trace1"}},
 			Value:       float64(i),
 			TimestampMs: now.Add(time.Hour).UnixNano() / int64(time.Millisecond),
 		}}

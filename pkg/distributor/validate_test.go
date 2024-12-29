@@ -26,6 +26,7 @@ import (
 	golangproto "google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -109,7 +110,7 @@ func TestValidateLabels(t *testing.T) {
 				invalidLabelMsgFormat,
 				"foo ",
 				mimirpb.FromLabelAdaptersToString(
-					[]mimirpb.LabelAdapter{
+					[]mimirpb_custom.LabelAdapter{
 						{Name: model.MetricNameLabel, Value: "valid"},
 						{Name: "foo ", Value: "bar"},
 					},
@@ -130,7 +131,7 @@ func TestValidateLabels(t *testing.T) {
 				labelNameTooLongMsgFormat,
 				"this_is_a_really_really_long_name_that_should_cause_an_error",
 				mimirpb.FromLabelAdaptersToString(
-					[]mimirpb.LabelAdapter{
+					[]mimirpb_custom.LabelAdapter{
 						{Name: model.MetricNameLabel, Value: "badLabelName"},
 						{Name: "this_is_a_really_really_long_name_that_should_cause_an_error", Value: "test_value_please_ignore"},
 					},
@@ -146,7 +147,7 @@ func TestValidateLabels(t *testing.T) {
 				"much_shorter_name",
 				"test_value_please_ignore_no_really_nothing_to_see_here",
 				mimirpb.FromLabelAdaptersToString(
-					[]mimirpb.LabelAdapter{
+					[]mimirpb_custom.LabelAdapter{
 						{Name: model.MetricNameLabel, Value: "badLabelValue"},
 						{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
 					},
@@ -160,7 +161,7 @@ func TestValidateLabels(t *testing.T) {
 			err: fmt.Errorf(
 				tooManyLabelsMsgFormat,
 				tooManyLabelsArgs(
-					[]mimirpb.LabelAdapter{
+					[]mimirpb_custom.LabelAdapter{
 						{Name: model.MetricNameLabel, Value: "foo"},
 						{Name: "bar", Value: "baz"},
 						{Name: "blip", Value: "blop"},
@@ -184,7 +185,7 @@ func TestValidateLabels(t *testing.T) {
 			err: fmt.Errorf(
 				tooManyInfoLabelsMsgFormat,
 				tooManyLabelsArgs(
-					[]mimirpb.LabelAdapter{
+					[]mimirpb_custom.LabelAdapter{
 						{Name: model.MetricNameLabel, Value: "foo_info"},
 						{Name: "bar", Value: "baz"},
 						{Name: "blip", Value: "blop"},
@@ -271,44 +272,44 @@ func TestValidateExemplars(t *testing.T) {
 		},
 		{
 			// Labels all blank
-			Labels:      []mimirpb.LabelAdapter{{Name: "", Value: ""}},
+			Labels:      []mimirpb_custom.LabelAdapter{{Name: "", Value: ""}},
 			TimestampMs: 1000,
 		},
 		{
 			// Labels value blank
-			Labels:      []mimirpb.LabelAdapter{{Name: "foo", Value: ""}},
+			Labels:      []mimirpb_custom.LabelAdapter{{Name: "foo", Value: ""}},
 			TimestampMs: 1000,
 		},
 		{
 			// Invalid timestamp
-			Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+			Labels: []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}},
 		},
 		{
 			// Combined labelset too long
-			Labels:      []mimirpb.LabelAdapter{{Name: "foo", Value: strings.Repeat("0", 126)}},
+			Labels:      []mimirpb_custom.LabelAdapter{{Name: "foo", Value: strings.Repeat("0", 126)}},
 			TimestampMs: 1000,
 		},
 	}
 
 	for _, ie := range invalidExemplars {
-		assert.Error(t, validateExemplar(m, userID, []mimirpb.LabelAdapter{}, ie))
+		assert.Error(t, validateExemplar(m, userID, []mimirpb_custom.LabelAdapter{}, ie))
 	}
 
 	validExemplars := []mimirpb.Exemplar{
 		{
 			// Valid labels
-			Labels:      []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+			Labels:      []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}},
 			TimestampMs: 1000,
 		},
 		{
 			// Single label blank value with one valid value
-			Labels:      []mimirpb.LabelAdapter{{Name: "foo", Value: ""}, {Name: "traceID", Value: "123abc"}},
+			Labels:      []mimirpb_custom.LabelAdapter{{Name: "foo", Value: ""}, {Name: "traceID", Value: "123abc"}},
 			TimestampMs: 1000,
 		},
 	}
 
 	for _, ve := range validExemplars {
-		assert.NoError(t, validateExemplar(m, userID, []mimirpb.LabelAdapter{}, ve))
+		assert.NoError(t, validateExemplar(m, userID, []mimirpb_custom.LabelAdapter{}, ve))
 	}
 
 	validation.DiscardedExemplarsCounter(reg, "random reason").WithLabelValues("different user").Inc()
@@ -429,7 +430,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 
 	userID := "testUser"
 
-	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
+	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb_custom.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
 	}, false, false)
@@ -437,7 +438,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 		duplicateLabelMsgFormat,
 		model.MetricNameLabel,
 		mimirpb.FromLabelAdaptersToString(
-			[]mimirpb.LabelAdapter{
+			[]mimirpb_custom.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "a"},
 				{Name: model.MetricNameLabel, Value: "b"},
 			},
@@ -445,7 +446,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	)
 	assert.Equal(t, expected, actual)
 
-	actual = validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
+	actual = validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb_custom.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
@@ -454,7 +455,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 		duplicateLabelMsgFormat,
 		"a",
 		mimirpb.FromLabelAdaptersToString(
-			[]mimirpb.LabelAdapter{
+			[]mimirpb_custom.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "a"},
 				{Name: "a", Value: "a"},
 				{Name: "a", Value: "a"},
@@ -606,7 +607,7 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 			t.Run(fmt.Sprintf("limit-%d-%s", limit, name), func(t *testing.T) {
 				var cfg sampleValidationCfg
 				cfg.maxNativeHistogramBuckets = limit
-				ls := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
+				ls := []mimirpb_custom.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
 
 				_, err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", ls, &h)
 
@@ -651,7 +652,7 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 	metrics := newSampleValidationMetrics(registry)
 	cfg := sampleValidationCfg{}
 	hist := &mimirpb.Histogram{}
-	labels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
+	labels := []mimirpb_custom.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
 	for testName, testCase := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			hist.Schema = testCase.schema
@@ -667,7 +668,7 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 	`), "cortex_discarded_samples_total"))
 }
 
-func tooManyLabelsArgs(series []mimirpb.LabelAdapter, limit int) []any {
+func tooManyLabelsArgs(series []mimirpb_custom.LabelAdapter, limit int) []any {
 	metric := mimirpb.FromLabelAdaptersToMetric(series).String()
 	ellipsis := ""
 

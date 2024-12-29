@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -48,7 +49,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 		},
 		"should return float series on success": {
 			series: &storepb.Series{
-				Labels: []mimirpb.LabelAdapter{
+				Labels: []mimirpb_custom.LabelAdapter{
 					{Name: "foo", Value: "bar"},
 				},
 				Chunks: []storepb.AggrChunk{
@@ -67,7 +68,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 		},
 		"should return histogram series on success": {
 			series: &storepb.Series{
-				Labels: []mimirpb.LabelAdapter{
+				Labels: []mimirpb_custom.LabelAdapter{
 					{Name: "foo", Value: "bar"},
 				},
 				Chunks: []storepb.AggrChunk{
@@ -90,7 +91,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 		},
 		"should return float histogram series on success": {
 			series: &storepb.Series{
-				Labels: []mimirpb.LabelAdapter{
+				Labels: []mimirpb_custom.LabelAdapter{
 					{Name: "foo", Value: "bar"},
 				},
 				Chunks: []storepb.AggrChunk{
@@ -113,7 +114,7 @@ func TestBlockQuerierSeries(t *testing.T) {
 		},
 		"should return error on failure while reading encoded chunk data": {
 			series: &storepb.Series{
-				Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+				Labels: []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}},
 				Chunks: []storepb.AggrChunk{
 					{MinTime: minTimestamp.Unix() * 1000, MaxTime: maxTimestamp.Unix() * 1000, Raw: storepb.Chunk{Type: storepb.Chunk_XOR, Data: []byte{0, 1}}},
 				},
@@ -514,11 +515,11 @@ func createAggrFloatHistogramChunk(minTime, maxTime int64, samples ...promql.HPo
 	}
 }
 
-func mkZLabels(s ...string) []mimirpb.LabelAdapter {
-	var result []mimirpb.LabelAdapter
+func mkZLabels(s ...string) []mimirpb_custom.LabelAdapter {
+	var result []mimirpb_custom.LabelAdapter
 
 	for i := 0; i+1 < len(s); i = i + 2 {
-		result = append(result, mimirpb.LabelAdapter{
+		result = append(result, mimirpb_custom.LabelAdapter{
 			Name:  s[i],
 			Value: s[i+1],
 		})

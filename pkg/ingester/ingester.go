@@ -56,6 +56,7 @@ import (
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/querier/api"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -1186,31 +1187,31 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 			func() {
 				stats.failedSamplesCount++
 			},
-			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(timestamp int64, labels []mimirpb_custom.LabelAdapter) {
 				stats.sampleTimestampTooOldCount++
 				updateFirstPartial(i.errorSamplers.sampleTimestampTooOld, func() softError {
 					return newSampleTimestampTooOldError(model.Time(timestamp), labels)
 				})
 			},
-			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(timestamp int64, labels []mimirpb_custom.LabelAdapter) {
 				stats.sampleOutOfOrderCount++
 				updateFirstPartial(i.errorSamplers.sampleOutOfOrder, func() softError {
 					return newSampleOutOfOrderError(model.Time(timestamp), labels)
 				})
 			},
-			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(timestamp int64, labels []mimirpb_custom.LabelAdapter) {
 				stats.sampleTooOldCount++
 				updateFirstPartial(i.errorSamplers.sampleTimestampTooOldOOOEnabled, func() softError {
 					return newSampleTimestampTooOldOOOEnabledError(model.Time(timestamp), labels, outOfOrderWindow)
 				})
 			},
-			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(timestamp int64, labels []mimirpb_custom.LabelAdapter) {
 				stats.sampleTooFarInFutureCount++
 				updateFirstPartial(i.errorSamplers.sampleTimestampTooFarInFuture, func() softError {
 					return newSampleTimestampTooFarInFutureError(model.Time(timestamp), labels)
 				})
 			},
-			func(timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(timestamp int64, labels []mimirpb_custom.LabelAdapter) {
 				stats.newValueForTimestampCount++
 				updateFirstPartial(i.errorSamplers.sampleDuplicateTimestamp, func() softError {
 					return newSampleDuplicateTimestampError(model.Time(timestamp), labels)
@@ -1222,44 +1223,44 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 					return newPerUserSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerUser(userID))
 				})
 			},
-			func(labels []mimirpb.LabelAdapter) {
+			func(labels []mimirpb_custom.LabelAdapter) {
 				stats.perMetricSeriesLimitCount++
 				updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() softError {
 					return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
 				})
 			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(err error, timestamp int64, labels []mimirpb_custom.LabelAdapter) {
 				stats.sampleOutOfOrderCount++
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					e := newNativeHistogramValidationError(globalerror.NativeHistogramOOODisabled, err, model.Time(timestamp), labels)
 					return e
 				})
 			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(err error, timestamp int64, labels []mimirpb_custom.LabelAdapter) {
 				stats.invalidNativeHistogramCount++
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					return newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, err, model.Time(timestamp), labels)
 				})
 			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(err error, timestamp int64, labels []mimirpb_custom.LabelAdapter) {
 				stats.invalidNativeHistogramCount++
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					return newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, err, model.Time(timestamp), labels)
 				})
 			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(err error, timestamp int64, labels []mimirpb_custom.LabelAdapter) {
 				stats.invalidNativeHistogramCount++
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					return newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, err, model.Time(timestamp), labels)
 				})
 			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(err error, timestamp int64, labels []mimirpb_custom.LabelAdapter) {
 				stats.invalidNativeHistogramCount++
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					return newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, err, model.Time(timestamp), labels)
 				})
 			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(err error, timestamp int64, labels []mimirpb_custom.LabelAdapter) {
 				stats.invalidNativeHistogramCount++
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
 					return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)

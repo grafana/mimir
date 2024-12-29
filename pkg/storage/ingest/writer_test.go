@@ -24,6 +24,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
@@ -1029,7 +1030,7 @@ func BenchmarkMarshalWriteRequestToRecords_NoSplitting(b *testing.B) {
 func mockPreallocTimeseries(metricName string) mimirpb.PreallocTimeseries {
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels:    []mimirpb.LabelAdapter{{Name: "__name__", Value: metricName}},
+			Labels:    []mimirpb_custom.LabelAdapter{{Name: "__name__", Value: metricName}},
 			Samples:   []mimirpb.Sample{{TimestampMs: 1, Value: 2}},
 			Exemplars: []mimirpb.Exemplar{}, // Makes comparison with unmarshalled TimeSeries easy.
 		},
@@ -1039,7 +1040,7 @@ func mockPreallocTimeseries(metricName string) mimirpb.PreallocTimeseries {
 func mockPreallocTimeseriesWithExemplar(metricName string) mimirpb.PreallocTimeseries {
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels: []mimirpb.LabelAdapter{
+			Labels: []mimirpb_custom.LabelAdapter{
 				{Name: "__name__", Value: metricName},
 			},
 			Samples: []mimirpb.Sample{{
@@ -1049,7 +1050,7 @@ func mockPreallocTimeseriesWithExemplar(metricName string) mimirpb.PreallocTimes
 			Exemplars: []mimirpb.Exemplar{{
 				TimestampMs: 2,
 				Value:       14,
-				Labels: []mimirpb.LabelAdapter{
+				Labels: []mimirpb_custom.LabelAdapter{
 					{Name: "trace_id", Value: metricName + "_trace"},
 				},
 			}},

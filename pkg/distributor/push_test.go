@@ -41,6 +41,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -359,54 +360,54 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 		{
 			name: "request with exemplars and exemplars are enabled",
 			submitTimeseries: mimirpb.TimeSeries{
-				Labels: []mimirpb.LabelAdapter{
+				Labels: []mimirpb_custom.LabelAdapter{
 					{Name: "label1", Value: "value1"},
 				},
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
 				},
 				Exemplars: []mimirpb.Exemplar{
-					{Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}}, Value: 1, TimestampMs: timestampMs},
-					{Labels: []mimirpb.LabelAdapter{{Name: "label2", Value: "value2"}}, Value: 2, TimestampMs: timestampMs},
-					{Labels: []mimirpb.LabelAdapter{{Name: "label3", Value: "value3"}}, Value: 3, TimestampMs: timestampMs},
+					{Labels: []mimirpb_custom.LabelAdapter{{Name: "label1", Value: "value1"}}, Value: 1, TimestampMs: timestampMs},
+					{Labels: []mimirpb_custom.LabelAdapter{{Name: "label2", Value: "value2"}}, Value: 2, TimestampMs: timestampMs},
+					{Labels: []mimirpb_custom.LabelAdapter{{Name: "label3", Value: "value3"}}, Value: 3, TimestampMs: timestampMs},
 				},
 				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
 			},
 			maxGlobalExemplarsPerUser: 1, // exemplars are not disabled
 			expectTimeseries: mimirpb.TimeSeries{
-				Labels: []mimirpb.LabelAdapter{
+				Labels: []mimirpb_custom.LabelAdapter{
 					{Name: "label1", Value: "value1"},
 				},
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
 				},
 				Exemplars: []mimirpb.Exemplar{
-					{Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}}, Value: 1, TimestampMs: timestampMs},
-					{Labels: []mimirpb.LabelAdapter{{Name: "label2", Value: "value2"}}, Value: 2, TimestampMs: timestampMs},
-					{Labels: []mimirpb.LabelAdapter{{Name: "label3", Value: "value3"}}, Value: 3, TimestampMs: timestampMs},
+					{Labels: []mimirpb_custom.LabelAdapter{{Name: "label1", Value: "value1"}}, Value: 1, TimestampMs: timestampMs},
+					{Labels: []mimirpb_custom.LabelAdapter{{Name: "label2", Value: "value2"}}, Value: 2, TimestampMs: timestampMs},
+					{Labels: []mimirpb_custom.LabelAdapter{{Name: "label3", Value: "value3"}}, Value: 3, TimestampMs: timestampMs},
 				},
 				Histograms: []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
 			},
 		}, {
 			name: "request with exemplars and exemplars are disabled",
 			submitTimeseries: mimirpb.TimeSeries{
-				Labels: []mimirpb.LabelAdapter{
+				Labels: []mimirpb_custom.LabelAdapter{
 					{Name: "label1", Value: "value1"},
 				},
 				Samples: []mimirpb.Sample{
 					{Value: 1, TimestampMs: timestampMs},
 				},
 				Exemplars: []mimirpb.Exemplar{
-					{Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}}, Value: 1, TimestampMs: timestampMs},
-					{Labels: []mimirpb.LabelAdapter{{Name: "label2", Value: "value2"}}, Value: 2, TimestampMs: timestampMs},
-					{Labels: []mimirpb.LabelAdapter{{Name: "label3", Value: "value3"}}, Value: 3, TimestampMs: timestampMs},
+					{Labels: []mimirpb_custom.LabelAdapter{{Name: "label1", Value: "value1"}}, Value: 1, TimestampMs: timestampMs},
+					{Labels: []mimirpb_custom.LabelAdapter{{Name: "label2", Value: "value2"}}, Value: 2, TimestampMs: timestampMs},
+					{Labels: []mimirpb_custom.LabelAdapter{{Name: "label3", Value: "value3"}}, Value: 3, TimestampMs: timestampMs},
 				},
 				Histograms:                []mimirpb.Histogram{{Sum: 1, Schema: 2, ZeroThreshold: 3, ResetHint: 4, Timestamp: 5}},
 				SkipUnmarshalingExemplars: true,
 			},
 			maxGlobalExemplarsPerUser: 0, // 0 disables exemplars
 			expectTimeseries: mimirpb.TimeSeries{
-				Labels: []mimirpb.LabelAdapter{
+				Labels: []mimirpb_custom.LabelAdapter{
 					{Name: "label1", Value: "value1"},
 				},
 				Samples: []mimirpb.Sample{
@@ -419,7 +420,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 		}, {
 			name: "request without exemplars and exemplars are enabled",
 			submitTimeseries: mimirpb.TimeSeries{
-				Labels: []mimirpb.LabelAdapter{
+				Labels: []mimirpb_custom.LabelAdapter{
 					{Name: "label1", Value: "value1"},
 				},
 				Samples: []mimirpb.Sample{
@@ -430,7 +431,7 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 			},
 			maxGlobalExemplarsPerUser: 1, // exemplars are not disabled
 			expectTimeseries: mimirpb.TimeSeries{
-				Labels: []mimirpb.LabelAdapter{
+				Labels: []mimirpb_custom.LabelAdapter{
 					{Name: "label1", Value: "value1"},
 				},
 				Samples: []mimirpb.Sample{
@@ -548,7 +549,7 @@ func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation, skip
 	h := prompb.FromIntHistogram(1337, test.GenerateTestHistogram(1))
 	ts := mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels: []mimirpb.LabelAdapter{
+			Labels: []mimirpb_custom.LabelAdapter{
 				{Name: "__name__", Value: "foo"},
 			},
 			Samples: []mimirpb.Sample{
@@ -572,7 +573,7 @@ func createMimirWriteRequestProtobufWithNonSupportedLabelNames(t *testing.T, ski
 	t.Helper()
 	ts := mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels: []mimirpb.LabelAdapter{
+			Labels: []mimirpb_custom.LabelAdapter{
 				{Name: "a-label", Value: "value"}, // a-label does not comply with regex [a-zA-Z_:][a-zA-Z0-9_:]*
 			},
 			Samples: []mimirpb.Sample{

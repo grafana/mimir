@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -1120,7 +1121,7 @@ func TestBatchingQueue(t *testing.T) {
 		timeSeries.Exemplars = append(timeSeries.Exemplars, mimirpb.Exemplar{
 			Value:       42.0,
 			TimestampMs: timestamp,
-			Labels:      []mimirpb.LabelAdapter{{Name: "trace_id", Value: "abc123"}},
+			Labels:      []mimirpb_custom.LabelAdapter{{Name: "trace_id", Value: "abc123"}},
 		},
 		)
 

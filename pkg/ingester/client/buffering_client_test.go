@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	pool2 "github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -240,10 +241,10 @@ func TestWriteRequestBufferingClient_PushConcurrent(t *testing.T) {
 }
 
 func createRequest(metricName string, seriesPerRequest int) *mimirpb.WriteRequest {
-	metrics := make([][]mimirpb.LabelAdapter, 0, seriesPerRequest)
+	metrics := make([][]mimirpb_custom.LabelAdapter, 0, seriesPerRequest)
 	samples := make([]mimirpb.Sample, 0, seriesPerRequest)
 	for i := 0; i < seriesPerRequest; i++ {
-		metrics = append(metrics, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}})
+		metrics = append(metrics, []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}})
 		samples = append(samples, mimirpb.Sample{Value: float64(i), TimestampMs: time.Now().UnixMilli()})
 	}
 

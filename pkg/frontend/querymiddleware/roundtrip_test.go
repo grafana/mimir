@@ -39,6 +39,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/testkafka"
@@ -161,7 +162,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 				ResultType: "vector",
 				Result: []SampleStream{
 					{
-						Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+						Labels: []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}},
 						Samples: []mimirpb.Sample{
 							{TimestampMs: int64(reqTime * 1000), Value: 1},
 						},

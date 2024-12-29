@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
@@ -900,7 +901,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 
 	return false, nil
 }
-func (d *Distributor) labelValuesWithNewlines(labels []mimirpb.LabelAdapter) int {
+func (d *Distributor) labelValuesWithNewlines(labels []mimirpb_custom.LabelAdapter) int {
 	count := 0
 	for _, l := range labels {
 		if strings.IndexByte(l.Value, '\n') >= 0 {
@@ -1807,7 +1808,7 @@ func getTokensForMetadata(userID string, metadata []*mimirpb.MetricMetadata) []u
 	return metadataKeys
 }
 
-func tokenForLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
+func tokenForLabels(userID string, labels []mimirpb_custom.LabelAdapter) uint32 {
 	return mimirpb.ShardByAllLabelAdapters(userID, labels)
 }
 

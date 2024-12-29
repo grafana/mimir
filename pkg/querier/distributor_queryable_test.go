@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
@@ -145,13 +146,13 @@ func TestDistributorQuerier_Select(t *testing.T) {
 			response: client.CombinedQueryStreamResponse{
 				Chunkseries: []client.TimeSeriesChunk{
 					{
-						Labels: []mimirpb.LabelAdapter{
+						Labels: []mimirpb_custom.LabelAdapter{
 							{Name: "bar", Value: "baz"},
 						},
 						Chunks: clientChunks,
 					},
 					{
-						Labels: []mimirpb.LabelAdapter{
+						Labels: []mimirpb_custom.LabelAdapter{
 							{Name: "foo", Value: "bar"},
 						},
 						Chunks: clientChunks,
@@ -250,22 +251,22 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Labels: []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
 					Chunks: convertToChunks(t, samplesToInterface(s1), false),
 				},
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+					Labels: []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
 					Chunks: convertToChunks(t, samplesToInterface(s1), false),
 				},
 			},
 
 			Timeseries: []mimirpb.TimeSeries{
 				{
-					Labels:  []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+					Labels:  []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
 					Samples: s2,
 				},
 				{
-					Labels:  []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
+					Labels:  []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
 					Samples: s1,
 				},
 			},
@@ -376,22 +377,22 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Labels: []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
 					Chunks: convertToChunks(t, histogramsToInterface(s1), false),
 				},
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+					Labels: []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
 					Chunks: convertToChunks(t, histogramsToInterface(s1), false),
 				},
 			},
 
 			Timeseries: []mimirpb.TimeSeries{
 				{
-					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+					Labels:     []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
 					Histograms: s2,
 				},
 				{
-					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
+					Labels:     []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
 					Histograms: s1,
 				},
 			},
@@ -475,23 +476,23 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 		client.CombinedQueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Labels: []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
 					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
 				},
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+					Labels: []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
 					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
 				},
 			},
 
 			Timeseries: []mimirpb.TimeSeries{
 				{
-					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+					Labels:     []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
 					Samples:    s2,
 					Histograms: h2,
 				},
 				{
-					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
+					Labels:     []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
 					Samples:    s1,
 					Histograms: h1,
 				},
@@ -593,7 +594,7 @@ func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
 					combinedResponse: client.CombinedQueryStreamResponse{
 						Chunkseries: []client.TimeSeriesChunk{
 							{
-								Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+								Labels: []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
 								Chunks: tc.chunks,
 							},
 						},
