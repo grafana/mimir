@@ -17,10 +17,10 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-type TrackerState int
+type trackerState int
 
 const (
-	Normal TrackerState = iota
+	Normal trackerState = iota
 	Overflow
 )
 
@@ -47,7 +47,7 @@ type Tracker struct {
 	observed                       map[string]*observation
 	observedMtx                    sync.RWMutex
 	hashBuffer                     []byte
-	state                          TrackerState
+	state                          trackerState
 	overflowCounter                *observation
 	totalFailedActiveSeries        *atomic.Float64
 	cooldownDuration               time.Duration
@@ -188,48 +188,39 @@ func (t *Tracker) IncrementActiveSeriesFailure() {
 }
 
 func (t *Tracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
-	extractValues := func() []string {
-		labelValues := make([]string, len(t.labels))
-		for idx, cal := range t.labels {
-			for _, l := range lbls {
-				if l.Name == cal {
-					labelValues[idx] = l.Value
-					break
-				}
-			}
-			if labelValues[idx] == "" {
-				labelValues[idx] = missingValue
+	labelValues := make([]string, len(t.labels))
+	for idx, cal := range t.labels {
+		for _, l := range lbls {
+			if l.Name == cal {
+				labelValues[idx] = l.Value
+				break
 			}
 		}
-		return labelValues
+		if labelValues[idx] == "" {
+			labelValues[idx] = missingValue
+		}
 	}
-	t.updateCountersCommon(extractValues, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
+	t.updateCountersCommon(labelValues, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
 }
 
 func (t *Tracker) updateCounters(lbls labels.Labels, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
-	extractValues := func() []string {
-		labelValues := make([]string, len(t.labels))
-		for idx, cal := range t.labels {
-			labelValues[idx] = lbls.Get(cal)
-			if labelValues[idx] == "" {
-				labelValues[idx] = missingValue
-			}
+	labelValues := make([]string, len(t.labels))
+	for idx, cal := range t.labels {
+		labelValues[idx] = lbls.Get(cal)
+		if labelValues[idx] == "" {
+			labelValues[idx] = missingValue
 		}
-		return labelValues
 	}
-	t.updateCountersCommon(extractValues, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
+	t.updateCountersCommon(labelValues, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
 }
 
 func (t *Tracker) updateCountersCommon(
-	extractValues func() []string,
+	labelValues []string,
 	ts time.Time,
 	activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64,
 	reason *string,
 	createIfDoesNotExist bool,
 ) {
-	// Extract label values
-	labelValues := extractValues()
-
 	// Reuse buffer from pool for building the observation key
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
