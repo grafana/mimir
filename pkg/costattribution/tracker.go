@@ -245,7 +245,17 @@ func (t *Tracker) updateCountersCommon(
 
 // updateObservations updates or creates a new observation in the 'observed' map.
 func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
-	if o, known := t.observed[string(key)]; known && o.lastUpdate.Load() != 0 {
+	o, known := t.observed[string(key)]
+	if !known {
+		if len(t.observed) < t.maxCardinality*2 && createIfDoesNotExist {
+			// When createIfDoesNotExist is false, it means that the method is called from DecrementActiveSeries, when key doesn't exist we should ignore the call
+			// Otherwise create a new observation for the key
+			t.createNewObservation(string(key), ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
+		}
+		return
+	}
+
+	if o.lastUpdate.Load() != 0 {
 		o.lastUpdate.Store(ts)
 		if activeSeriesIncrement != 0 {
 			o.activeSerie.Add(activeSeriesIncrement)
@@ -262,10 +272,6 @@ func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement
 			}
 			o.discardedSampleMtx.Unlock()
 		}
-	} else if len(t.observed) < t.maxCardinality*2 && createIfDoesNotExist {
-		// When createIfDoesNotExist is false, it means that the method is called from DecrementActiveSeries, when key doesn't exist we should ignore the call
-		// Otherwise create a new observation for the key
-		t.createNewObservation(string(key), ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
 	}
 }
 
