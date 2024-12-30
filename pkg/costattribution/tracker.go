@@ -31,7 +31,7 @@ type observation struct {
 	activeSerie        atomic.Float64
 	receivedSample     atomic.Float64
 	discardedSampleMtx sync.Mutex
-	discardedSample    map[string]atomic.Float64
+	discardedSample    map[string]*atomic.Float64
 	totalDiscarded     atomic.Float64
 }
 
@@ -264,11 +264,10 @@ func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement
 		}
 		if discardedSampleIncrement > 0 && reason != nil {
 			o.discardedSampleMtx.Lock()
-			if v, ok := o.discardedSample[*reason]; ok {
-				v.Add(discardedSampleIncrement)
-				o.discardedSample[*reason] = v
+			if _, ok := o.discardedSample[*reason]; ok {
+				o.discardedSample[*reason].Add(discardedSampleIncrement)
 			} else {
-				o.discardedSample[*reason] = *atomic.NewFloat64(discardedSampleIncrement)
+				o.discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
 			}
 			o.discardedSampleMtx.Unlock()
 		}
@@ -317,12 +316,12 @@ func (t *Tracker) createNewObservation(key []byte, ts int64, activeSeriesIncreme
 		lastUpdate:         *atomic.NewInt64(ts),
 		activeSerie:        *atomic.NewFloat64(activeSeriesIncrement),
 		receivedSample:     *atomic.NewFloat64(receivedSampleIncrement),
-		discardedSample:    map[string]atomic.Float64{},
+		discardedSample:    make(map[string]*atomic.Float64),
 		discardedSampleMtx: sync.Mutex{},
 	}
 	if discardedSampleIncrement > 0 && reason != nil {
 		t.observed[string(key)].discardedSampleMtx.Lock()
-		t.observed[string(key)].discardedSample[*reason] = *atomic.NewFloat64(discardedSampleIncrement)
+		t.observed[string(key)].discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
 		t.observed[string(key)].discardedSampleMtx.Unlock()
 	}
 }
