@@ -265,7 +265,7 @@ func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement
 	} else if len(t.observed) < t.maxCardinality*2 && createIfDoesNotExist {
 		// When createIfDoesNotExist is false, it means that the method is called from DecrementActiveSeries, when key doesn't exist we should ignore the call
 		// Otherwise create a new observation for the key
-		t.createNewObservation(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
+		t.createNewObservation(string(key), ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
 	}
 }
 
@@ -302,8 +302,8 @@ func (t *Tracker) updateState(ts time.Time, activeSeriesIncrement, receivedSampl
 }
 
 // createNewObservation creates a new observation in the 'observed' map.
-func (t *Tracker) createNewObservation(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
-	t.observed[string(key)] = &observation{
+func (t *Tracker) createNewObservation(key string, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
+	t.observed[key] = &observation{
 		lastUpdate:         *atomic.NewInt64(ts),
 		activeSerie:        *atomic.NewFloat64(activeSeriesIncrement),
 		receivedSample:     *atomic.NewFloat64(receivedSampleIncrement),
@@ -311,9 +311,9 @@ func (t *Tracker) createNewObservation(key []byte, ts int64, activeSeriesIncreme
 		discardedSampleMtx: sync.Mutex{},
 	}
 	if discardedSampleIncrement > 0 && reason != nil {
-		t.observed[string(key)].discardedSampleMtx.Lock()
-		t.observed[string(key)].discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
-		t.observed[string(key)].discardedSampleMtx.Unlock()
+		t.observed[key].discardedSampleMtx.Lock()
+		t.observed[key].discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
+		t.observed[key].discardedSampleMtx.Unlock()
 	}
 }
 
