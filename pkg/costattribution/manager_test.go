@@ -54,7 +54,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	t.Run("Metrics tracking", func(t *testing.T) {
 		manager.Tracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
 		manager.Tracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
-		manager.Tracker("user3").IncrementReceivedSamples([]mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "dodo"}}, 1, time.Unix(20, 0))
+		manager.Tracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
@@ -112,10 +112,9 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	})
 
 	t.Run("Overflow metrics on cardinality limit", func(t *testing.T) {
-
-		manager.Tracker("user3").IncrementReceivedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}, {Name: "feature", Value: "bar"}}, 1, time.Unix(15, 0))
-		manager.Tracker("user3").IncrementReceivedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "baz"}, {Name: "feature", Value: "baz"}}, 1, time.Unix(16, 0))
-		manager.Tracker("user3").IncrementReceivedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}, {Name: "feature", Value: "foo"}}, 1, time.Unix(17, 0))
+		manager.Tracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "bar", "feature", "bar"}, SamplesCount: 1}}), time.Unix(15, 0))
+		manager.Tracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "baz", "feature", "baz"}, SamplesCount: 1}}), time.Unix(16, 0))
+		manager.Tracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "foo", "feature", "foo"}, SamplesCount: 1}}), time.Unix(17, 0))
 		expectedMetrics := `
 		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
 		# TYPE cortex_received_attributed_samples_total counter
@@ -128,7 +127,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 	manager := newTestManager()
 
-	manager.Tracker("user1").IncrementReceivedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, time.Unix(1, 0))
+	manager.Tracker("user1").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "foo"}, SamplesCount: 1}}), time.Unix(1, 0))
 	manager.Tracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(1, 0))
 	manager.Tracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "bar"}}, 1, "out-of-window", time.Unix(10, 0))
 

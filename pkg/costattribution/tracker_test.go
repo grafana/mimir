@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/costattribution/testutils"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -22,18 +22,58 @@ func TestTracker_hasSameLabels(t *testing.T) {
 	assert.True(t, tracker.hasSameLabels([]string{"team"}), "Expected cost attribution labels mismatch")
 }
 
+func TestTracker_IncrementReceviedSamples(t *testing.T) {
+	tManager := newTestManager()
+	tracker := tManager.Tracker("user4")
+	t.Run("One Single Series in Request", func(t *testing.T) {
+		tracker.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"platform", "foo", "service", "dodo"}, SamplesCount: 3}}), time.Unix(10, 0))
+
+		expectedMetrics := `
+	# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
+	# TYPE cortex_received_attributed_samples_total counter
+	cortex_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 3
+	`
+		assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), "cortex_received_attributed_samples_total"))
+	})
+	t.Run("Multiple Different Series in Request", func(t *testing.T) {
+		tracker.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
+			{LabelValues: []string{"platform", "foo", "service", "dodo"}, SamplesCount: 3},
+			{LabelValues: []string{"platform", "bar", "service", "yoyo"}, SamplesCount: 5},
+		}), time.Unix(20, 0))
+
+		expectedMetrics := `
+	# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
+	# TYPE cortex_received_attributed_samples_total counter
+	cortex_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 6
+	cortex_received_attributed_samples_total{platform="bar",tenant="user4",tracker="cost-attribution"} 5
+	`
+		assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), "cortex_received_attributed_samples_total"))
+	})
+
+	t.Run("Multiple Series in Request with Same Labels", func(t *testing.T) {
+		tracker.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{
+			{LabelValues: []string{"platform", "foo", "service", "dodo"}, SamplesCount: 3},
+			{LabelValues: []string{"platform", "foo", "service", "yoyo"}, SamplesCount: 5},
+		}), time.Unix(30, 0))
+
+		expectedMetrics := `
+	# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
+	# TYPE cortex_received_attributed_samples_total counter
+	cortex_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 14
+	cortex_received_attributed_samples_total{platform="bar",tenant="user4",tracker="cost-attribution"} 5
+	`
+		assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), "cortex_received_attributed_samples_total"))
+	})
+}
+
 func TestTracker_CreateDelete(t *testing.T) {
 	tManager := newTestManager()
 	tracker := tManager.Tracker("user4")
 
-	reg := prometheus.NewRegistry()
-	err := reg.Register(tManager)
-	require.NoError(t, err)
-
 	tracker.IncrementActiveSeries(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "1"), time.Unix(1, 0))
 	tracker.IncrementActiveSeries(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "2"), time.Unix(2, 0))
 	tracker.DecrementActiveSeries(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "3"))
-	tracker.IncrementReceivedSamples([]mimirpb.LabelAdapter{{Name: "platform", Value: "foo"}, {Name: "team", Value: "1"}}, 5, time.Unix(4, 0))
+	tracker.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"platform", "foo", "team", "1"}, SamplesCount: 5}}), time.Unix(4, 0))
 	tracker.IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "platform", Value: "foo"}, {Name: "team", Value: "1"}}, 2, "sample-out-of-order", time.Unix(4, 0))
 	tracker.IncrementActiveSeries(labels.FromStrings("platform", "bar", "tenant", "user4", "team", "2"), time.Unix(6, 0))
 	tracker.IncrementActiveSeriesFailure()
@@ -60,7 +100,7 @@ func TestTracker_CreateDelete(t *testing.T) {
 		"cortex_ingester_attributed_active_series",
 		"cortex_ingester_attributed_active_series_failure",
 	}
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
+	assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), metricNames...))
 	assert.Equal(t, []string{"foo"}, tracker.inactiveObservations(time.Unix(5, 0)))
 	assert.NoError(t, tManager.purgeInactiveAttributionsUntil(time.Unix(5, 0)))
 
@@ -72,9 +112,9 @@ func TestTracker_CreateDelete(t *testing.T) {
     # TYPE cortex_ingester_attributed_active_series_failure counter
     cortex_ingester_attributed_active_series_failure{tenant="user4",tracker="cost-attribution"} 1
 	`
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), metricNames...))
+	assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), metricNames...))
 	tManager.deleteTracker("user4")
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), metricNames...))
+	assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(""), metricNames...))
 }
 
 func TestTracker_updateCounters(t *testing.T) {

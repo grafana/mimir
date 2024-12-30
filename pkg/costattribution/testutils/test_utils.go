@@ -2,7 +2,10 @@
 
 package testutils
 
-import "github.com/grafana/mimir/pkg/util/validation"
+import (
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/validation"
+)
 
 func NewMockCostAttributionLimits(idx int, lvs ...string) (*validation.Overrides, error) {
 	baseLimits := map[string]*validation.Limits{
@@ -32,4 +35,26 @@ func NewMockCostAttributionLimits(idx int, lvs ...string) (*validation.Overrides
 	}
 
 	return validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(baseLimits))
+}
+
+type Series struct {
+	LabelValues  []string
+	SamplesCount int
+}
+
+func CreateRequest(data []Series) *mimirpb.WriteRequest {
+	timeSeries := make([]mimirpb.PreallocTimeseries, 0, len(data))
+	for i := 0; i < len(data); i++ {
+		var Labels []mimirpb.LabelAdapter
+		for j := 0; j+1 < len(data[i].LabelValues); j += 2 {
+			Labels = append(Labels, mimirpb.LabelAdapter{Name: data[i].LabelValues[j], Value: data[i].LabelValues[j+1]})
+		}
+		timeSeries = append(timeSeries, mimirpb.PreallocTimeseries{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels:  Labels,
+				Samples: make([]mimirpb.Sample, data[i].SamplesCount),
+			},
+		})
+	}
+	return &mimirpb.WriteRequest{Timeseries: timeSeries}
 }

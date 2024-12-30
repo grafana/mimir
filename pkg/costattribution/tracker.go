@@ -173,11 +173,19 @@ func (t *Tracker) IncrementDiscardedSamples(lbs []mimirpb.LabelAdapter, value fl
 	t.updateCountersWithLabelAdapter(lbs, now, 0, 0, value, &reason, true)
 }
 
-func (t *Tracker) IncrementReceivedSamples(lbs []mimirpb.LabelAdapter, value float64, now time.Time) {
+func (t *Tracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.Time) {
 	if t == nil {
 		return
 	}
-	t.updateCountersWithLabelAdapter(lbs, now, 0, value, 0, nil, true)
+
+	dict := make(map[string]int)
+	for _, ts := range req.Timeseries {
+		lvs := t.extractLabelValuesFromLabelAdapater(ts.Labels)
+		dict[t.hashLabelValues(lvs)] += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
+	}
+	for k, v := range dict {
+		t.updateCountersCommon(k, now, 0, float64(v), 0, nil, true)
+	}
 }
 
 func (t *Tracker) IncrementActiveSeriesFailure() {
@@ -188,6 +196,26 @@ func (t *Tracker) IncrementActiveSeriesFailure() {
 }
 
 func (t *Tracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
+	labelValues := t.extractLabelValuesFromLabelAdapater(lbls)
+	key := t.hashLabelValues(labelValues)
+	t.updateCountersCommon(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
+}
+
+func (t *Tracker) hashLabelValues(labelValues []string) string {
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufferPool.Put(buf)
+
+	for i, value := range labelValues {
+		if i > 0 {
+			buf.WriteRune(sep)
+		}
+		buf.WriteString(value)
+	}
+	return buf.String()
+}
+
+func (t *Tracker) extractLabelValuesFromLabelAdapater(lbls []mimirpb.LabelAdapter) []string {
 	labelValues := make([]string, len(t.labels))
 	for idx, cal := range t.labels {
 		for _, l := range lbls {
@@ -200,7 +228,7 @@ func (t *Tracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts
 			labelValues[idx] = missingValue
 		}
 	}
-	t.updateCountersCommon(labelValues, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
+	return labelValues
 }
 
 func (t *Tracker) updateCounters(lbls labels.Labels, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
@@ -211,46 +239,33 @@ func (t *Tracker) updateCounters(lbls labels.Labels, ts time.Time, activeSeriesI
 			labelValues[idx] = missingValue
 		}
 	}
-	t.updateCountersCommon(labelValues, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
+	key := t.hashLabelValues(labelValues)
+	t.updateCountersCommon(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
 }
 
 func (t *Tracker) updateCountersCommon(
-	labelValues []string,
+	key string,
 	ts time.Time,
 	activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64,
 	reason *string,
 	createIfDoesNotExist bool,
 ) {
-	// Reuse buffer from pool for building the observation key
-	buf := bufferPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	defer bufferPool.Put(buf)
-
-	// Construct the observation key by joining label values
-	for i, value := range labelValues {
-		if i > 0 {
-			buf.WriteRune(sep)
-		}
-		buf.WriteString(value)
-	}
-
 	// Lock access to the observation map
 	t.observedMtx.Lock()
 	defer t.observedMtx.Unlock()
-
 	// Update observations and state
-	t.updateObservations(buf.Bytes(), ts.Unix(), activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
+	t.updateObservations(key, ts.Unix(), activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
 	t.updateState(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
 }
 
 // updateObservations updates or creates a new observation in the 'observed' map.
-func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
-	o, known := t.observed[string(key)]
+func (t *Tracker) updateObservations(key string, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
+	o, known := t.observed[key]
 	if !known {
 		if len(t.observed) < t.maxCardinality*2 && createIfDoesNotExist {
 			// When createIfDoesNotExist is false, it means that the method is called from DecrementActiveSeries, when key doesn't exist we should ignore the call
 			// Otherwise create a new observation for the key
-			t.createNewObservation(string(key), ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
+			t.createNewObservation(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
 		}
 		return
 	}
