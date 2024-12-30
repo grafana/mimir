@@ -57,7 +57,7 @@ func (m *Manager) iteration(_ context.Context) error {
 	return m.purgeInactiveAttributionsUntil(time.Now().Add(-m.inactiveTimeout).Unix())
 }
 
-func (m *Manager) EnabledForUser(userID string) bool {
+func (m *Manager) enabledForUser(userID string) bool {
 	if m == nil {
 		return false
 	}
@@ -65,7 +65,7 @@ func (m *Manager) EnabledForUser(userID string) bool {
 }
 
 func (m *Manager) Tracker(userID string) *Tracker {
-	if !m.EnabledForUser(userID) {
+	if !m.enabledForUser(userID) {
 		return nil
 	}
 
@@ -77,12 +77,17 @@ func (m *Manager) Tracker(userID string) *Tracker {
 		return tracker
 	}
 
+	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
+	labels := m.limits.CostAttributionLabels(userID)
+	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
+	cooldownDuration := m.limits.CostAttributionCooldown(userID)
+
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 	if tracker, exists = m.trackersByUserID[userID]; exists {
 		return tracker
 	}
-	tracker = newTracker(userID, m.limits.CostAttributionLabels(userID), m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
+	tracker = newTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
 	m.trackersByUserID[userID] = tracker
 	return tracker
 }
@@ -107,7 +112,7 @@ func (m *Manager) deleteTracker(userID string) {
 }
 
 func (m *Manager) updateTracker(userID string) *Tracker {
-	if !m.EnabledForUser(userID) {
+	if !m.enabledForUser(userID) {
 		m.deleteTracker(userID)
 		return nil
 	}
