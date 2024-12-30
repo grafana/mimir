@@ -75,7 +75,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.22
 	github.com/prometheus/procfs v0.15.1
 	github.com/shirou/gopsutil/v4 v4.24.11
-	github.com/thanos-io/objstore v0.0.0-20241217111833-063ea3806b2f
+	github.com/thanos-io/objstore v0.0.0-20241226233006-a14268e0e939
 	github.com/tjhop/slog-gokit v0.1.2
 	github.com/twmb/franz-go v1.18.0
 	github.com/twmb/franz-go/pkg/kadm v1.14.0
