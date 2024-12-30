@@ -1829,10 +1829,11 @@ func tokenForMetadata(userID string, metricName string) uint32 {
 
 func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID string) {
 	var receivedSamples, receivedExemplars, receivedMetadata int
+	cat := d.costAttributionMgr.Tracker(userID)
 	for _, ts := range req.Timeseries {
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
-		d.costAttributionMgr.Tracker(userID).IncrementReceivedSamples(ts.Labels, float64(receivedSamples), mtime.Now())
+		cat.IncrementReceivedSamples(ts.Labels, float64(receivedSamples), mtime.Now())
 	}
 	receivedMetadata = len(req.Metadata)
 
