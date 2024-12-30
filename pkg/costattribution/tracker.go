@@ -288,10 +288,7 @@ func (t *Tracker) updateState(ts int64, activeSeriesIncrement, receivedSampleInc
 		t.state = Overflow
 		// Initialize the overflow counter.
 		t.overflowCounter = &observation{
-			lastUpdate:     atomic.NewInt64(ts),
-			activeSerie:    *atomic.NewFloat64(0),
-			receivedSample: *atomic.NewFloat64(0),
-			totalDiscarded: *atomic.NewFloat64(0),
+			lastUpdate: atomic.NewInt64(ts),
 		}
 
 		// Aggregate active series from all keys into the overflow counter.

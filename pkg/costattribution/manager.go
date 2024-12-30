@@ -124,7 +124,7 @@ func (m *Manager) updateTracker(userID string) *Tracker {
 	slices.Sort(lbls)
 
 	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker
-	if !t.hasSameLabels(lbls) || t.maxCardinality != m.limits.MaxCostAttributionCardinalityPerUser(userID) || t.cooldownDuration != m.limits.CostAttributionCooldown(userID) {
+	if !t.hasSameLabels(lbls) || t.maxCardinality != m.limits.MaxCostAttributionCardinalityPerUser(userID) || t.cooldownDuration != int64(m.limits.CostAttributionCooldown(userID).Seconds()) {
 		m.mtx.Lock()
 		t = newTracker(userID, lbls, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
 		m.trackersByUserID[userID] = t
