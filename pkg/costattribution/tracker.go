@@ -27,7 +27,7 @@ const (
 const sep = rune(0x80)
 
 type observation struct {
-	lastUpdate         *atomic.Int64
+	lastUpdate         atomic.Int64
 	activeSerie        atomic.Float64
 	receivedSample     atomic.Float64
 	discardedSampleMtx sync.Mutex
@@ -254,7 +254,7 @@ func (t *Tracker) updateCountersCommon(
 
 // updateObservations updates or creates a new observation in the 'observed' map.
 func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
-	if o, known := t.observed[string(key)]; known && o.lastUpdate != nil {
+	if o, known := t.observed[string(key)]; known && o.lastUpdate.Load() != 0 {
 		o.lastUpdate.Store(ts)
 		if activeSeriesIncrement != 0 {
 			o.activeSerie.Add(activeSeriesIncrement)
@@ -286,9 +286,7 @@ func (t *Tracker) updateState(ts time.Time, activeSeriesIncrement, receivedSampl
 	if t.state == Normal && len(t.observed) > t.maxCardinality {
 		t.state = Overflow
 		// Initialize the overflow counter.
-		t.overflowCounter = &observation{
-			lastUpdate: atomic.NewInt64(ts.Unix()),
-		}
+		t.overflowCounter = &observation{}
 
 		// Aggregate active series from all keys into the overflow counter.
 		for _, o := range t.observed {
@@ -316,7 +314,7 @@ func (t *Tracker) updateState(ts time.Time, activeSeriesIncrement, receivedSampl
 // createNewObservation creates a new observation in the 'observed' map.
 func (t *Tracker) createNewObservation(key []byte, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
 	t.observed[string(key)] = &observation{
-		lastUpdate:         atomic.NewInt64(ts),
+		lastUpdate:         *atomic.NewInt64(ts),
 		activeSerie:        *atomic.NewFloat64(activeSeriesIncrement),
 		receivedSample:     *atomic.NewFloat64(receivedSampleIncrement),
 		discardedSample:    map[string]atomic.Float64{},
@@ -358,7 +356,7 @@ func (t *Tracker) inactiveObservations(deadline time.Time) []string {
 	t.observedMtx.RLock()
 	defer t.observedMtx.RUnlock()
 	for labkey, ob := range t.observed {
-		if ob != nil && ob.lastUpdate != nil && ob.lastUpdate.Load() <= deadline.Unix() {
+		if ob != nil && ob.lastUpdate.Load() != 0 && ob.lastUpdate.Load() <= deadline.Unix() {
 			invalidKeys = append(invalidKeys, labkey)
 		}
 	}
