@@ -124,16 +124,16 @@ func TestTracker_updateCounters(t *testing.T) {
 	lbls3 := labels.FromStrings("department", "baz", "service", "foo")
 
 	tracker.updateCounters(lbls1, time.Unix(1, 0), 1, 0, 0, nil, true)
-	assert.Equal(t, Normal, tracker.state, "First observation, should not overflow")
+	assert.False(t, tracker.isOverflow.Load(), "First observation, should not overflow")
 
 	tracker.updateCounters(lbls2, time.Unix(2, 0), 1, 0, 0, nil, true)
-	assert.Equal(t, Normal, tracker.state, "Second observation, should not overflow")
+	assert.False(t, tracker.isOverflow.Load(), "Second observation, should not overflow")
 
 	tracker.updateCounters(lbls3, time.Unix(3, 0), 1, 0, 0, nil, true)
-	assert.Equal(t, Overflow, tracker.state, "Third observation, should overflow")
+	assert.True(t, tracker.isOverflow.Load(), "Third observation, should overflow")
 
 	tracker.updateCounters(lbls3, time.Unix(4, 0), 1, 0, 0, nil, true)
-	assert.Equal(t, Overflow, tracker.state, "Fourth observation, should stay overflow")
+	assert.True(t, tracker.isOverflow.Load(), "Fourth observation, should stay overflow")
 
 	assert.Equal(t, time.Unix(3, 0).Add(tracker.cooldownDuration), tracker.cooldownUntil, "CooldownUntil should be updated correctly")
 }
@@ -191,7 +191,7 @@ func TestTracker_Concurrency(t *testing.T) {
 	// Verify no data races or inconsistencies
 	assert.True(t, len(tracker.observed) > 0, "Observed set should not be empty after concurrent updates")
 	assert.LessOrEqual(t, len(tracker.observed), 2*tracker.maxCardinality, "Observed count should not exceed 2 times of max cardinality")
-	assert.Equal(t, Overflow, tracker.state, "Expected state to be Overflow")
+	assert.True(t, tracker.isOverflow.Load(), "Expected state to be Overflow")
 
 	expectedMetrics := `
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.

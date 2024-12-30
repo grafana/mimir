@@ -17,13 +17,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-type trackerState int
-
-const (
-	Normal trackerState = iota
-	Overflow
-)
-
 const sep = rune(0x80)
 
 type observation struct {
@@ -47,7 +40,7 @@ type Tracker struct {
 	observed                       map[string]*observation
 	observedMtx                    sync.RWMutex
 	hashBuffer                     []byte
-	state                          trackerState
+	isOverflow                     atomic.Bool
 	overflowCounter                *observation
 	totalFailedActiveSeries        *atomic.Float64
 	cooldownDuration               time.Duration
@@ -132,37 +125,38 @@ func (t *Tracker) DecrementActiveSeries(lbs labels.Labels) {
 }
 
 func (t *Tracker) Collect(out chan<- prometheus.Metric) {
-	switch t.state {
-	case Overflow:
+	if t.totalFailedActiveSeries.Load() > 0 {
+		out <- prometheus.MustNewConstMetric(t.failedActiveSeriesDecrement, prometheus.CounterValue, t.totalFailedActiveSeries.Load(), t.userID)
+	}
+
+	if t.isOverflow.Load() {
 		out <- prometheus.MustNewConstMetric(t.activeSeriesPerUserAttribution, prometheus.GaugeValue, t.overflowCounter.activeSerie.Load(), t.overflowLabels[:len(t.overflowLabels)-1]...)
 		out <- prometheus.MustNewConstMetric(t.receivedSamplesAttribution, prometheus.CounterValue, t.overflowCounter.receivedSample.Load(), t.overflowLabels[:len(t.overflowLabels)-1]...)
 		out <- prometheus.MustNewConstMetric(t.discardedSampleAttribution, prometheus.CounterValue, t.overflowCounter.totalDiscarded.Load(), t.overflowLabels...)
-	case Normal:
-		// Collect metrics for all observed keys
-		t.observedMtx.RLock()
-		defer t.observedMtx.RUnlock()
-		for key, o := range t.observed {
-			if key == "" {
-				continue
-			}
-			keys := strings.Split(key, string(sep))
-
-			keys = append(keys, t.userID)
-			if o.activeSerie.Load() > 0 {
-				out <- prometheus.MustNewConstMetric(t.activeSeriesPerUserAttribution, prometheus.GaugeValue, o.activeSerie.Load(), keys...)
-			}
-			if o.receivedSample.Load() > 0 {
-				out <- prometheus.MustNewConstMetric(t.receivedSamplesAttribution, prometheus.CounterValue, o.receivedSample.Load(), keys...)
-			}
-			o.discardedSampleMtx.Lock()
-			for reason, discarded := range o.discardedSample {
-				out <- prometheus.MustNewConstMetric(t.discardedSampleAttribution, prometheus.CounterValue, discarded.Load(), append(keys, reason)...)
-			}
-			o.discardedSampleMtx.Unlock()
-		}
+		return
 	}
-	if t.totalFailedActiveSeries.Load() > 0 {
-		out <- prometheus.MustNewConstMetric(t.failedActiveSeriesDecrement, prometheus.CounterValue, t.totalFailedActiveSeries.Load(), t.userID)
+
+	// Collect metrics for all observed keys
+	t.observedMtx.RLock()
+	defer t.observedMtx.RUnlock()
+	for key, o := range t.observed {
+		if key == "" {
+			continue
+		}
+		keys := strings.Split(key, string(sep))
+
+		keys = append(keys, t.userID)
+		if o.activeSerie.Load() > 0 {
+			out <- prometheus.MustNewConstMetric(t.activeSeriesPerUserAttribution, prometheus.GaugeValue, o.activeSerie.Load(), keys...)
+		}
+		if o.receivedSample.Load() > 0 {
+			out <- prometheus.MustNewConstMetric(t.receivedSamplesAttribution, prometheus.CounterValue, o.receivedSample.Load(), keys...)
+		}
+		o.discardedSampleMtx.Lock()
+		for reason, discarded := range o.discardedSample {
+			out <- prometheus.MustNewConstMetric(t.discardedSampleAttribution, prometheus.CounterValue, discarded.Load(), append(keys, reason)...)
+		}
+		o.discardedSampleMtx.Unlock()
 	}
 }
 
@@ -250,17 +244,20 @@ func (t *Tracker) updateCountersCommon(
 	reason *string,
 	createIfDoesNotExist bool,
 ) {
+	// Update observations and state
+	t.updateObservations(key, ts.Unix(), activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
 	// Lock access to the observation map
 	t.observedMtx.Lock()
 	defer t.observedMtx.Unlock()
-	// Update observations and state
-	t.updateObservations(key, ts.Unix(), activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
 	t.updateState(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
 }
 
 // updateObservations updates or creates a new observation in the 'observed' map.
 func (t *Tracker) updateObservations(key string, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
+	t.observedMtx.RLock()
 	o, known := t.observed[key]
+	t.observedMtx.RUnlock()
+
 	if !known {
 		if len(t.observed) < t.maxCardinality*2 && createIfDoesNotExist {
 			// When createIfDoesNotExist is false, it means that the method is called from DecrementActiveSeries, when key doesn't exist we should ignore the call
@@ -270,47 +267,51 @@ func (t *Tracker) updateObservations(key string, ts int64, activeSeriesIncrement
 		return
 	}
 
-	if o.lastUpdate.Load() != 0 {
-		o.lastUpdate.Store(ts)
-		if activeSeriesIncrement != 0 {
-			o.activeSerie.Add(activeSeriesIncrement)
+	o.lastUpdate.Store(ts)
+	if activeSeriesIncrement != 0 {
+		o.activeSerie.Add(activeSeriesIncrement)
+	}
+	if receivedSampleIncrement > 0 {
+		o.receivedSample.Add(receivedSampleIncrement)
+	}
+	if discardedSampleIncrement > 0 && reason != nil {
+		o.discardedSampleMtx.Lock()
+		if _, ok := o.discardedSample[*reason]; ok {
+			o.discardedSample[*reason].Add(discardedSampleIncrement)
+		} else {
+			o.discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
 		}
-		if receivedSampleIncrement > 0 {
-			o.receivedSample.Add(receivedSampleIncrement)
-		}
-		if discardedSampleIncrement > 0 && reason != nil {
-			o.discardedSampleMtx.Lock()
-			if _, ok := o.discardedSample[*reason]; ok {
-				o.discardedSample[*reason].Add(discardedSampleIncrement)
-			} else {
-				o.discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
-			}
-			o.discardedSampleMtx.Unlock()
-		}
+		o.discardedSampleMtx.Unlock()
 	}
 }
 
 // updateState checks if the tracker has exceeded its max cardinality and updates overflow state if necessary.
 func (t *Tracker) updateState(ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64) {
+	previousOverflow := true
+	t.observedMtx.RLock()
+
 	// Transition to overflow mode if maximum cardinality is exceeded.
-	previousState := t.state
-	if t.state == Normal && len(t.observed) > t.maxCardinality {
-		t.state = Overflow
-		// Initialize the overflow counter.
-		t.overflowCounter = &observation{}
+	if !t.isOverflow.Load() && len(t.observed) > t.maxCardinality {
+		// Make sure that we count current overflow only when state is switched to overflow from normal.
+		previousOverflow = t.isOverflow.Swap(true)
+		if !previousOverflow {
+			// Initialize the overflow counter.
+			t.overflowCounter = &observation{}
 
-		// Aggregate active series from all keys into the overflow counter.
-		for _, o := range t.observed {
-			if o != nil {
-				t.overflowCounter.activeSerie.Add(o.activeSerie.Load())
+			// Aggregate active series from all keys into the overflow counter.
+			for _, o := range t.observed {
+				if o != nil {
+					t.overflowCounter.activeSerie.Add(o.activeSerie.Load())
+				}
 			}
+			t.cooldownUntil = ts.Add(t.cooldownDuration)
 		}
-		t.cooldownUntil = ts.Add(t.cooldownDuration)
 	}
+	t.observedMtx.RUnlock()
 
-	if t.state == Overflow {
+	if t.isOverflow.Load() {
 		// if already in overflow mode, update the overflow counter. If it was normal mode, the active series are already applied.
-		if previousState == Overflow && activeSeriesIncrement != 0 {
+		if previousOverflow && activeSeriesIncrement != 0 {
 			t.overflowCounter.activeSerie.Add(activeSeriesIncrement)
 		}
 		if receivedSampleIncrement > 0 {
@@ -324,6 +325,12 @@ func (t *Tracker) updateState(ts time.Time, activeSeriesIncrement, receivedSampl
 
 // createNewObservation creates a new observation in the 'observed' map.
 func (t *Tracker) createNewObservation(key string, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
+	t.observedMtx.Lock()
+	defer t.observedMtx.Unlock()
+	if _, exists := t.observed[key]; exists {
+		return
+	}
+
 	t.observed[key] = &observation{
 		lastUpdate:         *atomic.NewInt64(ts),
 		activeSerie:        *atomic.NewFloat64(activeSeriesIncrement),
@@ -367,7 +374,7 @@ func (t *Tracker) inactiveObservations(deadline time.Time) []string {
 	t.observedMtx.RLock()
 	defer t.observedMtx.RUnlock()
 	for labkey, ob := range t.observed {
-		if ob != nil && ob.lastUpdate.Load() != 0 && ob.lastUpdate.Load() <= deadline.Unix() {
+		if ob != nil && ob.lastUpdate.Load() <= deadline.Unix() {
 			invalidKeys = append(invalidKeys, labkey)
 		}
 	}
