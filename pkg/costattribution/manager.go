@@ -118,19 +118,15 @@ func (m *Manager) updateTracker(userID string) *Tracker {
 	}
 
 	t := m.Tracker(userID)
-
-	lbls := m.limits.CostAttributionLabels(userID)
-
-	newTrackedLabels := make([]string, len(lbls))
-	copy(newTrackedLabels, lbls)
+	lbls := slices.Clone(m.limits.CostAttributionLabels(userID))
 
 	// sort the labels to ensure the order is consistent
-	slices.Sort(newTrackedLabels)
+	slices.Sort(lbls)
 
 	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker
-	if !t.hasSameLabels(newTrackedLabels) || t.maxCardinality != m.limits.MaxCostAttributionCardinalityPerUser(userID) || t.cooldownDuration != int64(m.limits.CostAttributionCooldown(userID).Seconds()) {
+	if !t.hasSameLabels(lbls) || t.maxCardinality != m.limits.MaxCostAttributionCardinalityPerUser(userID) || t.cooldownDuration != m.limits.CostAttributionCooldown(userID) {
 		m.mtx.Lock()
-		t = newTracker(userID, newTrackedLabels, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
+		t = newTracker(userID, lbls, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
 		m.trackersByUserID[userID] = t
 		m.mtx.Unlock()
 		return t
