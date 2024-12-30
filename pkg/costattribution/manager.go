@@ -54,7 +54,7 @@ func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logge
 }
 
 func (m *Manager) iteration(_ context.Context) error {
-	return m.purgeInactiveAttributionsUntil(time.Now().Add(-m.inactiveTimeout).Unix())
+	return m.purgeInactiveAttributionsUntil(time.Now().Add(-m.inactiveTimeout))
 }
 
 func (m *Manager) enabledForUser(userID string) bool {
@@ -124,7 +124,7 @@ func (m *Manager) updateTracker(userID string) *Tracker {
 	slices.Sort(lbls)
 
 	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker
-	if !t.hasSameLabels(lbls) || t.maxCardinality != m.limits.MaxCostAttributionCardinalityPerUser(userID) || t.cooldownDuration != int64(m.limits.CostAttributionCooldown(userID).Seconds()) {
+	if !t.hasSameLabels(lbls) || t.maxCardinality != m.limits.MaxCostAttributionCardinalityPerUser(userID) || t.cooldownDuration != m.limits.CostAttributionCooldown(userID) {
 		m.mtx.Lock()
 		t = newTracker(userID, lbls, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
 		m.trackersByUserID[userID] = t
@@ -135,7 +135,7 @@ func (m *Manager) updateTracker(userID string) *Tracker {
 	return t
 }
 
-func (m *Manager) purgeInactiveAttributionsUntil(deadline int64) error {
+func (m *Manager) purgeInactiveAttributionsUntil(deadline time.Time) error {
 	m.mtx.RLock()
 	userIDs := make([]string, 0, len(m.trackersByUserID))
 	for userID := range m.trackersByUserID {

@@ -46,12 +46,12 @@ type Tracker struct {
 	overflowLabels                 []string
 	observed                       map[string]*observation
 	observedMtx                    sync.RWMutex
-	cooldownUntil                  int64
 	hashBuffer                     []byte
 	state                          TrackerState
 	overflowCounter                *observation
 	totalFailedActiveSeries        *atomic.Float64
-	cooldownDuration               int64
+	cooldownDuration               time.Duration
+	cooldownUntil                  time.Time
 	logger                         log.Logger
 }
 
@@ -74,11 +74,10 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 		maxCardinality:          limit,
 		observed:                make(map[string]*observation),
 		hashBuffer:              make([]byte, 0, 1024),
-		cooldownDuration:        int64(cooldown.Seconds()),
+		cooldownDuration:        cooldown,
 		logger:                  logger,
 		overflowLabels:          overflowLabels,
 		totalFailedActiveSeries: atomic.NewFloat64(0),
-		cooldownUntil:           0,
 	}
 
 	variableLabels := slices.Clone(orderedLables)
@@ -122,14 +121,14 @@ func (t *Tracker) IncrementActiveSeries(lbs labels.Labels, now time.Time) {
 	if t == nil {
 		return
 	}
-	t.updateCounters(lbs, now.Unix(), 1, 0, 0, nil, true)
+	t.updateCounters(lbs, now, 1, 0, 0, nil, true)
 }
 
 func (t *Tracker) DecrementActiveSeries(lbs labels.Labels) {
 	if t == nil {
 		return
 	}
-	t.updateCounters(lbs, -1, -1, 0, 0, nil, false)
+	t.updateCounters(lbs, time.Time{}, -1, 0, 0, nil, false)
 }
 
 func (t *Tracker) Collect(out chan<- prometheus.Metric) {
@@ -171,14 +170,14 @@ func (t *Tracker) IncrementDiscardedSamples(lbs []mimirpb.LabelAdapter, value fl
 	if t == nil {
 		return
 	}
-	t.updateCountersWithLabelAdapter(lbs, now.Unix(), 0, 0, value, &reason, true)
+	t.updateCountersWithLabelAdapter(lbs, now, 0, 0, value, &reason, true)
 }
 
 func (t *Tracker) IncrementReceivedSamples(lbs []mimirpb.LabelAdapter, value float64, now time.Time) {
 	if t == nil {
 		return
 	}
-	t.updateCountersWithLabelAdapter(lbs, now.Unix(), 0, value, 0, nil, true)
+	t.updateCountersWithLabelAdapter(lbs, now, 0, value, 0, nil, true)
 }
 
 func (t *Tracker) IncrementActiveSeriesFailure() {
@@ -188,7 +187,7 @@ func (t *Tracker) IncrementActiveSeriesFailure() {
 	t.totalFailedActiveSeries.Add(1)
 }
 
-func (t *Tracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
+func (t *Tracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
 	extractValues := func() []string {
 		labelValues := make([]string, len(t.labels))
 		for idx, cal := range t.labels {
@@ -207,7 +206,7 @@ func (t *Tracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts
 	t.updateCountersCommon(extractValues, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
 }
 
-func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
+func (t *Tracker) updateCounters(lbls labels.Labels, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
 	extractValues := func() []string {
 		labelValues := make([]string, len(t.labels))
 		for idx, cal := range t.labels {
@@ -223,7 +222,7 @@ func (t *Tracker) updateCounters(lbls labels.Labels, ts int64, activeSeriesIncre
 
 func (t *Tracker) updateCountersCommon(
 	extractValues func() []string,
-	ts int64,
+	ts time.Time,
 	activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64,
 	reason *string,
 	createIfDoesNotExist bool,
@@ -249,7 +248,7 @@ func (t *Tracker) updateCountersCommon(
 	defer t.observedMtx.Unlock()
 
 	// Update observations and state
-	t.updateObservations(buf.Bytes(), ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
+	t.updateObservations(buf.Bytes(), ts.Unix(), activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
 	t.updateState(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
 }
 
@@ -281,14 +280,14 @@ func (t *Tracker) updateObservations(key []byte, ts int64, activeSeriesIncrement
 }
 
 // updateState checks if the tracker has exceeded its max cardinality and updates overflow state if necessary.
-func (t *Tracker) updateState(ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64) {
+func (t *Tracker) updateState(ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64) {
 	// Transition to overflow mode if maximum cardinality is exceeded.
 	previousState := t.state
 	if t.state == Normal && len(t.observed) > t.maxCardinality {
 		t.state = Overflow
 		// Initialize the overflow counter.
 		t.overflowCounter = &observation{
-			lastUpdate: atomic.NewInt64(ts),
+			lastUpdate: atomic.NewInt64(ts.Unix()),
 		}
 
 		// Aggregate active series from all keys into the overflow counter.
@@ -297,7 +296,7 @@ func (t *Tracker) updateState(ts int64, activeSeriesIncrement, receivedSampleInc
 				t.overflowCounter.activeSerie.Add(o.activeSerie.Load())
 			}
 		}
-		t.cooldownUntil = ts + t.cooldownDuration
+		t.cooldownUntil = ts.Add(t.cooldownDuration)
 	}
 
 	if t.state == Overflow {
@@ -330,9 +329,9 @@ func (t *Tracker) createNewObservation(key []byte, ts int64, activeSeriesIncreme
 	}
 }
 
-func (t *Tracker) recoveredFromOverflow(deadline int64) bool {
+func (t *Tracker) recoveredFromOverflow(deadline time.Time) bool {
 	t.observedMtx.RLock()
-	if t.cooldownUntil > 0 && t.cooldownUntil < deadline {
+	if !t.cooldownUntil.IsZero() && t.cooldownUntil.Before(deadline) {
 		if len(t.observed) <= t.maxCardinality {
 			t.observedMtx.RUnlock()
 			return true
@@ -345,7 +344,7 @@ func (t *Tracker) recoveredFromOverflow(deadline int64) bool {
 			t.observedMtx.Unlock()
 			return true
 		}
-		t.cooldownUntil = deadline + t.cooldownDuration
+		t.cooldownUntil = deadline.Add(t.cooldownDuration)
 		t.observedMtx.Unlock()
 	} else {
 		t.observedMtx.RUnlock()
@@ -353,13 +352,13 @@ func (t *Tracker) recoveredFromOverflow(deadline int64) bool {
 	return false
 }
 
-func (t *Tracker) inactiveObservations(deadline int64) []string {
+func (t *Tracker) inactiveObservations(deadline time.Time) []string {
 	// otherwise, we need to check all observations and clean up the ones that are inactive
 	var invalidKeys []string
 	t.observedMtx.RLock()
 	defer t.observedMtx.RUnlock()
 	for labkey, ob := range t.observed {
-		if ob != nil && ob.lastUpdate != nil && ob.lastUpdate.Load() <= deadline {
+		if ob != nil && ob.lastUpdate != nil && ob.lastUpdate.Load() <= deadline.Unix() {
 			invalidKeys = append(invalidKeys, labkey)
 		}
 	}
