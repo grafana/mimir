@@ -122,9 +122,6 @@ func (t *Tracker) DecrementActiveSeries(lbs labels.Labels) {
 }
 
 func (t *Tracker) Collect(out chan<- prometheus.Metric) {
-	if t.totalFailedActiveSeries.Load() > 0 {
-		out <- prometheus.MustNewConstMetric(t.failedActiveSeriesDecrement, prometheus.CounterValue, t.totalFailedActiveSeries.Load(), t.userID)
-	}
 
 	if t.isOverflow.Load() {
 		out <- prometheus.MustNewConstMetric(t.activeSeriesPerUserAttribution, prometheus.GaugeValue, t.overflowCounter.activeSerie.Load(), t.overflowLabels[:len(t.overflowLabels)-1]...)
@@ -234,11 +231,7 @@ func (t *Tracker) updateCountersCommon(
 	reason *string,
 	createIfDoesNotExist bool,
 ) {
-	// Update observations and state
 	t.updateObservations(key, ts.Unix(), activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
-	// Lock access to the observation map
-	t.observedMtx.Lock()
-	defer t.observedMtx.Unlock()
 	t.updateState(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
 }
 
@@ -279,7 +272,6 @@ func (t *Tracker) updateObservations(key string, ts int64, activeSeriesIncrement
 func (t *Tracker) updateState(ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64) {
 	previousOverflow := true
 	t.observedMtx.RLock()
-
 	// Transition to overflow mode if maximum cardinality is exceeded.
 	if !t.isOverflow.Load() && len(t.observed) > t.maxCardinality {
 		// Make sure that we count current overflow only when state is switched to overflow from normal.
