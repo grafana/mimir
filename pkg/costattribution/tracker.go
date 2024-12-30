@@ -35,7 +35,6 @@ type Tracker struct {
 	activeSeriesPerUserAttribution *prometheus.Desc
 	receivedSamplesAttribution     *prometheus.Desc
 	discardedSampleAttribution     *prometheus.Desc
-	failedActiveSeriesDecrement    *prometheus.Desc
 	overflowLabels                 []string
 	observed                       map[string]*observation
 	observedMtx                    sync.RWMutex
@@ -88,9 +87,7 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 	tracker.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",
 		"The total number of active series per user and attribution.", variableLabels[:len(variableLabels)-1],
 		prometheus.Labels{trackerLabel: defaultTrackerName})
-	tracker.failedActiveSeriesDecrement = prometheus.NewDesc("cortex_ingester_attributed_active_series_failure",
-		"The total number of failed active series decrement per user and tracker.", []string{tenantLabel},
-		prometheus.Labels{trackerLabel: defaultTrackerName})
+
 	return tracker
 }
 
@@ -180,13 +177,6 @@ func (t *Tracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.T
 	for k, v := range dict {
 		t.updateCountersCommon(k, now, 0, float64(v), 0, nil, true)
 	}
-}
-
-func (t *Tracker) IncrementActiveSeriesFailure() {
-	if t == nil {
-		return
-	}
-	t.totalFailedActiveSeries.Add(1)
 }
 
 func (t *Tracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {

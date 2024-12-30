@@ -818,6 +818,11 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 				i.metrics.activeNativeHistogramBucketsPerUser.DeleteLabelValues(userID)
 			}
 
+			AttributedActiveSeriesFailure := userDB.activeSeries.ActiveSeriesAttributionFailureCount()
+			if AttributedActiveSeriesFailure > 0 {
+				i.metrics.attributedActiveSeriesFailuresPerUser.WithLabelValues(userID).Add(AttributedActiveSeriesFailure)
+			}
+
 			for idx, name := range userDB.activeSeries.CurrentMatcherNames() {
 				// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
 				if activeMatching[idx] > 0 {

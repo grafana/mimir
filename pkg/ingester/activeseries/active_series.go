@@ -67,15 +67,16 @@ type seriesStripe struct {
 	// Unix nanoseconds. Only used by purge. Zero = unknown.
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
 	// without holding the lock -- hence the atomic).
-	oldestEntryTs                        atomic.Int64
-	mu                                   sync.RWMutex
-	refs                                 map[storage.SeriesRef]seriesEntry
-	active                               uint32   // Number of active entries in this stripe. Only decreased during purge or clear.
-	activeMatching                       []uint32 // Number of active entries in this stripe matching each matcher of the configured Matchers.
-	activeNativeHistograms               uint32   // Number of active entries (only native histograms) in this stripe. Only decreased during purge or clear.
-	activeMatchingNativeHistograms       []uint32 // Number of active entries (only native histograms) in this stripe matching each matcher of the configured Matchers.
-	activeNativeHistogramBuckets         uint32   // Number of buckets in active native histogram entries in this stripe. Only decreased during purge or clear.
-	activeMatchingNativeHistogramBuckets []uint32 // Number of buckets in active native histogram entries in this stripe matching each matcher of the configured Matchers.
+	oldestEntryTs                         atomic.Int64
+	mu                                    sync.RWMutex
+	refs                                  map[storage.SeriesRef]seriesEntry
+	activeSeriesAttributionFailureCounter atomic.Float64
+	active                                uint32   // Number of active entries in this stripe. Only decreased during purge or clear.
+	activeMatching                        []uint32 // Number of active entries in this stripe matching each matcher of the configured Matchers.
+	activeNativeHistograms                uint32   // Number of active entries (only native histograms) in this stripe. Only decreased during purge or clear.
+	activeMatchingNativeHistograms        []uint32 // Number of active entries (only native histograms) in this stripe matching each matcher of the configured Matchers.
+	activeNativeHistogramBuckets          uint32   // Number of buckets in active native histogram entries in this stripe. Only decreased during purge or clear.
+	activeMatchingNativeHistogramBuckets  []uint32 // Number of buckets in active native histogram entries in this stripe matching each matcher of the configured Matchers.
 
 	cat *costattribution.Tracker
 }
@@ -215,6 +216,14 @@ func (c *ActiveSeries) ActiveWithMatchers() (total int, totalMatching []int, tot
 	}
 
 	return
+}
+
+func (c *ActiveSeries) ActiveSeriesAttributionFailureCount() float64 {
+	var total float64
+	for s := 0; s < numStripes; s++ {
+		total += c.stripes[s].activeSeriesAttributionFailureCount()
+	}
+	return total
 }
 
 func (c *ActiveSeries) Delete(ref chunks.HeadSeriesRef, idx tsdb.IndexReader) {
@@ -461,7 +470,7 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 		if ts < keepUntilNanos {
 			if s.cat != nil {
 				if err := idx.Series(ref, &buf, nil); err != nil {
-					s.cat.IncrementActiveSeriesFailure()
+					s.activeSeriesAttributionFailureCounter.Add(1)
 				} else {
 					s.cat.DecrementActiveSeries(buf.Labels())
 				}
@@ -499,6 +508,13 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 	}
 }
 
+func (s *seriesStripe) activeSeriesAttributionFailureCount() float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.activeSeriesAttributionFailureCounter.Swap(0)
+}
+
 // remove a single series from the stripe.
 // This is mostly the same logic from purge() but we decrement counters for a single entry instead of incrementing for each entry.
 // Note: we might remove the oldest series here, but the worst thing can happen is that we let run a useless purge() cycle later,
@@ -519,7 +535,7 @@ func (s *seriesStripe) remove(ref storage.SeriesRef, idx tsdb.IndexReader) {
 	if s.cat != nil {
 		buf := labels.NewScratchBuilder(128)
 		if err := idx.Series(ref, &buf, nil); err != nil {
-			s.cat.IncrementActiveSeriesFailure()
+			s.activeSeriesAttributionFailureCounter.Add(1)
 		} else {
 			s.cat.DecrementActiveSeries(buf.Labels())
 		}
