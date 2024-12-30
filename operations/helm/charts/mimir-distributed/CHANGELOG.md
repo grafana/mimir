@@ -29,6 +29,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
+
 ## 5.6.0-rc.0
 
 * [CHANGE] Update rollout-operator version to 0.20.0. #9995
