@@ -3,7 +3,7 @@
 ## main / unreleased
 
 * [CHANGE] Query-frontend: Add `topic` label to `cortex_ingest_storage_strong_consistency_requests_total`, `cortex_ingest_storage_strong_consistency_failures_total`, and `cortex_ingest_storage_strong_consistency_wait_duration_seconds` metrics. #10220
-[FEATURE] Ingester/Distributor: Add support for exporting cost attribution metrics with labels specified by customers to a custom Prometheus registry. This enables customers to track billing data more flexibly. #10269
+* [FEATURE] Ingester/Distributor: Add support for exporting cost attribution metrics (`cortex_ingester_attributed_active_series`, `cortex_received_attributed_samples_total`, and `cortex_discarded_attributed_samples_total`) with labels specified by customers to a custom Prometheus registry. This feature enables more flexible billing data tracking. #10269
 
 ### Grafana Mimir
 
