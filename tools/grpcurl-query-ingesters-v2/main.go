@@ -35,7 +35,7 @@ func main() {
 	flag.StringVar(&namespace, "namespace", "", "Namespace of the pods.")
 
 	var fromUnix, toUnix int64
-	flag.Int64Var(&fromUnix, "from", time.Now().Add(-10*time.Minute).Unix(), "Start time in Unix timestamp. Default is 10 minutes ago.")
+	flag.Int64Var(&fromUnix, "from", time.Now().Add(-1*time.Hour).Unix(), "Start time in Unix timestamp. Default is 10 minutes ago.")
 	flag.Int64Var(&toUnix, "to", time.Now().Unix(), "End time in Unix timestamp. Default is now.")
 
 	var matchersString string
