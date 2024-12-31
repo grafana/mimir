@@ -7,14 +7,16 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os/exec"
 	"sync"
+	"time"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -22,12 +24,27 @@ import (
 
 func main() {
 	var port int
-	flag.IntVar(&port, "port", 80, "Port to port-forward.")
+	flag.IntVar(&port, "port", 9095, "Port to port-forward.")
 	var pods flagext.StringSlice
 	flag.Var(&pods, "pod", "Pod to query, can be provided multiple times.")
 	var namespace string
 	flag.StringVar(&namespace, "namespace", "", "Namespace of the pods.")
+
+	var fromUnix, toUnix int64
+	flag.Int64Var(&fromUnix, "from", time.Now().Add(-10*time.Minute).Unix(), "Start time in Unix timestamp. Default is 10 minutes ago.")
+	flag.Int64Var(&toUnix, "to", time.Now().Unix(), "End time in Unix timestamp. Default is now.")
+
+	var matchersString string
+	flag.StringVar(&matchersString, "matchers", "", "Matchers to query the ingester. Format: {foo=\"bar\",...}")
+
+	var orgID string
+	flag.StringVar(&orgID, "org", "", "Organization ID to query the ingester.")
+
 	flag.Parse()
+
+	if orgID == "" {
+		log.Fatal("orgID is required")
+	}
 
 	if namespace == "" {
 		log.Fatal("namespace is required")
@@ -37,24 +54,22 @@ func main() {
 		log.Fatal("at least one pod is required")
 	}
 
+	matchers, err := parser.ParseMetricSelector(matchersString)
+	if err != nil {
+		log.Fatalf("failed to parse matchers: %v", err)
+	}
+
+	from := model.Time(fromUnix * 1000)
+	to := model.Time(toUnix * 1000)
+
+	ctx := user.InjectOrgID(context.Background(), orgID)
+
 	process := func(pod string, localPort int) {
-
-		// Send HTTP GET request to /metrics
-		url := fmt.Sprintf("http://localhost:%d/metrics", localPort)
-		resp, err := http.Get(url)
-		if err != nil {
-			log.Printf("failed to GET %s: %v", url, err)
+		addr := fmt.Sprintf("localhost:%d", localPort)
+		if err := queryIngesterAndCheckMatchersCorrectness(ctx, addr, from, to, matchers...); err != nil {
+			log.Printf("failed to check ingester: %v", err)
 			return
 		}
-		defer resp.Body.Close()
-
-		// Read and process the response
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			log.Printf("failed to read response: %v", err)
-			return
-		}
-		fmt.Printf("Response from pod %s in namespace %s:\n%s\n", pod, namespace, string(body))
 	}
 
 	// WaitGroup to wait for all goroutines to finish
