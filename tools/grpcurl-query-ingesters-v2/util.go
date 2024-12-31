@@ -101,7 +101,7 @@ func waitForPortForward(stdout, stderr io.ReadCloser) error {
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(5 * time.Second):
+	case <-time.After(15 * time.Second):
 		return fmt.Errorf("timeout waiting for port-forward")
 	}
 }

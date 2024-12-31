@@ -111,16 +111,6 @@ func main() {
 	// WaitGroup to wait for all goroutines to finish
 	var wg sync.WaitGroup
 
-	for _, pod := range pods {
-		wg.Add(1)
-		go func(pod string) {
-			defer wg.Done()
-			if err := processPortForwarded(pod, namespace, port, process); err != nil {
-				log.Printf("Error processing pod %s in namespace %s: %v", pod, namespace, err)
-			}
-		}(pod)
-	}
-
 	// Periodically print stats.
 	wg.Add(1)
 	go func() {
@@ -132,33 +122,53 @@ func main() {
 
 			successes := 0
 			failures := 0
-			minQueriesPerIngester := -1
-			maxQueriesPerIngester := 0
+			ingesterWithMinQueriesID := ""
+			ingesterWithMinQueriesCount := -1
+			ingesterWithMaxQueriesID := ""
+			ingesterWithMaxQueriesCount := 0
 
-			for _, stat := range stats {
+			for pod, stat := range stats {
 				successes += stat.successQueries
 				failures += stat.failureQueries
 
 				total := stat.successQueries + stat.failureQueries
-				if minQueriesPerIngester < 0 || total < minQueriesPerIngester {
-					minQueriesPerIngester = total
+				if ingesterWithMinQueriesCount < 0 || total < ingesterWithMinQueriesCount {
+					ingesterWithMinQueriesID = pod
+					ingesterWithMinQueriesCount = total
 				}
-				if total > maxQueriesPerIngester {
-					maxQueriesPerIngester = total
+				if total > ingesterWithMaxQueriesCount {
+					ingesterWithMaxQueriesID = pod
+					ingesterWithMaxQueriesCount = total
 				}
 			}
 
-			if minQueriesPerIngester < 0 {
-				minQueriesPerIngester = 0
+			if ingesterWithMinQueriesCount < 0 {
+				ingesterWithMinQueriesCount = 0
 			}
 
-			log.Printf("Stats - Total ingesters: %d Successes: %d Failures: %d - Min / max queries per ingester: %d / %d", len(stats), successes, failures, minQueriesPerIngester, maxQueriesPerIngester)
+			log.Printf("Stats - Total ingesters: %d Successes: %d Failures: %d - Min / max queries per ingester: %d (%s) / %d (%s)",
+				len(stats), successes, failures,
+				ingesterWithMinQueriesCount, ingesterWithMinQueriesID,
+				ingesterWithMaxQueriesCount, ingesterWithMaxQueriesID)
 			statsMx.Unlock()
 
 			// Throttle.
 			time.Sleep(5 * time.Second)
 		}
 	}()
+
+	for _, pod := range pods {
+		wg.Add(1)
+		go func(pod string) {
+			defer wg.Done()
+			if err := processPortForwarded(pod, namespace, port, process); err != nil {
+				log.Printf("Error processing pod %s in namespace %s: %v", pod, namespace, err)
+			}
+		}(pod)
+
+		// Throttle the creation of goroutines, to avoid setting up forwarding for all pods at the same time.
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	wg.Wait()
 }
