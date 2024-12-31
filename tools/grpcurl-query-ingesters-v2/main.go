@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/grafana/dskit/flagext"
@@ -18,8 +19,25 @@ func main() {
 
 }
 
-func queryIngesterAndCheckMatchersCorrectness() {
+func queryIngesterAndCheckMatchersCorrectness(ctx context.Context, addr string, from, to model.Time, matchers ...*labels.Matcher) error {
+	fetchedSeries, err := queryIngester(ctx, addr, from, to, matchers...)
+	if err != nil {
+		return err
+	}
 
+	for _, series := range fetchedSeries {
+		seriesLabels := mimirpb.FromLabelAdaptersToLabels(series.Labels)
+
+		// Ensure the matchers match all series labels.
+		for _, m := range matchers {
+			val := seriesLabels.Get(m.Name)
+			if !m.Matches(val) {
+				return fmt.Errorf("received series %s but it doesn't match the matcher %s", seriesLabels.String(), m.String())
+			}
+		}
+	}
+
+	return nil
 }
 
 func queryIngester(ctx context.Context, addr string, from, to model.Time, matchers ...*labels.Matcher) (_ map[string]ingester_client.TimeSeriesChunk, returnErr error) {
