@@ -89,6 +89,9 @@ func main() {
 			err := queryIngesterAndCheckMatchersCorrectness(ctx, addr, from, to, matchers...)
 			if err != nil {
 				log.Printf("failed to check ingester %s: %v", pod, err)
+
+				// Throttle in case of error.
+				time.Sleep(2 * time.Second)
 			}
 
 			// Keep track of stats.
