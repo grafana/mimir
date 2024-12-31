@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -103,4 +104,28 @@ func waitForPortForward(stdout, stderr io.ReadCloser) error {
 	case <-time.After(5 * time.Second):
 		return fmt.Errorf("timeout waiting for port-forward")
 	}
+}
+
+func generatePodIDs(template string, zones []string, ids []string) []string {
+	var permutations []string
+
+	for _, zone := range zones {
+		for _, id := range ids {
+			replacement := strings.Replace(template, "<zone>", zone, -1)
+			replacement = strings.Replace(replacement, "<id>", id, -1)
+			permutations = append(permutations, replacement)
+		}
+	}
+
+	return permutations
+}
+
+func generatePodIDsWithinRange(template string, zones []string, minID, maxID int) []string {
+	// Generate the numeric IDs as strings
+	var ids []string
+	for i := minID; i <= maxID; i++ {
+		ids = append(ids, strconv.Itoa(i))
+	}
+
+	return generatePodIDs(template, zones, ids)
 }

@@ -29,8 +29,18 @@ type IngesterStats struct {
 func main() {
 	var port int
 	flag.IntVar(&port, "port", 9095, "Port to port-forward.")
-	var pods flagext.StringSlice
-	flag.Var(&pods, "pod", "Pod to query, can be provided multiple times.")
+
+	var podTemplate string
+	flag.StringVar(&podTemplate, "pod-template", "ingester-zone-<zone>-<id>", "Template to generate the pod ID in the format 'ingester-zone-<zone>-<id>'")
+
+	var podMinID int
+	var podMaxID int
+	flag.IntVar(&podMinID, "pod-min-id", 0, "Min pod ID (included)")
+	flag.IntVar(&podMaxID, "pod-max-id", 0, "Max pod ID (included)")
+
+	var podZones flagext.StringSliceCSV
+	flag.Var(&podZones, "pod-zones", "Comma-separated list of zones")
+
 	var namespace string
 	flag.StringVar(&namespace, "namespace", "", "Namespace of the pods.")
 
@@ -54,9 +64,9 @@ func main() {
 		log.Fatal("namespace is required")
 	}
 
-	if len(pods) == 0 {
-		log.Fatal("at least one pod is required")
-	}
+	// Generate pod IDs.
+	pods := generatePodIDsWithinRange(podTemplate, podZones, podMinID, podMaxID)
+	log.Println("Pods:", pods)
 
 	matchers, err := parser.ParseMetricSelector(matchersString)
 	if err != nil {
