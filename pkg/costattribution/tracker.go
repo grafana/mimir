@@ -171,15 +171,22 @@ func (t *Tracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.T
 		lvs := t.extractLabelValuesFromLabelAdapater(ts.Labels)
 		dict[t.hashLabelValues(lvs)] += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 	}
+
+	// Update the observations for each label set and update the state per request,
+	// this would be less precised than per sample but it's more efficient
+	var total float64
 	for k, v := range dict {
-		t.updateCountersCommon(k, now, 0, float64(v), 0, nil, true)
+		t.updateObservations(k, now.Unix(), 0, float64(v), 0, nil, true)
+		total += float64(v)
 	}
+	t.updateState(now, 0, total, 0)
 }
 
 func (t *Tracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
 	labelValues := t.extractLabelValuesFromLabelAdapater(lbls)
 	key := t.hashLabelValues(labelValues)
-	t.updateCountersCommon(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
+	t.updateObservations(key, ts.Unix(), activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
+	t.updateState(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
 }
 
 func (t *Tracker) hashLabelValues(labelValues []string) string {
@@ -221,16 +228,6 @@ func (t *Tracker) updateCounters(lbls labels.Labels, ts time.Time, activeSeriesI
 		}
 	}
 	key := t.hashLabelValues(labelValues)
-	t.updateCountersCommon(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
-}
-
-func (t *Tracker) updateCountersCommon(
-	key string,
-	ts time.Time,
-	activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64,
-	reason *string,
-	createIfDoesNotExist bool,
-) {
 	t.updateObservations(key, ts.Unix(), activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
 	t.updateState(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
 }
