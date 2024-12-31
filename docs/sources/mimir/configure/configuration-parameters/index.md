@@ -3587,10 +3587,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 [active_series_results_max_size_bytes: <int> | default = 419430400]
 
 # (experimental) Defines labels for cost attribution. Applies to metrics like
-# cortex_distributor_attributed_received_samples_total. To disable, set to an
-# empty string. For example, 'team,service' produces metrics such as
-# cortex_distributor_attributed_received_samples_total{team='frontend',
-# service='api'}.
+# cortex_received_attributed_samples_total. To disable, set to an empty string.
+# For example, 'team,service' produces metrics such as
+# cortex_received_attributed_samples_total{team='frontend', service='api'}.
 # CLI flag: -validation.cost-attribution-labels
 [cost_attribution_labels: <string> | default = ""]
 

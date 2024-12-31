@@ -4372,7 +4372,7 @@
           "kind": "field",
           "name": "cost_attribution_labels",
           "required": false,
-          "desc": "Defines labels for cost attribution. Applies to metrics like cortex_distributor_attributed_received_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_distributor_attributed_received_samples_total{team='frontend', service='api'}.",
+          "desc": "Defines labels for cost attribution. Applies to metrics like cortex_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_received_attributed_samples_total{team='frontend', service='api'}.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "validation.cost-attribution-labels",
