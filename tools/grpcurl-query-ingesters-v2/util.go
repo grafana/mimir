@@ -6,9 +6,51 @@ import (
 	"io"
 	"log"
 	"net"
+	"os/exec"
 	"strings"
 	"time"
 )
+
+// processPortForwarded handles port-forwarding, HTTP request, and cleanup for a single pod
+func processPortForwarded(pod string, namespace string, podPort int, process func(pod string, localPort int)) error {
+	localPort, err := getFreePort()
+	if err != nil {
+		return fmt.Errorf("failed to get free port: %v", err)
+	}
+
+	// Start port-forwarding
+	cmd := exec.Command("kubectl", "port-forward", "--namespace", namespace,
+		fmt.Sprintf("pod/%s", pod), fmt.Sprintf("%d:%d", localPort, podPort))
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stdout pipe: %v", err)
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return fmt.Errorf("failed to get stderr pipe: %v", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start kubectl port-forward: %v", err)
+	}
+
+	defer cmd.Process.Kill()
+
+	// Wait for port-forward to be ready
+	if err := waitForPortForward(stdout, stderr); err != nil {
+		return fmt.Errorf("port-forward failed: %v", err)
+	}
+
+	process(pod, localPort)
+
+	// Stop the port-forward
+	if err := cmd.Process.Kill(); err != nil {
+		return fmt.Errorf("failed to kill port-forward process: %v", err)
+	}
+
+	return nil
+}
 
 // getFreePort finds an available TCP port
 func getFreePort() (int, error) {

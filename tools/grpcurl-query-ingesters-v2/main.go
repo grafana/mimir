@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os/exec"
 	"sync"
 	"time"
 
@@ -79,54 +78,13 @@ func main() {
 		wg.Add(1)
 		go func(pod string) {
 			defer wg.Done()
-			if err := processPod(pod, namespace, port, process); err != nil {
+			if err := processPortForwarded(pod, namespace, port, process); err != nil {
 				log.Printf("Error processing pod %s in namespace %s: %v", pod, namespace, err)
 			}
 		}(pod)
 	}
 
 	wg.Wait()
-}
-
-// processPod handles port-forwarding, HTTP request, and cleanup for a single pod
-func processPod(pod string, namespace string, podPort int, process func(pod string, localPort int)) error {
-	localPort, err := getFreePort()
-	if err != nil {
-		return fmt.Errorf("failed to get free port: %v", err)
-	}
-
-	// Start port-forwarding
-	cmd := exec.Command("kubectl", "port-forward", "--namespace", namespace,
-		fmt.Sprintf("pod/%s", pod), fmt.Sprintf("%d:%d", localPort, podPort))
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("failed to get stdout pipe: %v", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return fmt.Errorf("failed to get stderr pipe: %v", err)
-	}
-
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start kubectl port-forward: %v", err)
-	}
-
-	defer cmd.Process.Kill()
-
-	// Wait for port-forward to be ready
-	if err := waitForPortForward(stdout, stderr); err != nil {
-		return fmt.Errorf("port-forward failed: %v", err)
-	}
-
-	process(pod, localPort)
-
-	// Stop the port-forward
-	if err := cmd.Process.Kill(); err != nil {
-		return fmt.Errorf("failed to kill port-forward process: %v", err)
-	}
-
-	return nil
 }
 
 func queryIngesterAndCheckMatchersCorrectness(ctx context.Context, addr string, from, to model.Time, matchers ...*labels.Matcher) error {
