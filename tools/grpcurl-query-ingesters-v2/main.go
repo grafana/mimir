@@ -18,6 +18,10 @@ func main() {
 
 }
 
+func queryIngesterAndCheckMatchersCorrectness() {
+
+}
+
 func queryIngester(ctx context.Context, addr string, from, to model.Time, matchers ...*labels.Matcher) (_ map[string]ingester_client.TimeSeriesChunk, returnErr error) {
 	req, err := ingester_client.ToQueryRequest(from, to, matchers)
 	if err != nil {
