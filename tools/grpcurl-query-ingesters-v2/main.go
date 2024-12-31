@@ -21,6 +21,11 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
+type IngesterStats struct {
+	successQueries int
+	failureQueries int
+}
+
 func main() {
 	var port int
 	flag.IntVar(&port, "port", 9095, "Port to port-forward.")
@@ -60,14 +65,36 @@ func main() {
 
 	from := model.Time(fromUnix * 1000)
 	to := model.Time(toUnix * 1000)
-
 	ctx := user.InjectOrgID(context.Background(), orgID)
+
+	// Keep track of query stats.
+	statsMx := sync.Mutex{}
+	stats := make(map[string]*IngesterStats)
 
 	process := func(pod string, localPort int) {
 		addr := fmt.Sprintf("localhost:%d", localPort)
-		if err := queryIngesterAndCheckMatchersCorrectness(ctx, addr, from, to, matchers...); err != nil {
-			log.Printf("failed to check ingester: %v", err)
-			return
+
+		// Query continuously.
+		for {
+			err := queryIngesterAndCheckMatchersCorrectness(ctx, addr, from, to, matchers...)
+			if err != nil {
+				log.Printf("failed to check ingester %s: %v", pod, err)
+			}
+
+			// Keep track of stats.
+			statsMx.Lock()
+			data, ok := stats[pod]
+			if !ok {
+				data = &IngesterStats{}
+				stats[pod] = data
+			}
+
+			if err == nil {
+				data.successQueries++
+			} else {
+				data.failureQueries++
+			}
+			statsMx.Unlock()
 		}
 	}
 
@@ -83,6 +110,45 @@ func main() {
 			}
 		}(pod)
 	}
+
+	// Periodically print stats.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		for {
+			// Print stats.
+			statsMx.Lock()
+
+			successes := 0
+			failures := 0
+			minQueriesPerIngester := -1
+			maxQueriesPerIngester := 0
+
+			for _, stat := range stats {
+				successes += stat.successQueries
+				failures += stat.failureQueries
+
+				total := stat.successQueries + stat.failureQueries
+				if minQueriesPerIngester < 0 || total < minQueriesPerIngester {
+					minQueriesPerIngester = total
+				}
+				if total > maxQueriesPerIngester {
+					maxQueriesPerIngester = total
+				}
+			}
+
+			if minQueriesPerIngester < 0 {
+				minQueriesPerIngester = 0
+			}
+
+			log.Printf("Stats - Total ingesters: %d Successes: %d Failures: %d - Min / max queries per ingester: %d / %d", len(stats), successes, failures, minQueriesPerIngester, maxQueriesPerIngester)
+			statsMx.Unlock()
+
+			// Throttle.
+			time.Sleep(5 * time.Second)
+		}
+	}()
 
 	wg.Wait()
 }
