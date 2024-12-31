@@ -176,8 +176,9 @@ func (t *Tracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.T
 	// this would be less precised than per sample but it's more efficient
 	var total float64
 	for k, v := range dict {
-		t.updateObservations(k, now.Unix(), 0, float64(v), 0, nil, true)
-		total += float64(v)
+		count := float64(v)
+		t.updateObservations(k, now.Unix(), 0, count, 0, nil, true)
+		total += count
 	}
 	t.updateState(now, 0, total, 0)
 }
