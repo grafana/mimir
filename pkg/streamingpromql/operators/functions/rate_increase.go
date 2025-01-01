@@ -29,6 +29,20 @@ var Increase = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
+var Irate = FunctionOverRangeVectorDefinition{
+	StepFunc:                       irate(true),
+	SeriesValidationFuncFactory:    rateSeriesValidator,
+	SeriesMetadataFunction:         DropSeriesName,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+var Idelta = FunctionOverRangeVectorDefinition{
+	StepFunc:                       irate(false),
+	SeriesValidationFuncFactory:    rateSeriesValidator,
+	SeriesMetadataFunction:         DropSeriesName,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
 // isRate is true for `rate` function, or false for `instant` function
 func rate(isRate bool) RangeVectorStepFunction {
 	return func(step *types.RangeVectorStepData, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
@@ -249,6 +263,46 @@ func calculateFloatRate(isRate bool, rangeStart, rangeEnd int64, rangeSeconds fl
 		factor /= rangeSeconds
 	}
 	return delta * factor
+}
+
+func irate(isRate bool) RangeVectorStepFunction {
+	return func(step *types.RangeVectorStepData, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+		fHead, fTail := step.Floats.UnsafePoints()
+
+		// We need at least two samples to calculate irate or idelta.
+		if len(fHead)+len(fTail) < 2 {
+			return 0, false, nil, nil
+		}
+
+		lastSample := fHead[len(fHead)-1]
+		var previousSample promql.FPoint
+		// If head at least has 2 points, previousSample is must be in the head too,
+		// otherwise the previousSample might be in tail.
+		if len(fHead) >= 2 {
+			previousSample = fHead[len(fHead)-2]
+		} else {
+			previousSample = fTail[len(fTail)-1]
+		}
+
+		var resultValue float64
+		if isRate && lastSample.F < previousSample.F {
+			// Counter reset.
+			resultValue = lastSample.F
+		} else {
+			resultValue = lastSample.F - previousSample.F
+		}
+		sampledInterval := lastSample.T - previousSample.T
+		if sampledInterval == 0 {
+			// Avoid dividing by 0.
+			return 0, false, nil, nil
+		}
+
+		if isRate {
+			// Convert to per-second.
+			resultValue /= float64(sampledInterval) / 1000
+		}
+		return resultValue, true, nil, nil
+	}
 }
 
 func rateSeriesValidator() RangeVectorSeriesValidationFunction {
