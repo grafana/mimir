@@ -217,6 +217,25 @@ Params:
 {{- end -}}
 
 {{/*
+Rollout group name template
+Params:
+  ctx = . context
+  component = component name
+*/}}
+{{- define "mimir.rolloutGroupName" -}}
+{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
+{{- if $componentSection.zoneAwareReplication.rolloutGroupName -}}
+{{- $componentSection.zoneAwareReplication.rolloutGroupName -}}
+{{- else -}}
+{{- $rolloutGroupName := include "mimir.fullname" .ctx -}}
+{{- if not .component -}}{{- printf "Component name cannot be empty." | fail -}}{{- end -}}
+{{- $rolloutGroupName = printf "%s-%s" $rolloutGroupName .component -}}
+{{- if gt (len $rolloutGroupName) 253 -}}{{- printf "Rollout group name (%s) exceeds kubernetes limit of 253 character. To fix: shorten release name if this will be a fresh install." $rolloutGroupName | fail -}}{{- end -}}
+{{- $rolloutGroupName -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Resource labels
 Params:
   ctx = . context
@@ -255,7 +274,7 @@ app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
 {{-     printf "Component name cannot be empty if rolloutZoneName (%s) is set" .rolloutZoneName | fail }}
 {{-   end }}
 name: "{{ .component }}-{{ .rolloutZoneName }}" {{- /* Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15 */}}
-rollout-group: {{ .component }}
+rollout-group: {{ include "mimir.rolloutGroupName" . }}
 zone: {{ .rolloutZoneName }}
 {{- end }}
 {{- end -}}
@@ -308,7 +327,7 @@ app.kubernetes.io/part-of: memberlist
 {{-     printf "Component name cannot be empty if rolloutZoneName (%s) is set" .rolloutZoneName | fail }}
 {{-   end }}
 name: "{{ .component }}-{{ .rolloutZoneName }}" {{- /* Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15 */}}
-rollout-group: {{ .component }}
+rollout-group: {{ include "mimir.rolloutGroupName" . }}
 zone: {{ .rolloutZoneName }}
 {{- end }}
 {{- end -}}
@@ -363,7 +382,7 @@ app.kubernetes.io/component: {{ .component }}
 {{-   if not .component }}
 {{-     printf "Component name cannot be empty if rolloutZoneName (%s) is set" .rolloutZoneName | fail }}
 {{-   end }}
-rollout-group: {{ .component }}
+rollout-group: {{ include "mimir.rolloutGroupName" . }}
 zone: {{ .rolloutZoneName }}
 {{- end }}
 {{- end -}}
@@ -584,7 +603,7 @@ which allows us to keep generating everything for the default zone.
 
 {{- range $idx, $rolloutZone := $componentSection.zoneAwareReplication.zones -}}
 {{- $_ := set $zonesMap $rolloutZone.name (dict
-  "affinity" (($rolloutZone.extraAffinity | default (dict)) | mergeOverwrite (include "mimir.zoneAntiAffinity" (dict "component" $.component "rolloutZoneName" $rolloutZone.name "topologyKey" $componentSection.zoneAwareReplication.topologyKey ) | fromYaml ) )
+  "affinity" (($rolloutZone.extraAffinity | default (dict)) | mergeOverwrite (include "mimir.zoneAntiAffinity" (dict "ctx" $.ctx "component" $.component "rolloutZoneName" $rolloutZone.name "topologyKey" $componentSection.zoneAwareReplication.topologyKey ) | fromYaml ) )
   "nodeSelector" ($rolloutZone.nodeSelector | default (dict) )
   "replicas" $replicaPerZone
   "storageClass" $rolloutZone.storageClass
@@ -607,6 +626,7 @@ which allows us to keep generating everything for the default zone.
 {{/*
 Calculate anti-affinity for a zone
 Params:
+  ctx = .
   component = component name
   rolloutZoneName = name of the rollout zone
   topologyKey = topology key
@@ -620,7 +640,7 @@ podAntiAffinity:
           - key: rollout-group
             operator: In
             values:
-              - {{ .component }}
+              - {{ include "mimir.rolloutGroupName" . }}
           - key: zone
             operator: NotIn
             values:
