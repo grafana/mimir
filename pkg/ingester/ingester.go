@@ -2406,6 +2406,15 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 }
 
 func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
+	// Enable troubleshooting only for specific queries.
+	troubleshoot := false
+	for _, m := range matchers {
+		if m.Name == labels.MetricName {
+			troubleshoot = m.Type == labels.MatchEqual && m.Value == "tempo_request_duration_seconds_bucket"
+			break
+		}
+	}
+
 	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
 	// the requested from/through range. PromQL engine can handle it.
 	hints := initSelectHints(from, through)
@@ -2433,6 +2442,22 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 
 	for ss.Next() {
 		series := ss.At()
+
+		// Troubleshooting.
+		if troubleshoot {
+			seriesLabels := series.Labels()
+
+			for _, m := range matchers {
+				val := seriesLabels.Get(m.Name)
+				if !m.Matches(val) {
+					level.Error(i.logger).Log("msg", "ingester fetched series that doesn't match the input matcher", "series", seriesLabels.String(), "matcher", m.String())
+
+					// Stop troubleshooting this request, given we've already found a bad series.
+					troubleshoot = false
+					break
+				}
+			}
+		}
 
 		if len(lastSeriesNode.series) == chunkSeriesNodeSize {
 			newNode := getChunkSeriesNode()
