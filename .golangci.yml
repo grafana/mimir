@@ -11,6 +11,8 @@ linters:
     - errorlint
     - forbidigo
     - loggercheck
+    - staticcheck
+    - gosec
 
 linters-settings:
   errcheck:
