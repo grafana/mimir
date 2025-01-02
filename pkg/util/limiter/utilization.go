@@ -5,7 +5,7 @@ package limiter
 import (
 	"context"
 	"fmt"
-	"runtime"
+	"runtime/metrics"
 	"strings"
 	"time"
 
@@ -36,7 +36,8 @@ type utilizationScanner interface {
 
 // combinedScanner scans /proc for CPU utilization and Go runtime for heap size.
 type combinedScanner struct {
-	proc procfs.Proc
+	proc              procfs.Proc
+	memoryTotalSample []metrics.Sample
 }
 
 func (s combinedScanner) Scan() (float64, uint64, error) {
@@ -45,16 +46,16 @@ func (s combinedScanner) Scan() (float64, uint64, error) {
 		return 0, 0, errors.Wrap(err, "failed to get process stats")
 	}
 
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
+	metrics.Read(s.memoryTotalSample)
 
-	return ps.CPUTime(), m.HeapInuse, nil
+	return ps.CPUTime(), s.memoryTotalSample[0].Value.Uint64(), nil
 }
 
 func newCombinedScanner() (combinedScanner, error) {
 	p, err := procfs.Self()
 	return combinedScanner{
-		proc: p,
+		proc:              p,
+		memoryTotalSample: []metrics.Sample{{Name: "/memory/classes/heap/objects:bytes"}},
 	}, err
 }
 
