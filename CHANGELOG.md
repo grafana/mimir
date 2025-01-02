@@ -13,8 +13,10 @@
 * [ENHANCEMENT] Distributor: discard float and histogram samples with duplicated timestamps from each timeseries in a request before the request is forwarded to ingesters. Discarded samples are tracked by the `cortex_discarded_samples_total` metrics with reason `sample_duplicate_timestamp`. #10145
 * [ENHANCEMENT] Ruler: Add `cortex_prometheus_rule_group_last_rule_duration_sum_seconds` metric to track the total evaluation duration of a rule group regardless of concurrency #10189
 * [ENHANCEMENT] Distributor: Add native histogram support for `electedReplicaPropagationTime` metric in ha_tracker. #10264
+* [ENHANCEMENT] Ingester: More efficient CPU/memory utilization-based read request limiting. #10325
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 * [BUGFIX] Querier: fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #10154
+* [BUGFIX] Query-frontend and querier: show warning/info annotations in some cases where they were missing (if a lazy querier was used). #10277
 * [BUGFIX] Ruler: fix indeterminate rules being always run concurrently (instead of never) when `-ruler.max-independent-rule-evaluation-concurrency` is set. https://github.com/prometheus/prometheus/pull/15560 #10258
 * [BUGFIX] PromQL: Fix various UTF-8 bugs related to quoting. https://github.com/prometheus/prometheus/pull/15531 #10258
 * [BUGFIX] Ruler: Fixed an issue when using the experimental `-ruler.max-independent-rule-evaluation-concurrency` feature, where if a rule group was eligible for concurrency, it would flap between running concurrently or not based on the time it took after running concurrently. #9726 #10189
@@ -28,6 +30,7 @@
 ### Jsonnet
 
 * [CHANGE] Update rollout-operator version to 0.22.0. #10229
+* [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [BUGFIX] Ports in container rollout-operator. #10273
 
 ### Mimirtool
@@ -45,6 +48,8 @@
 * [ENHANCEMENT] Update `MimirAutoscalerNotActive` and `MimirAutoscalerKedaFailing` runbooks, with an instruction to check whether Prometheus has enough CPU allocated. #10257
 
 ### Tools
+
+* [CHANGE] `copyblocks`: Remove /pprof endpoint. #10329
 
 ## 2.15.0-rc.0
 
