@@ -535,15 +535,13 @@ func linearRegression(head, tail []promql.FPoint, interceptTime int64) (slope, i
 }
 
 var Irate = FunctionOverRangeVectorDefinition{
-	StepFunc:                       irate(true),
-	SeriesMetadataFunction:         DropSeriesName,
-	NeedsSeriesNamesForAnnotations: true,
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               irate(true),
 }
 
 var Idelta = FunctionOverRangeVectorDefinition{
-	StepFunc:                       irate(false),
-	SeriesMetadataFunction:         DropSeriesName,
-	NeedsSeriesNamesForAnnotations: true,
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               irate(false),
 }
 
 func irate(isRate bool) RangeVectorStepFunction {
