@@ -65,6 +65,7 @@ linters-settings:
   gosec:
     includes:
       - G108
+      - G114
 
 run:
   timeout: 10m
