@@ -1353,7 +1353,7 @@
                         "legendLink": null
                      },
                      {
-                        "expr": "cortex_query_scheduler_connected_querier_clients",
+                        "expr": "sum(cortex_query_scheduler_connected_querier_clients{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"})",
                         "format": "time_series",
                         "legendFormat": "Total Connected Queriers",
                         "legendLink": null

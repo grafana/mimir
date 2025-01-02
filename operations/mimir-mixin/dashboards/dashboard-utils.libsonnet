@@ -1665,7 +1665,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel(
           [
             'sum by(query_component) (cortex_query_scheduler_querier_inflight_requests{quantile="0.99", %s})' % [$.jobMatcher(querySchedulerJobName)],
-            'cortex_query_scheduler_connected_querier_clients',
+            'sum(cortex_query_scheduler_connected_querier_clients{%s})' % [$.jobMatcher(querySchedulerJobName)],
           ],
           [
             '99th Percentile Inflight Requests: {{query_component}}',
