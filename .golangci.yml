@@ -66,6 +66,7 @@ linters-settings:
     includes:
       - G108
       - G109
+      - G112
       - G114
 
 run:
