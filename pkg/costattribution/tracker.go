@@ -252,27 +252,33 @@ func (t *Tracker) updateObservations(key string, ts time.Time, activeSeriesIncre
 		if !createIfDoesNotExist {
 			return
 		}
-		// We don't want to restart the tracker when we are not sure overflow is fixed, so we keep a observation with 2 times the max cardinality, as soon as
-		// the tracker is still above the max cardinality, we will keep the overflow state.
-		t.observedMtx.RLock()
-		if len(t.observed) < t.maxCardinality*2 {
-			t.observedMtx.RUnlock()
-
-			// If adding the new observation would exceed the max cardinality, we need to update the state, it is fine only call it here
-			// because we are sure that the new observation will be added to the map
-			t.updateState(ts)
-
-			// If we are not in overflow mode, we can create a new observation with input values, otherwise we create a new observation with 0 values
-			if !t.isOverflow.Load() {
-				t.createNewObservationAndUpdateState(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
-				return
-			}
-			t.createNewObservationAndUpdateState(key, ts, 0, 0, 0, nil)
-		} else {
-			t.observedMtx.RUnlock()
+		createStatus, ob := t.createNewObservationAndUpdateState(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
+		switch createStatus {
+		case fullCreate:
+			return
+		case alreadyExists:
+			known = true
+			o = ob
+		case exceedLimit:
+			// If we are in overflow mode (including the case that observed map size exceed 2 times max cardinality), we update the overflow counter
+			o = t.overflowCounter
+		case partialCreate:
+			activeSeriesIncrement = 0
+			o = t.overflowCounter
 		}
-		// If we are in overflow mode (including the case that observed map size exceed 2 times max cardinality), we update the overflow counter
-		o = t.overflowCounter
+	}
+
+	// Rechecking the known flag since we change above when we seen the observation already exists during creation
+	if known {
+		// if we already know the observation, we would increment the active series for sure, but we need to check if it is overflow mode
+		// if yes, that means we only update active series with the real observation, and we update the overflow counter with the rest
+		if t.isOverflow.Load() {
+			if activeSeriesIncrement > 0 {
+				o.activeSerie.Add(activeSeriesIncrement)
+				activeSeriesIncrement = 0
+			}
+			o = t.overflowCounter
+		}
 	}
 
 	o.lastUpdate.Store(ts.Unix())
@@ -306,26 +312,52 @@ func (t *Tracker) updateState(ts time.Time) {
 	}
 }
 
+type createStatus int
+
+const (
+	fullCreate createStatus = iota
+	partialCreate
+	exceedLimit
+	alreadyExists
+)
+
 // createNewObservationAndUpdateState creates a new observation in the 'observed' map. Check if the tracker is in overflow mode and updates the state.
-func (t *Tracker) createNewObservationAndUpdateState(key string, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
+// returns true if update with not overflow mode, it has been full create with full update
+func (t *Tracker) createNewObservationAndUpdateState(key string, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) (createStatus, *observation) {
 	t.observedMtx.Lock()
 	defer t.observedMtx.Unlock()
-	if _, exists := t.observed[key]; exists {
-		return
+	if o, exists := t.observed[key]; exists {
+		return alreadyExists, o
+	}
+
+	// If adding the new observation would exceed the max cardinality, we need to update the state, it is fine only call it here
+	// because we are sure that the new observation will be added to the map
+	t.updateState(ts)
+
+	// We don't want to restart the tracker when we are not sure overflow is fixed, so we keep a observation with 2 times the max cardinality, as soon as
+	// the tracker is still above the max cardinality, we will keep the overflow state.
+	if len(t.observed) >= 2*t.maxCardinality {
+		return exceedLimit, nil
 	}
 
 	t.observed[key] = &observation{
 		lastUpdate:         *atomic.NewInt64(ts.Unix()),
 		activeSerie:        *atomic.NewFloat64(activeSeriesIncrement),
-		receivedSample:     *atomic.NewFloat64(receivedSampleIncrement),
 		discardedSample:    make(map[string]*atomic.Float64),
 		discardedSampleMtx: sync.Mutex{},
 	}
+	// If we are not in overflow mode, we can create a new observation with input values, otherwise we create a new observation with 0 values except for active series
+	if t.isOverflow.Load() {
+		return partialCreate, t.observed[key]
+	}
+
+	t.observed[key].receivedSample = *atomic.NewFloat64(receivedSampleIncrement)
 	if discardedSampleIncrement > 0 && reason != nil {
 		t.observed[key].discardedSampleMtx.Lock()
 		t.observed[key].discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
 		t.observed[key].discardedSampleMtx.Unlock()
 	}
+	return fullCreate, t.observed[key]
 }
 
 func (t *Tracker) recoveredFromOverflow(deadline time.Time) bool {
