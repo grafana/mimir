@@ -252,6 +252,11 @@ func TestBlockBuilder_StartWithExistingCommit_PullMode(t *testing.T) {
 		return completeJobCalls > 0
 	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
 
+	require.EqualValues(t,
+		[]schedulerpb.JobKey{{Id: "test-job-4898", Epoch: 90000}},
+		scheduler.completeJobCalls,
+	)
+
 	// Because there is a commit, on startup, block-builder must consume samples only after the commit.
 	expSamples := producedSamples[1+(len(producedSamples)/2):]
 
@@ -386,6 +391,11 @@ func TestBlockBuilder_StartWithLookbackOnNoCommit_PullMode(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return bb.jobIteration.Load() > 0
 	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
+
+	require.EqualValues(t,
+		[]schedulerpb.JobKey{{Id: "test-job-4898", Epoch: 90001}},
+		scheduler.completeJobCalls,
+	)
 
 	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
 	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
@@ -565,7 +575,14 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection_PullMode(t *testi
 	})
 
 	// Wait for both jobs to complete.
-	require.Eventually(t, func() bool { return bb.jobIteration.Load() >= 2 }, 5*time.Second, 100*time.Millisecond, "expected job completion")
+	require.Eventually(t, func() bool {
+		return bb.jobIteration.Load() >= 2
+	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
+
+	require.EqualValues(t,
+		[]schedulerpb.JobKey{{Id: "test-job-p0-4898", Epoch: 90002}, {Id: "test-job-p1-4899", Epoch: 90070}},
+		scheduler.completeJobCalls,
+	)
 
 	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
 	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
@@ -703,6 +720,11 @@ func TestBlockBuilder_WithMultipleTenants_PullMode(t *testing.T) {
 		_, _, completeJobCalls := scheduler.counts()
 		return completeJobCalls > 0
 	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
+
+	require.EqualValues(t,
+		[]schedulerpb.JobKey{{Id: "test-job-4898", Epoch: 90003}},
+		scheduler.completeJobCalls,
+	)
 
 	for _, tenant := range tenants {
 		bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
@@ -1157,6 +1179,11 @@ func TestPullMode(t *testing.T) {
 		return completeJobCalls == 2
 	}, 5*time.Second, 100*time.Millisecond, "expected to complete two jobs")
 
+	require.EqualValues(t,
+		[]schedulerpb.JobKey{{Id: "test-job-p0-0", Epoch: 220}, {Id: "test-job-p1-0", Epoch: 233}},
+		scheduler.completeJobCalls,
+	)
+
 	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
 	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
 	require.NoError(t, err)
@@ -1184,7 +1211,7 @@ type mockSchedulerClient struct {
 	}
 	runCalls         int
 	getJobCalls      int
-	completeJobCalls int
+	completeJobCalls []schedulerpb.JobKey
 }
 
 func (m *mockSchedulerClient) Run(_ context.Context) {
@@ -1211,10 +1238,11 @@ func (m *mockSchedulerClient) GetJob(ctx context.Context) (schedulerpb.JobKey, s
 	return schedulerpb.JobKey{}, schedulerpb.JobSpec{}, ctx.Err()
 }
 
-func (m *mockSchedulerClient) CompleteJob(schedulerpb.JobKey) error {
+func (m *mockSchedulerClient) CompleteJob(key schedulerpb.JobKey) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.completeJobCalls++
+
+	m.completeJobCalls = append(m.completeJobCalls, key)
 
 	// Do nothing.
 	return nil
@@ -1232,5 +1260,5 @@ func (m *mockSchedulerClient) addJob(key schedulerpb.JobKey, spec schedulerpb.Jo
 func (m *mockSchedulerClient) counts() (int, int, int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.runCalls, m.getJobCalls, m.completeJobCalls
+	return m.runCalls, m.getJobCalls, len(m.completeJobCalls)
 }
