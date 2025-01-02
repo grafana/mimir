@@ -99,7 +99,7 @@ func newWithSchedulerClient(
 		} else {
 			var err error
 			if b.scheduler, err = b.makeSchedulerClient(); err != nil {
-				return nil, fmt.Errorf("failed to create scheduler client: %w", err)
+				return nil, fmt.Errorf("make scheduler client: %w", err)
 			}
 		}
 
