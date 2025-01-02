@@ -230,8 +230,8 @@ eval instant at 50m irate(http_requests_total[50m])
 
 # Counter reset.
 eval instant at 30m irate(http_requests_total[50m])
- 	{path="/foo"} .03333333333333333333
- 	{path="/bar"} 0
+	{path="/foo"} .03333333333333333333
+	{path="/bar"} 0
 
 clear
 
@@ -253,8 +253,8 @@ load 5m
 	http_requests{path="/bar"}	0 50 100 50
 
 eval instant at 20m idelta(http_requests[20m])
- 	{path="/foo"} 50
- 	{path="/bar"} -50
+	{path="/foo"} 50
+	{path="/bar"} -50
 
 clear
 
