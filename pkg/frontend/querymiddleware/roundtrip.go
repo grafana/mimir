@@ -81,6 +81,8 @@ type Config struct {
 	ExtraInstantQueryMiddlewares []MetricsQueryMiddleware `yaml:"-"`
 	ExtraRangeQueryMiddlewares   []MetricsQueryMiddleware `yaml:"-"`
 
+	ExtraPropagateHeaders []string `yaml:"-"`
+
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 }
 
