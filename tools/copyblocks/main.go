@@ -167,8 +167,12 @@ func main() {
 	go func() {
 		level.Info(logger).Log("msg", "HTTP server listening on "+cfg.httpListen)
 		http.Handle("/metrics", promhttp.Handler())
-		err := http.ListenAndServe(cfg.httpListen, nil)
-		if err != nil {
+		server := &http.Server{
+			Addr:         cfg.httpListen,
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		}
+		if err := server.ListenAndServe(); err != nil {
 			level.Error(logger).Log("msg", "failed to start HTTP server")
 			os.Exit(1)
 		}
