@@ -203,6 +203,8 @@ func queryIngester(ctx context.Context, addr string, from, to model.Time, matche
 		return nil, err
 	}
 
+	req.StreamingChunksBatchSize = 1000
+
 	// To keep it simple, create a gRPC client each time.
 	clientMetrics := ingester_client.NewMetrics(nil)
 	clientConfig := ingester_client.Config{}
@@ -238,22 +240,25 @@ func queryIngester(ctx context.Context, addr string, from, to model.Time, matche
 
 		if len(resp.Timeseries) > 0 {
 			panic("Not expected to receive timeseries")
-		} else if len(resp.StreamingSeries) > 0 {
-			panic("Not expected to receive streaming series")
 		} else if len(resp.Chunkseries) > 0 {
-			for _, series := range resp.Chunkseries {
+			panic("Not expected to receive chunkseries")
+		} else if len(resp.StreamingSeries) > 0 {
+			for _, series := range resp.StreamingSeries {
 				// Serialize the series labels and use it as map key.
 				key := mimirpb.FromLabelAdaptersToString(series.Labels)
 
-				data, ok := fetchedSeries[key]
+				_, ok := fetchedSeries[key]
 				if !ok {
-					fetchedSeries[key] = series
-				} else {
-					data = fetchedSeries[key]
-					data.Chunks = append(fetchedSeries[key].Chunks, series.Chunks...)
-					fetchedSeries[key] = data
+					fetchedSeries[key] = ingester_client.TimeSeriesChunk{
+						Labels: series.Labels,
+					}
 				}
 			}
+		}
+
+		// Do not read chunks for simplicity.
+		if resp.IsEndOfSeriesStream {
+			break
 		}
 	}
 
