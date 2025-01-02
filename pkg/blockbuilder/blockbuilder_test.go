@@ -223,7 +223,7 @@ func TestBlockBuilder_StartWithExistingCommit_PullMode(t *testing.T) {
 	scheduler.addJob(
 		schedulerpb.JobKey{
 			Id:    "test-job-4898",
-			Epoch: 84823,
+			Epoch: 90000,
 		},
 		schedulerpb.JobSpec{
 			Topic:          testTopic,
@@ -360,7 +360,7 @@ func TestBlockBuilder_StartWithLookbackOnNoCommit_PullMode(t *testing.T) {
 	scheduler.addJob(
 		schedulerpb.JobKey{
 			Id:    "test-job-4898",
-			Epoch: 84823,
+			Epoch: 90001,
 		},
 		schedulerpb.JobSpec{
 			Topic:          testTopic,
@@ -408,7 +408,6 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection(t *testing.T) {
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
 	kafkaCluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-
 	kafkaClient := mustKafkaClient(t, kafkaAddr)
 
 	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
@@ -479,7 +478,8 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection(t *testing.T) {
 
 // When there are no records to consume before the last cycle section, the whole cycle should bail.
 func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection_PullMode(t *testing.T) {
-	t.Parallel()
+	// FIXME: I'm currently trying to understand why uncommenting this line causes tests to fail when all run together:
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
@@ -522,7 +522,7 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection_PullMode(t *testi
 	scheduler.addJob(
 		schedulerpb.JobKey{
 			Id:    "test-job-p0-4898",
-			Epoch: 84823,
+			Epoch: 90002,
 		},
 		schedulerpb.JobSpec{
 			Topic:          testTopic,
@@ -540,7 +540,7 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection_PullMode(t *testi
 	scheduler.addJob(
 		schedulerpb.JobKey{
 			Id:    "test-job-p1-4899",
-			Epoch: 84824,
+			Epoch: 90070,
 		},
 		schedulerpb.JobSpec{
 			Topic:          testTopic,
@@ -662,7 +662,7 @@ func TestBlockBuilder_WithMultipleTenants_PullMode(t *testing.T) {
 	scheduler.addJob(
 		schedulerpb.JobKey{
 			Id:    "test-job-4898",
-			Epoch: 84823,
+			Epoch: 90003,
 		},
 		schedulerpb.JobSpec{
 			Topic:          testTopic,
