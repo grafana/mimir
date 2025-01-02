@@ -792,11 +792,11 @@ as well as which query components are utilized to service the queries.
 
 #### How it Works
 
-- A query-frontend API endpoint is called to execute a query
-- The query-frontend enqueues the request to the query-scheduler
-- The query-scheduler is responsible for dispatching enqueued queries to idle querier workers
+- A query-frontend API endpoint is called to execute a query.
+- The query-frontend enqueues the request to the query-scheduler.
+- The query-scheduler is responsible for dispatching enqueued queries to idle querier workers.
 - The querier fetches data from ingesters, store-gateways, or both, and runs the query against the data.
-  Then, itsends the response back directly to the query-frontend and notifies the query-scheduler that it can process another query.
+  Then, it sends the response back directly to the query-frontend and notifies the query-scheduler that it can process another query.
 
 #### How to Investigate
 
