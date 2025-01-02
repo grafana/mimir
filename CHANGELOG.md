@@ -49,6 +49,8 @@
 
 ### Tools
 
+* [CHANGE] `copyblocks`: Remove /pprof endpoint. #10329
+
 ## 2.15.0-rc.0
 
 ### Grafana Mimir

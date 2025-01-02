@@ -63,6 +63,10 @@ linters-settings:
       - p: ^.*\.CloseSend.*$
         msg: Do not use CloseSend on a server-streaming gRPC stream. Use util.CloseAndExhaust instead. See the documentation on CloseAndExhaust for further explanation.
 
+  gosec:
+    includes:
+      - G108
+
 run:
   timeout: 10m
 

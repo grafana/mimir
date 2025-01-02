@@ -12,7 +12,6 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	_ "net/http/pprof" // anonymous import to get the pprof handler registered
 	"os"
 	"os/signal"
 	"path/filepath"
