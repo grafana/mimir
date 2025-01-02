@@ -956,11 +956,6 @@ instance_limits:
 # limiting feature.)
 # CLI flag: -distributor.reusable-ingester-push-workers
 [reusable_ingester_push_workers: <int> | default = 2000]
-
-# (advanced) Change the implementation of Otel startTime from a real zero to a
-# special NaN value.
-# CLI flag: -distributor.otel-start-time-quiet-zero
-[start_time_quiet_zero: <boolean> | default = false]
 ```
 
 ### ingester

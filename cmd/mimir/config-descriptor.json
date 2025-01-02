@@ -1690,17 +1690,6 @@
           "fieldFlag": "distributor.reusable-ingester-push-workers",
           "fieldType": "int",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "start_time_quiet_zero",
-          "required": false,
-          "desc": "Change the implementation of Otel startTime from a real zero to a special NaN value.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "distributor.otel-start-time-quiet-zero",
-          "fieldType": "boolean",
-          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
