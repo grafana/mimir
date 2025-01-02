@@ -209,12 +209,12 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 		return
 	}
 
+	logger := l.logger
+	if l.cpuSamples != nil {
+		// Log also the CPU samples the CPU load EWMA is based on
+		logger = log.WithSuffix(logger, "source_samples", l.cpuSamples.String())
+	}
 	if enable {
-		logger := l.logger
-		if l.cpuSamples != nil {
-			// Log also the CPU samples the CPU load EWMA is based on
-			logger = log.WithSuffix(logger, "source_samples", l.cpuSamples.String())
-		}
 		level.Info(logger).Log("msg", "enabling resource utilization based limiting",
 			"reason", reason, "memory_limit", formatMemoryLimit(l.memoryLimit), "memory_utilization", formatMemory(currHeapSize),
 			"cpu_limit", formatCPULimit(l.cpuLimit), "cpu_utilization", formatCPU(currCPUUtil))

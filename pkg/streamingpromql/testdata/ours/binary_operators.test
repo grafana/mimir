@@ -276,16 +276,16 @@ load 1m
   another_mixed{job="test"} 10 {{schema:0 sum:12 count:6 buckets:[2 4 6]}}  {{schema:0 sum:12 count:6 buckets:[2 4 6]}}   4                                            5                                              {{schema:0 sum:12 count:6 buckets:[2 4 6]}}
 #                           @0 @5m                                          @10m                                          @15m                                         @20m                                           @25m
 
-eval range from 0 to 5m step 1m mixed_metric + another_mixed
+eval_info range from 0 to 5m step 1m mixed_metric + another_mixed
   {job="test"}              20 11                                           12                                            7                                            _                                              {{schema:0 sum:24 count:12 buckets:[4 8 12]}}
 
-eval range from 0 to 5m step 1m mixed_metric - another_mixed
+eval_info range from 0 to 5m step 1m mixed_metric - another_mixed
   {job="test"}              0  -9                                           -8                                            -1                                           _                                              {{schema:0 sum:0 count:0}}
 
-eval range from 0 to 5m step 1m mixed_metric * another_mixed
+eval_info range from 0 to 5m step 1m mixed_metric * another_mixed
   {job="test"}              100 10                                          20                                            12                                           {{schema:0 sum:30 count:15 buckets:[5 10 15]}} _
 
-eval range from 0 to 5m step 1m mixed_metric / another_mixed
+eval_info range from 0 to 5m step 1m mixed_metric / another_mixed
   {job="test"}              1  0.1                                          0.2                                           0.75                                         {{schema:0 sum:1.2 count:0.6 buckets:[0.2 0.4 0.6]}} _
 
 clear
@@ -317,18 +317,18 @@ eval range from 0m to 24m step 6m my_metric / 2
 
 # Scalar on left side
 # Note that positive scalar / histogram == nothing.
-eval range from 0m to 24m step 6m 2 / my_metric
+eval_info range from 0m to 24m step 6m 2 / my_metric
   {histograms="both"} 0.4 0.2 _
   {job="foo"} 2 1 0.6666666666666667 0.5 0.4
   {job="bar"} 0.2 0.1 0.06666666666666667 _ 0.04
 
 # Test other arithmetic operations.
-eval range from 0m to 24m step 6m my_metric + 2
+eval_info range from 0m to 24m step 6m my_metric + 2
   {histograms="both"} 7 12 _
   {job="foo"} 3 4 5 6 7
   {job="bar"} 12 22 32 _ 52
 
-eval range from 0m to 24m step 6m my_metric - 2
+eval_info range from 0m to 24m step 6m my_metric - 2
   {histograms="both"} 3 8
   {job="foo"} -1 0 1 2 3
   {job="bar"} 8 18 28 _ 48
@@ -552,7 +552,7 @@ eval_info range from 0 to 24m step 6m left_histograms == 0
 eval_info range from 0 to 24m step 6m left_histograms != 3
   # No results.
 
-eval range from 0 to 24m step 6m left_histograms != 0
+eval_info range from 0 to 24m step 6m left_histograms != 0
   # No results.
 
 eval_info range from 0 to 24m step 6m left_histograms > 3
@@ -561,7 +561,7 @@ eval_info range from 0 to 24m step 6m left_histograms > 3
 eval_info range from 0 to 24m step 6m left_histograms > 0
   # No results.
 
-eval range from 0 to 24m step 6m left_histograms >= 3
+eval_info range from 0 to 24m step 6m left_histograms >= 3
   # No results.
 
 eval_info range from 0 to 24m step 6m left_histograms >= 0
@@ -576,7 +576,7 @@ eval_info range from 0 to 24m step 6m left_histograms < 0
 eval_info range from 0 to 24m step 6m left_histograms <= 3
   # No results.
 
-eval range from 0 to 24m step 6m left_histograms <= 0
+eval_info range from 0 to 24m step 6m left_histograms <= 0
   # No results.
 
 eval_info range from 0 to 24m step 6m left_histograms == bool 3
@@ -649,40 +649,40 @@ eval range from 0 to 60m step 6m NaN == left_floats
 eval range from 0 to 60m step 6m NaN == bool left_floats
   {} 0 0 _ _ 0 _ 0 0 0 0 0
 
-eval range from 0 to 24m step 6m 3 == left_histograms
+eval_info range from 0 to 24m step 6m 3 == left_histograms
   # No results.
 
-eval range from 0 to 24m step 6m 0 == left_histograms
+eval_info range from 0 to 24m step 6m 0 == left_histograms
   # No results.
 
-eval range from 0 to 24m step 6m 3 != left_histograms
+eval_info range from 0 to 24m step 6m 3 != left_histograms
   # No results.
 
-eval range from 0 to 24m step 6m 0 != left_histograms
+eval_info range from 0 to 24m step 6m 0 != left_histograms
   # No results.
 
-eval range from 0 to 24m step 6m 3 < left_histograms
+eval_info range from 0 to 24m step 6m 3 < left_histograms
   # No results.
 
-eval range from 0 to 24m step 6m 0 < left_histograms
+eval_info range from 0 to 24m step 6m 0 < left_histograms
   # No results.
 
-eval range from 0 to 24m step 6m 3 < left_histograms
+eval_info range from 0 to 24m step 6m 3 < left_histograms
   # No results.
 
-eval range from 0 to 24m step 6m 0 < left_histograms
+eval_info range from 0 to 24m step 6m 0 < left_histograms
   # No results.
 
-eval range from 0 to 24m step 6m 3 > left_histograms
+eval_info range from 0 to 24m step 6m 3 > left_histograms
   # No results.
 
-eval range from 0 to 24m step 6m 0 > left_histograms
+eval_info range from 0 to 24m step 6m 0 > left_histograms
   # No results.
 
-eval range from 0 to 24m step 6m 3 >= left_histograms
+eval_info range from 0 to 24m step 6m 3 >= left_histograms
   # No results.
 
-eval range from 0 to 24m step 6m 0 >= left_histograms
+eval_info range from 0 to 24m step 6m 0 >= left_histograms
   # No results.
 
 # Scalar / scalar combinations

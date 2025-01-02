@@ -249,6 +249,11 @@ blocks_storage:
 			// Do not wait before switching an INACTIVE partition to ACTIVE.
 			"-ingester.partition-ring.min-partition-owners-count":    "0",
 			"-ingester.partition-ring.min-partition-owners-duration": "0s",
+
+			// Enable ingestion and fetch concurrency
+			"-ingest-storage.kafka.fetch-concurrency-max":                "12",
+			"-ingest-storage.kafka.ingestion-concurrency-max":            "8",
+			"-ingest-storage.kafka.auto-create-topic-default-partitions": "10",
 		}
 	}
 )

@@ -24,7 +24,7 @@ The following table contains past releases and tentative dates for upcoming rele
 | 2.12.0  | 2024-03-11 | Yuri Nikolic       |
 | 2.13.0  | 2024-06-17 | Dimitar Dimitrov   |
 | 2.14.0  | 2024-10-07 | Vladimir Varankin  |
-| 2.15.0  | 2024-12-09 | _To be announced_  |
+| 2.15.0  | 2024-12-12 | Casie Chen         |
 | 2.16.0  | 2025-03-10 | _To be announced_  |
 
 ## Release shepherd responsibilities
@@ -276,7 +276,11 @@ To publish a stable release:
    1. Update the Mimir version in the following locations:
       - `operations/mimir/images.libsonnet` (`_images.mimir` and `_images.query_tee` fields)
       - `operations/mimir-rules-action/Dockerfile` (`grafana/mimirtool` image tag)
+   1. Update Jsonnet tests: `make build-jsonnet-tests`
+   1. Commit updated tests
 1. Update dashboard screenshots
+   1. Make sure that operations/mimir-mixin-tools/screenshots/.config is configured according to the directions in [operations/mimir-mixin-tools/screenshots/run.sh](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-tools/screenshots/run.sh)
+   1. Make sure that operations/mimir-mixin-tools/serve/.config is configured according to the directions in [operations/mimir-mixin-tools/serve/run.sh](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-tools/serve/run.sh)
    1. Run `make mixin-screenshots`
    1. Review all updated screenshots and ensure no sensitive data is disclosed
    1. Open a PR

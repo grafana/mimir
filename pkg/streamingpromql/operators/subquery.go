@@ -69,8 +69,15 @@ func (s *Subquery) NextSeries(ctx context.Context) error {
 	}
 
 	s.nextStepT = s.ParentQueryTimeRange.StartT
-	s.floats.Use(data.Floats)
-	s.histograms.Use(data.Histograms)
+
+	if err := s.floats.Use(data.Floats); err != nil {
+		return err
+	}
+
+	if err := s.histograms.Use(data.Histograms); err != nil {
+		return err
+	}
+
 	return nil
 }
 

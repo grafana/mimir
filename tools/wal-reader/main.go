@@ -15,8 +15,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wlog"
-
-	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
 func main() {
@@ -172,8 +170,8 @@ func printWalEntries(r *wlog.Reader, seriesMap map[chunks.HeadSeriesRef]string, 
 					log.Println("seg:", seg, "off:", off, "samples record:", s.Ref, s.T, formatTimestamp(s.T), s.V, si)
 				}
 
-				*minSampleTime = util_math.Min(s.T, *minSampleTime)
-				*maxSampleTime = util_math.Max(s.T, *maxSampleTime)
+				*minSampleTime = min(s.T, *minSampleTime)
+				*maxSampleTime = max(s.T, *maxSampleTime)
 			}
 
 		case record.Tombstones:
@@ -213,8 +211,8 @@ func printWalEntries(r *wlog.Reader, seriesMap map[chunks.HeadSeriesRef]string, 
 					log.Println("seg:", seg, "off:", off, "histograms record:", s.Ref, s.T, formatTimestamp(s.T), si)
 				}
 
-				*minSampleTime = util_math.Min(s.T, *minSampleTime)
-				*maxSampleTime = util_math.Max(s.T, *maxSampleTime)
+				*minSampleTime = min(s.T, *minSampleTime)
+				*maxSampleTime = max(s.T, *maxSampleTime)
 			}
 
 		case record.FloatHistogramSamples:
@@ -229,8 +227,8 @@ func printWalEntries(r *wlog.Reader, seriesMap map[chunks.HeadSeriesRef]string, 
 					log.Println("seg:", seg, "off:", off, "float histograms record:", s.Ref, s.T, formatTimestamp(s.T), si)
 				}
 
-				*minSampleTime = util_math.Min(s.T, *minSampleTime)
-				*maxSampleTime = util_math.Max(s.T, *maxSampleTime)
+				*minSampleTime = min(s.T, *minSampleTime)
+				*maxSampleTime = max(s.T, *maxSampleTime)
 			}
 
 		case record.Metadata:

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -26,13 +27,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
-	"golang.org/x/exp/slices"
 	"google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/protobuf/proto"
@@ -50,6 +49,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 	}, []string{tenantID, "group"})
 	resourceAttrs := map[string]string{
 		"service.name":        "service name",
+		"service.namespace":   "service namespace",
 		"service.instance.id": "service ID",
 		"existent-attr":       "resource value",
 		// This one is for testing conflict with metric attribute.
@@ -59,32 +59,6 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 		// This one is for testing conflict with auto-generated instance attribute.
 		"instance": "resource value",
 	}
-	expTargetInfoLabels := []mimirpb.LabelAdapter{
-		{
-			Name:  labels.MetricName,
-			Value: "target_info",
-		},
-	}
-	for k, v := range resourceAttrs {
-		switch k {
-		case "service.name":
-			k = "job"
-		case "service.instance.id":
-			k = "instance"
-		case "job", "instance":
-			// Ignore, as these labels are generated from service.name and service.instance.id
-			continue
-		default:
-			k = prometheustranslator.NormalizeLabel(k, false)
-		}
-		expTargetInfoLabels = append(expTargetInfoLabels, mimirpb.LabelAdapter{
-			Name:  k,
-			Value: v,
-		})
-	}
-	slices.SortStableFunc(expTargetInfoLabels, func(a, b mimirpb.LabelAdapter) int {
-		return strings.Compare(a.Name, b.Name)
-	})
 
 	md := pmetric.NewMetrics()
 	{
@@ -102,9 +76,11 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name                      string
-		promoteResourceAttributes []string
-		expectedLabels            []mimirpb.LabelAdapter
+		name                              string
+		promoteResourceAttributes         []string
+		keepIdentifyingResourceAttributes bool
+		expectedLabels                    []mimirpb.LabelAdapter
+		expectedInfoLabels                []mimirpb.LabelAdapter
 	}{
 		{
 			name:                      "Successful conversion without resource attribute promotion",
@@ -120,11 +96,90 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				},
 				{
 					Name:  "job",
-					Value: "service name",
+					Value: "service namespace/service name",
 				},
 				{
 					Name:  "metric_attr",
 					Value: "metric value",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
+		{
+			name:                              "Successful conversion without resource attribute promotion, and keep identifying resource attributes",
+			promoteResourceAttributes:         nil,
+			keepIdentifyingResourceAttributes: true,
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "metric value",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "service_instance_id",
+					Value: "service ID",
+				},
+				{
+					Name:  "service_name",
+					Value: "service name",
+				},
+				{
+					Name:  "service_namespace",
+					Value: "service namespace",
 				},
 			},
 		},
@@ -142,7 +197,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				},
 				{
 					Name:  "job",
-					Value: "service name",
+					Value: "service namespace/service name",
 				},
 				{
 					Name:  "metric_attr",
@@ -151,6 +206,28 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				{
 					Name:  "existent_attr",
 					Value: "resource value",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
 				},
 			},
 		},
@@ -168,7 +245,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				},
 				{
 					Name:  "job",
-					Value: "service name",
+					Value: "service namespace/service name",
 				},
 				{
 					Name:  "existent_attr",
@@ -179,12 +256,34 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					Value: "metric value",
 				},
 			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+			},
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			mimirTS, err := otelMetricsToTimeseries(
-				context.Background(), tenantID, true, false, tc.promoteResourceAttributes, discardedDueToOTelParseError, log.NewNopLogger(), md,
+				context.Background(), tenantID, true, false, tc.promoteResourceAttributes, tc.keepIdentifyingResourceAttributes, discardedDueToOTelParseError, log.NewNopLogger(), md,
 			)
 			require.NoError(t, err)
 			require.Len(t, mimirTS, 2)
@@ -205,7 +304,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			}
 
 			assert.ElementsMatch(t, ts.Labels, tc.expectedLabels)
-			assert.ElementsMatch(t, targetInfo.Labels, expTargetInfoLabels)
+			assert.ElementsMatch(t, targetInfo.Labels, tc.expectedInfoLabels)
 		})
 	}
 }

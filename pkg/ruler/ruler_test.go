@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -42,7 +43,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
 
@@ -1939,7 +1939,7 @@ func TestFilterRuleGroupsByNotMissing(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			logger := log.NewNopLogger()
 
-			actual := filterRuleGroupsByNotMissing(testData.configs, testData.missing, logger)
+			actual := FilterRuleGroupsByNotMissing(testData.configs, testData.missing, logger)
 			assert.Equal(t, testData.expected, actual)
 		})
 	}

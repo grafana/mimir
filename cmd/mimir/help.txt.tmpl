@@ -398,9 +398,9 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.address string
     	The Kafka backend address.
   -ingest-storage.kafka.auto-create-topic-default-partitions int
-    	When auto-creation of Kafka topic is enabled and this value is positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that the Kafka broker uses for auto-created topics. Note that this is a Kafka-cluster wide setting, and applies to any auto-created topic. If the setting of num.partitions fails, Mimir proceeds anyways, but auto-created topics could have an incorrect number of partitions.
+    	When auto-creation of Kafka topic is enabled and this value is positive, Mimir will create the topic with this number of partitions. When the value is -1 the Kafka broker will use the default number of partitions (num.partitions configuration). (default -1)
   -ingest-storage.kafka.auto-create-topic-enabled
-    	Enable auto-creation of Kafka topic if it doesn't exist. (default true)
+    	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir will fail to start. (default true)
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
   -ingest-storage.kafka.consume-from-position-at-startup string
@@ -413,6 +413,8 @@ Usage of ./cmd/mimir/mimir:
     	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
   -ingest-storage.kafka.dial-timeout duration
     	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
+  -ingest-storage.kafka.fetch-concurrency-max int
+    	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.
   -ingest-storage.kafka.ingestion-concurrency-batch-size int
     	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
   -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample int
@@ -431,8 +433,6 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit. (default 100000000)
   -ingest-storage.kafka.max-consumer-lag-at-startup duration
     	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
-  -ingest-storage.kafka.ongoing-fetch-concurrency int
-    	The number of concurrent fetch requests that the ingester makes when reading data continuously from Kafka after startup. Is disabled unless ingest-storage.kafka.startup-fetch-concurrency is greater than 0. 0 to disable.
   -ingest-storage.kafka.producer-max-buffered-bytes int
     	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
   -ingest-storage.kafka.producer-max-record-size-bytes int
@@ -441,8 +441,6 @@ Usage of ./cmd/mimir/mimir:
     	The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
   -ingest-storage.kafka.sasl-username string
     	The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
-  -ingest-storage.kafka.startup-fetch-concurrency int
-    	The number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. 0 to disable.
   -ingest-storage.kafka.target-consumer-lag-at-startup duration
     	The best-effort maximum lag a consumer tries to achieve at startup. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
   -ingest-storage.kafka.topic string
@@ -715,6 +713,8 @@ Usage of ./cmd/mimir/mimir:
     	OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.
   -ruler.alertmanager-client.oauth.client_secret string
     	OAuth2 client secret.
+  -ruler.alertmanager-client.oauth.endpoint-params value
+    	Optional additional URL parameters to send to the token URL. (default {})
   -ruler.alertmanager-client.oauth.scopes comma-separated-list-of-strings
     	Optional scopes to include with the token request.
   -ruler.alertmanager-client.oauth.token_url string

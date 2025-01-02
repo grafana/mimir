@@ -19,7 +19,7 @@ type ringBuffer[T any] interface {
 	DiscardPointsAtOrBefore(t int64)
 	Append(p T) error
 	Reset()
-	Use(s []T)
+	Use(s []T) error
 	Release()
 	ViewUntilSearchingForwardsForTesting(maxT int64) ringBufferView[T]
 	ViewUntilSearchingBackwardsForTesting(maxT int64) ringBufferView[T]
@@ -120,7 +120,8 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 
 	pointsWithPowerOfTwoCapacity := make([]T, 0, 16) // Use must be passed a slice with a capacity that is equal to a power of 2.
 	pointsWithPowerOfTwoCapacity = append(pointsWithPowerOfTwoCapacity, points...)
-	buf.Use(pointsWithPowerOfTwoCapacity)
+	err := buf.Use(pointsWithPowerOfTwoCapacity)
+	require.NoError(t, err)
 	shouldHavePoints(t, buf, points...)
 
 	buf.DiscardPointsAtOrBefore(4)
@@ -131,7 +132,8 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 
 	subsliceWithPowerOfTwoCapacity := make([]T, 0, 8) // Use must be passed a slice with a capacity that is equal to a power of 2.
 	subsliceWithPowerOfTwoCapacity = append(subsliceWithPowerOfTwoCapacity, points[4:]...)
-	buf.Use(subsliceWithPowerOfTwoCapacity)
+	err = buf.Use(subsliceWithPowerOfTwoCapacity)
+	require.NoError(t, err)
 	shouldHavePoints(t, buf, points[4:]...)
 }
 
@@ -499,4 +501,28 @@ func setupRingBufferTestingPools(t *testing.T) {
 		getHPointSliceForRingBuffer = originalGetHPointSlice
 		putHPointSliceForRingBuffer = originalPutHPointSlice
 	})
+}
+
+func TestFPointRingBuffer_UseReturnsErrorOnNonPowerOfTwoSlice(t *testing.T) {
+	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	buf := NewFPointRingBuffer(memoryConsumptionTracker)
+
+	nonPowerOfTwoSlice := make([]promql.FPoint, 0, 15)
+
+	err := buf.Use(nonPowerOfTwoSlice)
+	require.Error(t, err, "Use() should return an error for a non-power-of-two slice")
+	require.EqualError(t, err, "slice capacity must be a power of two, but is 15",
+		"Error message should indicate the invalid capacity")
+}
+
+func TestHPointRingBuffer_UseReturnsErrorOnNonPowerOfTwoSlice(t *testing.T) {
+	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
+	buf := NewHPointRingBuffer(memoryConsumptionTracker)
+
+	nonPowerOfTwoSlice := make([]promql.HPoint, 0, 15)
+
+	err := buf.Use(nonPowerOfTwoSlice)
+	require.Error(t, err, "Use() should return an error for a non-power-of-two slice")
+	require.EqualError(t, err, "slice capacity must be a power of two, but is 15",
+		"Error message should indicate the invalid capacity")
 }

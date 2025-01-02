@@ -31,7 +31,8 @@ body:
   id: environment
   attributes:
     label: What was your environment?
-    placeholder: Infrastructure (e.g., Kubernetes, bare-metal, laptop), deployment tool (e.g., helm, jsonnet)
+    description: When sharing the configs, make sure you have redacted any credentials or other sensitive details.
+    placeholder: Infrastructure (e.g., Kubernetes, bare-metal, laptop), deployment tool (e.g., helm, jsonnet), versions (e.g. Mimir 2.14, Kubernetes 1.30, Helm 3.16).
   validations:
     required: true
 
@@ -39,6 +40,7 @@ body:
   id: context
   attributes:
     label: Any additional context to share?
-    placeholder: Add any other context or screenshots about the feature request here.
+    description: If possible, provide the logs that illustrate what the system was doing at the time when the bug occurred.
+    placeholder: Add any other context or screenshots about the bug report here.
   validations:
     required: false

@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -378,7 +377,7 @@ func (c *loadingSeriesChunksSetIterator) Next() (retHasNext bool) {
 
 	// Pre-allocate the series slice using the expected batchSize even if nextUnloaded has less elements,
 	// so that there's a higher chance the slice will be reused once released.
-	nextSet := newSeriesChunksSet(util_math.Max(c.fromBatchSize, nextUnloaded.len()), true)
+	nextSet := newSeriesChunksSet(max(c.fromBatchSize, nextUnloaded.len()), true)
 
 	// Release the set if an error occurred.
 	defer func() {

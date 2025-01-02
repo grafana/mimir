@@ -8,7 +8,9 @@ package client
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 
@@ -99,4 +101,115 @@ func TestBuildURL(t *testing.T) {
 		})
 	}
 
+}
+
+func TestDoRequest(t *testing.T) {
+	requestCh := make(chan *http.Request, 1)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCh <- r
+		fmt.Fprintln(w, "hello")
+	}))
+	defer ts.Close()
+
+	for _, tc := range []struct {
+		name         string
+		user         string
+		key          string
+		id           string
+		authToken    string
+		extraHeaders map[string]string
+		expectedErr  string
+		validate     func(t *testing.T, req *http.Request)
+	}{
+		{
+			name:        "errors because user, key and authToken are provided",
+			user:        "my-ba-user",
+			key:         "my-ba-password",
+			authToken:   "RandomJwt",
+			expectedErr: "at most one of basic auth or auth token should be configured",
+		},
+		{
+			name: "user provided so uses key as password",
+			user: "my-ba-user",
+			key:  "my-ba-password",
+			id:   "my-tenant-id",
+			validate: func(t *testing.T, req *http.Request) {
+				user, pass, ok := req.BasicAuth()
+				require.True(t, ok)
+				require.Equal(t, "my-ba-user", user)
+				require.Equal(t, "my-ba-password", pass)
+				require.Equal(t, "my-tenant-id", req.Header.Get("X-Scope-OrgID"))
+			},
+		},
+		{
+			name: "user not provided so uses id as username and key as password",
+			key:  "my-ba-password",
+			id:   "my-tenant-id",
+			validate: func(t *testing.T, req *http.Request) {
+				user, pass, ok := req.BasicAuth()
+				require.True(t, ok)
+				require.Equal(t, "my-tenant-id", user)
+				require.Equal(t, "my-ba-password", pass)
+				require.Equal(t, "my-tenant-id", req.Header.Get("X-Scope-OrgID"))
+			},
+		},
+		{
+			name:      "authToken is provided",
+			id:        "my-tenant-id",
+			authToken: "RandomJwt",
+			validate: func(t *testing.T, req *http.Request) {
+				require.Equal(t, "Bearer RandomJwt", req.Header.Get("Authorization"))
+				require.Equal(t, "my-tenant-id", req.Header.Get("X-Scope-OrgID"))
+			},
+		},
+		{
+			name: "no auth options and tenant are provided",
+			validate: func(t *testing.T, req *http.Request) {
+				require.Empty(t, req.Header.Get("Authorization"))
+				require.Empty(t, req.Header.Get("X-Scope-OrgID"))
+			},
+		},
+		{
+			name: "extraHeaders are added",
+			id:   "my-tenant-id",
+			extraHeaders: map[string]string{
+				"key1":          "value1",
+				"key2":          "value2",
+				"X-Scope-OrgID": "first-tenant-id",
+			},
+			validate: func(t *testing.T, req *http.Request) {
+				require.Equal(t, "value1", req.Header.Get("key1"))
+				require.Equal(t, "value2", req.Header.Get("key2"))
+				require.Equal(t, []string{"first-tenant-id", "my-tenant-id"}, req.Header.Values("X-Scope-OrgID"))
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			client, err := New(Config{
+				Address:      ts.URL,
+				User:         tc.user,
+				Key:          tc.key,
+				AuthToken:    tc.authToken,
+				ID:           tc.id,
+				ExtraHeaders: tc.extraHeaders,
+			})
+			require.NoError(t, err)
+
+			res, err := client.doRequest(ctx, "/test", http.MethodGet, nil, -1)
+
+			// Validate errors
+			if tc.expectedErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.expectedErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, res.StatusCode)
+			req := <-requestCh
+			tc.validate(t, req)
+		})
+	}
 }

@@ -9,13 +9,13 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"golang.org/x/exp/slices"
 
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader/indexheaderpb"

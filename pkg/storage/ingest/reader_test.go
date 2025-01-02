@@ -113,10 +113,8 @@ func TestPartitionReader_ConsumerError(t *testing.T) {
 
 	// We want to run this test with different concurrency config.
 	concurrencyVariants := map[string][]readerTestCfgOpt{
-		"without concurrency":                                       {withStartupConcurrency(0), withOngoingConcurrency(0)},
-		"with startup concurrency":                                  {withStartupConcurrency(2), withOngoingConcurrency(0)},
-		"with startup and ongoing concurrency (same settings)":      {withStartupConcurrency(2), withOngoingConcurrency(2)},
-		"with startup and ongoing concurrency (different settings)": {withStartupConcurrency(2), withOngoingConcurrency(4)},
+		"without concurrency":    {withFetchConcurrency(0)},
+		"with fetch concurrency": {withFetchConcurrency(2)},
 	}
 
 	for concurrencyName, concurrencyVariant := range concurrencyVariants {
@@ -169,10 +167,8 @@ func TestPartitionReader_ConsumerStopping(t *testing.T) {
 
 	// We want to run this test with different concurrency config.
 	concurrencyVariants := map[string][]readerTestCfgOpt{
-		"without concurrency":                                       {withStartupConcurrency(0), withOngoingConcurrency(0)},
-		"with startup concurrency":                                  {withStartupConcurrency(2), withOngoingConcurrency(0)},
-		"with startup and ongoing concurrency (same settings)":      {withStartupConcurrency(2), withOngoingConcurrency(2)},
-		"with startup and ongoing concurrency (different settings)": {withStartupConcurrency(2), withOngoingConcurrency(4)},
+		"without concurrency":    {withFetchConcurrency(0)},
+		"with fetch concurrency": {withFetchConcurrency(2)},
 	}
 
 	for concurrencyName, concurrencyVariant := range concurrencyVariants {
@@ -316,13 +312,13 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
-					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 0
 
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 0
-				`, withOffset, !withOffset)),
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader", topic="%s"} 0
+				`, topicName, withOffset, topicName, !withOffset, topicName)),
 					"cortex_ingest_storage_strong_consistency_requests_total",
 					"cortex_ingest_storage_strong_consistency_failures_total"))
 			})
@@ -366,13 +362,13 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
-					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 0
 
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
-				`, withOffset, !withOffset)),
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader", topic="%s"} 1
+				`, topicName, withOffset, topicName, !withOffset, topicName)),
 					"cortex_ingest_storage_strong_consistency_requests_total",
 					"cortex_ingest_storage_strong_consistency_failures_total"))
 
@@ -419,13 +415,13 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
-					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 0
 
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
-				`, withOffset, !withOffset)),
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader", topic="%s"} 1
+				`, topicName, withOffset, topicName, !withOffset, topicName)),
 					"cortex_ingest_storage_strong_consistency_requests_total",
 					"cortex_ingest_storage_strong_consistency_failures_total"))
 
@@ -456,13 +452,13 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
-					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 0
 
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 0
-				`, withOffset, !withOffset)),
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader", topic="%s"} 0
+				`, topicName, withOffset, topicName, !withOffset, topicName)),
 					"cortex_ingest_storage_strong_consistency_requests_total",
 					"cortex_ingest_storage_strong_consistency_failures_total"))
 			})
@@ -493,13 +489,13 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
 					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 1
-					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="%t"} 0
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 0
 
 					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
 					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader"} 1
-				`, withOffset, !withOffset)),
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader", topic="%s"} 1
+				`, topicName, withOffset, topicName, !withOffset, topicName)),
 					"cortex_ingest_storage_strong_consistency_requests_total",
 					"cortex_ingest_storage_strong_consistency_failures_total"))
 			})
@@ -517,10 +513,8 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 	// We want to run all these tests with different concurrency config.
 	concurrencyVariants := map[string][]readerTestCfgOpt{
-		"without concurrency":                                       {withStartupConcurrency(0), withOngoingConcurrency(0)},
-		"with startup concurrency":                                  {withStartupConcurrency(2), withOngoingConcurrency(0)},
-		"with startup and ongoing concurrency (same settings)":      {withStartupConcurrency(2), withOngoingConcurrency(2)},
-		"with startup and ongoing concurrency (different settings)": {withStartupConcurrency(2), withOngoingConcurrency(4)},
+		"without concurrency":      {withFetchConcurrency(0)},
+		"with startup concurrency": {withFetchConcurrency(2)},
 	}
 
 	t.Run("should immediately switch to Running state if partition is empty", func(t *testing.T) {
@@ -1721,8 +1715,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
 			withRegistry(reg),
 			withLogger(log.NewLogfmtLogger(logs)),
-			withStartupConcurrency(2),
-			withOngoingConcurrency(0))
+			withFetchConcurrency(2))
 
 		require.NoError(t, reader.StartAsync(ctx))
 		t.Cleanup(func() {
@@ -1809,19 +1802,13 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 		expectedBufferedRecordsFromClient int
 	}{
 		"without concurrency": {
-			concurrencyVariant:                []readerTestCfgOpt{withStartupConcurrency(0), withOngoingConcurrency(0)},
+			concurrencyVariant:                []readerTestCfgOpt{withFetchConcurrency(0)},
 			expectedBufferedRecords:           1,
 			expectedBufferedBytes:             8,
 			expectedBufferedRecordsFromClient: 1,
 		},
-		"with startup concurrency": {
-			concurrencyVariant:                []readerTestCfgOpt{withStartupConcurrency(2), withOngoingConcurrency(0)},
-			expectedBufferedRecords:           1,
-			expectedBufferedBytes:             8,
-			expectedBufferedRecordsFromClient: 1,
-		},
-		"with startup and ongoing concurrency": {
-			concurrencyVariant:      []readerTestCfgOpt{withStartupConcurrency(2), withOngoingConcurrency(2)},
+		"with fetch concurrency": {
+			concurrencyVariant:      []readerTestCfgOpt{withFetchConcurrency(2)},
 			expectedBufferedRecords: 1,
 			// only one fetcher is active because we don't fetch over the HWM.
 			// That fetcher should fetch 1MB. It's padded with 5% to account for underestimation of the record size.
@@ -1829,8 +1816,8 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 			expectedBufferedBytes:             1_050_000,
 			expectedBufferedRecordsFromClient: 0,
 		},
-		"with startup and ongoing concurrency (different settings)": {
-			concurrencyVariant:      []readerTestCfgOpt{withStartupConcurrency(2), withOngoingConcurrency(4)},
+		"with higher fetch concurrency": {
+			concurrencyVariant:      []readerTestCfgOpt{withFetchConcurrency(4)},
 			expectedBufferedRecords: 1,
 			// There is one fetcher fetching. That fetcher should fetch 500KB.
 			// But we clamp the MaxBytes to at least 1MB, so that we don't underfetch when the absolute volume of data is low.
@@ -2129,8 +2116,7 @@ func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailure
 		withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
 		withLogger(log.NewNopLogger()),
 		withMaxBufferedBytes(maxBufferedBytes),
-		withStartupConcurrency(concurrency),
-		withOngoingConcurrency(concurrency),
+		withFetchConcurrency(concurrency),
 	}
 
 	reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
@@ -2167,10 +2153,8 @@ func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnError
 
 	// We want to run all these tests with different concurrency config.
 	concurrencyVariants := map[string][]readerTestCfgOpt{
-		"without concurrency":                                       {withStartupConcurrency(0), withOngoingConcurrency(0)},
-		"with startup concurrency":                                  {withStartupConcurrency(2), withOngoingConcurrency(0)},
-		"with startup and ongoing concurrency (same settings)":      {withStartupConcurrency(2), withOngoingConcurrency(2)},
-		"with startup and ongoing concurrency (different settings)": {withStartupConcurrency(2), withOngoingConcurrency(4)},
+		"without concurrency":    {withFetchConcurrency(0)},
+		"with fetch concurrency": {withFetchConcurrency(2)},
 	}
 
 	for concurrencyName, concurrencyVariant := range concurrencyVariants {
@@ -2705,15 +2689,9 @@ func withLogger(logger log.Logger) func(cfg *readerTestCfg) {
 	}
 }
 
-func withStartupConcurrency(i int) readerTestCfgOpt {
+func withFetchConcurrency(i int) readerTestCfgOpt {
 	return func(cfg *readerTestCfg) {
-		cfg.kafka.StartupFetchConcurrency = i
-	}
-}
-
-func withOngoingConcurrency(i int) readerTestCfgOpt {
-	return func(cfg *readerTestCfg) {
-		cfg.kafka.OngoingFetchConcurrency = i
+		cfg.kafka.FetchConcurrencyMax = i
 	}
 }
 

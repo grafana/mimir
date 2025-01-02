@@ -29,6 +29,10 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
+
+## 5.6.0-rc.0
+
 * [CHANGE] Update rollout-operator version to 0.20.0. #9995
 * [CHANGE] Remove the `track_sizes` feature for Memcached pods since it is unused. #10032
 * [FEATURE] Add support for GEM's federation-frontend. See the `federation_frontend` section in the values file. #9673

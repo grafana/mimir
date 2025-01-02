@@ -13,6 +13,8 @@ std.manifestYamlDoc({
     self.kafka_2 +
     self.kafka_3 +
     self.jaeger +
+    self.blockbuilder +
+    self.blockbuilderscheduler +
     {},
 
   write:: {
@@ -54,8 +56,7 @@ std.manifestYamlDoc({
         '-ingester.ring.prefix=exclusive-prefix',
         '-ingest-storage.kafka.consume-from-position-at-startup=end',
         '-ingest-storage.kafka.consume-from-timestamp-at-startup=0',
-        '-ingest-storage.kafka.startup-fetch-concurrency=15',
-        '-ingest-storage.kafka.ongoing-fetch-concurrency=2',
+        '-ingest-storage.kafka.fetch-concurrency-max=2',
         '-ingest-storage.kafka.ingestion-concurrency-max=2',
         '-ingest-storage.kafka.ingestion-concurrency-batch-size=150',
       ],
@@ -86,6 +87,22 @@ std.manifestYamlDoc({
       name: 'mimir-backend-2',
       target: 'backend',
       publishedHttpPort: 8007,
+    }),
+  },
+
+  blockbuilder:: {
+    'mimir-block-builder-1': mimirService({
+      name: 'mimir-block-builder-1',
+      target: 'block-builder',
+      publishedHttpPort: 8008,
+    }),
+  },
+
+  blockbuilderscheduler:: {
+    'mimir-block-builder-scheduler-1': mimirService({
+      name: 'mimir-block-builder-scheduler-1',
+      target: 'block-builder-scheduler',
+      publishedHttpPort: 8019,
     }),
   },
 
@@ -157,8 +174,6 @@ std.manifestYamlDoc({
       },
     },
   },
-
-
   kafka_2:: {
     kafka_2: {
       image: 'confluentinc/cp-kafka:latest',
