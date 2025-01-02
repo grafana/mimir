@@ -212,7 +212,7 @@ func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
 }
 
 // consumeJob performs block consumption from Kafka into object storage based on the given job spec.
-func (b *BlockBuilder) consumeJob(ctx context.Context, _ schedulerpb.JobKey, jobSpec schedulerpb.JobSpec) (PartitionState, error) {
+func (b *BlockBuilder) consumeJob(ctx context.Context, k schedulerpb.JobKey, jobSpec schedulerpb.JobSpec) (PartitionState, error) {
 	state := PartitionState{
 		Commit: kadm.Offset{
 			Topic:     jobSpec.Topic,
@@ -224,7 +224,8 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, _ schedulerpb.JobKey, job
 		LastBlockEnd:          jobSpec.LastBlockEndTs,
 	}
 
-	return b.consumePartition(ctx, jobSpec.Partition, state, jobSpec.CycleEndTs, jobSpec.CycleEndOffset)
+	logger := log.With(b.logger, "job_id", k.Id, "job_epoch", k.Epoch)
+	return b.consumePartition(ctx, jobSpec.Partition, state, jobSpec.CycleEndTs, jobSpec.CycleEndOffset, logger)
 }
 
 // runningStandaloneMode is a service `running` function for standalone mode,
@@ -325,7 +326,7 @@ func (b *BlockBuilder) nextConsumeCycle(ctx context.Context, cycleEndTime time.T
 		}
 
 		state := PartitionStateFromLag(b.logger, lag, b.fallbackOffsetMillis)
-		if _, err := b.consumePartition(ctx, partition, state, cycleEndTime, lag.End.Offset); err != nil {
+		if _, err := b.consumePartition(ctx, partition, state, cycleEndTime, lag.End.Offset, b.logger); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume partition", "err", err, "partition", partition)
 		}
 	}
@@ -410,11 +411,11 @@ func PartitionStateFromLag(logger log.Logger, lag kadm.GroupMemberLag, fallbackM
 
 // consumePartition consumes records from the given partition until the cycleEnd timestamp.
 // If the partition is lagging behind, it takes care of consuming it in sections.
-func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, state PartitionState, cycleEndTime time.Time, cycleEndOffset int64) (finalState PartitionState, err error) {
-	sp, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BlockBuilder.consumePartition")
+func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, state PartitionState, cycleEndTime time.Time, cycleEndOffset int64, logger log.Logger) (finalState PartitionState, err error) {
+	sp, ctx := spanlogger.NewWithLogger(ctx, logger, "BlockBuilder.consumePartition")
 	defer sp.Finish()
 
-	logger := log.With(sp, "partition", partition, "cycle_end", cycleEndTime, "cycle_end_offset", cycleEndOffset)
+	logger = log.With(sp, "partition", partition, "cycle_end", cycleEndTime, "cycle_end_offset", cycleEndOffset)
 
 	builder := NewTSDBBuilder(b.logger, b.cfg.DataDir, b.cfg.BlocksStorage, b.limits, b.tsdbBuilderMetrics, b.cfg.ApplyMaxGlobalSeriesPerUserBelow)
 	defer runutil.CloseWithErrCapture(&err, builder, "closing tsdb builder")
