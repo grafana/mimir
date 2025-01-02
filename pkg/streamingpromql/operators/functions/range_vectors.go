@@ -533,3 +533,63 @@ func linearRegression(head, tail []promql.FPoint, interceptTime int64) (slope, i
 	intercept = sumY/n - slope*sumX/n
 	return slope, intercept
 }
+
+var Irate = FunctionOverRangeVectorDefinition{
+	StepFunc:                       irate(true),
+	SeriesMetadataFunction:         DropSeriesName,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+var Idelta = FunctionOverRangeVectorDefinition{
+	StepFunc:                       irate(false),
+	SeriesMetadataFunction:         DropSeriesName,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func irate(isRate bool) RangeVectorStepFunction {
+	return func(step *types.RangeVectorStepData, rangeSeconds float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+		fHead, fTail := step.Floats.UnsafePoints()
+
+		// We need at least two samples to calculate irate or idelta.
+		if len(fHead)+len(fTail) < 2 {
+			return 0, false, nil, nil
+		}
+
+		var lastSample promql.FPoint
+		var previousSample promql.FPoint
+
+		// If tails has more than two samples, we should use the last two samples from tail.
+		// If tail has only one sample, the last sample is from the tail and the previous sample is last point in the head.
+		// Otherwise, last two samples are all in the head.
+		if len(fTail) >= 2 {
+			lastSample = fTail[len(fTail)-1]
+			previousSample = fTail[len(fTail)-2]
+		} else if len(fTail) == 1 {
+			lastSample = fTail[0]
+			previousSample = fHead[len(fHead)-1]
+		} else {
+			lastSample = fHead[len(fHead)-1]
+			previousSample = fHead[len(fHead)-2]
+		}
+
+		var resultValue float64
+		if isRate && lastSample.F < previousSample.F {
+			// Counter reset.
+			resultValue = lastSample.F
+		} else {
+			resultValue = lastSample.F - previousSample.F
+		}
+
+		sampledInterval := lastSample.T - previousSample.T
+		if sampledInterval == 0 {
+			// Avoid dividing by 0.
+			return 0, false, nil, nil
+		}
+
+		if isRate {
+			// Convert to per-second.
+			resultValue /= float64(sampledInterval) / 1000
+		}
+		return resultValue, true, nil, nil
+	}
+}
