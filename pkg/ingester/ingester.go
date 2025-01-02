@@ -2450,7 +2450,7 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 			for _, m := range matchers {
 				val := seriesLabels.Get(m.Name)
 				if !m.Matches(val) {
-					level.Error(i.logger).Log("msg", "ingester fetched series that doesn't match the input matcher", "series", seriesLabels.String(), "matcher", m.String())
+					level.Error(i.logger).Log("msg", "ingester fetched series that doesn't match the input matcher", "series", seriesLabels.String(), "first_failing_matcher", m.String(), "matchers", util.MatchersStringer(matchers).String())
 
 					// Stop troubleshooting this request, given we've already found a bad series.
 					troubleshoot = false
