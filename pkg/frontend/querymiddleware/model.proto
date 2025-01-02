@@ -39,7 +39,7 @@ message PrometheusData {
 }
 
 message SampleStream {
-  repeated cortexpb_custom.LabelAdapter labels = 1 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "metric", (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb_custom.LabelAdapter"];
+  repeated cortexpb_custom.LabelAdapter labels = 1 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "metric"];
   repeated cortexpb.Sample samples = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "values"];
   repeated cortexpb.FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "histograms"];
 }

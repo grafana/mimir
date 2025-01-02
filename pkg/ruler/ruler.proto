@@ -78,12 +78,10 @@ message RuleStateDesc {
 message AlertStateDesc {
   string state = 1;
   repeated cortexpb_custom.LabelAdapter labels = 2 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb_custom.LabelAdapter"
+    (gogoproto.nullable) = false
   ];
   repeated cortexpb_custom.LabelAdapter annotations = 3 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb_custom.LabelAdapter"
+    (gogoproto.nullable) = false
   ];
   double value = 4;
   google.protobuf.Timestamp active_at = 5
