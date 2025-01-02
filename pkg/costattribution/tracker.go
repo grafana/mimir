@@ -38,7 +38,6 @@ type Tracker struct {
 	overflowLabels                 []string
 	observed                       map[string]*observation
 	observedMtx                    sync.RWMutex
-	hashBuffer                     []byte
 	isOverflow                     atomic.Bool
 	overflowCounter                *observation
 	totalFailedActiveSeries        *atomic.Float64
@@ -65,11 +64,11 @@ func newTracker(userID string, trackedLabels []string, limit int, cooldown time.
 		labels:                  orderedLables,
 		maxCardinality:          limit,
 		observed:                make(map[string]*observation),
-		hashBuffer:              make([]byte, 0, 1024),
 		cooldownDuration:        cooldown,
 		logger:                  logger,
 		overflowLabels:          overflowLabels,
 		totalFailedActiveSeries: atomic.NewFloat64(0),
+		overflowCounter:         &observation{},
 	}
 
 	variableLabels := slices.Clone(orderedLables)
@@ -122,35 +121,40 @@ func (t *Tracker) DecrementActiveSeries(lbs labels.Labels) {
 }
 
 func (t *Tracker) Collect(out chan<- prometheus.Metric) {
-
 	if t.isOverflow.Load() {
-		out <- prometheus.MustNewConstMetric(t.activeSeriesPerUserAttribution, prometheus.GaugeValue, t.overflowCounter.activeSerie.Load(), t.overflowLabels[:len(t.overflowLabels)-1]...)
+		var activeSeries float64
+		t.observedMtx.RLock()
+		for _, o := range t.observed {
+			activeSeries += o.activeSerie.Load()
+		}
+		t.observedMtx.RUnlock()
+		out <- prometheus.MustNewConstMetric(t.activeSeriesPerUserAttribution, prometheus.GaugeValue, activeSeries+t.overflowCounter.activeSerie.Load(), t.overflowLabels[:len(t.overflowLabels)-1]...)
 		out <- prometheus.MustNewConstMetric(t.receivedSamplesAttribution, prometheus.CounterValue, t.overflowCounter.receivedSample.Load(), t.overflowLabels[:len(t.overflowLabels)-1]...)
 		out <- prometheus.MustNewConstMetric(t.discardedSampleAttribution, prometheus.CounterValue, t.overflowCounter.totalDiscarded.Load(), t.overflowLabels...)
 		return
 	}
-
-	// Collect metrics for all observed keys
+	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
+	var prometheusMetrics []prometheus.Metric
 	t.observedMtx.RLock()
-	defer t.observedMtx.RUnlock()
 	for key, o := range t.observed {
-		if key == "" {
-			continue
-		}
 		keys := strings.Split(key, string(sep))
-
 		keys = append(keys, t.userID)
 		if o.activeSerie.Load() > 0 {
-			out <- prometheus.MustNewConstMetric(t.activeSeriesPerUserAttribution, prometheus.GaugeValue, o.activeSerie.Load(), keys...)
+			prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(t.activeSeriesPerUserAttribution, prometheus.GaugeValue, o.activeSerie.Load(), keys...))
 		}
 		if o.receivedSample.Load() > 0 {
-			out <- prometheus.MustNewConstMetric(t.receivedSamplesAttribution, prometheus.CounterValue, o.receivedSample.Load(), keys...)
+			prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(t.receivedSamplesAttribution, prometheus.CounterValue, o.receivedSample.Load(), keys...))
 		}
 		o.discardedSampleMtx.Lock()
 		for reason, discarded := range o.discardedSample {
-			out <- prometheus.MustNewConstMetric(t.discardedSampleAttribution, prometheus.CounterValue, discarded.Load(), append(keys, reason)...)
+			prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(t.discardedSampleAttribution, prometheus.CounterValue, discarded.Load(), append(keys, reason)...))
 		}
 		o.discardedSampleMtx.Unlock()
+	}
+	t.observedMtx.RUnlock()
+
+	for _, m := range prometheusMetrics {
+		out <- m
 	}
 }
 
@@ -166,10 +170,14 @@ func (t *Tracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.T
 		return
 	}
 
+	// We precompute the cost attribution per request before update Observations and State to avoid frequently update the atomic counters
 	dict := make(map[string]int)
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufferPool.Put(buf)
 	for _, ts := range req.Timeseries {
-		lvs := t.extractLabelValuesFromLabelAdapater(ts.Labels)
-		dict[t.hashLabelValues(lvs)] += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
+		t.fillKeyFromLabelAdapters(ts.Labels, buf)
+		dict[string(buf.Bytes())] += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 	}
 
 	// Update the observations for each label set and update the state per request,
@@ -177,78 +185,97 @@ func (t *Tracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.T
 	var total float64
 	for k, v := range dict {
 		count := float64(v)
-		t.updateObservations(k, now.Unix(), 0, count, 0, nil, true)
+		t.updateObservations(k, now, 0, count, 0, nil, true)
 		total += count
 	}
-	t.updateState(now, 0, total, 0)
 }
 
 func (t *Tracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
-	labelValues := t.extractLabelValuesFromLabelAdapater(lbls)
-	key := t.hashLabelValues(labelValues)
-	t.updateObservations(key, ts.Unix(), activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
-	t.updateState(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
-}
-
-func (t *Tracker) hashLabelValues(labelValues []string) string {
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufferPool.Put(buf)
-
-	for i, value := range labelValues {
-		if i > 0 {
-			buf.WriteRune(sep)
-		}
-		buf.WriteString(value)
-	}
-	return buf.String()
+	t.fillKeyFromLabelAdapters(lbls, buf)
+	t.updateObservations(buf.String(), ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
 }
 
-func (t *Tracker) extractLabelValuesFromLabelAdapater(lbls []mimirpb.LabelAdapter) []string {
-	labelValues := make([]string, len(t.labels))
+func (t *Tracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, buf *bytes.Buffer) {
+	buf.Reset()
+	var exists bool
 	for idx, cal := range t.labels {
+		if idx > 0 {
+			buf.WriteRune(sep)
+		}
+		exists = false
 		for _, l := range lbls {
 			if l.Name == cal {
-				labelValues[idx] = l.Value
+				exists = true
+				buf.WriteString(l.Value)
 				break
 			}
 		}
-		if labelValues[idx] == "" {
-			labelValues[idx] = missingValue
+		if !exists {
+			buf.WriteString(missingValue)
 		}
 	}
-	return labelValues
+}
+
+func (t *Tracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.Buffer) {
+	buf.Reset()
+	for idx, cal := range t.labels {
+		if idx > 0 {
+			buf.WriteRune(sep)
+		}
+		v := lbls.Get(cal)
+		if v != "" {
+			buf.WriteString(v)
+		} else {
+			buf.WriteString(missingValue)
+		}
+	}
 }
 
 func (t *Tracker) updateCounters(lbls labels.Labels, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
-	labelValues := make([]string, len(t.labels))
-	for idx, cal := range t.labels {
-		labelValues[idx] = lbls.Get(cal)
-		if labelValues[idx] == "" {
-			labelValues[idx] = missingValue
-		}
-	}
-	key := t.hashLabelValues(labelValues)
-	t.updateObservations(key, ts.Unix(), activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
-	t.updateState(ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement)
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufferPool.Put(buf)
+	t.fillKeyFromLabels(lbls, buf)
+	t.updateObservations(buf.String(), ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason, createIfDoesNotExist)
 }
 
 // updateObservations updates or creates a new observation in the 'observed' map.
-func (t *Tracker) updateObservations(key string, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
+func (t *Tracker) updateObservations(key string, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string, createIfDoesNotExist bool) {
 	t.observedMtx.RLock()
 	o, known := t.observed[key]
 	t.observedMtx.RUnlock()
 
 	if !known {
-		if len(t.observed) < t.maxCardinality*2 && createIfDoesNotExist {
-			// When createIfDoesNotExist is false, it means that the method is called from DecrementActiveSeries, when key doesn't exist we should ignore the call
-			// Otherwise create a new observation for the key
-			t.createNewObservation(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
+		if !createIfDoesNotExist {
+			return
 		}
-		return
+		// We don't want to restart the tracker when we are not sure overflow is fixed, so we keep a observation with 2 times the max cardinality, as soon as
+		// the tracker is still above the max cardinality, we will keep the overflow state.
+		t.observedMtx.RLock()
+		if len(t.observed) < t.maxCardinality*2 {
+			t.observedMtx.RUnlock()
+
+			// If adding the new observation would exceed the max cardinality, we need to update the state, it is fine only call it here
+			// because we are sure that the new observation will be added to the map
+			t.updateState(ts)
+
+			// If we are not in overflow mode, we can create a new observation with input values, otherwise we create a new observation with 0 values
+			if !t.isOverflow.Load() {
+				t.createNewObservationAndUpdateState(key, ts, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement, reason)
+				return
+			}
+			t.createNewObservationAndUpdateState(key, ts, 0, 0, 0, nil)
+		} else {
+			t.observedMtx.RUnlock()
+		}
+		// If we are in overflow mode (including the case that observed map size exceed 2 times max cardinality), we update the overflow counter
+		o = t.overflowCounter
 	}
 
-	o.lastUpdate.Store(ts)
+	o.lastUpdate.Store(ts.Unix())
 	if activeSeriesIncrement != 0 {
 		o.activeSerie.Add(activeSeriesIncrement)
 	}
@@ -267,44 +294,20 @@ func (t *Tracker) updateObservations(key string, ts int64, activeSeriesIncrement
 }
 
 // updateState checks if the tracker has exceeded its max cardinality and updates overflow state if necessary.
-func (t *Tracker) updateState(ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64) {
-	previousOverflow := true
-	t.observedMtx.RLock()
-	// Transition to overflow mode if maximum cardinality is exceeded.
-	if !t.isOverflow.Load() && len(t.observed) > t.maxCardinality {
-		// Make sure that we count current overflow only when state is switched to overflow from normal.
-		previousOverflow = t.isOverflow.Swap(true)
-		if !previousOverflow {
-			// Initialize the overflow counter.
-			t.overflowCounter = &observation{}
-
-			// Aggregate active series from all keys into the overflow counter.
-			for _, o := range t.observed {
-				if o != nil {
-					t.overflowCounter.activeSerie.Add(o.activeSerie.Load())
-				}
-			}
+// This function is not thread-safe and should be called with the t.observedMtx read lock.
+func (t *Tracker) updateState(ts time.Time) {
+	if !t.isOverflow.Load() && len(t.observed) >= t.maxCardinality {
+		// Update state to overflow and set cooldown time
+		t.isOverflow.Store(true)
+		if t.cooldownUntil.IsZero() {
 			t.cooldownUntil = ts.Add(t.cooldownDuration)
 		}
-	}
-	t.observedMtx.RUnlock()
-
-	if t.isOverflow.Load() {
-		// if already in overflow mode, update the overflow counter. If it was normal mode, the active series are already applied.
-		if previousOverflow && activeSeriesIncrement != 0 {
-			t.overflowCounter.activeSerie.Add(activeSeriesIncrement)
-		}
-		if receivedSampleIncrement > 0 {
-			t.overflowCounter.receivedSample.Add(receivedSampleIncrement)
-		}
-		if discardedSampleIncrement > 0 {
-			t.overflowCounter.totalDiscarded.Add(discardedSampleIncrement)
-		}
+		t.logger.Log("msg", "tracker is in overflow mode", "userID", t.userID, "maxCardinality", t.maxCardinality)
 	}
 }
 
-// createNewObservation creates a new observation in the 'observed' map.
-func (t *Tracker) createNewObservation(key string, ts int64, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
+// createNewObservationAndUpdateState creates a new observation in the 'observed' map. Check if the tracker is in overflow mode and updates the state.
+func (t *Tracker) createNewObservationAndUpdateState(key string, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
 	t.observedMtx.Lock()
 	defer t.observedMtx.Unlock()
 	if _, exists := t.observed[key]; exists {
@@ -312,7 +315,7 @@ func (t *Tracker) createNewObservation(key string, ts int64, activeSeriesIncreme
 	}
 
 	t.observed[key] = &observation{
-		lastUpdate:         *atomic.NewInt64(ts),
+		lastUpdate:         *atomic.NewInt64(ts.Unix()),
 		activeSerie:        *atomic.NewFloat64(activeSeriesIncrement),
 		receivedSample:     *atomic.NewFloat64(receivedSampleIncrement),
 		discardedSample:    make(map[string]*atomic.Float64),
