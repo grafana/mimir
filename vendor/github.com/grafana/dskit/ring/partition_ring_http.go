@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
-
-	"golang.org/x/exp/slices"
 )
 
 //go:embed partition_ring_status.gohtml

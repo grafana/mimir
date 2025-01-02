@@ -2876,6 +2876,8 @@ For example, you can create a tar of the path you are interested in, and then ex
 kubectl --namespace mimir exec compactor-0 -c mimir-debug-container -- tar cf - "/proc/1/root/etc/cortex" | tar xf -
 ```
 
+Note that the container that you're copying files from must still be running. If you have already exited your debugging container before, that container has stopped, and it cannot be used to copy files. In that case you need to start a new container.
+
 ## Cleanup and Limitations
 
 One downside of using [ephemeral containers](https://kubernetes.io/docs/concepts/workloads/pods/ephemeral-containers/#understanding-ephemeral-containers)

@@ -1306,7 +1306,7 @@ spec:
         - --listen=notls:127.0.0.1:11211,0.0.0.0:11212
         - --enable-ssl
         - --extended=ssl_ca_cert=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem,ssl_chain_cert=/var/secrets/memcached-server-cert/memcached-server-cert.pem,ssl_key=/var/secrets/memcached-server-key/memcached-server-key.pem,ssl_kernel_tls,ssl_verify_mode=2
-        image: memcached:1.6.28-alpine
+        image: memcached:1.6.34-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1382,7 +1382,7 @@ spec:
         - --listen=notls:127.0.0.1:11211,0.0.0.0:11212
         - --enable-ssl
         - --extended=ssl_ca_cert=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem,ssl_chain_cert=/var/secrets/memcached-server-cert/memcached-server-cert.pem,ssl_key=/var/secrets/memcached-server-key/memcached-server-key.pem,ssl_kernel_tls,ssl_verify_mode=2
-        image: memcached:1.6.28-alpine
+        image: memcached:1.6.34-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1458,7 +1458,7 @@ spec:
         - --listen=notls:127.0.0.1:11211,0.0.0.0:11212
         - --enable-ssl
         - --extended=ssl_ca_cert=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem,ssl_chain_cert=/var/secrets/memcached-server-cert/memcached-server-cert.pem,ssl_key=/var/secrets/memcached-server-key/memcached-server-key.pem,ssl_kernel_tls,ssl_verify_mode=2
-        image: memcached:1.6.28-alpine
+        image: memcached:1.6.34-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:
@@ -1534,7 +1534,7 @@ spec:
         - --listen=notls:127.0.0.1:11211,0.0.0.0:11212
         - --enable-ssl
         - --extended=ssl_ca_cert=/var/secrets/memcached-ca-cert/memcached-ca-cert.pem,ssl_chain_cert=/var/secrets/memcached-server-cert/memcached-server-cert.pem,ssl_key=/var/secrets/memcached-server-key/memcached-server-key.pem,ssl_kernel_tls,ssl_verify_mode=2
-        image: memcached:1.6.28-alpine
+        image: memcached:1.6.34-alpine
         imagePullPolicy: IfNotPresent
         name: memcached
         ports:

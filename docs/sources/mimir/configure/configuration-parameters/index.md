@@ -1238,10 +1238,6 @@ instance_limits:
 # CLI flag: -ingester.read-path-memory-utilization-limit
 [read_path_memory_utilization_limit: <int> | default = 0]
 
-# (experimental) Enable logging of utilization based limiter CPU samples.
-# CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
-[log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
-
 # (advanced) Each error will be logged once in this many times. Use 0 to log all
 # of them.
 # CLI flag: -ingester.error-sample-rate

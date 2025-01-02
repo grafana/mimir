@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
 
 ## 5.6.0-rc.0
