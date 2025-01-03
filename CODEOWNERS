@@ -2,6 +2,7 @@
 * @grafana/mimir-maintainers
 
 # Documentation.
+/.github/workflows/deploy-pr-preview.yml                                    @grafana/docs-tooling @grafana/mimir-maintainers
 /.github/workflows/publish-technical-documentation-next.yml                 @grafana/docs-tooling @grafana/mimir-maintainers
 /.github/workflows/publish-technical-documentation-release-helm-charts.yml  @grafana/docs-tooling @grafana/mimir-maintainers
 /.github/workflows/publish-technical-documentation-release-mimir.yml        @grafana/docs-tooling @grafana/mimir-maintainers
