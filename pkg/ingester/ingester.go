@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
@@ -2466,7 +2467,8 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 			for _, m := range matchers {
 				val := seriesLabels.Get(m.Name)
 				if !m.Matches(val) {
-					level.Error(i.logger).Log("msg", "ingester fetched series that doesn't match the input matcher", "series", seriesLabels.String(), "first_failing_matcher", m.String(), "matchers", util.MatchersStringer(matchers).String())
+					traceID := trace.SpanFromContext(ctx).SpanContext().TraceID()
+					level.Error(i.logger).Log("msg", "ingester fetched series that doesn't match the input matcher", "traceID", traceID, "series", seriesLabels.String(), "first_failing_matcher", m.String(), "matchers", util.MatchersStringer(matchers).String())
 
 					// Stop troubleshooting this request unless we set TROUBLESHOOT_LOG_ALL_BAD_SERIES=true
 					troubleshoot = troubleshootLogAllBadSeries
