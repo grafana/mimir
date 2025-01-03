@@ -240,10 +240,9 @@ load 5m
 	http_requests{path="/foo"}	0 50 100 150 200
 	http_requests{path="/bar"}	200 150 100 50 0
 
-# Unsupported by streaming engine.
-# eval instant at 20m delta(http_requests[20m])
-# 	{path="/foo"} 200
-# 	{path="/bar"} -200
+eval instant at 20m delta(http_requests[20m])
+	{path="/foo"} 200
+	{path="/bar"} -200
 
 clear
 
