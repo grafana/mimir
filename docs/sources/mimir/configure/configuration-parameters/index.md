@@ -1531,6 +1531,12 @@ mimir_query_engine:
   # Mimir query engine. Only applies if the MQE is in use.
   # CLI flag: -querier.mimir-query-engine.enable-histogram-quantile-function
   [enable_histogram_quantile_function: <boolean> | default = true]
+
+  # (experimental) Enable support for one-to-many and many-to-one binary
+  # operations (group_left/group_right) in the Mimir query engine. Only applies
+  # if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations
+  [enable_one_to_many_and_many_to_one_binary_operations: <boolean> | default = true]
 ```
 
 ### frontend
