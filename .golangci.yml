@@ -64,6 +64,7 @@ linters-settings:
 
   gosec:
     includes:
+      - G104
       - G108
       - G109
       - G112
