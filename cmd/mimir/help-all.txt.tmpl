@@ -2103,6 +2103,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable support for binary logical operations in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-histogram-quantile-function
     	[experimental] Enable support for the histogram_quantile function in the Mimir query engine. Only applies if the MQE is in use. (default true)
+  -querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations
+    	[experimental] Enable support for one-to-many and many-to-one binary operations (group_left/group_right) in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
     	[experimental] Enable support for binary comparison operations between two scalars in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-scalars

@@ -212,7 +212,8 @@ func (a *Aggregation) groupingWithoutLabelsSeriesToGroupFuncs() (seriesToGroupLa
 	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
 	b := make([]byte, 0, 1024)
 	bytesFunc := func(l labels.Labels) []byte {
-		return l.BytesWithoutLabels(b, a.Grouping...) // NewAggregation will add __name__ to Grouping for 'without' aggregations, so no need to add it here.
+		b = l.BytesWithoutLabels(b, a.Grouping...) // NewAggregation will add __name__ to Grouping for 'without' aggregations, so no need to add it here.
+		return b
 	}
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
@@ -231,7 +232,8 @@ func (a *Aggregation) groupingByLabelsSeriesToGroupFuncs() (seriesToGroupLabelsB
 	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
 	b := make([]byte, 0, 1024)
 	bytesFunc := func(l labels.Labels) []byte {
-		return l.BytesWithLabels(b, a.Grouping...)
+		b = l.BytesWithLabels(b, a.Grouping...)
+		return b
 	}
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
