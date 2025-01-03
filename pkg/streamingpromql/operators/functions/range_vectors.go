@@ -556,7 +556,7 @@ func irate(isRate bool) RangeVectorStepFunction {
 		var lastSample promql.FPoint
 		var previousSample promql.FPoint
 
-		// If tails has more than two samples, we should use the last two samples from tail.
+		// If tail has more than two samples, we should use the last two samples from tail.
 		// If tail has only one sample, the last sample is from the tail and the previous sample is last point in the head.
 		// Otherwise, last two samples are all in the head.
 		if len(fTail) >= 2 {
