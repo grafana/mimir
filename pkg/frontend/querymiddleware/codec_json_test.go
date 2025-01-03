@@ -23,6 +23,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 )
 
 func TestPrometheusCodec_JSONResponse_Metrics(t *testing.T) {
@@ -56,7 +57,7 @@ func TestPrometheusCodec_JSONResponse_Metrics(t *testing.T) {
 					ResultType: model.ValString.String(),
 					Result: []SampleStream{
 						{
-							Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: "foo"}},
+							Labels:  []mimirpb_custom.LabelAdapter{{Name: "value", Value: "foo"}},
 							Samples: []mimirpb.Sample{{TimestampMs: 1_500}},
 						},
 					},
@@ -104,8 +105,8 @@ func TestPrometheusCodec_JSONResponse_Metrics(t *testing.T) {
 				Data: &PrometheusData{
 					ResultType: model.ValVector.String(),
 					Result: []SampleStream{
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
-						{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 201}}},
+						{Labels: []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
+						{Labels: []mimirpb_custom.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 201}}},
 					},
 				},
 				Headers: expectedRespHeaders,
@@ -128,8 +129,8 @@ func TestPrometheusCodec_JSONResponse_Metrics(t *testing.T) {
 				Data: &PrometheusData{
 					ResultType: model.ValMatrix.String(),
 					Result: []SampleStream{
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 100}, {TimestampMs: 2_000, Value: 200}}},
-						{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}}},
+						{Labels: []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 100}, {TimestampMs: 2_000, Value: 200}}},
+						{Labels: []mimirpb_custom.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}}},
 					},
 				},
 				Headers: expectedRespHeaders,
@@ -376,7 +377,7 @@ func TestPrometheusCodec_JSONEncoding_Metrics(t *testing.T) {
 				Data: &PrometheusData{
 					ResultType: model.ValMatrix.String(),
 					Result: []SampleStream{
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1_234, Histogram: &responseHistogram}}},
+						{Labels: []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}}, Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1_234, Histogram: &responseHistogram}}},
 					},
 				},
 			},
@@ -421,7 +422,7 @@ func TestPrometheusCodec_JSONEncoding_Metrics(t *testing.T) {
 					ResultType: model.ValMatrix.String(),
 					Result: []SampleStream{
 						{
-							Labels:     []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+							Labels:     []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}},
 							Samples:    []mimirpb.Sample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}},
 							Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 3_000, Histogram: &responseHistogram}}},
 					},

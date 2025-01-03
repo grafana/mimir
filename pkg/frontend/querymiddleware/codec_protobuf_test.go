@@ -19,6 +19,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 )
 
 var expectedProtobufResponseHeaders = []*PrometheusHeader{
@@ -86,7 +87,7 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValString.String(),
 				Result: []SampleStream{
 					{
-						Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: "foo"}},
+						Labels:  []mimirpb_custom.LabelAdapter{{Name: "value", Value: "foo"}},
 						Samples: []mimirpb.Sample{{TimestampMs: 1_500}},
 					},
 				},
@@ -150,7 +151,7 @@ var protobufCodecScenarios = []struct {
 			Data: &PrometheusData{
 				ResultType: model.ValVector.String(),
 				Result: []SampleStream{
-					{Labels: []mimirpb.LabelAdapter{}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
+					{Labels: []mimirpb_custom.LabelAdapter{}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
 				},
 			},
 			Headers: expectedProtobufResponseHeaders,
@@ -173,7 +174,7 @@ var protobufCodecScenarios = []struct {
 			Data: &PrometheusData{
 				ResultType: model.ValVector.String(),
 				Result: []SampleStream{
-					{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
+					{Labels: []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
 				},
 			},
 			Headers: expectedProtobufResponseHeaders,
@@ -197,7 +198,7 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValVector.String(),
 				Result: []SampleStream{
 					{
-						Labels: []mimirpb.LabelAdapter{
+						Labels: []mimirpb_custom.LabelAdapter{
 							{Name: "foo", Value: "bar"},
 							{Name: "baz", Value: "blah"},
 						},
@@ -226,8 +227,8 @@ var protobufCodecScenarios = []struct {
 			Data: &PrometheusData{
 				ResultType: model.ValVector.String(),
 				Result: []SampleStream{
-					{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
-					{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 201}}},
+					{Labels: []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
+					{Labels: []mimirpb_custom.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 201}}},
 				},
 			},
 			Headers: expectedProtobufResponseHeaders,
@@ -255,7 +256,7 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValVector.String(),
 				Result: []SampleStream{
 					{
-						Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}},
+						Labels:     []mimirpb_custom.LabelAdapter{{Name: "name-1", Value: "value-1"}},
 						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},
 				},
@@ -293,15 +294,15 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValVector.String(),
 				Result: []SampleStream{
 					{
-						Labels:  []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+						Labels:  []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}},
 						Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 200}},
 					},
 					{
-						Labels:     []mimirpb.LabelAdapter{{Name: "baz", Value: "blah"}},
+						Labels:     []mimirpb_custom.LabelAdapter{{Name: "baz", Value: "blah"}},
 						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},
 					{
-						Labels:     []mimirpb.LabelAdapter{{Name: "baz2", Value: "blah2"}},
+						Labels:     []mimirpb_custom.LabelAdapter{{Name: "baz2", Value: "blah2"}},
 						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram2}},
 					},
 				},
@@ -357,7 +358,7 @@ var protobufCodecScenarios = []struct {
 			Data: &PrometheusData{
 				ResultType: model.ValMatrix.String(),
 				Result: []SampleStream{
-					{Labels: []mimirpb.LabelAdapter{}},
+					{Labels: []mimirpb_custom.LabelAdapter{}},
 				},
 			},
 			Headers: expectedProtobufResponseHeaders,
@@ -380,7 +381,7 @@ var protobufCodecScenarios = []struct {
 			Data: &PrometheusData{
 				ResultType: model.ValMatrix.String(),
 				Result: []SampleStream{
-					{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}},
+					{Labels: []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}}},
 				},
 			},
 			Headers: expectedProtobufResponseHeaders,
@@ -404,7 +405,7 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValMatrix.String(),
 				Result: []SampleStream{
 					{
-						Labels: []mimirpb.LabelAdapter{
+						Labels: []mimirpb_custom.LabelAdapter{
 							{Name: "foo", Value: "bar"},
 							{Name: "baz", Value: "blah"},
 						},
@@ -437,7 +438,7 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValMatrix.String(),
 				Result: []SampleStream{
 					{
-						Labels: []mimirpb.LabelAdapter{
+						Labels: []mimirpb_custom.LabelAdapter{
 							{Name: "foo", Value: "bar"},
 							{Name: "baz", Value: "blah"},
 						},
@@ -474,7 +475,7 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValMatrix.String(),
 				Result: []SampleStream{
 					{
-						Labels: []mimirpb.LabelAdapter{
+						Labels: []mimirpb_custom.LabelAdapter{
 							{Name: "foo", Value: "bar"},
 							{Name: "baz", Value: "blah"},
 						},
@@ -507,11 +508,11 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValMatrix.String(),
 				Result: []SampleStream{
 					{
-						Labels:  []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+						Labels:  []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}},
 						Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 100}, {TimestampMs: 2_000, Value: 200}},
 					},
 					{
-						Labels:  []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}},
+						Labels:  []mimirpb_custom.LabelAdapter{{Name: "bar", Value: "baz"}},
 						Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}},
 					},
 				},
@@ -540,7 +541,7 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValMatrix.String(),
 				Result: []SampleStream{
 					{
-						Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}, {Name: "name-2", Value: "value-2"}},
+						Labels:     []mimirpb_custom.LabelAdapter{{Name: "name-1", Value: "value-1"}, {Name: "name-2", Value: "value-2"}},
 						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},
 				},
@@ -570,7 +571,7 @@ var protobufCodecScenarios = []struct {
 				ResultType: model.ValMatrix.String(),
 				Result: []SampleStream{
 					{
-						Labels:     []mimirpb.LabelAdapter{{Name: "name-1", Value: "value-1"}, {Name: "name-2", Value: "value-2"}},
+						Labels:     []mimirpb_custom.LabelAdapter{{Name: "name-1", Value: "value-1"}, {Name: "name-2", Value: "value-2"}},
 						Samples:    []mimirpb.Sample{{TimestampMs: 1000, Value: 200}},
 						Histograms: []mimirpb.FloatHistogramPair{{TimestampMs: 1234, Histogram: &protobufResponseHistogram}},
 					},

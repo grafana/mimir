@@ -37,6 +37,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -79,13 +80,13 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 		name                              string
 		promoteResourceAttributes         []string
 		keepIdentifyingResourceAttributes bool
-		expectedLabels                    []mimirpb.LabelAdapter
-		expectedInfoLabels                []mimirpb.LabelAdapter
+		expectedLabels                    []mimirpb_custom.LabelAdapter
+		expectedInfoLabels                []mimirpb_custom.LabelAdapter
 	}{
 		{
 			name:                      "Successful conversion without resource attribute promotion",
 			promoteResourceAttributes: nil,
-			expectedLabels: []mimirpb.LabelAdapter{
+			expectedLabels: []mimirpb_custom.LabelAdapter{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -103,7 +104,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					Value: "metric value",
 				},
 			},
-			expectedInfoLabels: []mimirpb.LabelAdapter{
+			expectedInfoLabels: []mimirpb_custom.LabelAdapter{
 				{
 					Name:  "__name__",
 					Value: "target_info",
@@ -130,7 +131,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			name:                              "Successful conversion without resource attribute promotion, and keep identifying resource attributes",
 			promoteResourceAttributes:         nil,
 			keepIdentifyingResourceAttributes: true,
-			expectedLabels: []mimirpb.LabelAdapter{
+			expectedLabels: []mimirpb_custom.LabelAdapter{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -148,7 +149,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					Value: "metric value",
 				},
 			},
-			expectedInfoLabels: []mimirpb.LabelAdapter{
+			expectedInfoLabels: []mimirpb_custom.LabelAdapter{
 				{
 					Name:  "__name__",
 					Value: "target_info",
@@ -186,7 +187,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 		{
 			name:                      "Successful conversion with resource attribute promotion",
 			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr"},
-			expectedLabels: []mimirpb.LabelAdapter{
+			expectedLabels: []mimirpb_custom.LabelAdapter{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -208,7 +209,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					Value: "resource value",
 				},
 			},
-			expectedInfoLabels: []mimirpb.LabelAdapter{
+			expectedInfoLabels: []mimirpb_custom.LabelAdapter{
 				{
 					Name:  "__name__",
 					Value: "target_info",
@@ -234,7 +235,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 		{
 			name:                      "Successful conversion with resource attribute promotion, conflicting resource attributes are ignored",
 			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
-			expectedLabels: []mimirpb.LabelAdapter{
+			expectedLabels: []mimirpb_custom.LabelAdapter{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
@@ -256,7 +257,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					Value: "metric value",
 				},
 			},
-			expectedInfoLabels: []mimirpb.LabelAdapter{
+			expectedInfoLabels: []mimirpb_custom.LabelAdapter{
 				{
 					Name:  "__name__",
 					Value: "target_info",
@@ -504,7 +505,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 		require.Len(t, series, 1)
 
 		for name, value := range tc.expectedAttributePromotions {
-			require.Truef(t, slices.ContainsFunc(series[0].Labels, func(l mimirpb.LabelAdapter) bool {
+			require.Truef(t, slices.ContainsFunc(series[0].Labels, func(l mimirpb_custom.LabelAdapter) bool {
 				return l.Name == name && l.Value == value
 			}), "OTel resource attribute should have been promoted to label %s=%s", name, value)
 		}

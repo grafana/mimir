@@ -28,6 +28,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 
 	"github.com/prometheus/prometheus/model/value"
 )
@@ -119,7 +120,7 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 				return nil
 			}
 
-			createdLabels := make([]mimirpb.LabelAdapter, len(lbls))
+			createdLabels := make([]mimirpb_custom.LabelAdapter, len(lbls))
 			copy(createdLabels, lbls)
 			for i, l := range createdLabels {
 				if l.Name == model.MetricNameLabel {

@@ -20,11 +20,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 )
 
 func TestDuplicatesSamples(t *testing.T) {
 	ts := mimirpb.TimeSeries{
-		Labels: []mimirpb.LabelAdapter{
+		Labels: []mimirpb_custom.LabelAdapter{
 			{
 				Name:  "lbl",
 				Value: "val",
@@ -61,7 +62,7 @@ func TestDuplicatesSamples(t *testing.T) {
 
 	// run same query, but with deduplicated samples
 	deduped := mimirpb.TimeSeries{
-		Labels: []mimirpb.LabelAdapter{
+		Labels: []mimirpb_custom.LabelAdapter{
 			{
 				Name:  "lbl",
 				Value: "val",

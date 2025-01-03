@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -104,7 +105,7 @@ var _ ingesterError = sampleError{}
 // Ensure that sampleError is a softError.
 var _ softError = sampleError{}
 
-func newSampleError(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
+func newSampleError(errID globalerror.ID, errMsg string, timestamp model.Time, labels []mimirpb_custom.LabelAdapter) sampleError {
 	return sampleError{
 		errID:     errID,
 		errMsg:    errMsg,
@@ -113,23 +114,23 @@ func newSampleError(errID globalerror.ID, errMsg string, timestamp model.Time, l
 	}
 }
 
-func newSampleTimestampTooOldError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
+func newSampleTimestampTooOldError(timestamp model.Time, labels []mimirpb_custom.LabelAdapter) sampleError {
 	return newSampleError(globalerror.SampleTimestampTooOld, "the sample has been rejected because its timestamp is too old", timestamp, labels)
 }
 
-func newSampleTimestampTooOldOOOEnabledError(timestamp model.Time, labels []mimirpb.LabelAdapter, oooTimeWindow time.Duration) sampleError {
+func newSampleTimestampTooOldOOOEnabledError(timestamp model.Time, labels []mimirpb_custom.LabelAdapter, oooTimeWindow time.Duration) sampleError {
 	return newSampleError(globalerror.SampleTimestampTooOld, fmt.Sprintf("the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window of %s", model.Duration(oooTimeWindow).String()), timestamp, labels)
 }
 
-func newSampleTimestampTooFarInFutureError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
+func newSampleTimestampTooFarInFutureError(timestamp model.Time, labels []mimirpb_custom.LabelAdapter) sampleError {
 	return newSampleError(globalerror.SampleTooFarInFuture, "received a sample whose timestamp is too far in the future", timestamp, labels)
 }
 
-func newSampleOutOfOrderError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
+func newSampleOutOfOrderError(timestamp model.Time, labels []mimirpb_custom.LabelAdapter) sampleError {
 	return newSampleError(globalerror.SampleOutOfOrder, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and out-of-order samples are not allowed", timestamp, labels)
 }
 
-func newSampleDuplicateTimestampError(timestamp model.Time, labels []mimirpb.LabelAdapter) sampleError {
+func newSampleDuplicateTimestampError(timestamp model.Time, labels []mimirpb_custom.LabelAdapter) sampleError {
 	return newSampleError(globalerror.SampleDuplicateTimestamp, "the sample has been rejected because another sample with the same timestamp, but a different value, has already been ingested", timestamp, labels)
 }
 
@@ -164,7 +165,7 @@ var _ ingesterError = exemplarError{}
 // Ensure that exemplarError is an softError.
 var _ softError = exemplarError{}
 
-func newExemplarError(errID globalerror.ID, errMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
+func newExemplarError(errID globalerror.ID, errMsg string, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb_custom.LabelAdapter) exemplarError {
 	return exemplarError{
 		errID:          errID,
 		errMsg:         errMsg,
@@ -174,14 +175,14 @@ func newExemplarError(errID globalerror.ID, errMsg string, timestamp model.Time,
 	}
 }
 
-func newExemplarMissingSeriesError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
+func newExemplarMissingSeriesError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb_custom.LabelAdapter) exemplarError {
 	return newExemplarError(globalerror.ExemplarSeriesMissing, "the exemplar has been rejected because the related series has not been ingested yet", timestamp, seriesLabels, exemplarLabels)
 }
 
-func newExemplarTimestampTooFarInFutureError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
+func newExemplarTimestampTooFarInFutureError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb_custom.LabelAdapter) exemplarError {
 	return newExemplarError(globalerror.ExemplarTooFarInFuture, "received an exemplar whose timestamp is too far in the future", timestamp, seriesLabels, exemplarLabels)
 }
-func newExemplarTimestampTooFarInPastError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) exemplarError {
+func newExemplarTimestampTooFarInPastError(timestamp model.Time, seriesLabels, exemplarLabels []mimirpb_custom.LabelAdapter) exemplarError {
 	return newExemplarError(globalerror.ExemplarTooFarInPast, "received an exemplar whose timestamp is too far in the past", timestamp, seriesLabels, exemplarLabels)
 }
 
@@ -214,7 +215,7 @@ var _ ingesterError = tsdbIngestExemplarErr{}
 // Ensure that tsdbIngestExemplarErr is an softError.
 var _ softError = tsdbIngestExemplarErr{}
 
-func newTSDBIngestExemplarErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) tsdbIngestExemplarErr {
+func newTSDBIngestExemplarErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb_custom.LabelAdapter) tsdbIngestExemplarErr {
 	return tsdbIngestExemplarErr{
 		originalErr:    ingestErr,
 		timestamp:      timestamp,
@@ -292,7 +293,7 @@ type perMetricSeriesLimitReachedError struct {
 }
 
 // newPerMetricSeriesLimitReachedError creates a new perMetricSeriesLimitReachedError indicating that a per-metric series limit has been reached.
-func newPerMetricSeriesLimitReachedError(limit int, labels []mimirpb.LabelAdapter) perMetricSeriesLimitReachedError {
+func newPerMetricSeriesLimitReachedError(limit int, labels []mimirpb_custom.LabelAdapter) perMetricSeriesLimitReachedError {
 	return perMetricSeriesLimitReachedError{
 		limit:  limit,
 		series: mimirpb.FromLabelAdaptersToString(labels),
@@ -361,11 +362,11 @@ var _ softError = perMetricMetadataLimitReachedError{}
 type nativeHistogramValidationError struct {
 	id           globalerror.ID
 	originalErr  error
-	seriesLabels []mimirpb.LabelAdapter
+	seriesLabels []mimirpb_custom.LabelAdapter
 	timestamp    model.Time
 }
 
-func newNativeHistogramValidationError(id globalerror.ID, originalErr error, timestamp model.Time, seriesLabels []mimirpb.LabelAdapter) nativeHistogramValidationError {
+func newNativeHistogramValidationError(id globalerror.ID, originalErr error, timestamp model.Time, seriesLabels []mimirpb_custom.LabelAdapter) nativeHistogramValidationError {
 	return nativeHistogramValidationError{
 		id:           id,
 		originalErr:  originalErr,

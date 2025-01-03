@@ -35,6 +35,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -49,7 +50,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		dayThreeStartTime = parseTimeRFC3339(t, "2021-10-16T00:00:00Z")
 		dayFourEndTime    = parseTimeRFC3339(t, "2021-10-17T23:59:59Z")
 		queryURL          = mockQueryRangeURL(dayOneStartTime, dayFourEndTime, `{__name__=~".+"}`)
-		seriesLabels      = []mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}}
+		seriesLabels      = []mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "test_metric"}}
 
 		// Mock the downstream responses.
 		firstDayDownstreamResponse = jsonEncodePrometheusResponse(t,
@@ -257,7 +258,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 			ResultType: model.ValMatrix.String(),
 			Result: []SampleStream{
 				{
-					Labels: []mimirpb.LabelAdapter{
+					Labels: []mimirpb_custom.LabelAdapter{
 						{Name: "foo", Value: "bar"},
 					},
 					Samples: []mimirpb.Sample{
@@ -394,7 +395,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheNoStore(t *testing.T) {
 			ResultType: model.ValMatrix.String(),
 			Result: []SampleStream{
 				{
-					Labels: []mimirpb.LabelAdapter{
+					Labels: []mimirpb_custom.LabelAdapter{
 						{Name: "foo", Value: "bar"},
 					},
 					Samples: []mimirpb.Sample{
@@ -520,7 +521,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 			ResultType: model.ValMatrix.String(),
 			Result: []SampleStream{
 				{
-					Labels: []mimirpb.LabelAdapter{
+					Labels: []mimirpb_custom.LabelAdapter{
 						{Name: "foo", Value: "bar"},
 					},
 					Samples: []mimirpb.Sample{
@@ -636,7 +637,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 			ResultType: model.ValMatrix.String(),
 			Result: []SampleStream{
 				{
-					Labels: []mimirpb.LabelAdapter{
+					Labels: []mimirpb_custom.LabelAdapter{
 						{Name: "foo", Value: "bar"},
 					},
 					Samples: []mimirpb.Sample{
@@ -729,7 +730,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			queryStartTime: fiveMinutesAgo,
 			queryEndTime:   now,
 			downstreamResponse: mockPrometheusResponseSingleSeries(
-				[]mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
+				[]mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
 				mimirpb.Sample{TimestampMs: fiveMinutesAgo.Unix() * 1000, Value: 10},
 				mimirpb.Sample{TimestampMs: now.Unix() * 1000, Value: 20}),
 			expectedDownstreamStartTime: fiveMinutesAgo,
@@ -759,14 +760,14 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			queryStartTime: twentyMinutesAgo,
 			queryEndTime:   now,
 			downstreamResponse: mockPrometheusResponseSingleSeries(
-				[]mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
+				[]mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
 				mimirpb.Sample{TimestampMs: twentyMinutesAgo.Unix() * 1000, Value: 10},
 				mimirpb.Sample{TimestampMs: now.Unix() * 1000, Value: 20}),
 			expectedDownstreamStartTime: twentyMinutesAgo,
 			expectedDownstreamEndTime:   now,
 			expectedCachedResponses: []Response{
 				mockPrometheusResponseSingleSeries(
-					[]mimirpb.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
+					[]mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "test_metric"}},
 					// Any sample more recent than max cache freshness shouldn't be cached.
 					mimirpb.Sample{TimestampMs: twentyMinutesAgo.Unix() * 1000, Value: 10}),
 			},
@@ -1616,7 +1617,7 @@ func mockQueryRangeURL(startTime, endTime time.Time, query string) string {
 	return generated.String()
 }
 
-func mockProtobufResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter, samples []mimirpb.Sample, histograms []mimirpb.FloatHistogramPair) *mimirpb.QueryResponse {
+func mockProtobufResponseWithSamplesAndHistograms(labels []mimirpb_custom.LabelAdapter, samples []mimirpb.Sample, histograms []mimirpb.FloatHistogramPair) *mimirpb.QueryResponse {
 	return &mimirpb.QueryResponse{
 		Status: mimirpb.QueryResponse_SUCCESS,
 		Data: &mimirpb.QueryResponse_Matrix{

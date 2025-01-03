@@ -34,6 +34,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
@@ -1120,7 +1121,7 @@ func TestMergeAPIResponses(t *testing.T) {
 						ResultType: matrix,
 						Result: []SampleStream{
 							{
-								Labels: []mimirpb.LabelAdapter{},
+								Labels: []mimirpb_custom.LabelAdapter{},
 								Samples: []mimirpb.Sample{
 									{Value: 0, TimestampMs: 0},
 									{Value: 1, TimestampMs: 1},
@@ -1135,7 +1136,7 @@ func TestMergeAPIResponses(t *testing.T) {
 						ResultType: matrix,
 						Result: []SampleStream{
 							{
-								Labels: []mimirpb.LabelAdapter{},
+								Labels: []mimirpb_custom.LabelAdapter{},
 								Samples: []mimirpb.Sample{
 									{Value: 2, TimestampMs: 2},
 									{Value: 3, TimestampMs: 3},
@@ -1151,7 +1152,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{},
+							Labels: []mimirpb_custom.LabelAdapter{},
 							Samples: []mimirpb.Sample{
 								{Value: 0, TimestampMs: 0},
 								{Value: 1, TimestampMs: 1},
@@ -1176,7 +1177,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+							Labels: []mimirpb_custom.LabelAdapter{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
 							Samples: []mimirpb.Sample{
 								{Value: 0, TimestampMs: 0},
 								{Value: 1, TimestampMs: 1000},
@@ -1201,7 +1202,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+							Labels: []mimirpb_custom.LabelAdapter{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
 							Samples: []mimirpb.Sample{
 								{Value: 1, TimestampMs: 1000},
 								{Value: 2, TimestampMs: 2000},
@@ -1224,7 +1225,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+							Labels: []mimirpb_custom.LabelAdapter{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
 							Samples: []mimirpb.Sample{
 								{Value: 1, TimestampMs: 1000},
 								{Value: 2, TimestampMs: 2000},
@@ -1249,7 +1250,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+							Labels: []mimirpb_custom.LabelAdapter{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
 							Samples: []mimirpb.Sample{
 								{Value: 2, TimestampMs: 2000},
 								{Value: 3, TimestampMs: 3000},
@@ -1271,7 +1272,7 @@ func TestMergeAPIResponses(t *testing.T) {
 						ResultType: matrix,
 						Result: []SampleStream{
 							{
-								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+								Labels: []mimirpb_custom.LabelAdapter{{Name: "a", Value: "b"}},
 								Histograms: []mimirpb.FloatHistogramPair{
 									{TimestampMs: 1000, Histogram: &histogram1},
 								},
@@ -1286,7 +1287,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+							Labels: []mimirpb_custom.LabelAdapter{{Name: "a", Value: "b"}},
 							Histograms: []mimirpb.FloatHistogramPair{
 								{
 									TimestampMs: 1000,
@@ -1308,7 +1309,7 @@ func TestMergeAPIResponses(t *testing.T) {
 						ResultType: matrix,
 						Result: []SampleStream{
 							{
-								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+								Labels: []mimirpb_custom.LabelAdapter{{Name: "a", Value: "b"}},
 								Histograms: []mimirpb.FloatHistogramPair{
 									{TimestampMs: 1000, Histogram: &histogram1},
 								},
@@ -1322,7 +1323,7 @@ func TestMergeAPIResponses(t *testing.T) {
 						ResultType: matrix,
 						Result: []SampleStream{
 							{
-								Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+								Labels: []mimirpb_custom.LabelAdapter{{Name: "a", Value: "b"}},
 								Histograms: []mimirpb.FloatHistogramPair{
 									{TimestampMs: 2000, Histogram: &histogram2},
 								},
@@ -1337,7 +1338,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: "a", Value: "b"}},
+							Labels: []mimirpb_custom.LabelAdapter{{Name: "a", Value: "b"}},
 							Histograms: []mimirpb.FloatHistogramPair{
 								{TimestampMs: 1000, Histogram: &histogram1},
 								{TimestampMs: 2000, Histogram: &histogram2},
@@ -1357,7 +1358,7 @@ func TestMergeAPIResponses(t *testing.T) {
 						ResultType: matrix,
 						Result: []SampleStream{
 							{
-								Labels: []mimirpb.LabelAdapter{},
+								Labels: []mimirpb_custom.LabelAdapter{},
 								Samples: []mimirpb.Sample{
 									{Value: 0, TimestampMs: 0},
 									{Value: 1, TimestampMs: 1},
@@ -1373,7 +1374,7 @@ func TestMergeAPIResponses(t *testing.T) {
 						ResultType: matrix,
 						Result: []SampleStream{
 							{
-								Labels: []mimirpb.LabelAdapter{},
+								Labels: []mimirpb_custom.LabelAdapter{},
 								Samples: []mimirpb.Sample{
 									{Value: 2, TimestampMs: 2},
 									{Value: 3, TimestampMs: 3},
@@ -1390,7 +1391,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
-							Labels: []mimirpb.LabelAdapter{},
+							Labels: []mimirpb_custom.LabelAdapter{},
 							Samples: []mimirpb.Sample{
 								{Value: 0, TimestampMs: 0},
 								{Value: 1, TimestampMs: 1},
@@ -1528,7 +1529,7 @@ func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusRespo
 		}
 
 		// Generate random labels.
-		lbls := make([]mimirpb.LabelAdapter, 10)
+		lbls := make([]mimirpb_custom.LabelAdapter, 10)
 		for i := range lbls {
 			lbls[i].Name = "a_medium_size_label_name"
 			lbls[i].Value = "a_medium_size_label_value_that_is_used_to_benchmark_marshalling"
@@ -1549,7 +1550,7 @@ func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusRespo
 	}
 }
 
-func mockPrometheusResponseSingleSeries(series []mimirpb.LabelAdapter, samples ...mimirpb.Sample) *PrometheusResponse {
+func mockPrometheusResponseSingleSeries(series []mimirpb_custom.LabelAdapter, samples ...mimirpb.Sample) *PrometheusResponse {
 	return &PrometheusResponse{
 		Status: "success",
 		Data: &PrometheusData{
@@ -1564,7 +1565,7 @@ func mockPrometheusResponseSingleSeries(series []mimirpb.LabelAdapter, samples .
 	}
 }
 
-func mockPrometheusResponseWithSamplesAndHistograms(labels []mimirpb.LabelAdapter, samples []mimirpb.Sample, histograms []mimirpb.FloatHistogramPair) *PrometheusResponse {
+func mockPrometheusResponseWithSamplesAndHistograms(labels []mimirpb_custom.LabelAdapter, samples []mimirpb.Sample, histograms []mimirpb.FloatHistogramPair) *PrometheusResponse {
 	return &PrometheusResponse{
 		Status: "success",
 		Data: &PrometheusData{

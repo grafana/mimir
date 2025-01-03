@@ -26,6 +26,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	mimir_storage "github.com/grafana/mimir/pkg/storage"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -48,11 +49,11 @@ type TSDBBuilder struct {
 
 // We use this only to identify the soft errors.
 var softErrProcessor = mimir_storage.NewSoftAppendErrorProcessor(
-	func() {}, func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {},
-	func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {},
-	func() {}, func([]mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
-	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
-	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
+	func() {}, func(int64, []mimirpb_custom.LabelAdapter) {}, func(int64, []mimirpb_custom.LabelAdapter) {},
+	func(int64, []mimirpb_custom.LabelAdapter) {}, func(int64, []mimirpb_custom.LabelAdapter) {}, func(int64, []mimirpb_custom.LabelAdapter) {},
+	func() {}, func([]mimirpb_custom.LabelAdapter) {}, func(error, int64, []mimirpb_custom.LabelAdapter) {},
+	func(error, int64, []mimirpb_custom.LabelAdapter) {}, func(error, int64, []mimirpb_custom.LabelAdapter) {}, func(error, int64, []mimirpb_custom.LabelAdapter) {},
+	func(error, int64, []mimirpb_custom.LabelAdapter) {}, func(error, int64, []mimirpb_custom.LabelAdapter) {},
 )
 
 type tsdbTenant struct {

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -27,18 +28,18 @@ func TestTimeSeriesSeriesSet(t *testing.T) {
 
 	timeseries := []mimirpb.TimeSeries{
 		{
-			Labels:  []mimirpb.LabelAdapter{{Name: "label1", Value: "value3"}},
+			Labels:  []mimirpb_custom.LabelAdapter{{Name: "label1", Value: "value3"}},
 			Samples: []mimirpb.Sample{{Value: 3.14, TimestampMs: 1234}},
 		},
 		{
-			Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value2"}},
+			Labels: []mimirpb_custom.LabelAdapter{{Name: "label1", Value: "value2"}},
 			Samples: []mimirpb.Sample{
 				{Value: 3.14, TimestampMs: 1234},
 				{Value: 1.618, TimestampMs: 2345},
 			},
 		},
 		{
-			Labels:  []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}},
+			Labels:  []mimirpb_custom.LabelAdapter{{Name: "label1", Value: "value1"}},
 			Samples: []mimirpb.Sample{{Value: 3.14, TimestampMs: 1234}},
 		},
 	}
@@ -100,7 +101,7 @@ func BenchmarkTimeSeriesSeriesSet(b *testing.B) {
 func TestTimeSeriesIterator(t *testing.T) {
 	ts := timeseries{
 		series: mimirpb.TimeSeries{
-			Labels: []mimirpb.LabelAdapter{
+			Labels: []mimirpb_custom.LabelAdapter{
 				{
 					Name:  "label1",
 					Value: "value1",

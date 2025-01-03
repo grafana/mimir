@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/timestamp"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -660,9 +660,9 @@ func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, r
 	return err
 }
 
-func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapter) (string, string) {
+func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb_custom.LabelAdapter) (string, string) {
 	var cluster, replica string
-	var pair mimirpb.LabelAdapter
+	var pair mimirpb_custom.LabelAdapter
 
 	for _, pair = range labels {
 		if pair.Name == replicaLabel {

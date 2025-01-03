@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -238,7 +239,7 @@ func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMe
 // validateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) error {
+func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb_custom.LabelAdapter, s mimirpb.Sample) error {
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
@@ -257,7 +258,7 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 // validateSampleHistogram returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram) (bool, error) {
+func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb_custom.LabelAdapter, s *mimirpb.Histogram) (bool, error) {
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
@@ -308,10 +309,10 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 
 // validateExemplar returns an error if the exemplar is invalid.
 // The returned error may retain the provided series labels.
-func validateExemplar(m *exemplarValidationMetrics, userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) error {
+func validateExemplar(m *exemplarValidationMetrics, userID string, ls []mimirpb_custom.LabelAdapter, e mimirpb.Exemplar) error {
 	if len(e.Labels) <= 0 {
 		m.labelsMissing.WithLabelValues(userID).Inc()
-		return fmt.Errorf(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToString(ls), mimirpb.FromLabelAdaptersToString([]mimirpb.LabelAdapter{}))
+		return fmt.Errorf(exemplarEmptyLabelsMsgFormat, e.TimestampMs, mimirpb.FromLabelAdaptersToString(ls), mimirpb.FromLabelAdaptersToString([]mimirpb_custom.LabelAdapter{}))
 	}
 
 	if e.TimestampMs == 0 {
@@ -392,7 +393,7 @@ func removeNonASCIIChars(in string) (out string) {
 
 // validateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
-func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelValidation, skipLabelCountValidation bool) error {
+func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb_custom.LabelAdapter, skipLabelValidation, skipLabelCountValidation bool) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		m.missingMetricName.WithLabelValues(userID, group).Inc()
@@ -503,7 +504,7 @@ func cleanAndValidateMetadata(m *metadataValidationMetrics, cfg metadataValidati
 	return err
 }
 
-func getMetricAndEllipsis(ls []mimirpb.LabelAdapter) (string, string) {
+func getMetricAndEllipsis(ls []mimirpb_custom.LabelAdapter) (string, string) {
 	metric := mimirpb.FromLabelAdaptersToString(ls)
 	ellipsis := ""
 

@@ -40,6 +40,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
@@ -113,7 +114,7 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 	require.ElementsMatch(t, a.Warnings, b.Warnings, "expected same warning annotations")
 }
 
-func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expectedVal, actualVal float64, j int, labels []mimirpb.LabelAdapter, sampleType string, tolerance float64) {
+func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expectedVal, actualVal float64, j int, labels []mimirpb_custom.LabelAdapter, sampleType string, tolerance float64) {
 	require.Equalf(t, expectedTs, actualTs, "%s timestamp at position %d for series %s", sampleType, j, labels)
 
 	if value.IsStaleNaN(expectedVal) {
@@ -2034,7 +2035,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 			input: &promql.Result{Value: promql.String{T: 1, V: "hi"}},
 			expected: []SampleStream{
 				{
-					Labels: []mimirpb.LabelAdapter{
+					Labels: []mimirpb_custom.LabelAdapter{
 						{
 							Name:  "value",
 							Value: "hi",
@@ -2082,7 +2083,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 			err: false,
 			expected: []SampleStream{
 				{
-					Labels: []mimirpb.LabelAdapter{
+					Labels: []mimirpb_custom.LabelAdapter{
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
@@ -2094,7 +2095,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 					},
 				},
 				{
-					Labels: []mimirpb.LabelAdapter{
+					Labels: []mimirpb_custom.LabelAdapter{
 						{Name: "a", Value: "a2"},
 						{Name: "b", Value: "b2"},
 					},
@@ -2130,7 +2131,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 			err: false,
 			expected: []SampleStream{
 				{
-					Labels: []mimirpb.LabelAdapter{
+					Labels: []mimirpb_custom.LabelAdapter{
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
@@ -2146,7 +2147,7 @@ func TestPromqlResultToSampleStreams(t *testing.T) {
 					},
 				},
 				{
-					Labels: []mimirpb.LabelAdapter{
+					Labels: []mimirpb_custom.LabelAdapter{
 						{Name: "a", Value: "a2"},
 						{Name: "b", Value: "b2"},
 					},

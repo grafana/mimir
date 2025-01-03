@@ -31,7 +31,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	utiltest "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -840,11 +840,11 @@ func TestHATrackerFindHALabels(t *testing.T) {
 		replica string
 	}
 	cases := []struct {
-		labelsIn []mimirpb.LabelAdapter
+		labelsIn []mimirpb_custom.LabelAdapter
 		expected expectedOutput
 	}{
 		{
-			[]mimirpb.LabelAdapter{
+			[]mimirpb_custom.LabelAdapter{
 				{Name: "__name__", Value: "foo"},
 				{Name: "bar", Value: "baz"},
 				{Name: "sample", Value: "1"},
@@ -853,7 +853,7 @@ func TestHATrackerFindHALabels(t *testing.T) {
 			expectedOutput{cluster: "", replica: "1"},
 		},
 		{
-			[]mimirpb.LabelAdapter{
+			[]mimirpb_custom.LabelAdapter{
 				{Name: "__name__", Value: "foo"},
 				{Name: "bar", Value: "baz"},
 				{Name: "sample", Value: "1"},
@@ -862,7 +862,7 @@ func TestHATrackerFindHALabels(t *testing.T) {
 			expectedOutput{cluster: "cluster-2", replica: ""},
 		},
 		{
-			[]mimirpb.LabelAdapter{
+			[]mimirpb_custom.LabelAdapter{
 				{Name: "__name__", Value: "foo"},
 				{Name: "bar", Value: "baz"},
 				{Name: "sample", Value: "1"},

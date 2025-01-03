@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 )
 
 var (
@@ -20,7 +20,7 @@ var (
 
 // UnsafeMetricNameFromLabelAdapters extracts the metric name from a list of LabelPairs.
 // The returned metric name string is a reference to the label value (no copy).
-func UnsafeMetricNameFromLabelAdapters(labels []mimirpb.LabelAdapter) (string, error) {
+func UnsafeMetricNameFromLabelAdapters(labels []mimirpb_custom.LabelAdapter) (string, error) {
 	for _, label := range labels {
 		if label.Name == model.MetricNameLabel {
 			return label.Value, nil

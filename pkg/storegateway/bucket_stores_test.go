@@ -41,6 +41,7 @@ import (
 	grpc_metadata "google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -101,7 +102,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		require.Len(t, seriesSet, 1)
-		assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
+		assert.Equal(t, []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
 	}
 
 	// Query series of another user.
@@ -175,7 +176,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	require.Len(t, seriesSet, 1)
-	assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "series_1"}}, seriesSet[0].Labels)
+	assert.Equal(t, []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "series_1"}}, seriesSet[0].Labels)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_blocks_meta_syncs_total Total blocks metadata synchronization attempts
@@ -250,7 +251,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	assert.Len(t, seriesSet, 1)
-	assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
+	assert.Equal(t, []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.

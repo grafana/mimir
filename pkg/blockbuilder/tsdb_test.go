@@ -27,6 +27,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -43,7 +44,7 @@ func createWriteRequest(t *testing.T, suffix string, samples []mimirpb.Sample, h
 	}
 	req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels: []mimirpb.LabelAdapter{
+			Labels: []mimirpb_custom.LabelAdapter{
 				{Name: "foo", Value: fmt.Sprintf("%s%s", seriesValue, suffix)},
 			},
 			Samples:    samples,
@@ -358,7 +359,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	req := mimirpb.WriteRequest{}
 	req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels:  []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+			Labels:  []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}},
 			Samples: []mimirpb.Sample{},
 		},
 	})

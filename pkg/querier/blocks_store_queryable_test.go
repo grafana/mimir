@@ -51,6 +51,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -3243,7 +3244,7 @@ func mockSeriesResponseWithChunks(lbls labels.Labels, chunks ...storepb.AggrChun
 	}
 }
 
-func mockStreamingSeriesBatchResponse(endOfStream bool, lbls ...[]mimirpb.LabelAdapter) *storepb.SeriesResponse {
+func mockStreamingSeriesBatchResponse(endOfStream bool, lbls ...[]mimirpb_custom.LabelAdapter) *storepb.SeriesResponse {
 	res := &storepb.StreamingSeriesBatch{}
 	for _, l := range lbls {
 		res.Series = append(res.Series, &storepb.StreamingSeries{Labels: l})

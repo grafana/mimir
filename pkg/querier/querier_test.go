@@ -35,6 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
@@ -272,7 +273,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 			Chunkseries: []client.TimeSeriesChunk{
 				// Series with data points only before queryStart.
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Labels: []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
 					Chunks: convertToChunks(t, []interface{}{
 						mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
 						mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
@@ -281,7 +282,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 				},
 				// Series with data points before and after queryStart, but before queryEnd.
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Labels: []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
 					Chunks: convertToChunks(t, []interface{}{
 						mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
 						mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 3},
@@ -299,7 +300,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 				},
 				// Series with data points after queryEnd.
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Labels: []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
 					Chunks: convertToChunks(t, []interface{}{
 						mimirpb.Sample{TimestampMs: queryStart.Add(+4*time.Minute).Unix() * 1000, Value: 41},
 						mimirpb.Sample{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
@@ -391,12 +392,12 @@ func TestBatchMergeChunks(t *testing.T) {
 			Chunkseries: []client.TimeSeriesChunk{
 				// Series with chunks in the 1,2 order, that need merge
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
+					Labels: []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
 					Chunks: chunks12,
 				},
 				// Series with chunks in the 2,1 order, that need merge
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "bar"}},
+					Labels: []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "bar"}},
 					Chunks: chunks21,
 				},
 			},
@@ -468,7 +469,7 @@ func BenchmarkQueryExecute(b *testing.B) {
 				client.CombinedQueryStreamResponse{
 					Chunkseries: []client.TimeSeriesChunk{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
+							Labels: []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
 							Chunks: chunks,
 						},
 					},

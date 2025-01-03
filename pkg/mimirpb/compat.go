@@ -21,6 +21,8 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/jsonutil"
+
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 )
 
 // ToWriteRequest converts matched slices of Labels, Samples, Exemplars, and Metadata into a WriteRequest
@@ -28,7 +30,7 @@ import (
 // method implies that only a single sample and optionally exemplar can be set for each series.
 //
 // For histograms use NewWriteRequest and Add* functions to build write request with Floats and Histograms
-func ToWriteRequest(lbls [][]LabelAdapter, samples []Sample, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
+func ToWriteRequest(lbls [][]mimirpb_custom.LabelAdapter, samples []Sample, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
 	return NewWriteRequest(metadata, source).AddFloatSeries(lbls, samples, exemplars)
 }
 
@@ -44,7 +46,7 @@ func NewWriteRequest(metadata []*MetricMetadata, source WriteRequest_SourceEnum)
 // AddFloatSeries converts matched slices of Labels, Samples, Exemplars into a WriteRequest
 // proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
 // method implies that only a single sample and optionally exemplar can be set for each series.
-func (req *WriteRequest) AddFloatSeries(lbls [][]LabelAdapter, samples []Sample, exemplars []*Exemplar) *WriteRequest {
+func (req *WriteRequest) AddFloatSeries(lbls [][]mimirpb_custom.LabelAdapter, samples []Sample, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range samples {
 		ts := TimeseriesFromPool()
 		ts.Labels = append(ts.Labels, lbls[i]...)
@@ -66,7 +68,7 @@ func (req *WriteRequest) AddFloatSeries(lbls [][]LabelAdapter, samples []Sample,
 // AddHistogramSeries converts matched slices of Labels, Histograms, Exemplars into a WriteRequest
 // proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
 // method implies that only a single sample and optionally exemplar can be set for each series.
-func (req *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []Histogram, exemplars []*Exemplar) *WriteRequest {
+func (req *WriteRequest) AddHistogramSeries(lbls [][]mimirpb_custom.LabelAdapter, histograms []Histogram, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range histograms {
 		ts := TimeseriesFromPool()
 		ts.Labels = append(ts.Labels, lbls[i]...)
@@ -98,7 +100,7 @@ func (req *WriteRequest) AddExemplarsAt(i int, exemplars []*Exemplar) *WriteRequ
 
 // FromLabelAdaptersToMetric converts []LabelAdapter to a model.Metric.
 // Don't do this on any performance sensitive paths.
-func FromLabelAdaptersToMetric(ls []LabelAdapter) model.Metric {
+func FromLabelAdaptersToMetric(ls []mimirpb_custom.LabelAdapter) model.Metric {
 	m := make(model.Metric, len(ls))
 	for _, la := range ls {
 		m[model.LabelName(la.Name)] = model.LabelValue(la.Value)
@@ -108,7 +110,7 @@ func FromLabelAdaptersToMetric(ls []LabelAdapter) model.Metric {
 
 // FromLabelAdaptersToKeyString makes a string to be used as a key to a map.
 // It's much simpler than FromLabelAdaptersToString, but not human-readable.
-func FromLabelAdaptersToKeyString(ls []LabelAdapter) string {
+func FromLabelAdaptersToKeyString(ls []mimirpb_custom.LabelAdapter) string {
 	buf := make([]byte, 0, 1024)
 	for i := range ls {
 		buf = append(buf, '\xff')
@@ -122,7 +124,7 @@ func FromLabelAdaptersToKeyString(ls []LabelAdapter) string {
 // FromLabelAdaptersToString formats label adapters as a metric name with labels, while preserving
 // label order, and keeping duplicates. If there are multiple "__name__" labels, only
 // first one is used as metric name, other ones will be included as regular labels.
-func FromLabelAdaptersToString(ls []LabelAdapter) string {
+func FromLabelAdaptersToString(ls []mimirpb_custom.LabelAdapter) string {
 	var space [1024]byte
 	var quoteSpace [256]byte
 	b := bytes.NewBuffer(space[:0])
@@ -164,10 +166,10 @@ func FromLabelAdaptersToString(ls []LabelAdapter) string {
 // FromMetricsToLabelAdapters converts model.Metric to []LabelAdapter.
 // Don't do this on any performance sensitive paths.
 // The result is sorted.
-func FromMetricsToLabelAdapters(metric model.Metric) []LabelAdapter {
-	result := make([]LabelAdapter, 0, len(metric))
+func FromMetricsToLabelAdapters(metric model.Metric) []mimirpb_custom.LabelAdapter {
+	result := make([]mimirpb_custom.LabelAdapter, 0, len(metric))
 	for k, v := range metric {
-		result = append(result, LabelAdapter{
+		result = append(result, mimirpb_custom.LabelAdapter{
 			Name:  string(k),
 			Value: string(v),
 		})
@@ -381,7 +383,7 @@ func FromHistogramToPromHistogram(h *histogram.Histogram) *model.SampleHistogram
 	return FromFloatHistogramToPromHistogram(h.ToFloat(nil))
 }
 
-type byLabel []LabelAdapter
+type byLabel []mimirpb_custom.LabelAdapter
 
 func (s byLabel) Len() int           { return len(s) }
 func (s byLabel) Less(i, j int) bool { return s[i].Name < s[j].Name }
@@ -596,7 +598,7 @@ type PreallocatingMetric struct {
 func (m *PreallocatingMetric) Unmarshal(dAtA []byte) error {
 	numLabels, ok := m.labelsCount(dAtA)
 	if ok && numLabels > 0 {
-		m.Labels = make([]LabelAdapter, 0, numLabels)
+		m.Labels = make([]mimirpb_custom.LabelAdapter, 0, numLabels)
 	}
 
 	return m.Metric.Unmarshal(dAtA)

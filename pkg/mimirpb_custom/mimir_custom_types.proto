@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package cortexpb_custom;
+
+option go_package = "mimirpb_custom";
+
+message LabelAdapter {
+  string name  = 1;
+  string value = 2;
+}

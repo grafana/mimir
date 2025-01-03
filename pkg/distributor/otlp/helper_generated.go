@@ -37,6 +37,7 @@ import (
 	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
@@ -76,7 +77,7 @@ func (m byBucketBoundsData) Less(i, j int) bool { return m[i].bound < m[j].bound
 func (m byBucketBoundsData) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 
 // ByLabelName enables the usage of sort.Sort() with a slice of labels.
-type ByLabelName []mimirpb.LabelAdapter
+type ByLabelName []mimirpb_custom.LabelAdapter
 
 func (a ByLabelName) Len() int           { return len(a) }
 func (a ByLabelName) Less(i, j int) bool { return a[i].Name < a[j].Name }
@@ -86,7 +87,7 @@ func (a ByLabelName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 // The label slice should not contain duplicate label names; this method sorts the slice by label name before creating
 // the signature.
 // The algorithm is the same as in Prometheus' labels.StableHash function.
-func timeSeriesSignature(labels []mimirpb.LabelAdapter) uint64 {
+func timeSeriesSignature(labels []mimirpb_custom.LabelAdapter) uint64 {
 	sort.Sort(ByLabelName(labels))
 
 	// Use xxhash.Sum64(b) for fast path as it's faster.
@@ -120,15 +121,15 @@ var seps = []byte{'\xff'}
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
 func createAttributes(resource pcommon.Resource, attributes pcommon.Map, settings Settings,
-	ignoreAttrs []string, logOnOverwrite bool, extras ...string) []mimirpb.LabelAdapter {
+	ignoreAttrs []string, logOnOverwrite bool, extras ...string) []mimirpb_custom.LabelAdapter {
 	resourceAttrs := resource.Attributes()
 	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
 	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
 
-	promotedAttrs := make([]mimirpb.LabelAdapter, 0, len(settings.PromoteResourceAttributes))
+	promotedAttrs := make([]mimirpb_custom.LabelAdapter, 0, len(settings.PromoteResourceAttributes))
 	for _, name := range settings.PromoteResourceAttributes {
 		if value, exists := resourceAttrs.Get(name); exists {
-			promotedAttrs = append(promotedAttrs, mimirpb.LabelAdapter{Name: name, Value: value.AsString()})
+			promotedAttrs = append(promotedAttrs, mimirpb_custom.LabelAdapter{Name: name, Value: value.AsString()})
 		}
 	}
 	sort.Stable(ByLabelName(promotedAttrs))
@@ -146,12 +147,12 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 
 	// Ensure attributes are sorted by key for consistent merging of keys which
 	// collide when sanitized.
-	labels := make([]mimirpb.LabelAdapter, 0, maxLabelCount)
+	labels := make([]mimirpb_custom.LabelAdapter, 0, maxLabelCount)
 	// XXX: Should we always drop service namespace/service name/service instance ID from the labels
 	// (as they get mapped to other Prometheus labels)?
 	attributes.Range(func(key string, value pcommon.Value) bool {
 		if !slices.Contains(ignoreAttrs, key) {
-			labels = append(labels, mimirpb.LabelAdapter{Name: key, Value: value.AsString()})
+			labels = append(labels, mimirpb_custom.LabelAdapter{Name: key, Value: value.AsString()})
 		}
 		return true
 	})
@@ -221,7 +222,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 
 	labels = labels[:0]
 	for k, v := range l {
-		labels = append(labels, mimirpb.LabelAdapter{Name: k, Value: v})
+		labels = append(labels, mimirpb_custom.LabelAdapter{Name: k, Value: v})
 	}
 
 	return labels
@@ -380,7 +381,7 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 		if traceID := exemplar.TraceID(); !traceID.IsEmpty() {
 			val := hex.EncodeToString(traceID[:])
 			exemplarRunes += utf8.RuneCountInString(traceIDKey) + utf8.RuneCountInString(val)
-			promLabel := mimirpb.LabelAdapter{
+			promLabel := mimirpb_custom.LabelAdapter{
 				Name:  traceIDKey,
 				Value: val,
 			}
@@ -389,7 +390,7 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 		if spanID := exemplar.SpanID(); !spanID.IsEmpty() {
 			val := hex.EncodeToString(spanID[:])
 			exemplarRunes += utf8.RuneCountInString(spanIDKey) + utf8.RuneCountInString(val)
-			promLabel := mimirpb.LabelAdapter{
+			promLabel := mimirpb_custom.LabelAdapter{
 				Name:  spanIDKey,
 				Value: val,
 			}
@@ -397,11 +398,11 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 		}
 
 		attrs := exemplar.FilteredAttributes()
-		labelsFromAttributes := make([]mimirpb.LabelAdapter, 0, attrs.Len())
+		labelsFromAttributes := make([]mimirpb_custom.LabelAdapter, 0, attrs.Len())
 		attrs.Range(func(key string, value pcommon.Value) bool {
 			val := value.AsString()
 			exemplarRunes += utf8.RuneCountInString(key) + utf8.RuneCountInString(val)
-			promLabel := mimirpb.LabelAdapter{
+			promLabel := mimirpb_custom.LabelAdapter{
 				Name:  key,
 				Value: val,
 			}
@@ -524,24 +525,24 @@ func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pm
 // createLabels returns a copy of baseLabels, adding to it the pair model.MetricNameLabel=name.
 // If extras are provided, corresponding label pairs are also added to the returned slice.
 // If extras is uneven length, the last (unpaired) extra will be ignored.
-func createLabels(name string, baseLabels []mimirpb.LabelAdapter, extras ...string) []mimirpb.LabelAdapter {
+func createLabels(name string, baseLabels []mimirpb_custom.LabelAdapter, extras ...string) []mimirpb_custom.LabelAdapter {
 	extraLabelCount := len(extras) / 2
-	labels := make([]mimirpb.LabelAdapter, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
+	labels := make([]mimirpb_custom.LabelAdapter, len(baseLabels), len(baseLabels)+extraLabelCount+1) // +1 for name
 	copy(labels, baseLabels)
 
 	n := len(extras)
 	n -= n % 2
 	for extrasIdx := 0; extrasIdx < n; extrasIdx += 2 {
-		labels = append(labels, mimirpb.LabelAdapter{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
+		labels = append(labels, mimirpb_custom.LabelAdapter{Name: extras[extrasIdx], Value: extras[extrasIdx+1]})
 	}
 
-	labels = append(labels, mimirpb.LabelAdapter{Name: model.MetricNameLabel, Value: name})
+	labels = append(labels, mimirpb_custom.LabelAdapter{Name: model.MetricNameLabel, Value: name})
 	return labels
 }
 
 // getOrCreateTimeSeries returns the time series corresponding to the label set if existent, and false.
 // Otherwise it creates a new one and returns that, and true.
-func (c *MimirConverter) getOrCreateTimeSeries(lbls []mimirpb.LabelAdapter) (*mimirpb.TimeSeries, bool) {
+func (c *MimirConverter) getOrCreateTimeSeries(lbls []mimirpb_custom.LabelAdapter) (*mimirpb.TimeSeries, bool) {
 	h := timeSeriesSignature(lbls)
 	ts := c.unique[h]
 	if ts != nil {
@@ -577,7 +578,7 @@ func (c *MimirConverter) getOrCreateTimeSeries(lbls []mimirpb.LabelAdapter) (*mi
 // addTimeSeriesIfNeeded adds a corresponding time series if it doesn't already exist.
 // If the time series doesn't already exist, it gets added with startTimestamp for its value and timestamp for its timestamp,
 // both converted to milliseconds.
-func (c *MimirConverter) addTimeSeriesIfNeeded(lbls []mimirpb.LabelAdapter, startTimestamp int64, timestamp pcommon.Timestamp) {
+func (c *MimirConverter) addTimeSeriesIfNeeded(lbls []mimirpb_custom.LabelAdapter, startTimestamp int64, timestamp pcommon.Timestamp) {
 	ts, created := c.getOrCreateTimeSeries(lbls)
 	if created {
 		ts.Samples = []mimirpb.Sample{
@@ -599,7 +600,7 @@ const defaultIntervalForStartTimestamps = int64(300_000)
 // make use of its direct support fort Created Timestamps instead.
 // See https://opentelemetry.io/docs/specs/otel/metrics/data-model/#resets-and-gaps to know more about how OTel handles
 // resets for cumulative metrics.
-func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.LabelAdapter, settings Settings, typ string, value float64, logger *slog.Logger) {
+func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb_custom.LabelAdapter, settings Settings, typ string, value float64, logger *slog.Logger) {
 	if !settings.EnableCreatedTimestampZeroIngestion {
 		return
 	}

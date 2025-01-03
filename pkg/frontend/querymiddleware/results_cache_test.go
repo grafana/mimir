@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 )
 
 func TestResultsCacheConfig_Validate(t *testing.T) {
@@ -97,7 +98,7 @@ func mkAPIResponse(start, end, step int64) *PrometheusResponse {
 			ResultType: matrix,
 			Result: []SampleStream{
 				{
-					Labels: []mimirpb.LabelAdapter{
+					Labels: []mimirpb_custom.LabelAdapter{
 						{Name: "foo", Value: "bar"},
 					},
 					Samples: samples,

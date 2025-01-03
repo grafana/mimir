@@ -10,6 +10,7 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 )
 
 type protobufFormatter struct{}
@@ -246,7 +247,7 @@ func (f protobufFormatter) decodeStringData(data *mimirpb.StringData) *Prometheu
 		ResultType: model.ValString.String(),
 		Result: []SampleStream{
 			{
-				Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: data.Value}},
+				Labels:  []mimirpb_custom.LabelAdapter{{Name: "value", Value: data.Value}},
 				Samples: []mimirpb.Sample{{TimestampMs: data.TimestampMs}},
 			},
 		},
@@ -342,16 +343,16 @@ func (f protobufFormatter) DecodeSeriesResponse([]byte) (*PrometheusSeriesRespon
 	return nil, errors.New("protobuf series decoding is not supported")
 }
 
-func labelsFromStringArray(s []string) ([]mimirpb.LabelAdapter, error) {
+func labelsFromStringArray(s []string) ([]mimirpb_custom.LabelAdapter, error) {
 	if len(s)%2 != 0 {
 		return nil, fmt.Errorf("metric is malformed: expected even number of symbols, but got %v", len(s))
 	}
 
 	labelCount := len(s) / 2
-	l := make([]mimirpb.LabelAdapter, labelCount)
+	l := make([]mimirpb_custom.LabelAdapter, labelCount)
 
 	for i := 0; i < labelCount; i++ {
-		l[i] = mimirpb.LabelAdapter{
+		l[i] = mimirpb_custom.LabelAdapter{
 			Name:  s[2*i],
 			Value: s[2*i+1],
 		}
@@ -360,7 +361,7 @@ func labelsFromStringArray(s []string) ([]mimirpb.LabelAdapter, error) {
 	return l, nil
 }
 
-func stringArrayFromLabels(labels []mimirpb.LabelAdapter) []string {
+func stringArrayFromLabels(labels []mimirpb_custom.LabelAdapter) []string {
 	s := make([]string, len(labels)*2)
 
 	for i, l := range labels {

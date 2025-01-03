@@ -33,7 +33,7 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
@@ -236,7 +236,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 
 type testBucketStoreCase struct {
 	req              *storepb.SeriesRequest
-	expected         [][]mimirpb.LabelAdapter
+	expected         [][]mimirpb_custom.LabelAdapter
 	expectedChunkLen int
 }
 
@@ -271,7 +271,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]mimirpb.LabelAdapter{
+			expected: [][]mimirpb_custom.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -291,7 +291,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]mimirpb.LabelAdapter{
+			expected: [][]mimirpb_custom.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -307,7 +307,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]mimirpb.LabelAdapter{
+			expected: [][]mimirpb_custom.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -323,7 +323,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]mimirpb.LabelAdapter{
+			expected: [][]mimirpb_custom.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -343,7 +343,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]mimirpb.LabelAdapter{
+			expected: [][]mimirpb_custom.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -363,7 +363,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]mimirpb.LabelAdapter{
+			expected: [][]mimirpb_custom.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}},
 			},
@@ -377,7 +377,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]mimirpb.LabelAdapter{
+			expected: [][]mimirpb_custom.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -393,7 +393,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 				MaxTime: maxt,
 			},
 			expectedChunkLen: 3,
-			expected: [][]mimirpb.LabelAdapter{
+			expected: [][]mimirpb_custom.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -427,7 +427,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite, addit
 				SkipChunks: true,
 			},
 			expectedChunkLen: 0,
-			expected: [][]mimirpb.LabelAdapter{
+			expected: [][]mimirpb_custom.LabelAdapter{
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
 				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
 				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
@@ -540,7 +540,7 @@ func TestBucketStore_e2e_StreamingEdgeCases(t *testing.T) {
 					MaxTime: maxt,
 				},
 				expectedChunkLen: 1,
-				expected: [][]mimirpb.LabelAdapter{
+				expected: [][]mimirpb_custom.LabelAdapter{
 					{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
 					{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
 					{{Name: "a", Value: "2"}, {Name: "c", Value: "1"}},

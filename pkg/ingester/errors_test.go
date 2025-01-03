@@ -20,6 +20,7 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -106,7 +107,7 @@ func TestNewPerUserMetadataLimitError(t *testing.T) {
 
 func TestNewPerMetricSeriesLimitError(t *testing.T) {
 	limit := 100
-	labels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	labels := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
 	err := newPerMetricSeriesLimitReachedError(limit, labels)
 	expectedErrMsg := fmt.Sprintf("%s This is for series %s",
 		globalerror.MaxSeriesPerMetric.MessageWithPerTenantLimitConfig(
@@ -145,7 +146,7 @@ func TestNewPerMetricMetadataLimitError(t *testing.T) {
 }
 
 func TestNewSampleError(t *testing.T) {
-	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	seriesLabels := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	tests := map[string]struct {
 		err         error
 		expectedMsg string
@@ -187,8 +188,8 @@ func TestNewSampleError(t *testing.T) {
 }
 
 func TestNewExemplarError(t *testing.T) {
-	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
+	seriesLabels := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	exemplarsLabels := []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}}
 	tests := map[string]struct {
 		err         error
 		expectedMsg string
@@ -218,8 +219,8 @@ func TestNewExemplarError(t *testing.T) {
 }
 
 func TestNewTSDBIngestExemplarErr(t *testing.T) {
-	seriesLabels := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	exemplarsLabels := []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}
+	seriesLabels := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	exemplarsLabels := []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}}
 	anotherErr := errors.New("another error")
 	err := newTSDBIngestExemplarErr(anotherErr, timestamp, seriesLabels, exemplarsLabels)
 	expectedErrMsg := fmt.Sprintf("err: %v. timestamp=1970-01-19T05:30:43.969Z, series=test, exemplar={traceID=\"123\"}", anotherErr)
@@ -343,7 +344,7 @@ func TestWrapOrAnnotateWithUser(t *testing.T) {
 	require.NotErrorIs(t, annotatedUnsafeErr, annotatingErr)
 	require.Nil(t, errors.Unwrap(annotatedUnsafeErr))
 
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabelAdapters := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	wrappingErr := newSampleTimestampTooOldError(timestamp, metricLabelAdapters)
 	expectedWrappedErrMsg := fmt.Sprintf("user=%s: %s", userID, wrappingErr.Error())
 	wrappedSafeErr := wrapOrAnnotateWithUser(wrappingErr, userID)
@@ -357,7 +358,7 @@ func TestMapPushErrorToErrorWithStatus(t *testing.T) {
 	const originalMsg = "this is an error"
 	originalErr := errors.New(originalMsg)
 	family := "testmetric"
-	labelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: family}, {Name: "foo", Value: "biz"}}
+	labelAdapters := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: family}, {Name: "foo", Value: "biz"}}
 	timestamp := model.Time(1)
 
 	testCases := map[string]struct {

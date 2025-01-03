@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 )
 
 type Settings struct {
@@ -54,7 +55,7 @@ type Settings struct {
 }
 
 type StartTsAndTs struct {
-	Labels  []mimirpb.LabelAdapter
+	Labels  []mimirpb_custom.LabelAdapter
 	StartTs int64
 	Ts      int64
 }
@@ -203,7 +204,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 	return annots, errs
 }
 
-func isSameMetric(ts *mimirpb.TimeSeries, lbls []mimirpb.LabelAdapter) bool {
+func isSameMetric(ts *mimirpb.TimeSeries, lbls []mimirpb_custom.LabelAdapter) bool {
 	if len(ts.Labels) != len(lbls) {
 		return false
 	}
@@ -250,7 +251,7 @@ func (c *MimirConverter) addExemplars(ctx context.Context, dataPoint pmetric.His
 // If there is no corresponding TimeSeries already, it's created.
 // The corresponding TimeSeries is returned.
 // If either lbls is nil/empty or sample is nil, nothing is done.
-func (c *MimirConverter) addSample(sample *mimirpb.Sample, lbls []mimirpb.LabelAdapter) *mimirpb.TimeSeries {
+func (c *MimirConverter) addSample(sample *mimirpb.Sample, lbls []mimirpb_custom.LabelAdapter) *mimirpb.TimeSeries {
 	if sample == nil || len(lbls) == 0 {
 		// This shouldn't happen
 		return nil
@@ -261,7 +262,7 @@ func (c *MimirConverter) addSample(sample *mimirpb.Sample, lbls []mimirpb.LabelA
 	return ts
 }
 
-type labelsStringer []mimirpb.LabelAdapter
+type labelsStringer []mimirpb_custom.LabelAdapter
 
 func (ls labelsStringer) String() string {
 	var seriesBuilder strings.Builder

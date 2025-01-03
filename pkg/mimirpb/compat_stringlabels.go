@@ -6,11 +6,13 @@ package mimirpb
 
 import (
 	"github.com/prometheus/prometheus/model/labels"
+
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 )
 
 // FromLabelAdaptersToLabels converts []LabelAdapter to labels.Labels.
 // Note this is relatively expensive; see FromLabelAdaptersOverwriteLabels for a fast unsafe way.
-func FromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
+func FromLabelAdaptersToLabels(ls []mimirpb_custom.LabelAdapter) labels.Labels {
 	builder := labels.NewScratchBuilder(len(ls))
 	for _, v := range ls {
 		builder.Add(v.Name, v.Value)
@@ -20,7 +22,7 @@ func FromLabelAdaptersToLabels(ls []LabelAdapter) labels.Labels {
 
 // FromLabelAdaptersToLabelsWithCopy converts []LabelAdapter to labels.Labels.
 // The output does not retain any part of the input.
-func FromLabelAdaptersToLabelsWithCopy(input []LabelAdapter) labels.Labels {
+func FromLabelAdaptersToLabelsWithCopy(input []mimirpb_custom.LabelAdapter) labels.Labels {
 	return FromLabelAdaptersToLabels(input)
 }
 
@@ -30,7 +32,7 @@ func CopyLabels(input labels.Labels) labels.Labels {
 }
 
 // Build a labels.Labels from LabelAdaptors, with amortized zero allocations.
-func FromLabelAdaptersOverwriteLabels(builder *labels.ScratchBuilder, ls []LabelAdapter, dest *labels.Labels) {
+func FromLabelAdaptersOverwriteLabels(builder *labels.ScratchBuilder, ls []mimirpb_custom.LabelAdapter, dest *labels.Labels) {
 	builder.Reset()
 	for _, v := range ls {
 		builder.Add(v.Name, v.Value)
@@ -39,7 +41,7 @@ func FromLabelAdaptersOverwriteLabels(builder *labels.ScratchBuilder, ls []Label
 }
 
 // FromLabelAdaptersToBuilder converts []LabelAdapter to labels.Builder.
-func FromLabelAdaptersToBuilder(ls []LabelAdapter, builder *labels.Builder) {
+func FromLabelAdaptersToBuilder(ls []mimirpb_custom.LabelAdapter, builder *labels.Builder) {
 	builder.Reset(labels.EmptyLabels())
 	for _, v := range ls {
 		builder.Set(v.Name, v.Value)
@@ -48,26 +50,26 @@ func FromLabelAdaptersToBuilder(ls []LabelAdapter, builder *labels.Builder) {
 
 // FromBuilderToLabelAdapters converts labels.Builder to []LabelAdapter, reusing ls.
 // Note the result may not be sorted.
-func FromBuilderToLabelAdapters(builder *labels.Builder, ls []LabelAdapter) []LabelAdapter {
+func FromBuilderToLabelAdapters(builder *labels.Builder, ls []mimirpb_custom.LabelAdapter) []mimirpb_custom.LabelAdapter {
 	ls = ls[:0]
 	builder.Range(func(l labels.Label) {
-		ls = append(ls, LabelAdapter{Name: l.Name, Value: l.Value})
+		ls = append(ls, mimirpb_custom.LabelAdapter{Name: l.Name, Value: l.Value})
 	})
 	return ls
 }
 
 // FromLabelsToLabelAdapters casts labels.Labels to []LabelAdapter.
 // For now it's doing an expensive conversion: TODO figure out a faster way.
-func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
-	r := make([]LabelAdapter, 0, ls.Len())
+func FromLabelsToLabelAdapters(ls labels.Labels) []mimirpb_custom.LabelAdapter {
+	r := make([]mimirpb_custom.LabelAdapter, 0, ls.Len())
 	ls.Range(func(l labels.Label) {
-		r = append(r, LabelAdapter{Name: l.Name, Value: l.Value})
+		r = append(r, mimirpb_custom.LabelAdapter{Name: l.Name, Value: l.Value})
 	})
 	return r
 }
 
 // CompareLabelAdapters returns be 0 if a==b, <0 if a < b, and >0 if a > b.
-func CompareLabelAdapters(a, b []LabelAdapter) int {
+func CompareLabelAdapters(a, b []mimirpb_custom.LabelAdapter) int {
 	l := len(a)
 	if len(b) < l {
 		l = len(b)

@@ -63,6 +63,7 @@ import (
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/mimirpb_custom"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -351,7 +352,7 @@ func TestIngester_StartReadRequest(t *testing.T) {
 }
 
 func TestIngester_Push(t *testing.T) {
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabelAdapters := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
 	metricNames := []string{
 		"cortex_ingester_ingested_samples_total",
@@ -406,7 +407,7 @@ func TestIngester_Push(t *testing.T) {
 		"should succeed on valid series and metadata": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
 					[]*mimirpb.MetricMetadata{
@@ -414,7 +415,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 					mimirpb.API),
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					nil,
 					[]*mimirpb.MetricMetadata{
@@ -483,11 +484,11 @@ func TestIngester_Push(t *testing.T) {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
 					{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.HISTOGRAM},
-				}, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{metricLabelAdapters},
+				}, mimirpb.API).AddHistogramSeries([][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(1, util_test.GenerateTestHistogram(1))}, nil),
 				mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{
 					{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGEHISTOGRAM},
-				}, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{metricLabelAdapters},
+				}, mimirpb.API).AddHistogramSeries([][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(2, util_test.GenerateTestGaugeHistogram(2))}, nil),
 			},
 			expectedErr: nil,
@@ -561,11 +562,11 @@ func TestIngester_Push(t *testing.T) {
 			maxExemplars: 2,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -583,7 +584,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -667,16 +668,16 @@ func TestIngester_Push(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels:  []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels:  []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 							},
 						},
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels: []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -695,7 +696,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -766,18 +767,18 @@ func TestIngester_Push(t *testing.T) {
 			maxExemplars: 2,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
 					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -795,7 +796,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -879,16 +880,16 @@ func TestIngester_Push(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels:  []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels:  []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 							},
 						},
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels: []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -901,10 +902,10 @@ func TestIngester_Push(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels: []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+										Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "333"}},
 										TimestampMs: 500,
 										Value:       2000,
 									},
@@ -914,7 +915,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newTSDBIngestExemplarErr(storage.ErrOutOfOrderExemplar, model.Time(500), []mimirpb.LabelAdapter{metricLabelAdapters[0]}, []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newTSDBIngestExemplarErr(storage.ErrOutOfOrderExemplar, model.Time(500), []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "333"}}), userID), codes.InvalidArgument),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}}},
 			},
@@ -923,7 +924,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1006,16 +1007,16 @@ func TestIngester_Push(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels:  []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels:  []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 							},
 						},
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels: []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -1028,10 +1029,10 @@ func TestIngester_Push(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels: []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+										Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "333"}},
 										TimestampMs: 500,
 										Value:       2000,
 									},
@@ -1050,7 +1051,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1130,11 +1131,11 @@ func TestIngester_Push(t *testing.T) {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1150,7 +1151,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1241,7 +1242,7 @@ func TestIngester_Push(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels: []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Histograms: []mimirpb.Histogram{
 									mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1)),
 								},
@@ -1249,10 +1250,10 @@ func TestIngester_Push(t *testing.T) {
 						},
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels: []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -1271,7 +1272,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1359,16 +1360,16 @@ func TestIngester_Push(t *testing.T) {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
 					nil,
 				),
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1387,7 +1388,7 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
@@ -1475,23 +1476,23 @@ func TestIngester_Push(t *testing.T) {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
 					nil,
 				),
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "456"}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
@@ -1510,12 +1511,12 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "456"}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
@@ -1603,44 +1604,44 @@ func TestIngester_Push(t *testing.T) {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "456"}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
 					},
 				),
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
 						{
 							// This will never be ingested/appeneded as it is out of order.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "333"}},
 							TimestampMs: 1500,
 							Value:       1500,
 						},
 						{
 							// This is appended as duplicate.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "456"}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
 						{
 							// This is appended as new exemplar and pushes out the oldest exemplar.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "789"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "789"}},
 							TimestampMs: 3000,
 							Value:       3000,
 						},
@@ -1659,12 +1660,12 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "456"}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "789"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "789"}},
 							TimestampMs: 3000,
 							Value:       3000,
 						},
@@ -1677,13 +1678,13 @@ func TestIngester_Push(t *testing.T) {
 					Exemplars: []mimirpb.Exemplar{
 						{
 							// This examplar is dropped due to the max exemplar limit.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
 							// This example is ignored as equal to the previous one.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "456"}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
@@ -1770,13 +1771,13 @@ func TestIngester_Push(t *testing.T) {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithBucketCountMismatch)},
 					nil,
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, fmt.Errorf("21 observations found in buckets, but the Count field is 22: histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, fmt.Errorf("21 observations found in buckets, but the Count field is 22: histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)"), model.Time(10), []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -1811,13 +1812,13 @@ func TestIngester_Push(t *testing.T) {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithCountNotBigEnough)},
 					nil,
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, fmt.Errorf("21 observations found in buckets, but the Count field is 20: histogram's observation count should be at least the number of observations found in the buckets"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, fmt.Errorf("21 observations found in buckets, but the Count field is 20: histogram's observation count should be at least the number of observations found in the buckets"), model.Time(10), []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -1852,13 +1853,13 @@ func TestIngester_Push(t *testing.T) {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithSpanNegativeOffset)},
 					nil,
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, fmt.Errorf("positive side: span number 2 with offset -2: histogram has a span whose offset is negative"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, fmt.Errorf("positive side: span number 2 with offset -2: histogram has a span whose offset is negative"), model.Time(10), []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -1893,13 +1894,13 @@ func TestIngester_Push(t *testing.T) {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithSpansBucketsMismatch)},
 					nil,
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, fmt.Errorf("positive side: spans need 5 buckets, have 4 buckets: histogram spans specify different number of buckets than provided"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, fmt.Errorf("positive side: spans need 5 buckets, have 4 buckets: histogram spans specify different number of buckets than provided"), model.Time(10), []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -1935,17 +1936,17 @@ func TestIngester_Push(t *testing.T) {
 			disableOOONativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(1))},
 					nil,
 				),
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(-10, util_test.GenerateTestHistogram(1))},
 					nil,
 				),
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramOOODisabled, fmt.Errorf("out-of-order native histogram ingestion is disabled"), model.Time(-10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramOOODisabled, fmt.Errorf("out-of-order native histogram ingestion is disabled"), model.Time(-10), []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -1994,13 +1995,13 @@ func TestIngester_Push(t *testing.T) {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, histogramWithNegativeBucketCount)},
 					nil,
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, fmt.Errorf("negative side: bucket number 2 has observation count of -98: histogram has a bucket whose observation count is negative"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, fmt.Errorf("negative side: bucket number 2 has observation count of -98: histogram has a bucket whose observation count is negative"), model.Time(10), []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -2036,45 +2037,45 @@ func TestIngester_Push(t *testing.T) {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "456"}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
 					},
 				),
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
 						{
 							// This will never be ingested/appeneded as it is out of order.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
 							// This will never be ingested/appeneded as it is out of order.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "333"}},
 							TimestampMs: 1500,
 							Value:       1500,
 						},
 					},
 				),
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newTSDBIngestExemplarErr(storage.ErrOutOfOrderExemplar, model.Time(1500), []mimirpb.LabelAdapter{metricLabelAdapters[0]}, []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newTSDBIngestExemplarErr(storage.ErrOutOfOrderExemplar, model.Time(1500), []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "333"}}), userID), codes.InvalidArgument),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
 					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: 9},
@@ -2086,12 +2087,12 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "456"}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
@@ -2180,38 +2181,38 @@ func TestIngester_Push(t *testing.T) {
 			ignoreOOOExemplars: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "456"}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
 					},
 				),
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
 					nil,
 				).AddExemplarsAt(0, // Add exemplars to the first series.
 					[]*mimirpb.Exemplar{
 						{
 							// This will never be ingested/appeneded as it is out of order.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
 							// This will never be ingested/appeneded as it is out of order.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "333"}},
 							TimestampMs: 1500,
 							Value:       1500,
 						},
@@ -2230,12 +2231,12 @@ func TestIngester_Push(t *testing.T) {
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "456"}},
 							TimestampMs: 2000,
 							Value:       2000,
 						},
@@ -2322,13 +2323,13 @@ func TestIngester_Push(t *testing.T) {
 			disableActiveSeries: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
 					nil,
 					mimirpb.API),
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					nil,
 					nil,
@@ -2368,14 +2369,14 @@ func TestIngester_Push(t *testing.T) {
 		"should soft fail on sample out-of-order": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					nil,
 					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
 					nil,
@@ -2422,7 +2423,7 @@ func TestIngester_Push(t *testing.T) {
 		"should soft fail on all samples out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -2480,7 +2481,7 @@ func TestIngester_Push(t *testing.T) {
 		"should soft fail on all samples with histograms out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -2540,7 +2541,7 @@ func TestIngester_Push(t *testing.T) {
 		"should succeed if histograms are out of bound but samples are not and histograms are not accepted": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -2597,7 +2598,7 @@ func TestIngester_Push(t *testing.T) {
 		"should soft fail on some samples out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -2658,7 +2659,7 @@ func TestIngester_Push(t *testing.T) {
 		"should soft fail on some samples with timestamp too far in future in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli()}},
 					nil,
 					nil,
@@ -2789,15 +2790,15 @@ func TestIngester_Push(t *testing.T) {
 								Samples: []mimirpb.Sample{
 									{Value: 1, TimestampMs: now.UnixMilli()}},
 								Exemplars: []mimirpb.Exemplar{
-									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, Value: 1, TimestampMs: now.UnixMilli()},
-									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}, Value: 2, TimestampMs: now.UnixMilli() + (86400 * 1000)},
+									{Labels: []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "111"}}, Value: 1, TimestampMs: now.UnixMilli()},
+									{Labels: []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "222"}}, Value: 2, TimestampMs: now.UnixMilli() + (86400 * 1000)},
 								},
 							},
 						},
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "222"}}), userID), codes.InvalidArgument),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{
 					Metric: metricLabelSet,
@@ -2810,7 +2811,7 @@ func TestIngester_Push(t *testing.T) {
 				{
 					Labels: metricLabelAdapters,
 					Exemplars: []mimirpb.Exemplar{
-						{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, TimestampMs: now.UnixMilli(), Value: 1},
+						{Labels: []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "111"}}, TimestampMs: now.UnixMilli(), Value: 1},
 					},
 				},
 			},
@@ -2857,14 +2858,14 @@ func TestIngester_Push(t *testing.T) {
 		"should soft fail on two different sample values at the same timestamp": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -2917,10 +2918,10 @@ func TestIngester_Push(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels: []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -2930,7 +2931,7 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:              newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), codes.InvalidArgument),
+			expectedErr:              newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), codes.InvalidArgument),
 			expectedIngested:         nil,
 			expectedMetadataIngested: nil,
 			additionalMetrics: []string{
@@ -3008,10 +3009,10 @@ func TestIngester_Push(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels: []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -3020,14 +3021,14 @@ func TestIngester_Push(t *testing.T) {
 						},
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels:  []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels:  []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 							},
 						},
 					},
 				},
 			},
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}}), userID), codes.InvalidArgument),
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}}},
 			},
@@ -3399,8 +3400,8 @@ func TestIngester_Push(t *testing.T) {
 }
 
 func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testing.T) {
-	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
-	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test_histogram"}}}
+	metricLabelAdapters := [][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+	metricLabelAdaptersHist := [][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "test_histogram"}}}
 	metricNames := []string{
 		"cortex_ingester_ingested_samples_total",
 		"cortex_ingester_ingested_samples_failures_total",
@@ -3511,8 +3512,8 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 }
 
 func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
-	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
-	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test_histogram"}}}
+	metricLabelAdapters := [][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+	metricLabelAdaptersHist := [][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "test_histogram"}}}
 	metricNames := []string{
 		"cortex_ingester_memory_series_created_total",
 		"cortex_ingester_memory_series_removed_total",
@@ -3606,7 +3607,7 @@ func BenchmarkIngesterPush(b *testing.B) {
 	})
 
 	// Push a single time series to set the TSDB min time.
-	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+	metricLabelAdapters := [][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
 	startTime := util.TimeToMillis(time.Now())
 
 	currTimeReq := mimirpb.ToWriteRequest(
@@ -3684,14 +3685,14 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 		// If this returns false, test is skipped.
 		prepareConfig   func(limits *validation.Limits, instanceLimits *InstanceLimits) bool
 		beforeBenchmark func(b *testing.B, ingester *Ingester, numSeriesPerRequest int)
-		runBenchmark    func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample)
+		runBenchmark    func(b *testing.B, ingester *Ingester, metrics [][]mimirpb_custom.LabelAdapter, samples []mimirpb.Sample)
 	}{
 		"out of bound samples": {
 			prepareConfig: func(*validation.Limits, *InstanceLimits) bool { return true },
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a single time series to set the TSDB min time.
 				currTimeReq := mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: metricName}}},
+					[][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: metricName}}},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: util.TimeToMillis(time.Now())}},
 					nil,
 					nil,
@@ -3700,7 +3701,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				_, err := ingester.Push(ctx, currTimeReq)
 				require.NoError(b, err)
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb_custom.LabelAdapter, samples []mimirpb.Sample) {
 				expectedErr := storage.ErrOutOfBounds.Error()
 
 				// Push out of bound samples.
@@ -3717,7 +3718,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				// For each series, push a single sample with a timestamp greater than next pushes.
 				for i := 0; i < numSeriesPerRequest; i++ {
 					currTimeReq := mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}}},
+						[][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 						nil,
 						nil,
@@ -3727,7 +3728,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 					require.NoError(b, err)
 				}
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb_custom.LabelAdapter, samples []mimirpb.Sample) {
 				expectedErr := storage.ErrOutOfOrderSample.Error()
 
 				// Push out-of-order samples.
@@ -3746,7 +3747,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a series with a metric name different than the one used during the benchmark.
 				currTimeReq := mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "another"}}},
+					[][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "another"}}},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					nil,
@@ -3755,7 +3756,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				_, err := ingester.Push(ctx, currTimeReq)
 				require.NoError(b, err)
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb_custom.LabelAdapter, samples []mimirpb.Sample) {
 				// Push series with a different name than the one already pushed.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
@@ -3771,7 +3772,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a series with the same metric name but different labels than the one used during the benchmark.
 				currTimeReq := mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: "another"}}},
+					[][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: "another"}}},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					nil,
@@ -3780,7 +3781,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				_, err := ingester.Push(ctx, currTimeReq)
 				require.NoError(b, err)
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb_custom.LabelAdapter, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API)) // nolint:errcheck
@@ -3803,7 +3804,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 
 				ingester.ingestionRate.Tick()
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb_custom.LabelAdapter, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
@@ -3825,7 +3826,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
 				require.NoError(b, err)
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb_custom.LabelAdapter, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
@@ -3845,7 +3846,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
 				require.NoError(b, err)
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb_custom.LabelAdapter, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
 					verifyErrorString(b, err, "max series limit reached")
@@ -3863,7 +3864,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(_ *testing.B, ingester *Ingester, _ int) {
 				ingester.inflightPushRequests.Inc()
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb_custom.LabelAdapter, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
 					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
 					verifyErrorString(b, err, "too many inflight push requests")
@@ -3911,10 +3912,10 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 					testData.beforeBenchmark(b, ingester, scenario.numSeriesPerRequest)
 
 					// Prepare the request.
-					metrics := make([][]mimirpb.LabelAdapter, 0, scenario.numSeriesPerRequest)
+					metrics := make([][]mimirpb_custom.LabelAdapter, 0, scenario.numSeriesPerRequest)
 					samples := make([]mimirpb.Sample, 0, scenario.numSeriesPerRequest)
 					for i := 0; i < scenario.numSeriesPerRequest; i++ {
-						metrics = append(metrics, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}})
+						metrics = append(metrics, []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}})
 						samples = append(samples, mimirpb.Sample{Value: float64(i), TimestampMs: sampleTimestamp})
 					}
 
@@ -4980,11 +4981,11 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 			batchSize := min(maxBatchSize, numSeries-o)
 
 			// Generate metrics and samples (1 for each series).
-			metrics := make([][]mimirpb.LabelAdapter, 0, batchSize)
+			metrics := make([][]mimirpb_custom.LabelAdapter, 0, batchSize)
 			samples := make([]mimirpb.Sample, 0, batchSize)
 
 			for s := 0; s < batchSize; s++ {
-				metrics = append(metrics, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: fmt.Sprintf("test_%d", o+s)}})
+				metrics = append(metrics, []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: fmt.Sprintf("test_%d", o+s)}})
 				samples = append(samples, mimirpb.Sample{
 					TimestampMs: ts,
 					Value:       1,
@@ -6136,7 +6137,7 @@ func mockHistogramWriteRequest(lbls labels.Labels, timestampMs int64, histIdx in
 		h := util_test.GenerateTestHistogram(histIdx)
 		histograms = []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(timestampMs, h)}
 	}
-	return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(lbls)}, histograms, nil)
+	return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([][]mimirpb_custom.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(lbls)}, histograms, nil)
 }
 
 func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestampMs int64) (*mimirpb.WriteRequest, *client.QueryResponse, *client.QueryStreamResponse, *client.QueryStreamResponse) {
@@ -6147,7 +6148,7 @@ func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestamp
 		},
 	}
 
-	req := mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(lbls)}, samples, nil, nil, mimirpb.API)
+	req := mimirpb.ToWriteRequest([][]mimirpb_custom.LabelAdapter{mimirpb.FromLabelsToLabelAdapters(lbls)}, samples, nil, nil, mimirpb.API)
 
 	// Generate the expected response
 	expectedQueryRes := &client.QueryResponse{
@@ -8032,7 +8033,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"test": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}},
+						[][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						[]*mimirpb.MetricMetadata{
@@ -8051,7 +8052,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"test": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
+						[][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
@@ -8059,7 +8060,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test2"}}}, // another series
+						[][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "test2"}}}, // another series
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
 						nil,
@@ -8078,7 +8079,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"user1": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
+						[][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
@@ -8088,7 +8089,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 
 				"user2": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test2"}}}, // another series
+						[][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "test2"}}}, // another series
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
 						nil,
@@ -8107,7 +8108,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"user1": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
+						[][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
@@ -8115,7 +8116,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
+						[][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
 						nil,
@@ -8504,7 +8505,7 @@ func prepareRequestForTargetRequestDuration(ctx context.Context, t *testing.T, i
 }
 
 func generateSamplesForLabel(baseLabels labels.Labels, series, samples int) *mimirpb.WriteRequest {
-	lbls := make([][]mimirpb.LabelAdapter, 0, series*samples)
+	lbls := make([][]mimirpb_custom.LabelAdapter, 0, series*samples)
 	ss := make([]mimirpb.Sample, 0, series*samples)
 
 	for s := 0; s < series; s++ {
@@ -8557,8 +8558,8 @@ func matrixToSamples(m model.Matrix) []mimirpb.Sample {
 }
 
 // Return one copy of the labels per sample
-func matrixToLables(m model.Matrix) [][]mimirpb.LabelAdapter {
-	var labels [][]mimirpb.LabelAdapter
+func matrixToLables(m model.Matrix) [][]mimirpb_custom.LabelAdapter {
+	var labels [][]mimirpb_custom.LabelAdapter
 	for _, ss := range m {
 		for range ss.Values {
 			labels = append(labels, mimirpb.FromMetricsToLabelAdapters(ss.Metric))
@@ -8782,7 +8783,7 @@ func TestIngester_Push_SeriesWithBlankLabel(t *testing.T) {
 	})
 
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-	lbls := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: ""}, {Name: "bar", Value: ""}}}
+	lbls := [][]mimirpb_custom.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: ""}, {Name: "bar", Value: ""}}}
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = ing.Push(ctx, mimirpb.ToWriteRequest(
@@ -8840,7 +8841,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 
 	userID := "1"
 	// Series
-	labels1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
+	labels1 := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: 0,
 		Value:       1,
@@ -8849,7 +8850,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		TimestampMs: 1,
 		Value:       2,
 	}
-	labels3 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	labels3 := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
 	sample3 := mimirpb.Sample{
 		TimestampMs: 1,
 		Value:       3,
@@ -8860,12 +8861,12 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 
 	// Append only one series and one metadata first, expect no error.
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{labels1}, []mimirpb.Sample{sample1}, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
+	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb_custom.LabelAdapter{labels1}, []mimirpb.Sample{sample1}, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
 	require.NoError(t, err)
 
 	testLimits := func() {
 		// Append to two series, expect series-exceeded error.
-		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb_custom.LabelAdapter{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
 		expectedErr := newErrorWithStatus(wrapOrAnnotateWithUser(newPerUserSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerUser(userID)), userID), codes.FailedPrecondition)
 		checkErrorWithStatus(t, err, expectedErr)
 
@@ -8942,7 +8943,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
 
 	userID := "1"
-	labels1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
+	labels1 := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: 0,
 		Value:       1,
@@ -8951,7 +8952,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		TimestampMs: 1,
 		Value:       2,
 	}
-	labels3 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	labels3 := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
 	sample3 := mimirpb.Sample{
 		TimestampMs: 1,
 		Value:       3,
@@ -8963,12 +8964,12 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 
 	// Append only one series and one metadata first, expect no error.
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{labels1}, []mimirpb.Sample{sample1}, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
+	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb_custom.LabelAdapter{labels1}, []mimirpb.Sample{sample1}, nil, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
 	require.NoError(t, err)
 
 	testLimits := func() {
 		// Append two series, expect series-exceeded error.
-		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb_custom.LabelAdapter{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
 		expectedErr := newErrorWithStatus(wrapOrAnnotateWithUser(newPerMetricSeriesLimitReachedError(ing.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels3), userID), codes.FailedPrecondition)
 		checkErrorWithStatus(t, err, expectedErr)
 
@@ -9016,7 +9017,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 }
 
 // Construct a set of realistic-looking samples, all with slightly different label sets
-func benchmarkData(nSeries int) (allLabels [][]mimirpb.LabelAdapter, allSamples []mimirpb.Sample) {
+func benchmarkData(nSeries int) (allLabels [][]mimirpb_custom.LabelAdapter, allSamples []mimirpb.Sample) {
 	// Real example from Kubernetes' embedded cAdvisor metrics, lightly obfuscated.
 	var benchmarkLabels = labels.FromStrings(
 		model.MetricNameLabel, "container_cpu_usage_seconds_total",
@@ -9065,30 +9066,30 @@ func (t *TenantLimitsMock) ByUserID(userID string) *validation.Limits {
 }
 
 func TestIngesterActiveSeries(t *testing.T) {
-	labelsToPush := [][]mimirpb.LabelAdapter{
+	labelsToPush := [][]mimirpb_custom.LabelAdapter{
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
-	labelsToPushHist := [][]mimirpb.LabelAdapter{
+	labelsToPushHist := [][]mimirpb_custom.LabelAdapter{
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
 
-	req := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
+	req := func(lbls []mimirpb_custom.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
 		return mimirpb.ToWriteRequest(
-			[][]mimirpb.LabelAdapter{lbls},
+			[][]mimirpb_custom.LabelAdapter{lbls},
 			[]mimirpb.Sample{{Value: 1, TimestampMs: t.UnixMilli()}},
 			nil,
 			nil,
 			mimirpb.API,
 		)
 	}
-	reqHist := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
-		return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{lbls},
+	reqHist := func(lbls []mimirpb_custom.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
+		return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([][]mimirpb_custom.LabelAdapter{lbls},
 			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(t.UnixMilli(), util_test.GenerateTestGaugeHistogram(1))}, nil)
 	}
 
@@ -9425,30 +9426,30 @@ func TestIngesterActiveSeries(t *testing.T) {
 }
 
 func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
-	labelsToPush := [][]mimirpb.LabelAdapter{
+	labelsToPush := [][]mimirpb_custom.LabelAdapter{
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
 		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
-	labelsToPushHist := [][]mimirpb.LabelAdapter{
+	labelsToPushHist := [][]mimirpb_custom.LabelAdapter{
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
 		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
 
-	req := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
+	req := func(lbls []mimirpb_custom.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
 		return mimirpb.ToWriteRequest(
-			[][]mimirpb.LabelAdapter{lbls},
+			[][]mimirpb_custom.LabelAdapter{lbls},
 			[]mimirpb.Sample{{Value: 1, TimestampMs: t.UnixMilli()}},
 			nil,
 			nil,
 			mimirpb.API,
 		)
 	}
-	reqHist := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
-		return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([][]mimirpb.LabelAdapter{lbls},
+	reqHist := func(lbls []mimirpb_custom.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
+		return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries([][]mimirpb_custom.LabelAdapter{lbls},
 			[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(t.UnixMilli(), util_test.GenerateTestGaugeHistogram(1))}, nil)
 	}
 
@@ -9954,7 +9955,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 	}
 }
 
-func pushWithUser(t *testing.T, ingester *Ingester, labelsToPush [][]mimirpb.LabelAdapter, userID string, req func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest) {
+func pushWithUser(t *testing.T, ingester *Ingester, labelsToPush [][]mimirpb_custom.LabelAdapter, userID string, req func(lbls []mimirpb_custom.LabelAdapter, t time.Time) *mimirpb.WriteRequest) {
 	for _, label := range labelsToPush {
 		ctx := user.InjectOrgID(context.Background(), userID)
 		_, err := ingester.Push(ctx, req(label, time.Now()))
@@ -9987,7 +9988,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 }
 
 func testIngesterOutOfOrder(t *testing.T,
-	makeWriteRequest func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest,
+	makeWriteRequest func(start, end int64, s []mimirpb_custom.LabelAdapter) *mimirpb.WriteRequest,
 	makeExpectedSamples func(start, end int64, m model.Metric) model.Matrix) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
@@ -10031,7 +10032,7 @@ func testIngesterOutOfOrder(t *testing.T,
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
-		s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
+		s := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
 		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
 		if expErr {
@@ -10248,7 +10249,7 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 }
 
 func testIngesterOutOfOrderCompactHead(t *testing.T,
-	makeWriteRequest func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest,
+	makeWriteRequest func(start, end int64, s []mimirpb_custom.LabelAdapter) *mimirpb.WriteRequest,
 	makeExpectedSamples func(start, end int64, m model.Metric) model.Matrix) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Hour      // Long enough to not be reached during the test.
@@ -10282,7 +10283,7 @@ func testIngesterOutOfOrderCompactHead(t *testing.T,
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
-		s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
+		s := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
 		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
 		require.NoError(t, err)
@@ -10332,7 +10333,7 @@ func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
 	for name, tc := range ingesterSampleTypeScenarios {
 		t.Run(name, func(t *testing.T) {
 			testIngesterOutOfOrderCompactHeadStillActive(t,
-				func(ts int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+				func(ts int64, s []mimirpb_custom.LabelAdapter) *mimirpb.WriteRequest {
 					return tc.makeWriteRequest(ts, ts, s)
 				})
 		})
@@ -10340,7 +10341,7 @@ func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
 }
 
 func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
-	makeWriteRequest func(ts int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest) {
+	makeWriteRequest func(ts int64, s []mimirpb_custom.LabelAdapter) *mimirpb.WriteRequest) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
 
@@ -10366,7 +10367,7 @@ func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	pushSamples := func(ts int64, series string) {
-		wReq := makeWriteRequest(ts*time.Minute.Milliseconds(), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "series", Value: series}})
+		wReq := makeWriteRequest(ts*time.Minute.Milliseconds(), []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "series", Value: series}})
 		_, err = i.Push(ctx, wReq)
 		require.NoError(t, err)
 	}
@@ -10451,9 +10452,9 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 				start = start * time.Minute.Milliseconds()
 				end = end * time.Minute.Milliseconds()
 
-				s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
+				s := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
 				var samples []mimirpb.Sample
-				var lbls [][]mimirpb.LabelAdapter
+				var lbls [][]mimirpb_custom.LabelAdapter
 				for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
 					samples = append(samples, mimirpb.Sample{
 						TimestampMs: ts,
@@ -10576,7 +10577,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 	ing := newIngester()
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
 
-	labels1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
+	labels1 := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: 0,
 		Value:       1,
@@ -10588,8 +10589,8 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 	// Append only one series and one metadata first, expect no error.
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = ing.Push(ctx, mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{metadata1}, mimirpb.API).
-		AddFloatSeries([][]mimirpb.LabelAdapter{labels1}, []mimirpb.Sample{sample1}, nil).
-		AddHistogramSeries([][]mimirpb.LabelAdapter{labels1}, sampleHistograms, nil))
+		AddFloatSeries([][]mimirpb_custom.LabelAdapter{labels1}, []mimirpb.Sample{sample1}, nil).
+		AddHistogramSeries([][]mimirpb_custom.LabelAdapter{labels1}, sampleHistograms, nil))
 	require.NoError(t, err)
 
 	expectedMetrics := `
@@ -10641,7 +10642,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 
 	// Append only one series and one metadata first, expect no error.
 	_, err = ing.Push(ctx, mimirpb.NewWriteRequest([]*mimirpb.MetricMetadata{metadata2}, mimirpb.API).
-		AddHistogramSeries([][]mimirpb.LabelAdapter{labels1}, sampleHistograms, nil))
+		AddHistogramSeries([][]mimirpb_custom.LabelAdapter{labels1}, sampleHistograms, nil))
 	require.NoError(t, err)
 
 	expectedMetrics = `
@@ -10712,7 +10713,7 @@ func TestIngester_GetOpenTSDBsConcurrencyConfig(t *testing.T) {
 }
 
 func TestIngester_PushWithSampledErrors(t *testing.T) {
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabelAdapters := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricNames := []string{
 		"cortex_discarded_samples_total",
 	}
@@ -10732,14 +10733,14 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 		"should soft fail on sample out-of-order": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					nil,
 					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
 					nil,
@@ -10761,7 +10762,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 		"should soft fail on all samples out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -10794,7 +10795,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 		"should soft fail on all histograms out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -10828,7 +10829,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 		"should soft fail on all samples and histograms out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -10863,7 +10864,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 		"should soft fail on some samples out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -10899,7 +10900,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 		"should soft fail on some samples with timestamp too far in future in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: now.UnixMilli()}},
 					nil,
 					nil,
@@ -10969,8 +10970,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 								Samples: []mimirpb.Sample{
 									{Value: 1, TimestampMs: now.UnixMilli()}},
 								Exemplars: []mimirpb.Exemplar{
-									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, Value: 1, TimestampMs: now.UnixMilli()},
-									{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}, Value: 2, TimestampMs: now.UnixMilli() + (86400 * 1000)},
+									{Labels: []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "111"}}, Value: 1, TimestampMs: now.UnixMilli()},
+									{Labels: []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "222"}}, Value: 2, TimestampMs: now.UnixMilli() + (86400 * 1000)},
 								},
 							},
 						},
@@ -10978,22 +10979,22 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []globalerror.ErrorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[0]), codes.InvalidArgument),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "222"}}), users[1]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "222"}}), users[0]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarTimestampTooFarInFutureError(model.Time(now.UnixMilli()+(86400*1000)), metricLabelAdapters, []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "222"}}), users[1]), codes.InvalidArgument),
 			},
 			expectedSampling: false,
 		},
 		"should soft fail on two different sample values at the same timestamp": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					nil,
 					mimirpb.API,
 				),
 				mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[][]mimirpb_custom.LabelAdapter{metricLabelAdapters},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: 1575043969}},
 					nil,
 					nil,
@@ -11021,10 +11022,10 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 					Timeseries: []mimirpb.PreallocTimeseries{
 						{
 							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Labels: []mimirpb_custom.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
 								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -11035,8 +11036,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				},
 			},
 			expectedErrs: []globalerror.ErrorWithStatus{
-				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[0]), codes.InvalidArgument),
-				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[1]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}}), users[0]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb_custom.LabelAdapter{{Name: "traceID", Value: "123"}}), users[1]), codes.InvalidArgument),
 			},
 			expectedSampling: false,
 		},
@@ -11194,8 +11195,8 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 
 	userID := "1"
 	timestamp := int64(1575043969)
-	metricLabelAdapters1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "bar"}}
-	metricLabelAdapters2 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "biz"}}
+	metricLabelAdapters1 := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "bar"}}
+	metricLabelAdapters2 := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "biz"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: timestamp + 1,
 		Value:       1,
@@ -11212,7 +11213,7 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	// Append only one series first, expect no error.
-	res, err := client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1}, []mimirpb.Sample{sample1}, nil, nil, mimirpb.API))
+	res, err := client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb_custom.LabelAdapter{metricLabelAdapters1}, []mimirpb.Sample{sample1}, nil, nil, mimirpb.API))
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
@@ -11225,7 +11226,7 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 	// - all 10 samples as discarded.
 	for i := 0; i < 2*errorSampleRate; i++ {
 		// Append 2 series first, expect max-series-per-user error.
-		_, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
+		_, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb_custom.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
 		require.Error(t, err)
 		status, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
@@ -11298,8 +11299,8 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 
 	userID := "1"
 	timestamp := int64(1575043969)
-	metricLabelAdapters1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "bar"}}
-	metricLabelAdapters2 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "biz"}}
+	metricLabelAdapters1 := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "bar"}}
+	metricLabelAdapters2 := []mimirpb_custom.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "biz"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: timestamp + 1,
 		Value:       1,
@@ -11316,7 +11317,7 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	// Append only one series first, expect no error.
-	res, err := client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1}, []mimirpb.Sample{sample1}, nil, nil, mimirpb.API))
+	res, err := client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb_custom.LabelAdapter{metricLabelAdapters1}, []mimirpb.Sample{sample1}, nil, nil, mimirpb.API))
 	require.NoError(t, err)
 	require.NotNil(t, res)
 
@@ -11329,7 +11330,7 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 	// - all 10 samples as discarded.
 	for i := 0; i < 2*errorSampleRate; i++ {
 		// Append 2 series first, expect max-series-per-user error.
-		_, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
+		_, err = client.Push(ctx, mimirpb.ToWriteRequest([][]mimirpb_custom.LabelAdapter{metricLabelAdapters1, metricLabelAdapters2}, []mimirpb.Sample{sample2, sample3}, nil, nil, mimirpb.API))
 		require.Error(t, err)
 		status, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
@@ -11762,13 +11763,13 @@ func pushWithSimulatedGRPCHandler(ctx context.Context, i *Ingester, req *mimirpb
 }
 
 var ingesterSampleTypeScenarios = map[string]struct {
-	makeWriteRequest    func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest
+	makeWriteRequest    func(start, end int64, s []mimirpb_custom.LabelAdapter) *mimirpb.WriteRequest
 	makeExpectedSamples func(start, end int64, m model.Metric) model.Matrix
 }{
 	"float": {
-		makeWriteRequest: func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+		makeWriteRequest: func(start, end int64, s []mimirpb_custom.LabelAdapter) *mimirpb.WriteRequest {
 			var samples []mimirpb.Sample
-			var lbls [][]mimirpb.LabelAdapter
+			var lbls [][]mimirpb_custom.LabelAdapter
 			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
 				samples = append(samples, mimirpb.Sample{
 					TimestampMs: ts,
@@ -11793,9 +11794,9 @@ var ingesterSampleTypeScenarios = map[string]struct {
 		},
 	},
 	"int histogram": {
-		makeWriteRequest: func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+		makeWriteRequest: func(start, end int64, s []mimirpb_custom.LabelAdapter) *mimirpb.WriteRequest {
 			var histograms []mimirpb.Histogram
-			var lbls [][]mimirpb.LabelAdapter
+			var lbls [][]mimirpb_custom.LabelAdapter
 			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
 				h := util_test.GenerateTestHistogram(int(ts))
 				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(ts, h))
@@ -11818,9 +11819,9 @@ var ingesterSampleTypeScenarios = map[string]struct {
 		},
 	},
 	"float histogram": {
-		makeWriteRequest: func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+		makeWriteRequest: func(start, end int64, s []mimirpb_custom.LabelAdapter) *mimirpb.WriteRequest {
 			var histograms []mimirpb.Histogram
-			var lbls [][]mimirpb.LabelAdapter
+			var lbls [][]mimirpb_custom.LabelAdapter
 			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
 				h := util_test.GenerateTestFloatHistogram(int(ts))
 				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(ts, h))
