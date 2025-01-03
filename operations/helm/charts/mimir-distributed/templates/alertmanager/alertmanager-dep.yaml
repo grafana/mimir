@@ -45,7 +45,7 @@ spec:
       {{- end }}
       containers:
         - name: alertmanager
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "alertmanager") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=alertmanager"

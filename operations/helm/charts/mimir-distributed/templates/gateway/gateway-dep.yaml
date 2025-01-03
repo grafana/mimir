@@ -52,7 +52,7 @@ spec:
       containers:
         {{- if $isGEMGateway }}
         - name: gateway
-          image: {{ include "mimir.imageReference" $ | quote }}
+          image: {{ include "mimir.imageReference" (dict "ctx" $ "component" "gateway") }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           args:
             - "-target=gateway"

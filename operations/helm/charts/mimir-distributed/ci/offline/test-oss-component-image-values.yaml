@@ -1,0 +1,84 @@
+# General setup
+minio:
+  enabled: false
+
+# Individual components under test
+alertmanager:
+  image:
+    repository: test/alertmanager
+    tag: 1-alertmanager
+
+compactor:
+  image:
+    repository: test/compactor
+    tag: 1-compactor
+
+continuous_test:
+  image:
+    repository: test/continuous_test
+    tag: 1-continuous-test
+
+distributor:
+  image:
+    repository: test/distributor
+    tag: 1-distributor
+
+gateway:
+  image:
+    repository: test/gateway
+    tag: 1-gateway
+
+ingester:
+  image:
+    repository: test/ingester
+    tag: 1-ingester
+
+overrides_exporter:
+  image:
+    repository: test/overrides_exporter
+    tag: 1-overrides-exporter
+
+querier:
+  image:
+    repository: test/querier
+    tag: 1-querier
+
+query_frontend:
+  image:
+    repository: test/query_frontend
+    tag: 1-query-frontend
+
+query_scheduler:
+  image:
+    repository: test/query_scheduler
+    tag: 1-query-scheduler
+
+ruler:
+  image:
+    repository: test/ruler
+    tag: 1-ruler
+
+ruler_querier:
+  image:
+    repository: test/ruler_querier
+    tag: 1-ruler-querier
+
+ruler_query_frontend:
+  image:
+    repository: test/ruler_query_frontend
+    tag: 1-ruler-query-frontend
+
+ruler_query_scheduler:
+  image:
+    repository: test/ruler_query_scheduler
+    tag: 1-ruler-query-scheduler
+
+smoke_test:
+  image:
+    repository: test/smoke_test
+    tag: 1-smoke-test
+
+store_gateway:
+  image:
+    repository: test/store_gateway
+    tag: 1-store-gateway

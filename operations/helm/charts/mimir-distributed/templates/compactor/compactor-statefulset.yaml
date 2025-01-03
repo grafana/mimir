@@ -115,7 +115,7 @@ spec:
         {{ toYaml .Values.compactor.extraContainers | nindent 8 }}
         {{- end }}
         - name: compactor
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "compactor") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=compactor"
