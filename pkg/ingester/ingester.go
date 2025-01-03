@@ -2405,14 +2405,30 @@ func putChunkSeriesNode(sn *chunkSeriesNode) {
 	chunkSeriesNodePool.Put(sn)
 }
 
+func getEnvWithDefault(envName, def string) string {
+	if val := os.Getenv(envName); val != "" {
+		return val
+	}
+	return def
+}
+
+var (
+	troubleshootMetricName = getEnvWithDefault("TROUBLESHOOT_METRIC_NAME", "tempo_request_duration_seconds_bucket")
+	troubleshootNotRegexp  = getEnvWithDefault("TROUBLESHOOT_NOT_REGEXP", "true") == "true"
+	troubleshootNotEqual   = getEnvWithDefault("TROUBLESHOOT_NOT_EQUAL", "false") == "true"
+	troubleshootAll        = getEnvWithDefault("TROUBLESHOOT_ALL", "false") == "true"
+
+	troubleshootLogAllBadSeries = getEnvWithDefault("TROUBLESHOOT_LOG_ALL_BAD_SERIES", "false") == "true"
+)
+
 func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.ChunkQuerier, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (*chunkSeriesNode, int, error) {
 	// Enable troubleshooting only for specific queries.
-	troubleshoot := false
-	for _, m := range matchers {
-		if m.Name == labels.MetricName {
-			troubleshoot = m.Type == labels.MatchEqual && m.Value == "tempo_request_duration_seconds_bucket"
-			break
-		}
+	troubleshoot := troubleshootAll
+	for i := 0; !troubleshoot && i < len(matchers); i++ {
+		m := matchers[i]
+		troubleshoot = (m.Name == labels.MetricName && m.Type == labels.MatchEqual && m.Value == troubleshootMetricName) ||
+			(troubleshootNotRegexp && m.Type == labels.MatchNotRegexp) ||
+			(troubleshootNotEqual && m.Type == labels.MatchNotEqual)
 	}
 
 	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
@@ -2452,8 +2468,8 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 				if !m.Matches(val) {
 					level.Error(i.logger).Log("msg", "ingester fetched series that doesn't match the input matcher", "series", seriesLabels.String(), "first_failing_matcher", m.String(), "matchers", util.MatchersStringer(matchers).String())
 
-					// Stop troubleshooting this request, given we've already found a bad series.
-					troubleshoot = false
+					// Stop troubleshooting this request unless we set TROUBLESHOOT_LOG_ALL_BAD_SERIES=true
+					troubleshoot = troubleshootLogAllBadSeries
 					break
 				}
 			}
