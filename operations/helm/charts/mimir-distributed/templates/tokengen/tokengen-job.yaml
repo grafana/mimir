@@ -40,7 +40,7 @@ spec:
         {{- toYaml .Values.tokengenJob.initContainers | nindent 8 }}
       containers:
         - name: tokengen
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "tokengen") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=tokengen"

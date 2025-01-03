@@ -40,7 +40,7 @@ spec:
       {{- end }}
       containers:
         - name: federation-frontend
-          image: {{ include "mimir.imageReference" . | quote }}
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "federation-frontend") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=federation-frontend"

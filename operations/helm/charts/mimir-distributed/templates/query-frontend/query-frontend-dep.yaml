@@ -46,7 +46,7 @@ spec:
       {{- end }}
       containers:
         - name: query-frontend
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "query-frontend") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=query-frontend"

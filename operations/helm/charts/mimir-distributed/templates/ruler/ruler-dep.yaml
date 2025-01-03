@@ -43,7 +43,7 @@ spec:
       {{- end }}
       containers:
         - name: ruler
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "ruler") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=ruler"

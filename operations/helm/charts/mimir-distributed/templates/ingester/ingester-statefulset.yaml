@@ -125,7 +125,7 @@ spec:
         {{ toYaml .Values.ingester.extraContainers | nindent 8 }}
         {{- end }}
         - name: ingester
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "ingester") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=ingester"
