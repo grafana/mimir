@@ -549,15 +549,16 @@ func irateIdelta(isRate bool) RangeVectorStepFunction {
 		// Histograms are ignored
 		fHead, fTail := step.Floats.UnsafePoints()
 
-		// We need at least two samples to calculate irateIdelta or idelta.
-		if len(fHead)+len(fTail) < 2 {
+		lenTail := len(fTail)
+		lenHead := len(fHead)
+
+		// We need at least two samples to calculate irate or idelta
+		if lenHead+lenTail < 2 {
 			return 0, false, nil, nil
 		}
 
 		var lastSample promql.FPoint
 		var previousSample promql.FPoint
-		lenTail := len(fTail)
-		lenHead := len(fHead)
 
 		// If tail has more than two samples, we should use the last two samples from tail.
 		// If tail has only one sample, the last sample is from the tail and the previous sample is last point in the head.
