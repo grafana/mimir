@@ -2099,7 +2099,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 	{
 		matchersCopy := make([]*labels.Matcher, 0, len(matchers))
 		for _, m := range matchers {
-			matchersCopy = append(matchersCopy, labels.MustNewMatcher(m.Type, m.Name, m.Value))
+			matchersCopy = append(matchersCopy, labels.MustNewMatcher(m.Type, strings.Clone(m.Name), strings.Clone(m.Value)))
 		}
 		tsdb.SortMatchers(matchersCopy)
 		ctx = context.WithValue(ctx, tsdb.OriginalMatchersCtxKey, matchersCopy)
