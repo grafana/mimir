@@ -345,7 +345,9 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	).Wrap(transport.NewHandler(handlerCfg, rt, logger, nil, nil)))
 
 	httpServer := http.Server{
-		Handler: r,
+		Handler:      r,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 	defer httpServer.Shutdown(context.Background()) //nolint:errcheck
 
