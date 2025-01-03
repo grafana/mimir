@@ -546,6 +546,7 @@ var Idelta = FunctionOverRangeVectorDefinition{
 
 func irate(isRate bool) RangeVectorStepFunction {
 	return func(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+		// Histograms are ignored
 		fHead, fTail := step.Floats.UnsafePoints()
 
 		// We need at least two samples to calculate irate or idelta.
