@@ -82,6 +82,7 @@ spec:
             name: test-ingress-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: grafana/mimir:r323-f8e07d0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"

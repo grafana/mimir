@@ -93,6 +93,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: grafana/mimir:r323-f8e07d0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -236,6 +237,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: grafana/mimir:r323-f8e07d0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -379,6 +381,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: grafana/mimir:r323-f8e07d0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"

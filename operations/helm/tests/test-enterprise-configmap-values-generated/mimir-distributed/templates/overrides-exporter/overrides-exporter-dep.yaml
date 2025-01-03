@@ -45,6 +45,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: overrides-exporter
+          image: grafana/enterprise-metrics:r323-bf0aeaa5
           imagePullPolicy: IfNotPresent
           args:
             - "-target=overrides-exporter"
