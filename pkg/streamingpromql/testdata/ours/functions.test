@@ -557,6 +557,72 @@ eval range from 0 to 20m step 1m deriv(metric[3m1s])
 
 clear
 
+# Testing irate and idelta
+# nh stands for native histogram
+# nhcb stands for native histogram custom bucket
+load 1m
+  metric{case="1 float"} 9
+  metric{case="2 floats"} 1 5
+  metric{case="all floats with reset"} 1 7 1 7 1 7 1 7
+  metric{case="2 floats with missing middle sample"} 1 _ 5
+  metric{case="2 floats with missing 2 middle samples"} 1 _ _ 5
+  metric{case="2 floats with missing last sample"} 1 5 _
+  metric{case="2 floats with NaN middle sample"} 1 NaN 5
+  metric{case="2 floats with NaN 2 middle samples"} 1 NaN NaN 5
+  metric{case="2 floats with NaN last sample"} 1 5 NaN
+  metric{case="2 floats with Inf middle sample"} 1 Inf 5
+  metric{case="2 floats with Inf 2 middle samples"} 1 Inf Inf 5
+  metric{case="2 floats with Inf last sample"} 1 5 Inf
+  metric{case="all NaN"} NaN NaN NaN NaN
+  metric{case="all Inf"} Inf Inf Inf Inf
+  metric{case="2 floats and nh middle sample"} 1 {{schema:3 sum:0 count:0 buckets:[1 2 1]}} 5
+  metric{case="2 floats and nh last sample"} 1 5 {{schema:3 sum:0 count:0 buckets:[1 2 1]}}
+  metric{case="2 floats and nhcb middle sample"} 1 {{schema:-53 sum:0 count:0 custom_values:[5 10] buckets:[1 4]}} 5
+  metric{case="2 floats and nhcb last sample"} 1 5 {{schema:-53 sum:0 count:0 custom_values:[5 10] buckets:[1 4]}}
+  metric{case="all nh"} {{schema:3 sum:0 count:0 buckets:[1 2 1]}} {{schema:3 sum:0 count:0 buckets:[1 2 1]}}
+  metric{case="all nhcb"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
+
+eval range from 0 to 8m step 1m idelta(metric[3m1s])
+  {case="2 floats"} _ 4 4 4
+  {case="2 floats and nh last sample"} _ 4 4 4
+  {case="2 floats and nh middle sample"} _ _ 4 4
+  {case="2 floats and nhcb last sample"} _ 4 4 4
+  {case="2 floats and nhcb middle sample"} _ _ 4 4
+  {case="2 floats with Inf 2 middle samples"} _ Inf NaN -Inf -Inf -Inf
+  {case="2 floats with Inf last sample"} _ 4 Inf Inf Inf
+  {case="2 floats with Inf middle sample"} _ Inf -Inf -Inf -Inf
+  {case="2 floats with NaN 2 middle samples"} _ NaN NaN NaN NaN NaN
+  {case="2 floats with NaN last sample"} _ 4 NaN NaN NaN
+  {case="2 floats with NaN middle sample"} _ NaN NaN NaN NaN
+  {case="2 floats with missing last sample"} _ 4 4 4
+  {case="2 floats with missing middle sample"} _ _ 4 4
+  {case="2 floats with missing 2 middle samples"} _ _ _ 4
+  {case="all Inf"} _ NaN NaN NaN NaN NaN
+  {case="all NaN"} _ NaN NaN NaN NaN NaN
+  {case="all floats with reset"} _ 6 -6 6 -6 6 -6 6 6
+
+eval range from 0 to 8m step 1m irate(metric[3m1s])
+  {case="2 floats"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
+  {case="2 floats and nh last sample"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
+  {case="2 floats and nh middle sample"} _ _ 0.03333333333333333 0.03333333333333333
+  {case="2 floats and nhcb last sample"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
+  {case="2 floats and nhcb middle sample"} _ _ 0.03333333333333333 0.03333333333333333
+  {case="2 floats with Inf 2 middle samples"} _ Inf NaN 0.08333333333333333 0.08333333333333333 0.08333333333333333
+  {case="2 floats with Inf last sample"} _ 0.06666666666666667 Inf Inf Inf
+  {case="2 floats with Inf middle sample"} _ Inf 0.08333333333333333 0.08333333333333333 0.08333333333333333
+  {case="2 floats with NaN 2 middle samples"} _ NaN NaN NaN NaN NaN
+  {case="2 floats with NaN last sample"} _ 0.06666666666666667 NaN NaN NaN
+  {case="2 floats with NaN middle sample"} _ NaN NaN NaN NaN
+  {case="2 floats with missing last sample"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
+  {case="2 floats with missing middle sample"} _ _ 0.03333333333333333 0.03333333333333333
+  {case="2 floats with missing 2 middle samples"} _ _ _ 0.022222222222222223
+  {case="all Inf"} _ NaN NaN NaN NaN NaN
+  {case="all NaN"} _ NaN NaN NaN NaN NaN
+  {case="all floats with reset"} _ 0.1 0.016666666666666666 0.1 0.016666666666666666 0.1 0.016666666666666666 0.1 0.1
+
+
+clear
+
 load 1m
   some_metric_count{env="prod", cluster="eu"} _ _ _ 0+1x4
   some_metric_count{env="prod", cluster="us"} _ _ _ 0+2x4
