@@ -57,6 +57,8 @@ func main() {
 		err := pushSeriesToIngester(ctx, pod, addr)
 		if err != nil {
 			log.Printf("failed to check ingester %s: %v", pod, err)
+		} else {
+			log.Printf("Pushed to %s", pod)
 		}
 	}
 
