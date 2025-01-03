@@ -536,39 +536,41 @@ func linearRegression(head, tail []promql.FPoint, interceptTime int64) (slope, i
 
 var Irate = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               irate(true),
+	StepFunc:               irateIdelta(true),
 }
 
 var Idelta = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               irate(false),
+	StepFunc:               irateIdelta(false),
 }
 
-func irate(isRate bool) RangeVectorStepFunction {
+func irateIdelta(isRate bool) RangeVectorStepFunction {
 	return func(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 		// Histograms are ignored
 		fHead, fTail := step.Floats.UnsafePoints()
 
-		// We need at least two samples to calculate irate or idelta.
+		// We need at least two samples to calculate irateIdelta or idelta.
 		if len(fHead)+len(fTail) < 2 {
 			return 0, false, nil, nil
 		}
 
 		var lastSample promql.FPoint
 		var previousSample promql.FPoint
+		lenTail := len(fTail)
+		lenHead := len(fHead)
 
 		// If tail has more than two samples, we should use the last two samples from tail.
 		// If tail has only one sample, the last sample is from the tail and the previous sample is last point in the head.
 		// Otherwise, last two samples are all in the head.
-		if len(fTail) >= 2 {
-			lastSample = fTail[len(fTail)-1]
-			previousSample = fTail[len(fTail)-2]
-		} else if len(fTail) == 1 {
+		if lenTail >= 2 {
+			lastSample = fTail[lenTail-1]
+			previousSample = fTail[lenTail-2]
+		} else if lenTail == 1 {
 			lastSample = fTail[0]
-			previousSample = fHead[len(fHead)-1]
+			previousSample = fHead[lenHead-1]
 		} else {
-			lastSample = fHead[len(fHead)-1]
-			previousSample = fHead[len(fHead)-2]
+			lastSample = fHead[lenHead-1]
+			previousSample = fHead[lenHead-2]
 		}
 
 		var resultValue float64
