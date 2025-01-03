@@ -7,7 +7,6 @@ syntax = "proto3";
 
 package alertmanagerpb;
 import "gogoproto/gogo.proto";
-
 option go_package = "alertmanagerpb";
 
 import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";

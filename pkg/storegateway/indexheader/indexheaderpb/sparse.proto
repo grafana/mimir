@@ -6,8 +6,7 @@ package indexheaderpb;
 
 option go_package = "indexheaderpb";
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-
+import "gogoproto/gogo.proto";
 // Do not generate XXX fields to reduce memory footprint.
 option (gogoproto.goproto_unkeyed_all) = false;
 option (gogoproto.goproto_unrecognized_all) = false;
