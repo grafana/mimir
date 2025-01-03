@@ -24,6 +24,7 @@ import (
 type InstantVectorSelector struct {
 	Selector                 *Selector
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	Stats                    *types.QueryStats
 
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
@@ -143,6 +144,12 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
 			lastHistogramT = t
 			lastHistogram = h
+
+			// For consistency with PromQL engine:
+			// h.Size() returns the size of the histogram in bytes,
+			// add 8 bytes to account for the timestamp,
+			// and divide by 16 to get the number of samples.
+			v.Stats.TotalSamples += int64((h.Size() + 8) / 16)
 		} else {
 			// Only create the slice once we know the series is a histogram or not.
 			if len(data.Floats) == 0 {
@@ -154,6 +161,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				}
 			}
 			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
+			v.Stats.TotalSamples++
 		}
 	}
 
