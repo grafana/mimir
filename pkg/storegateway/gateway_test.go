@@ -1185,7 +1185,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 
 					actualMetrics := make([]string, 0, len(seriesSet))
 					for _, s := range seriesSet {
-						actualMetrics = append(actualMetrics, promLabels(s).Get(labels.MetricName))
+						actualMetrics = append(actualMetrics, promLabels(s.Series).Get(labels.MetricName))
 					}
 					assert.ElementsMatch(t, testData.expectedMetrics, actualMetrics)
 				})
@@ -1333,7 +1333,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 		t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
 			// Keep track of all responses received (by shard).
 			responsesMx := sync.Mutex{}
-			responses := make(map[int][][]*storepb.Series)
+			responses := make(map[int][][]*storepb.CustomSeries)
 
 			wg := sync.WaitGroup{}
 			wg.Add(numQueries)
@@ -1373,7 +1373,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 			totalSeries := 0
 
 			for shardIndex := 0; shardIndex < shardCount; shardIndex++ {
-				var expected []*storepb.Series
+				var expected []*storepb.CustomSeries
 
 				for resIdx, res := range responses[shardIndex] {
 					// We consider the 1st response for a shard as the expected one

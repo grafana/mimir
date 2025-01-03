@@ -1,0 +1,31 @@
+diff --git a/pkg/storegateway/storepb/rpc.pb.go b/pkg/storegateway/storepb/rpc.pb.go
+index 79b2d8863c..afc2785d4a 100644
+--- a/pkg/storegateway/storepb/rpc.pb.go
++++ b/pkg/storegateway/storepb/rpc.pb.go
+@@ -2364,7 +2364,7 @@ func (m *SeriesResponse) Unmarshal(dAtA []byte) error {
+ 			if postIndex > l {
+ 				return io.ErrUnexpectedEOF
+ 			}
+-			v := &CustomSeries{}
++			v := &Series{}
+ 			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+ 				return err
+ 			}
+@@ -2501,7 +2501,7 @@ func (m *SeriesResponse) Unmarshal(dAtA []byte) error {
+ 			if postIndex > l {
+ 				return io.ErrUnexpectedEOF
+ 			}
+-			v := &CustomStreamingSeriesBatch{}
++			v := &StreamingSeriesBatch{}
+ 			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+ 				return err
+ 			}
+@@ -2536,7 +2536,7 @@ func (m *SeriesResponse) Unmarshal(dAtA []byte) error {
+ 			if postIndex > l {
+ 				return io.ErrUnexpectedEOF
+ 			}
+-			v := &CustomStreamingChunksBatch{}
++			v := &StreamingChunksBatch{}
+ 			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+ 				return err
+ 			}

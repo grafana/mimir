@@ -122,7 +122,6 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
 	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
-
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
