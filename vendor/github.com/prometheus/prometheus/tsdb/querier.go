@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 
 	"github.com/oklog/ulid"
 
@@ -189,9 +190,42 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 	return NewBlockChunkSeriesSet(blockID, index, chunks, tombstones, p, mint, maxt, disableTrimming)
 }
 
+// MatchersStringer implements Stringer for a slice of Prometheus matchers. Useful for logging.
+type MatchersStringer []*labels.Matcher
+
+func (s MatchersStringer) String() string {
+	var b strings.Builder
+	for _, m := range s {
+		if b.Len() > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(m.String())
+	}
+
+	return b.String()
+}
+
+
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. The resulting postings are not ordered by series.
 func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+	// Ensure the matchers are the expected ones.
+	if expectedMatchersAny := ctx.Value(OriginalMatchersCtxKey); expectedMatchersAny != nil	{
+		expectedMatchers := expectedMatchersAny.([]*labels.Matcher)
+
+		// Make a copy of the actual matchers and then sort them for a stable comparison.
+		actualMatchers := make([]*labels.Matcher, 0, len(ms))
+		for _, m := range ms {
+			actualMatchers = append(actualMatchers, labels.MustNewMatcher(m.Type, m.Name, m.Value))
+		}
+		SortMatchers(actualMatchers)
+
+		// Ensure they're the same.
+		if !SameMatchers(expectedMatchers, actualMatchers) {
+			fmt.Println("PostingsForMatchers() received matchers different than the expected ones, expected:", MatchersStringer(expectedMatchers).String(), "actual:", MatchersStringer(actualMatchers).String())
+		}
+	}
+
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
 	// Optimization for case like {l=~".", l!="1"}.
@@ -338,6 +372,34 @@ func postingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *labels.M
 
 	it := ix.PostingsForLabelMatching(ctx, m.Name, m.Matches)
 	return it, it.Err()
+}
+
+type ctxKey int
+
+const OriginalMatchersCtxKey ctxKey = 1
+
+func SortMatchers(matchers []*labels.Matcher) {
+	slices.SortStableFunc(matchers, func(i, j *labels.Matcher) int {
+		if i.Type != j.Type {
+			return int(i.Type) - int(j.Type)
+		}
+		if i.Name != j.Name {
+			return strings.Compare(i.Name, j.Name)
+		}
+		return strings.Compare(i.Value, j.Value)
+	})
+}
+
+func SameMatchers(a, b []*labels.Matcher) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, m := range a {
+		if m.Type != b[i].Type || m.Name != b[i].Name || m.Value != b[i].Value {
+			return false
+		}
+	}
+	return true
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.

@@ -94,6 +94,10 @@ overrides_exporter:
     enabled: true
     wait_stability_min_duration: 30s
 
+frontend:
+  parallelize_shardable_queries: true
+  query_sharding_target_series_per_shard: 0
+
 limits:
   native_histograms_ingestion_enabled: true
   ingestion_rate: 100000

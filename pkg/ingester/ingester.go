@@ -2095,6 +2095,16 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
+	// Copy the matchers and inject them in the context for debugging purposes.
+	{
+		matchersCopy := make([]*labels.Matcher, 0, len(matchers))
+		for _, m := range matchers {
+			matchersCopy = append(matchersCopy, labels.MustNewMatcher(m.Type, m.Name, m.Value))
+		}
+		tsdb.SortMatchers(matchersCopy)
+		ctx = context.WithValue(ctx, tsdb.OriginalMatchersCtxKey, matchersCopy)
+	}
+
 	i.metrics.queries.Inc()
 
 	// Enforce read consistency before getting TSDB (covers the case the tenant's data has not been ingested
