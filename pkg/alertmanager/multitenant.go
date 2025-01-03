@@ -1092,9 +1092,9 @@ func (am *MultitenantAlertmanager) ReplicateStateForUser(ctx context.Context, us
 		}
 
 		switch resp.Status {
-		case alertmanagerpb.MERGE_ERROR:
+		case alertmanagerpb.UpdateStateStatus_MERGE_ERROR:
 			level.Error(am.logger).Log("msg", "state replication failed", "user", userID, "key", part.Key, "err", resp.Error)
-		case alertmanagerpb.USER_NOT_FOUND:
+		case alertmanagerpb.UpdateStateStatus_USER_NOT_FOUND:
 			level.Debug(am.logger).Log("msg", "user not found while trying to replicate state", "user", userID, "key", part.Key)
 		}
 		return nil
@@ -1140,13 +1140,13 @@ func (am *MultitenantAlertmanager) ReadFullStateForUser(ctx context.Context, use
 		}
 
 		switch resp.Status {
-		case alertmanagerpb.READ_OK:
+		case alertmanagerpb.ReadStateStatus_READ_OK:
 			resultsMtx.Lock()
 			results = append(results, resp.State)
 			resultsMtx.Unlock()
-		case alertmanagerpb.READ_ERROR:
+		case alertmanagerpb.ReadStateStatus_READ_ERROR:
 			level.Error(am.logger).Log("msg", "error trying to read state", "addr", addr, "user", userID, "err", resp.Error)
-		case alertmanagerpb.READ_USER_NOT_FOUND:
+		case alertmanagerpb.ReadStateStatus_READ_USER_NOT_FOUND:
 			level.Debug(am.logger).Log("msg", "user not found while trying to read state", "addr", addr, "user", userID)
 			resultsMtx.Lock()
 			notFound++
@@ -1188,19 +1188,19 @@ func (am *MultitenantAlertmanager) UpdateState(ctx context.Context, part *cluste
 		// We can end up trying to replicate state to an alertmanager that is no longer available due to e.g. a ring topology change.
 		level.Debug(am.logger).Log("msg", "user does not have an alertmanager in this instance", "user", userID)
 		return &alertmanagerpb.UpdateStateResponse{
-			Status: alertmanagerpb.USER_NOT_FOUND,
+			Status: alertmanagerpb.UpdateStateStatus_USER_NOT_FOUND,
 			Error:  "alertmanager for this user does not exists",
 		}, nil
 	}
 
 	if err = userAM.mergePartialExternalState(part); err != nil {
 		return &alertmanagerpb.UpdateStateResponse{
-			Status: alertmanagerpb.MERGE_ERROR,
+			Status: alertmanagerpb.UpdateStateStatus_MERGE_ERROR,
 			Error:  err.Error(),
 		}, nil
 	}
 
-	return &alertmanagerpb.UpdateStateResponse{Status: alertmanagerpb.OK}, nil
+	return &alertmanagerpb.UpdateStateResponse{Status: alertmanagerpb.UpdateStateStatus_OK}, nil
 }
 
 // deleteUnusedRemoteUserState deletes state objects in remote storage for users that are no longer configured.
@@ -1292,7 +1292,7 @@ func (am *MultitenantAlertmanager) ReadState(ctx context.Context, _ *alertmanage
 	if !ok {
 		level.Debug(am.logger).Log("msg", "user does not have an alertmanager in this instance", "user", userID)
 		return &alertmanagerpb.ReadStateResponse{
-			Status: alertmanagerpb.READ_USER_NOT_FOUND,
+			Status: alertmanagerpb.ReadStateStatus_READ_USER_NOT_FOUND,
 			Error:  "alertmanager for this user does not exists",
 		}, nil
 	}
@@ -1300,13 +1300,13 @@ func (am *MultitenantAlertmanager) ReadState(ctx context.Context, _ *alertmanage
 	state, err := userAM.getFullState()
 	if err != nil {
 		return &alertmanagerpb.ReadStateResponse{
-			Status: alertmanagerpb.READ_ERROR,
+			Status: alertmanagerpb.ReadStateStatus_READ_ERROR,
 			Error:  err.Error(),
 		}, nil
 	}
 
 	return &alertmanagerpb.ReadStateResponse{
-		Status: alertmanagerpb.READ_OK,
+		Status: alertmanagerpb.ReadStateStatus_READ_OK,
 		State:  state,
 	}, nil
 }

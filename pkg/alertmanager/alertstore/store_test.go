@@ -122,11 +122,11 @@ func TestAlertStore_SetAndGetAlertConfig(t *testing.T) {
 
 		config, err := store.GetAlertConfig(ctx, "user-1")
 		require.NoError(t, err)
-		assert.Equal(t, user1Cfg, config)
+		assert.EqualExportedValues(t, user1Cfg, config)
 
 		config, err = store.GetAlertConfig(ctx, "user-2")
 		require.NoError(t, err)
-		assert.Equal(t, user2Cfg, config)
+		assert.EqualExportedValues(t, user2Cfg, config)
 
 		// Ensure the config is stored at the expected location. Without this check
 		// we have no guarantee that the objects are stored at the expected location.
@@ -165,7 +165,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.NotContains(t, configs, "user-2")
-		assert.Equal(t, user1Cfg, configs["user-1"].Mimir)
+		assert.EqualExportedValues(t, user1Cfg, configs["user-1"].Mimir)
 
 		// Add another user config.
 		require.NoError(t, store.SetAlertConfig(ctx, user2Cfg))
@@ -176,10 +176,10 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, configs, "user-1")
 		assert.Contains(t, configs, "user-2")
-		assert.Equal(t, user1Cfg, configs["user-1"].Mimir)
-		assert.Equal(t, alertspb.GrafanaAlertConfigDesc{}, configs["user-1"].Grafana)
-		assert.Equal(t, user2Cfg, configs["user-2"].Mimir)
-		assert.Equal(t, user2GrafanaCfg, configs["user-2"].Grafana)
+		assert.EqualExportedValues(t, user1Cfg, configs["user-1"].Mimir)
+		assert.EqualExportedValues(t, alertspb.GrafanaAlertConfigDesc{}, configs["user-1"].Grafana)
+		assert.EqualExportedValues(t, user2Cfg, configs["user-2"].Mimir)
+		assert.EqualExportedValues(t, user2GrafanaCfg, configs["user-2"].Grafana)
 	}
 }
 
@@ -198,11 +198,11 @@ func TestAlertStore_DeleteAlertConfig(t *testing.T) {
 	// Ensure the config has been correctly uploaded.
 	config, err := store.GetAlertConfig(ctx, "user-1")
 	require.NoError(t, err)
-	assert.Equal(t, user1Cfg, config)
+	assert.EqualExportedValues(t, user1Cfg, config)
 
 	config, err = store.GetAlertConfig(ctx, "user-2")
 	require.NoError(t, err)
-	assert.Equal(t, user2Cfg, config)
+	assert.EqualExportedValues(t, user2Cfg, config)
 
 	// Delete the config for user-1.
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user-1"))
@@ -213,7 +213,7 @@ func TestAlertStore_DeleteAlertConfig(t *testing.T) {
 
 	config, err = store.GetAlertConfig(ctx, "user-2")
 	require.NoError(t, err)
-	assert.Equal(t, user2Cfg, config)
+	assert.EqualExportedValues(t, user2Cfg, config)
 
 	// Delete again (should be idempotent).
 	require.NoError(t, store.DeleteAlertConfig(ctx, "user-1"))
@@ -272,11 +272,11 @@ func TestBucketAlertStore_GetSetDeleteFullState(t *testing.T) {
 
 		res, err := store.GetFullState(ctx, "user-1")
 		require.NoError(t, err)
-		assert.Equal(t, state1, res)
+		assert.EqualExportedValues(t, state1, res)
 
 		res, err = store.GetFullState(ctx, "user-2")
 		require.NoError(t, err)
-		assert.Equal(t, state2, res)
+		assert.EqualExportedValues(t, state2, res)
 
 		// Ensure the config is stored at the expected location. Without this check
 		// we have no guarantee that the objects are stored at the expected location.
@@ -303,7 +303,7 @@ func TestBucketAlertStore_GetSetDeleteFullState(t *testing.T) {
 
 		res, err := store.GetFullState(ctx, "user-2")
 		require.NoError(t, err)
-		assert.Equal(t, state2, res)
+		assert.EqualExportedValues(t, state2, res)
 
 		users, err := store.ListUsersWithFullState(ctx)
 		assert.NoError(t, err)
@@ -338,11 +338,11 @@ func TestBucketAlertStore_GetSetDeleteGrafanaState(t *testing.T) {
 
 		res, err := store.GetFullGrafanaState(ctx, "user-1")
 		require.NoError(t, err)
-		assert.Equal(t, state1, res)
+		assert.EqualExportedValues(t, state1, res)
 
 		res, err = store.GetFullGrafanaState(ctx, "user-2")
 		require.NoError(t, err)
-		assert.Equal(t, state2, res)
+		assert.EqualExportedValues(t, state2, res)
 
 		// Ensure the state is stored at the expected location. Without this check
 		// we have no guarantee that the objects are stored at the expected location.
@@ -365,7 +365,7 @@ func TestBucketAlertStore_GetSetDeleteGrafanaState(t *testing.T) {
 
 		res, err := store.GetFullGrafanaState(ctx, "user-2")
 		require.NoError(t, err)
-		assert.Equal(t, state2, res)
+		assert.EqualExportedValues(t, state2, res)
 
 		// Delete again (should be idempotent).
 		require.NoError(t, store.DeleteGrafanaAlertConfig(ctx, "user-1"))
@@ -397,11 +397,11 @@ func TestBucketAlertStore_GetSetDeleteGrafanaAlertConfig(t *testing.T) {
 
 		res, err := store.GetGrafanaAlertConfig(ctx, "user-1")
 		require.NoError(t, err)
-		assert.Equal(t, cfg1, res)
+		assert.EqualExportedValues(t, cfg1, res)
 
 		res, err = store.GetGrafanaAlertConfig(ctx, "user-2")
 		require.NoError(t, err)
-		assert.Equal(t, cfg2, res)
+		assert.EqualExportedValues(t, cfg2, res)
 
 		// Ensure the config is stored at the expected location. Without this check
 		// we have no guarantee that the objects are stored at the expected location.
@@ -424,7 +424,7 @@ func TestBucketAlertStore_GetSetDeleteGrafanaAlertConfig(t *testing.T) {
 
 		res, err := store.GetGrafanaAlertConfig(ctx, "user-2")
 		require.NoError(t, err)
-		assert.Equal(t, cfg2, res)
+		assert.EqualExportedValues(t, cfg2, res)
 
 		// Delete again (should be idempotent).
 		require.NoError(t, store.DeleteGrafanaAlertConfig(ctx, "user-1"))
