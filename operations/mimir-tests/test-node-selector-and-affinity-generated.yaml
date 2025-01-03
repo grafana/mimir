@@ -904,8 +904,6 @@ spec:
           name: overrides
       nodeSelector:
         workload: mimir
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 900
       volumes:
       - configMap:
@@ -1030,8 +1028,6 @@ spec:
           name: overrides
       nodeSelector:
         workload: mimir
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 1200
       volumes:
       - configMap:
@@ -1390,8 +1386,6 @@ spec:
           name: overrides
       nodeSelector:
         workload: mimir
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 120
       volumes:
       - configMap:
