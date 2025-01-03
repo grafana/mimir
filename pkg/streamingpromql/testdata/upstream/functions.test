@@ -224,16 +224,14 @@ load 5m
 	http_requests_total{path="/foo"}	0+10x10
 	http_requests_total{path="/bar"}	0+10x5 0+10x5
 
-# Unsupported by streaming engine.
-# eval instant at 50m irate(http_requests_total[50m])
-# 	{path="/foo"} .03333333333333333333
-# 	{path="/bar"} .03333333333333333333
+eval instant at 50m irate(http_requests_total[50m])
+	{path="/foo"} .03333333333333333333
+	{path="/bar"} .03333333333333333333
 
 # Counter reset.
-# Unsupported by streaming engine.
-# eval instant at 30m irate(http_requests_total[50m])
-# 	{path="/foo"} .03333333333333333333
-# 	{path="/bar"} 0
+eval instant at 30m irate(http_requests_total[50m])
+	{path="/foo"} .03333333333333333333
+	{path="/bar"} 0
 
 clear
 
@@ -254,10 +252,9 @@ load 5m
 	http_requests{path="/foo"}	0 50 100 150
 	http_requests{path="/bar"}	0 50 100 50
 
-# Unsupported by streaming engine.
-# eval instant at 20m idelta(http_requests[20m])
-# 	{path="/foo"} 50
-# 	{path="/bar"} -50
+eval instant at 20m idelta(http_requests[20m])
+	{path="/foo"} 50
+	{path="/bar"} -50
 
 clear
 
