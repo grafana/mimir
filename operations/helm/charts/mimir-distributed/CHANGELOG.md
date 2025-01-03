@@ -28,6 +28,7 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
+* [ENHANCEMENT] Add extra values for KEDA auto scaling. #10265
 
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
