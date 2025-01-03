@@ -33,6 +33,7 @@
 * [CHANGE] Update rollout-operator version to 0.22.0. #10229
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [BUGFIX] Ports in container rollout-operator. #10273
+* [BUGFIX] Remove run as root user from Statefulsets and Flusher job
 
 ### Mimirtool
 

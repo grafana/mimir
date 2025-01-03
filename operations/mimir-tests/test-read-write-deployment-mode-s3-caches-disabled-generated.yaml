@@ -659,8 +659,6 @@ spec:
           name: mimir-backend-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 900
       volumes:
       - configMap:
@@ -828,8 +826,6 @@ spec:
           name: mimir-backend-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 900
       volumes:
       - configMap:
@@ -997,8 +993,6 @@ spec:
           name: mimir-backend-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 900
       volumes:
       - configMap:
@@ -1135,8 +1129,6 @@ spec:
           name: mimir-write-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 1200
       volumes:
       - configMap:
@@ -1273,8 +1265,6 @@ spec:
           name: mimir-write-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 1200
       volumes:
       - configMap:
@@ -1411,8 +1401,6 @@ spec:
           name: mimir-write-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 1200
       volumes:
       - configMap:

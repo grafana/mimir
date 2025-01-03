@@ -121,7 +121,6 @@
     statefulSet.mixin.metadata.withLabels({ name: name }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name }) +
     statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
-    statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     (if podManagementPolicy != null then statefulSet.mixin.spec.withPodManagementPolicy(podManagementPolicy) else {}) +
     (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)),
