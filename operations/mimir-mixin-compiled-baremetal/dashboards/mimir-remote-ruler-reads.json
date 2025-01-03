@@ -819,7 +819,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
-                  "description": "### 99th Percentile Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
+                  "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -858,18 +858,18 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "label_replace(histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
+                        "expr": "label_replace(histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
                         "format": "time_series",
                         "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
                         "refId": "A"
                      }
                   ],
-                  "title": "99th Percentile Latency by Queue Dimension",
+                  "title": "99th Percentile Latency by Expected Query Component",
                   "type": "timeseries"
                },
                {
                   "datasource": "$datasource",
-                  "description": "### 50th Percentile Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
+                  "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -908,18 +908,18 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "label_replace(histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
+                        "expr": "label_replace(histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
                         "format": "time_series",
                         "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
                         "refId": "A"
                      }
                   ],
-                  "title": "50th Percentile Latency by Queue Dimension",
+                  "title": "50th Percentile Latency by Expected Query Component",
                   "type": "timeseries"
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Average Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
+                  "description": "### Average Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -958,13 +958,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "label_replace(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions), \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
+                        "expr": "label_replace(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
                         "format": "time_series",
                         "legendFormat": "Average: {{ additional_queue_dimensions }}",
                         "refId": "C"
                      }
                   ],
-                  "title": "Average Latency by Queue Dimension",
+                  "title": "Average Latency by Expected Query Component",
                   "type": "timeseries"
                }
             ],
@@ -972,7 +972,74 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ruler-query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions",
+            "title": "Ruler-query-scheduler Latency (Time in Queue) Breakout by Expected Query Component",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
+                  "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 12,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 12,
+                  "targets": [
+                     {
+                        "expr": "sum by(query_component) (cortex_query_scheduler_querier_inflight_requests{quantile=\"0.99\", cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"})",
+                        "format": "time_series",
+                        "legendFormat": "99th Percentile Inflight Requests: {{query_component}}",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "sum(cortex_query_scheduler_connected_querier_clients{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"})",
+                        "format": "time_series",
+                        "legendFormat": "Total Connected Queriers",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Ruler-query-scheduler <-> Querier Inflight Requests",
             "titleSize": "h6"
          },
          {
@@ -1140,7 +1207,7 @@
                         }
                      ]
                   },
-                  "id": 12,
+                  "id": 13,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1188,7 +1255,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 13,
+                  "id": 14,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1249,7 +1316,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 14,
+                  "id": 15,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1361,7 +1428,7 @@
                         }
                      ]
                   },
-                  "id": 15,
+                  "id": 16,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1422,7 +1489,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 16,
+                  "id": 17,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1483,7 +1550,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 17,
+                  "id": 18,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1532,7 +1599,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 18,
+                  "id": 19,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1581,7 +1648,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 19,
+                  "id": 20,
                   "links": [ ],
                   "options": {
                      "legend": {
