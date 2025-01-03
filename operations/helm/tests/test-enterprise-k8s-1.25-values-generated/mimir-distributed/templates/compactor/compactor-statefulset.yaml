@@ -81,6 +81,7 @@ spec:
           emptyDir: {}
       containers:
         - name: compactor
+          image: grafana/enterprise-metrics:r323-bf0aeaa5
           imagePullPolicy: IfNotPresent
           args:
             - "-target=compactor"

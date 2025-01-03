@@ -53,6 +53,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: querier
+          image: grafana/mimir:r323-f8e07d0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=querier"

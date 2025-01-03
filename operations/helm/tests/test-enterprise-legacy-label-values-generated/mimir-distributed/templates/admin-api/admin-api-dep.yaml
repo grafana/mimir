@@ -43,6 +43,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: admin-api
+          image: grafana/enterprise-metrics:r323-bf0aeaa5
           imagePullPolicy: IfNotPresent
           args:
             - "-target=admin-api"

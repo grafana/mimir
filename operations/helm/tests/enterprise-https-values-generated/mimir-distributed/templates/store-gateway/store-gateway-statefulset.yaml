@@ -93,6 +93,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: grafana/enterprise-metrics:r323-bf0aeaa5
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -244,6 +245,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: grafana/enterprise-metrics:r323-bf0aeaa5
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -395,6 +397,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: grafana/enterprise-metrics:r323-bf0aeaa5
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
