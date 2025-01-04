@@ -6,9 +6,8 @@
 syntax = "proto3";
 
 package alertmanagerpb;
-import "gogoproto/gogo.proto";
 
-option go_package = "alertmanagerpb";
+option go_package = "github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb";
 
 import "github.com/grafana/dskit/httpgrpc/httpgrpc.proto";
 import "github.com/prometheus/alertmanager/cluster/clusterpb/cluster.proto";
@@ -42,7 +41,6 @@ enum ReadStateStatus {
 
 message ReadStateResponse {
   // Alertmanager (clusterpb) types do not have Equal methods.
-  option (gogoproto.equal) = false;
 
   ReadStateStatus status = 1;
   string error = 2;

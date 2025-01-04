@@ -1,0 +1,69 @@
+# options for analysis running
+run:
+  modules-download-mode: readonly
+  deadline: 10m
+  timeout: 10m
+
+issues:
+  exclude-rules:
+    # ignore code duplication in tests
+    - path: _test\.go
+      linters:
+        - dupl
+    # ignore deprecation warnings for golang/protobuf
+    - path: \.go
+      linters:
+        - staticcheck
+      text: '"github.com/golang/protobuf/proto" is deprecated'
+
+# output configuration options
+output:
+  print-issued-lines: false
+  sort-results: true
+  uniq-by-line: false
+
+linters:
+  # these are disabled by default so turn them on
+  enable:
+    - dupl
+    - errname
+    - exhaustive
+    - gochecknoinits
+    - goimports
+    - gosec
+    - lll
+    - nolintlint
+    - predeclared
+    - revive
+    - stylecheck
+    - unconvert
+    - unparam
+
+linters-settings:
+  exhaustive:
+    # check switch statements in generated files also
+    check-generated: false
+    # indicates that switch statements are to be considered exhaustive if a
+    # 'default' case is present, even if all enum members aren't listed in the
+    # switch
+    default-signifies-exhaustive: true
+  goimports:
+    local-prefixes: github.com/CrowdStrike
+  lll:
+    line-length: 200
+    tab-width: 4
+  nolintlint:
+    # allow unused nolint to avoid false positives for linters that are temporarily disabled under go1.18
+    # . see https://github.com/golangci/golangci-lint/issues/2649
+    allow-unused: true
+    require-explanation: true
+  revive:
+    ignore-generated-header: true
+    min-confidence: 0
+  gosec:
+    excludes:
+      # disable "Potential integer overflow when converting between integer types"
+      # - we have to do A LOT of conversions between integer types when encoding/decoding so there
+      #   are lots of _potential_ overflows
+      # - more efficient to disable this check globally than for each line
+      - G115
