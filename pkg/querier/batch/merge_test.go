@@ -28,15 +28,15 @@ func TestMergeIter(t *testing.T) {
 			chunk4 := mkGenericChunk(t, model.TimeFromUnix(75), 100, enc)
 			chunk5 := mkGenericChunk(t, model.TimeFromUnix(100), 100, enc)
 
-			iter := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5}, nil)
 			testIter(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
-			iter = NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter = NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5}, nil)
 			testSeek(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
 
 			// Re-use iterator.
-			iter = NewGenericChunkMergeIterator(iter, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter = NewGenericChunkMergeIterator(iter, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5}, nil)
 			testIter(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
-			iter = NewGenericChunkMergeIterator(iter, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
+			iter = NewGenericChunkMergeIterator(iter, labels.EmptyLabels(), []GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5}, nil)
 			testSeek(t, 200, iter, enc, setNotCounterResetHintsAsUnknown)
 		})
 	}
@@ -57,10 +57,10 @@ func TestMergeHarder(t *testing.T) {
 				chunks = append(chunks, mkGenericChunk(t, from, samples, enc))
 				from = from.Add(time.Duration(offset) * time.Second)
 			}
-			iter := newMergeIterator(nil, chunks)
+			iter := newMergeIterator(nil, chunks, nil)
 			testIter(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc, setNotCounterResetHintsAsUnknown)
 
-			iter = newMergeIterator(nil, chunks)
+			iter = newMergeIterator(nil, chunks, nil)
 			testSeek(t, offset*numChunks+samples-offset, newIteratorAdapter(nil, iter, labels.EmptyLabels()), enc, setNotCounterResetHintsAsUnknown)
 		})
 	}
@@ -271,7 +271,7 @@ func TestMergeHistogramCheckHints(t *testing.T) {
 				},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
-					iter := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), tc.chunks)
+					iter := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), tc.chunks, nil)
 					for i, s := range tc.expectedSamples {
 						valType := iter.Next()
 						require.NotEqual(t, chunkenc.ValNone, valType, "expectedSamples has extra samples")
@@ -331,7 +331,7 @@ func TestMergeIteratorSeek(t *testing.T) {
 		}))
 	}
 
-	c3It := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), genericChunks)
+	c3It := NewGenericChunkMergeIterator(nil, labels.EmptyLabels(), genericChunks, nil)
 
 	c3It.Seek(15)
 	// These Next() calls are necessary to reproduce the bug.

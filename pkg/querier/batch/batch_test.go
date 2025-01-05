@@ -48,7 +48,7 @@ func BenchmarkNewChunkMergeIterator_CreateAndIterate(b *testing.B) {
 					fh *histogram.FloatHistogram
 				)
 				for n := 0; n < b.N; n++ {
-					it = NewChunkMergeIterator(it, lbls, chunks)
+					it = NewChunkMergeIterator(it, lbls, chunks, nil)
 					for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
 						switch valType {
 						case chunkenc.ValFloat:
@@ -77,7 +77,7 @@ func TestSeekCorrectlyDealWithSinglePointChunks(t *testing.T) {
 	chunkTwo := mkChunk(t, model.Time(10*step/time.Millisecond), 1, chunk.PrometheusXorChunk)
 	chunks := []chunk.Chunk{chunkOne, chunkTwo}
 
-	sut := NewChunkMergeIterator(nil, labels.EmptyLabels(), chunks)
+	sut := NewChunkMergeIterator(nil, labels.EmptyLabels(), chunks, nil)
 
 	// Following calls mimics Prometheus's query engine behaviour for VectorSelector.
 	require.Equal(t, chunkenc.ValFloat, sut.Next())
