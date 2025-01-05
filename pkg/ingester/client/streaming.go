@@ -43,10 +43,10 @@ type SeriesChunksStreamReader struct {
 	cleanup             func()
 	log                 log.Logger
 
-	seriesBatchChan chan []QueryStreamSeriesChunks
+	seriesBatchChan chan *QueryStreamResponse
 	errorChan       chan error
 	err             error
-	seriesBatch     []QueryStreamSeriesChunks
+	seriesBatch     *QueryStreamResponse
 
 	// Keeping the ingester name for debug logs.
 	ingesterName string
@@ -85,7 +85,7 @@ func (s *SeriesChunksStreamReader) Close() {
 // If an error occurs while streaming, a subsequent call to GetChunks will return an error.
 // To cancel buffering, cancel the context associated with this SeriesChunksStreamReader's client.Ingester_QueryStreamClient.
 func (s *SeriesChunksStreamReader) StartBuffering() {
-	s.seriesBatchChan = make(chan []QueryStreamSeriesChunks, 1)
+	s.seriesBatchChan = make(chan *QueryStreamResponse, 1)
 
 	// Important: to ensure that the goroutine does not become blocked and leak, the goroutine must only ever write to errorChan at most once.
 	s.errorChan = make(chan error, 1)
@@ -137,13 +137,13 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 		}
 
 		if len(msg.StreamingSeriesChunks) == 0 {
-			msg.FreeBuffer()
+			msg.Release()
 			continue
 		}
 
 		totalSeries += len(msg.StreamingSeriesChunks)
 		if totalSeries > s.expectedSeriesCount {
-			msg.FreeBuffer()
+			msg.Release()
 			return fmt.Errorf("expected to receive only %v series, but received at least %v series", s.expectedSeriesCount, totalSeries)
 		}
 
@@ -159,23 +159,10 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 
 		// The chunk count limit is enforced earlier, while we're reading series labels, so we don't need to do that here.
 		if err := s.queryLimiter.AddChunkBytes(chunkBytes); err != nil {
-			msg.FreeBuffer()
+			msg.Release()
 			return err
 		}
 
-		rslt := make([]QueryStreamSeriesChunks, 0, len(msg.StreamingSeriesChunks))
-		for _, chunks := range msg.StreamingSeriesChunks {
-			safeChunks := make([]Chunk, 0, len(chunks.Chunks))
-			for _, c := range chunks.Chunks {
-				safeData := make([]byte, len(c.Data))
-				copy(safeData, c.Data)
-				c.Data = safeData
-				safeChunks = append(safeChunks, c)
-			}
-			chunks.Chunks = safeChunks
-			rslt = append(rslt, chunks)
-		}
-		msg.FreeBuffer()
 		select {
 		case <-s.ctx.Done():
 			// Why do we abort if the context is done?
@@ -191,7 +178,7 @@ func (s *SeriesChunksStreamReader) readStream(log *spanlogger.SpanLogger) error 
 			// longer healthy. If that happens, we want to return the more informative error we'll get from Recv() above, not
 			// a generic 'context canceled' error.
 			return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
-		case s.seriesBatchChan <- rslt:
+		case s.seriesBatchChan <- msg:
 			// Batch enqueued successfully, nothing else to do for this batch.
 		}
 	}
@@ -212,22 +199,24 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) (_ []Chunk, err
 		s.err = err
 	}()
 
-	if len(s.seriesBatch) == 0 {
+	if s.seriesBatch == nil {
 		if err := s.readNextBatch(seriesIndex); err != nil {
 			return nil, err
 		}
 	}
 
-	series := s.seriesBatch[0]
+	series := s.seriesBatch.StreamingSeriesChunks[0]
 
 	// Discard the series we just read.
-	if len(s.seriesBatch) > 1 {
-		s.seriesBatch = s.seriesBatch[1:]
+	if len(s.seriesBatch.StreamingSeriesChunks) > 1 {
+		s.seriesBatch.StreamingSeriesChunks = s.seriesBatch.StreamingSeriesChunks[1:]
 	} else {
+		s.seriesBatch.Release()
 		s.seriesBatch = nil
 	}
 
 	if series.SeriesIndex != seriesIndex {
+		defer series.Release()
 		return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has series with index %v", seriesIndex, series.SeriesIndex)
 	}
 
@@ -243,11 +232,17 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) (_ []Chunk, err
 		//    is cancelled before the gRPC stream's Recv() returns EOF, this can result in misleading context cancellation errors being
 		//    logged and included in metrics and traces, when in fact the call succeeded.
 		if err := <-s.errorChan; err != nil {
+			series.Release()
 			return nil, fmt.Errorf("attempted to read series at index %v from ingester chunks stream, but the stream has failed: %w", seriesIndex, err)
 		}
 	}
 
-	return series.Chunks, nil
+	// Take ownership of chunks.
+	chks := series.Chunks
+	series.Chunks = nil
+	// TODO: Fix me.
+	// series.Release()
+	return chks, nil
 }
 
 func (s *SeriesChunksStreamReader) readNextBatch(seriesIndex uint64) error {
