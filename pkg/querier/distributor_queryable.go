@@ -126,7 +126,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		return storage.ErrSeriesSet(err)
 	}
 
-	sets := []storage.SeriesSet(nil)
+	var sets []storage.SeriesSet
 	if len(results.Timeseries) > 0 {
 		sets = append(sets, newTimeSeriesSeriesSet(results.Timeseries))
 	}
