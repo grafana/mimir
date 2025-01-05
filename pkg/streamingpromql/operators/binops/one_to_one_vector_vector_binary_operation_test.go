@@ -24,8 +24,8 @@ import (
 // The merging behaviour has many edge cases, so it's easier to test it directly from Go.
 //
 // Most of the edge cases are already covered by TestMergeSeries, so we focus on the logic
-// unique to VectorVectorBinaryOperation: converting conflicts to user-friendly error messages.
-func TestVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
+// unique to OneToOneVectorVectorBinaryOperation: converting conflicts to user-friendly error messages.
+func TestOneToOneVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
 	testCases := map[string]struct {
 		input                []types.InstantVectorSeriesData
 		sourceSeriesIndices  []int
@@ -188,7 +188,7 @@ func TestVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
-			o := &VectorVectorBinaryOperation{
+			o := &OneToOneVectorVectorBinaryOperation{
 				// Simulate an expression with "on (env)".
 				// This is used to generate error messages.
 				VectorMatching: parser.VectorMatching{
@@ -202,7 +202,7 @@ func TestVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
 				require.NoError(t, memoryConsumptionTracker.IncreaseMemoryConsumption(types.FPointSize*uint64(len(s.Floats))+types.HPointSize*uint64(len(s.Histograms))))
 			}
 
-			result, err := o.mergeOneSide(testCase.input, testCase.sourceSeriesIndices, testCase.sourceSeriesMetadata, "right")
+			result, err := o.mergeSingleSide(testCase.input, testCase.sourceSeriesIndices, testCase.sourceSeriesMetadata, "right")
 
 			if testCase.expectedError == "" {
 				require.NoError(t, err)
@@ -214,21 +214,21 @@ func TestVectorVectorBinaryOperation_SeriesMerging(t *testing.T) {
 	}
 }
 
-func TestVectorVectorBinaryOperation_Sorting(t *testing.T) {
+func TestOneToOneVectorVectorBinaryOperation_Sorting(t *testing.T) {
 	testCases := map[string]struct {
-		series []*binaryOperationOutputSeries
+		series []*oneToOneBinaryOperationOutputSeries
 
 		expectedOrderFavouringLeftSide  []int
 		expectedOrderFavouringRightSide []int
 	}{
 		"no output series": {
-			series: []*binaryOperationOutputSeries{},
+			series: []*oneToOneBinaryOperationOutputSeries{},
 
 			expectedOrderFavouringLeftSide:  []int{},
 			expectedOrderFavouringRightSide: []int{},
 		},
 		"single output series": {
-			series: []*binaryOperationOutputSeries{
+			series: []*oneToOneBinaryOperationOutputSeries{
 				{
 					leftSeriesIndices:  []int{4},
 					rightSeriesIndices: []int{1},
@@ -239,7 +239,7 @@ func TestVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			expectedOrderFavouringRightSide: []int{0},
 		},
 		"two output series, both with one input series, read from both sides in same order and already sorted correctly": {
-			series: []*binaryOperationOutputSeries{
+			series: []*oneToOneBinaryOperationOutputSeries{
 				{
 					leftSeriesIndices:  []int{1},
 					rightSeriesIndices: []int{1},
@@ -254,7 +254,7 @@ func TestVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			expectedOrderFavouringRightSide: []int{0, 1},
 		},
 		"two output series, both with one input series, read from both sides in same order but sorted incorrectly": {
-			series: []*binaryOperationOutputSeries{
+			series: []*oneToOneBinaryOperationOutputSeries{
 				{
 					leftSeriesIndices:  []int{2},
 					rightSeriesIndices: []int{2},
@@ -269,7 +269,7 @@ func TestVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			expectedOrderFavouringRightSide: []int{1, 0},
 		},
 		"two output series, both with one input series, read from both sides in different order": {
-			series: []*binaryOperationOutputSeries{
+			series: []*oneToOneBinaryOperationOutputSeries{
 				{
 					leftSeriesIndices:  []int{1},
 					rightSeriesIndices: []int{2},
@@ -284,7 +284,7 @@ func TestVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			expectedOrderFavouringRightSide: []int{1, 0},
 		},
 		"two output series, both with multiple input series": {
-			series: []*binaryOperationOutputSeries{
+			series: []*oneToOneBinaryOperationOutputSeries{
 				{
 					leftSeriesIndices:  []int{1, 2},
 					rightSeriesIndices: []int{0, 3},
@@ -299,7 +299,7 @@ func TestVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			expectedOrderFavouringRightSide: []int{1, 0},
 		},
 		"multiple output series, both with one input series, read from both sides in same order and already sorted correctly": {
-			series: []*binaryOperationOutputSeries{
+			series: []*oneToOneBinaryOperationOutputSeries{
 				{
 					leftSeriesIndices:  []int{1},
 					rightSeriesIndices: []int{1},
@@ -318,7 +318,7 @@ func TestVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			expectedOrderFavouringRightSide: []int{0, 1, 2},
 		},
 		"multiple output series, both with one input series, read from both sides in same order but sorted incorrectly": {
-			series: []*binaryOperationOutputSeries{
+			series: []*oneToOneBinaryOperationOutputSeries{
 				{
 					leftSeriesIndices:  []int{2},
 					rightSeriesIndices: []int{2},
@@ -337,7 +337,7 @@ func TestVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			expectedOrderFavouringRightSide: []int{2, 0, 1},
 		},
 		"multiple output series, both with one input series, read from both sides in different order": {
-			series: []*binaryOperationOutputSeries{
+			series: []*oneToOneBinaryOperationOutputSeries{
 				{
 					leftSeriesIndices:  []int{1},
 					rightSeriesIndices: []int{2},
@@ -356,7 +356,7 @@ func TestVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			expectedOrderFavouringRightSide: []int{2, 0, 1},
 		},
 		"multiple output series, with multiple input series each": {
-			series: []*binaryOperationOutputSeries{
+			series: []*oneToOneBinaryOperationOutputSeries{
 				{
 					leftSeriesIndices:  []int{4, 5, 10},
 					rightSeriesIndices: []int{2, 20},
@@ -375,7 +375,7 @@ func TestVectorVectorBinaryOperation_Sorting(t *testing.T) {
 			expectedOrderFavouringRightSide: []int{0, 2, 1},
 		},
 		"multiple output series which depend on the same input series": {
-			series: []*binaryOperationOutputSeries{
+			series: []*oneToOneBinaryOperationOutputSeries{
 				{
 					leftSeriesIndices:  []int{1},
 					rightSeriesIndices: []int{2},
@@ -409,8 +409,8 @@ func TestVectorVectorBinaryOperation_Sorting(t *testing.T) {
 				metadata[i] = types.SeriesMetadata{Labels: labels.FromStrings("series", strconv.Itoa(i))}
 			}
 
-			test := func(t *testing.T, series []*binaryOperationOutputSeries, metadata []types.SeriesMetadata, sorter sort.Interface, expectedOrder []int) {
-				expectedSeriesOrder := make([]*binaryOperationOutputSeries, len(series))
+			test := func(t *testing.T, series []*oneToOneBinaryOperationOutputSeries, metadata []types.SeriesMetadata, sorter sort.Interface, expectedOrder []int) {
+				expectedSeriesOrder := make([]*oneToOneBinaryOperationOutputSeries, len(series))
 				expectedMetadataOrder := make([]types.SeriesMetadata, len(metadata))
 
 				for outputIndex, inputIndex := range expectedOrder {
