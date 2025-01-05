@@ -34,8 +34,20 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 	series := streamingChunkSeries{
 		labels: labels.FromStrings("the-name", "the-value"),
 		sources: []client.StreamingSeriesSource{
-			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToFirstSource, chunkPresentInBothSources}}})},
-			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToSecondSource, chunkPresentInBothSources}}})},
+			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.CustomQueryStreamSeriesChunks{
+				{
+					QueryStreamSeriesChunks: &client.QueryStreamSeriesChunks{
+						SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToFirstSource, chunkPresentInBothSources},
+					},
+				},
+			})},
+			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.CustomQueryStreamSeriesChunks{
+				{
+					QueryStreamSeriesChunks: &client.QueryStreamSeriesChunks{
+						SeriesIndex: 0, Chunks: []client.Chunk{chunkUniqueToSecondSource, chunkPresentInBothSources},
+					},
+				},
+			})},
 		},
 		context: &streamingChunkSeriesContext{
 			queryMetrics: stats.NewQueryMetrics(reg),
@@ -48,7 +60,7 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 
 	expectedChunks, err := client.FromChunks(series.labels, []client.Chunk{chunkUniqueToFirstSource, chunkUniqueToSecondSource, chunkPresentInBothSources})
 	require.NoError(t, err)
-	assertChunkIteratorsEqual(t, iterator, batch.NewChunkMergeIterator(nil, series.labels, expectedChunks))
+	assertChunkIteratorsEqual(t, iterator, batch.NewChunkMergeIterator(nil, series.labels, expectedChunks, nil))
 
 	m, err := metrics.NewMetricFamilyMapFromGatherer(reg)
 	require.NoError(t, err)
@@ -97,7 +109,7 @@ func TestStreamingChunkSeries_StreamReaderReturnsError(t *testing.T) {
 		labels: labels.FromStrings("the-name", "the-value"),
 		// Create a stream reader that will always return an error because we'll try to read a series when it has no series to read.
 		sources: []client.StreamingSeriesSource{
-			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{})},
+			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.CustomQueryStreamSeriesChunks{})},
 		},
 		context: &streamingChunkSeriesContext{
 			queryMetrics: stats.NewQueryMetrics(reg),
@@ -114,7 +126,13 @@ func TestStreamingChunkSeries_CreateIteratorTwice(t *testing.T) {
 	series := streamingChunkSeries{
 		labels: labels.FromStrings("the-name", "the-value"),
 		sources: []client.StreamingSeriesSource{
-			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{{SeriesIndex: 0, Chunks: []client.Chunk{createTestChunk(t, 1500, 1.23)}}})},
+			{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.CustomQueryStreamSeriesChunks{
+				{
+					QueryStreamSeriesChunks: &client.QueryStreamSeriesChunks{
+						SeriesIndex: 0, Chunks: []client.Chunk{createTestChunk(t, 1500, 1.23)}},
+				},
+			},
+			)},
 		},
 		context: &streamingChunkSeriesContext{
 			queryMetrics: stats.NewQueryMetrics(prometheus.NewPedanticRegistry()),
@@ -144,7 +162,7 @@ func createTestChunk(t *testing.T, time int64, value float64) client.Chunk {
 	return chunks[0]
 }
 
-func createTestStreamReader(batches ...[]client.QueryStreamSeriesChunks) *client.SeriesChunksStreamReader {
+func createTestStreamReader(batches ...[]client.CustomQueryStreamSeriesChunks) *client.SeriesChunksStreamReader {
 	seriesCount := 0
 
 	for _, batch := range batches {
@@ -167,7 +185,7 @@ func createTestStreamReader(batches ...[]client.QueryStreamSeriesChunks) *client
 
 type mockQueryStreamClient struct {
 	ctx     context.Context
-	batches [][]client.QueryStreamSeriesChunks
+	batches [][]client.CustomQueryStreamSeriesChunks
 }
 
 func (m *mockQueryStreamClient) Recv() (*client.QueryStreamResponse, error) {
