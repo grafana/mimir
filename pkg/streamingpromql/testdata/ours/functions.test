@@ -25,11 +25,21 @@ eval range from 0 to 4m step 1m increase(some_metric_count[1m1s])
   {env="test", cluster="eu"} _ 180 183 183 183
   {env="test", cluster="us"} _ 240 244 244 244
 
+# Range query with delta.
+eval range from 0 to 4m step 1m delta(some_metric_count[1m1s])
+  {env="prod", cluster="eu"} _ 61 61 61 61
+  {env="prod", cluster="us"} _ 122 122 122 122
+  {env="test", cluster="eu"} _ 183 183 183 183
+  {env="test", cluster="us"} _ 244 244 244 244
+
 # If no series are matched, we shouldn't return any results.
 eval range from 0 to 4m step 1m rate(some_nonexistent_metric[1m])
   # Should return no results.
 
 eval range from 0 to 4m step 1m increase(some_nonexistent_metric[1m])
+  # Should return no results.
+
+eval range from 0 to 4m step 1m delta(some_nonexistent_metric[1m])
   # Should return no results.
 
 # Ensure we don't include points outside the range of each individual step.
