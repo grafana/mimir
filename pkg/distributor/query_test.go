@@ -47,7 +47,7 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 		shuffleShardSize  int
 		multiMatchers     [][]*labels.Matcher
 		maxSeriesPerQuery int
-		expectedResult    []mimirpb.TimeSeries
+		expectedResult    []mimirpb.CustomTimeSeries
 		expectedIngesters int
 		expectedErr       error
 	}{
@@ -55,16 +55,24 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 			multiMatchers: [][]*labels.Matcher{
 				{mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown")},
 			},
-			expectedResult:    []mimirpb.TimeSeries{},
+			expectedResult:    []mimirpb.CustomTimeSeries{},
 			expectedIngesters: numIngesters,
 		},
 		"should filter series by single matcher": {
 			multiMatchers: [][]*labels.Matcher{
 				{mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "series_1")},
 			},
-			expectedResult: []mimirpb.TimeSeries{
-				{Labels: fixtures[0].Labels, Exemplars: fixtures[0].Exemplars},
-				{Labels: fixtures[1].Labels, Exemplars: fixtures[1].Exemplars},
+			expectedResult: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: fixtures[0].Labels, Exemplars: fixtures[0].Exemplars,
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: fixtures[1].Labels, Exemplars: fixtures[1].Exemplars,
+					},
+				},
 			},
 			expectedIngesters: numIngesters,
 		},
@@ -72,8 +80,12 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 			multiMatchers: [][]*labels.Matcher{
 				{mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "series_1"), mustNewMatcher(labels.MatchEqual, "namespace", "a")},
 			},
-			expectedResult: []mimirpb.TimeSeries{
-				{Labels: fixtures[0].Labels, Exemplars: fixtures[0].Exemplars},
+			expectedResult: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: fixtures[0].Labels, Exemplars: fixtures[0].Exemplars,
+					},
+				},
 			},
 			expectedIngesters: numIngesters,
 		},
@@ -81,9 +93,17 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 			multiMatchers: [][]*labels.Matcher{
 				{mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "series_1")},
 			},
-			expectedResult: []mimirpb.TimeSeries{
-				{Labels: fixtures[0].Labels, Exemplars: fixtures[0].Exemplars},
-				{Labels: fixtures[1].Labels, Exemplars: fixtures[1].Exemplars},
+			expectedResult: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: fixtures[0].Labels, Exemplars: fixtures[0].Exemplars,
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: fixtures[1].Labels, Exemplars: fixtures[1].Exemplars,
+					},
+				},
 			},
 			shuffleShardSize:  3,
 			expectedIngesters: 3,
@@ -565,52 +585,185 @@ func TestMergeExemplars(t *testing.T) {
 	labels2 := []mimirpb.LabelAdapter{{Name: "label1", Value: "foo2"}}
 
 	for i, c := range []struct {
-		seriesA       []mimirpb.TimeSeries
-		seriesB       []mimirpb.TimeSeries
-		expected      []mimirpb.TimeSeries
+		seriesA       []mimirpb.CustomTimeSeries
+		seriesB       []mimirpb.CustomTimeSeries
+		expected      []mimirpb.CustomTimeSeries
 		nonReversible bool
 	}{
 		{
-			seriesA:  []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{}}},
-			seriesB:  []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{}}},
-			expected: []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{}}},
+			seriesA: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{},
+					},
+				},
+			},
+			seriesB: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{},
+					},
+				},
+			},
+			expected: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{},
+					},
+				},
+			},
 		},
 		{
-			seriesA:  []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1}}},
-			seriesB:  []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{}}},
-			expected: []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1}}},
+			seriesA: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1},
+					},
+				},
+			},
+			seriesB: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{},
+					},
+				},
+			},
+			expected: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1},
+					},
+				},
+			},
 		},
 		{
-			seriesA:  []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1}}},
-			seriesB:  []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1}}},
-			expected: []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1}}},
+			seriesA: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1},
+					},
+				},
+			},
+			seriesB: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1},
+					},
+				},
+			},
+			expected: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1},
+					},
+				},
+			},
 		},
 		{
-			seriesA:  []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2, exemplar3}}},
-			seriesB:  []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar3, exemplar4}}},
-			expected: []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2, exemplar3, exemplar4}}},
+			seriesA: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2, exemplar3},
+					},
+				},
+			},
+			seriesB: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar3, exemplar4},
+					},
+				},
+			},
+			expected: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2, exemplar3, exemplar4},
+					},
+				},
+			},
 		},
 		{ // Ensure that when there are exemplars with duplicate timestamps, the first one wins.
-			seriesA:       []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2, exemplar3}}},
-			seriesB:       []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar5, exemplar3, exemplar4}}},
-			expected:      []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2, exemplar3, exemplar4}}},
+			seriesA: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2, exemplar3},
+					},
+				},
+			},
+			seriesB: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar5, exemplar3, exemplar4},
+					},
+				},
+			},
+			expected: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2, exemplar3, exemplar4},
+					},
+				},
+			},
 			nonReversible: true,
 		},
 		{ // Disjoint exemplars on two different series.
-			seriesA: []mimirpb.TimeSeries{{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2}}},
-			seriesB: []mimirpb.TimeSeries{{Labels: labels2, Exemplars: []mimirpb.Exemplar{exemplar3, exemplar4}}},
-			expected: []mimirpb.TimeSeries{
-				{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2}},
-				{Labels: labels2, Exemplars: []mimirpb.Exemplar{exemplar3, exemplar4}}},
+			seriesA: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2},
+					},
+				},
+			},
+			seriesB: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels2, Exemplars: []mimirpb.Exemplar{exemplar3, exemplar4},
+					},
+				},
+			},
+			expected: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels2, Exemplars: []mimirpb.Exemplar{exemplar3, exemplar4}},
+				},
+			},
 		},
 		{ // Second input adds to first on one series.
-			seriesA: []mimirpb.TimeSeries{
-				{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2}},
-				{Labels: labels2, Exemplars: []mimirpb.Exemplar{exemplar3}}},
-			seriesB: []mimirpb.TimeSeries{{Labels: labels2, Exemplars: []mimirpb.Exemplar{exemplar4}}},
-			expected: []mimirpb.TimeSeries{
-				{Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2}},
-				{Labels: labels2, Exemplars: []mimirpb.Exemplar{exemplar3, exemplar4}}},
+			seriesA: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels2, Exemplars: []mimirpb.Exemplar{exemplar3},
+					},
+				},
+			},
+			seriesB: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels2, Exemplars: []mimirpb.Exemplar{exemplar4},
+					},
+				},
+			},
+			expected: []mimirpb.CustomTimeSeries{
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels1, Exemplars: []mimirpb.Exemplar{exemplar1, exemplar2},
+					},
+				},
+				{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: labels2, Exemplars: []mimirpb.Exemplar{exemplar3, exemplar4}},
+				},
+			},
 		},
 	} {
 		t.Run(fmt.Sprint("test", i), func(t *testing.T) {
@@ -629,19 +782,21 @@ func TestMergeExemplars(t *testing.T) {
 
 func makeExemplarQueryResponse(numSeries int) *ingester_client.ExemplarQueryResponse {
 	now := time.Now()
-	ts := make([]mimirpb.TimeSeries, numSeries)
+	ts := make([]mimirpb.CustomTimeSeries, numSeries)
 	for i := 0; i < numSeries; i++ {
 		lbls := labels.NewBuilder(labels.EmptyLabels())
 		lbls.Set(model.MetricNameLabel, "foo")
 		for i := 0; i < 10; i++ {
 			lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d_%d", i, rand.Intn(10)))
 		}
-		ts[i].Labels = mimirpb.FromLabelsToLabelAdapters(lbls.Labels())
-		ts[i].Exemplars = []mimirpb.Exemplar{{
-			Labels:      []mimirpb.LabelAdapter{{Name: "traceid", Value: "trace1"}},
-			Value:       float64(i),
-			TimestampMs: now.Add(time.Hour).UnixNano() / int64(time.Millisecond),
-		}}
+		ts[i].TimeSeries = &mimirpb.TimeSeries{
+			Labels: mimirpb.FromLabelsToLabelAdapters(lbls.Labels()),
+			Exemplars: []mimirpb.Exemplar{{
+				Labels:      []mimirpb.LabelAdapter{{Name: "traceid", Value: "trace1"}},
+				Value:       float64(i),
+				TimestampMs: now.Add(time.Hour).UnixNano() / int64(time.Millisecond),
+			}},
+		}
 	}
 
 	return &ingester_client.ExemplarQueryResponse{Timeseries: ts}

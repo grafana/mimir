@@ -151,5 +151,5 @@ func newBlockQuerierSeriesIterator(reuse chunkenc.Iterator, lbls labels.Labels, 
 		genericChunks = append(genericChunks, genericChunk)
 	}
 
-	return batch.NewGenericChunkMergeIterator(reuse, lbls, genericChunks)
+	return batch.NewGenericChunkMergeIterator(reuse, lbls, genericChunks, nil)
 }

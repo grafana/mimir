@@ -1845,9 +1845,11 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 
 	result := &client.ExemplarQueryResponse{}
 	for _, es := range res {
-		ts := mimirpb.TimeSeries{
-			Labels:    mimirpb.FromLabelsToLabelAdapters(es.SeriesLabels),
-			Exemplars: mimirpb.FromExemplarsToExemplarProtos(es.Exemplars),
+		ts := mimirpb.CustomTimeSeries{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels:    mimirpb.FromLabelsToLabelAdapters(es.SeriesLabels),
+				Exemplars: mimirpb.FromExemplarsToExemplarProtos(es.Exemplars),
+			},
 		}
 
 		numExemplars += len(ts.Exemplars)
@@ -2021,7 +2023,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 
 	// Generate the response merging all series sets.
 	result := &client.MetricsForLabelMatchersResponse{
-		Metric: make([]*mimirpb.Metric, 0),
+		Metric: make([]mimirpb.CustomMetric, 0),
 	}
 
 	mergedSet := storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
@@ -2031,15 +2033,10 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 			return nil, ctx.Err()
 		}
 
-		// Besides we are passing the hints to q.Select, we also limit the number of returned series here,
-		// to account for cases when series were resolved via different instances and joined into a single seriesSet,
-		// which are not limited by the MergeSeriesSet.
-		if hints.Limit > 0 && len(result.Metric) >= hints.Limit {
-			break
-		}
-
-		result.Metric = append(result.Metric, &mimirpb.Metric{
-			Labels: mimirpb.FromLabelsToLabelAdapters(mergedSet.At().Labels()),
+		result.Metric = append(result.Metric, mimirpb.CustomMetric{
+			Metric: &mimirpb.Metric{
+				Labels: mimirpb.FromLabelsToLabelAdapters(mergedSet.At().Labels()),
+			},
 		})
 	}
 
@@ -2325,15 +2322,17 @@ func (i *Ingester) executeSamplesQuery(ctx context.Context, db *userTSDB, from, 
 		return 0, 0, ss.Err()
 	}
 
-	timeseries := make([]mimirpb.TimeSeries, 0, queryStreamBatchSize)
+	timeseries := make([]mimirpb.CustomTimeSeries, 0, queryStreamBatchSize)
 	batchSizeBytes := 0
 	var it chunkenc.Iterator
 	for ss.Next() {
 		series := ss.At()
 
 		// convert labels to LabelAdapter
-		ts := mimirpb.TimeSeries{
-			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+		ts := mimirpb.CustomTimeSeries{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+			},
 		}
 
 		it = series.Iterator(it)
@@ -2423,15 +2422,17 @@ func (i *Ingester) executeChunksQuery(ctx context.Context, db *userTSDB, from, t
 		return 0, 0, errors.Wrap(ss.Err(), "selecting series from ChunkQuerier")
 	}
 
-	chunkSeries := make([]client.TimeSeriesChunk, 0, queryStreamBatchSize)
+	chunkSeries := make([]client.CustomTimeSeriesChunk, 0, queryStreamBatchSize)
 	batchSizeBytes := 0
 	var it chunks.Iterator
 	for ss.Next() {
 		series := ss.At()
 
 		// convert labels to LabelAdapter
-		ts := client.TimeSeriesChunk{
-			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+		ts := client.CustomTimeSeriesChunk{
+			TimeSeriesChunk: &client.TimeSeriesChunk{
+				Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+			},
 		}
 
 		it = series.Iterator(it)
@@ -2575,7 +2576,7 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 		return nil, 0, errors.Wrap(ss.Err(), "selecting series from ChunkQuerier")
 	}
 
-	seriesInBatch := make([]client.QueryStreamSeries, 0, queryStreamBatchSize)
+	seriesInBatch := make([]client.CustomQueryStreamSeries, 0, queryStreamBatchSize)
 
 	// Why retain the storage.ChunkSeries instead of their chunks.Iterator? If we get the iterators here,
 	// we can't re-use them. Re-using iterators has a bigger impact on allocations/memory than trying to
@@ -2604,9 +2605,11 @@ func (i *Ingester) sendStreamingQuerySeries(ctx context.Context, q storage.Chunk
 			return nil, 0, errors.Wrap(err, "getting ChunkSeries chunk count")
 		}
 
-		seriesInBatch = append(seriesInBatch, client.QueryStreamSeries{
-			Labels:     mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-			ChunkCount: int64(chunkCount),
+		seriesInBatch = append(seriesInBatch, client.CustomQueryStreamSeries{
+			QueryStreamSeries: &client.QueryStreamSeries{
+				Labels:     mimirpb.FromLabelsToLabelAdapters(series.Labels()),
+				ChunkCount: int64(chunkCount),
+			},
 		})
 
 		if len(seriesInBatch) >= queryStreamBatchSize {
@@ -2646,15 +2649,17 @@ func (i *Ingester) sendStreamingQueryChunks(allSeries *chunkSeriesNode, stream c
 		numSamples     = 0
 		numChunks      = 0
 		numBatches     = 0
-		seriesInBatch  = make([]client.QueryStreamSeriesChunks, 0, batchSize)
+		seriesInBatch  = make([]client.CustomQueryStreamSeriesChunks, 0, batchSize)
 		batchSizeBytes = 0
 	)
 
 	for currNode != nil {
 		for _, series := range currNode.series {
 			seriesIdx++
-			seriesChunks := client.QueryStreamSeriesChunks{
-				SeriesIndex: uint64(seriesIdx),
+			seriesChunks := client.CustomQueryStreamSeriesChunks{
+				QueryStreamSeriesChunks: &client.QueryStreamSeriesChunks{
+					SeriesIndex: uint64(seriesIdx),
+				},
 			}
 
 			it = series.Iterator(it)

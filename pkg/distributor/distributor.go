@@ -2899,7 +2899,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 	}
 	defer func() {
 		for _, resp := range resps {
-			resp.FreeBuffer()
+			resp.Release()
 		}
 	}()
 

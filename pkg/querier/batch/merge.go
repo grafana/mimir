@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/zeropool"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
@@ -27,9 +28,12 @@ type mergeIterator struct {
 	fhPool zeropool.Pool[*histogram.FloatHistogram]
 
 	currErr error
+
+	// TODO: Release each source chunk when it's not needed any longer.
+	sourceChunks []client.Chunk
 }
 
-func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
+func newMergeIterator(it iterator, cs []GenericChunk, sourceChunks []client.Chunk) *mergeIterator {
 	c, ok := it.(*mergeIterator)
 	if ok {
 		c.currErr = nil
@@ -38,6 +42,7 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 		c.hPool = zeropool.New(func() *histogram.Histogram { return &histogram.Histogram{} })
 		c.fhPool = zeropool.New(func() *histogram.FloatHistogram { return &histogram.FloatHistogram{} })
 	}
+	c.sourceChunks = sourceChunks
 
 	css := partitionChunks(cs)
 	if cap(c.its) >= len(css) {
