@@ -100,7 +100,7 @@ func fromLabelsToMetric(ls labels.Labels) model.Metric {
 }
 
 // TimeSeriesChunksToMatrix converts slice of []client.TimeSeriesChunk to a model.Matrix.
-func TimeSeriesChunksToMatrix(from, through model.Time, serieses []TimeSeriesChunk) (model.Matrix, error) {
+func TimeSeriesChunksToMatrix(from, through model.Time, serieses []CustomTimeSeriesChunk) (model.Matrix, error) {
 	if serieses == nil {
 		return nil, nil
 	}
@@ -116,7 +116,7 @@ func TimeSeriesChunksToMatrix(from, through model.Time, serieses []TimeSeriesChu
 	return result, nil
 }
 
-func TimeseriesToMatrix(from, through model.Time, series []mimirpb.TimeSeries) (model.Matrix, error) {
+func TimeseriesToMatrix(from, through model.Time, series []mimirpb.CustomTimeSeries) (model.Matrix, error) {
 	if series == nil {
 		return nil, nil
 	}
