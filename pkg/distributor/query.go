@@ -67,11 +67,13 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 		if err != nil {
 			return err
 		}
+		/* TODO: Fix me.
 		defer func() {
 			for _, r := range results {
-				r.FreeBuffer()
+				r.Release()
 			}
 		}()
+		*/
 
 		result = mergeExemplarQueryResponses(results)
 
@@ -179,7 +181,7 @@ func mergeExemplarSets(a, b []mimirpb.Exemplar) []mimirpb.Exemplar {
 
 func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryResponse) *ingester_client.ExemplarQueryResponse {
 	var keys []string
-	exemplarResults := make(map[string]mimirpb.TimeSeries)
+	exemplarResults := make(map[string]mimirpb.CustomTimeSeries)
 	for _, r := range results {
 		for _, ts := range r.Timeseries {
 			lbls := mimirpb.FromLabelAdaptersToKeyString(ts.Labels)
@@ -198,7 +200,7 @@ func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryRespons
 	// Query results from each ingester were sorted, but are not necessarily still sorted after merging.
 	slices.Sort(keys)
 
-	result := make([]mimirpb.TimeSeries, len(exemplarResults))
+	result := make([]mimirpb.CustomTimeSeries, len(exemplarResults))
 	for i, k := range keys {
 		ts := exemplarResults[k]
 		for i, l := range ts.Labels {
@@ -219,8 +221,8 @@ func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryRespons
 
 type ingesterQueryResult struct {
 	// Why retain the batches rather than build a single slice? We don't need a single slice for each ingester, so building a single slice for each ingester is a waste of time.
-	chunkseriesBatches [][]ingester_client.TimeSeriesChunk
-	timeseriesBatches  [][]mimirpb.TimeSeries
+	chunkseriesBatches [][]ingester_client.CustomTimeSeriesChunk
+	timeseriesBatches  [][]mimirpb.CustomTimeSeries
 	streamingSeries    seriesChunksStream
 }
 
@@ -329,9 +331,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		queryMetrics.IngesterChunksTotal.Add(float64(totalChunks))
 	}()
 
-	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
-	hashToTimeSeries := map[string]mimirpb.TimeSeries{}
-	streamReaderCount := 0
+	hashToChunkseries := map[string]ingester_client.CustomTimeSeriesChunk{}
+	hashToTimeSeries := map[string]mimirpb.CustomTimeSeries{}
 
 	for _, res := range results {
 		// Accumulate any chunk series
@@ -339,6 +340,9 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			for _, series := range batch {
 				key := mimirpb.FromLabelAdaptersToKeyString(series.Labels)
 				existing := hashToChunkseries[key]
+				if existing.TimeSeriesChunk == nil {
+					existing.TimeSeriesChunk = &ingester_client.TimeSeriesChunk{}
+				}
 				existing.Labels = series.Labels
 
 				numPotentialChunks := len(existing.Chunks) + len(series.Chunks)
@@ -374,8 +378,8 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 	// Now turn the accumulated maps into slices.
 	resp := ingester_client.CombinedQueryStreamResponse{
-		Chunkseries:     make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
-		Timeseries:      make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
+		Chunkseries:     make([]ingester_client.CustomTimeSeriesChunk, 0, len(hashToChunkseries)),
+		Timeseries:      make([]mimirpb.CustomTimeSeries, 0, len(hashToTimeSeries)),
 		StreamingSeries: mergeSeriesChunkStreams(results, d.estimatedIngestersPerSeries(replicationSets)),
 	}
 	for _, series := range hashToChunkseries {
@@ -404,7 +408,6 @@ func receiveResponse(stream ingester_client.Ingester_QueryStreamClient, streamin
 	if err != nil {
 		return 0, nil, false, err
 	}
-	defer resp.FreeBuffer()
 
 	if len(resp.Timeseries) > 0 {
 		for _, series := range resp.Timeseries {

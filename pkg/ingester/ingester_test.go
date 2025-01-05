@@ -404,8 +404,8 @@ func TestIngester_Push(t *testing.T) {
 		expectedErr               error
 		expectedIngested          model.Matrix
 		expectedMetadataIngested  []*mimirpb.MetricMetadata
-		expectedExemplarsIngested []mimirpb.TimeSeries
-		expectedExemplarsDropped  []mimirpb.TimeSeries
+		expectedExemplarsIngested  []mimirpb.CustomTimeSeries
+		expectedExemplarsDropped   []mimirpb.CustomTimeSeries
 		expectedMetrics           string
 		additionalMetrics         []string
 		disableActiveSeries       bool
@@ -591,14 +591,16 @@ func TestIngester_Push(t *testing.T) {
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}}},
 			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
-							TimestampMs: 1000,
-							Value:       1000,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							},
 						},
 					},
 				},
@@ -703,14 +705,16 @@ func TestIngester_Push(t *testing.T) {
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}}},
 			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
-							TimestampMs: 1000,
-							Value:       1000,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							},
 						},
 					},
 				},
@@ -803,14 +807,16 @@ func TestIngester_Push(t *testing.T) {
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}, {Value: 2, Timestamp: 10}}},
 			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
-							TimestampMs: 1000,
-							Value:       1000,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							},
 						},
 					},
 				},
@@ -931,14 +937,16 @@ func TestIngester_Push(t *testing.T) {
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}}},
 			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
-							TimestampMs: 1000,
-							Value:       1000,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							},
 						},
 					},
 				},
@@ -1058,14 +1066,16 @@ func TestIngester_Push(t *testing.T) {
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}}},
 			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
-							TimestampMs: 1000,
-							Value:       1000,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							},
 						},
 					},
 				},
@@ -1158,14 +1168,16 @@ func TestIngester_Push(t *testing.T) {
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: 9}}},
 			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
-							TimestampMs: 1000,
-							Value:       1000,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							},
 						},
 					},
 				},
@@ -1279,14 +1291,16 @@ func TestIngester_Push(t *testing.T) {
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: 9}}},
 			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
-							TimestampMs: 1000,
-							Value:       1000,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							},
 						},
 					},
 				},
@@ -1395,14 +1409,16 @@ func TestIngester_Push(t *testing.T) {
 					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(2)), Timestamp: 10}},
 				},
 			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
-							TimestampMs: 1000,
-							Value:       1000,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							},
 						},
 					},
 				},
@@ -1518,19 +1534,21 @@ func TestIngester_Push(t *testing.T) {
 					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(2)), Timestamp: 10}},
 				},
 			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
-							TimestampMs: 1000,
-							Value:       1000,
-						},
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
-							TimestampMs: 2000,
-							Value:       2000,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							},
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+								TimestampMs: 2000,
+								Value:       2000,
+							},
 						},
 					},
 				},
@@ -1667,38 +1685,42 @@ func TestIngester_Push(t *testing.T) {
 					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(2)), Timestamp: 10}},
 				},
 			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
-							TimestampMs: 2000,
-							Value:       2000,
-						},
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "789"}},
-							TimestampMs: 3000,
-							Value:       3000,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+								TimestampMs: 2000,
+								Value:       2000,
+							},
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "789"}},
+								TimestampMs: 3000,
+								Value:       3000,
+							},
 						},
 					},
 				},
 			},
-			expectedExemplarsDropped: []mimirpb.TimeSeries{
+			expectedExemplarsDropped: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{
-							// This examplar is dropped due to the max exemplar limit.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
-							TimestampMs: 1000,
-							Value:       1000,
-						},
-						{
-							// This example is ignored as equal to the previous one.
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
-							TimestampMs: 2000,
-							Value:       2000,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								// This examplar is dropped due to the max exemplar limit.
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							},
+							{
+								// This example is ignored as equal to the previous one.
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+								TimestampMs: 2000,
+								Value:       2000,
+							},
 						},
 					},
 				},
@@ -2326,19 +2348,21 @@ func TestIngester_Push(t *testing.T) {
 					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(2)), Timestamp: 10}},
 				},
 			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
-							TimestampMs: 1000,
-							Value:       1000,
-						},
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
-							TimestampMs: 2000,
-							Value:       2000,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							},
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+								TimestampMs: 2000,
+								Value:       2000,
+							},
 						},
 					},
 				},
@@ -2470,19 +2494,21 @@ func TestIngester_Push(t *testing.T) {
 					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(2)), Timestamp: 10}},
 				},
 			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
-							TimestampMs: 1000,
-							Value:       1000,
-						},
-						{
-							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
-							TimestampMs: 2000,
-							Value:       2000,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+								TimestampMs: 1000,
+								Value:       1000,
+							},
+							{
+								Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+								TimestampMs: 2000,
+								Value:       2000,
+							},
 						},
 					},
 				},
@@ -3051,11 +3077,13 @@ func TestIngester_Push(t *testing.T) {
 					},
 				},
 			},
-			expectedExemplarsIngested: []mimirpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.CustomTimeSeries{
 				{
-					Labels: metricLabelAdapters,
-					Exemplars: []mimirpb.Exemplar{
-						{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, TimestampMs: now.UnixMilli(), Value: 1},
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: metricLabelAdapters,
+						Exemplars: []mimirpb.Exemplar{
+							{Labels: []mimirpb.LabelAdapter{{Name: "traceID", Value: "111"}}, TimestampMs: now.UnixMilli(), Value: 1},
+						},
 					},
 				},
 			},
@@ -5083,7 +5111,7 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 		to       int64
 		limit    int64
 		matchers []*client.LabelMatchers
-		expected []*mimirpb.Metric
+		expected []mimirpb.CustomMetric
 	}{
 		"should return an empty response if no metric match": {
 			from: math.MinInt64,
@@ -5093,7 +5121,7 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "unknown"},
 				},
 			}},
-			expected: []*mimirpb.Metric{},
+			expected: []mimirpb.CustomMetric{},
 		},
 		"should filter metrics by single matcher": {
 			from: math.MinInt64,
@@ -5103,9 +5131,17 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 				},
 			}},
-			expected: []*mimirpb.Metric{
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[1].lbls)},
+			expected: []mimirpb.CustomMetric{
+				{
+					Metric: &mimirpb.Metric{
+						Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls),
+					},
+				},
+				{
+					Metric: &mimirpb.Metric{
+						Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[1].lbls),
+					},
+				},
 			},
 		},
 		"should filter metrics by multiple matchers": {
@@ -5123,9 +5159,17 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 					},
 				},
 			},
-			expected: []*mimirpb.Metric{
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[2].lbls)},
+			expected: []mimirpb.CustomMetric{
+				{
+					Metric: &mimirpb.Metric{
+						Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls),
+					},
+				},
+				{
+					Metric: &mimirpb.Metric{
+						Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[2].lbls),
+					},
+				},
 			},
 		},
 		"should filter metrics by time range to return nothing when queried for older time ranges": {
@@ -5136,7 +5180,7 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 				},
 			}},
-			expected: []*mimirpb.Metric{},
+			expected: []mimirpb.CustomMetric{},
 		},
 		"should not return duplicated metrics on overlapping matchers": {
 			from: math.MinInt64,
@@ -5153,10 +5197,22 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 					},
 				},
 			},
-			expected: []*mimirpb.Metric{
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[1].lbls)},
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[2].lbls)},
+			expected: []mimirpb.CustomMetric{
+				{
+					Metric: &mimirpb.Metric{
+						Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls),
+					},
+				},
+				{
+					Metric: &mimirpb.Metric{
+						Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[1].lbls),
+					},
+				},
+				{
+					Metric: &mimirpb.Metric{
+						Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[2].lbls),
+					},
+				},
 			},
 		},
 		"should return all matching metrics even if their FastFingerprint collide": {
@@ -5167,9 +5223,16 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "collision"},
 				},
 			}},
-			expected: []*mimirpb.Metric{
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[3].lbls)},
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[4].lbls)},
+			expected: []mimirpb.CustomMetric{
+				{
+					Metric: &mimirpb.Metric{
+						Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[3].lbls),
+					},
+				},
+				{
+					Metric: &mimirpb.Metric{
+						Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[4].lbls)},
+				},
 			},
 		},
 		"should respect requested limit": {
@@ -5181,8 +5244,12 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 				},
 			}},
-			expected: []*mimirpb.Metric{
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
+			expected: []mimirpb.CustomMetric{
+				{
+					Metric: &mimirpb.Metric{
+						Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls),
+					},
+				},
 			},
 		},
 		"should return all matching metrics when limit is higher than the result": {
@@ -5194,9 +5261,17 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 				},
 			}},
-			expected: []*mimirpb.Metric{
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[1].lbls)},
+			expected: []mimirpb.CustomMetric{
+				{
+					Metric: &mimirpb.Metric{
+						Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls),
+					},
+				},
+				{
+					Metric: &mimirpb.Metric{
+						Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[1].lbls),
+					},
+				},
 			},
 		},
 	}
@@ -5266,7 +5341,7 @@ func Test_Ingester_MetricsForLabelMatchers_Deduplication(t *testing.T) {
 
 	res, err := i.MetricsForLabelMatchers(ctx, req)
 	require.NoError(t, err)
-	require.Len(t, res.GetMetric(), numSeries)
+	require.Len(t, res.Metric, numSeries)
 }
 
 func Benchmark_Ingester_MetricsForLabelMatchers(b *testing.B) {
@@ -5299,7 +5374,7 @@ func Benchmark_Ingester_MetricsForLabelMatchers(b *testing.B) {
 
 		res, err := i.MetricsForLabelMatchers(ctx, req)
 		require.NoError(b, err)
-		require.Len(b, res.GetMetric(), numSeries)
+		require.Len(b, res.Metric, numSeries)
 	}
 }
 
@@ -5453,8 +5528,8 @@ func TestIngester_QueryStream(t *testing.T) {
 			streamType = testData.streamType
 
 			// Query all series.
-			var actualTimeseries []mimirpb.TimeSeries
-			var actualChunkseries []client.TimeSeriesChunk
+			var actualTimeseries []mimirpb.CustomTimeSeries
+			var actualChunkseries []client.CustomTimeSeriesChunk
 
 			runQueryAndSaveResponse := func(req *client.QueryRequest) (receivedSeries int, err error) {
 				s, err := c.QueryStream(ctx, req)
@@ -5870,10 +5945,22 @@ func TestIngester_QueryStream_StreamingWithManySamples(t *testing.T) {
 	require.NoError(t, err)
 
 	seriesLabelsMsg := client.QueryStreamResponse{
-		StreamingSeries: []client.QueryStreamSeries{
-			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "1")), ChunkCount: 834},
-			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "2")), ChunkCount: 8334},
-			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "3")), ChunkCount: 4167},
+		StreamingSeries: []client.CustomQueryStreamSeries{
+			{
+				QueryStreamSeries: &client.QueryStreamSeries{
+					Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "1")), ChunkCount: 834,
+				},
+			},
+			{
+				QueryStreamSeries: &client.QueryStreamSeries{
+					Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "2")), ChunkCount: 8334,
+				},
+			},
+			{
+				QueryStreamSeries: &client.QueryStreamSeries{
+					Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "3")), ChunkCount: 4167,
+				},
+			},
 		},
 		IsEndOfSeriesStream: true,
 	}
@@ -6486,10 +6573,12 @@ func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestamp
 	}
 
 	expectedQueryStreamResSamples := &client.QueryStreamResponse{
-		Timeseries: []mimirpb.TimeSeries{
+		Timeseries: []mimirpb.CustomTimeSeries{
 			{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(lbls),
-				Samples: samples,
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels:  mimirpb.FromLabelsToLabelAdapters(lbls),
+					Samples: samples,
+				},
 			},
 		},
 	}
@@ -6501,15 +6590,17 @@ func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestamp
 	chk.Compact()
 
 	expectedQueryStreamResChunks := &client.QueryStreamResponse{
-		Chunkseries: []client.TimeSeriesChunk{
+		Chunkseries: []client.CustomTimeSeriesChunk{
 			{
-				Labels: mimirpb.FromLabelsToLabelAdapters(lbls),
-				Chunks: []client.Chunk{
-					{
-						StartTimestampMs: timestampMs,
-						EndTimestampMs:   timestampMs,
-						Encoding:         int32(chunk.PrometheusXorChunk),
-						Data:             chk.Bytes(),
+				TimeSeriesChunk: &client.TimeSeriesChunk{
+					Labels: mimirpb.FromLabelsToLabelAdapters(lbls),
+					Chunks: []client.Chunk{
+						{
+							StartTimestampMs: timestampMs,
+							EndTimestampMs:   timestampMs,
+							Encoding:         int32(chunk.PrometheusXorChunk),
+							Data:             chk.Bytes(),
+						},
 					},
 				},
 			},

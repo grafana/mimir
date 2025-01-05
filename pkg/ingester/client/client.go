@@ -88,7 +88,7 @@ func (cfg *Config) Validate() error {
 }
 
 type CombinedQueryStreamResponse struct {
-	Chunkseries     []TimeSeriesChunk
-	Timeseries      []mimirpb.TimeSeries
+	Chunkseries     []CustomTimeSeriesChunk
+	Timeseries      []mimirpb.CustomTimeSeries
 	StreamingSeries []StreamingSeries
 }

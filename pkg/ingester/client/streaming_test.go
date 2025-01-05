@@ -32,41 +32,111 @@ func TestSeriesChunksStreamReader_HappyPaths(t *testing.T) {
 	series4 := []Chunk{createTestChunk(t, 1000, 5)}
 
 	testCases := map[string]struct {
-		batches [][]QueryStreamSeriesChunks
+		batches [][]CustomQueryStreamSeriesChunks
 	}{
 		"single series per batch": {
-			batches: [][]QueryStreamSeriesChunks{
-				{{SeriesIndex: 0, Chunks: series0}},
-				{{SeriesIndex: 1, Chunks: series1}},
-				{{SeriesIndex: 2, Chunks: series2}},
-				{{SeriesIndex: 3, Chunks: series3}},
-				{{SeriesIndex: 4, Chunks: series4}},
+			batches: [][]CustomQueryStreamSeriesChunks{
+				{
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 0, Chunks: series0,
+						},
+					},
+				},
+				{
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 1, Chunks: series1,
+						},
+					},
+				},
+				{
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 2, Chunks: series2,
+						},
+					},
+				},
+				{
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 3, Chunks: series3,
+						},
+					},
+				},
+				{
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 4, Chunks: series4,
+						},
+					},
+				},
 			},
 		},
 		"multiple series per batch": {
-			batches: [][]QueryStreamSeriesChunks{
+			batches: [][]CustomQueryStreamSeriesChunks{
 				{
-					{SeriesIndex: 0, Chunks: series0},
-					{SeriesIndex: 1, Chunks: series1},
-					{SeriesIndex: 2, Chunks: series2},
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 0, Chunks: series0,
+						},
+					},
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 1, Chunks: series1,
+						},
+					},
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 2, Chunks: series2,
+						},
+					},
 				},
 				{
-					{SeriesIndex: 3, Chunks: series3},
-					{SeriesIndex: 4, Chunks: series4},
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 3, Chunks: series3,
+						},
+					},
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 4, Chunks: series4,
+						},
+					},
 				},
 			},
 		},
 		"empty batches": {
-			batches: [][]QueryStreamSeriesChunks{
+			batches: [][]CustomQueryStreamSeriesChunks{
 				{
-					{SeriesIndex: 0, Chunks: series0},
-					{SeriesIndex: 1, Chunks: series1},
-					{SeriesIndex: 2, Chunks: series2},
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 0, Chunks: series0,
+						},
+					},
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 1, Chunks: series1,
+						},
+					},
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 2, Chunks: series2,
+						},
+					},
 				},
 				{},
 				{
-					{SeriesIndex: 3, Chunks: series3},
-					{SeriesIndex: 4, Chunks: series4},
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 3, Chunks: series3,
+						},
+					},
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 4, Chunks: series4,
+						},
+					},
 				},
 				{},
 			},
@@ -104,15 +174,24 @@ func TestSeriesChunksStreamReader_AbortsWhenParentContextCancelled(t *testing.T)
 	test.VerifyNoLeak(t)
 
 	// Create multiple batches to ensure that the buffering goroutine becomes blocked waiting to send further chunks to GetChunks().
-	batches := [][]QueryStreamSeriesChunks{
+	batches := [][]CustomQueryStreamSeriesChunks{
 		{
-			{SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)}},
+			{
+				QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+					SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)},
+				}},
 		},
 		{
-			{SeriesIndex: 1, Chunks: []Chunk{createTestChunk(t, 1000, 4.56)}},
+			{
+				QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+					SeriesIndex: 1, Chunks: []Chunk{createTestChunk(t, 1000, 4.56)},
+				}},
 		},
 		{
-			{SeriesIndex: 2, Chunks: []Chunk{createTestChunk(t, 1000, 7.89)}},
+			{
+				QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+					SeriesIndex: 2, Chunks: []Chunk{createTestChunk(t, 1000, 7.89)},
+				}},
 		},
 	}
 
@@ -151,15 +230,24 @@ func TestSeriesChunksStreamReader_DoesNotAbortWhenStreamContextCancelled(t *test
 	test.VerifyNoLeak(t)
 
 	// Create multiple batches to ensure that the buffering goroutine becomes blocked waiting to send further chunks to GetChunks().
-	batches := [][]QueryStreamSeriesChunks{
+	batches := [][]CustomQueryStreamSeriesChunks{
 		{
-			{SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)}},
+			{
+				QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+					SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)},
+				}},
 		},
 		{
-			{SeriesIndex: 1, Chunks: []Chunk{createTestChunk(t, 1000, 4.56)}},
+			{
+				QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+					SeriesIndex: 1, Chunks: []Chunk{createTestChunk(t, 1000, 4.56)},
+				}},
 		},
 		{
-			{SeriesIndex: 2, Chunks: []Chunk{createTestChunk(t, 1000, 7.89)}},
+			{
+				QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+					SeriesIndex: 2, Chunks: []Chunk{createTestChunk(t, 1000, 7.89)},
+				}},
 		},
 	}
 
@@ -185,9 +273,12 @@ func TestSeriesChunksStreamReader_DoesNotAbortWhenStreamContextCancelled(t *test
 }
 
 func TestSeriesChunksStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
-	batches := [][]QueryStreamSeriesChunks{
+	batches := [][]CustomQueryStreamSeriesChunks{
 		{
-			{SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)}},
+			{
+				QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+					SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)},
+				}},
 		},
 	}
 
@@ -213,9 +304,13 @@ func TestSeriesChunksStreamReader_ReadingSeriesOutOfOrder(t *testing.T) {
 
 func TestSeriesChunksStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 	firstSeries := []Chunk{createTestChunk(t, 1000, 1.23)}
-	batches := [][]QueryStreamSeriesChunks{
+	batches := [][]CustomQueryStreamSeriesChunks{
 		{
-			{SeriesIndex: 0, Chunks: firstSeries},
+			{
+				QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+					SeriesIndex: 0, Chunks: firstSeries,
+				},
+			},
 		},
 	}
 
@@ -245,9 +340,13 @@ func TestSeriesChunksStreamReader_ReadingMoreSeriesThanAvailable(t *testing.T) {
 
 func TestSeriesChunksStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) {
 	firstSeries := []Chunk{createTestChunk(t, 1000, 1.23)}
-	batches := [][]QueryStreamSeriesChunks{
+	batches := [][]CustomQueryStreamSeriesChunks{
 		{
-			{SeriesIndex: 0, Chunks: firstSeries},
+			{
+				QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+					SeriesIndex: 0, Chunks: firstSeries,
+				},
+			},
 		},
 	}
 
@@ -280,21 +379,39 @@ func TestSeriesChunksStreamReader_ReceivedFewerSeriesThanExpected(t *testing.T) 
 }
 
 func TestSeriesChunksStreamReader_ReceivedMoreSeriesThanExpected(t *testing.T) {
-	testCases := map[string][][]QueryStreamSeriesChunks{
+	testCases := map[string][][]CustomQueryStreamSeriesChunks{
 		"extra series received as part of batch for last expected series": {
 			{
-				{SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)}},
-				{SeriesIndex: 1, Chunks: []Chunk{createTestChunk(t, 1000, 4.56)}},
-				{SeriesIndex: 2, Chunks: []Chunk{createTestChunk(t, 1000, 7.89)}},
+				{
+					QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+						SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)},
+					}},
+				{
+					QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+						SeriesIndex: 1, Chunks: []Chunk{createTestChunk(t, 1000, 4.56)},
+					}},
+				{
+					QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+						SeriesIndex: 2, Chunks: []Chunk{createTestChunk(t, 1000, 7.89)},
+					}},
 			},
 		},
 		"extra series received as part of batch after batch containing last expected series": {
 			{
-				{SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)}},
+				{
+					QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+						SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23)},
+					}},
 			},
 			{
-				{SeriesIndex: 1, Chunks: []Chunk{createTestChunk(t, 1000, 4.56)}},
-				{SeriesIndex: 2, Chunks: []Chunk{createTestChunk(t, 1000, 7.89)}},
+				{
+					QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+						SeriesIndex: 1, Chunks: []Chunk{createTestChunk(t, 1000, 4.56)},
+					}},
+				{
+					QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+						SeriesIndex: 2, Chunks: []Chunk{createTestChunk(t, 1000, 7.89)},
+					}},
 			},
 		},
 	}
@@ -362,9 +479,12 @@ func TestSeriesChunksStreamReader_QueryAndChunksLimits(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			batches := [][]QueryStreamSeriesChunks{
+			batches := [][]CustomQueryStreamSeriesChunks{
 				{
-					{SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23), createTestChunk(t, 2000, 4.56), createTestChunk(t, 3000, 7.89)}},
+					{
+						QueryStreamSeriesChunks: &QueryStreamSeriesChunks{
+							SeriesIndex: 0, Chunks: []Chunk{createTestChunk(t, 1000, 1.23), createTestChunk(t, 2000, 4.56), createTestChunk(t, 3000, 7.89)},
+						}},
 				},
 			}
 
@@ -425,7 +545,7 @@ func createTestChunk(t *testing.T, time int64, value float64) Chunk {
 
 type mockQueryStreamClient struct {
 	ctx     context.Context
-	batches [][]QueryStreamSeriesChunks
+	batches [][]CustomQueryStreamSeriesChunks
 	closed  atomic.Bool
 }
 
