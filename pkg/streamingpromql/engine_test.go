@@ -2635,14 +2635,14 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 				q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
 				require.NoError(t, err)
 				defer q.Close()
-				expectedResults := q.Exec(context.Background())
+				prometheusResults := q.Exec(context.Background())
 
 				q, err = mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
 				require.NoError(t, err)
 				defer q.Close()
 				mimirResults := q.Exec(context.Background())
 
-				testutils.RequireEqualResults(t, expr, expectedResults, mimirResults, skipAnnotationComparison)
+				testutils.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
 			})
 		}
 	}
