@@ -128,7 +128,7 @@ compactor:
 
 store_gateway:
   sharding_ring:
-    replication_factor: 1
+    replication_factor: 3
     heartbeat_period:   5s
     heartbeat_timeout:  15s
     wait_stability_min_duration: 0
