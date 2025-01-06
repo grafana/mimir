@@ -35,6 +35,22 @@ func ErrorToStatus(err error) (*status.Status, bool) {
 	return nil, false
 }
 
+func ErrorToGRPCStatus(err error) (*grpcstatus.Status, bool) {
+	if err == nil {
+		return nil, false
+	}
+	type grpcStatus interface{ GRPCStatus() *grpcstatus.Status }
+	var gs grpcStatus
+	if errors.As(err, &gs) {
+		st := gs.GRPCStatus()
+		if st == nil {
+			return nil, false
+		}
+		return st, true
+	}
+	return nil, false
+}
+
 // ErrorToStatusCode extracts gRPC status code from error and returns it.
 //
 //   - If err is nil, codes.OK is returned.
