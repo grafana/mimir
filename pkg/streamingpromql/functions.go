@@ -357,6 +357,10 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"cos":                InstantVectorTransformationFunctionOperatorFactory("cos", functions.Cos),
 	"cosh":               InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
 	"count_over_time":    FunctionOverRangeVectorOperatorFactory("count_over_time", functions.CountOverTime),
+	"days_in_month":      InstantVectorTransformationFunctionOperatorFactory("days_in_month", functions.DaysInMonth),
+	"day_of_month":       InstantVectorTransformationFunctionOperatorFactory("day_of_month", functions.DayOfMonth),
+	"day_of_week":        InstantVectorTransformationFunctionOperatorFactory("day_of_week", functions.DayOfWeek),
+	"day_of_year":        InstantVectorTransformationFunctionOperatorFactory("day_of_year", functions.DayOfYear),
 	"deg":                InstantVectorTransformationFunctionOperatorFactory("deg", functions.Deg),
 	"delta":              FunctionOverRangeVectorOperatorFactory("delta", functions.Delta),
 	"deriv":              FunctionOverRangeVectorOperatorFactory("deriv", functions.Deriv),
@@ -369,6 +373,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"histogram_stddev":   InstantVectorTransformationFunctionOperatorFactory("histogram_stddev", functions.HistogramStdDevStdVar(true)),
 	"histogram_stdvar":   InstantVectorTransformationFunctionOperatorFactory("histogram_stdvar", functions.HistogramStdDevStdVar(false)),
 	"histogram_sum":      InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
+	"hour":               InstantVectorTransformationFunctionOperatorFactory("hour", functions.Hour),
 	"idelta":             FunctionOverRangeVectorOperatorFactory("idelta", functions.Idelta),
 	"increase":           FunctionOverRangeVectorOperatorFactory("increase", functions.Increase),
 	"irate":              FunctionOverRangeVectorOperatorFactory("irate", functions.Irate),
@@ -379,6 +384,8 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"log2":               InstantVectorTransformationFunctionOperatorFactory("log2", functions.Log2),
 	"max_over_time":      FunctionOverRangeVectorOperatorFactory("max_over_time", functions.MaxOverTime),
 	"min_over_time":      FunctionOverRangeVectorOperatorFactory("min_over_time", functions.MinOverTime),
+	"minute":             InstantVectorTransformationFunctionOperatorFactory("minute", functions.Minute),
+	"month":              InstantVectorTransformationFunctionOperatorFactory("month", functions.Month),
 	"present_over_time":  FunctionOverRangeVectorOperatorFactory("present_over_time", functions.PresentOverTime),
 	"rad":                InstantVectorTransformationFunctionOperatorFactory("rad", functions.Rad),
 	"rate":               FunctionOverRangeVectorOperatorFactory("rate", functions.Rate),
@@ -393,6 +400,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"tanh":               InstantVectorTransformationFunctionOperatorFactory("tanh", functions.Tanh),
 	"time":               InstantVectorTransformationFunctionOperatorFactory("time", functions.Time),
 	"vector":             scalarToInstantVectorOperatorFactory,
+	"year":               InstantVectorTransformationFunctionOperatorFactory("year", functions.Year),
 }
 
 func RegisterInstantVectorFunctionOperatorFactory(functionName string, factory InstantVectorFunctionOperatorFactory) error {
