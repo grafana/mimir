@@ -391,6 +391,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"sum_over_time":      FunctionOverRangeVectorOperatorFactory("sum_over_time", functions.SumOverTime),
 	"tan":                InstantVectorTransformationFunctionOperatorFactory("tan", functions.Tan),
 	"tanh":               InstantVectorTransformationFunctionOperatorFactory("tanh", functions.Tanh),
+	"time":               InstantVectorTransformationFunctionOperatorFactory("time", functions.Time),
 	"vector":             scalarToInstantVectorOperatorFactory,
 }
 
