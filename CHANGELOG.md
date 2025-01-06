@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.14.3
+
+### Grafana Mimir
+
+* [BUGFIX] Update `golang.org/x/crypto` to address [CVE-2024-45337](https://github.com/advisories/GHSA-v778-237x-gjrc). #10251
+* [BUGFIX] Update `golang.org/x/net` to address [CVE-2024-45338](https://github.com/advisories/GHSA-w32m-9786-jp63). #10298
+
 ## 2.14.2
 
 ### Grafana Mimir
