@@ -125,6 +125,7 @@ If something is not clear, you can get back to this document to learn more about
     - `operations/mimir/images.libsonnet` (`_images.mimir` and `_images.query_tee` fields)
     - `operations/mimir-rules-action/Dockerfile` (`grafana/mimirtool` image tag)
   - [ ] [Tag the release](https://github.com/grafana/mimir/blob/main/RELEASE.md#how-to-tag-a-release)
+    - NOTE: The release notes should be included at `docs/sources/mimir/release-notes` on the branch _before_ tagging the release.
     ```bash
     git checkout release-<version>
     ./tools/release/tag-release.sh
