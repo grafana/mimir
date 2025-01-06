@@ -26,21 +26,38 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 )
+
+func newBlock(id ulid.ULID, minT time.Time, maxT time.Time) *bucketindex.Block {
+	return &bucketindex.Block{
+		ID:      id,
+		MinTime: minT.UnixMilli(),
+		MaxTime: maxT.UnixMilli(),
+	}
+}
 
 func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 	// The following block IDs have been picked to have increasing hash values
 	// in order to simplify the tests.
-	block1 := ulid.MustNew(1, nil) // hash: 283204220
-	block2 := ulid.MustNew(2, nil) // hash: 444110359
-	block3 := ulid.MustNew(5, nil) // hash: 2931974232
-	block4 := ulid.MustNew(6, nil) // hash: 3092880371
+	blockID1 := ulid.MustNew(1, nil) // hash: 283204220
+	blockID2 := ulid.MustNew(2, nil) // hash: 444110359
+	blockID3 := ulid.MustNew(5, nil) // hash: 2931974232
+	blockID4 := ulid.MustNew(6, nil) // hash: 3092880371
 
-	block1Hash := mimir_tsdb.HashBlockID(block1)
-	block2Hash := mimir_tsdb.HashBlockID(block2)
-	block3Hash := mimir_tsdb.HashBlockID(block3)
-	block4Hash := mimir_tsdb.HashBlockID(block4)
+	block1Hash := mimir_tsdb.HashBlockID(blockID1)
+	block2Hash := mimir_tsdb.HashBlockID(blockID2)
+	block3Hash := mimir_tsdb.HashBlockID(blockID3)
+	block4Hash := mimir_tsdb.HashBlockID(blockID4)
+
+	minT := time.Now().Add(-5 * time.Hour)
+	maxT := minT.Add(2 * time.Hour)
+
+	block1 := newBlock(blockID1, minT, maxT)
+	block2 := newBlock(blockID2, minT, maxT)
+	block3 := newBlock(blockID3, minT, maxT)
+	block4 := newBlock(blockID4, minT, maxT)
 
 	userID := "user-A"
 	registeredAt := time.Now()
@@ -49,7 +66,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 		tenantShardSize   int
 		replicationFactor int
 		setup             func(*ring.Desc)
-		queryBlocks       []ulid.ULID
+		queryBlocks       bucketindex.Blocks
 		exclude           map[ulid.ULID][]string
 		expectedClients   map[string][]ulid.ULID
 		expectedErr       error
@@ -60,9 +77,9 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			setup: func(d *ring.Desc) {
 				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block2},
+			queryBlocks: []*bucketindex.Block{block1, block2},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {block1, block2},
+				"127.0.0.1": {blockID1, blockID2},
 			},
 		},
 		"shard size 0, single instance in the ring with RF = 1 but excluded": {
@@ -71,11 +88,11 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			setup: func(d *ring.Desc) {
 				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block2},
+			queryBlocks: []*bucketindex.Block{block1, block2},
 			exclude: map[ulid.ULID][]string{
-				block1: {"127.0.0.1"},
+				blockID1: {"127.0.0.1"},
 			},
-			expectedErr: fmt.Errorf("no store-gateway instance left after checking exclude for block %s", block1.String()),
+			expectedErr: fmt.Errorf("no store-gateway instance left after checking exclude for block %s", blockID1.String()),
 		},
 		"shard size 0, single instance in the ring with RF = 1 but excluded for non queried block": {
 			tenantShardSize:   0,
@@ -83,12 +100,12 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			setup: func(d *ring.Desc) {
 				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block2},
+			queryBlocks: []*bucketindex.Block{block1, block2},
 			exclude: map[ulid.ULID][]string{
-				block3: {"127.0.0.1"},
+				blockID3: {"127.0.0.1"},
 			},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {block1, block2},
+				"127.0.0.1": {blockID1, blockID2},
 			},
 		},
 		"shard size 0, single instance in the ring with RF = 2": {
@@ -97,9 +114,9 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			setup: func(d *ring.Desc) {
 				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block2},
+			queryBlocks: []*bucketindex.Block{block1, block2},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {block1, block2},
+				"127.0.0.1": {blockID1, blockID2},
 			},
 		},
 		"shard size 0, multiple instances in the ring with each requested block belonging to a different store-gateway and RF = 1": {
@@ -111,11 +128,11 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block3, block4},
+			queryBlocks: []*bucketindex.Block{block1, block3, block4},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {block1},
-				"127.0.0.3": {block3},
-				"127.0.0.4": {block4},
+				"127.0.0.1": {blockID1},
+				"127.0.0.3": {blockID3},
+				"127.0.0.4": {blockID4},
 			},
 		},
 		"shard size 0, multiple instances in the ring with each requested block belonging to a different store-gateway and RF = 1 but excluded": {
@@ -127,11 +144,11 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block3, block4},
+			queryBlocks: []*bucketindex.Block{block1, block3, block4},
 			exclude: map[ulid.ULID][]string{
-				block3: {"127.0.0.3"},
+				blockID3: {"127.0.0.3"},
 			},
-			expectedErr: fmt.Errorf("no store-gateway instance left after checking exclude for block %s", block3.String()),
+			expectedErr: fmt.Errorf("no store-gateway instance left after checking exclude for block %s", blockID3.String()),
 		},
 		"shard size 0, multiple instances in the ring with each requested block belonging to a different store-gateway and RF = 2": {
 			tenantShardSize:   0,
@@ -142,11 +159,11 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block3, block4},
+			queryBlocks: []*bucketindex.Block{block1, block3, block4},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {block1},
-				"127.0.0.3": {block3},
-				"127.0.0.4": {block4},
+				"127.0.0.1": {blockID1},
+				"127.0.0.3": {blockID3},
+				"127.0.0.4": {blockID4},
 			},
 		},
 		"shard size 0, multiple instances in the ring with multiple requested blocks belonging to the same store-gateway and RF = 2": {
@@ -156,10 +173,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				d.AddIngester("instance-2", "127.0.0.2", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block2, block3, block4},
+			queryBlocks: []*bucketindex.Block{block1, block2, block3, block4},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {block1, block4},
-				"127.0.0.2": {block2, block3},
+				"127.0.0.1": {blockID1, blockID4},
+				"127.0.0.2": {blockID2, blockID3},
 			},
 		},
 		"shard size 0, multiple instances in the ring with each requested block belonging to a different store-gateway and RF = 2 and some blocks excluded but with replacement available": {
@@ -171,14 +188,14 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block3, block4},
+			queryBlocks: []*bucketindex.Block{block1, block3, block4},
 			exclude: map[ulid.ULID][]string{
-				block3: {"127.0.0.3"},
-				block1: {"127.0.0.1"},
+				blockID3: {"127.0.0.3"},
+				blockID1: {"127.0.0.1"},
 			},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.2": {block1},
-				"127.0.0.4": {block3, block4},
+				"127.0.0.2": {blockID1},
+				"127.0.0.4": {blockID3, blockID4},
 			},
 		},
 		"shard size 0, multiple instances in the ring are JOINING, the requested block + its replicas only belongs to JOINING instances": {
@@ -190,9 +207,9 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.JOINING, registeredAt, false, time.Time{})
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1},
+			queryBlocks: []*bucketindex.Block{block1},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.4": {block1},
+				"127.0.0.4": {blockID1},
 			},
 		},
 		"shard size 1, single instance in the ring with RF = 1": {
@@ -201,9 +218,9 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			setup: func(d *ring.Desc) {
 				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block2},
+			queryBlocks: []*bucketindex.Block{block1, block2},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {block1, block2},
+				"127.0.0.1": {blockID1, blockID2},
 			},
 		},
 		"shard size 1, single instance in the ring with RF = 1, but store-gateway excluded": {
@@ -212,11 +229,11 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			setup: func(d *ring.Desc) {
 				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block2},
+			queryBlocks: []*bucketindex.Block{block1, block2},
 			exclude: map[ulid.ULID][]string{
-				block1: {"127.0.0.1"},
+				blockID1: {"127.0.0.1"},
 			},
-			expectedErr: fmt.Errorf("no store-gateway instance left after checking exclude for block %s", block1.String()),
+			expectedErr: fmt.Errorf("no store-gateway instance left after checking exclude for block %s", blockID1.String()),
 		},
 		"shard size 2, single instance in the ring with RF = 2": {
 			tenantShardSize:   2,
@@ -224,9 +241,9 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			setup: func(d *ring.Desc) {
 				d.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block2},
+			queryBlocks: []*bucketindex.Block{block1, block2},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {block1, block2},
+				"127.0.0.1": {blockID1, blockID2},
 			},
 		},
 		"shard size 1, multiple instances in the ring with RF = 1": {
@@ -238,9 +255,9 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block2, block4},
+			queryBlocks: []*bucketindex.Block{block1, block2, block4},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {block1, block2, block4},
+				"127.0.0.1": {blockID1, blockID2, blockID4},
 			},
 		},
 		"shard size 2, shuffle sharding, multiple instances in the ring with RF = 1": {
@@ -252,10 +269,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block2, block4},
+			queryBlocks: []*bucketindex.Block{block1, block2, block4},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {block1, block4},
-				"127.0.0.3": {block2},
+				"127.0.0.1": {blockID1, blockID4},
+				"127.0.0.3": {blockID2},
 			},
 		},
 		"shard size 4, multiple instances in the ring with RF = 1": {
@@ -267,11 +284,11 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block2, block4},
+			queryBlocks: []*bucketindex.Block{block1, block2, block4},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.1": {block1},
-				"127.0.0.2": {block2},
-				"127.0.0.4": {block4},
+				"127.0.0.1": {blockID1},
+				"127.0.0.2": {blockID2},
+				"127.0.0.4": {blockID4},
 			},
 		},
 		"shard size 2, multiple instances in the ring with RF = 2, with excluded blocks but some replacement available": {
@@ -283,13 +300,13 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block2},
+			queryBlocks: []*bucketindex.Block{block1, block2},
 			exclude: map[ulid.ULID][]string{
-				block1: {"127.0.0.1"},
-				block2: {"127.0.0.1"},
+				blockID1: {"127.0.0.1"},
+				blockID2: {"127.0.0.1"},
 			},
 			expectedClients: map[string][]ulid.ULID{
-				"127.0.0.3": {block1, block2},
+				"127.0.0.3": {blockID1, blockID2},
 			},
 		},
 		"shard size 2, multiple instances in the ring with RF = 2, SS = 2 with excluded blocks and no replacement available": {
@@ -301,12 +318,12 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 				d.AddIngester("instance-3", "127.0.0.3", "", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				d.AddIngester("instance-4", "127.0.0.4", "", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
-			queryBlocks: []ulid.ULID{block1, block2},
+			queryBlocks: []*bucketindex.Block{block1, block2},
 			exclude: map[ulid.ULID][]string{
-				block1: {"127.0.0.1", "127.0.0.3"},
-				block2: {"127.0.0.1"},
+				blockID1: {"127.0.0.1", "127.0.0.3"},
+				blockID2: {"127.0.0.1"},
 			},
-			expectedErr: fmt.Errorf("no store-gateway instance left after checking exclude for block %s", block1.String()),
+			expectedErr: fmt.Errorf("no store-gateway instance left after checking exclude for block %s", blockID1.String()),
 		},
 	}
 
@@ -339,7 +356,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, limits, ClientConfig{}, log.NewNopLogger(), reg)
+			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, storegateway.NewNopExpandedReplication(), limits, ClientConfig{}, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 			defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck
@@ -381,7 +398,11 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	ctx := context.Background()
 	userID := "user-A"
 	registeredAt := time.Now()
-	block1 := ulid.MustNew(1, nil)
+
+	minT := time.Now().Add(-5 * time.Hour)
+	maxT := minT.Add(2 * time.Hour)
+	blockID1 := ulid.MustNew(1, nil)
+	block1 := newBlock(blockID1, minT, maxT)
 
 	// Create a ring.
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
@@ -405,7 +426,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 
 	limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
 	reg := prometheus.NewPedanticRegistry()
-	s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, limits, ClientConfig{}, log.NewNopLogger(), reg)
+	s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, storegateway.NewNopExpandedReplication(), limits, ClientConfig{}, log.NewNopLogger(), reg)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 	defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck
@@ -421,7 +442,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	distribution := map[string]int{}
 
 	for n := 0; n < numRuns; n++ {
-		clients, err := s.GetClientsFor(userID, []ulid.ULID{block1}, nil)
+		clients, err := s.GetClientsFor(userID, []*bucketindex.Block{block1}, nil)
 		require.NoError(t, err)
 		defer func() {
 			// Close all clients to ensure no goroutines are leaked.

@@ -11656,6 +11656,38 @@
           "fieldDefaultValue": null
         },
         {
+          "kind": "block",
+          "name": "expanded_replication",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Use a higher number of replicas for recent blocks. Useful to spread query load more evenly at the cost of slightly higher disk usage.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "store-gateway.expanded-replication.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_time_threshold",
+              "required": false,
+              "desc": "Threshold of the most recent sample in a block used to determine it is eligible for higher than default replication. If a block has samples within this amount of time, it is considered recent and will be owned by more replicas.",
+              "fieldValue": null,
+              "fieldDefaultValue": 90000000000000,
+              "fieldFlag": "store-gateway.expanded-replication.max-time-threshold",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
           "kind": "field",
           "name": "enabled_tenants",
           "required": false,
