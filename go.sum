@@ -1271,8 +1271,8 @@ github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc h1:PXZQA2WCxe85T
 github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc/go.mod h1:AHHlOEv1+GGQ3ktHMlhuTUwo3zljV3QJbC0+8o2kn+4=
 github.com/grafana/alerting v0.0.0-20241211182001-0f317eb6b2f7 h1:VGLUQ2mwzlF1NGwTxpSfv1RnuOsDlNh/NT5KRvhZ0sQ=
 github.com/grafana/alerting v0.0.0-20241211182001-0f317eb6b2f7/go.mod h1:QsnoKX/iYZxA4Cv+H+wC7uxutBD8qi8ZW5UJvD2TYmU=
-github.com/grafana/dskit v0.0.0-20250103192458-b54518d1a463 h1:H6DzXDDyoqnLIH5CPSxx3zDd9FY8D8SyeVbzlRfCipI=
-github.com/grafana/dskit v0.0.0-20250103192458-b54518d1a463/go.mod h1:SPLNCARd4xdjCkue0O6hvuoveuS1dGJjDnfxYe405YQ=
+github.com/grafana/dskit v0.0.0-20250106205746-3702098cbd0c h1:zixK7kthU3M9Wo0tIxdKmM0X2DHDQeqwvfrhRqRXQbk=
+github.com/grafana/dskit v0.0.0-20250106205746-3702098cbd0c/go.mod h1:SPLNCARd4xdjCkue0O6hvuoveuS1dGJjDnfxYe405YQ=
 github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc h1:BW+LjKJDz0So5LI8UZfW5neWeKpSkWqhmGjQFzcFfLM=
 github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc/go.mod h1:JVmqPBe8A/pZWwRoJW5ZjyALeY5OXMzPl7LrVXOdZAI=
 github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937 h1:fwwnG/NcygoS6XbAaEyK2QzMXI/BZIEJvQ3CD+7XZm8=
