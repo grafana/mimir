@@ -145,11 +145,8 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			lastHistogramT = t
 			lastHistogram = h
 
-			// For consistency with PromQL engine:
-			// h.Size() returns the size of the histogram in bytes,
-			// add 8 bytes to account for the timestamp,
-			// and divide by 16 to get the number of samples.
-			v.Stats.TotalSamples += int64((h.Size() + 8) / 16)
+			// For consistency with Prometheus' engine, we convert each histogram point to an equivalent number of float points.
+			v.Stats.TotalSamples += types.EquivalentFloatSampleCount(h)
 		} else {
 			// Only create the slice once we know the series is a histogram or not.
 			if len(data.Floats) == 0 {
@@ -161,13 +158,14 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				}
 			}
 			data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
-			v.Stats.TotalSamples++
 		}
 	}
 
 	if v.memoizedIterator.Err() != nil {
 		return types.InstantVectorSeriesData{}, v.memoizedIterator.Err()
 	}
+
+	v.Stats.TotalSamples += int64(len(data.Floats))
 
 	return data, nil
 }

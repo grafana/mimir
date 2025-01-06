@@ -104,7 +104,7 @@ func (m *RangeVectorSelector) NextStepSamples() (*types.RangeVectorStepData, err
 	m.stepData.RangeStart = rangeStart
 	m.stepData.RangeEnd = rangeEnd
 
-	m.Stats.TotalSamples += int64(m.stepData.Floats.Count() + m.stepData.Histograms.CountSamples())
+	m.Stats.TotalSamples += int64(m.stepData.Floats.Count()) + m.stepData.Histograms.EquivalentFloatSampleCount()
 
 	return m.stepData, nil
 }

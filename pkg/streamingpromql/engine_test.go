@@ -2908,8 +2908,7 @@ func TestQueryStats(t *testing.T) {
 		},
 		"instant vector selector with NaNs": {
 			expr:                 `nan_series{}`,
-			isInstantQuery:       true,
-			expectedTotalSamples: 1,
+			expectedTotalSamples: 11,
 		},
 		"range vector selector with NaNs": {
 			expr:                 `sum_over_time(nan_series{}[1m])`,

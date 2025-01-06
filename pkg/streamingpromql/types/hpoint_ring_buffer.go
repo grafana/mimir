@@ -301,19 +301,20 @@ func (v HPointRingBufferView) Count() int {
 	return v.size
 }
 
-// CountSamples returns the size of the HPointRingBufferView compared to the size of an FPointRingBufferView.
-// For consistency with PromQL engine:
-// H.Size() returns the size of the histogram in bytes,
-// add 8 bytes to account for the timestamp,
-// and divide by 16 to get the number of samples.
-func (v HPointRingBufferView) CountSamples() int {
-	var totalSize int
-	for i := 0; i < v.size; i++ {
-		totalSize += v.buffer.pointAt(i).H.Size() + 8
-	}
-	totalSize = totalSize / 16
+// EquivalentFloatSampleCount returns the equivalent number of float samples in this ring buffer view.
+func (v HPointRingBufferView) EquivalentFloatSampleCount() int64 {
+	count := int64(0)
+	head, tail := v.UnsafePoints()
 
-	return totalSize
+	for _, p := range head {
+		count += EquivalentFloatSampleCount(p.H)
+	}
+
+	for _, p := range tail {
+		count += EquivalentFloatSampleCount(p.H)
+	}
+
+	return count
 }
 
 // Any returns true if this ring buffer view contains any points.
