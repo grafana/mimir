@@ -2824,6 +2824,7 @@ func TestQueryStats(t *testing.T) {
 			start_series  0 1 _ _ _ _ _ _ _ _ _
 			end_series    _ _ _ _ _ 5 6 7 8 9 10
 			sparse_series 0 _ _ _ _ _ _ 7 _ _ _
+			stale_series  0 1 2 3 4 5 stale 7 8 9 10
 			nan_series    NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
 			native_histogram_series {{schema:0 sum:2 count:4 buckets:[1 2 1]}} {{sum:2 count:4 buckets:[1 2 1]}}
 	`)
@@ -2869,6 +2870,10 @@ func TestQueryStats(t *testing.T) {
 			expr:                 `sparse_series{}`,
 			expectedTotalSamples: 5 + 4, // 5 for first point at T=0, and 4 for second point at T=7
 		},
+		"instant vector selector with stale marker": {
+			expr:                 `stale_series{}`,
+			expectedTotalSamples: 10, // Instant vector selectors ignore stale markers.
+		},
 
 		"raw range vector selector with single point": {
 			expr:                 `dense_series[45s]`,
@@ -2900,6 +2905,10 @@ func TestQueryStats(t *testing.T) {
 		"range vector selector where range overlaps previous step's range": {
 			expr:                 `sum_over_time(dense_series{}[1m30s])`,
 			expectedTotalSamples: 21, // Each step except the first selects two points.
+		},
+		"range vector selector with stale marker": {
+			expr:                 `count_over_time(stale_series{}[1m30s])`,
+			expectedTotalSamples: 19, // Each step except the first selects two points. Range vector selectors ignore stale markers.
 		},
 
 		"expression with multiple selectors": {
