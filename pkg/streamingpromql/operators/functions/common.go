@@ -4,15 +4,10 @@ package functions
 
 import (
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
-
-var Time = floatTransformationSampleFunc(func(sample promql.FPoint) float64 {
-	return float64(sample.T) / 1000
-})
 
 // SeriesMetadataFunction is a function to operate on the metadata across series.
 type SeriesMetadataFunction func(seriesMetadata []types.SeriesMetadata, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error)
@@ -31,16 +26,6 @@ var DropSeriesName = SeriesMetadataFunctionDefinition{
 
 // InstantVectorSeriesFunction is a function that takes in an instant vector and produces an instant vector.
 type InstantVectorSeriesFunction func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error)
-
-// floatTransformationSampleFunc is not needed elsewhere, so it is not exported yet
-func floatTransformationSampleFunc(transform func(sample promql.FPoint) float64) InstantVectorSeriesFunction {
-	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
-		for i := range seriesData.Floats {
-			seriesData.Floats[i].F = transform(seriesData.Floats[i])
-		}
-		return seriesData, nil
-	}
-}
 
 // floatTransformationFunc is not needed elsewhere, so it is not exported yet
 func floatTransformationFunc(transform func(f float64) float64) InstantVectorSeriesFunction {
