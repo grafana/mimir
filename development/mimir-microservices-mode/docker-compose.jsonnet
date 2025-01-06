@@ -45,7 +45,7 @@ std.manifestYamlDoc({
     self.distributor +
     self.ingesters +
     self.read_components +  // Querier, Frontend and query-scheduler, if enabled.
-    self.store_gateways +
+    self.store_gateways(3) +
     self.compactor +
     self.rulers(2) +
     self.alertmanagers(3) +
@@ -113,7 +113,7 @@ std.manifestYamlDoc({
         httpPort: 8005,
         extraArguments:
           // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
-          if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9011 -querier.frontend-address=' else '',
+          if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9008 -querier.frontend-address=' else '',
       }),
 
       'query-frontend': mimirService({
@@ -124,14 +124,14 @@ std.manifestYamlDoc({
         extraArguments:
           '-query-frontend.max-total-query-length=8760h' +
           // Use of scheduler is activated by `-query-frontend.scheduler-address` option.
-          (if $._config.use_query_scheduler then ' -query-frontend.scheduler-address=query-scheduler:9011' else ''),
+          (if $._config.use_query_scheduler then ' -query-frontend.scheduler-address=query-scheduler:9008' else ''),
       }),
     } + (
       if $._config.use_query_scheduler then {
         'query-scheduler': mimirService({
           name: 'query-scheduler',
           target: 'query-scheduler',
-          httpPort: 8011,
+          httpPort: 8008,
           extraArguments: '-query-frontend.max-total-query-length=8760h',
         }),
       } else {}
@@ -167,20 +167,14 @@ std.manifestYamlDoc({
     for id in std.range(1, count)
   },
 
-  store_gateways:: {
-    'store-gateway-1': mimirService({
-      name: 'store-gateway-1',
+  store_gateways(count):: {
+    ['store-gateway-%d' % id]: mimirService({
+      name: 'store-gateway-' + id,
       target: 'store-gateway',
-      httpPort: 8008,
-      jaegerApp: 'store-gateway-1',
-    }),
-
-    'store-gateway-2': mimirService({
-      name: 'store-gateway-2',
-      target: 'store-gateway',
-      httpPort: 8009,
-      jaegerApp: 'store-gateway-2',
-    }),
+      httpPort: 8010 + id,
+      jaegerApp: 'store-gateway-%d' % id,
+    })
+    for id in std.range(1, count)
   },
 
   continuous_test:: {
