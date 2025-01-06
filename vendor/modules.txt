@@ -124,7 +124,7 @@ github.com/Masterminds/semver/v3
 # github.com/Masterminds/sprig/v3 v3.2.1
 ## explicit; go 1.13
 github.com/Masterminds/sprig/v3
-# github.com/alecthomas/chroma/v2 v2.14.0
+# github.com/alecthomas/chroma/v2 v2.15.0
 ## explicit; go 1.19
 github.com/alecthomas/chroma/v2
 github.com/alecthomas/chroma/v2/formatters
@@ -337,7 +337,7 @@ github.com/dgraph-io/ristretto/z/simd
 # github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f
 ## explicit
 github.com/dgryski/go-rendezvous
-# github.com/dlclark/regexp2 v1.11.0
+# github.com/dlclark/regexp2 v1.11.4
 ## explicit; go 1.13
 github.com/dlclark/regexp2
 github.com/dlclark/regexp2/syntax

@@ -56,7 +56,7 @@ require (
 
 require (
 	cloud.google.com/go/storage v1.43.0
-	github.com/alecthomas/chroma/v2 v2.14.0
+	github.com/alecthomas/chroma/v2 v2.15.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/aws/aws-sdk-go v1.55.5
 	github.com/dennwc/varint v1.0.0
@@ -178,7 +178,7 @@ require (
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/dlclark/regexp2 v1.11.0 // indirect
+	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/docker/go-connections v0.4.1-0.20210727194412-58542c764a11 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/efficientgo/core v1.0.0-rc.3
