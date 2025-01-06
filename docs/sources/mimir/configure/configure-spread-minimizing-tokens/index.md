@@ -53,10 +53,9 @@ You should see something like this:
 
 ## Step 2: Shut down ingesters from `zone-a`
 
-Next, ensure that all the in-memory series of all ingesters from `zone-a` have been flushed to long-term storage, as well as that the ingesters from `zone-a` have been forgotten from the ring.
-To do this, invoke the [/ingester/shutdown](https://github.com/grafana/mimir/blob/main/docs/sources/mimir/references/http-api/index.md#shutdown) endpoint on all the ingesters from `zone-a`.
+Call the [/ingester/shutdown](https://github.com/grafana/mimir/blob/main/docs/sources/mimir/references/http-api/index.md#shutdown) endpoint on all ingesters from `zone-a` to flush all in-memory series and metrics to long-term storage and to clear all ingesters from the ring.
 
-Before proceeding to the next step, ensure that all the calls completed successfully completed.
+Before proceeding to the next step, ensure that all calls complete successfully.
 
 ## Step 3: Enable spread-minimizing tokens for ingesters in `zone-a`
 
