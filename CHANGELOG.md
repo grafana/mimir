@@ -224,6 +224,19 @@
 * [ENHANCEMENT] `kafkatool`: add `dump print` command to print the content of write requests from a dump. #9942
 * [ENHANCEMENT] Updated `KubePersistentVolumeFillingUp` runbook, including a sample command to debug the distroless image. #9802
 
+## 2.14.3
+
+### Grafana Mimir
+
+* [BUGFIX] Update `golang.org/x/crypto` to address [CVE-2024-45337](https://github.com/advisories/GHSA-v778-237x-gjrc). #10251
+* [BUGFIX] Update `golang.org/x/net` to address [CVE-2024-45338](https://github.com/advisories/GHSA-w32m-9786-jp63). #10298
+
+## 2.14.2
+
+### Grafana Mimir
+
+* [BUGFIX] Query-frontend: Do not break scheduler connection on malformed queries. #9833
+
 ## 2.14.1
 
 ### Grafana Mimir
