@@ -114,6 +114,14 @@ func (m *Block) GetUploadedAt() time.Time {
 	return time.Unix(m.UploadedAt, 0)
 }
 
+func (m *Block) GetMinTime() time.Time {
+	return time.UnixMilli(m.MinTime)
+}
+
+func (m *Block) GetMaxTime() time.Time {
+	return time.UnixMilli(m.MaxTime)
+}
+
 // ThanosMeta returns a block meta based on the known information in the index.
 // The returned meta doesn't include all original meta.json data but only a subset
 // of it.
