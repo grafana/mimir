@@ -13,6 +13,15 @@ datasources:
     - name: traceID
       datasourceUid: jaeger
 
+- name: Prometheus
+  type: prometheus
+  access: proxy
+  uid: prometheus
+  orgID: 1
+  url: http://prometheus:9090
+  jsonData:
+    prometheusType: Mimir
+
 - name: Mimir (query results caching disabled)
   type: prometheus
   access: proxy
