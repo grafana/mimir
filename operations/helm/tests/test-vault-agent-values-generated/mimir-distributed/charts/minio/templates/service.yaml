@@ -6,7 +6,7 @@ metadata:
   name: test-vault-agent-values-minio
   labels:
     app: minio
-    chart: minio-5.3.0
+    chart: minio-5.4.0
     release: test-vault-agent-values
     heritage: Helm
     monitoring: "true"
