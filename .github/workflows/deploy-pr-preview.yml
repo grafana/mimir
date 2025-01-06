@@ -19,6 +19,7 @@ jobs:
       event_number: ${{ github.event.number }}
       title: ${{ github.event.pull_request.title }}
       repo: mimir
+      source_directory: docs/sources/mimir
       website_directory: content/docs/mimir/latest
       relative_prefix: /docs/mimir/latest/
       index_file: true
