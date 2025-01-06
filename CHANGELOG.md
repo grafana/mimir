@@ -165,6 +165,7 @@
 * [BUGFIX] PromQL: Ignore native histograms in `topk` and `bottomk` functions and return info annotation instead. #10188
 * [BUGFIX] PromQL: Let `limitk` and `limit_ratio` include native histograms if applicable. #10188
 * [BUGFIX] PromQL: Fix `changes` and `resets` functions to count switch between float and native histograms sample type as change and reset. #10188
+* [BUGFIX] Alertmanager: Fix decoding of queryFromGeneratorURL in templates. #8914
 
 ### Mixin
 
