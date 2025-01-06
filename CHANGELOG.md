@@ -53,7 +53,7 @@
 
 * [CHANGE] `copyblocks`: Remove /pprof endpoint. #10329
 
-## 2.15.0-rc.0
+## 2.15.0
 
 ### Grafana Mimir
 
@@ -69,6 +69,7 @@
 * [CHANGE] Distributor: Drop experimental `-distributor.direct-otlp-translation-enabled` flag, since direct OTLP translation is well tested at this point. #9647
 * [CHANGE] Ingester: Change `-initial-delay` for circuit breakers to begin when the first request is received, rather than at breaker activation. #9842
 * [CHANGE] Query-frontend: apply query pruning before query sharding instead of after. #9913
+* [CHANGE] Ingester: remove experimental flags `-ingest-storage.kafka.ongoing-records-per-fetch` and `-ingest-storage.kafka.startup-records-per-fetch`. They are removed in favour of `-ingest-storage.kafka.max-buffered-bytes`. #9906
 * [CHANGE] Ingester: Replace `cortex_discarded_samples_total` label from `sample-out-of-bounds` to `sample-timestamp-too-old`. #9885
 * [CHANGE] Ruler: the `/prometheus/config/v1/rules` does not return an error anymore if a rule group is missing in the object storage after been successfully returned by listing the storage, because it could have been deleted in the meanwhile. #9936
 * [CHANGE] Querier: The `.` pattern in regular expressions in PromQL matches newline characters. With this change regular expressions like `.*` match strings that include `\n`. To maintain the old behaviour, you will have to change regular expressions by replacing all `.` patterns with `[^\n]`, e.g. `foo[^\n]*`. This upgrades PromQL compatibility from Prometheus 2.0 to 3.0. #9844
@@ -126,6 +127,7 @@
 * [ENHANCEMENT] Compactor: refresh deletion marks when updating the bucket index concurrently. This speeds up updating the bucket index by up to 16 times when there is a lot of blocks churn (thousands of blocks churning every cleanup cycle). #9881
 * [ENHANCEMENT] PromQL: make `sort_by_label` stable. #9879
 * [ENHANCEMENT] Distributor: Initialize ha_tracker cache before ha_tracker and distributor reach running state and begin serving writes. #9826 #9976
+* [ENHANCEMENT] Ingester: `-ingest-storage.kafka.max-buffered-bytes` to limit the memory for buffered records when using concurrent fetching. #9892
 * [ENHANCEMENT] Querier: improve performance and memory consumption of queries that select many series. #9914
 * [ENHANCEMENT] Ruler: Support OAuth2 and proxies in Alertmanager client #9945 #10030
 * [ENHANCEMENT] Ingester: Add `-blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples` to build 24h blocks for out-of-order data belonging to the previous days instead of building smaller 2h blocks. This reduces pressure on compactors and ingesters when the out-of-order samples span multiple days in the past. #9844 #10033 #10035
@@ -330,7 +332,7 @@
 * [ENHANCEMENT] Update runtime configuration to read gzip-compressed files with `.gz` extension. #9074
 * [ENHANCEMENT] Ingester: add `cortex_lifecycler_read_only` metric which is set to 1 when ingester's lifecycler is set to read-only mode. #9095
 * [ENHANCEMENT] Add a new field, `encode_time_seconds` to query stats log messages, to record the amount of time it takes the query-frontend to encode a response. This does not include any serialization time for downstream components. #9062
-* [ENHANCEMENT] OTLP: If the flag `-distributor.otel-created-timestamp-zero-ingestion-enabled` is true, OTel start timestamps are converted to Prometheus zero samples to mark series start. #9131
+* [ENHANCEMENT] OTLP: If the flag `-distributor.otel-created-timestamp-zero-ingestion-enabled` is true, OTel start timestamps are converted to Prometheus zero samples to mark series start. #9131 #10053
 * [ENHANCEMENT] Querier: attach logs emitted during query consistency check to trace span for query. #9213
 * [ENHANCEMENT] Query-scheduler: Experimental `-query-scheduler.prioritize-query-components` flag enables the querier-worker queue priority algorithm to take precedence over tenant rotation when dequeuing requests. #9220
 * [ENHANCEMENT] Add application credential arguments for Openstack Swift storage backend. #9181
