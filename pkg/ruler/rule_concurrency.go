@@ -62,10 +62,13 @@ func (ds *DynamicSemaphore) Release() {
 }
 
 type MultiTenantConcurrencyControllerMetrics struct {
-	SlotsInUse              *prometheus.GaugeVec
-	AttemptsStartedTotal    *prometheus.CounterVec
-	AttemptsIncompleteTotal *prometheus.CounterVec
-	AttemptsCompletedTotal  *prometheus.CounterVec
+	SlotsInUse                   *prometheus.GaugeVec
+	AttemptsStartedTotal         *prometheus.CounterVec
+	AttemptsIncompleteTotal      *prometheus.CounterVec
+	AttemptsCompletedTotal       *prometheus.CounterVec
+	BatchAttemptsStartedTotal    *prometheus.CounterVec
+	BatchAttemptsIncompleteTotal *prometheus.CounterVec
+	BatchAttemptsCompletedTotal  *prometheus.CounterVec
 }
 
 func newMultiTenantConcurrencyControllerMetrics(reg prometheus.Registerer) *MultiTenantConcurrencyControllerMetrics {
@@ -85,6 +88,18 @@ func newMultiTenantConcurrencyControllerMetrics(reg prometheus.Registerer) *Mult
 		AttemptsCompletedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total",
 			Help: "Total number of concurrency slots we're done using across all tenants",
+		}, []string{"user"}),
+		BatchAttemptsStartedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ruler_independent_rule_evaluation_batch_attempts_started_total",
+			Help: "Total number of started attempts to split rules into concurrent batches across all tenants",
+		}, []string{"user"}),
+		BatchAttemptsIncompleteTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ruler_independent_rule_evaluation_batch_attempts_incomplete_total",
+			Help: "Total number of incomplete attempts to split rules into concurrent batches across all tenants",
+		}, []string{"user", "group", "reason"}),
+		BatchAttemptsCompletedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ruler_independent_rule_evaluation_batch_attempts_completed_total",
+			Help: "Total number of completed attempts to split rules into concurrent batches across all tenants",
 		}, []string{"user"}),
 	}
 
@@ -115,10 +130,13 @@ func NewMultiTenantConcurrencyController(logger log.Logger, maxGlobalConcurrency
 // NewTenantConcurrencyControllerFor returns a new rules.RuleConcurrencyController to use for the input tenantID.
 func (c *MultiTenantConcurrencyController) NewTenantConcurrencyControllerFor(tenantID string) rules.RuleConcurrencyController {
 	return &TenantConcurrencyController{
-		slotsInUse:              c.metrics.SlotsInUse.WithLabelValues(tenantID),
-		attemptsStartedTotal:    c.metrics.AttemptsStartedTotal.WithLabelValues(tenantID),
-		attemptsIncompleteTotal: c.metrics.AttemptsIncompleteTotal.WithLabelValues(tenantID),
-		attemptsCompletedTotal:  c.metrics.AttemptsCompletedTotal.WithLabelValues(tenantID),
+		slotsInUse:                   c.metrics.SlotsInUse.WithLabelValues(tenantID),
+		attemptsStartedTotal:         c.metrics.AttemptsStartedTotal.WithLabelValues(tenantID),
+		attemptsIncompleteTotal:      c.metrics.AttemptsIncompleteTotal.WithLabelValues(tenantID),
+		attemptsCompletedTotal:       c.metrics.AttemptsCompletedTotal.WithLabelValues(tenantID),
+		batchAttemptsStartedTotal:    c.metrics.BatchAttemptsStartedTotal.WithLabelValues(tenantID),
+		batchAttemptsIncompleteTotal: c.metrics.BatchAttemptsIncompleteTotal.MustCurryWith(prometheus.Labels{"user": tenantID}),
+		batchAttemptsCompletedTotal:  c.metrics.BatchAttemptsCompletedTotal.WithLabelValues(tenantID),
 
 		tenantID:                 tenantID,
 		thresholdRuleConcurrency: c.thresholdRuleConcurrency,
@@ -136,10 +154,13 @@ type TenantConcurrencyController struct {
 	thresholdRuleConcurrency float64 // Percentage of the rule interval at which we consider the rule group at risk of missing its evaluation.
 
 	// Metrics with the tenant label already in them. This avoids having to call WithLabelValues on every metric change.
-	slotsInUse              prometheus.Gauge
-	attemptsStartedTotal    prometheus.Counter
-	attemptsIncompleteTotal prometheus.Counter
-	attemptsCompletedTotal  prometheus.Counter
+	slotsInUse                   prometheus.Gauge
+	attemptsStartedTotal         prometheus.Counter
+	attemptsIncompleteTotal      prometheus.Counter
+	attemptsCompletedTotal       prometheus.Counter
+	batchAttemptsStartedTotal    prometheus.Counter
+	batchAttemptsIncompleteTotal *prometheus.CounterVec
+	batchAttemptsCompletedTotal  prometheus.Counter
 
 	globalConcurrency *semaphore.Weighted
 	tenantConcurrency *DynamicSemaphore
@@ -156,18 +177,6 @@ func (c *TenantConcurrencyController) Done(_ context.Context) {
 
 // Allow tries to acquire a slot from the concurrency controller.
 func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Group, rule rules.Rule) bool {
-	// To allow a rule to be executed concurrently, we need 3 conditions:
-	// 1. The rule group must be at risk of missing its evaluation.
-	// 2. The rule must not have any rules that depend on it.
-	// 3. The rule itself must not depend on any other rules.
-	if !c.isGroupAtRisk(group) {
-		return false
-	}
-
-	if !isRuleIndependent(rule) {
-		return false
-	}
-
 	// Next, try to acquire a global concurrency slot.
 	c.attemptsStartedTotal.Inc()
 	if !c.globalConcurrency.TryAcquire(1) {
@@ -185,6 +194,84 @@ func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Grou
 	c.slotsInUse.Dec()
 	c.attemptsIncompleteTotal.Inc()
 	return false
+}
+
+func (c *TenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, g *rules.Group) []rules.ConcurrentRules {
+	c.batchAttemptsStartedTotal.Inc()
+
+	incomplete := func(reason string) []rules.ConcurrentRules {
+		c.batchAttemptsIncompleteTotal.With(prometheus.Labels{"group": g.Name(), "reason": reason}).Inc()
+		return sequentialOrdering(g)
+	}
+
+	if !c.isGroupAtRisk(g) {
+		return incomplete("group_not_at_risk")
+	}
+
+	type ruleInfo struct {
+		ruleIdx                 int
+		unevaluatedDependencies map[rules.Rule]struct{}
+	}
+	remainingRules := make(map[rules.Rule]ruleInfo)
+	firstBatch := rules.ConcurrentRules{}
+	for i, r := range g.Rules() {
+		if r.NoDependencyRules() {
+			firstBatch = append(firstBatch, i)
+			continue
+		}
+		// Initialize the rule info with the rule's dependencies.
+		// Use a copy of the dependencies to avoid mutating the rule.
+		info := ruleInfo{ruleIdx: i, unevaluatedDependencies: map[rules.Rule]struct{}{}}
+		for _, dep := range r.DependencyRules() {
+			info.unevaluatedDependencies[dep] = struct{}{}
+		}
+		remainingRules[r] = info
+	}
+	if len(firstBatch) == 0 {
+		// There are no rules without dependencies.
+		// Fall back to sequential evaluation.
+		return incomplete("no_rules_without_dependencies")
+	}
+	order := []rules.ConcurrentRules{firstBatch}
+
+	// Build the order of rules to evaluate based on dependencies.
+	for len(remainingRules) > 0 {
+		previousBatch := order[len(order)-1]
+		// Remove the batch's rules from the dependencies of its dependents.
+		for _, idx := range previousBatch {
+			rule := g.Rules()[idx]
+			for _, dependent := range rule.DependentRules() {
+				dependentInfo := remainingRules[dependent]
+				delete(dependentInfo.unevaluatedDependencies, rule)
+			}
+		}
+
+		var batch rules.ConcurrentRules
+		// Find rules that have no remaining dependencies.
+		for name, info := range remainingRules {
+			if len(info.unevaluatedDependencies) == 0 {
+				batch = append(batch, info.ruleIdx)
+				delete(remainingRules, name)
+			}
+		}
+
+		if len(batch) == 0 {
+			// There is a cycle in the rules' dependencies.
+			// We can't evaluate them concurrently.
+			// Fall back to sequential evaluation.
+			return incomplete("cyclic_dependencies")
+		}
+
+		order = append(order, batch)
+	}
+
+	if len(order) == len(g.Rules()) {
+		// All rules depend on each other, this is equivalent to sequential evaluation.
+		return incomplete("all_rules_depend_on_each_other")
+	}
+
+	c.batchAttemptsCompletedTotal.Inc()
+	return order
 }
 
 // isGroupAtRisk checks if the rule group's last evaluation time is within the risk threshold.
@@ -205,11 +292,6 @@ func (c *TenantConcurrencyController) isGroupAtRisk(group *rules.Group) bool {
 	return false
 }
 
-// isRuleIndependent checks if the rule is independent of other rules.
-func isRuleIndependent(rule rules.Rule) bool {
-	return rule.NoDependentRules() && rule.NoDependencyRules()
-}
-
 // NoopMultiTenantConcurrencyController is a concurrency controller that does not allow for concurrency.
 type NoopMultiTenantConcurrencyController struct{}
 
@@ -221,6 +303,17 @@ func (n *NoopMultiTenantConcurrencyController) NewTenantConcurrencyControllerFor
 type NoopTenantConcurrencyController struct{}
 
 func (n *NoopTenantConcurrencyController) Done(_ context.Context) {}
+func (n *NoopTenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, g *rules.Group) []rules.ConcurrentRules {
+	return sequentialOrdering(g)
+}
 func (n *NoopTenantConcurrencyController) Allow(_ context.Context, _ *rules.Group, _ rules.Rule) bool {
 	return false
+}
+
+func sequentialOrdering(g *rules.Group) []rules.ConcurrentRules {
+	order := make([]rules.ConcurrentRules, len(g.Rules()))
+	for i := 0; i < len(g.Rules()); i++ {
+		order[i] = []int{i}
+	}
+	return order
 }

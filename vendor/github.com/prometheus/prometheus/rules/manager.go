@@ -147,9 +147,13 @@ func NewManager(o *ManagerOptions) *Manager {
 		o.GroupLoader = FileLoader{}
 	}
 
+	if o.Logger == nil {
+		o.Logger = promslog.NewNopLogger()
+	}
+
 	if o.RuleConcurrencyController == nil {
 		if o.ConcurrentEvalsEnabled {
-			o.RuleConcurrencyController = newRuleConcurrencyController(o.MaxConcurrentEvals)
+			o.RuleConcurrencyController = newRuleConcurrencyController(o.MaxConcurrentEvals, o.Logger)
 		} else {
 			o.RuleConcurrencyController = sequentialRuleEvalController{}
 		}
@@ -157,10 +161,6 @@ func NewManager(o *ManagerOptions) *Manager {
 
 	if o.RuleDependencyController == nil {
 		o.RuleDependencyController = ruleDependencyController{}
-	}
-
-	if o.Logger == nil {
-		o.Logger = promslog.NewNopLogger()
 	}
 
 	m := &Manager{
@@ -473,8 +473,8 @@ func SendAlerts(s Sender, externalURL string) NotifyFunc {
 // RuleDependencyController controls whether a set of rules have dependencies between each other.
 type RuleDependencyController interface {
 	// AnalyseRules analyses dependencies between the input rules. For each rule that it's guaranteed
-	// not having any dependants and/or dependency, this function should call Rule.SetNoDependentRules(true)
-	// and/or Rule.SetNoDependencyRules(true).
+	// not having any dependants and/or dependency, this function should call Rule.SetDependentRules(...)
+	// and/or Rule.SetDependencyRules(...).
 	AnalyseRules(rules []Rule)
 }
 
@@ -489,15 +489,22 @@ func (c ruleDependencyController) AnalyseRules(rules []Rule) {
 	}
 
 	for _, r := range rules {
-		r.SetNoDependentRules(depMap.dependents(r) == 0)
-		r.SetNoDependencyRules(depMap.dependencies(r) == 0)
+		r.SetDependentRules(depMap.dependents(r))
+		r.SetDependencyRules(depMap.dependencies(r))
 	}
 }
+
+// ConcurrentRules represents a slice of indexes of rules that can be evaluated concurrently.
+type ConcurrentRules []int
 
 // RuleConcurrencyController controls concurrency for rules that are safe to be evaluated concurrently.
 // Its purpose is to bound the amount of concurrency in rule evaluations to avoid overwhelming the Prometheus
 // server with additional query load. Concurrency is controlled globally, not on a per-group basis.
 type RuleConcurrencyController interface {
+	// SplitGroupIntoBatches returns an ordered slice of of ConcurrentRules, which are batches of rules that can be evaluated concurrently.
+	// The rules are represented by their index from the input rule group.
+	SplitGroupIntoBatches(ctx context.Context, group *Group) []ConcurrentRules
+
 	// Allow determines if the given rule is allowed to be evaluated concurrently.
 	// If Allow() returns true, then Done() must be called to release the acquired slot and corresponding cleanup is done.
 	// It is important that both *Group and Rule are not retained and only be used for the duration of the call.
@@ -509,36 +516,105 @@ type RuleConcurrencyController interface {
 
 // concurrentRuleEvalController holds a weighted semaphore which controls the concurrent evaluation of rules.
 type concurrentRuleEvalController struct {
-	sema *semaphore.Weighted
+	sema   *semaphore.Weighted
+	logger *slog.Logger
 }
 
-func newRuleConcurrencyController(maxConcurrency int64) RuleConcurrencyController {
+func newRuleConcurrencyController(maxConcurrency int64, logger *slog.Logger) RuleConcurrencyController {
 	return &concurrentRuleEvalController{
-		sema: semaphore.NewWeighted(maxConcurrency),
+		sema:   semaphore.NewWeighted(maxConcurrency),
+		logger: logger,
 	}
 }
 
 func (c *concurrentRuleEvalController) Allow(_ context.Context, _ *Group, rule Rule) bool {
-	// To allow a rule to be executed concurrently, we need 3 conditions:
-	// 1. The rule must not have any rules that depend on it.
-	// 2. The rule itself must not depend on any other rules.
-	// 3. If 1 & 2 are true, then and only then we should try to acquire the concurrency slot.
-	if rule.NoDependentRules() && rule.NoDependencyRules() {
-		return c.sema.TryAcquire(1)
+	return c.sema.TryAcquire(1)
+}
+
+func (c *concurrentRuleEvalController) SplitGroupIntoBatches(_ context.Context, g *Group) []ConcurrentRules {
+	sequentialController := sequentialRuleEvalController{}
+
+	type ruleInfo struct {
+		ruleIdx                 int
+		unevaluatedDependencies map[Rule]struct{}
+	}
+	remainingRules := make(map[Rule]ruleInfo)
+	firstBatch := ConcurrentRules{}
+	for i, r := range g.rules {
+		if r.NoDependencyRules() {
+			firstBatch = append(firstBatch, i)
+			continue
+		}
+		// Initialize the rule info with the rule's dependencies.
+		// Use a copy of the dependencies to avoid mutating the rule.
+		info := ruleInfo{ruleIdx: i, unevaluatedDependencies: map[Rule]struct{}{}}
+		for _, dep := range r.DependencyRules() {
+			info.unevaluatedDependencies[dep] = struct{}{}
+		}
+		remainingRules[r] = info
+	}
+	if len(firstBatch) == 0 {
+		// There are no rules without dependencies.
+		// Fall back to sequential evaluation.
+		c.logger.With("group", g.Name()).Info("No rules without dependencies found, falling back to sequential rule evaluation. This may be due to indeterminate rule dependencies.")
+		return sequentialController.SplitGroupIntoBatches(context.Background(), g)
+	}
+	order := []ConcurrentRules{firstBatch}
+
+	// Build the order of rules to evaluate based on dependencies.
+	for len(remainingRules) > 0 {
+		previousBatch := order[len(order)-1]
+		// Remove the batch's rules from the dependencies of its dependents.
+		for _, idx := range previousBatch {
+			rule := g.rules[idx]
+			for _, dependent := range rule.DependentRules() {
+				dependentInfo := remainingRules[dependent]
+				delete(dependentInfo.unevaluatedDependencies, rule)
+			}
+		}
+
+		var batch ConcurrentRules
+		// Find rules that have no remaining dependencies.
+		for name, info := range remainingRules {
+			if len(info.unevaluatedDependencies) == 0 {
+				batch = append(batch, info.ruleIdx)
+				delete(remainingRules, name)
+			}
+		}
+
+		if len(batch) == 0 {
+			// There is a cycle in the rules' dependencies.
+			// We can't evaluate them concurrently.
+			// Fall back to sequential evaluation.
+			c.logger.With("group", g.Name()).Warn("Cyclic rule dependencies detected, falling back to sequential rule evaluation")
+			return sequentialController.SplitGroupIntoBatches(context.Background(), g)
+		}
+
+		order = append(order, batch)
 	}
 
-	return false
+	return order
 }
 
 func (c *concurrentRuleEvalController) Done(_ context.Context) {
 	c.sema.Release(1)
 }
 
+var _ RuleConcurrencyController = &sequentialRuleEvalController{}
+
 // sequentialRuleEvalController is a RuleConcurrencyController that runs every rule sequentially.
 type sequentialRuleEvalController struct{}
 
 func (c sequentialRuleEvalController) Allow(_ context.Context, _ *Group, _ Rule) bool {
 	return false
+}
+
+func (c sequentialRuleEvalController) SplitGroupIntoBatches(_ context.Context, g *Group) []ConcurrentRules {
+	order := make([]ConcurrentRules, len(g.rules))
+	for i := range g.rules {
+		order[i] = []int{i}
+	}
+	return order
 }
 
 func (c sequentialRuleEvalController) Done(_ context.Context) {}

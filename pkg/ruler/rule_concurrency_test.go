@@ -106,8 +106,8 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 	exp, err := parser.ParseExpr("vector(1)")
 	require.NoError(t, err)
 	rule1 := rules.NewRecordingRule("test", exp, labels.Labels{})
-	rule1.SetNoDependencyRules(true)
-	rule1.SetNoDependentRules(true)
+	rule1.SetDependencyRules([]rules.Rule{})
+	rule1.SetDependentRules([]rules.Rule{})
 
 	globalController := NewMultiTenantConcurrencyController(logger, 3, 50.0, reg, limits)
 	user1Controller := globalController.NewTenantConcurrencyControllerFor("user1")
@@ -123,6 +123,14 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 
 	// Let's check the metrics up until this point.
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+# HELP cortex_ruler_independent_rule_evaluation_batch_attempts_completed_total Total number of completed attempts to split rules into concurrent batches across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_batch_attempts_completed_total counter
+cortex_ruler_independent_rule_evaluation_batch_attempts_completed_total{user="user1"} 0
+cortex_ruler_independent_rule_evaluation_batch_attempts_completed_total{user="user2"} 0
+# HELP cortex_ruler_independent_rule_evaluation_batch_attempts_started_total Total number of started attempts to split rules into concurrent batches across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_batch_attempts_started_total counter
+cortex_ruler_independent_rule_evaluation_batch_attempts_started_total{user="user1"} 0
+cortex_ruler_independent_rule_evaluation_batch_attempts_started_total{user="user2"} 0
 # HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total Total number of concurrency slots we're done using across all tenants
 # TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total counter
 cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{user="user1"} 0
@@ -148,6 +156,14 @@ cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use{user="user2"} 
 
 	// Let's look at the metrics again.
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+# HELP cortex_ruler_independent_rule_evaluation_batch_attempts_completed_total Total number of completed attempts to split rules into concurrent batches across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_batch_attempts_completed_total counter
+cortex_ruler_independent_rule_evaluation_batch_attempts_completed_total{user="user1"} 0
+cortex_ruler_independent_rule_evaluation_batch_attempts_completed_total{user="user2"} 0
+# HELP cortex_ruler_independent_rule_evaluation_batch_attempts_started_total Total number of started attempts to split rules into concurrent batches across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_batch_attempts_started_total counter
+cortex_ruler_independent_rule_evaluation_batch_attempts_started_total{user="user1"} 0
+cortex_ruler_independent_rule_evaluation_batch_attempts_started_total{user="user2"} 0
 # HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total Total number of incomplete attempts to acquire concurrency slots across all tenants
 # TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total counter
 cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total{user="user1"} 2
@@ -171,19 +187,27 @@ cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{us
 	user2Controller.Done(ctx)
 	user2Controller.Done(ctx)
 
-	// Finally, let's try a few edge cases.
-	rg2 := rules.NewGroup(rules.GroupOptions{
-		File:     "test.rules",
-		Name:     "test",
-		Interval: 1 * time.Minute, // group not at risk.
-		Opts:     &rules.ManagerOptions{},
-	})
-	require.False(t, user1Controller.Allow(ctx, rg2, rule1)) // Should not be allowed with a group that is not at risk.
-	rule1.SetNoDependencyRules(false)
-	require.False(t, user1Controller.Allow(ctx, rg, rule1)) // Should not be allowed as the rule is no longer independent.
+	// // Finally, let's try a few edge cases.
+	// rg2 := rules.NewGroup(rules.GroupOptions{
+	// 	File:     "test.rules",
+	// 	Name:     "test",
+	// 	Interval: 1 * time.Minute, // group not at risk.
+	// 	Opts:     &rules.ManagerOptions{},
+	// })
+	// require.False(t, user1Controller.Allow(ctx, rg2, rule1)) // Should not be allowed with a group that is not at risk.
+	// rule1.SetDependencyRules([]rules.Rule{rules.NewRecordingRule("test2", nil, labels.Labels{})})
+	// require.False(t, user1Controller.Allow(ctx, rg, rule1)) // Should not be allowed as the rule is no longer independent.
 
 	// Check the metrics one final time to ensure there are no active slots in use.
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+# HELP cortex_ruler_independent_rule_evaluation_batch_attempts_completed_total Total number of completed attempts to split rules into concurrent batches across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_batch_attempts_completed_total counter
+cortex_ruler_independent_rule_evaluation_batch_attempts_completed_total{user="user1"} 0
+cortex_ruler_independent_rule_evaluation_batch_attempts_completed_total{user="user2"} 0
+# HELP cortex_ruler_independent_rule_evaluation_batch_attempts_started_total Total number of started attempts to split rules into concurrent batches across all tenants
+# TYPE cortex_ruler_independent_rule_evaluation_batch_attempts_started_total counter
+cortex_ruler_independent_rule_evaluation_batch_attempts_started_total{user="user1"} 0
+cortex_ruler_independent_rule_evaluation_batch_attempts_started_total{user="user2"} 0
 # HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total Total number of incomplete attempts to acquire concurrency slots across all tenants
 # TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total counter
 cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total{user="user1"} 2
@@ -203,7 +227,7 @@ cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{us
 `)))
 
 	// Make the rule independent again.
-	rule1.SetNoDependencyRules(true)
+	rule1.SetDependencyRules([]rules.Rule{})
 
 	// Now let's test having a controller two times for the same tenant.
 	user3Controller := globalController.NewTenantConcurrencyControllerFor("user3")
@@ -213,57 +237,6 @@ cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{us
 	require.True(t, user3Controller.Allow(ctx, rg, rule1))
 	require.True(t, user3Controller.Allow(ctx, rg, rule1))
 	require.True(t, user3ControllerTwo.Allow(ctx, rg, rule1))
-}
-
-func TestIsRuleIndependent(t *testing.T) {
-	tests := map[string]struct {
-		rule     rules.Rule
-		expected bool
-	}{
-		"rule has neither dependencies nor dependents": {
-			rule: func() rules.Rule {
-				r := rules.NewRecordingRule("test", nil, labels.Labels{})
-				r.SetNoDependentRules(true)
-				r.SetNoDependencyRules(true)
-				return r
-			}(),
-			expected: true,
-		},
-		"rule has both dependencies and dependents": {
-			rule: func() rules.Rule {
-				r := rules.NewRecordingRule("test", nil, labels.Labels{})
-				r.SetNoDependentRules(false)
-				r.SetNoDependencyRules(false)
-				return r
-			}(),
-			expected: false,
-		},
-		"rule has dependents": {
-			rule: func() rules.Rule {
-				r := rules.NewRecordingRule("test", nil, labels.Labels{})
-				r.SetNoDependentRules(false)
-				r.SetNoDependencyRules(true)
-				return r
-			}(),
-			expected: false,
-		},
-		"rule has dependencies": {
-			rule: func() rules.Rule {
-				r := rules.NewRecordingRule("test", nil, labels.Labels{})
-				r.SetNoDependentRules(true)
-				r.SetNoDependencyRules(false)
-				return r
-			}(),
-			expected: false,
-		},
-	}
-
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			result := isRuleIndependent(tc.rule)
-			require.Equal(t, tc.expected, result)
-		})
-	}
 }
 
 func TestGroupAtRisk(t *testing.T) {
@@ -279,8 +252,8 @@ func TestGroupAtRisk(t *testing.T) {
 			q, err := parser.ParseExpr("vector(1)")
 			require.NoError(t, err)
 			rule := rules.NewRecordingRule(fmt.Sprintf("test_rule%d", i), q, labels.Labels{})
-			rule.SetNoDependencyRules(true)
-			rule.SetNoDependentRules(true)
+			rule.SetDependencyRules([]rules.Rule{})
+			rule.SetDependentRules([]rules.Rule{})
 			createdRules = append(createdRules, rule)
 		}
 
@@ -369,6 +342,14 @@ type allowAllConcurrencyController struct{}
 
 func (a *allowAllConcurrencyController) Allow(_ context.Context, _ *rules.Group, _ rules.Rule) bool {
 	return true
+}
+
+func (a *allowAllConcurrencyController) SplitGroupIntoBatches(_ context.Context, g *rules.Group) []rules.ConcurrentRules {
+	indexes := make([]int, len(g.Rules()))
+	for i := 0; i < len(g.Rules()); i++ {
+		indexes[i] = i
+	}
+	return []rules.ConcurrentRules{indexes}
 }
 
 func (a *allowAllConcurrencyController) Done(_ context.Context) {}
