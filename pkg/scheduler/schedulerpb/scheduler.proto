@@ -36,6 +36,9 @@ message QuerierToScheduler {
 }
 
 message SchedulerToQuerier {
+  option (gogoproto.equal) = false;
+  option (gogoproto.marshaler) = false;
+
   // Query ID as reported by frontend. When querier sends the response back to frontend (using frontendAddress),
   // it identifies the query by using this ID.
   uint64 queryID = 1;
@@ -73,6 +76,8 @@ enum FrontendToSchedulerType {
 }
 
 message FrontendToScheduler {
+  option (gogoproto.equal) = false;
+  option (gogoproto.marshaler) = false;
   FrontendToSchedulerType type = 1;
 
   // Used by INIT message. Will be put into all requests passed to querier.

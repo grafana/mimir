@@ -1,0 +1,32 @@
+diff --git a/pkg/distributor/query.go b/pkg/distributor/query.go
+index 2b766f30f4..41d83b124f 100644
+--- a/pkg/distributor/query.go
++++ b/pkg/distributor/query.go
+@@ -337,15 +337,20 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
+ 		for _, batch := range res.chunkseriesBatches {
+ 			for _, series := range batch {
+ 				key := mimirpb.FromLabelAdaptersToKeyString(series.Labels)
+-				existing := hashToChunkseries[key]
+-				existing.Labels = series.Labels
++				if existing, ok := hashToChunkseries[key]; ok {
++					existing.Labels = series.Labels
+ 
+-				numPotentialChunks := len(existing.Chunks) + len(series.Chunks)
+-				existing.Chunks = ingester_client.AccumulateChunks(existing.Chunks, series.Chunks)
++					numPotentialChunks := len(existing.Chunks) + len(series.Chunks)
++					existing.Chunks = ingester_client.AccumulateChunks(existing.Chunks, series.Chunks)
+ 
+-				deduplicatedChunks += numPotentialChunks - len(existing.Chunks)
+-				totalChunks += len(series.Chunks)
+-				hashToChunkseries[key] = existing
++					deduplicatedChunks += numPotentialChunks - len(existing.Chunks)
++					totalChunks += len(series.Chunks)
++					hashToChunkseries[key] = existing
++				} else {
++					// no existing series to dedupe
++					totalChunks += len(series.Chunks)
++					hashToChunkseries[key] = series
++				}
+ 			}
+ 		}
+ 
