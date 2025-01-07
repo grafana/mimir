@@ -26,11 +26,13 @@ type FeatureToggles struct {
 	EnableScalars                                bool `yaml:"enable_scalars" category:"experimental"`
 	EnableSubqueries                             bool `yaml:"enable_subqueries" category:"experimental"`
 	EnableHistogramQuantileFunction              bool `yaml:"enable_histogram_quantile_function" category:"experimental"`
+	EnableOneToManyAndManyToOneBinaryOperations  bool `yaml:"enable_one_to_many_and_many_to_one_binary_operations" category:"experimental"`
 }
 
 // EnableAllFeatures enables all features supported by MQE, including experimental or incomplete features.
 var EnableAllFeatures = FeatureToggles{
 	// Note that we deliberately use a keyless literal here to force a compilation error if we don't keep this in sync with new fields added to FeatureToggles.
+	true,
 	true,
 	true,
 	true,
@@ -50,4 +52,5 @@ func (t *FeatureToggles) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&t.EnableScalars, "querier.mimir-query-engine.enable-scalars", true, "Enable support for scalars in the Mimir query engine. Only applies if the MQE is in use.")
 	f.BoolVar(&t.EnableSubqueries, "querier.mimir-query-engine.enable-subqueries", true, "Enable support for subqueries in the Mimir query engine. Only applies if the MQE is in use.")
 	f.BoolVar(&t.EnableHistogramQuantileFunction, "querier.mimir-query-engine.enable-histogram-quantile-function", true, "Enable support for the histogram_quantile function in the Mimir query engine. Only applies if the MQE is in use.")
+	f.BoolVar(&t.EnableOneToManyAndManyToOneBinaryOperations, "querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations", true, "Enable support for one-to-many and many-to-one binary operations (group_left/group_right) in the Mimir query engine. Only applies if the MQE is in use.")
 }

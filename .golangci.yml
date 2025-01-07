@@ -11,6 +11,7 @@ linters:
     - errorlint
     - forbidigo
     - loggercheck
+    - gosec
 
 linters-settings:
   errcheck:
@@ -60,6 +61,14 @@ linters-settings:
       # We can't use faillint for a rule like this, because it does not support matching methods on structs or interfaces (see https://github.com/fatih/faillint/issues/18)
       - p: ^.*\.CloseSend.*$
         msg: Do not use CloseSend on a server-streaming gRPC stream. Use util.CloseAndExhaust instead. See the documentation on CloseAndExhaust for further explanation.
+
+  gosec:
+    includes:
+      - G104
+      - G108
+      - G109
+      - G112
+      - G114
 
 run:
   timeout: 10m
