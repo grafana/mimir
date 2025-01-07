@@ -1,0 +1,37 @@
+# Enable enterprise features (required for federation-frontend)
+enterprise:
+  enabled: true
+
+# Enable and configure federation-frontend
+federation_frontend:
+  enabled: true
+  disableOtherComponents: true
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1
+      memory: 256Mi
+
+mimir:
+  structuredConfig:
+    auth:
+      type: trust
+    # The federation-frontend doesn't handle auth. Disabling multi-tenant means the FF doesn't need to check for the X-Scope-OrgID header
+    # and will use the auth material from the proxy_targets configuration.
+    # If using the federation-frontend.
+    multitenancy_enabled: false
+    federation:
+      proxy_targets:
+        - name: "mimir-distributed-1"
+          url: "http://mimir-query-frontend.real-deployment.svc.cluster.local:8080/prometheus"
+        - name: "mimir-distributed-2"
+          url: "http://mimir-query-frontend.real-deployment.svc.cluster.local:8080/prometheus"
+
+minio:
+  enabled: false
+
+rollout_operator:
+  enabled: false

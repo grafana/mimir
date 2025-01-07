@@ -4,20 +4,23 @@ package ingest
 
 import (
 	"context"
+	crypto_rand "crypto/rand"
 	"errors"
 	"fmt"
+	"math/rand"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -26,6 +29,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
+	mimirtest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
@@ -54,19 +58,18 @@ func TestPartitionReader(t *testing.T) {
 
 	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
-	content := []byte("special content")
 	consumer := newTestConsumer(2)
 
 	createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
 
 	writeClient := newKafkaProduceClient(t, clusterAddr)
 
-	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
-	produceRecord(ctx, t, writeClient, topicName, partitionID, content)
+	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record 1"))
+	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record 2"))
 
 	records, err := consumer.waitRecords(2, 5*time.Second, 0)
 	assert.NoError(t, err)
-	assert.Equal(t, [][]byte{content, content}, records)
+	assert.Equal(t, [][]byte{[]byte("record 1"), []byte("record 2")}, records)
 }
 
 func TestPartitionReader_logFetchErrors(t *testing.T) {
@@ -101,47 +104,137 @@ func TestPartitionReader_logFetchErrors(t *testing.T) {
 }
 
 func TestPartitionReader_ConsumerError(t *testing.T) {
+	t.Parallel()
+
 	const (
 		topicName   = "test"
 		partitionID = 1
 	)
 
-	ctx, cancel := context.WithCancelCause(context.Background())
-	t.Cleanup(func() { cancel(errors.New("test done")) })
+	// We want to run this test with different concurrency config.
+	concurrencyVariants := map[string][]readerTestCfgOpt{
+		"without concurrency":    {withFetchConcurrency(0)},
+		"with fetch concurrency": {withFetchConcurrency(2)},
+	}
 
-	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+	for concurrencyName, concurrencyVariant := range concurrencyVariants {
+		concurrencyVariant := concurrencyVariant
 
-	invocations := atomic.NewInt64(0)
-	returnErrors := atomic.NewBool(true)
-	trackingConsumer := newTestConsumer(2)
-	consumer := consumerFunc(func(ctx context.Context, records []record) error {
-		invocations.Inc()
-		if !returnErrors.Load() {
-			return trackingConsumer.consume(ctx, records)
-		}
-		// There may be more records, but we only care that the one we failed to consume in the first place is still there.
-		assert.Equal(t, "1", string(records[0].content))
-		return errors.New("consumer error")
-	})
-	createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
+		t.Run(concurrencyName, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancelCause(context.Background())
+			t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	// Write to Kafka.
-	writeClient := newKafkaProduceClient(t, clusterAddr)
+			_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
-	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("1"))
-	produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("2"))
+			invocations := atomic.NewInt64(0)
+			returnErrors := atomic.NewBool(true)
+			trackingConsumer := newTestConsumer(2)
+			consumer := consumerFunc(func(ctx context.Context, records []record) error {
+				invocations.Inc()
+				if !returnErrors.Load() {
+					return trackingConsumer.Consume(ctx, records)
+				}
+				// There may be more records, but we only care that the one we failed to consume in the first place is still there.
+				assert.Equal(t, "1", string(records[0].content))
+				return errors.New("consumer error")
+			})
+			createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer, concurrencyVariant...)
 
-	// There are more than one invocation because the reader will retry.
-	assert.Eventually(t, func() bool { return invocations.Load() > 1 }, 5*time.Second, 100*time.Millisecond)
+			// Write to Kafka.
+			writeClient := newKafkaProduceClient(t, clusterAddr)
 
-	returnErrors.Store(false)
+			produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("1"))
+			produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("2"))
 
-	records, err := trackingConsumer.waitRecords(2, time.Second, 0)
-	assert.NoError(t, err)
-	assert.Equal(t, [][]byte{[]byte("1"), []byte("2")}, records)
+			// There are more than one invocation because the reader will retry.
+			assert.Eventually(t, func() bool { return invocations.Load() > 1 }, 5*time.Second, 100*time.Millisecond)
+
+			returnErrors.Store(false)
+
+			records, err := trackingConsumer.waitRecords(2, time.Second, 0)
+			assert.NoError(t, err)
+			assert.Equal(t, [][]byte{[]byte("1"), []byte("2")}, records)
+		})
+	}
 }
 
-func TestPartitionReader_WaitReadConsistency(t *testing.T) {
+func TestPartitionReader_ConsumerStopping(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	// We want to run this test with different concurrency config.
+	concurrencyVariants := map[string][]readerTestCfgOpt{
+		"without concurrency":    {withFetchConcurrency(0)},
+		"with fetch concurrency": {withFetchConcurrency(2)},
+	}
+
+	for concurrencyName, concurrencyVariant := range concurrencyVariants {
+		concurrencyVariant := concurrencyVariant
+
+		t.Run(concurrencyName, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithCancelCause(context.Background())
+			t.Cleanup(func() { cancel(errors.New("test done")) })
+
+			_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+
+			// consumerErrs will store the last error returned by the consumer; its initial value doesn't matter, but it must be non-nil.
+			consumerErrs := atomic.NewError(errors.New("dummy error"))
+			type consumerCall struct {
+				f    func() []record
+				resp chan error
+			}
+			consumeCalls := make(chan consumerCall)
+			consumer := consumerFunc(func(ctx context.Context, records []record) (err error) {
+				defer consumerErrs.Store(err)
+
+				call := consumerCall{
+					f:    func() []record { return records },
+					resp: make(chan error),
+				}
+				consumeCalls <- call
+				err = <-call.resp
+				// The service is about to transition into its stopping phase. But the consumer must not observe it via the parent context.
+				assert.NoError(t, ctx.Err())
+
+				return err
+			})
+			reader := createReader(t, clusterAddr, topicName, partitionID, consumer, concurrencyVariant...)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+
+			// Write to Kafka.
+			writeClient := newKafkaProduceClient(t, clusterAddr)
+			produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("1"))
+
+			// After this point, we know that the consumer is in the in-flight.
+			call := <-consumeCalls
+			// Explicitly begin to stop the service while it's still consuming the records. This shouldn't cancel the in-flight consumption.
+			reader.StopAsync()
+
+			go func() {
+				// Simulate a slow consumer, that blocks reader from stopping.
+				time.Sleep(time.Second)
+
+				defer close(call.resp)
+
+				records := call.f()
+				require.Len(t, records, 1)
+				require.Equal(t, []byte("1"), records[0].content)
+			}()
+
+			// Wait for the reader to stop completely.
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+			// Checks the consumer returned a non-errored result.
+			require.NoError(t, consumerErrs.Load())
+		})
+	}
+}
+
+func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitReadConsistencyUntilOffset(t *testing.T) {
 	const (
 		topicName   = "test"
 		partitionID = 0
@@ -151,14 +244,14 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 		ctx = context.Background()
 	)
 
-	setup := func(t *testing.T, consumer recordConsumer, opts ...readerTestCfgOtp) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
+	setup := func(t *testing.T, consumer recordConsumer, opts ...readerTestCfgOpt) (*PartitionReader, *kgo.Client, *prometheus.Registry) {
 		reg := prometheus.NewPedanticRegistry()
 
-		_, clusterAddr := testkafka.CreateCluster(t, 1, topicName)
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
 
 		// Configure the reader to poll the "last produced offset" frequently.
 		reader := createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer,
-			append([]readerTestCfgOtp{
+			append([]readerTestCfgOpt{
 				withLastProducedOffsetPollInterval(100 * time.Millisecond),
 				withRegistry(reg),
 			}, opts...)...)
@@ -171,165 +264,242 @@ func TestPartitionReader_WaitReadConsistency(t *testing.T) {
 	t.Run("should return after all produced records have been consumed", func(t *testing.T) {
 		t.Parallel()
 
-		consumedRecords := atomic.NewInt64(0)
+		for _, withOffset := range []bool{false, true} {
+			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
 
-		// We define a custom consume function which introduces a delay once the 2nd record
-		// has been consumed but before the function returns. From the PartitionReader perspective,
-		// the 2nd record consumption will be delayed.
-		consumer := consumerFunc(func(_ context.Context, records []record) error {
-			for _, record := range records {
-				// Introduce a delay before returning from the consume function once
-				// the 2nd record has been consumed.
-				if consumedRecords.Load()+1 == 2 {
-					time.Sleep(time.Second)
+				consumedRecords := atomic.NewInt64(0)
+
+				// We define a custom consume function which introduces a delay once the 2nd record
+				// has been consumed but before the function returns. From the PartitionReader perspective,
+				// the 2nd record consumption will be delayed.
+				consumer := consumerFunc(func(_ context.Context, records []record) error {
+					for _, record := range records {
+						// Introduce a delay before returning from the consume function once
+						// the 2nd record has been consumed.
+						if consumedRecords.Load()+1 == 2 {
+							time.Sleep(time.Second)
+						}
+
+						consumedRecords.Inc()
+						assert.Equal(t, fmt.Sprintf("record-%d", consumedRecords.Load()), string(record.content))
+						t.Logf("consumed record: %s", string(record.content))
+					}
+
+					return nil
+				})
+
+				reader, writeClient, reg := setup(t, consumer)
+
+				// Produce some records.
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				lastRecordOffset := produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+				t.Logf("produced 2 records (last record offset: %d)", lastRecordOffset)
+
+				// WaitReadConsistencyUntilLastProducedOffset() should return after all records produced up until this
+				// point have been consumed.
+				t.Log("started waiting for read consistency")
+
+				if withOffset {
+					require.NoError(t, reader.WaitReadConsistencyUntilOffset(ctx, lastRecordOffset))
+				} else {
+					require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(ctx))
 				}
 
-				consumedRecords.Inc()
-				assert.Equal(t, fmt.Sprintf("record-%d", consumedRecords.Load()), string(record.content))
-				t.Logf("consumed record: %s", string(record.content))
-			}
+				assert.Equal(t, int64(2), consumedRecords.Load())
+				t.Log("finished waiting for read consistency")
 
-			return nil
-		})
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
+					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 0
 
-		reader, writeClient, reg := setup(t, consumer)
+					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
+					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader", topic="%s"} 0
+				`, topicName, withOffset, topicName, !withOffset, topicName)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
+			})
+		}
 
-		// Produce some records.
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
-		t.Log("produced 2 records")
-
-		// WaitReadConsistency() should return after all records produced up until this
-		// point have been consumed.
-		t.Log("started waiting for read consistency")
-
-		err := reader.WaitReadConsistency(ctx)
-		require.NoError(t, err)
-		assert.Equal(t, int64(2), consumedRecords.Load())
-		t.Log("finished waiting for read consistency")
-
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
-			# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-			cortex_ingest_storage_strong_consistency_requests_total 1
-
-			# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
-			# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-			cortex_ingest_storage_strong_consistency_failures_total 0
-		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
 	})
 
 	t.Run("should block until the request context deadline is exceeded if produced records are not consumed", func(t *testing.T) {
 		t.Parallel()
 
-		// Create a consumer with no buffer capacity.
-		consumer := newTestConsumer(0)
+		for _, withOffset := range []bool{false, true} {
+			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
 
-		reader, writeClient, reg := setup(t, consumer, withWaitStrongReadConsistencyTimeout(0))
+				// Create a consumer with no buffer capacity.
+				consumer := newTestConsumer(0)
 
-		// Produce some records.
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		t.Log("produced 1 record")
+				reader, writeClient, reg := setup(t, consumer, withWaitStrongReadConsistencyTimeout(0))
 
-		err := reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
-		require.ErrorIs(t, err, context.DeadlineExceeded)
-		require.NotErrorIs(t, err, errWaitStrongReadConsistencyTimeoutExceeded)
+				// Produce some records.
+				lastRecordOffset := produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				t.Logf("produced 1 record (last record offset: %d)", lastRecordOffset)
 
-		// Consume the records.
-		records, err := consumer.waitRecords(1, 2*time.Second, 0)
-		assert.NoError(t, err)
-		assert.Equal(t, [][]byte{[]byte("record-1")}, records)
+				waitCtx := createTestContextWithTimeout(t, time.Second)
+				var err error
 
-		// Now the WaitReadConsistency() should return soon.
-		err = reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
-		require.NoError(t, err)
+				if withOffset {
+					err = reader.WaitReadConsistencyUntilOffset(waitCtx, lastRecordOffset)
+				} else {
+					err = reader.WaitReadConsistencyUntilLastProducedOffset(waitCtx)
+				}
 
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
-			# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-			cortex_ingest_storage_strong_consistency_requests_total 2
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+				require.NotErrorIs(t, err, errWaitStrongReadConsistencyTimeoutExceeded)
 
-			# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
-			# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-			cortex_ingest_storage_strong_consistency_failures_total 1
-		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+				// Consume the records.
+				records, err := consumer.waitRecords(1, 2*time.Second, 0)
+				assert.NoError(t, err)
+				assert.Equal(t, [][]byte{[]byte("record-1")}, records)
+
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
+					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 0
+
+					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
+					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader", topic="%s"} 1
+				`, topicName, withOffset, topicName, !withOffset, topicName)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
+
+				// Now the WaitReadConsistencyUntilLastProducedOffset() should return soon.
+				err = reader.WaitReadConsistencyUntilLastProducedOffset(createTestContextWithTimeout(t, time.Second))
+				require.NoError(t, err)
+			})
+		}
 	})
 
 	t.Run("should block until the configured wait timeout is exceeded if produced records are not consumed", func(t *testing.T) {
 		t.Parallel()
 
-		// Create a consumer with no buffer capacity.
-		consumer := newTestConsumer(0)
+		for _, withOffset := range []bool{false, true} {
+			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
 
-		reader, writeClient, reg := setup(t, consumer, withWaitStrongReadConsistencyTimeout(time.Second))
+				// Create a consumer with no buffer capacity.
+				consumer := newTestConsumer(0)
 
-		// Produce some records.
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		t.Log("produced 1 record")
+				reader, writeClient, reg := setup(t, consumer, withWaitStrongReadConsistencyTimeout(time.Second))
 
-		ctx := context.Background()
-		err := reader.WaitReadConsistency(ctx)
-		require.ErrorIs(t, err, context.DeadlineExceeded)
-		require.ErrorIs(t, err, errWaitStrongReadConsistencyTimeoutExceeded)
+				// Produce some records.
+				lastRecordOffset := produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				t.Logf("produced 1 record (last record offset: %d)", lastRecordOffset)
 
-		// Consume the records.
-		records, err := consumer.waitRecords(1, 2*time.Second, 0)
-		assert.NoError(t, err)
-		assert.Equal(t, [][]byte{[]byte("record-1")}, records)
+				ctx := context.Background()
+				var err error
 
-		// Now the WaitReadConsistency() should return soon.
-		err = reader.WaitReadConsistency(ctx)
-		require.NoError(t, err)
+				if withOffset {
+					err = reader.WaitReadConsistencyUntilOffset(ctx, lastRecordOffset)
+				} else {
+					err = reader.WaitReadConsistencyUntilLastProducedOffset(ctx)
+				}
 
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
-			# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-			cortex_ingest_storage_strong_consistency_requests_total 2
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+				require.ErrorIs(t, err, errWaitStrongReadConsistencyTimeoutExceeded)
 
-			# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
-			# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-			cortex_ingest_storage_strong_consistency_failures_total 1
-		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+				// Consume the records.
+				records, err := consumer.waitRecords(1, 2*time.Second, 0)
+				assert.NoError(t, err)
+				assert.Equal(t, [][]byte{[]byte("record-1")}, records)
+
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
+					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 0
+
+					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
+					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader", topic="%s"} 1
+				`, topicName, withOffset, topicName, !withOffset, topicName)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
+
+				// Now the WaitReadConsistencyUntilLastProducedOffset() should return soon.
+				err = reader.WaitReadConsistencyUntilLastProducedOffset(ctx)
+				require.NoError(t, err)
+			})
+		}
 	})
 
 	t.Run("should return if no records have been produced yet", func(t *testing.T) {
 		t.Parallel()
 
-		reader, _, reg := setup(t, newTestConsumer(0))
+		for _, withOffset := range []bool{false, true} {
+			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
 
-		err := reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
-		require.NoError(t, err)
+				reader, _, reg := setup(t, newTestConsumer(0))
+				waitCtx := createTestContextWithTimeout(t, time.Second)
+				createTestContextWithTimeout(t, time.Second)
 
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
-			# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-			cortex_ingest_storage_strong_consistency_requests_total 1
+				if withOffset {
+					require.NoError(t, reader.WaitReadConsistencyUntilOffset(waitCtx, -1))
+				} else {
+					require.NoError(t, reader.WaitReadConsistencyUntilLastProducedOffset(waitCtx))
+				}
 
-			# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
-			# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-			cortex_ingest_storage_strong_consistency_failures_total 0
-		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
+					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 0
+
+					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
+					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader", topic="%s"} 0
+				`, topicName, withOffset, topicName, !withOffset, topicName)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
+			})
+		}
 	})
 
 	t.Run("should return an error if the PartitionReader is not running", func(t *testing.T) {
 		t.Parallel()
 
-		reader, _, reg := setup(t, newTestConsumer(0))
+		for _, withOffset := range []bool{false, true} {
+			t.Run(fmt.Sprintf("with offset %v", withOffset), func(t *testing.T) {
+				t.Parallel()
 
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+				reader, _, reg := setup(t, newTestConsumer(0))
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
 
-		err := reader.WaitReadConsistency(createTestContextWithTimeout(t, time.Second))
-		require.ErrorContains(t, err, "partition reader service is not running")
+				waitCtx := createTestContextWithTimeout(t, time.Second)
+				var err error
 
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested.
-			# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
-			cortex_ingest_storage_strong_consistency_requests_total 1
+				if withOffset {
+					err = reader.WaitReadConsistencyUntilOffset(waitCtx, -1)
+				} else {
+					err = reader.WaitReadConsistencyUntilLastProducedOffset(waitCtx)
+				}
 
-			# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
-			# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
-			cortex_ingest_storage_strong_consistency_failures_total 1
-		`), "cortex_ingest_storage_strong_consistency_requests_total", "cortex_ingest_storage_strong_consistency_failures_total"))
+				require.ErrorContains(t, err, "partition reader service is not running")
+
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_strong_consistency_requests_total Total number of requests for which strong consistency has been requested. The metric distinguishes between requests with an offset specified and requests requesting to enforce strong consistency up until the last produced offset.
+					# TYPE cortex_ingest_storage_strong_consistency_requests_total counter
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 1
+					cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", topic="%s", with_offset="%t"} 0
+
+					# HELP cortex_ingest_storage_strong_consistency_failures_total Total number of failures while waiting for strong consistency to be enforced.
+					# TYPE cortex_ingest_storage_strong_consistency_failures_total counter
+					cortex_ingest_storage_strong_consistency_failures_total{component="partition-reader", topic="%s"} 1
+				`, topicName, withOffset, topicName, !withOffset, topicName)),
+					"cortex_ingest_storage_strong_consistency_requests_total",
+					"cortex_ingest_storage_strong_consistency_failures_total"))
+			})
+		}
 	})
 }
 
@@ -341,326 +511,539 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 	ctx := context.Background()
 
+	// We want to run all these tests with different concurrency config.
+	concurrencyVariants := map[string][]readerTestCfgOpt{
+		"without concurrency":      {withFetchConcurrency(0)},
+		"with startup concurrency": {withFetchConcurrency(2)},
+	}
+
 	t.Run("should immediately switch to Running state if partition is empty", func(t *testing.T) {
 		t.Parallel()
 
-		var (
-			_, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-			consumer       = consumerFunc(func(context.Context, []record) error { return nil })
-			reg            = prometheus.NewPedanticRegistry()
-		)
+		for concurrencyName, concurrencyVariant := range concurrencyVariants {
+			concurrencyVariant := concurrencyVariant
 
-		// Create and start the reader. We expect the reader to start even if partition is empty.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
-		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+			t.Run(concurrencyName, func(t *testing.T) {
+				t.Parallel()
 
-		// The last consumed offset should be -1, since nothing has been consumed yet.
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
-			# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-			cortex_ingest_storage_reader_last_consumed_offset{partition="1"} -1
-		`), "cortex_ingest_storage_reader_last_consumed_offset"))
+				var (
+					_, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+					consumer       = consumerFunc(func(context.Context, []record) error { return nil })
+					reg            = prometheus.NewPedanticRegistry()
+				)
+
+				// Create and start the reader. We expect the reader to start even if partition is empty.
+				readerOpts := append([]readerTestCfgOpt{
+					withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second),
+					withRegistry(reg),
+				}, concurrencyVariant...)
+
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+
+				// The last consumed offset should be -1, since nothing has been consumed yet.
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+					# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+					# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+					cortex_ingest_storage_reader_last_consumed_offset{partition="1"} -1
+				`), "cortex_ingest_storage_reader_last_consumed_offset"))
+			})
+		}
 	})
 
-	t.Run("should immediately switch to Running state if configured max lag is 0", func(t *testing.T) {
+	t.Run("should immediately switch to Running state if configured target / max lag is 0", func(t *testing.T) {
 		t.Parallel()
 
-		var (
-			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
-			reg                  = prometheus.NewPedanticRegistry()
-		)
+		for concurrencyName, concurrencyVariant := range concurrencyVariants {
+			concurrencyVariant := concurrencyVariant
 
-		// Mock Kafka to fail the Fetch request.
-		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
-			cluster.KeepControl()
+			t.Run(concurrencyName, func(t *testing.T) {
+				t.Parallel()
 
-			return nil, errors.New("mocked error"), true
-		})
+				var (
+					cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+					consumer             = consumerFunc(func(context.Context, []record) error { return nil })
+					reg                  = prometheus.NewPedanticRegistry()
+				)
 
-		// Produce some records.
-		writeClient := newKafkaProduceClient(t, clusterAddr)
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
-		t.Log("produced 2 records")
+				// Mock Kafka to fail the Fetch request.
+				cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
+					cluster.KeepControl()
 
-		// Create and start the reader. We expect the reader to start even if Fetch is failing.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(0), withRegistry(reg))
-		require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+					return nil, errors.New("mocked error"), true
+				})
 
-		// The last consumed offset should be -1, since nothing has been consumed yet (Fetch requests are failing).
-		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-			# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
-			# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-			cortex_ingest_storage_reader_last_consumed_offset{partition="1"} -1
-		`), "cortex_ingest_storage_reader_last_consumed_offset"))
+				// Produce some records.
+				writeClient := newKafkaProduceClient(t, clusterAddr)
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+				t.Log("produced 2 records")
+
+				// Create and start the reader. We expect the reader to start even if Fetch is failing.
+				readerOpts := append([]readerTestCfgOpt{
+					withTargetAndMaxConsumerLagAtStartup(0, 0),
+					withRegistry(reg),
+				}, concurrencyVariant...)
+
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+
+				// The last consumed offset should be -1, since nothing has been consumed yet (Fetch requests are failing).
+				assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+					# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+					# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+					cortex_ingest_storage_reader_last_consumed_offset{partition="1"} -1
+				`), "cortex_ingest_storage_reader_last_consumed_offset"))
+			})
+		}
 	})
 
-	t.Run("should consume partition from start if last committed offset is missing and wait until max lag is honored", func(t *testing.T) {
+	t.Run("should consume partition from start if last committed offset is missing and wait until target lag is honored", func(t *testing.T) {
 		t.Parallel()
 
-		var (
-			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-			fetchRequestsCount   = atomic.NewInt64(0)
-			fetchShouldFail      = atomic.NewBool(true)
-			consumedRecordsCount = atomic.NewInt64(0)
-		)
+		for concurrencyName, concurrencyVariant := range concurrencyVariants {
+			concurrencyVariant := concurrencyVariant
 
-		consumer := consumerFunc(func(_ context.Context, records []record) error {
-			consumedRecordsCount.Add(int64(len(records)))
-			return nil
-		})
+			t.Run(concurrencyName, func(t *testing.T) {
+				t.Parallel()
 
-		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
-			cluster.KeepControl()
-			fetchRequestsCount.Inc()
+				var (
+					cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+					fetchRequestsCount   = atomic.NewInt64(0)
+					fetchShouldFail      = atomic.NewBool(true)
+					consumedRecordsCount = atomic.NewInt64(0)
+				)
 
-			if fetchShouldFail.Load() {
-				return nil, errors.New("mocked error"), true
-			}
+				consumer := consumerFunc(func(_ context.Context, records []record) error {
+					consumedRecordsCount.Add(int64(len(records)))
+					return nil
+				})
 
-			return nil, nil, false
-		})
+				cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
+					cluster.KeepControl()
+					fetchRequestsCount.Inc()
 
-		// Produce some records.
-		writeClient := newKafkaProduceClient(t, clusterAddr)
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
-		t.Log("produced 2 records")
+					if fetchShouldFail.Load() {
+						return nil, errors.New("mocked error"), true
+					}
 
-		// Create and start the reader.
-		reg := prometheus.NewPedanticRegistry()
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
-		require.NoError(t, reader.StartAsync(ctx))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		})
+					return nil, nil, false
+				})
 
-		// Wait until the Kafka cluster received few Fetch requests.
-		test.Poll(t, 5*time.Second, true, func() interface{} {
-			return fetchRequestsCount.Load() > 2
-		})
+				// Produce some records.
+				writeClient := newKafkaProduceClient(t, clusterAddr)
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+				t.Log("produced 2 records")
 
-		// Since the mocked Kafka cluster is configured to fail any Fetch we expect the reader hasn't
-		// catched up yet, and it's still in Starting state.
-		assert.Equal(t, services.Starting, reader.State())
-		assert.Equal(t, int64(0), consumedRecordsCount.Load())
+				// Create and start the reader.
+				reg := prometheus.NewPedanticRegistry()
+				logs := &concurrency.SyncBuffer{}
+				readerOpts := append([]readerTestCfgOpt{
+					withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+					withRegistry(reg),
+					withLogger(log.NewLogfmtLogger(logs)),
+				}, concurrencyVariant...)
 
-		// Unblock the Fetch requests. Now they will succeed.
-		fetchShouldFail.Store(false)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				require.NoError(t, reader.StartAsync(ctx))
+				t.Cleanup(func() {
+					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+				})
 
-		// We expect the reader to catch up, and then switch to Running state.
-		test.Poll(t, 5*time.Second, services.Running, func() interface{} {
-			return reader.State()
-		})
+				// Wait until the Kafka cluster received few Fetch requests.
+				test.Poll(t, 5*time.Second, true, func() interface{} {
+					return fetchRequestsCount.Load() > 2
+				})
 
-		assert.Equal(t, int64(2), consumedRecordsCount.Load())
+				// Since the mocked Kafka cluster is configured to fail any Fetch we expect the reader hasn't
+				// catched up yet, and it's still in Starting state.
+				assert.Equal(t, services.Starting, reader.State())
+				assert.Equal(t, int64(0), consumedRecordsCount.Load())
 
-		// We expect the last consumed offset to be tracked in a metric.
-		test.Poll(t, time.Second, nil, func() interface{} {
-			return promtest.GatherAndCompare(reg, strings.NewReader(`
-				# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
-				# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-				cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
-			`), "cortex_ingest_storage_reader_last_consumed_offset")
-		})
+				// Unblock the Fetch requests. Now they will succeed.
+				fetchShouldFail.Store(false)
+
+				// We expect the reader to catch up, and then switch to Running state.
+				test.Poll(t, 5*time.Second, services.Running, func() interface{} {
+					return reader.State()
+				})
+
+				// We expect the reader to have switched to running because target consumer lag has been honored.
+				assert.Contains(t, logs.String(), "partition reader consumed partition and current lag is lower than configured target consumer lag")
+
+				assert.Equal(t, int64(2), consumedRecordsCount.Load())
+
+				// We expect the last consumed offset to be tracked in a metric.
+				test.Poll(t, time.Second, nil, func() interface{} {
+					return promtest.GatherAndCompare(reg, strings.NewReader(`
+						# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+						# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+						cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+
+						# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+						# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+						cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+					`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
+				})
+			})
+		}
 	})
 
-	t.Run("should consume partition from start if last committed offset is missing and wait until max lag is honored and retry if a failure occurs when fetching last produced offset", func(t *testing.T) {
+	t.Run("should consume partition from start if last committed offset is missing and wait until target lag is honored and retry if a failure occurs when fetching last produced offset", func(t *testing.T) {
 		t.Parallel()
 
-		var (
-			cluster, clusterAddr     = testkafka.CreateCluster(t, partitionID+1, topicName)
-			listOffsetsRequestsCount = atomic.NewInt64(0)
-			listOffsetsShouldFail    = atomic.NewBool(true)
-			consumedRecordsCount     = atomic.NewInt64(0)
-		)
+		for concurrencyName, concurrencyVariant := range concurrencyVariants {
+			concurrencyVariant := concurrencyVariant
 
-		consumer := consumerFunc(func(_ context.Context, records []record) error {
-			consumedRecordsCount.Add(int64(len(records)))
-			return nil
-		})
+			t.Run(concurrencyName, func(t *testing.T) {
+				t.Parallel()
 
-		cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
-			cluster.KeepControl()
-			listOffsetsRequestsCount.Inc()
+				var (
+					cluster, clusterAddr     = testkafka.CreateCluster(t, partitionID+1, topicName)
+					listOffsetsRequestsCount = atomic.NewInt64(0)
+					listOffsetsShouldFail    = atomic.NewBool(true)
+					consumedRecordsCount     = atomic.NewInt64(0)
+				)
 
-			if listOffsetsShouldFail.Load() {
-				return nil, errors.New("mocked error"), true
-			}
+				consumer := consumerFunc(func(_ context.Context, records []record) error {
+					consumedRecordsCount.Add(int64(len(records)))
+					return nil
+				})
 
-			return nil, nil, false
-		})
+				cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
+					cluster.KeepControl()
+					listOffsetsRequestsCount.Inc()
 
-		// Produce some records.
-		writeClient := newKafkaProduceClient(t, clusterAddr)
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
-		t.Log("produced 2 records")
+					if listOffsetsShouldFail.Load() {
+						return nil, errors.New("mocked error"), true
+					}
 
-		// Create and start the reader.
-		reg := prometheus.NewPedanticRegistry()
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
-		require.NoError(t, reader.StartAsync(ctx))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		})
+					return nil, nil, false
+				})
 
-		// Wait until the Kafka cluster received few ListOffsets requests.
-		test.Poll(t, 5*time.Second, true, func() interface{} {
-			return listOffsetsRequestsCount.Load() > 2
-		})
+				// Produce some records.
+				writeClient := newKafkaProduceClient(t, clusterAddr)
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+				t.Log("produced 2 records")
 
-		// Since the mocked Kafka cluster is configured to fail any ListOffsets request we expect the reader hasn't
-		// catched up yet, and it's still in Starting state.
-		assert.Equal(t, services.Starting, reader.State())
-		assert.Equal(t, int64(0), consumedRecordsCount.Load())
+				// Create and start the reader.
+				reg := prometheus.NewPedanticRegistry()
+				logs := &concurrency.SyncBuffer{}
+				readerOpts := append([]readerTestCfgOpt{
+					withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+					withRegistry(reg),
+					withLogger(log.NewLogfmtLogger(logs)),
+				}, concurrencyVariant...)
 
-		// Unblock the ListOffsets requests. Now they will succeed.
-		listOffsetsShouldFail.Store(false)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				require.NoError(t, reader.StartAsync(ctx))
+				t.Cleanup(func() {
+					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+				})
 
-		// We expect the reader to catch up, and then switch to Running state.
-		test.Poll(t, 5*time.Second, services.Running, func() interface{} {
-			return reader.State()
-		})
+				// Wait until the Kafka cluster received few ListOffsets requests.
+				test.Poll(t, 5*time.Second, true, func() interface{} {
+					return listOffsetsRequestsCount.Load() > 2
+				})
 
-		assert.Equal(t, int64(2), consumedRecordsCount.Load())
+				// Since the mocked Kafka cluster is configured to fail any ListOffsets request we expect the reader hasn't
+				// catched up yet, and it's still in Starting state.
+				assert.Equal(t, services.Starting, reader.State())
+				assert.Equal(t, int64(0), consumedRecordsCount.Load())
 
-		// We expect the last consumed offset to be tracked in a metric.
-		test.Poll(t, time.Second, nil, func() interface{} {
-			return promtest.GatherAndCompare(reg, strings.NewReader(`
-				# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
-				# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-				cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
-			`), "cortex_ingest_storage_reader_last_consumed_offset")
-		})
+				// Unblock the ListOffsets requests. Now they will succeed.
+				listOffsetsShouldFail.Store(false)
+
+				// We expect the reader to catch up, and then switch to Running state.
+				test.Poll(t, 5*time.Second, services.Running, func() interface{} {
+					return reader.State()
+				})
+
+				// We expect the reader to have switched to running because target consumer lag has been honored.
+				assert.Contains(t, logs.String(), "partition reader consumed partition and current lag is lower than configured target consumer lag")
+
+				assert.Equal(t, int64(2), consumedRecordsCount.Load())
+
+				// We expect the last consumed offset to be tracked in a metric.
+				test.Poll(t, time.Second, nil, func() interface{} {
+					return promtest.GatherAndCompare(reg, strings.NewReader(`
+						# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+						# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+						cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+
+						# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+						# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+						cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+					`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
+				})
+			})
+		}
 	})
 
-	t.Run("should consume partition from end if position=end, and skip honoring max lag", func(t *testing.T) {
+	t.Run("should consume partition from end if position=end, and skip honoring target max lag", func(t *testing.T) {
 		t.Parallel()
 
-		var (
-			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-			reg                  = prometheus.NewPedanticRegistry()
-			fetchRequestsCount   = atomic.NewInt64(0)
-			fetchShouldFail      = atomic.NewBool(true)
-			consumedRecordsMx    sync.Mutex
-			consumedRecords      []string
-		)
+		for concurrencyName, concurrencyVariant := range concurrencyVariants {
+			concurrencyVariant := concurrencyVariant
 
-		consumer := consumerFunc(func(_ context.Context, records []record) error {
-			consumedRecordsMx.Lock()
-			defer consumedRecordsMx.Unlock()
+			t.Run(concurrencyName, func(t *testing.T) {
+				t.Parallel()
 
-			for _, r := range records {
-				consumedRecords = append(consumedRecords, string(r.content))
-			}
-			return nil
-		})
+				var (
+					cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+					reg                  = prometheus.NewPedanticRegistry()
+					fetchRequestsCount   = atomic.NewInt64(0)
+					fetchShouldFail      = atomic.NewBool(true)
+					consumedRecordsMx    sync.Mutex
+					consumedRecords      []string
+				)
 
-		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
-			cluster.KeepControl()
+				consumer := consumerFunc(func(_ context.Context, records []record) error {
+					consumedRecordsMx.Lock()
+					defer consumedRecordsMx.Unlock()
 
-			fetchRequestsCount.Inc()
-			if fetchShouldFail.Load() {
-				return nil, errors.New("mocked error"), true
-			}
+					for _, r := range records {
+						consumedRecords = append(consumedRecords, string(r.content))
+					}
+					return nil
+				})
 
-			return nil, nil, false
-		})
+				cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
+					cluster.KeepControl()
 
-		// Produce some records.
-		writeClient := newKafkaProduceClient(t, clusterAddr)
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
-		t.Log("produced 2 records before starting the reader")
+					fetchRequestsCount.Inc()
+					if fetchShouldFail.Load() {
+						return nil, errors.New("mocked error"), true
+					}
 
-		// Create and start the reader.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromPositionAtStartup(consumeFromEnd), withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
-		require.NoError(t, reader.StartAsync(ctx))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		})
+					return nil, nil, false
+				})
 
-		// The reader service should start even if Fetch is failing because max log is skipped.
-		test.Poll(t, time.Second, services.Running, func() interface{} {
-			return reader.State()
-		})
+				// Produce some records.
+				writeClient := newKafkaProduceClient(t, clusterAddr)
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+				t.Log("produced 2 records before starting the reader")
 
-		// Make Fetch working.
-		fetchShouldFail.Store(false)
+				// Create and start the reader.
+				readerOpts := append([]readerTestCfgOpt{
+					withConsumeFromPositionAtStartup(consumeFromEnd),
+					withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second),
+					withRegistry(reg),
+				}, concurrencyVariant...)
 
-		// Wait until Fetch request has been issued at least once, in order to avoid any race condition
-		// (the problem is that we may produce the next record before the client fetched the partition end position).
-		require.Eventually(t, func() bool {
-			return fetchRequestsCount.Load() > 0
-		}, 5*time.Second, 10*time.Millisecond)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				require.NoError(t, reader.StartAsync(ctx))
+				t.Cleanup(func() {
+					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+				})
 
-		// Produce one more record.
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-3"))
-		t.Log("produced 1 record after starting the reader")
+				// The reader service should start even if Fetch is failing because max log is skipped.
+				test.Poll(t, time.Second, services.Running, func() interface{} {
+					return reader.State()
+				})
 
-		// Since the reader has been configured with position=end we expect to consume only
-		// the record produced after reader has been started.
-		test.Poll(t, 5*time.Second, []string{"record-3"}, func() interface{} {
-			consumedRecordsMx.Lock()
-			defer consumedRecordsMx.Unlock()
-			return slices.Clone(consumedRecords)
-		})
+				// Make Fetch working.
+				fetchShouldFail.Store(false)
 
-		// We expect the last consumed offset to be tracked in a metric.
-		test.Poll(t, time.Second, nil, func() interface{} {
-			return promtest.GatherAndCompare(reg, strings.NewReader(`
-				# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
-				# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-				cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 2
-			`), "cortex_ingest_storage_reader_last_consumed_offset")
-		})
+				// Wait until Fetch request has been issued at least once, in order to avoid any race condition
+				// (the problem is that we may produce the next record before the client fetched the partition end position).
+				require.Eventually(t, func() bool {
+					return fetchRequestsCount.Load() > 0
+				}, 5*time.Second, 10*time.Millisecond)
+
+				// Produce one more record.
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-3"))
+				t.Log("produced 1 record after starting the reader")
+
+				// Since the reader has been configured with position=end we expect to consume only
+				// the record produced after reader has been started.
+				test.Poll(t, 5*time.Second, []string{"record-3"}, func() interface{} {
+					consumedRecordsMx.Lock()
+					defer consumedRecordsMx.Unlock()
+					return slices.Clone(consumedRecords)
+				})
+
+				// We expect the last consumed offset to be tracked in a metric.
+				test.Poll(t, time.Second, nil, func() interface{} {
+					return promtest.GatherAndCompare(reg, strings.NewReader(`
+						# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+						# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+						cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 2
+
+						# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+						# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+						cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+					`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
+				})
+			})
+		}
 	})
 
-	t.Run("should consume partition from start if position=start, and wait until max lag is honored", func(t *testing.T) {
+	t.Run("should consume partition from start if position=start, and wait until target lag is honored", func(t *testing.T) {
 		t.Parallel()
 
-		var (
-			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-			fetchRequestsCount   = atomic.NewInt64(0)
-			fetchShouldFail      = atomic.NewBool(false)
-			consumedRecordsMx    sync.Mutex
-			consumedRecords      []string
-		)
+		for concurrencyName, concurrencyVariant := range concurrencyVariants {
+			concurrencyVariant := concurrencyVariant
 
-		consumer := consumerFunc(func(_ context.Context, records []record) error {
-			consumedRecordsMx.Lock()
-			defer consumedRecordsMx.Unlock()
+			t.Run(concurrencyName, func(t *testing.T) {
+				t.Parallel()
 
-			for _, r := range records {
-				consumedRecords = append(consumedRecords, string(r.content))
-			}
-			return nil
-		})
+				var (
+					cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+					fetchRequestsCount   = atomic.NewInt64(0)
+					fetchShouldFail      = atomic.NewBool(false)
+					consumedRecordsMx    sync.Mutex
+					consumedRecords      []string
+				)
 
-		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
-			cluster.KeepControl()
-			fetchRequestsCount.Inc()
+				consumer := consumerFunc(func(_ context.Context, records []record) error {
+					consumedRecordsMx.Lock()
+					defer consumedRecordsMx.Unlock()
 
-			if fetchShouldFail.Load() {
-				return nil, errors.New("mocked error"), true
-			}
+					for _, r := range records {
+						consumedRecords = append(consumedRecords, string(r.content))
+					}
+					return nil
+				})
 
-			return nil, nil, false
-		})
+				cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
+					cluster.KeepControl()
+					fetchRequestsCount.Inc()
 
-		// Produce some records.
-		writeClient := newKafkaProduceClient(t, clusterAddr)
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
-		t.Log("produced 2 records")
+					if fetchShouldFail.Load() {
+						return nil, errors.New("mocked error"), true
+					}
 
-		// Run the test twice with the same Kafka cluster to show that second time it consumes all records again.
-		for run := 1; run <= 2; run++ {
-			t.Run(fmt.Sprintf("Run %d", run), func(t *testing.T) {
+					return nil, nil, false
+				})
+
+				// Produce some records.
+				writeClient := newKafkaProduceClient(t, clusterAddr)
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+				t.Log("produced 2 records")
+
+				// Run the test twice with the same Kafka cluster to show that second time it consumes all records again.
+				for run := 1; run <= 2; run++ {
+					t.Run(fmt.Sprintf("Run %d", run), func(t *testing.T) {
+						// Reset the test.
+						fetchShouldFail.Store(true)
+						fetchRequestsCount.Store(0)
+						consumedRecordsMx.Lock()
+						consumedRecords = nil
+						consumedRecordsMx.Unlock()
+
+						// Create and start the reader.
+						reg := prometheus.NewPedanticRegistry()
+						logs := &concurrency.SyncBuffer{}
+						readerOpts := append([]readerTestCfgOpt{
+							withConsumeFromPositionAtStartup(consumeFromStart),
+							withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+							withRegistry(reg),
+							withLogger(log.NewLogfmtLogger(logs)),
+						}, concurrencyVariant...)
+
+						reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+						require.NoError(t, reader.StartAsync(ctx))
+						t.Cleanup(func() {
+							require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+						})
+
+						// Wait until the Kafka cluster received few Fetch requests.
+						test.Poll(t, 5*time.Second, true, func() interface{} {
+							return fetchRequestsCount.Load() > 2
+						})
+
+						// Since the mocked Kafka cluster is configured to fail any Fetch we expect the reader hasn't
+						// catched up yet, and it's still in Starting state.
+						assert.Equal(t, services.Starting, reader.State())
+
+						// Unblock the Fetch requests. Now they will succeed.
+						fetchShouldFail.Store(false)
+
+						// We expect the reader to catch up, and then switch to Running state.
+						test.Poll(t, 5*time.Second, services.Running, func() interface{} {
+							return reader.State()
+						})
+
+						// We expect the reader to have switched to running because target consumer lag has been honored.
+						assert.Contains(t, logs.String(), "partition reader consumed partition and current lag is lower than configured target consumer lag")
+
+						// We expect the reader to have consumed the partition from start.
+						test.Poll(t, time.Second, []string{"record-1", "record-2"}, func() interface{} {
+							consumedRecordsMx.Lock()
+							defer consumedRecordsMx.Unlock()
+							return slices.Clone(consumedRecords)
+						})
+
+						// We expect the last consumed offset to be tracked in a metric.
+						test.Poll(t, time.Second, nil, func() interface{} {
+							return promtest.GatherAndCompare(reg, strings.NewReader(`
+								# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+								# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+								cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+
+								# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+								# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+								cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+							`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
+						})
+					})
+				}
+			})
+		}
+	})
+
+	t.Run("should consume partition from start if position=start, and wait until target lag is honored, and then consume some records after lag is honored", func(t *testing.T) {
+		t.Parallel()
+
+		for concurrencyName, concurrencyVariant := range concurrencyVariants {
+			concurrencyVariant := concurrencyVariant
+
+			t.Run(concurrencyName, func(t *testing.T) {
+				t.Parallel()
+
+				var (
+					cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+					fetchRequestsCount   = atomic.NewInt64(0)
+					fetchShouldFail      = atomic.NewBool(false)
+					consumedRecordsMx    sync.Mutex
+					consumedRecords      []string
+				)
+
+				consumer := consumerFunc(func(_ context.Context, records []record) error {
+					consumedRecordsMx.Lock()
+					defer consumedRecordsMx.Unlock()
+
+					for _, r := range records {
+						consumedRecords = append(consumedRecords, string(r.content))
+					}
+					return nil
+				})
+
+				cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
+					cluster.KeepControl()
+					fetchRequestsCount.Inc()
+
+					if fetchShouldFail.Load() {
+						return nil, errors.New("mocked error"), true
+					}
+
+					return nil, nil, false
+				})
+
+				// Produce some records.
+				writeClient := newKafkaProduceClient(t, clusterAddr)
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+				t.Log("produced 2 records")
+
+				// Run the test twice with the same Kafka cluster to show that second time it consumes all records again.
 				// Reset the test.
 				fetchShouldFail.Store(true)
 				fetchRequestsCount.Store(0)
@@ -670,7 +1053,15 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				// Create and start the reader.
 				reg := prometheus.NewPedanticRegistry()
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromPositionAtStartup(consumeFromStart), withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
+				logs := &concurrency.SyncBuffer{}
+				readerOpts := append([]readerTestCfgOpt{
+					withConsumeFromPositionAtStartup(consumeFromStart),
+					withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+					withRegistry(reg),
+					withLogger(log.NewLogfmtLogger(logs)),
+				}, concurrencyVariant...)
+
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
 				require.NoError(t, reader.StartAsync(ctx))
 				t.Cleanup(func() {
 					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -692,6 +1083,9 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 				test.Poll(t, 5*time.Second, services.Running, func() interface{} {
 					return reader.State()
 				})
+
+				// We expect the reader to have switched to running because target consumer lag has been honored.
+				assert.Contains(t, logs.String(), "partition reader consumed partition and current lag is lower than configured target consumer lag")
 
 				// We expect the reader to have consumed the partition from start.
 				test.Poll(t, time.Second, []string{"record-1", "record-2"}, func() interface{} {
@@ -708,153 +1102,101 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 						cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
 					`), "cortex_ingest_storage_reader_last_consumed_offset")
 				})
+
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-3"))
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-4"))
+				t.Log("produced 2 records")
+
+				// We expect the reader to have consumed the partition from start.
+				test.Poll(t, time.Second, []string{"record-1", "record-2", "record-3", "record-4"}, func() interface{} {
+					consumedRecordsMx.Lock()
+					defer consumedRecordsMx.Unlock()
+					return slices.Clone(consumedRecords)
+				})
+
+				// We expect the last consumed offset to be tracked in a metric.
+				test.Poll(t, time.Second, nil, func() interface{} {
+					return promtest.GatherAndCompare(reg, strings.NewReader(`
+						# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+						# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+						cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 3
+
+						# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+						# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+						cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+					`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
+				})
 			})
 		}
 	})
 
-	t.Run("should consume partition from the timestamp if position=timestamp, and wait until max lag is honored", func(t *testing.T) {
+	t.Run("should consume partition from the timestamp if position=timestamp, and wait until target lag is honored", func(t *testing.T) {
 		t.Parallel()
 
-		var (
-			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-			fetchRequestsCount   = atomic.NewInt64(0)
-			fetchShouldFail      = atomic.NewBool(false)
-			consumedRecordsMx    sync.Mutex
-			consumedRecords      []string
-		)
+		for concurrencyName, concurrencyVariant := range concurrencyVariants {
+			concurrencyVariant := concurrencyVariant
 
-		consumer := consumerFunc(func(_ context.Context, records []record) error {
-			consumedRecordsMx.Lock()
-			defer consumedRecordsMx.Unlock()
+			t.Run(concurrencyName, func(t *testing.T) {
+				t.Parallel()
 
-			for _, r := range records {
-				consumedRecords = append(consumedRecords, string(r.content))
-			}
-			return nil
-		})
+				var (
+					cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+					fetchRequestsCount   = atomic.NewInt64(0)
+					fetchShouldFail      = atomic.NewBool(false)
+					consumedRecordsMx    sync.Mutex
+					consumedRecords      []string
+				)
 
-		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
-			cluster.KeepControl()
-			fetchRequestsCount.Inc()
+				consumer := consumerFunc(func(_ context.Context, records []record) error {
+					consumedRecordsMx.Lock()
+					defer consumedRecordsMx.Unlock()
 
-			if fetchShouldFail.Load() {
-				return nil, errors.New("mocked error"), true
-			}
+					for _, r := range records {
+						consumedRecords = append(consumedRecords, string(r.content))
+					}
+					return nil
+				})
 
-			return nil, nil, false
-		})
+				cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
+					cluster.KeepControl()
+					fetchRequestsCount.Inc()
 
-		writeClient := newKafkaProduceClient(t, clusterAddr)
+					if fetchShouldFail.Load() {
+						return nil, errors.New("mocked error"), true
+					}
 
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+					return nil, nil, false
+				})
 
-		// Consume from after the records in the head. The sleep guaranties a full second gap between the head and tail of the topic.
-		time.Sleep(time.Second)
-		consumeFromTs := time.Now()
+				writeClient := newKafkaProduceClient(t, clusterAddr)
 
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-3"))
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-4"))
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
 
-		// Create and start the reader.
-		fetchShouldFail.Store(true)
-		fetchRequestsCount.Store(0)
-		consumedRecordsMx.Lock()
-		consumedRecords = nil
-		consumedRecordsMx.Unlock()
+				// Consume from after the records in the head. The sleep guaranties a full second gap between the head and tail of the topic.
+				time.Sleep(time.Second)
+				consumeFromTs := time.Now()
 
-		reg := prometheus.NewPedanticRegistry()
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromTimestampAtStartup(consumeFromTs.UnixMilli()), withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
-		require.NoError(t, reader.StartAsync(ctx))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-		})
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-3"))
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-4"))
 
-		// Wait until the Kafka cluster received few Fetch requests.
-		test.Poll(t, 5*time.Second, true, func() interface{} {
-			return fetchRequestsCount.Load() > 0
-		})
-
-		// Since the mocked Kafka cluster is configured to fail any Fetch we expect the reader hasn't
-		// catched up yet, and it's still in Starting state.
-		assert.Equal(t, services.Starting, reader.State())
-
-		// Unblock the Fetch requests. Now they will succeed.
-		fetchShouldFail.Store(false)
-
-		// We expect the reader to catch up, and then switch to Running state.
-		test.Poll(t, 5*time.Second, services.Running, func() interface{} {
-			return reader.State()
-		})
-
-		// We expect the reader to have consumed the partition from the third record.
-		test.Poll(t, time.Second, []string{"record-3", "record-4"}, func() interface{} {
-			consumedRecordsMx.Lock()
-			defer consumedRecordsMx.Unlock()
-			return slices.Clone(consumedRecords)
-		})
-
-		// We expect the last consumed offset to be tracked in a metric.
-		expectedConsumedOffset := 3
-		test.Poll(t, time.Second, nil, func() interface{} {
-			return promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-				# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
-				# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-				cortex_ingest_storage_reader_last_consumed_offset{partition="1"} %d
-			`, expectedConsumedOffset)), "cortex_ingest_storage_reader_last_consumed_offset")
-		})
-	})
-
-	t.Run("should consume partition from last committed offset if position=last-offset, and wait until max lag is honored", func(t *testing.T) {
-		t.Parallel()
-
-		var (
-			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-			fetchRequestsCount   = atomic.NewInt64(0)
-			fetchShouldFail      = atomic.NewBool(false)
-			consumedRecordsMx    sync.Mutex
-			consumedRecords      []string
-		)
-
-		consumer := consumerFunc(func(_ context.Context, records []record) error {
-			consumedRecordsMx.Lock()
-			defer consumedRecordsMx.Unlock()
-
-			for _, r := range records {
-				consumedRecords = append(consumedRecords, string(r.content))
-			}
-			return nil
-		})
-
-		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
-			cluster.KeepControl()
-			fetchRequestsCount.Inc()
-
-			if fetchShouldFail.Load() {
-				return nil, errors.New("mocked error"), true
-			}
-
-			return nil, nil, false
-		})
-
-		// Run the test twice with the same Kafka cluster to show that second time it consumes only new records.
-		for run := 1; run <= 2; run++ {
-			t.Run(fmt.Sprintf("Run %d", run), func(t *testing.T) {
-				// Reset the test.
+				// Create and start the reader.
 				fetchShouldFail.Store(true)
 				fetchRequestsCount.Store(0)
 				consumedRecordsMx.Lock()
 				consumedRecords = nil
 				consumedRecordsMx.Unlock()
 
-				// Produce a record before each test run.
-				writeClient := newKafkaProduceClient(t, clusterAddr)
-				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", run)))
-				t.Log("produced 1 record")
-
-				// Create and start the reader.
 				reg := prometheus.NewPedanticRegistry()
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withConsumeFromPositionAtStartup(consumeFromLastOffset), withMaxConsumerLagAtStartup(time.Second), withRegistry(reg))
+				logs := &concurrency.SyncBuffer{}
+				readerOpts := append([]readerTestCfgOpt{
+					withConsumeFromTimestampAtStartup(consumeFromTs.UnixMilli()),
+					withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+					withRegistry(reg),
+					withLogger(log.NewLogfmtLogger(logs)),
+				}, concurrencyVariant...)
+
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
 				require.NoError(t, reader.StartAsync(ctx))
 				t.Cleanup(func() {
 					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
@@ -862,7 +1204,7 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 
 				// Wait until the Kafka cluster received few Fetch requests.
 				test.Poll(t, 5*time.Second, true, func() interface{} {
-					return fetchRequestsCount.Load() > 2
+					return fetchRequestsCount.Load() > 0
 				})
 
 				// Since the mocked Kafka cluster is configured to fail any Fetch we expect the reader hasn't
@@ -877,22 +1219,245 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 					return reader.State()
 				})
 
-				// We expect the reader to have consumed the partition from last offset.
-				test.Poll(t, time.Second, []string{fmt.Sprintf("record-%d", run)}, func() interface{} {
+				// We expect the reader to have switched to running because target consumer lag has been honored.
+				assert.Contains(t, logs.String(), "partition reader consumed partition and current lag is lower than configured target consumer lag")
+
+				// We expect the reader to have consumed the partition from the third record.
+				test.Poll(t, time.Second, []string{"record-3", "record-4"}, func() interface{} {
 					consumedRecordsMx.Lock()
 					defer consumedRecordsMx.Unlock()
 					return slices.Clone(consumedRecords)
 				})
 
 				// We expect the last consumed offset to be tracked in a metric.
-				expectedConsumedOffset := run - 1
+				expectedConsumedOffset := 3
 				test.Poll(t, time.Second, nil, func() interface{} {
 					return promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 						# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
 						# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
 						cortex_ingest_storage_reader_last_consumed_offset{partition="1"} %d
-					`, expectedConsumedOffset)), "cortex_ingest_storage_reader_last_consumed_offset")
+
+						# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+						# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+						cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+					`, expectedConsumedOffset)), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
 				})
+			})
+		}
+	})
+
+	t.Run("should consume partition from last committed offset if position=last-offset, and wait until target lag is honored", func(t *testing.T) {
+		t.Parallel()
+
+		for concurrencyName, concurrencyVariant := range concurrencyVariants {
+			concurrencyVariant := concurrencyVariant
+
+			t.Run(concurrencyName, func(t *testing.T) {
+				t.Parallel()
+
+				var (
+					cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+					fetchRequestsCount   = atomic.NewInt64(0)
+					fetchShouldFail      = atomic.NewBool(false)
+					consumedRecordsMx    sync.Mutex
+					consumedRecords      []string
+				)
+
+				consumer := consumerFunc(func(_ context.Context, records []record) error {
+					consumedRecordsMx.Lock()
+					defer consumedRecordsMx.Unlock()
+
+					for _, r := range records {
+						consumedRecords = append(consumedRecords, string(r.content))
+					}
+					return nil
+				})
+
+				cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
+					cluster.KeepControl()
+					fetchRequestsCount.Inc()
+
+					if fetchShouldFail.Load() {
+						return nil, errors.New("mocked error"), true
+					}
+
+					return nil, nil, false
+				})
+
+				// Run the test twice with the same Kafka cluster to show that second time it consumes only new records.
+				for run := 1; run <= 2; run++ {
+					t.Run(fmt.Sprintf("Run %d", run), func(t *testing.T) {
+						// Reset the test.
+						fetchShouldFail.Store(true)
+						fetchRequestsCount.Store(0)
+						consumedRecordsMx.Lock()
+						consumedRecords = nil
+						consumedRecordsMx.Unlock()
+
+						// Produce a record before each test run.
+						writeClient := newKafkaProduceClient(t, clusterAddr)
+						produceRecord(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", run)))
+						t.Log("produced 1 record")
+
+						// Create and start the reader.
+						reg := prometheus.NewPedanticRegistry()
+						logs := &concurrency.SyncBuffer{}
+						readerOpts := append([]readerTestCfgOpt{
+							withConsumeFromPositionAtStartup(consumeFromLastOffset),
+							withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+							withRegistry(reg),
+							withLogger(log.NewLogfmtLogger(logs)),
+						}, concurrencyVariant...)
+
+						reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+						require.NoError(t, reader.StartAsync(ctx))
+						t.Cleanup(func() {
+							require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+						})
+
+						// Wait until the Kafka cluster received few Fetch requests.
+						test.Poll(t, 5*time.Second, true, func() interface{} {
+							return fetchRequestsCount.Load() > 2
+						})
+
+						// Since the mocked Kafka cluster is configured to fail any Fetch we expect the reader hasn't
+						// catched up yet, and it's still in Starting state.
+						assert.Equal(t, services.Starting, reader.State())
+
+						// Unblock the Fetch requests. Now they will succeed.
+						fetchShouldFail.Store(false)
+
+						// We expect the reader to catch up, and then switch to Running state.
+						test.Poll(t, 5*time.Second, services.Running, func() interface{} {
+							return reader.State()
+						})
+
+						// We expect the reader to have consumed the partition from last offset.
+						test.Poll(t, time.Second, []string{fmt.Sprintf("record-%d", run)}, func() interface{} {
+							consumedRecordsMx.Lock()
+							defer consumedRecordsMx.Unlock()
+							return slices.Clone(consumedRecords)
+						})
+
+						// We expect the last consumed offset to be tracked in a metric.
+						expectedConsumedOffset := run - 1
+						test.Poll(t, time.Second, nil, func() interface{} {
+							return promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+								# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+								# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+								cortex_ingest_storage_reader_last_consumed_offset{partition="1"} %d
+
+								# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+								# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+								cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+							`, expectedConsumedOffset)), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
+						})
+					})
+				}
+			})
+		}
+	})
+
+	t.Run("should consume partition from last committed offset if position=last-offset, and wait until max lag is honored if can't honor target lag", func(t *testing.T) {
+		t.Parallel()
+
+		for concurrencyName, concurrencyVariant := range concurrencyVariants {
+			concurrencyVariant := concurrencyVariant
+
+			t.Run(concurrencyName, func(t *testing.T) {
+				t.Parallel()
+
+				var (
+					cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+					writeClient          = newKafkaProduceClient(t, clusterAddr)
+					nextRecordID         = atomic.NewInt32(0)
+					targetLag            = 500 * time.Millisecond
+					maxLag               = 2 * time.Second
+				)
+
+				// Wait until all goroutines used in this test have done.
+				testRoutines := sync.WaitGroup{}
+				t.Cleanup(testRoutines.Wait)
+
+				// Create a channel to signal goroutines once the test has done.
+				testDone := make(chan struct{})
+				t.Cleanup(func() {
+					close(testDone)
+				})
+
+				consumer := consumerFunc(func(_ context.Context, _ []record) error {
+					return nil
+				})
+
+				cluster.ControlKey(int16(kmsg.ListOffsets), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+					cluster.KeepControl()
+
+					// Slow down each ListOffsets request to take longer than the target lag.
+					req := kreq.(*kmsg.ListOffsetsRequest)
+					if len(req.Topics) > 0 && len(req.Topics[0].Partitions) > 0 && req.Topics[0].Partitions[0].Timestamp == kafkaOffsetEnd {
+						cluster.SleepControl(func() {
+							testRoutines.Add(1)
+							defer testRoutines.Done()
+
+							delay := time.Duration(float64(targetLag) * 1.1)
+							t.Logf("artificially slowing down OffsetFetch request by %s", delay.String())
+
+							select {
+							case <-testDone:
+							case <-time.After(delay):
+							}
+						})
+					}
+
+					return nil, nil, false
+				})
+
+				// Produce a record.
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", nextRecordID.Inc())))
+				t.Log("produced 1 record")
+
+				// Continue to produce records at a high pace, so that we simulate the case there are always new
+				// records to fetch.
+				testRoutines.Add(1)
+				go func() {
+					defer testRoutines.Done()
+
+					for {
+						select {
+						case <-testDone:
+							return
+
+						case <-time.After(targetLag / 2):
+							produceRecord(ctx, t, writeClient, topicName, partitionID, []byte(fmt.Sprintf("record-%d", nextRecordID.Inc())))
+							t.Log("produced 1 record")
+						}
+					}
+				}()
+
+				// Create and start the reader.
+				reg := prometheus.NewPedanticRegistry()
+				logs := &concurrency.SyncBuffer{}
+				readerOpts := append([]readerTestCfgOpt{
+					withConsumeFromPositionAtStartup(consumeFromLastOffset),
+					withTargetAndMaxConsumerLagAtStartup(targetLag, maxLag),
+					withRegistry(reg),
+					withLogger(log.NewLogfmtLogger(logs)),
+				}, concurrencyVariant...)
+
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+				require.NoError(t, reader.StartAsync(ctx))
+				t.Cleanup(func() {
+					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+				})
+
+				// We expect the reader to catch up, and then switch to Running state.
+				test.Poll(t, maxLag*5, services.Running, func() interface{} {
+					return reader.State()
+				})
+
+				// We expect the reader to have switched to running because max consumer lag has been honored
+				// but target lag has not.
+				assert.Contains(t, logs.String(), "partition reader consumed partition and current lag is lower than configured max consumer lag but higher than target consumer lag")
 			})
 		}
 	})
@@ -900,81 +1465,114 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 	t.Run("should not wait indefinitely if context is cancelled while fetching last produced offset", func(t *testing.T) {
 		t.Parallel()
 
-		var (
-			cluster, clusterAddr     = testkafka.CreateCluster(t, partitionID+1, topicName)
-			consumer                 = consumerFunc(func(context.Context, []record) error { return nil })
-			listOffsetsRequestsCount = atomic.NewInt64(0)
-		)
+		for concurrencyName, concurrencyVariant := range concurrencyVariants {
+			concurrencyVariant := concurrencyVariant
 
-		// Mock Kafka to always fail the ListOffsets request.
-		cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
-			cluster.KeepControl()
+			t.Run(concurrencyName, func(t *testing.T) {
+				t.Parallel()
 
-			listOffsetsRequestsCount.Inc()
-			return nil, errors.New("mocked error"), true
-		})
+				var (
+					cluster, clusterAddr     = testkafka.CreateCluster(t, partitionID+1, topicName)
+					consumer                 = consumerFunc(func(context.Context, []record) error { return nil })
+					listOffsetsRequestsCount = atomic.NewInt64(0)
+				)
 
-		// Create and start the reader.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+				// Mock Kafka to always fail the ListOffsets request.
+				cluster.ControlKey(int16(kmsg.ListOffsets), func(kmsg.Request) (kmsg.Response, error, bool) {
+					cluster.KeepControl()
 
-		readerCtx, cancelReaderCtx := context.WithCancel(ctx)
-		require.NoError(t, reader.StartAsync(readerCtx))
+					listOffsetsRequestsCount.Inc()
+					return nil, errors.New("mocked error"), true
+				})
 
-		// Wait until the Kafka cluster received at least 1 ListOffsets request.
-		test.Poll(t, 5*time.Second, true, func() interface{} {
-			return listOffsetsRequestsCount.Load() > 0
-		})
+				// Create and start the reader.
+				readerOpts := append([]readerTestCfgOpt{
+					withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second),
+				}, concurrencyVariant...)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
 
-		// Cancelling the context should cause the service to switch to a terminal state.
-		assert.Equal(t, services.Starting, reader.State())
-		cancelReaderCtx()
+				readerCtx, cancelReaderCtx := context.WithCancel(ctx)
+				require.NoError(t, reader.StartAsync(readerCtx))
+				t.Cleanup(func() {
+					// Interrupting startup should fail the service.
+					// A context cancellation error shouldn't be swallowed and interpreted as "startup went ok"
+					assert.ErrorIs(t, services.StopAndAwaitTerminated(ctx, reader), context.Canceled)
+				})
 
-		test.Poll(t, 5*time.Second, services.Failed, func() interface{} {
-			return reader.State()
-		})
+				// Wait until the Kafka cluster received at least 1 ListOffsets request.
+				test.Poll(t, 5*time.Second, true, func() interface{} {
+					return listOffsetsRequestsCount.Load() > 0
+				})
+
+				// Cancelling the context should cause the service to switch to a terminal state.
+				assert.Equal(t, services.Starting, reader.State())
+				cancelReaderCtx()
+
+				// franz-go has internal retries that can last up to 10s
+				test.Poll(t, 15*time.Second, services.Failed, func() interface{} {
+					return reader.State()
+				})
+			})
+		}
 	})
 
 	t.Run("should not wait indefinitely if context is cancelled while fetching records", func(t *testing.T) {
 		t.Parallel()
 
-		var (
-			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
-			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
-			fetchRequestsCount   = atomic.NewInt64(0)
-		)
+		for concurrencyName, concurrencyVariant := range concurrencyVariants {
+			concurrencyVariant := concurrencyVariant
 
-		// Mock Kafka to always fail the Fetch request.
-		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
-			cluster.KeepControl()
+			t.Run(concurrencyName, func(t *testing.T) {
+				t.Parallel()
 
-			fetchRequestsCount.Inc()
-			return nil, errors.New("mocked error"), true
-		})
+				var (
+					cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+					consumer             = consumerFunc(func(context.Context, []record) error { return nil })
+					fetchRequestsCount   = atomic.NewInt64(0)
+				)
 
-		// Produce some records.
-		writeClient := newKafkaProduceClient(t, clusterAddr)
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
-		t.Log("produced 2 records")
+				// Mock Kafka to always fail the Fetch request.
+				cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
+					cluster.KeepControl()
 
-		// Create and start the reader.
-		reader := createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+					fetchRequestsCount.Inc()
+					return nil, errors.New("mocked error"), true
+				})
 
-		readerCtx, cancelReaderCtx := context.WithCancel(ctx)
-		require.NoError(t, reader.StartAsync(readerCtx))
+				// Produce some records.
+				writeClient := newKafkaProduceClient(t, clusterAddr)
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+				t.Log("produced 2 records")
 
-		// Wait until the Kafka cluster received at least 1 Fetch request.
-		test.Poll(t, 5*time.Second, true, func() interface{} {
-			return fetchRequestsCount.Load() > 0
-		})
+				// Create and start the reader.
+				readerOpts := append([]readerTestCfgOpt{
+					withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second),
+				}, concurrencyVariant...)
+				reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
 
-		// Cancelling the context should cause the service to switch to a terminal state.
-		assert.Equal(t, services.Starting, reader.State())
-		cancelReaderCtx()
+				readerCtx, cancelReaderCtx := context.WithCancel(ctx)
+				require.NoError(t, reader.StartAsync(readerCtx))
+				t.Cleanup(func() {
+					// Interrupting startup should fail the service.
+					// A context cancellation error shouldn't be swallowed and interpreted as "startup went ok"
+					assert.ErrorIs(t, services.StopAndAwaitTerminated(ctx, reader), context.Canceled)
+				})
 
-		test.Poll(t, 5*time.Second, services.Failed, func() interface{} {
-			return reader.State()
-		})
+				// Wait until the Kafka cluster received at least 1 Fetch request.
+				test.Poll(t, 5*time.Second, true, func() interface{} {
+					return fetchRequestsCount.Load() > 0
+				})
+
+				// Cancelling the context should cause the service to switch to a terminal state.
+				assert.Equal(t, services.Starting, reader.State())
+				cancelReaderCtx()
+
+				test.Poll(t, 5*time.Second, services.Failed, func() interface{} {
+					return reader.State()
+				})
+			})
+		}
 	})
 
 	t.Run("should not wait indefinitely if there are no records to consume from Kafka but partition start offset is > 0 (e.g. all previous records have been deleted by Kafka retention)", func(t *testing.T) {
@@ -986,74 +1584,711 @@ func TestPartitionReader_ConsumeAtStartup(t *testing.T) {
 			t.Run(fmt.Sprintf("consume from position: %s", consumeFromPosition), func(t *testing.T) {
 				t.Parallel()
 
-				ctx, cancel := context.WithCancel(context.Background())
-				t.Cleanup(cancel)
+				for concurrencyName, concurrencyVariant := range concurrencyVariants {
+					concurrencyVariant := concurrencyVariant
 
-				consumer := consumerFunc(func(context.Context, []record) error {
-					return nil
-				})
+					t.Run(concurrencyName, func(t *testing.T) {
+						t.Parallel()
 
-				cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
-				cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
-					cluster.KeepControl()
+						ctx, cancel := context.WithCancel(context.Background())
+						t.Cleanup(cancel)
 
-					// Throttle the Fetch request.
-					select {
-					case <-ctx.Done():
-					case <-time.After(time.Second):
-					}
+						consumer := consumerFunc(func(context.Context, []record) error {
+							return nil
+						})
 
-					return nil, nil, false
-				})
+						cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+						cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
+							cluster.KeepControl()
 
-				// Produce some records.
-				writeClient := newKafkaProduceClient(t, clusterAddr)
-				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
-				produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
-				t.Log("produced 2 records")
+							// Throttle the Fetch request.
+							select {
+							case <-ctx.Done():
+							case <-time.After(time.Second):
+							}
 
-				// Fetch the partition end offset, which is the offset of the next record that will be produced.
-				adminClient := kadm.NewClient(writeClient)
-				endOffsets, err := adminClient.ListEndOffsets(ctx, topicName)
-				require.NoError(t, err)
-				endOffset, exists := endOffsets.Lookup(topicName, partitionID)
-				require.True(t, exists)
-				require.NoError(t, endOffset.Err)
-				t.Logf("fetched partition end offset: %d", endOffset.Offset)
+							return nil, nil, false
+						})
 
-				// Issue a request to delete produced records so far. What Kafka does under the hood is to advance
-				// the partition start offset to the specified offset.
-				advancePartitionStartTo := kadm.Offsets{}
-				advancePartitionStartTo.Add(kadm.Offset{Topic: topicName, Partition: partitionID, At: endOffset.Offset})
-				_, err = adminClient.DeleteRecords(ctx, advancePartitionStartTo)
-				require.NoError(t, err)
-				t.Logf("advanced partition start offset to: %d", endOffset.Offset)
+						// Produce some records.
+						writeClient := newKafkaProduceClient(t, clusterAddr)
+						produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+						produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+						t.Log("produced 2 records")
 
-				// Create and start the reader. We expect the reader to immediately switch to Running state.
-				reg := prometheus.NewPedanticRegistry()
-				reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
-					withConsumeFromPositionAtStartup(consumeFromPosition),
-					withMaxConsumerLagAtStartup(time.Second),
-					withRegistry(reg))
+						// Fetch the partition end offset, which is the offset of the next record that will be produced.
+						adminClient := kadm.NewClient(writeClient)
+						endOffsets, err := adminClient.ListEndOffsets(ctx, topicName)
+						require.NoError(t, err)
+						endOffset, exists := endOffsets.Lookup(topicName, partitionID)
+						require.True(t, exists)
+						require.NoError(t, endOffset.Err)
+						t.Logf("fetched partition end offset: %d", endOffset.Offset)
 
-				require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
-				t.Cleanup(func() {
-					require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
-				})
+						// Issue a request to delete produced records so far. What Kafka does under the hood is to advance
+						// the partition start offset to the specified offset.
+						advancePartitionStartTo := kadm.Offsets{}
+						advancePartitionStartTo.Add(kadm.Offset{Topic: topicName, Partition: partitionID, At: endOffset.Offset})
+						_, err = adminClient.DeleteRecords(ctx, advancePartitionStartTo)
+						require.NoError(t, err)
+						t.Logf("advanced partition start offset to: %d", endOffset.Offset)
 
-				// We expect no record has been consumed.
-				require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
-					# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
-					# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
-					cortex_ingest_storage_reader_last_consumed_offset{partition="1"} -1
+						// Create and start the reader. We expect the reader to immediately switch to Running state.
+						reg := prometheus.NewPedanticRegistry()
+						readerOpts := append([]readerTestCfgOpt{
+							withConsumeFromPositionAtStartup(consumeFromPosition),
+							withConsumeFromTimestampAtStartup(time.Now().UnixMilli()), // For the test where position=timestamp.
+							withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second),
+							withRegistry(reg),
+						}, concurrencyVariant...)
 
-					# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
-					# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
-					cortex_ingest_storage_reader_last_committed_offset{partition="1"} -1
-				`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_last_committed_offset"))
+						reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+
+						require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
+						t.Cleanup(func() {
+							require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+						})
+
+						// We expect no record has been consumed.
+						require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
+							# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+							# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+							cortex_ingest_storage_reader_last_consumed_offset{partition="1"} -1
+
+							# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
+							# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
+							cortex_ingest_storage_reader_last_committed_offset{partition="1"} -1
+
+							# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+							# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+							cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+						`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_last_committed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total"))
+					})
+				}
 			})
 		}
 	})
+
+	t.Run("should read target lag and then consume more records after switching to 0 ongoing concurrency if position=start, startup_fetch_concurrency=2, ongoing_fetch_concurrency=0", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+			fetchRequestsCount   = atomic.NewInt64(0)
+			fetchShouldFail      = atomic.NewBool(true)
+			consumedRecordsMx    sync.Mutex
+			consumedRecords      []string
+		)
+
+		consumer := consumerFunc(func(_ context.Context, records []record) error {
+			consumedRecordsMx.Lock()
+			defer consumedRecordsMx.Unlock()
+
+			for _, r := range records {
+				consumedRecords = append(consumedRecords, string(r.content))
+			}
+			return nil
+		})
+
+		cluster.ControlKey(int16(kmsg.Fetch), func(kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
+			fetchRequestsCount.Inc()
+
+			if fetchShouldFail.Load() {
+				return nil, errors.New("mocked error"), true
+			}
+
+			return nil, nil, false
+		})
+
+		// Produce some records.
+		writeClient := newKafkaProduceClient(t, clusterAddr)
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+		t.Log("produced 2 records")
+
+		// Create and start the reader.
+		reg := prometheus.NewPedanticRegistry()
+		logs := &concurrency.SyncBuffer{}
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withConsumeFromPositionAtStartup(consumeFromStart),
+			withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+			withRegistry(reg),
+			withLogger(log.NewLogfmtLogger(logs)),
+			withFetchConcurrency(2))
+
+		require.NoError(t, reader.StartAsync(ctx))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+		})
+
+		// Wait until the Kafka cluster received few Fetch requests.
+		test.Poll(t, 5*time.Second, true, func() interface{} {
+			return fetchRequestsCount.Load() > 2
+		})
+
+		// Since the mocked Kafka cluster is configured to fail any Fetch we expect the reader hasn't
+		// catched up yet, and it's still in Starting state.
+		assert.Equal(t, services.Starting, reader.State())
+
+		// Unblock the Fetch requests. Now they will succeed.
+		fetchShouldFail.Store(false)
+
+		// We expect the reader to catch up, and then switch to Running state.
+		test.Poll(t, 5*time.Second, services.Running, func() interface{} {
+			return reader.State()
+		})
+
+		// We expect the reader to have switched to running because target consumer lag has been honored.
+		assert.Contains(t, logs.String(), "partition reader consumed partition and current lag is lower than configured target consumer lag")
+
+		// We expect the reader to have consumed the partition from start.
+		test.Poll(t, time.Second, []string{"record-1", "record-2"}, func() interface{} {
+			consumedRecordsMx.Lock()
+			defer consumedRecordsMx.Unlock()
+			return slices.Clone(consumedRecords)
+		})
+
+		// We expect the last consumed offset to be tracked in a metric, and there are no buffered records reported.
+		test.Poll(t, time.Second, nil, func() interface{} {
+			return promtest.GatherAndCompare(reg, strings.NewReader(`
+				# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+				# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+				cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+
+				# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+				# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+				cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+			`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
+		})
+
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-3"))
+		produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-4"))
+		t.Log("produced 2 records")
+
+		// We expect the reader to consume subsequent records too.
+		test.Poll(t, time.Second, []string{"record-1", "record-2", "record-3", "record-4"}, func() interface{} {
+			consumedRecordsMx.Lock()
+			defer consumedRecordsMx.Unlock()
+			return slices.Clone(consumedRecords)
+		})
+
+		// We expect the last consumed offset to be tracked in a metric, and there are no buffered records reported.
+		test.Poll(t, time.Second, nil, func() interface{} {
+			return promtest.GatherAndCompare(reg, strings.NewReader(`
+				# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+				# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+				cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 3
+
+				# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+				# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+				cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+			`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
+		})
+	})
+}
+
+func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testing.T) {
+	const (
+		topicName        = "test"
+		partitionID      = 1
+		maxBufferedBytes = 2_000_000
+	)
+
+	tc := map[string]struct {
+		concurrencyVariant                []readerTestCfgOpt
+		expectedBufferedRecords           int
+		expectedBufferedBytes             int
+		expectedBufferedRecordsFromClient int
+	}{
+		"without concurrency": {
+			concurrencyVariant:                []readerTestCfgOpt{withFetchConcurrency(0)},
+			expectedBufferedRecords:           1,
+			expectedBufferedBytes:             8,
+			expectedBufferedRecordsFromClient: 1,
+		},
+		"with fetch concurrency": {
+			concurrencyVariant:      []readerTestCfgOpt{withFetchConcurrency(2)},
+			expectedBufferedRecords: 1,
+			// only one fetcher is active because we don't fetch over the HWM.
+			// That fetcher should fetch 1MB. It's padded with 5% to account for underestimation of the record size.
+			// The expected buffered bytes are 1.05MB
+			expectedBufferedBytes:             1_050_000,
+			expectedBufferedRecordsFromClient: 0,
+		},
+		"with higher fetch concurrency": {
+			concurrencyVariant:      []readerTestCfgOpt{withFetchConcurrency(4)},
+			expectedBufferedRecords: 1,
+			// There is one fetcher fetching. That fetcher should fetch 500KB.
+			// But we clamp the MaxBytes to at least 1MB, so that we don't underfetch when the absolute volume of data is low.
+			expectedBufferedBytes:             1_000_000,
+			expectedBufferedRecordsFromClient: 0,
+		},
+	}
+
+	for concurrencyName, tt := range tc {
+		concurrencyVariant := tt.concurrencyVariant
+
+		t.Run(concurrencyName, func(t *testing.T) {
+			t.Parallel()
+
+			var (
+				ctx               = context.Background()
+				_, clusterAddr    = testkafka.CreateCluster(t, partitionID+1, topicName)
+				consumedRecordsMx sync.Mutex
+				consumedRecords   []string
+				blocked           = atomic.NewBool(false)
+			)
+
+			consumer := consumerFunc(func(_ context.Context, records []record) error {
+				if blocked.Load() {
+					blockedTicker := time.NewTicker(100 * time.Millisecond)
+					defer blockedTicker.Stop()
+				outer:
+					for {
+						select {
+						case <-blockedTicker.C:
+							if !blocked.Load() {
+								break outer
+							}
+						case <-time.After(3 * time.Second):
+							// This is basically a test failure as we never finish the test in time.
+							t.Log("failed to finish unblocking the consumer in time")
+							return nil
+						}
+					}
+				}
+
+				consumedRecordsMx.Lock()
+				defer consumedRecordsMx.Unlock()
+				for _, r := range records {
+					consumedRecords = append(consumedRecords, string(r.content))
+				}
+				return nil
+			})
+
+			// Produce some records.
+			writeClient := newKafkaProduceClient(t, clusterAddr)
+			produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-1"))
+			produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-2"))
+			t.Log("produced 2 records")
+
+			// Create and start the reader.
+			reg := prometheus.NewPedanticRegistry()
+			logs := &concurrency.SyncBuffer{}
+
+			readerOpts := append([]readerTestCfgOpt{
+				withConsumeFromPositionAtStartup(consumeFromStart),
+				withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+				withRegistry(reg),
+				withLogger(log.NewLogfmtLogger(logs)),
+				withMaxBufferedBytes(maxBufferedBytes),
+			}, concurrencyVariant...)
+
+			reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+			require.NoError(t, reader.StartAsync(ctx))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+			})
+
+			// We expect the reader to catch up, and then switch to Running state.
+			test.Poll(t, 5*time.Second, services.Running, func() interface{} {
+				return reader.State()
+			})
+
+			// We expect the reader to have switched to running because target consumer lag has been honored.
+			assert.Contains(t, logs.String(), "partition reader consumed partition and current lag is lower than configured target consumer lag")
+
+			// We expect the reader to have consumed the partition from start.
+			test.Poll(t, time.Second, []string{"record-1", "record-2"}, func() interface{} {
+				consumedRecordsMx.Lock()
+				defer consumedRecordsMx.Unlock()
+				return slices.Clone(consumedRecords)
+			})
+
+			// Wait some time to give some time for the Kafka client to eventually read and buffer records.
+			// We don't expect it, but to make sure it's not happening we have to give it some time.
+			time.Sleep(time.Second)
+
+			// We expect the last consumed offset to be tracked in a metric, and there are no buffered records reported.
+			test.Poll(t, time.Second, nil, func() interface{} {
+				return promtest.GatherAndCompare(reg, strings.NewReader(`
+				# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+				# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+				cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+
+				# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+				# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+				cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+
+        		# HELP cortex_ingest_storage_reader_buffered_fetched_records The number of records fetched from Kafka by both concurrent fetchers and the Kafka client but not yet processed.
+        		# TYPE cortex_ingest_storage_reader_buffered_fetched_records gauge
+        		cortex_ingest_storage_reader_buffered_fetched_records 0
+			`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total", "cortex_ingest_storage_reader_buffered_fetched_records")
+			})
+
+			// Now, we want to assert that when the reader does have records buffered the metrics correctly reflect the current state.
+			// First, make the consumer block on the next consumption.
+			blocked.Store(true)
+
+			// Now, produce more records after the reader has started.
+			produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-3"))
+			produceRecord(ctx, t, writeClient, topicName, partitionID, []byte("record-4"))
+			t.Log("produced 2 records")
+
+			// Now, we expect to have some records buffered.
+			test.Poll(t, time.Second, nil, func() interface{} {
+				return promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+				# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+				cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 1
+
+				# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+				# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+				cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} %d
+
+        		# HELP cortex_ingest_storage_reader_buffered_fetched_records The number of records fetched from Kafka by both concurrent fetchers and the Kafka client but not yet processed.
+        		# TYPE cortex_ingest_storage_reader_buffered_fetched_records gauge
+        		cortex_ingest_storage_reader_buffered_fetched_records %d
+
+        		# HELP cortex_ingest_storage_reader_buffered_fetched_bytes The number of bytes fetched or requested from Kafka by both concurrent fetchers and the Kafka client but not yet processed. The value depends on -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes.
+        		# TYPE cortex_ingest_storage_reader_buffered_fetched_bytes gauge
+        		cortex_ingest_storage_reader_buffered_fetched_bytes %d
+			`, tt.expectedBufferedRecordsFromClient, tt.expectedBufferedRecords, tt.expectedBufferedBytes)), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total", "cortex_ingest_storage_reader_buffered_fetched_records", "cortex_ingest_storage_reader_buffered_fetched_bytes")
+			})
+
+			// With that assertion done, we can unblock records consumption.
+			blocked.Store(false)
+
+			// We expect the reader to consume subsequent records too.
+			test.Poll(t, time.Second, []string{"record-1", "record-2", "record-3", "record-4"}, func() interface{} {
+				consumedRecordsMx.Lock()
+				defer consumedRecordsMx.Unlock()
+				return slices.Clone(consumedRecords)
+			})
+
+			// Wait some time to give some time for the Kafka client to eventually read and buffer records.
+			// We don't expect it, but to make sure it's not happening we have to give it some time.
+			time.Sleep(time.Second)
+
+			// We expect the last consumed offset to be tracked in a metric, and there are no buffered records reported.
+			test.Poll(t, time.Second, nil, func() interface{} {
+				return promtest.GatherAndCompare(reg, strings.NewReader(`
+				# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+				# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+				cortex_ingest_storage_reader_last_consumed_offset{partition="1"} 3
+
+				# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+				# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+				cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+
+        		# HELP cortex_ingest_storage_reader_buffered_fetched_records The number of records fetched from Kafka by both concurrent fetchers and the Kafka client but not yet processed.
+        		# TYPE cortex_ingest_storage_reader_buffered_fetched_records gauge
+        		cortex_ingest_storage_reader_buffered_fetched_records 0
+			`), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total", "cortex_ingest_storage_reader_buffered_fetched_records")
+			})
+		})
+	}
+}
+
+func TestPartitionReader_ShouldNotPanicIfBufferedRecordsIsCalledBeforeStarting(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 1
+	)
+
+	_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+	reader := createReader(t, clusterAddr, topicName, partitionID, nil)
+
+	require.Zero(t, reader.BufferedRecords())
+}
+
+// This test is critical because it reproduces a bug that caused data loss. This test has been designed to
+// *not* mock PartitionReader or concurrentFetchers, and just mock responses from Kafka to reproduce a scenario
+// where *both* conditions are met:
+// 1. Fetch request failures
+// 2. Fetch responses containing less records than requested
+func TestPartitionReader_ShouldNotMissRecordsIfFetchRequestContainPartialFailuresWithConcurrentFetcherIsUsed(t *testing.T) {
+	t.Parallel()
+
+	const (
+		topicName   = "test-topic"
+		partitionID = 1
+		concurrency = 5
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	t.Cleanup(cancel)
+
+	cluster, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+	client := newKafkaProduceClient(t, clusterAddr)
+
+	// We generate records that match the initialBytesPerRecord expectation, so that
+	// we get concurrent Fetch requests since the beginning (a part from the very first
+	// Fetch request which is sequential because we don't have the HWM yet).
+	const recordSizeBytes = initialBytesPerRecord
+	const minFetchBytes = forcedMinValueForMaxBytes
+	const recordsPerFetch = minFetchBytes / recordSizeBytes
+	const maxBufferedBytes = concurrency * recordsPerFetch * recordSizeBytes
+
+	// We expect that fetchers will fetch more than 50 records per Fetch request.
+	require.Greater(t, recordsPerFetch, 50)
+
+	// Produce enough records so that we'll fetch concurrently.
+	const totalProducedRecords = concurrency * recordsPerFetch
+	for i := 0; i < totalProducedRecords; i++ {
+		produceRandomRecord(ctx, t, client, topicName, partitionID, recordSizeBytes, fmt.Sprintf("record-%05d", i))
+	}
+
+	t.Logf("Produced %d records", totalProducedRecords)
+
+	// Fetch the raw record batches for each offset, so that it's easier to later mock the Kafka
+	// server and control the returned batches.
+	fetchResponseByRequestedOffset := fetchSmallestRecordsBatchForEachOffset(t, client, topicName, partitionID, 0, totalProducedRecords)
+	t.Logf("Collected raw Fetch responses for all expected offsets")
+
+	// Mock the Kafka server to intercept Fetch requests, return less records than requested and
+	// inject random failures.
+	cluster.ControlKey(kmsg.Fetch.Int16(), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+		cluster.KeepControl()
+
+		req := kreq.(*kmsg.FetchRequest)
+
+		// We expect only 1 partition.
+		if len(req.Topics) != 1 {
+			return nil, fmt.Errorf("expected 1 topic, got %d", len(req.Topics)), true
+		}
+		if len(req.Topics[0].Partitions) != 1 {
+			return nil, fmt.Errorf("expected 1 partition, got %d", len(req.Topics[0].Partitions)), true
+		}
+
+		// Simulate a 10% Kafka error rate.
+		if rand.Int()%10 == 0 {
+			return &kmsg.FetchResponse{
+				Version:   req.Version,
+				ErrorCode: kerr.UnknownServerError.Code,
+				Topics: []kmsg.FetchResponseTopic{{
+					Topic:   req.Topics[0].Topic,
+					TopicID: req.Topics[0].TopicID,
+					Partitions: []kmsg.FetchResponseTopicPartition{{
+						Partition: req.Topics[0].Partitions[0].Partition,
+						ErrorCode: kerr.UnknownServerError.Code,
+					}},
+				}},
+			}, nil, true
+		}
+
+		// Lookup the response among the ones we previously fetched with a small "MaxBytes".
+		res := fetchResponseByRequestedOffset[req.Topics[0].Partitions[0].FetchOffset]
+		if res != nil {
+			return res, nil, true
+		}
+
+		if req.Topics[0].Partitions[0].FetchOffset < totalProducedRecords {
+			return nil, errors.New("the offset requested has not been found among the ones we previously fetched"), true
+		}
+
+		return nil, nil, false
+	})
+
+	// Consume all the records using the PartitionReader.
+	var (
+		totalConsumedRecords = atomic.NewInt64(0)
+		consumedRecordIDs    = sync.Map{}
+	)
+
+	consumer := consumerFunc(func(_ context.Context, records []record) error {
+		for _, rec := range records {
+			totalConsumedRecords.Inc()
+
+			// Parse the record ID from the actual record data.
+			recordID, err := strconv.ParseInt(string(rec.content[7:12]), 10, 64)
+			require.NoError(t, err)
+			consumedRecordIDs.Store(recordID, struct{}{})
+		}
+
+		return nil
+	})
+
+	// Create and start the reader.
+	readerOpts := []readerTestCfgOpt{
+		withConsumeFromPositionAtStartup(consumeFromStart),
+		withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+		withLogger(log.NewNopLogger()),
+		withMaxBufferedBytes(maxBufferedBytes),
+		withFetchConcurrency(concurrency),
+	}
+
+	reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+	require.NoError(t, reader.StartAsync(ctx))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+	})
+
+	// Wait until all produced have been consumed.
+	test.Poll(t, 60*time.Second, int64(totalProducedRecords), func() interface{} {
+		return totalConsumedRecords.Load()
+	})
+
+	// Ensure that the actual records content match the expected one.
+	for i := int64(0); i < totalProducedRecords; i++ {
+		_, found := consumedRecordIDs.Load(i)
+		require.Truef(t, found, "Expected to find a consumed record with ID %d", i)
+	}
+}
+
+// This test reproduces a scenario that we don't think should happen but, if it happens, we want to make sure
+// that we don't lose records. The scenario is when Kafka returns a Fetch response for a *single* topic-partition
+// containing *both* the error code set and some records.
+func TestPartitionReader_ShouldNotMissRecordsIfKafkaReturnsAFetchBothWithAnErrorAndSomeRecords(t *testing.T) {
+	t.Parallel()
+
+	const (
+		topicName            = "test"
+		partitionID          = 1
+		totalProducedRecords = 10000
+		recordSizeBytes      = initialBytesPerRecord
+		maxBufferedBytes     = (totalProducedRecords * initialBytesPerRecord) / 100
+	)
+
+	// We want to run all these tests with different concurrency config.
+	concurrencyVariants := map[string][]readerTestCfgOpt{
+		"without concurrency":    {withFetchConcurrency(0)},
+		"with fetch concurrency": {withFetchConcurrency(2)},
+	}
+
+	for concurrencyName, concurrencyVariant := range concurrencyVariants {
+		concurrencyVariant := concurrencyVariant
+
+		t.Run(concurrencyName, func(t *testing.T) {
+			t.Parallel()
+
+			var (
+				cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topicName)
+				reg                  = prometheus.NewPedanticRegistry()
+			)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			t.Cleanup(cancel)
+
+			// Produce records.
+			writeClient := newKafkaProduceClient(t, clusterAddr)
+			for i := 0; i < totalProducedRecords; i++ {
+				produceRandomRecord(ctx, t, writeClient, topicName, partitionID, recordSizeBytes, fmt.Sprintf("record-%05d", i))
+			}
+
+			// Fetch the raw record batches for each offset, so that it's easier to later mock the Kafka
+			// server and control the returned batches.
+			fetchResponseByRequestedOffset := fetchSmallestRecordsBatchForEachOffset(t, writeClient, topicName, partitionID, 0, totalProducedRecords)
+			t.Logf("Collected raw Fetch responses for all expected offsets")
+
+			// Mock the Kafka server to intercept Fetch requests, return less records than requested and
+			// randomly include error codes in some fetches.
+			cluster.ControlKey(kmsg.Fetch.Int16(), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+				cluster.KeepControl()
+
+				req := kreq.(*kmsg.FetchRequest)
+
+				// We expect only 1 partition in the request.
+				if len(req.Topics) != 1 {
+					return nil, fmt.Errorf("expected 1 topic in the request, got %d", len(req.Topics)), true
+				}
+				if len(req.Topics[0].Partitions) != 1 {
+					return nil, fmt.Errorf("expected 1 partition in the request, got %d", len(req.Topics[0].Partitions)), true
+				}
+
+				// Lookup the response among the ones we previously fetched with a small "MaxBytes".
+				res := fetchResponseByRequestedOffset[req.Topics[0].Partitions[0].FetchOffset]
+				if res == nil {
+					if req.Topics[0].Partitions[0].FetchOffset < totalProducedRecords {
+						return nil, errors.New("the offset requested has not been found among the ones we previously fetched"), true
+					}
+
+					// It was requested that we haven't been previously produced (could be a future offset), we just let kfake handle it.
+					return nil, nil, false
+				}
+
+				// We expect only 1 partition in the response.
+				if len(res.Topics) != 1 {
+					return nil, fmt.Errorf("expected 1 topic in the response, got %d", len(res.Topics)), true
+				}
+				if len(res.Topics[0].Partitions) != 1 {
+					return nil, fmt.Errorf("expected 1 partition in the response, got %d", len(res.Topics[0].Partitions)), true
+				}
+
+				// Simulate a 10% error rate in the Kafka responses, mixed with records.
+				if rand.Int()%10 == 0 {
+					// Make a copy so we don't overwrite the cached version, which will be later requested again.
+					resCopy := &kmsg.FetchResponse{Version: req.Version}
+					if err := resCopy.ReadFrom(res.AppendTo(nil)); err != nil {
+						return nil, fmt.Errorf("failed to make a copy of FetchResponse: %v", err), true
+					}
+
+					resCopy.Topics[0].Partitions[0].ErrorCode = kerr.UnknownServerError.Code
+					res = resCopy
+				}
+
+				return res, nil, true
+			})
+
+			// Consume all records.
+			var (
+				totalConsumedRecords = atomic.NewInt64(0)
+				consumedRecordIDs    = sync.Map{}
+			)
+
+			consumer := consumerFunc(func(_ context.Context, records []record) error {
+				for _, rec := range records {
+					totalConsumedRecords.Inc()
+
+					// Parse the record ID from the actual record data.
+					recordID, err := strconv.ParseInt(string(rec.content[7:12]), 10, 64)
+					require.NoError(t, err)
+					consumedRecordIDs.Store(recordID, struct{}{})
+				}
+
+				return nil
+			})
+
+			readerOpts := append([]readerTestCfgOpt{
+				withConsumeFromPositionAtStartup(consumeFromStart),
+				withTargetAndMaxConsumerLagAtStartup(time.Second, 2*time.Second),
+				withMaxBufferedBytes(maxBufferedBytes),
+				withRegistry(reg),
+				withLogger(log.NewNopLogger()),
+			}, concurrencyVariant...)
+
+			reader := createReader(t, clusterAddr, topicName, partitionID, consumer, readerOpts...)
+			require.NoError(t, reader.StartAsync(ctx))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, reader))
+			})
+
+			// Wait until all produced have been consumed.
+			test.Poll(t, 60*time.Second, int64(totalProducedRecords), func() interface{} {
+				return totalConsumedRecords.Load()
+			})
+
+			// Ensure that the actual records content match the expected one.
+			for i := int64(0); i < totalProducedRecords; i++ {
+				_, found := consumedRecordIDs.Load(i)
+				require.Truef(t, found, "Expected to find a consumed record with ID %d", i)
+			}
+
+			// We expect the last consumed offset to be tracked in a metric.
+			test.Poll(t, time.Second, nil, func() interface{} {
+				return promtest.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_ingest_storage_reader_last_consumed_offset The last offset successfully consumed by the partition reader. Set to -1 if not offset has been consumed yet.
+					# TYPE cortex_ingest_storage_reader_last_consumed_offset gauge
+					cortex_ingest_storage_reader_last_consumed_offset{partition="1"} %d
+
+					# HELP cortex_ingest_storage_reader_buffered_fetch_records_total Total number of records buffered within the client ready to be consumed
+					# TYPE cortex_ingest_storage_reader_buffered_fetch_records_total gauge
+					cortex_ingest_storage_reader_buffered_fetch_records_total{component="partition-reader"} 0
+				`, totalProducedRecords-1)), "cortex_ingest_storage_reader_last_consumed_offset", "cortex_ingest_storage_reader_buffered_fetch_records_total")
+			})
+		})
+	}
 }
 
 func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
@@ -1072,7 +2307,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
-			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
 		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -1103,7 +2338,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
-			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
 		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -1144,7 +2379,7 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 		var (
 			cluster, clusterAddr = testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
 			consumer             = consumerFunc(func(context.Context, []record) error { return nil })
-			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withMaxConsumerLagAtStartup(time.Second))
+			reader               = createReader(t, clusterAddr, topicName, partitionID, consumer, withTargetAndMaxConsumerLagAtStartup(time.Second, time.Second))
 		)
 
 		cluster.ControlKey(int16(kmsg.OffsetFetch), func(request kmsg.Request) (kmsg.Response, error, bool) {
@@ -1221,7 +2456,7 @@ func TestPartitionCommitter(t *testing.T) {
 			return res, nil, true
 		})
 
-		logger := testutil.NewLogger(t)
+		logger := mimirtest.NewTestingLogger(t)
 		cfg := createTestKafkaConfig(clusterAddr, topicName)
 		client, err := kgo.NewClient(commonKafkaClientOptions(cfg, nil, logger)...)
 		require.NoError(t, err)
@@ -1362,6 +2597,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
 	writeClient, err := kgo.NewClient(
 		kgo.SeedBrokers(addrs),
+		kgo.WithLogger(NewKafkaLogger(mimirtest.NewTestingLogger(t))),
 		// We will choose the partition of each record.
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
 	)
@@ -1370,7 +2606,7 @@ func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
 	return writeClient
 }
 
-func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte) {
+func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte) int64 {
 	rec := &kgo.Record{
 		Value:     content,
 		Topic:     topicName,
@@ -1378,17 +2614,30 @@ func produceRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, t
 	}
 	produceResult := writeClient.ProduceSync(ctx, rec)
 	require.NoError(t, produceResult.FirstErr())
+
+	return rec.Offset
+}
+
+// produceRandomRecord produces a record with random data, in order to reduce the compression ratio and
+// get the compressed record byte size as close as possible to the uncompressed one.
+func produceRandomRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, dataSize int, dataPrefix string) {
+	randomData := make([]byte, dataSize-len(dataPrefix))
+	_, err := crypto_rand.Read(randomData)
+	require.NoError(t, err)
+
+	recordValue := append([]byte(dataPrefix), randomData...)
+	produceRecord(ctx, t, writeClient, topicName, partitionID, recordValue)
 }
 
 type readerTestCfg struct {
 	kafka       KafkaConfig
 	partitionID int32
-	consumer    recordConsumer
+	consumer    consumerFactory
 	registry    *prometheus.Registry
 	logger      log.Logger
 }
 
-type readerTestCfgOtp func(cfg *readerTestCfg)
+type readerTestCfgOpt func(cfg *readerTestCfg)
 
 func withCommitInterval(i time.Duration) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
@@ -1402,8 +2651,9 @@ func withLastProducedOffsetPollInterval(i time.Duration) func(cfg *readerTestCfg
 	}
 }
 
-func withMaxConsumerLagAtStartup(maxLag time.Duration) func(cfg *readerTestCfg) {
+func withTargetAndMaxConsumerLagAtStartup(targetLag, maxLag time.Duration) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
+		cfg.kafka.TargetConsumerLagAtStartup = targetLag
 		cfg.kafka.MaxConsumerLagAtStartup = maxLag
 	}
 }
@@ -1433,28 +2683,66 @@ func withRegistry(reg *prometheus.Registry) func(cfg *readerTestCfg) {
 	}
 }
 
-func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
-	return &readerTestCfg{
-		registry:    prometheus.NewPedanticRegistry(),
-		logger:      testutil.NewLogger(t),
-		kafka:       createTestKafkaConfig(addr, topicName),
-		partitionID: partitionID,
-		consumer:    consumer,
+func withLogger(logger log.Logger) func(cfg *readerTestCfg) {
+	return func(cfg *readerTestCfg) {
+		cfg.logger = logger
 	}
 }
 
-func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
+func withFetchConcurrency(i int) readerTestCfgOpt {
+	return func(cfg *readerTestCfg) {
+		cfg.kafka.FetchConcurrencyMax = i
+	}
+}
+
+func withMaxBufferedBytes(i int) readerTestCfgOpt {
+	return func(cfg *readerTestCfg) {
+		cfg.kafka.MaxBufferedBytes = i
+	}
+}
+
+var testingLogger = mimirtest.NewTestingLogger(nil)
+
+func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer) *readerTestCfg {
+	return &readerTestCfg{
+		registry:    prometheus.NewPedanticRegistry(),
+		logger:      testingLogger.WithT(t),
+		kafka:       createTestKafkaConfig(addr, topicName),
+		partitionID: partitionID,
+		consumer: consumerFactoryFunc(func() recordConsumer {
+			return consumer
+		}),
+	}
+}
+
+func createReader(t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
 	cfg := defaultReaderTestConfig(t, addr, topicName, partitionID, consumer)
 	for _, o := range opts {
 		o(cfg)
 	}
+
+	t.Cleanup(func() {
+		// Assuming none of the tests intentionally create gaps in offsets, there should be no missed records.
+		assert.NoError(t, promtest.GatherAndCompare(cfg.registry, strings.NewReader(`
+			# HELP cortex_ingest_storage_reader_missed_records_total The number of offsets that were never consumed by the reader because they weren't fetched.
+			# TYPE cortex_ingest_storage_reader_missed_records_total counter
+			cortex_ingest_storage_reader_missed_records_total 0
+		`), "cortex_ingest_storage_reader_missed_records_total"))
+	})
+
+	// Ensure the config is valid.
+	require.NoError(t, cfg.kafka.Validate())
+
 	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
 	require.NoError(t, err)
+
+	// Reduce the time the fake kafka would wait for new records. Sometimes this blocks startup.
+	reader.concurrentFetchersMinBytesMaxWaitTime = 500 * time.Millisecond
 
 	return reader
 }
 
-func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOtp) *PartitionReader {
+func createAndStartReader(ctx context.Context, t *testing.T, addr string, topicName string, partitionID int32, consumer recordConsumer, opts ...readerTestCfgOpt) *PartitionReader {
 	reader := createReader(t, addr, topicName, partitionID, consumer, opts...)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, reader))
@@ -1578,7 +2866,7 @@ func newTestConsumer(capacity int) testConsumer {
 	}
 }
 
-func (t testConsumer) consume(ctx context.Context, records []record) error {
+func (t testConsumer) Consume(ctx context.Context, records []record) error {
 	for _, r := range records {
 		select {
 		case <-ctx.Done():
@@ -1619,7 +2907,7 @@ func (t testConsumer) waitRecords(numRecords int, waitTimeout, drainPeriod time.
 
 type consumerFunc func(ctx context.Context, records []record) error
 
-func (c consumerFunc) consume(ctx context.Context, records []record) error {
+func (c consumerFunc) Consume(ctx context.Context, records []record) error {
 	return c(ctx, records)
 }
 
@@ -1627,4 +2915,70 @@ func createTestContextWithTimeout(t *testing.T, timeout time.Duration) context.C
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	t.Cleanup(cancel)
 	return ctx
+}
+
+func fetchSmallestRecordsBatchForEachOffset(t *testing.T, client *kgo.Client, topicName string, partitionID int32, startOffset, endOffset int64) map[int64]*kmsg.FetchResponse {
+	// Get topic ID.
+	topics, err := kadm.NewClient(client).ListTopics(context.Background(), topicName)
+	require.NoError(t, err)
+	require.NoError(t, topics.Error())
+	require.True(t, topics.Has(topicName))
+	topicID := topics[topicName].ID
+
+	t.Logf("Fetched topic ID")
+
+	// Fetch the raw record batches for each offset
+	fetchResponseByRequestedOffset := map[int64]*kmsg.FetchResponse{}
+
+	for offset := startOffset; offset <= endOffset; offset++ {
+		// Build a Fetch request.
+		req := kmsg.NewFetchRequest()
+		req.MinBytes = 1
+		req.Version = 13
+		req.MaxWaitMillis = 1000
+		req.MaxBytes = 1 // Request the minimum amount of bytes.
+
+		reqTopic := kmsg.NewFetchRequestTopic()
+		reqTopic.Topic = topicName
+		reqTopic.TopicID = topicID
+
+		reqPartition := kmsg.NewFetchRequestTopicPartition()
+		reqPartition.Partition = partitionID
+		reqPartition.FetchOffset = offset
+		reqPartition.PartitionMaxBytes = 1  // Request the minimum amount of bytes.
+		reqPartition.CurrentLeaderEpoch = 0 // Not needed here.
+
+		reqTopic.Partitions = append(reqTopic.Partitions, reqPartition)
+		req.Topics = append(req.Topics, reqTopic)
+
+		// Issue the Fetch request.
+		kres, err := client.Request(context.Background(), &req)
+		require.NoError(t, err)
+
+		res := kres.(*kmsg.FetchResponse)
+		require.Equal(t, int16(0), res.ErrorCode)
+		require.Equal(t, 1, len(res.Topics))
+		require.Equal(t, 1, len(res.Topics[0].Partitions))
+
+		// Parse the response, just to check how many records we got.
+		parseOptions := kgo.ProcessFetchPartitionOptions{
+			KeepControlRecords: false,
+			Offset:             offset,
+			IsolationLevel:     kgo.ReadUncommitted(),
+			Topic:              topicName,
+			Partition:          partitionID,
+		}
+
+		rawPartitionResp := res.Topics[0].Partitions[0]
+		partition, _ := kgo.ProcessRespPartition(parseOptions, &rawPartitionResp, func(_ kgo.FetchBatchMetrics) {})
+
+		// Ensure we got a low number of records, otherwise the premise of this test is wrong
+		// because we want a single fetchWatch to be fulfilled in many Fetch requests.
+		require.LessOrEqual(t, len(partition.Records), 5)
+
+		// Keep track of the raw response.
+		fetchResponseByRequestedOffset[offset] = res
+	}
+
+	return fetchResponseByRequestedOffset
 }

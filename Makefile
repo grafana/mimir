@@ -269,13 +269,13 @@ all: $(UPTODATE_FILES)
 test: protos
 test-with-race: protos
 mod-check: protos
-lint: lint-packaging-scripts protos
+lint: lint-gh-action lint-packaging-scripts protos
 mimir-build-image/$(UPTODATE): mimir-build-image/*
 
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr8534-a0bb2974fb
+LATEST_BUILD_IMAGE_TAG ?= pr9491-80f5778956
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -300,7 +300,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -318,6 +318,7 @@ $(EXES_RACE):
 
 protos: ## Generates protobuf files.
 protos: $(PROTO_GOS)
+	@./tools/apply-expected-diffs.sh $(PROTO_GOS)
 
 GENERATE_FILES ?= true
 
@@ -332,9 +333,14 @@ endif
 lint-packaging-scripts: packaging/nfpm/mimir/postinstall.sh packaging/nfpm/mimir/preremove.sh
 	shellcheck $?
 
+lint-gh-action: operations/mimir-rules-action/entrypoint.sh
+	shellcheck $?
+
 lint: ## Run lints to check for style issues.
 lint: check-makefiles
 	misspell -error $(DOC_SOURCES_PATH)
+
+	./tools/find-unpooled-slice-creation.sh
 
 	# Configured via .golangci.yml.
 	golangci-lint run
@@ -364,6 +370,7 @@ lint: check-makefiles
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/storage/sharding/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/engine/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/api/...
+	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/util/math/...
 
 	# Ensure all errors are report as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
@@ -436,7 +443,7 @@ lint: check-makefiles
 	# Note that we don't automatically suggest replacing sort.Float64s() with slices.Sort() as the documentation for slices.Sort()
 	# at the time of writing warns that slices.Sort() may not correctly handle NaN values.
 	faillint -paths \
-		"sort.{Strings,Ints}=golang.org/x/exp/slices.Sort" \
+		"sort.{Strings,Ints}=slices.Sort" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Don't use generic ring.Read operation.
@@ -470,6 +477,12 @@ lint: check-makefiles
 	faillint -paths \
 		"google.golang.org/grpc/metadata.{FromIncomingContext}=google.golang.org/grpc/metadata.ValueFromIncomingContext" \
 		./pkg/... ./cmd/... ./integration/...
+
+	# We don't use topic auto-creation because we don't control the num.partitions.
+	# As a result the topic can be created with the wrong number of partitions.
+	faillint -paths \
+		"github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation}" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;

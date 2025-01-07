@@ -50,7 +50,7 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 		c.batches = newBatchStream(len(c.its), &c.hPool, &c.fhPool)
 	}
 	for i, cs := range css {
-		c.its[i] = newNonOverlappingIterator(c.its[i], cs, &c.hPool, &c.fhPool)
+		c.its[i] = newNonOverlappingIterator(c.its[i], i, cs, &c.hPool, &c.fhPool)
 	}
 
 	for _, iter := range c.its {
@@ -69,14 +69,19 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 }
 
 func (c *mergeIterator) Seek(t int64, size int) chunkenc.ValueType {
+	if c.currErr != nil {
+		// We've already failed. Stop.
+		return chunkenc.ValNone
+	}
 
 	// Optimisation to see if the seek is within our current caches batches.
 found:
 	for c.batches.len() > 0 {
 		batch := c.batches.curr()
-		if t >= batch.Timestamps[0] && t <= batch.Timestamps[batch.Length-1] {
+		// The first sample in the batch can be after the seek time.
+		if batch.Timestamps[batch.Length-1] >= t {
 			batch.Index = 0
-			for batch.Index < batch.Length && t > batch.Timestamps[batch.Index] {
+			for batch.Index < batch.Length && batch.Timestamps[batch.Index] < t {
 				batch.Index++
 			}
 			break found
@@ -109,6 +114,11 @@ found:
 }
 
 func (c *mergeIterator) Next(size int) chunkenc.ValueType {
+	if c.currErr != nil {
+		// We've already failed. Stop.
+		return chunkenc.ValNone
+	}
+
 	// Pop the last built batch in a way that doesn't extend the slice.
 	if c.batches.len() > 0 {
 		// The first batch is not needed anymore, so we remove it.
@@ -128,7 +138,7 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	// is before all iterators next entry.
 	for len(c.h) > 0 && (c.batches.len() == 0 || c.nextBatchEndTime() >= c.h[0].AtTime()) {
 		batch := c.h[0].Batch()
-		c.batches.merge(&batch, size)
+		c.batches.merge(&batch, size, c.h[0].id)
 
 		if c.h[0].Next(size) != chunkenc.ValNone {
 			heap.Fix(&c.h, 0)
@@ -155,7 +165,7 @@ func (c *mergeIterator) Err() error {
 	return c.currErr
 }
 
-type iteratorHeap []iterator
+type iteratorHeap []*nonOverlappingIterator
 
 func (h *iteratorHeap) Len() int      { return len(*h) }
 func (h *iteratorHeap) Swap(i, j int) { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
@@ -167,7 +177,7 @@ func (h *iteratorHeap) Less(i, j int) bool {
 }
 
 func (h *iteratorHeap) Push(x interface{}) {
-	*h = append(*h, x.(iterator))
+	*h = append(*h, x.(*nonOverlappingIterator))
 }
 
 func (h *iteratorHeap) Pop() interface{} {

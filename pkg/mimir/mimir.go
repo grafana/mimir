@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/signals"
 	"github.com/grafana/dskit/spanprofiler"
+	"github.com/okzk/sdnotify"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -47,6 +48,8 @@ import (
 	alertbucketclient "github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/api"
+	"github.com/grafana/mimir/pkg/blockbuilder"
+	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -111,23 +114,25 @@ type Config struct {
 	PrintConfig                     bool                   `yaml:"-"`
 	ApplicationName                 string                 `yaml:"-"`
 
-	API              api.Config                      `yaml:"api"`
-	Server           server.Config                   `yaml:"server"`
-	Distributor      distributor.Config              `yaml:"distributor"`
-	Querier          querier.Config                  `yaml:"querier"`
-	IngesterClient   client.Config                   `yaml:"ingester_client"`
-	Ingester         ingester.Config                 `yaml:"ingester"`
-	Flusher          flusher.Config                  `yaml:"flusher"`
-	LimitsConfig     validation.Limits               `yaml:"limits"`
-	Worker           querier_worker.Config           `yaml:"frontend_worker"`
-	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
-	IngestStorage    ingest.Config                   `yaml:"ingest_storage"`
-	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
-	Compactor        compactor.Config                `yaml:"compactor"`
-	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
-	TenantFederation tenantfederation.Config         `yaml:"tenant_federation"`
-	ActivityTracker  activitytracker.Config          `yaml:"activity_tracker"`
-	Vault            vault.Config                    `yaml:"vault"`
+	API                   api.Config                      `yaml:"api"`
+	Server                server.Config                   `yaml:"server"`
+	Distributor           distributor.Config              `yaml:"distributor"`
+	Querier               querier.Config                  `yaml:"querier"`
+	IngesterClient        client.Config                   `yaml:"ingester_client"`
+	Ingester              ingester.Config                 `yaml:"ingester"`
+	Flusher               flusher.Config                  `yaml:"flusher"`
+	LimitsConfig          validation.Limits               `yaml:"limits"`
+	Worker                querier_worker.Config           `yaml:"frontend_worker"`
+	Frontend              frontend.CombinedFrontendConfig `yaml:"frontend"`
+	IngestStorage         ingest.Config                   `yaml:"ingest_storage"`
+	BlockBuilder          blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
+	BlockBuilderScheduler blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
+	BlocksStorage         tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
+	Compactor             compactor.Config                `yaml:"compactor"`
+	StoreGateway          storegateway.Config             `yaml:"store_gateway"`
+	TenantFederation      tenantfederation.Config         `yaml:"tenant_federation"`
+	ActivityTracker       activitytracker.Config          `yaml:"activity_tracker"`
+	Vault                 vault.Config                    `yaml:"vault"`
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
@@ -180,6 +185,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
 	c.IngestStorage.RegisterFlags(f)
+	c.BlockBuilder.RegisterFlags(f, logger)
+	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
@@ -245,9 +252,6 @@ func (c *Config) Validate(log log.Logger) error {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
 	if c.isAnyModuleEnabled(Ingester, Write, All) {
-		if c.IngestStorage.Enabled && !c.Ingester.DeprecatedReturnOnlyGRPCErrors {
-			return errors.New("to use ingest storage (-ingest-storage.enabled) also enable -ingester.return-only-grpc-errors")
-		}
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
 			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
 		}
@@ -265,7 +269,7 @@ func (c *Config) Validate(log log.Logger) error {
 		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
 			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
 	}
-	if err := c.IngesterClient.Validate(log); err != nil {
+	if err := c.IngesterClient.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
 	if err := c.Ingester.Validate(log); err != nil {
@@ -701,38 +705,40 @@ type Mimir struct {
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                           *api.API
-	Server                        *server.Server
-	IngesterRing                  *ring.Ring
-	IngesterPartitionRingWatcher  *ring.PartitionRingWatcher
-	IngesterPartitionInstanceRing *ring.PartitionInstanceRing
-	TenantLimits                  validation.TenantLimits
-	Overrides                     *validation.Overrides
-	ActiveGroupsCleanup           *util.ActiveGroupsCleanupService
-	Distributor                   *distributor.Distributor
-	Ingester                      *ingester.Ingester
-	Flusher                       *flusher.Flusher
-	FrontendV1                    *frontendv1.Frontend
-	RuntimeConfig                 *runtimeconfig.Manager
-	QuerierQueryable              prom_storage.SampleAndChunkQueryable
-	ExemplarQueryable             prom_storage.ExemplarQueryable
-	MetadataSupplier              querier.MetadataSupplier
-	QuerierEngine                 promql.QueryEngine
-	QueryFrontendTripperware      querymiddleware.Tripperware
-	QueryFrontendCodec            querymiddleware.Codec
-	Ruler                         *ruler.Ruler
-	RulerDirectStorage            rulestore.RuleStore
-	RulerCachedStorage            rulestore.RuleStore
-	Alertmanager                  *alertmanager.MultitenantAlertmanager
-	Compactor                     *compactor.MultitenantCompactor
-	StoreGateway                  *storegateway.StoreGateway
-	StoreQueryable                prom_storage.Queryable
-	MemberlistKV                  *memberlist.KVInitService
-	ActivityTracker               *activitytracker.ActivityTracker
-	Vault                         *vault.Vault
-	UsageStatsReporter            *usagestats.Reporter
-	ContinuousTestManager         *continuoustest.Manager
-	BuildInfoHandler              http.Handler
+	API                              *api.API
+	Server                           *server.Server
+	IngesterRing                     *ring.Ring
+	IngesterPartitionRingWatcher     *ring.PartitionRingWatcher
+	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
+	TenantLimits                     validation.TenantLimits
+	Overrides                        *validation.Overrides
+	ActiveGroupsCleanup              *util.ActiveGroupsCleanupService
+	Distributor                      *distributor.Distributor
+	Ingester                         *ingester.Ingester
+	Flusher                          *flusher.Flusher
+	FrontendV1                       *frontendv1.Frontend
+	RuntimeConfig                    *runtimeconfig.Manager
+	QuerierQueryable                 prom_storage.SampleAndChunkQueryable
+	ExemplarQueryable                prom_storage.ExemplarQueryable
+	AdditionalStorageQueryables      []querier.TimeRangeQueryable
+	MetadataSupplier                 querier.MetadataSupplier
+	QuerierEngine                    promql.QueryEngine
+	QueryFrontendTripperware         querymiddleware.Tripperware
+	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
+	QueryFrontendCodec               querymiddleware.Codec
+	Ruler                            *ruler.Ruler
+	RulerStorage                     rulestore.RuleStore
+	Alertmanager                     *alertmanager.MultitenantAlertmanager
+	Compactor                        *compactor.MultitenantCompactor
+	StoreGateway                     *storegateway.StoreGateway
+	MemberlistKV                     *memberlist.KVInitService
+	ActivityTracker                  *activitytracker.ActivityTracker
+	Vault                            *vault.Vault
+	UsageStatsReporter               *usagestats.Reporter
+	BlockBuilder                     *blockbuilder.BlockBuilder
+	BlockBuilderScheduler            *blockbuilderscheduler.BlockBuilderScheduler
+	ContinuousTestManager            *continuoustest.Manager
+	BuildInfoHandler                 http.Handler
 }
 
 // New makes a new Mimir.
@@ -886,9 +892,15 @@ func (t *Mimir) Run() error {
 		grpcutil.WithManager(sm),
 	))
 
-	// Let's listen for events from this manager, and log them.
-	healthy := func() { level.Info(util_log.Logger).Log("msg", "Application started") }
-	stopped := func() { level.Info(util_log.Logger).Log("msg", "Application stopped") }
+	// Let's listen for events from this manager, log them and send sd_notify event
+	healthy := func() {
+		level.Info(util_log.Logger).Log("msg", "Application started")
+		_ = sdnotify.Ready()
+	}
+	stopped := func() {
+		level.Info(util_log.Logger).Log("msg", "Application stopped")
+		_ = sdnotify.Stopping()
+	}
 	serviceFailed := func(service services.Service) {
 		// if any service fails, stop entire Mimir
 		sm.StopAsync()

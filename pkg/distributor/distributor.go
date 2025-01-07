@@ -13,6 +13,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -44,7 +45,6 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/cardinality"
@@ -53,6 +53,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	mimir_limiter "github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -60,6 +61,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func init() {
+	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
+	model.NameValidationScheme = model.LegacyValidation
+}
 
 var (
 	// Validation errors.
@@ -80,6 +86,8 @@ const (
 
 	// metaLabelTenantID is the name of the metric_relabel_configs label with tenant ID.
 	metaLabelTenantID = model.MetaLabelPrefix + "tenant_id"
+
+	maxOTLPRequestSizeFlag = "distributor.max-otlp-request-size"
 
 	instanceIngestionRateTickInterval = time.Second
 
@@ -105,7 +113,7 @@ type Distributor struct {
 	healthyInstancesCount  *atomic.Uint32
 
 	// For handling HA replicas.
-	HATracker *haTracker
+	HATracker haTracker
 
 	// Per-user rate limiters.
 	requestRateLimiter   *limiter.RateLimiter
@@ -135,10 +143,10 @@ type Distributor struct {
 	nonHASamples                     *prometheus.CounterVec
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
-	sampleDelayHistogram             prometheus.Histogram
 	incomingSamplesPerRequest        *prometheus.HistogramVec
 	incomingExemplarsPerRequest      *prometheus.HistogramVec
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
+	labelValuesWithNewlinesPerUser   *prometheus.CounterVec
 	hashCollisionCount               prometheus.Counter
 
 	// Metrics for data rejected for hitting per-tenant limits
@@ -175,6 +183,19 @@ type Distributor struct {
 
 	// partitionsRing is the hash ring holding ingester partitions. It's used when ingest storage is enabled.
 	partitionsRing *ring.PartitionInstanceRing
+
+	// For testing functionality that relies on timing without having to sleep in unit tests.
+	sleep func(time.Duration)
+	now   func() time.Time
+}
+
+func defaultSleep(d time.Duration) { time.Sleep(d) }
+func defaultNow() time.Time        { return time.Now() }
+
+// OTelResourceAttributePromotionConfig contains methods for configuring OTel resource attribute promotion.
+type OTelResourceAttributePromotionConfig interface {
+	// PromoteOTelResourceAttributes returns which OTel resource attributes to promote for tenant ID.
+	PromoteOTelResourceAttributes(id string) []string
 }
 
 // Config contains the configuration required to
@@ -186,6 +207,7 @@ type Config struct {
 	HATrackerConfig HATrackerConfig `yaml:"ha_tracker"`
 
 	MaxRecvMsgSize           int           `yaml:"max_recv_msg_size" category:"advanced"`
+	MaxOTLPRequestSize       int           `yaml:"max_otlp_request_size" category:"experimental"`
 	MaxRequestPoolBufferSize int           `yaml:"max_request_pool_buffer_size" category:"experimental"`
 	RemoteTimeout            time.Duration `yaml:"remote_timeout" category:"advanced"`
 
@@ -195,9 +217,13 @@ type Config struct {
 	// for testing and for extending the ingester by adding calls to the client
 	IngesterClientFactory ring_client.PoolFactory `yaml:"-"`
 
-	// when true the distributor does not validate the label name, Mimir doesn't directly use
-	// this (and should never use it) but this feature is used by other projects built on top of it
-	SkipLabelNameValidation bool `yaml:"-"`
+	// When SkipLabelValidation is true the distributor does not validate the label name and value, Mimir doesn't directly use
+	// this (and should never use it) but this feature is used by other projects built on top of it.
+	SkipLabelValidation bool `yaml:"-"`
+
+	// When SkipLabelCountValidation is true the distributor does not validate the number of labels, Mimir doesn't directly use
+	// this (and should never use it) but this feature is used by other projects built on top of it.
+	SkipLabelCountValidation bool `yaml:"-"`
 
 	// This config is dynamically injected because it is defined in the querier config.
 	ShuffleShardingLookbackPeriod              time.Duration `yaml:"-"`
@@ -218,12 +244,14 @@ type Config struct {
 	// These functions will only receive samples that don't get dropped by HA deduplication.
 	PushWrappers []PushWrapper `yaml:"-"`
 
-	WriteRequestsBufferPoolingEnabled           bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
-	LimitInflightRequestsUsingGrpcMethodLimiter bool `yaml:"limit_inflight_requests_using_grpc_method_limiter" category:"deprecated"` // TODO Remove the configuration option in Mimir 2.14, keeping the same behavior as if it's enabled
-	ReusableIngesterPushWorkers                 int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
+	WriteRequestsBufferPoolingEnabled bool `yaml:"write_requests_buffer_pooling_enabled" category:"experimental"`
+	ReusableIngesterPushWorkers       int  `yaml:"reusable_ingester_push_workers" category:"advanced"`
 
-	// DirectOTLPTranslationEnabled allows reverting to the older way of translating from OTLP write requests via Prometheus, in case of problems.
-	DirectOTLPTranslationEnabled bool `yaml:"direct_otlp_translation_enabled" category:"experimental"`
+	// OTelResourceAttributePromotionConfig allows for specializing OTel resource attribute promotion.
+	OTelResourceAttributePromotionConfig OTelResourceAttributePromotionConfig `yaml:"-"`
+
+	// Change the implementation of OTel startTime from a real zero to a special NaN value.
+	EnableStartTimeQuietZero bool `yaml:"start_time_quiet_zero" category:"advanced" doc:"hidden"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -237,12 +265,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.RetryConfig.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
+	f.IntVar(&cfg.MaxOTLPRequestSize, maxOTLPRequestSizeFlag, 100<<20, "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
 	f.IntVar(&cfg.MaxRequestPoolBufferSize, "distributor.max-request-pool-buffer-size", 0, "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
-	f.BoolVar(&cfg.LimitInflightRequestsUsingGrpcMethodLimiter, "distributor.limit-inflight-requests-using-grpc-method-limiter", true, "When enabled, in-flight write requests limit is checked as soon as the gRPC request is received, before the request is decoded and parsed.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
-	f.BoolVar(&cfg.DirectOTLPTranslationEnabled, "distributor.direct-otlp-translation-enabled", true, "When enabled, OTLP write requests are directly translated to Mimir equivalents, for optimum performance.")
+	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -308,26 +336,13 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
-			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics, log)
+			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics)
 		})
 	}
 
 	cfg.PoolConfig.RemoteTimeout = cfg.RemoteTimeout
-
-	haTracker, err := newHATracker(cfg.HATrackerConfig, limits, reg, log)
-	if err != nil {
-		return nil, err
-	}
-
 	subservices := []services.Service(nil)
-	subservices = append(subservices, haTracker)
-
-	var requestBufferPool util.Pool
-	if cfg.MaxRequestPoolBufferSize > 0 {
-		requestBufferPool = util.NewBucketedBufferPool(1<<10, cfg.MaxRequestPoolBufferSize, 4)
-	} else {
-		requestBufferPool = util.NewBufferPool()
-	}
+	requestBufferPool := util.NewBufferPool(cfg.MaxRequestPoolBufferSize)
 
 	d := &Distributor{
 		cfg:                   cfg,
@@ -338,7 +353,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingesterPool:          NewPool(cfg.PoolConfig, ingestersRing, cfg.IngesterClientFactory, log),
 		healthyInstancesCount: atomic.NewUint32(0),
 		limits:                limits,
-		HATracker:             haTracker,
 		ingestionRate:         util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 
 		queryDuration: instrument.NewHistogramCollector(promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
@@ -391,27 +405,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help:    "Number of labels per sample.",
 			Buckets: []float64{5, 10, 15, 20, 25},
 		}),
-		sampleDelayHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name: "cortex_distributor_sample_delay_seconds",
-			Help: "Number of seconds by which a sample came in late wrt wallclock.",
-			Buckets: []float64{
-				-60 * 1,      // 1 min early
-				-15,          // 15s early
-				-5,           // 5s early
-				30,           // 30s
-				60 * 1,       // 1 min
-				60 * 2,       // 2 min
-				60 * 4,       // 4 min
-				60 * 8,       // 8 min
-				60 * 10,      // 10 min
-				60 * 30,      // 30 min
-				60 * 60,      // 1h
-				60 * 60 * 2,  // 2h
-				60 * 60 * 3,  // 3h
-				60 * 60 * 6,  // 6h
-				60 * 60 * 24, // 24h
-			},
-		}),
 		incomingSamplesPerRequest: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_distributor_samples_per_request",
 			Help:                            "Number of samples per request before deduplication and validation.",
@@ -429,6 +422,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		latestSeenSampleTimestampPerUser: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_distributor_latest_seen_sample_timestamp_seconds",
 			Help: "Unix timestamp of latest received sample per user.",
+		}, []string{"user"}),
+		labelValuesWithNewlinesPerUser: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_label_values_with_newlines_total",
+			Help: "Total number of label values with newlines seen at ingestion time.",
 		}, []string{"user"}),
 
 		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, reasonTooManyHAClusters),
@@ -452,6 +449,8 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}),
 
 		PushMetrics: newPushMetrics(reg),
+		now:         defaultNow,
+		sleep:       defaultSleep,
 	}
 
 	// Initialize expected rejected request labels
@@ -509,6 +508,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	var ingestionRateStrategy, requestRateStrategy limiter.RateLimiterStrategy
 	var distributorsLifecycler *ring.BasicLifecycler
 	var distributorsRing *ring.Ring
+	var err error
 
 	if !canJoinDistributorsRing {
 		requestRateStrategy = newInfiniteRateStrategy()
@@ -524,10 +524,28 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		ingestionRateStrategy = newGlobalRateStrategyWithBurstFactor(limits, d)
 	}
 
+	// If this isn't a real distributor that will be accepting writes or if the HA tracker is
+	// disabled, use a no-op implementation. We don't want to require it to be configured when
+	// it's not used due to being disabled or this being a component that doesn't use it (rulers,
+	// queriers).
+	var haTrackerImpl haTracker
+
+	if !canJoinDistributorsRing || !cfg.HATrackerConfig.EnableHATracker {
+		haTrackerImpl = newNopHaTracker()
+	} else {
+		haTrackerImpl, err = newHaTracker(cfg.HATrackerConfig, limits, reg, log)
+		if err != nil {
+			return nil, err
+		}
+
+		subservices = append(subservices, haTrackerImpl)
+	}
+
 	d.requestRateLimiter = limiter.NewRateLimiter(requestRateStrategy, 10*time.Second)
 	d.ingestionRateLimiter = limiter.NewRateLimiter(ingestionRateStrategy, 10*time.Second)
 	d.distributorsLifecycler = distributorsLifecycler
 	d.distributorsRing = distributorsRing
+	d.HATracker = haTrackerImpl
 
 	d.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(d.cleanupInactiveUser)
 	d.activeGroups = activeGroupsCleanupService
@@ -669,6 +687,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.incomingExemplarsPerRequest.DeleteLabelValues(userID)
 	d.nonHASamples.DeleteLabelValues(userID)
 	d.latestSeenSampleTimestampPerUser.DeleteLabelValues(userID)
+	d.labelValuesWithNewlinesPerUser.DeleteLabelValues(userID)
 
 	d.PushMetrics.deleteUserMetrics(userID)
 
@@ -723,47 +742,102 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 	return true, nil
 }
 
-// Validates a single series from a write request.
+// validateSamples validates samples of a single timeseries and removes the ones with duplicated timestamps.
+// Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
-// It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelNameValidation bool, minExemplarTS, maxExemplarTS int64) error {
-	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelNameValidation); err != nil {
-		return err
+func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
+	if len(ts.Samples) == 0 {
+		return nil
 	}
 
-	now := model.TimeFromUnixNano(nowt.UnixNano())
+	if len(ts.Samples) == 1 {
+		return validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, ts.Samples[0])
+	}
 
+	timestamps := make(map[int64]struct{}, min(len(ts.Samples), 100))
+	currPos := 0
+	duplicatesFound := false
 	for _, s := range ts.Samples {
+		if _, ok := timestamps[s.TimestampMs]; ok {
+			// A sample with the same timestamp has already been validated, so we skip it.
+			duplicatesFound = true
+			continue
+		}
 
-		delta := now - model.Time(s.TimestampMs)
-		d.sampleDelayHistogram.Observe(float64(delta) / 1000)
-
+		timestamps[s.TimestampMs] = struct{}{}
 		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s); err != nil {
 			return err
 		}
+
+		ts.Samples[currPos] = s
+		currPos++
 	}
 
-	histogramsUpdated := false
-	for i, h := range ts.Histograms {
-		delta := now - model.Time(h.Timestamp)
-		d.sampleDelayHistogram.Observe(float64(delta) / 1000)
+	if duplicatesFound {
+		ts.Samples = ts.Samples[:currPos]
+		ts.SamplesUpdated()
+	}
 
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[i])
+	return nil
+}
+
+// validateHistograms validates histograms of a single timeseries and removes the ones with duplicated timestamps.
+// Returns an error explaining the first validation finding.
+// May alter timeseries data in-place.
+// The returned error may retain the series labels.
+func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
+	if len(ts.Histograms) == 0 {
+		return nil
+	}
+
+	if len(ts.Histograms) == 1 {
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[0])
+		if err != nil {
+			return err
+		}
+		if updated {
+			ts.HistogramsUpdated()
+		}
+		return nil
+	}
+
+	timestamps := make(map[int64]struct{}, min(len(ts.Histograms), 100))
+	currPos := 0
+	histogramsUpdated := false
+	for idx := range ts.Histograms {
+		if _, ok := timestamps[ts.Histograms[idx].Timestamp]; ok {
+			// A sample with the same timestamp has already been validated, so we skip it.
+			histogramsUpdated = true
+			continue
+		}
+
+		timestamps[ts.Histograms[idx].Timestamp] = struct{}{}
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx])
 		if err != nil {
 			return err
 		}
 		histogramsUpdated = histogramsUpdated || updated
+
+		ts.Histograms[currPos] = ts.Histograms[idx]
+		currPos++
 	}
+
 	if histogramsUpdated {
+		ts.Histograms = ts.Histograms[:currPos]
 		ts.HistogramsUpdated()
 	}
 
+	return nil
+}
+
+// validateExemplars validates exemplars of a single timeseries.
+// May alter timeseries data in-place.
+func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID string, minExemplarTS, maxExemplarTS int64) {
 	if d.limits.MaxGlobalExemplarsPerUser(userID) == 0 {
 		ts.ClearExemplars()
-		return nil
+		return
 	}
-
 	allowedExemplars := d.limits.MaxExemplarsPerSeriesPerRequest(userID)
 	if allowedExemplars > 0 && len(ts.Exemplars) > allowedExemplars {
 		d.exemplarValidationMetrics.tooManyExemplars.WithLabelValues(userID).Add(float64(len(ts.Exemplars) - allowedExemplars))
@@ -795,7 +869,49 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	if !isInOrder {
 		ts.SortExemplars()
 	}
-	return nil
+}
+
+// Validates a single series from a write request.
+// May alter timeseries data in-place.
+// Returns a boolean stating if the timeseries should be removed from the request, and an error explaining the first validation finding.
+// The returned error may retain the series labels.
+// It uses the passed nowt time to observe the delay of sample timestamps.
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) (bool, error) {
+	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation); err != nil {
+		return true, err
+	}
+
+	now := model.TimeFromUnixNano(nowt.UnixNano())
+	totalSamplesAndHistograms := len(ts.Samples) + len(ts.Histograms)
+
+	if err := d.validateSamples(now, ts, userID, group); err != nil {
+		return true, err
+	}
+
+	if err := d.validateHistograms(now, ts, userID, group); err != nil {
+		return true, err
+	}
+
+	d.validateExemplars(ts, userID, minExemplarTS, maxExemplarTS)
+
+	deduplicatedSamplesAndHistograms := totalSamplesAndHistograms - len(ts.Samples) - len(ts.Histograms)
+
+	if deduplicatedSamplesAndHistograms > 0 {
+		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(deduplicatedSamplesAndHistograms))
+		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
+		return false, fmt.Errorf(duplicateTimestampMsgFormat, deduplicatedSamplesAndHistograms, unsafeMetricName)
+	}
+
+	return false, nil
+}
+func (d *Distributor) labelValuesWithNewlines(labels []mimirpb.LabelAdapter) int {
+	count := 0
+	for _, l := range labels {
+		if strings.IndexByte(l.Value, '\n') >= 0 {
+			count++
+		}
+	}
+	return count
 }
 
 // wrapPushWithMiddlewares returns push function wrapped in all Distributor's middlewares.
@@ -806,7 +922,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 	// The middlewares will be applied to the request (!) in the specified order, from first to last.
 	// To guarantee that, middleware functions will be called in reversed order, wrapping the
 	// result from previous call.
-	middlewares = append(middlewares, d.limitsMiddleware) // should run first because it checks limits before other middlewares need to read the request body
+	middlewares = append(middlewares, d.limitsMiddleware) // Should run first because it checks limits before other middlewares need to read the request body.
 	middlewares = append(middlewares, d.metricsMiddleware)
 	middlewares = append(middlewares, d.prePushHaDedupeMiddleware)
 	middlewares = append(middlewares, d.prePushRelabelMiddleware)
@@ -818,7 +934,9 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 		next = middlewares[ix](next)
 	}
 
-	return next
+	// The delay middleware must take into account total runtime of all other middlewares and the push func, hence why we wrap all others.
+	return d.outerMaybeDelayMiddleware(next)
+
 }
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
@@ -1019,12 +1137,12 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
 		for _, ts := range req.Timeseries {
 			for _, s := range ts.Samples {
-				earliestSampleTimestampMs = util_math.Min(earliestSampleTimestampMs, s.TimestampMs)
-				latestSampleTimestampMs = util_math.Max(latestSampleTimestampMs, s.TimestampMs)
+				earliestSampleTimestampMs = min(earliestSampleTimestampMs, s.TimestampMs)
+				latestSampleTimestampMs = max(latestSampleTimestampMs, s.TimestampMs)
 			}
 			for _, h := range ts.Histograms {
-				earliestSampleTimestampMs = util_math.Min(earliestSampleTimestampMs, h.Timestamp)
-				latestSampleTimestampMs = util_math.Max(latestSampleTimestampMs, h.Timestamp)
+				earliestSampleTimestampMs = min(earliestSampleTimestampMs, h.Timestamp)
+				latestSampleTimestampMs = max(latestSampleTimestampMs, h.Timestamp)
 			}
 		}
 		// Update this metric even in case of errors.
@@ -1051,6 +1169,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
 
+		labelValuesWithNewlines := 0
 		for tsIdx, ts := range req.Timeseries {
 			totalSamples += len(ts.Samples)
 			totalExemplars += len(ts.Exemplars)
@@ -1061,9 +1180,11 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 
 			d.labelsHistogram.Observe(float64(len(ts.Labels)))
 
-			skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
+			skipLabelValidation := d.cfg.SkipLabelValidation || req.GetSkipLabelValidation()
+			skipLabelCountValidation := d.cfg.SkipLabelCountValidation || req.GetSkipLabelCountValidation()
+
 			// Note that validateSeries may drop some data in ts.
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelNameValidation, minExemplarTS, maxExemplarTS)
+			shouldRemove, validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
@@ -1072,16 +1193,22 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
 					firstPartialErr = newValidationError(validationErr)
 				}
-				removeIndexes = append(removeIndexes, tsIdx)
+				if shouldRemove {
+					removeIndexes = append(removeIndexes, tsIdx)
+				}
 				continue
 			}
 
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
+			labelValuesWithNewlines += d.labelValuesWithNewlines(ts.Labels)
 		}
 
 		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
 		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
+		if labelValuesWithNewlines > 0 {
+			d.labelValuesWithNewlinesPerUser.WithLabelValues(userID).Add(float64(labelValuesWithNewlines))
+		}
 
 		if len(removeIndexes) > 0 {
 			for _, removeIndex := range removeIndexes {
@@ -1175,6 +1302,28 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 		d.incomingMetadata.WithLabelValues(userID).Add(float64(len(req.Metadata)))
 
 		return next(ctx, pushReq)
+	}
+}
+
+// outerMaybeDelayMiddleware is a middleware that may delay ingestion if configured.
+func (d *Distributor) outerMaybeDelayMiddleware(next PushFunc) PushFunc {
+	return func(ctx context.Context, pushReq *Request) error {
+		start := d.now()
+		// Execute the whole middleware chain.
+		err := next(ctx, pushReq)
+
+		userID, userErr := tenant.TenantID(ctx) // Log tenant ID if available.
+		if userErr == nil {
+			// Target delay - time spent processing the middleware chain including the push.
+			// If the request took longer than the target delay, we don't delay at all as sleep will return immediately for a negative value.
+			if delay := d.limits.DistributorIngestionArtificialDelay(userID) - d.now().Sub(start); delay > 0 {
+				d.sleep(util.DurationWithJitter(delay, 0.10))
+			}
+			return err
+		}
+
+		level.Warn(d.log).Log("msg", "failed to get tenant ID while trying to delay ingestion", "err", userErr)
+		return err
 	}
 }
 
@@ -1318,6 +1467,13 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 	return func(ctx context.Context, pushReq *Request) error {
+		// Make sure the distributor service and all its dependent services have been
+		// started. The following checks in this middleware depend on the runtime config
+		// service having been started.
+		if s := d.State(); s != services.Running {
+			return newUnavailableError(s)
+		}
+
 		// We don't know request size yet, will check it later.
 		ctx, rs, err := d.startPushRequest(ctx, -1)
 		if err != nil {
@@ -1399,13 +1555,6 @@ func (d *Distributor) handlePushError(ctx context.Context, pushErr error) error 
 	}
 
 	if errors.Is(pushErr, context.DeadlineExceeded) {
-		return pushErr
-	}
-
-	// This code is needed for backwards compatibility, since ingesters may still return errors
-	// created by httpgrpc.Errorf(). If pushErr is one of those errors, we just propagate it.
-	_, ok := httpgrpc.HTTPResponseFromError(pushErr)
-	if ok {
 		return pushErr
 	}
 
@@ -2240,7 +2389,7 @@ func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*l
 
 		stream, err := client.ActiveSeries(ctx, req)
 		if err != nil {
-			if errors.Is(globalerror.WrapGRPCErrorWithContextError(err), context.Canceled) {
+			if errors.Is(globalerror.WrapGRPCErrorWithContextError(ctx, err), context.Canceled) {
 				return ignored{}, nil
 			}
 			level.Error(log).Log("msg", "error creating active series response stream", "err", err)
@@ -2250,7 +2399,7 @@ func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*l
 
 		defer func() {
 			err = util.CloseAndExhaust[*ingester_client.ActiveSeriesResponse](stream)
-			if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(err), context.Canceled) {
+			if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(ctx, err), context.Canceled) {
 				level.Warn(d.log).Log("msg", "error closing active series response stream", "err", err)
 			}
 		}()
@@ -2261,7 +2410,7 @@ func (d *Distributor) deduplicateActiveSeries(ctx context.Context, matchers []*l
 				if errors.Is(err, io.EOF) {
 					break
 				}
-				if errors.Is(globalerror.WrapGRPCErrorWithContextError(err), context.Canceled) {
+				if errors.Is(globalerror.WrapGRPCErrorWithContextError(ctx, err), context.Canceled) {
 					return ignored{}, nil
 				}
 				level.Error(log).Log("msg", "error receiving active series response", "err", err)
@@ -2567,7 +2716,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		if err := queryLimiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(m)); err != nil {
+		if err := queryLimiter.AddSeries(m); err != nil {
 			return nil, err
 		}
 		result = append(result, m)

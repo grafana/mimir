@@ -12,6 +12,80 @@ local utils = import 'mixin-utils/utils.libsonnet';
   local groupStatefulSetByRolloutGroup(metricName) =
     'sum without(statefulset) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % metricName,
 
+  local request_metric = 'cortex_request_duration_seconds',
+
+  local rate(error_query, total_query, comment='') = |||
+    %(comment)s(
+      %(errorQuery)s
+      /
+      %(totalQuery)s
+    ) * 100 > 1
+  ||| % { comment: comment, errorQuery: error_query, totalQuery: total_query },
+
+  local requestErrorsQuery(selector, error_selector, rate_interval, sum_by, comment='') =
+    local errorSelector = '%s, %s' % [error_selector, selector];
+    local errorQuery = utils.ncHistogramSumBy(utils.ncHistogramCountRate(request_metric, errorSelector, rate_interval), sum_by);
+    local totalQuery = utils.ncHistogramSumBy(utils.ncHistogramCountRate(request_metric, selector, rate_interval), sum_by);
+    {
+      classic: rate(errorQuery.classic, totalQuery.classic, comment),
+      native: rate(errorQuery.native, totalQuery.native, comment),
+    },
+
+  local requestErrorsAlert(histogram) =
+    local query = requestErrorsQuery(
+      selector='route!~"%s"' % std.join('|', ['ready'] + $._config.alert_excluded_routes),
+      // Note if alert_aggregation_labels is "job", this will repeat the label. But
+      // prometheus seems to tolerate that.
+      error_selector='status_code=~"5..", status_code!~"529|598"',
+      rate_interval=$.alertRangeInterval(1),
+      sum_by=[$._config.alert_aggregation_labels, $._config.per_job_label, 'route'],
+      comment=|||
+        # The following 5xx errors considered as non-error:
+        # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
+        # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
+      |||,
+    );
+    if histogram != 'classic' && histogram != 'native'
+    then {}
+    else {
+      alert: $.alertName('RequestErrors'),
+      expr: if histogram == 'classic' then query.classic else query.native,
+      'for': '15m',
+      labels: {
+        severity: 'critical',
+        histogram: histogram,
+      },
+      annotations: {
+        message: |||
+          The route {{ $labels.route }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors.
+        ||| % $._config,
+      },
+    },
+
+  local rulerRemoteEvaluationFailingAlert(histogram) =
+    local query = requestErrorsQuery(
+      selector='route="/httpgrpc.HTTP/Handle", %s' % $.jobMatcher($._config.job_names.ruler_query_frontend),
+      error_selector='status_code=~"5.."',
+      rate_interval=$.alertRangeInterval(5),
+      sum_by=[$._config.alert_aggregation_labels],
+    );
+    if histogram != 'classic' && histogram != 'native'
+    then {}
+    else {
+      alert: $.alertName('RulerRemoteEvaluationFailing'),
+      expr: if histogram == 'classic' then query.classic else query.native,
+      'for': '5m',
+      labels: {
+        severity: 'warning',
+        histogram: histogram,
+      },
+      annotations: {
+        message: |||
+          %(product)s rulers in %(alert_aggregation_variables)s are failing to perform {{ printf "%%.2f" $value }}%% of remote evaluations through the ruler-query-frontend.
+        ||| % $._config,
+      },
+    },
+
   local alertGroups = [
     {
       name: 'mimir_alerts',
@@ -29,35 +103,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s cluster %(alert_aggregation_variables)s has {{ printf "%%f" $value }} unhealthy ingester(s).' % $._config,
           },
         },
-        {
-          alert: $.alertName('RequestErrors'),
-          // Note if alert_aggregation_labels is "job", this will repeat the label. But
-          // prometheus seems to tolerate that.
-          expr: |||
-            # The following 5xx errors considered as non-error:
-            # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
-            # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
-            (
-              sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",status_code!~"529|598",route!~"%(excluded_routes)s"}[%(range_interval)s]))
-              /
-              sum by (%(group_by)s, %(job_label)s, route) (rate(cortex_request_duration_seconds_count{route!~"%(excluded_routes)s"}[%(range_interval)s]))
-            ) * 100 > 1
-          ||| % {
-            group_by: $._config.alert_aggregation_labels,
-            job_label: $._config.per_job_label,
-            excluded_routes: std.join('|', ['ready'] + $._config.alert_excluded_routes),
-            range_interval: $.alertRangeInterval(1),
-          },
-          'for': '15m',
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              The route {{ $labels.route }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors.
-            ||| % $._config,
-          },
-        },
+        requestErrorsAlert('classic'),
+        requestErrorsAlert('native'),
         {
           alert: $.alertName('RequestLatency'),
           expr: |||
@@ -155,18 +202,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
         {
           alert: $.alertName('CacheRequestErrors'),
+          // Specifically exclude "add" and "delete" operations which are used for cache invalidation and "locking"
+          // since they are expected to sometimes fail in normal operation (such as when a "lock" already exists or
+          // key being invalidated does not exist).
           expr: |||
             (
               sum by(%(group_by)s, name, operation) (
-                rate(thanos_memcached_operation_failures_total[%(range_interval)s])
-                or
-                rate(thanos_cache_operation_failures_total[%(range_interval)s])
+                rate(thanos_cache_operation_failures_total{operation!~"add|delete"}[%(range_interval)s])
               )
               /
               sum by(%(group_by)s, name, operation) (
-                rate(thanos_memcached_operations_total[%(range_interval)s])
-                or
-                rate(thanos_cache_operations_total[%(range_interval)s])
+                rate(thanos_cache_operations_total{operation!~"add|delete"}[%(range_interval)s])
               )
             ) * 100 > 5
           ||| % {
@@ -251,7 +297,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('IngesterInstanceHasNoTenants'),
           'for': '1h',
           expr: |||
-            (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_memory_users) == 0)
+            (
+              (min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_memory_users) == 0)
+              unless
+              (max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_lifecycler_read_only) > 0)
+            )
             and on (%(alert_aggregation_labels)s)
             # Only if there are more timeseries than would be expected due to continuous testing load
             (
@@ -339,7 +389,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s store-gateway %(alert_instance_variable)s in %(alert_aggregation_variables)s is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.' % $._config,
+            message: '%(product)s store-gateway in %(alert_aggregation_variables)s is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.' % $._config,
           },
         },
       ] + [
@@ -347,8 +397,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RingMembersMismatch'),
           expr: |||
             (
-              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="%(component)s",%(job_regex)s}))
-              != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s})
+              avg by(%(alert_aggregation_labels)s) (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ring_members{name="ingester",%(job_regex)s,%(job_not_regex)s}))
+              != sum by(%(alert_aggregation_labels)s) (up{%(job_regex)s,%(job_not_regex)s})
             )
             and
             (
@@ -357,29 +407,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ||| % {
             alert_aggregation_labels: $._config.alert_aggregation_labels,
             per_instance_label: $._config.per_instance_label,
-            component: component_job[0],
-            job_regex: $.jobMatcher(component_job[1]),
+            job_regex: $.jobMatcher($._config.job_names.ingester),
+
+            // Exclude temporarily partition ingesters used during the migration to ingest storage.
+            // We exclude them because they will build a different ring, still named "ingester" but
+            // stored under a different prefix in the KV store.
+            job_not_regex: $.jobNotMatcher($._config.job_names.ingester_partition),
           },
           'for': '15m',
           labels: {
-            component: component_job[0],
+            component: 'ingester',
             severity: 'warning',
           },
           annotations: {
             message: |||
-              Number of members in %(product)s %(component)s hash ring does not match the expected number in %(alert_aggregation_variables)s.
-            ||| % { component: component_job[0], alert_aggregation_variables: $._config.alert_aggregation_variables, product: $._config.product },
+              Number of members in %(product)s ingester hash ring does not match the expected number in %(alert_aggregation_variables)s.
+            ||| % { alert_aggregation_variables: $._config.alert_aggregation_variables, product: $._config.product },
           },
-        }
-        // NOTE(jhesketh): It is expected that the stateless components may trigger this alert
-        //                 too often. Just alert on ingester for now.
-        for component_job in [
-          // ['compactor', $._config.job_names.compactor],
-          // ['distributor', $._config.job_names.distributor],
-          ['ingester', $._config.job_names.ingester],
-          // ['ruler', $._config.job_names.ruler],
-          // ['store-gateway', $._config.job_names.store_gateway],
-        ]
+        },
       ],
     },
     {
@@ -713,29 +758,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
             ||| % $._config,
           },
         },
-        {
-          alert: $.alertName('RulerRemoteEvaluationFailing'),
-          expr: |||
-            100 * (
-            sum by (%(alert_aggregation_labels)s) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", status_code=~"5..", %(job_regex)s}[%(range_interval)s]))
-              /
-            sum by (%(alert_aggregation_labels)s) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", %(job_regex)s}[%(range_interval)s]))
-            ) > 1
-          ||| % {
-            alert_aggregation_labels: $._config.alert_aggregation_labels,
-            job_regex: $.jobMatcher($._config.job_names.ruler_query_frontend),
-            range_interval: $.alertRangeInterval(5),
-          },
-          'for': '5m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              %(product)s rulers in %(alert_aggregation_variables)s are failing to perform {{ printf "%%.2f" $value }}%% of remote evaluations through the ruler-query-frontend.
-            ||| % $._config,
-          },
-        },
+        rulerRemoteEvaluationFailingAlert('classic'),
+        rulerRemoteEvaluationFailingAlert('native'),
       ],
     },
     {
@@ -756,8 +780,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
             |||
               max by (%s) (memberlist_client_cluster_members_count)
               >
-              (sum by (%s) (up{%s=~".+/%s"}) + 10)
-            ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $._config.per_job_label, simpleRegexpOpt($._config.job_names.ring_members)],
+              (sum by (%s) (up{%s}) + 10)
+            ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $.jobMatcher($._config.job_names.ring_members)],
           'for': '20m',
           labels: {
             severity: 'warning',
@@ -785,6 +809,64 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: 'One or more %(product)s instances in %(alert_aggregation_variables)s consistently sees a lower than expected number of gossip members.' % $._config,
           },
         },
+        {
+          // Alert if the list of endpoints returned by the gossip-ring service (used as memberlist seed nodes)
+          // is out-of-sync. This is a warning alert with 10% out-of-sync threshold.
+          alert: $.alertName('GossipMembersEndpointsOutOfSync'),
+          expr:
+            |||
+              (
+                count by(%(alert_aggregation_labels)s) (
+                  kube_endpoint_address{endpoint="gossip-ring"}
+                  unless on (%(alert_aggregation_labels)s, ip)
+                  label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
+                /
+                count by(%(alert_aggregation_labels)s) (
+                  kube_endpoint_address{endpoint="gossip-ring"}
+                )
+                * 100 > 10
+              )
+
+              # Filter by Mimir only.
+              and (count by(%(alert_aggregation_labels)s) (cortex_build_info) > 0)
+            ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s gossip-ring service endpoints list in %(alert_aggregation_variables)s is out of sync.' % $._config,
+          },
+        },
+        {
+          // Alert if the list of endpoints returned by the gossip-ring service (used as memberlist seed nodes)
+          // is out-of-sync. This is a critical alert with 50% out-of-sync threshold.
+          alert: $.alertName('GossipMembersEndpointsOutOfSync'),
+          expr:
+            |||
+              (
+                count by(%(alert_aggregation_labels)s) (
+                  kube_endpoint_address{endpoint="gossip-ring"}
+                  unless on (%(alert_aggregation_labels)s, ip)
+                  label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
+                /
+                count by(%(alert_aggregation_labels)s) (
+                  kube_endpoint_address{endpoint="gossip-ring"}
+                )
+                * 100 > 50
+              )
+
+              # Filter by Mimir only.
+              and (count by(%(alert_aggregation_labels)s) (cortex_build_info) > 0)
+            ||| % $._config,
+          'for': '5m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s gossip-ring service endpoints list in %(alert_aggregation_variables)s is out of sync.' % $._config,
+          },
+        },
       ],
     },
     {
@@ -794,7 +876,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: 'EtcdAllocatingTooMuchMemory',
           expr: |||
             (
-              container_memory_working_set_bytes{container="etcd"}
+              container_memory_rss{container="etcd"}
                 /
               ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
             ) > 0.65
@@ -813,7 +895,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: 'EtcdAllocatingTooMuchMemory',
           expr: |||
             (
-              container_memory_working_set_bytes{container="etcd"}
+              container_memory_rss{container="etcd"}
                 /
               ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
             ) > 0.8

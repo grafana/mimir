@@ -7,14 +7,11 @@
     ingest_storage_ingester_autoscaling_primary_zone: 'ingester-zone-a',
 
     // Total number of min/max replicas across all zones.
-    ingest_storage_ingester_autoscaling_min_replicas: error 'you must set ingest_storage_ingester_autoscaling_min_replicas in the _config in namespace %s' % $._config.namespace,
-    ingest_storage_ingester_autoscaling_max_replicas: error 'you must set ingest_storage_ingester_autoscaling_max_replicas in the _config in namespace %s' % $._config.namespace,
+    ingest_storage_ingester_autoscaling_min_replicas_per_zone: error 'you must set ingest_storage_ingester_autoscaling_min_replicas_per_zone in the _config in namespace %s' % $._config.namespace,
+    ingest_storage_ingester_autoscaling_max_replicas_per_zone: error 'you must set ingest_storage_ingester_autoscaling_max_replicas_per_zone in the _config in namespace %s' % $._config.namespace,
 
     // The target number of active series per ingester.
     ingest_storage_ingester_autoscaling_active_series_threshold: 1500000,
-
-    // How many zones ingesters have been deployed to.
-    ingest_storage_ingester_zones: 3,
 
     // How long to wait before terminating an ingester after it has been notified about the scale down.
     ingest_storage_ingester_downscale_delay: if 'querier.query-ingesters-within' in $.querier_args then
@@ -26,37 +23,63 @@
     // Allow to fine-tune which components gets deployed. This is useful when following the procedure
     // to rollout ingesters autoscaling with no downtime.
     ingest_storage_ingester_autoscaling_ingester_annotations_enabled: $._config.ingest_storage_ingester_autoscaling_enabled,
-    ingest_storage_ingester_autoscaling_replica_template_custom_resource_definition_enabled: $._config.ingest_storage_ingester_autoscaling_enabled,
+
+    // Make label selector in ReplicaTemplate configurable. This mostly doesn't matter, but from our experience if the selector
+    // doesn't match correct pods, HPA in GKE will display wrong usage in "kubectl describe hpa".
+    ingest_storage_replica_template_label_selector: 'name=ingester-zone-a',
+
+    // Make triggers configurable so that we can add more. Each object needs to have: query, threshold, metric_type.
+    ingest_storage_ingester_autoscaling_triggers: [
+      {
+        // Target ingesters in primary zone, ignoring read-write mode ingesters.
+        local sum_series_from_ready_pods = |||
+          sum(
+              sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", job="%(namespace)s/%(primary_zone)s", container="ingester"})
+              and
+              sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s",namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"}) > 0
+          )
+        |||,
+
+        local ratio_of_ready_pods_vs_all_replicas = |||
+          (
+              sum(kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"})
+              /
+              scalar(kube_statefulset_status_replicas{cluster="%(cluster)s", namespace="%(namespace)s", statefulset="%(primary_zone)s"})
+          )
+        |||,
+
+        query: ('(' + sum_series_from_ready_pods + ' / ' + ratio_of_ready_pods_vs_all_replicas + ') '
+                + ' and (' + ratio_of_ready_pods_vs_all_replicas + ' > 0.7)') % {
+          cluster: $._config.cluster,
+          namespace: $._config.namespace,
+          primary_zone: $._config.ingest_storage_ingester_autoscaling_primary_zone,
+        },
+        threshold: std.toString($._config.ingest_storage_ingester_autoscaling_active_series_threshold),
+        metric_type: 'AverageValue',  // HPA will compute desired replicas as "<query result> / <threshold>".
+      },
+    ],
+
+    // When set to false, metrics used by scaling triggers are only indexed if there is more than 1 trigger.
+    // When set to true, they are always indexed.
+    ingest_storage_ingester_autoscaling_index_metrics: false,
+
+    // Default stabilization windows for scaling up and down. This is the minimum time it takes for scaling event to start,
+    // rate and impact of scaling events is further limited by policies.
+    // Stabilization windows cannot be larger than 1 hour.
+    // https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#stabilization-window
+    ingest_storage_ingester_autoscaling_scale_up_stabilization_window_seconds: $.util.parseDuration('30m'),
+    ingest_storage_ingester_autoscaling_scale_down_stabilization_window_seconds: $.util.parseDuration('1h'),
   },
 
   // Validate the configuration.
   assert !$._config.ingest_storage_ingester_autoscaling_enabled || $._config.multi_zone_ingester_enabled : 'partitions ingester autoscaling is only supported with multi-zone ingesters in namespace %s' % $._config.namespace,
   assert !$._config.ingest_storage_ingester_autoscaling_ingester_annotations_enabled || $._config.multi_zone_ingester_replicas <= 0 : 'partitions ingester autoscaling and multi_zone_ingester_replicas are mutually exclusive in namespace %s' % $._config.namespace,
   assert !$._config.ingest_storage_ingester_autoscaling_ingester_annotations_enabled || !$._config.ingester_automated_downscale_enabled : 'partitions ingester autoscaling and ingester automated downscale config are mutually exclusive in namespace %s' % $._config.namespace,
+  assert !$._config.ingest_storage_ingester_autoscaling_ingester_annotations_enabled || !$._config.ingester_automated_downscale_v2_enabled : 'partitions ingester autoscaling and ingester automated downscale v2 config are mutually exclusive in namespace %s' % $._config.namespace,
   assert !$._config.ingest_storage_ingester_autoscaling_enabled || $.rollout_operator_deployment != null : 'partitions ingester autoscaling requires rollout-operator in namespace %s' % $._config.namespace,
 
-  //
-  // ReplicaTemplate
-  //
-
-  replica_template:: std.parseYaml(importstr 'replica-templates.yaml'),
-  replica_template_custom_resource: if !$._config.ingest_storage_ingester_autoscaling_replica_template_custom_resource_definition_enabled then null else $.replica_template,
-
-  replicaTemplate(name):: {
-    apiVersion: 'rollout-operator.grafana.com/v1',
-    kind: 'ReplicaTemplate',
-    metadata: {
-      name: name,
-      namespace: $._config.namespace,
-    },
-    spec: {
-      replicas:: null,  // Hide replicas field.
-      labelSelector: 'name=unused',  // HPA requires that label selector exists and is valid, but it will not be used for target type of AverageValue.
-    },
-  },
-
   // Create resource that will be targetted by ScaledObject.
-  ingester_primary_zone_replica_template: if !$._config.ingest_storage_ingester_autoscaling_enabled then null else $.replicaTemplate($._config.ingest_storage_ingester_autoscaling_primary_zone),
+  ingester_primary_zone_replica_template: if !$._config.ingest_storage_ingester_autoscaling_enabled then null else $.replicaTemplate($._config.ingest_storage_ingester_autoscaling_primary_zone, replicas=-1, label_selector=$._config.ingest_storage_replica_template_label_selector),
 
   //
   // Configure prepare-shutdown endpoint in all ingesters.
@@ -99,41 +122,23 @@
   // Define a ScaledObject for primary zone.
   //
 
-  newPartitionsPrimaryIngesterZoneScaledObject(primaryZone, min_replicas, max_replicas, active_series_threshold, targetResource)::
+  newPartitionsPrimaryIngesterZoneScaledObject(primaryZone, min_replicas, max_replicas, triggers, targetResource, indexMetrics)::
+    local formatTrigger(i, trigger, addIndexSuffix=false) = {
+      query: trigger.query,
+      metric_name: if addIndexSuffix then
+        'cortex_%s_replicas_hpa_%s_%d' % [std.strReplace(primaryZone, '-', '_'), std.strReplace($._config.namespace, '-', '_'), i]
+      else
+        'cortex_%s_replicas_hpa_%s' % [std.strReplace(primaryZone, '-', '_'), std.strReplace($._config.namespace, '-', '_')]
+      ,
+      threshold: trigger.threshold,
+      metric_type: trigger.metric_type,
+      ignore_null_values: false,  // Report error if query returns no value.
+    };
+
     local scaledObjectConfig = {
       min_replica_count: min_replicas,
       max_replica_count: max_replicas,
-      triggers: [
-        {
-          // Target ingesters in primary zone, ignoring read-write mode ingesters.
-          local sum_series_from_ready_pods = |||
-            sum(
-                sum by (pod) (cortex_ingester_owned_series{cluster="%(cluster)s", job="%(namespace)s/%(primary_zone)s", container="ingester"})
-                and
-                sum by (pod) (kube_pod_status_ready{cluster="%(cluster)s",namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"}) > 0
-            )
-          |||,
-
-          local ratio_of_ready_pods_vs_all_replicas = |||
-            (
-                sum(kube_pod_status_ready{cluster="%(cluster)s", namespace="%(namespace)s", pod=~"%(primary_zone)s.*", condition="true"})
-                /
-                scalar(kube_statefulset_status_replicas{cluster="%(cluster)s", namespace="%(namespace)s", statefulset="%(primary_zone)s"})
-            )
-          |||,
-
-          query: ('(' + sum_series_from_ready_pods + ' / ' + ratio_of_ready_pods_vs_all_replicas + ') '
-                  + ' and (' + ratio_of_ready_pods_vs_all_replicas + ' > 0.7)') % {
-            cluster: $._config.cluster,
-            namespace: $._config.namespace,
-            primary_zone: primaryZone,
-          },
-          metric_name: 'cortex_%s_replicas_hpa_%s' % [std.strReplace(primaryZone, '-', '_'), std.strReplace($._config.namespace, '-', '_')],
-          threshold: std.toString(active_series_threshold),
-          metric_type: 'AverageValue',  // HPA will compute desired replicas as "<query result> / <threshold>".
-          ignore_null_values: false,  // Report error if query returns no value.
-        },
-      ],
+      triggers: std.mapWithIndex(function(ix, tr) formatTrigger(ix, tr, indexMetrics || std.length(triggers) > 1), triggers),
     };
 
     self.newScaledObject(primaryZone, $._config.namespace, scaledObjectConfig, apiVersion=targetResource.apiVersion, kind=targetResource.kind) +
@@ -142,8 +147,7 @@
         advanced: {
           horizontalPodAutoscalerConfig: {
             behavior: {
-              // Allow 100% upscaling of pods if scale up is indicated for 10 minutes to see effects of scaling faster.
-              // Use a lookback period of 30 minutes, which will only upscale to the min(requestedReplicas) over that period
+              // Allow 100% upscaling of pods every 10 minutes to the min value of desired replicas over the stabilization window.
               scaleUp: {
                 policies: [
                   {
@@ -152,19 +156,18 @@
                     periodSeconds: $.util.parseDuration('10m'),
                   },
                 ],
-                selectPolicy: 'Min',
-                stabilizationWindowSeconds: $.util.parseDuration('30m'),
+                selectPolicy: 'Min',  // This would only have effect if there were multiple policies.
+                stabilizationWindowSeconds: $._config.ingest_storage_ingester_autoscaling_scale_up_stabilization_window_seconds,
               },
-              // Allow 10% downscaling of pods if scale down is indicated for 30 minutes.
-              // Use a lookback period of 60 minutes, which will only downscale to the max(requestedReplicas) over that period
+              // Allow 10% downscaling of pods every 30 minutes to the max value of desired replicas over the stabilization window.
               scaleDown: {
                 policies: [{
                   type: 'Percent',
                   value: 10,
                   periodSeconds: $.util.parseDuration('30m'),
                 }],
-                selectPolicy: 'Max',
-                stabilizationWindowSeconds: $.util.parseDuration('1h'),  // We can't go higher than 1h.,
+                selectPolicy: 'Max',  // This would only have effect if there were multiple policies.
+                stabilizationWindowSeconds: $._config.ingest_storage_ingester_autoscaling_scale_down_stabilization_window_seconds,
               },
             },
           },
@@ -175,27 +178,12 @@
   ingest_storage_ingester_primary_zone_scaling: if !$._config.ingest_storage_ingester_autoscaling_enabled then null else
     $.newPartitionsPrimaryIngesterZoneScaledObject(
       $._config.ingest_storage_ingester_autoscaling_primary_zone,
-      std.ceil($._config.ingest_storage_ingester_autoscaling_min_replicas / $._config.ingest_storage_ingester_zones),
-      std.ceil($._config.ingest_storage_ingester_autoscaling_max_replicas / $._config.ingest_storage_ingester_zones),
-      $._config.ingest_storage_ingester_autoscaling_active_series_threshold,
-      $.ingester_primary_zone_replica_template
+      $._config.ingest_storage_ingester_autoscaling_min_replicas_per_zone,
+      $._config.ingest_storage_ingester_autoscaling_max_replicas_per_zone,
+      $._config.ingest_storage_ingester_autoscaling_triggers,
+      $.ingester_primary_zone_replica_template,
+      $._config.ingest_storage_ingester_autoscaling_index_metrics,
     ),
-
-  //
-  // Grant extra privileges to rollout-operator.
-  //
-
-  local role = $.rbac.v1.role,
-  local policyRule = $.rbac.v1.policyRule,
-  rollout_operator_role: overrideSuperIfExists(
-    'rollout_operator_role',
-    if !$._config.ingest_storage_ingester_autoscaling_enabled then {} else
-      role.withRulesMixin([
-        policyRule.withApiGroups($.replica_template.spec.group) +
-        policyRule.withResources(['%s/scale' % $.replica_template.spec.names.plural, '%s/status' % $.replica_template.spec.names.plural]) +
-        policyRule.withVerbs(['get', 'patch']),
-      ])
-  ),
 
   // Utility used to override a field only if exists in super.
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else

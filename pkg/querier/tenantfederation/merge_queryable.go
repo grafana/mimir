@@ -7,6 +7,7 @@ package tenantfederation
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -22,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -63,8 +63,8 @@ type MergeQueryableCallbacks struct {
 // MergeQuerierUpstream mirrors storage.Querier, except every query method also takes a federation ID.
 type MergeQuerierUpstream interface {
 	Select(ctx context.Context, id string, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
-	LabelValues(ctx context.Context, id string, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
-	LabelNames(ctx context.Context, id string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
+	LabelValues(ctx context.Context, id string, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
+	LabelNames(ctx context.Context, id string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
 	Close() error
 }
 
@@ -78,12 +78,12 @@ func (q *tenantQuerier) Select(ctx context.Context, id string, sortSeries bool, 
 	return q.upstream.Select(user.InjectOrgID(ctx, id), sortSeries, hints, matchers...)
 }
 
-func (q *tenantQuerier) LabelValues(ctx context.Context, id string, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return q.upstream.LabelValues(user.InjectOrgID(ctx, id), name, matchers...)
+func (q *tenantQuerier) LabelValues(ctx context.Context, id string, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.upstream.LabelValues(user.InjectOrgID(ctx, id), name, hints, matchers...)
 }
 
-func (q *tenantQuerier) LabelNames(ctx context.Context, id string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return q.upstream.LabelNames(user.InjectOrgID(ctx, id), matchers...)
+func (q *tenantQuerier) LabelNames(ctx context.Context, id string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.upstream.LabelNames(user.InjectOrgID(ctx, id), hints, matchers...)
 }
 
 func (q *tenantQuerier) Close() error {
@@ -184,7 +184,7 @@ type mergeQuerier struct {
 // For the label `idLabelName` it will return all the underlying IDs available.
 // For the label "original_" + `idLabelName it will return all values
 // for the original `idLabelName` label.
-func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m *mergeQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ids, err := m.resolver.TenantIDs(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -192,13 +192,13 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ..
 
 	m.tenantsQueried.Observe(float64(len(ids)))
 	if m.bypassWithSingleID && len(ids) == 1 {
-		return m.upstream.LabelValues(ctx, ids[0], name, matchers...)
+		return m.upstream.LabelValues(ctx, ids[0], name, hints, matchers...)
 	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelValues")
 	defer spanlog.Finish()
 
-	matchedIDs, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
+	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
 
 	if name == m.idLabelName {
 		labelValues := make([]string, 0, len(matchedIDs))
@@ -217,13 +217,13 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ..
 	}
 
 	return m.mergeDistinctStringSliceWithTenants(ctx, matchedIDs, func(ctx context.Context, id string) ([]string, annotations.Annotations, error) {
-		return m.upstream.LabelValues(ctx, id, name, filteredMatchers...)
+		return m.upstream.LabelValues(ctx, id, name, hints, filteredMatchers...)
 	})
 }
 
 // LabelNames returns all the unique label names present for involved federation IDs.
 // It also adds the `idLabelName` and if present in the original results the original `idLabelName`.
-func (m *mergeQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m *mergeQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ids, err := m.resolver.TenantIDs(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -231,16 +231,16 @@ func (m *mergeQuerier) LabelNames(ctx context.Context, matchers ...*labels.Match
 
 	m.tenantsQueried.Observe(float64(len(ids)))
 	if m.bypassWithSingleID && len(ids) == 1 {
-		return m.upstream.LabelNames(ctx, ids[0], matchers...)
+		return m.upstream.LabelNames(ctx, ids[0], hints, matchers...)
 	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelNames")
 	defer spanlog.Finish()
 
-	matchedIDs, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
+	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
 
 	labelNames, warnings, err := m.mergeDistinctStringSliceWithTenants(ctx, matchedIDs, func(ctx context.Context, id string) ([]string, annotations.Annotations, error) {
-		return m.upstream.LabelNames(ctx, id, filteredMatchers...)
+		return m.upstream.LabelNames(ctx, id, hints, filteredMatchers...)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -349,7 +349,7 @@ func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.Select")
 	defer spanlog.Finish()
 
-	matchedIDs, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
+	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
 
 	jobs := make([]string, 0, len(matchedIDs))
 	seriesSets := make([]storage.SeriesSet, len(matchedIDs))
@@ -378,7 +378,7 @@ func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 		return storage.ErrSeriesSet(err)
 	}
 
-	return storage.NewMergeSeriesSet(seriesSets, storage.ChainedSeriesMerge)
+	return storage.NewMergeSeriesSet(seriesSets, 0, storage.ChainedSeriesMerge)
 }
 
 type addLabelsSeriesSet struct {

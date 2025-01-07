@@ -561,8 +561,16 @@ func (m multiTenantMockLimits) ResultsCacheTTLForLabelsQuery(userID string) time
 	return m.byTenant[userID].resultsCacheTTLForLabelsQuery
 }
 
+func (m multiTenantMockLimits) ResultsCacheTTLForErrors(userID string) time.Duration {
+	return m.byTenant[userID].resultsCacheTTLForErrors
+}
+
 func (m multiTenantMockLimits) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
 	return m.byTenant[userID].resultsCacheForUnalignedQueryEnabled
+}
+
+func (m multiTenantMockLimits) EnabledPromQLExperimentalFunctions(userID string) []string {
+	return m.byTenant[userID].enabledPromQLExperimentalFunctions
 }
 
 func (m multiTenantMockLimits) BlockedQueries(userID string) []*validation.BlockedQuery {
@@ -585,6 +593,10 @@ func (m multiTenantMockLimits) QueryIngestersWithin(userID string) time.Duration
 	return m.byTenant[userID].queryIngestersWithin
 }
 
+func (m multiTenantMockLimits) IngestStorageReadConsistency(userID string) string {
+	return m.byTenant[userID].ingestStorageReadConsistency
+}
+
 type mockLimits struct {
 	maxQueryLookback                     time.Duration
 	maxQueryLength                       time.Duration
@@ -605,10 +617,13 @@ type mockLimits struct {
 	resultsCacheOutOfOrderWindowTTL      time.Duration
 	resultsCacheTTLForCardinalityQuery   time.Duration
 	resultsCacheTTLForLabelsQuery        time.Duration
+	resultsCacheTTLForErrors             time.Duration
 	resultsCacheForUnalignedQueryEnabled bool
+	enabledPromQLExperimentalFunctions   []string
 	blockedQueries                       []*validation.BlockedQuery
 	alignQueriesWithStep                 bool
 	queryIngestersWithin                 time.Duration
+	ingestStorageReadConsistency         string
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -673,6 +688,10 @@ func (m mockLimits) ResultsCacheTTLForOutOfOrderTimeWindow(string) time.Duration
 	return m.resultsCacheOutOfOrderWindowTTL
 }
 
+func (m mockLimits) ResultsCacheTTLForErrors(string) time.Duration {
+	return m.resultsCacheTTLForErrors
+}
+
 func (m mockLimits) ResultsCacheTTLForCardinalityQuery(string) time.Duration {
 	return m.resultsCacheTTLForCardinalityQuery
 }
@@ -689,6 +708,10 @@ func (m mockLimits) ResultsCacheForUnalignedQueryEnabled(string) bool {
 	return m.resultsCacheForUnalignedQueryEnabled
 }
 
+func (m mockLimits) EnabledPromQLExperimentalFunctions(string) []string {
+	return m.enabledPromQLExperimentalFunctions
+}
+
 func (m mockLimits) CreationGracePeriod(string) time.Duration {
 	return m.creationGracePeriod
 }
@@ -703,6 +726,10 @@ func (m mockLimits) AlignQueriesWithStep(string) bool {
 
 func (m mockLimits) QueryIngestersWithin(string) time.Duration {
 	return m.queryIngestersWithin
+}
+
+func (m mockLimits) IngestStorageReadConsistency(string) string {
+	return m.ingestStorageReadConsistency
 }
 
 type mockHandler struct {
@@ -744,7 +771,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
@@ -788,7 +815,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				// fire up work and we don't wait.
@@ -829,7 +856,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 			return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 				var wg sync.WaitGroup
@@ -888,7 +915,7 @@ func BenchmarkLimitedParallelismRoundTripper(b *testing.B) {
 
 	for _, concurrentRequestCount := range []int{1, 10, 100} {
 		for _, subRequestCount := range []int{1, 2, 5, 10, 20, 50, 100} {
-			tripper := newLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxParallelism},
+			tripper := NewLimitedParallelismRoundTripper(downstream, codec, mockLimits{maxQueryParallelism: maxParallelism},
 				MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 					return HandlerFunc(func(c context.Context, _ MetricsQueryRequest) (Response, error) {
 						wg := sync.WaitGroup{}

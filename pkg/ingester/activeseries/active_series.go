@@ -16,6 +16,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/zeropool"
 	"go.uber.org/atomic"
+
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 )
 
 const (
@@ -34,7 +36,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, EnabledFlag, true, "Enable tracking of active series and export them as metrics.")
 	f.DurationVar(&cfg.UpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
-	f.DurationVar(&cfg.IdleTimeout, IdleTimeoutFlag, 10*time.Minute, "After what time a series is considered to be inactive.")
+	f.DurationVar(&cfg.IdleTimeout, IdleTimeoutFlag, 20*time.Minute, "After what time a series is considered to be inactive.")
 }
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
@@ -44,7 +46,7 @@ type ActiveSeries struct {
 
 	// matchersMutex protects matchers and lastMatchersUpdate.
 	matchersMutex      sync.RWMutex
-	matchers           *Matchers
+	matchers           *asmodel.Matchers
 	lastMatchersUpdate time.Time
 
 	// The duration after which series become inactive.
@@ -54,7 +56,7 @@ type ActiveSeries struct {
 
 // seriesStripe holds a subset of the series timestamps for a single tenant.
 type seriesStripe struct {
-	matchers *Matchers
+	matchers *asmodel.Matchers
 
 	deleted *deletedSeries
 
@@ -75,14 +77,14 @@ type seriesStripe struct {
 
 // seriesEntry holds a timestamp for single series.
 type seriesEntry struct {
-	nanos                     *atomic.Int64        // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
-	matches                   preAllocDynamicSlice //  Index of the matcher matching
-	numNativeHistogramBuckets int                  // Number of buckets in native histogram series, -1 if not a native histogram.
+	nanos                     *atomic.Int64                // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
+	matches                   asmodel.PreAllocDynamicSlice //  Index of the matcher matching
+	numNativeHistogramBuckets int                          // Number of buckets in native histogram series, -1 if not a native histogram.
 
 	deleted bool // This series was marked as deleted, so before purging we need to remove the refence to it from the deletedSeries.
 }
 
-func NewActiveSeries(asm *Matchers, timeout time.Duration) *ActiveSeries {
+func NewActiveSeries(asm *asmodel.Matchers, timeout time.Duration) *ActiveSeries {
 	c := &ActiveSeries{matchers: asm, timeout: timeout}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
@@ -99,7 +101,7 @@ func (c *ActiveSeries) CurrentMatcherNames() []string {
 	return c.matchers.MatcherNames()
 }
 
-func (c *ActiveSeries) ReloadMatchers(asm *Matchers, now time.Time) {
+func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
 	c.matchersMutex.Lock()
 	defer c.matchersMutex.Unlock()
 
@@ -110,7 +112,7 @@ func (c *ActiveSeries) ReloadMatchers(asm *Matchers, now time.Time) {
 	c.lastMatchersUpdate = now
 }
 
-func (c *ActiveSeries) CurrentConfig() CustomTrackersConfig {
+func (c *ActiveSeries) CurrentConfig() asmodel.CustomTrackersConfig {
 	c.matchersMutex.RLock()
 	defer c.matchersMutex.RUnlock()
 	return c.matchers.Config()
@@ -335,21 +337,21 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 	entry, ok := s.refs[ref]
 	if ok {
 		if entry.numNativeHistogramBuckets != numNativeHistogramBuckets {
-			matches := s.matchers.matches(series)
-			matchesLen := matches.len()
+			matches := s.matchers.Matches(series)
+			matchesLen := matches.Len()
 			if numNativeHistogramBuckets >= 0 && entry.numNativeHistogramBuckets >= 0 {
 				// change number of buckets but still a histogram
 				diff := numNativeHistogramBuckets - entry.numNativeHistogramBuckets
 				s.activeNativeHistogramBuckets = uint32(int(s.activeNativeHistogramBuckets) + diff)
 				for i := 0; i < matchesLen; i++ {
-					s.activeMatchingNativeHistogramBuckets[matches.get(i)] = uint32(int(s.activeMatchingNativeHistogramBuckets[matches.get(i)]) + diff)
+					s.activeMatchingNativeHistogramBuckets[matches.Get(i)] = uint32(int(s.activeMatchingNativeHistogramBuckets[matches.Get(i)]) + diff)
 				}
 			} else if numNativeHistogramBuckets >= 0 {
 				// change from float to histogram
 				s.activeNativeHistograms++
 				s.activeNativeHistogramBuckets += uint32(numNativeHistogramBuckets)
 				for i := 0; i < matchesLen; i++ {
-					match := matches.get(i)
+					match := matches.Get(i)
 					s.activeMatchingNativeHistograms[match]++
 					s.activeMatchingNativeHistogramBuckets[match] += uint32(numNativeHistogramBuckets)
 				}
@@ -358,7 +360,7 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 				s.activeNativeHistograms--
 				s.activeNativeHistogramBuckets -= uint32(entry.numNativeHistogramBuckets)
 				for i := 0; i < matchesLen; i++ {
-					match := matches.get(i)
+					match := matches.Get(i)
 					s.activeMatchingNativeHistograms[match]--
 					s.activeMatchingNativeHistogramBuckets[match] -= uint32(entry.numNativeHistogramBuckets)
 				}
@@ -369,8 +371,8 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 		return entry.nanos, false
 	}
 
-	matches := s.matchers.matches(series)
-	matchesLen := matches.len()
+	matches := s.matchers.Matches(series)
+	matchesLen := matches.Len()
 
 	s.active++
 	if numNativeHistogramBuckets >= 0 {
@@ -378,7 +380,7 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 		s.activeNativeHistogramBuckets += uint32(numNativeHistogramBuckets)
 	}
 	for i := 0; i < matchesLen; i++ {
-		match := matches.get(i)
+		match := matches.Get(i)
 		s.activeMatching[match]++
 		if numNativeHistogramBuckets >= 0 {
 			s.activeMatchingNativeHistograms[match]++
@@ -413,7 +415,7 @@ func (s *seriesStripe) clear() {
 }
 
 // Reinitialize assigns new matchers and corresponding size activeMatching slices.
-func (s *seriesStripe) reinitialize(asm *Matchers, deleted *deletedSeries) {
+func (s *seriesStripe) reinitialize(asm *asmodel.Matchers, deleted *deletedSeries) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -462,9 +464,9 @@ func (s *seriesStripe) purge(keepUntil time.Time) {
 			s.activeNativeHistograms++
 			s.activeNativeHistogramBuckets += uint32(entry.numNativeHistogramBuckets)
 		}
-		ml := entry.matches.len()
+		ml := entry.matches.Len()
 		for i := 0; i < ml; i++ {
-			match := entry.matches.get(i)
+			match := entry.matches.Get(i)
 			s.activeMatching[match]++
 			if entry.numNativeHistogramBuckets >= 0 {
 				s.activeMatchingNativeHistograms[match]++
@@ -504,9 +506,9 @@ func (s *seriesStripe) remove(ref storage.SeriesRef) {
 		s.activeNativeHistograms--
 		s.activeNativeHistogramBuckets -= uint32(entry.numNativeHistogramBuckets)
 	}
-	ml := entry.matches.len()
+	ml := entry.matches.Len()
 	for i := 0; i < ml; i++ {
-		match := entry.matches.get(i)
+		match := entry.matches.Get(i)
 		s.activeMatching[match]--
 		if entry.numNativeHistogramBuckets >= 0 {
 			s.activeMatchingNativeHistograms[match]--

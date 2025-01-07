@@ -46,6 +46,7 @@ type CreateTopicResponse struct {
 	Topic             string            // Topic is the topic that was created.
 	ID                TopicID           // ID is the topic ID for this topic, if talking to Kafka v2.8+.
 	Err               error             // Err is any error preventing this topic from being created.
+	ErrMessage        string            // ErrMessage a potential extra message describing any error.
 	NumPartitions     int32             // NumPartitions is the number of partitions in the response, if talking to Kafka v2.4+.
 	ReplicationFactor int16             // ReplicationFactor is how many replicas every partition has for this topic, if talking to Kafka 2.4+.
 	Configs           map[string]Config // Configs contains the topic configuration (minus config synonyms), if talking to Kafka 2.4+.
@@ -209,6 +210,7 @@ func (cl *Client) createTopics(ctx context.Context, dry bool, p int32, rf int16,
 			Topic:             t.Topic,
 			ID:                t.TopicID,
 			Err:               kerr.ErrorForCode(t.ErrorCode),
+			ErrMessage:        unptrStr(t.ErrorMessage),
 			NumPartitions:     t.NumPartitions,
 			ReplicationFactor: t.ReplicationFactor,
 			Configs:           make(map[string]Config),

@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -32,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
@@ -40,6 +42,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/storage/series"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -491,11 +494,11 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			// setup
 			cfg := defaultRulerConfig(t)
 			options := applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
-			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
+			notifierManager := notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, util_log.SlogFromGoKit(options.logger))
 			ruleFiles := writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, tc.ruleGroup)
 			regularQueryable, federatedQueryable := newMockQueryable(), newMockQueryable()
 
-			tracker := promql.NewActiveQueryTracker(t.TempDir(), 20, log.NewNopLogger())
+			tracker := promql.NewActiveQueryTracker(t.TempDir(), 20, promslog.NewNopLogger())
 			eng := promql.NewEngine(promql.EngineOpts{
 				MaxSamples:         1e6,
 				ActiveQueryTracker: tracker,
@@ -509,7 +512,7 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			// create and use manager factory
 			pusher := newPusherMock()
 			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, options.limits, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, federatedQueryable, queryFunc, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
@@ -525,9 +528,86 @@ func TestDefaultManagerFactory_CorrectQueryableUsed(t *testing.T) {
 			case <-time.NewTimer(time.Second).C:
 				require.Fail(t, "neither of the queryables was called within the timeout")
 			}
+
+			// Ensure the result has been written.
+			require.EventuallyWithT(t, func(collect *assert.CollectT) {
+				pusher.AssertCalled(test.NewCollectWithLogf(collect), "Push", mock.Anything, mock.Anything)
+			}, 5*time.Second, 100*time.Millisecond)
+
 			manager.Stop()
 		})
 	}
+}
+
+func TestDefaultManagerFactory_ShouldNotWriteRecordingRuleResultsWhenDisabled(t *testing.T) {
+	const userID = "tenant-1"
+
+	for _, writeEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("write enabled: %t", writeEnabled), func(t *testing.T) {
+			t.Parallel()
+
+			// Create a test recording rule.
+			ruleGroup := rulespb.RuleGroupDesc{
+				Name:     "test",
+				Interval: time.Second,
+				Rules: []*rulespb.RuleDesc{{
+					Record: "test",
+					Expr:   "1",
+				}},
+			}
+
+			// Setup ruler with writes disabled.
+			cfg := defaultRulerConfig(t)
+			cfg.RuleEvaluationWriteEnabled = writeEnabled
+
+			var (
+				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
+				notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, util_log.SlogFromGoKit(options.logger))
+				ruleFiles       = writeRuleGroupToFiles(t, cfg.RulePath, options.logger, userID, ruleGroup)
+				queryable       = newMockQueryable()
+				tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(log.NewNopLogger()))
+				eng             = promql.NewEngine(promql.EngineOpts{
+					MaxSamples:         1e6,
+					ActiveQueryTracker: tracker,
+					Timeout:            2 * time.Minute,
+				})
+				queryFunc = rules.EngineQueryFunc(eng, queryable)
+			)
+
+			pusher := newPusherMock()
+			pusher.MockPush(&mimirpb.WriteResponse{}, nil)
+
+			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			manager := factory(context.Background(), userID, notifierManager, options.logger, nil)
+
+			// Load rules into manager and start it.
+			require.NoError(t, manager.Update(time.Millisecond, ruleFiles, labels.EmptyLabels(), "", nil))
+			go manager.Run()
+
+			// Wait until the query has been executed.
+			select {
+			case <-queryable.called:
+				t.Log("query executed")
+			case <-time.NewTimer(time.Second).C:
+				require.Fail(t, "no query executed")
+			}
+
+			if writeEnabled {
+				// Ensure the result has been written.
+				require.EventuallyWithT(t, func(collect *assert.CollectT) {
+					pusher.AssertCalled(test.NewCollectWithLogf(collect), "Push", mock.Anything, mock.Anything)
+				}, 5*time.Second, 100*time.Millisecond)
+			} else {
+				// Ensure no write occurred within a reasonable amount of time.
+				time.Sleep(time.Second)
+				pusher.AssertNumberOfCalls(t, "Push", 0)
+			}
+
+			manager.Stop()
+
+		})
+	}
+
 }
 
 func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDetail(t *testing.T) {
@@ -570,8 +650,8 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 			var (
 				cfg             = defaultRulerConfig(t)
 				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
-				notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
-				tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, options.logger)
+				notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, util_log.SlogFromGoKit(options.logger))
+				tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(options.logger))
 				eng             = promql.NewEngine(promql.EngineOpts{
 					MaxSamples:         1e6,
 					ActiveQueryTracker: tracker,
@@ -596,7 +676,7 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 				matchersString := strings.Join(matchersStrings, ",")
 
 				// Ensure the read consistency injected in the context is the expected one.
-				actual, _ := api.ReadConsistencyFromContext(ctx)
+				actual, _ := api.ReadConsistencyLevelFromContext(ctx)
 				expected, hasExpected := testData.expectedReadConsistency[matchersString]
 				assert.Truef(t, hasExpected, "missing expected read consistency for matchers: %s", matchersString)
 				assert.Equal(t, expected, actual)
@@ -614,7 +694,7 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 
 			// Create the manager from the factory.
 			queryable := &storage.MockQueryable{MockQuerier: querier}
-			managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), options.limits, nil)
+			managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 			manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 			// Load rules into manager.
@@ -649,8 +729,8 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 
 	var (
 		options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
-		notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, options.logger)
-		tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, options.logger)
+		notifierManager = notifier.NewManager(&notifier.Options{Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil }}, util_log.SlogFromGoKit(options.logger))
+		tracker         = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(options.logger))
 		eng             = promql.NewEngine(promql.EngineOpts{
 			MaxSamples:         1e6,
 			ActiveQueryTracker: tracker,
@@ -679,7 +759,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 
 		if isQueryingAlertsForStateMetric("", matchers...) {
 			// Ensure it's queried with strong read consistency.
-			actual, ok := api.ReadConsistencyFromContext(ctx)
+			actual, ok := api.ReadConsistencyLevelFromContext(ctx)
 			assert.True(t, ok)
 			assert.Equal(t, api.ReadConsistencyStrong, actual)
 
@@ -710,7 +790,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 
 	// Create the manager from the factory.
 	queryable := &storage.MockQueryable{MockQuerier: querier}
-	managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), options.limits, nil)
+	managerFactory := DefaultTenantManagerFactory(cfg, pusher, queryable, rules.EngineQueryFunc(eng, queryable), &NoopMultiTenantConcurrencyController{}, options.limits, nil)
 	manager := managerFactory(context.Background(), userID, notifierManager, options.logger, nil)
 
 	// Load rules into manager.

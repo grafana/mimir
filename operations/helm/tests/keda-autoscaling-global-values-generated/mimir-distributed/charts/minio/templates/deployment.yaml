@@ -6,7 +6,7 @@ metadata:
   name: keda-autoscaling-global-values-minio
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.4.0
     release: keda-autoscaling-global-values
     heritage: Helm
 spec:
@@ -27,19 +27,20 @@ spec:
         app: minio
         release: keda-autoscaling-global-values
       annotations:
-        checksum/secrets: 5ca773d7b510a66ffbd530dbac05437cccfe3ec12f2f2ab6b763527b0d29500c
-        checksum/config: 4edc1371972f640d1f8710c65a61af9fc400bb19d3bdf1260413cafb836a9cb7
+        checksum/secrets: 95b032976ff694341397d8f8c1dc9d4483d457a0937b9f5cb285ccfc4833880a
+        checksum/config: a0bda18c7c220986e62d8eb6a95d36e68ea2475516425c0cf2ea805e953d67f7
     spec:
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
+        
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
       
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"
@@ -72,7 +73,9 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi      
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
       volumes:
         - name: export
           persistentVolumeClaim:

@@ -8,6 +8,7 @@ package querymiddleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,19 +23,25 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kgo"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/util/testkafka"
 )
 
 func TestTripperware_RangeQuery(t *testing.T) {
@@ -76,12 +83,13 @@ func TestTripperware_RangeQuery(t *testing.T) {
 		newTestPrometheusCodec(),
 		nil,
 		promql.EngineOpts{
-			Logger:     log.NewNopLogger(),
+			Logger:     promslog.NewNopLogger(),
 			Reg:        nil,
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
 		true,
+		nil,
 		nil,
 	)
 	if err != nil {
@@ -128,12 +136,13 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		codec,
 		nil,
 		promql.EngineOpts{
-			Logger:     log.NewNopLogger(),
+			Logger:     promslog.NewNopLogger(),
 			Reg:        nil,
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
 		true,
+		nil,
 		nil,
 	)
 	require.NoError(t, err)
@@ -146,7 +155,7 @@ func TestTripperware_InstantQuery(t *testing.T) {
 			return nil, err
 		}
 
-		return codec.EncodeResponse(r.Context(), r, &PrometheusResponse{
+		return codec.EncodeMetricsQueryResponse(r.Context(), r, &PrometheusResponse{
 			Status: "success",
 			Data: &PrometheusData{
 				ResultType: "vector",
@@ -177,46 +186,8 @@ func TestTripperware_InstantQuery(t *testing.T) {
 		}, res)
 	})
 
-	t.Run("specific time param with form being already parsed", func(t *testing.T) {
-		ts := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
-
-		formParserRoundTripper := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			assert.NoError(t, r.ParseForm())
-			return tripper.RoundTrip(r)
-		})
-		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: formParserRoundTripper})
-		require.NoError(t, err)
-		api := v1.NewAPI(queryClient)
-
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, ts)
-		require.NoError(t, err)
-		require.IsType(t, model.Vector{}, res)
-		require.NotEmpty(t, res.(model.Vector))
-
-		resultTime := res.(model.Vector)[0].Timestamp.Time()
-		require.Equal(t, ts.Unix(), resultTime.Unix())
-	})
-
 	t.Run("default time param happy case", func(t *testing.T) {
 		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: tripper})
-		require.NoError(t, err)
-		api := v1.NewAPI(queryClient)
-
-		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Time{})
-		require.NoError(t, err)
-		require.IsType(t, model.Vector{}, res)
-		require.NotEmpty(t, res.(model.Vector))
-
-		resultTime := res.(model.Vector)[0].Timestamp.Time()
-		require.InDelta(t, time.Now().Unix(), resultTime.Unix(), 1)
-	})
-
-	t.Run("default time param with form being already parsed", func(t *testing.T) {
-		formParserRoundTripper := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			assert.NoError(t, r.ParseForm())
-			return tripper.RoundTrip(r)
-		})
-		queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: formParserRoundTripper})
 		require.NoError(t, err)
 		api := v1.NewAPI(queryClient)
 
@@ -497,12 +468,13 @@ func TestTripperware_Metrics(t *testing.T) {
 				newTestPrometheusCodec(),
 				nil,
 				promql.EngineOpts{
-					Logger:     log.NewNopLogger(),
+					Logger:     promslog.NewNopLogger(),
 					Reg:        nil,
 					MaxSamples: 1000,
 					Timeout:    time.Minute,
 				},
 				true,
+				nil,
 				reg,
 			)
 			require.NoError(t, err)
@@ -531,10 +503,14 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg := makeTestConfig()
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
+	cfg.PrunedQueries = true
+	cfg.BlockPromQLExperimentalFunctions = true
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)
 	require.NotZero(t, cfg.ShardedQueries)
+	require.NotZero(t, cfg.PrunedQueries)
+	require.NotZero(t, cfg.BlockPromQLExperimentalFunctions)
 	require.NotZero(t, cfg.SplitQueriesByInterval)
 	require.NotZero(t, cfg.MaxRetries)
 
@@ -573,6 +549,8 @@ func TestMiddlewaresConsistency(t *testing.T) {
 				"splitAndCacheMiddleware",               // No time splitting and results cache support.
 				"splitInstantQueryByIntervalMiddleware", // Not applicable because specific to instant queries.
 				"stepAlignMiddleware",                   // Not applicable because remote read requests don't take step in account when running in Mimir.
+				"pruneMiddleware",                       // No query pruning support.
+				"experimentalFunctionsMiddleware",       // No blocking for PromQL experimental functions as it is executed remotely.
 			},
 		},
 	}
@@ -755,12 +733,13 @@ func TestTripperware_RemoteRead(t *testing.T) {
 				newTestPrometheusCodec(),
 				nil,
 				promql.EngineOpts{
-					Logger:     log.NewNopLogger(),
+					Logger:     promslog.NewNopLogger(),
 					Reg:        nil,
 					MaxSamples: 1000,
 					Timeout:    time.Minute,
 				},
 				true,
+				nil,
 				reg,
 			)
 			require.NoError(t, err)
@@ -790,6 +769,165 @@ func TestTripperware_RemoteRead(t *testing.T) {
 	}
 }
 
+func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) {
+	const (
+		topic         = "test"
+		numPartitions = 10
+		tenantID      = "user-1"
+	)
+
+	tests := map[string]struct {
+		makeRequest func() *http.Request
+	}{
+		"range query": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", queryRangePathSuffix+"?start=1536673680&end=1536716880&step=120&query=up", nil)
+			},
+		},
+		"instant query": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", instantQueryPathSuffix+"?time=1536673680&query=up", nil)
+			},
+		},
+		"cardinality label names": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", cardinalityLabelNamesPathSuffix, nil)
+			},
+		},
+		"cardinality label values": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", cardinalityLabelValuesPathSuffix+"?label_names[]=foo", nil)
+			},
+		},
+		"cardinality active series": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", cardinalityActiveSeriesPathSuffix, nil)
+			},
+		},
+		"cardinality active native histograms": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", cardinalityActiveNativeHistogramMetricsPathSuffix, nil)
+			},
+		},
+		"label names": {
+			makeRequest: func() *http.Request {
+				return httptest.NewRequest("GET", labelNamesPathSuffix, nil)
+			},
+		},
+		"remote read": {
+			makeRequest: func() *http.Request {
+				return makeTestHTTPRequestFromRemoteRead(&prompb.ReadRequest{
+					Queries: []*prompb.Query{
+						{
+							Matchers:         []*prompb.LabelMatcher{{Name: "__name__", Type: prompb.LabelMatcher_EQ, Value: "some_metric"}},
+							StartTimestampMs: time.Now().Add(-60 * 24 * time.Hour).UnixMilli(),
+							EndTimestampMs:   time.Now().UnixMilli(),
+						},
+					},
+				})
+			},
+		},
+	}
+
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+
+	// Setup a fake Kafka cluster.
+	_, clusterAddr := testkafka.CreateCluster(t, numPartitions, topic)
+
+	// Write some records to different partitions.
+	expectedOffsets := produceKafkaRecords(t, clusterAddr, topic,
+		&kgo.Record{Partition: 0},
+		&kgo.Record{Partition: 0},
+		&kgo.Record{Partition: 0},
+		&kgo.Record{Partition: 1},
+		&kgo.Record{Partition: 1},
+		&kgo.Record{Partition: 2},
+	)
+
+	// Create the topic offsets reader.
+	readClient, err := ingest.NewKafkaReaderClient(createKafkaConfig(clusterAddr, topic), nil, logger)
+	require.NoError(t, err)
+	t.Cleanup(readClient.Close)
+
+	offsetsReader := ingest.NewTopicOffsetsReaderForAllPartitions(readClient, topic, 100*time.Millisecond, nil, logger)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, offsetsReader))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, offsetsReader))
+	})
+
+	// Create the tripperware.
+	tw, err := NewTripperware(
+		makeTestConfig(func(cfg *Config) {
+			cfg.ShardedQueries = false
+			cfg.SplitQueriesByInterval = 0
+			cfg.CacheResults = false
+		}),
+		log.NewNopLogger(),
+		mockLimits{},
+		NewPrometheusCodec(nil, 0, formatJSON, nil),
+		nil,
+		promql.EngineOpts{
+			Logger:     promslog.NewNopLogger(),
+			Reg:        nil,
+			MaxSamples: 1000,
+			Timeout:    time.Minute,
+		},
+		true,
+		map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: offsetsReader},
+		nil,
+	)
+	require.NoError(t, err)
+
+	// Test it against all routes.
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			for _, consistencyLevel := range []string{querierapi.ReadConsistencyEventual, querierapi.ReadConsistencyStrong} {
+				t.Run(fmt.Sprintf("consistency level: %s", consistencyLevel), func(t *testing.T) {
+					t.Parallel()
+
+					// Create a roundtripper that captures the downstream HTTP request.
+					var downstreamReq *http.Request
+
+					tripper := tw(RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+						downstreamReq = req
+
+						return &http.Response{
+							StatusCode: 200,
+							Body:       io.NopCloser(strings.NewReader("{}")),
+							Header:     http.Header{"Content-Type": []string{"application/json"}},
+						}, nil
+					}))
+
+					// Send an HTTP request through the roundtripper.
+					req := testData.makeRequest()
+					req = req.WithContext(user.InjectOrgID(req.Context(), tenantID))
+					req = req.WithContext(querierapi.ContextWithReadConsistencyLevel(req.Context(), consistencyLevel))
+
+					res, err := tripper.RoundTrip(req)
+					require.NoError(t, err)
+					require.NotNil(t, res)
+					require.NotNil(t, downstreamReq)
+
+					if consistencyLevel == querierapi.ReadConsistencyStrong {
+						offsets := querierapi.EncodedOffsets(downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
+
+						for partitionID, expectedOffset := range expectedOffsets {
+							actual, ok := offsets.Lookup(partitionID)
+							assert.True(t, ok)
+							assert.Equal(t, expectedOffset, actual)
+						}
+					} else {
+						assert.Empty(t, downstreamReq.Header.Get(querierapi.ReadConsistencyOffsetsHeader))
+					}
+				})
+			}
+		})
+	}
+}
+
 type singleHostRoundTripper struct {
 	host string
 	next http.RoundTripper
@@ -804,9 +942,6 @@ func (s singleHostRoundTripper) RoundTrip(r *http.Request) (*http.Response, erro
 func makeTestConfig(overrides ...func(*Config)) Config {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
-
-	// Enable remote read limits by default, in order to exercise the code in tests.
-	cfg.RemoteReadLimitsEnabled = true
 
 	for _, override := range overrides {
 		override(&cfg)

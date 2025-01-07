@@ -15,8 +15,8 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -377,8 +377,8 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 					expectedSplitQueries:         0,
 					expectedSkippedNonSplittable: 1,
 				},
-				"holt_winters": {
-					query:                        `holt_winters(metric_counter[1m], 0.5, 0.9)`,
+				"double_exponential_smoothing": {
+					query:                        `double_exponential_smoothing(metric_counter[1m], 0.5, 0.9)`,
 					expectedSplitQueries:         0,
 					expectedSkippedNonSplittable: 1,
 				},
@@ -434,7 +434,7 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 				},
 			}
 
-			series := make([]*promql.StorageSeries, 0, numSeries+(numConvHistograms*len(histogramBuckets))+numNativeHistograms)
+			series := make([]storage.Series, 0, numSeries+(numConvHistograms*len(histogramBuckets))+numNativeHistograms)
 			seriesID := 0
 			end := start.Add(30 * time.Minute)
 
@@ -501,9 +501,6 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 			queryable := storageSeriesQueryable(series)
 
 			for testName, testData := range tests {
-				// Change scope to ensure it work fine when test cases are executed concurrently.
-				testData := testData
-
 				t.Run(testName, func(t *testing.T) {
 					t.Parallel()
 					reqs := []MetricsQueryRequest{
@@ -519,8 +516,9 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 							reg := prometheus.NewPedanticRegistry()
 							engine := newEngine()
 							downstream := &downstreamHandler{
-								engine:    engine,
-								queryable: queryable,
+								engine:                                  engine,
+								queryable:                               queryable,
+								includePositionInformationInAnnotations: true,
 							}
 
 							// Run the query with the normal engine
@@ -533,6 +531,12 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 							// Ensure the query produces some results.
 							require.NotEmpty(t, expectedPrometheusRes.Data.Result)
 							requireValidSamples(t, expectedPrometheusRes.Data.Result)
+
+							if testData.expectedSplitQueries > 0 {
+								// Remove position information from annotations, to mirror what we expect from the split queries below.
+								removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
+								removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
+							}
 
 							splittingware := newSplitInstantQueryByIntervalMiddleware(mockLimits{splitInstantQueriesInterval: 1 * time.Minute}, log.NewNopLogger(), engine, reg)
 
@@ -615,8 +619,6 @@ func TestInstantQuerySplittingHTTPOptions(t *testing.T) {
 			expectedDownstreamCall: 3, // [3h] range interval with 1h split interval should be split in 3 partial queries
 		},
 	} {
-		tt := tt
-
 		t.Run(tt.name, func(t *testing.T) {
 			req := &PrometheusInstantQueryRequest{
 				path:      "/query",

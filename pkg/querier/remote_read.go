@@ -227,10 +227,10 @@ func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int6
 				})
 			case chunkenc.ValHistogram:
 				t, h := it.AtHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
-				histograms = append(histograms, prom_remote.HistogramToHistogramProto(t, h))
+				histograms = append(histograms, prompb.FromIntHistogram(t, h))
 			case chunkenc.ValFloatHistogram:
 				t, h := it.AtFloatHistogram(nil) // Nil argument as we pass the data to the protobuf as-is without copy.
-				histograms = append(histograms, prom_remote.FloatHistogramToHistogramProto(t, h))
+				histograms = append(histograms, prompb.FromFloatHistogram(t, h))
 			default:
 				return nil, fmt.Errorf("unsupported value type: %v", valType)
 			}
@@ -241,7 +241,7 @@ func seriesSetToQueryResult(s storage.SeriesSet, filterStartMs, filterEndMs int6
 		}
 
 		ts := &prompb.TimeSeries{
-			Labels:     prom_remote.LabelsToLabelsProto(series.Labels(), nil),
+			Labels:     prompb.FromLabels(series.Labels(), nil),
 			Samples:    samples,
 			Histograms: histograms,
 		}
@@ -280,7 +280,7 @@ func streamChunkedReadResponses(stream io.Writer, ss storage.ChunkSeriesSet, que
 	for ss.Next() {
 		series := ss.At()
 		iter = series.Iterator(iter)
-		lbls = prom_remote.LabelsToLabelsProto(series.Labels(), nil)
+		lbls = prompb.FromLabels(series.Labels(), nil)
 
 		frameBytesRemaining := initializedFrameBytesRemaining(maxBytesInFrame, lbls)
 		isNext := iter.Next()

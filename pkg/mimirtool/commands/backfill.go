@@ -69,6 +69,11 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		Envar(envVars.APIKey).
 		StringVar(&c.clientConfig.Key)
 
+	c.clientConfig.ExtraHeaders = map[string]string{}
+	cmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").
+		Envar(envVars.ExtraHeaders).
+		StringMapVar(&c.clientConfig.ExtraHeaders)
+
 	cmd.Flag("tls-ca-path", "TLS CA certificate to verify Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCAPath+".").
 		Default("").
 		Envar(envVars.TLSCAPath).

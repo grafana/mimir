@@ -40,6 +40,7 @@ type BucketIndexBlocksFinder struct {
 
 	cfg    BucketIndexBlocksFinderConfig
 	loader *bucketindex.Loader
+	logger log.Logger
 }
 
 func NewBucketIndexBlocksFinder(cfg BucketIndexBlocksFinderConfig, bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger, reg prometheus.Registerer) *BucketIndexBlocksFinder {
@@ -49,16 +50,17 @@ func NewBucketIndexBlocksFinder(cfg BucketIndexBlocksFinderConfig, bkt objstore.
 		cfg:     cfg,
 		loader:  loader,
 		Service: loader,
+		logger:  logger,
 	}
 }
 
 // GetBlocks implements BlocksFinder.
-func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, map[ulid.ULID]*bucketindex.BlockDeletionMark, error) {
+func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, error) {
 	if f.State() != services.Running {
-		return nil, nil, errBucketIndexBlocksFinderNotRunning
+		return nil, errBucketIndexBlocksFinderNotRunning
 	}
 	if maxT < minT {
-		return nil, nil, errInvalidBlocksRange
+		return nil, errInvalidBlocksRange
 	}
 
 	// Get the bucket index for this user.
@@ -66,21 +68,18 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 	if errors.Is(err, bucketindex.ErrIndexNotFound) {
 		// This is a legit edge case, happening when a new tenant has not shipped blocks to the storage yet
 		// so the bucket index hasn't been created yet.
-		return nil, nil, nil
+		return nil, nil
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Ensure the bucket index is not too old.
 	if time.Since(idx.GetUpdatedAt()) > f.cfg.MaxStalePeriod {
-		return nil, nil, newBucketIndexTooOldError(idx.GetUpdatedAt(), f.cfg.MaxStalePeriod)
+		return nil, newBucketIndexTooOldError(idx.GetUpdatedAt(), f.cfg.MaxStalePeriod)
 	}
 
-	var (
-		matchingBlocks        = map[ulid.ULID]*bucketindex.Block{}
-		matchingDeletionMarks = map[ulid.ULID]*bucketindex.BlockDeletionMark{}
-	)
+	matchingBlocks := map[ulid.ULID]*bucketindex.Block{}
 
 	// Filter blocks containing samples within the range.
 	for _, block := range idx.Blocks {
@@ -92,18 +91,11 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 	}
 
 	for _, mark := range idx.BlockDeletionMarks {
-		// Filter deletion marks by matching blocks only.
-		if _, ok := matchingBlocks[mark.ID]; !ok {
-			continue
-		}
-
 		// Exclude blocks marked for deletion. This is the same logic as Thanos IgnoreDeletionMarkFilter.
 		if time.Since(time.Unix(mark.DeletionTime, 0)).Seconds() > f.cfg.IgnoreDeletionMarksDelay.Seconds() {
 			delete(matchingBlocks, mark.ID)
 			continue
 		}
-
-		matchingDeletionMarks[mark.ID] = mark
 	}
 
 	// Convert matching blocks into a list.
@@ -112,7 +104,7 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 		blocks = append(blocks, b)
 	}
 
-	return blocks, matchingDeletionMarks, nil
+	return blocks, nil
 }
 
 func newBucketIndexTooOldError(updatedAt time.Time, maxStalePeriod time.Duration) error {

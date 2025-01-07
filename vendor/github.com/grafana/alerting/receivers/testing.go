@@ -5,12 +5,14 @@ import (
 )
 
 type NotificationServiceMock struct {
-	Webhook     SendWebhookSettings
-	EmailSync   SendEmailSettings
-	ShouldError error
+	WebhookCalls []SendWebhookSettings
+	Webhook      SendWebhookSettings
+	EmailSync    SendEmailSettings
+	ShouldError  error
 }
 
 func (ns *NotificationServiceMock) SendWebhook(_ context.Context, cmd *SendWebhookSettings) error {
+	ns.WebhookCalls = append(ns.WebhookCalls, *cmd)
 	ns.Webhook = *cmd
 	return ns.ShouldError
 }

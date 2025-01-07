@@ -8,12 +8,9 @@ package ingester
 import (
 	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/circuitbreaker"
-	"github.com/grafana/dskit/grpcutil"
-	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/common/model"
@@ -49,17 +46,6 @@ func newErrorWithStatus(originalErr error, code codes.Code) globalerror.ErrorWit
 		errorDetails = &mimirpb.ErrorDetails{Cause: ingesterErr.errorCause()}
 	}
 	return globalerror.WrapErrorWithGRPCStatus(originalErr, code, errorDetails)
-}
-
-// newErrorWithHTTPStatus creates a new ErrorWithStatus backed by the given error,
-// and containing the given HTTP status code.
-func newErrorWithHTTPStatus(err error, code int) globalerror.ErrorWithStatus {
-	errWithHTTPStatus := httpgrpc.Errorf(code, err.Error())
-	stat, _ := grpcutil.ErrorToStatus(errWithHTTPStatus)
-	return globalerror.ErrorWithStatus{
-		UnderlyingErr: err,
-		Status:        stat,
-	}
 }
 
 // ingesterError is a marker interface for the errors returned by ingester, and that are safe to wrap.
@@ -305,7 +291,7 @@ type perMetricSeriesLimitReachedError struct {
 	series string
 }
 
-// newPerMetricSeriesLimitReachedError creates a new perMetricMetadataLimitReachedError indicating that a per-metric series limit has been reached.
+// newPerMetricSeriesLimitReachedError creates a new perMetricSeriesLimitReachedError indicating that a per-metric series limit has been reached.
 func newPerMetricSeriesLimitReachedError(limit int, labels []mimirpb.LabelAdapter) perMetricSeriesLimitReachedError {
 	return perMetricSeriesLimitReachedError{
 		limit:  limit,
@@ -569,31 +555,6 @@ func mapPushErrorToErrorWithStatus(err error) error {
 	return newErrorWithStatus(wrappedErr, errCode)
 }
 
-// mapPushErrorToErrorWithHTTPOrGRPCStatus maps ingesterError objects to an appropriate
-// globalerror.ErrorWithStatus, which may contain both HTTP and gRPC error codes.
-func mapPushErrorToErrorWithHTTPOrGRPCStatus(err error) error {
-	var ingesterErr ingesterError
-	if errors.As(err, &ingesterErr) {
-		switch ingesterErr.errorCause() {
-		case mimirpb.BAD_DATA:
-			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
-		case mimirpb.TENANT_LIMIT:
-			return newErrorWithHTTPStatus(err, http.StatusBadRequest)
-		case mimirpb.SERVICE_UNAVAILABLE:
-			return newErrorWithStatus(err, codes.Unavailable)
-		case mimirpb.INSTANCE_LIMIT:
-			return newErrorWithStatus(middleware.DoNotLogError{Err: err}, codes.Unavailable)
-		case mimirpb.TSDB_UNAVAILABLE:
-			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
-		case mimirpb.METHOD_NOT_ALLOWED:
-			return newErrorWithStatus(err, codes.Unimplemented)
-		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			return newErrorWithStatus(err, codes.Unavailable)
-		}
-	}
-	return err
-}
-
 // mapReadErrorToErrorWithStatus maps the given error to the corresponding error of type globalerror.ErrorWithStatus.
 func mapReadErrorToErrorWithStatus(err error) error {
 	var (
@@ -613,25 +574,4 @@ func mapReadErrorToErrorWithStatus(err error) error {
 		}
 	}
 	return newErrorWithStatus(err, errCode)
-}
-
-// mapReadErrorToErrorWithHTTPOrGRPCStatus maps ingesterError objects to an appropriate
-// globalerror.ErrorWithStatus, which may contain both HTTP and gRPC error codes.
-func mapReadErrorToErrorWithHTTPOrGRPCStatus(err error) error {
-	var (
-		ingesterErr ingesterError
-	)
-	if errors.As(err, &ingesterErr) {
-		switch ingesterErr.errorCause() {
-		case mimirpb.TOO_BUSY:
-			return newErrorWithHTTPStatus(err, http.StatusServiceUnavailable)
-		case mimirpb.SERVICE_UNAVAILABLE:
-			return newErrorWithStatus(err, codes.Unavailable)
-		case mimirpb.METHOD_NOT_ALLOWED:
-			return newErrorWithStatus(err, codes.Unimplemented)
-		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			return newErrorWithStatus(err, codes.Unavailable)
-		}
-	}
-	return err
 }

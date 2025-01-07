@@ -1,6 +1,6 @@
-# Streaming PromQL engine
+# Mimir Query Engine
 
-This file contains a brief overview of the internals of the streaming PromQL engine.
+This file contains a brief overview of the internals of the Mimir Query Engine, aka MQE.
 
 For an introduction to the engine itself and the problems it tries to solve, check out [this PromCon 2023 talk](https://www.youtube.com/watch?v=3kM2Asj6hcg).
 
@@ -16,19 +16,19 @@ Prometheus' PromQL engine will first load all samples for all series selected by
 It will then compute the sum for each unique value of `environment`.
 At its peak, Prometheus' PromQL engine will hold all samples for all input series (from `some_metric{cluster="cluster-1"}`) and all samples for all output series in memory at once.
 
-The streaming engine here will instead execute the selector `some_metric{cluster="cluster-1"}` and gather the labels of all series returned.
+MQE here will instead execute the selector `some_metric{cluster="cluster-1"}` and gather the labels of all series returned.
 With these labels, it will then compute all the possible output series for the `sum by (environment)` operation (ie. one output series per unique value of `environment`).
 Having computed the output series, it will then begin reading series from the selector, one at a time, and update the running total for the appropriate output series.
-At its peak, the streaming engine in this example will hold all samples for one input series and all samples for all output series in memory at once[^1],
+At its peak, MQE in this example will hold all samples for one input series and all samples for all output series in memory at once[^1],
 a significant reduction compared to Prometheus' PromQL engine, particularly when the selector selects many series.
 
 This idea of streaming can be applied to multiple levels as well. Imagine we're evaluating the query `max(sum by (environment) (some_metric{cluster="cluster-1"}))`.
-In the streaming engine, once the result of each group series produced by `sum` is complete, it is passed to `max`, which can update its running maximum seen so far across all groups.
-At its peak, the streaming engine will hold all samples for one input series, all samples for all incomplete `sum` group series, and the single incomplete `max` output series in memory at once.
+In MQE, once the result of each group series produced by `sum` is complete, it is passed to `max`, which can update its running maximum seen so far across all groups.
+At its peak, MQE will hold all samples for one input series, all samples for all incomplete `sum` group series, and the single incomplete `max` output series in memory at once.
 
 ## Internals
 
-Within the streaming engine, a query is represented by a set of linked operators (one for each operation) that together form the query plan.
+Within MQE, a query is represented by a set of linked operators (one for each operation) that together form the query plan.
 
 For example, the `max(sum by (environment) (some_metric{cluster="cluster-1"}))` example from before would have a query plan made up of three operators:
 
@@ -95,3 +95,31 @@ Elaborating on the example from before, the overall query would proceed like thi
 [^2]:
     This isn't done in a streaming fashion: all series' labels are loaded into memory at once.
     In a future iteration of the engine, `SeriesMetadata()` could be made streaming as well, but this is out of scope for now.
+
+## Implementation notes
+
+### Thread safety
+
+Operators are not expected to be thread-safe: the engine currently evaluates queries from a single goroutine.
+
+### Native histograms and memory pooling
+
+MQE makes extensive use of memory pooling to reduce GC pressure, including for slices that hold `*histogram.FloatHistogram` pointers.
+
+Slices of `promql.HPoint` returned by `types.HPointSlicePool` are not cleared when they are returned. This allows the `FloatHistogram`
+instances to be reused for other series or time steps. For example, when filling a `HPointRingBuffer`, range vector selectors will
+reuse `FloatHistogram` instances already present in the `HPoint` slice that backs the ring buffer, rather than unconditionally creating
+a new `FloatHistogram` instance.
+
+The implication of this is that anywhere that returns a `promql.HPoint` slice `s` to `types.HPointSlicePool` must remove references in
+`s` to any `FloatHistogram`s retained after `s` is returned. For example, binary operations that act as a filter retain the
+`FloatHistogram`s that satisfy the filter in a new, smaller slice, and return the original unfiltered slice `s` to the pool.
+
+The simplest way to do this is to set the `H` field on `promql.HPoint` to `nil`.
+If all points in `s` are being retained, then calling `clear(s)` is also sufficient.
+
+If this is not done, query results may become corrupted due to multiple queries simultaneously modifying the same `FloatHistogram` instance.
+This can also manifest as panics while interacting with `FloatHistogram`s.
+
+The same problem does not apply to `*histogram.FloatHistogram` slices returned by `types.HistogramSlicePool`. Slices from this pool are used only by
+parts of MQE that do not benefit from reusing `FloatHistogram` instances, and so `types.HistogramSlicePool` clears all slices returned for you.

@@ -1,3 +1,4 @@
+{{- if and .Values.store_gateway.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -25,3 +26,4 @@ spec:
       targetPort: grpc
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "store-gateway" "memberlist" true) | nindent 4 }}
+{{- end }}

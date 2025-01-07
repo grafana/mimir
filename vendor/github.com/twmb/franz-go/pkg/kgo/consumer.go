@@ -2126,7 +2126,7 @@ func (cl *Client) listOffsetsForBrokerLoad(ctx context.Context, broker *broker, 
 				delete(load, topic)
 			}
 
-			offset := poffset(&rPartition) //nolint:gosec // poffset returns int64 from input, does not save pointer
+			offset := poffset(&rPartition)
 			end := func() int64 { return poffset(&resp2.Topics[i].Partitions[j]) }
 
 			// We ensured the resp2 shape is as we want and has no

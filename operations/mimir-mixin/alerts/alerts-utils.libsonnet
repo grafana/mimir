@@ -10,7 +10,10 @@
     $._config.product + name,
 
   jobMatcher(job)::
-    'job=~".*/%s"' % formatJobForQuery(job),
+    '%s=~"%s%s"' % [$._config.per_job_label, $._config.alert_job_prefix, formatJobForQuery(job)],
+
+  jobNotMatcher(job)::
+    '%s!~"%s%s"' % [$._config.per_job_label, $._config.alert_job_prefix, formatJobForQuery(job)],
 
   local formatJobForQuery(job) =
     if std.isArray(job) then '(%s)' % std.join('|', job)

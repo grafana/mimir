@@ -17,10 +17,12 @@ const (
 	MissingMetricName                     ID = "missing-metric-name"
 	InvalidMetricName                     ID = "metric-name-invalid"
 	MaxLabelNamesPerSeries                ID = "max-label-names-per-series"
+	MaxLabelNamesPerInfoSeries            ID = "max-label-names-per-info-series"
 	MaxNativeHistogramBuckets             ID = "max-native-histogram-buckets"
 	NotReducibleNativeHistogram           ID = "not-reducible-native-histogram"
 	InvalidSchemaNativeHistogram          ID = "invalid-native-histogram-schema"
 	SeriesInvalidLabel                    ID = "label-invalid"
+	SeriesInvalidLabelValue               ID = "label-value-invalid"
 	SeriesLabelNameTooLong                ID = "label-name-too-long"
 	SeriesLabelValueTooLong               ID = "label-value-too-long"
 	SeriesWithDuplicateLabelNames         ID = "duplicate-label-names"
@@ -75,6 +77,7 @@ const (
 	BucketIndexTooOld           ID = "bucket-index-too-old"
 
 	DistributorMaxWriteMessageSize         ID = "distributor-max-write-message-size"
+	DistributorMaxOTLPRequestSize          ID = "distributor-max-otlp-request-size"
 	DistributorMaxWriteRequestDataItemSize ID = "distributor-max-write-request-data-item-size"
 
 	// Map Prometheus TSDB native histogram validation errors to Mimir errors.
@@ -84,6 +87,11 @@ const (
 	NativeHistogramNegativeBucketCount  ID = "native-histogram-negative-bucket-count"
 	NativeHistogramSpanNegativeOffset   ID = "native-histogram-span-negative-offset"
 	NativeHistogramSpansBucketsMismatch ID = "native-histogram-spans-buckets-mismatch"
+	NativeHistogramOOODisabled          ID = "native-histogram-ooo-disabled"
+
+	// Alertmanager errors
+	AlertmanagerMaxGrafanaConfigSize ID = "alertmanager-max-grafana-config-size"
+	AlertmanagerMaxGrafanaStateSize  ID = "alertmanager-max-grafana-state-size"
 )
 
 // Message returns the provided msg, appending the error id.

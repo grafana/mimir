@@ -72,7 +72,7 @@ func (s *shardBySeriesBase) shardBySeriesSelector(ctx context.Context, spanLog *
 	resp, err := doShardedRequests(ctx, reqs, s.upstream)
 	if err != nil {
 		if errors.Is(err, errShardCountTooLow) {
-			return nil, apierror.New(apierror.TypeBadData, fmt.Errorf("%w: try increasing the requested shard count", err).Error())
+			return nil, apierror.New(apierror.TypeTooLargeEntry, fmt.Errorf("%w: try increasing the requested shard count", err).Error())
 		}
 		return nil, apierror.New(apierror.TypeInternal, err.Error())
 	}

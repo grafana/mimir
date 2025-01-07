@@ -85,6 +85,8 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 		if err != nil {
 			return err
 		}
+
+		t.metrics.InitializeCountersToZero(floatTypeLabel)
 	}
 	if t.cfg.WithHistograms {
 		for i, histProfile := range histogramProfiles {
@@ -92,6 +94,8 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 			if err != nil {
 				return err
 			}
+
+			t.metrics.InitializeCountersToZero(histProfile.typeLabel)
 		}
 	}
 	return nil
@@ -179,9 +183,11 @@ func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string
 	defer sp.Finish()
 	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries)
 
+	start := time.Now()
 	statusCode, err := t.client.WriteSeries(ctx, series)
-
+	t.metrics.writesLatency.WithLabelValues(typeLabel).Observe(time.Since(start).Seconds())
 	t.metrics.writesTotal.WithLabelValues(typeLabel).Inc()
+
 	if statusCode/100 != 2 {
 		t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode), typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to remote write series", "status_code", statusCode, "err", err)
@@ -287,11 +293,13 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.runRangeQueryAndVerifyResult")
 	defer sp.Finish()
 
-	logger := log.With(sp, "query", metricSumQuery, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step, "results_cache", strconv.FormatBool(resultsCacheEnabled))
+	logger := log.With(sp, "query", metricSumQuery, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step, "results_cache", strconv.FormatBool(resultsCacheEnabled), "type", typeLabel)
 	level.Debug(logger).Log("msg", "Running range query")
 
 	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
+	queryStart := time.Now()
 	matrix, err := t.client.QueryRange(ctx, metricSumQuery, start, end, step, WithResultsCacheEnabled(resultsCacheEnabled))
+	t.metrics.queriesLatency.WithLabelValues(typeLabel, strconv.FormatBool(resultsCacheEnabled)).Observe(time.Since(queryStart).Seconds())
 	if err != nil {
 		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to execute range query", "err", err)
@@ -302,9 +310,12 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
-		level.Warn(logger).Log("msg", "Range query result check failed", "err", err, "type", typeLabel)
+		level.Warn(logger).Log("msg", "Range query result check failed", "err", err)
 		return errors.Wrap(err, "range query result check failed")
 	}
+
+	level.Info(logger).Log("msg", "Range query result check succeeded")
+
 	return nil
 }
 
@@ -319,11 +330,13 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	sp, ctx := spanlogger.NewWithLogger(ctx, t.logger, "WriteReadSeriesTest.runInstantQueryAndVerifyResult")
 	defer sp.Finish()
 
-	logger := log.With(sp, "query", metricSumQuery, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled))
+	logger := log.With(sp, "query", metricSumQuery, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled), "type", typeLabel)
 	level.Debug(logger).Log("msg", "Running instant query")
 
 	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
+	queryStart := time.Now()
 	vector, err := t.client.Query(ctx, metricSumQuery, ts, WithResultsCacheEnabled(resultsCacheEnabled))
+	t.metrics.queriesLatency.WithLabelValues(typeLabel, strconv.FormatBool(resultsCacheEnabled)).Observe(time.Since(queryStart).Seconds())
 	if err != nil {
 		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
@@ -354,9 +367,12 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, 0, generateValue, generateSampleHistogram)
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
-		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err, "type", typeLabel)
+		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err)
 		return errors.Wrap(err, "instant query result check failed")
 	}
+
+	level.Info(logger).Log("msg", "Instant query result check succeeded")
+
 	return nil
 }
 

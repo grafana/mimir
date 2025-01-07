@@ -78,8 +78,7 @@ type Client struct {
 	producer producer
 	consumer consumer
 
-	compressor   *compressor
-	decompressor *decompressor
+	compressor *compressor
 
 	coordinatorsMu sync.Mutex
 	coordinators   map[coordinatorKey]*coordinatorLoad
@@ -482,8 +481,7 @@ func NewClient(opts ...Opt) (*Client, error) {
 		bufPool: newBufPool(),
 		prsPool: newPrsPool(),
 
-		compressor:   compressor,
-		decompressor: newDecompressor(),
+		compressor: compressor,
 
 		coordinators: make(map[coordinatorKey]*coordinatorLoad),
 

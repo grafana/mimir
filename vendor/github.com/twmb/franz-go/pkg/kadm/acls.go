@@ -663,7 +663,8 @@ type CreateACLsResult struct {
 	Operation  ACLOperation           // Operation is the operation allowed / denied.
 	Permission kmsg.ACLPermissionType // Permission is whether this is allowed / denied.
 
-	Err error // Err is the error for this ACL creation.
+	Err        error  // Err is the error for this ACL creation.
+	ErrMessage string // ErrMessage a potential extra message describing any error.
 }
 
 // CreateACLsResults contains all results to created ACLs.
@@ -752,7 +753,8 @@ func (cl *Client) CreateACLs(ctx context.Context, b *ACLBuilder) (CreateACLsResu
 			Operation:  c.Operation,
 			Permission: c.PermissionType,
 
-			Err: kerr.ErrorForCode(r.ErrorCode),
+			Err:        kerr.ErrorForCode(r.ErrorCode),
+			ErrMessage: unptrStr(r.ErrorMessage),
 		})
 	}
 
@@ -770,7 +772,8 @@ type DeletedACL struct {
 	Operation  ACLOperation           // Operation is this deleted ACL's operation.
 	Permission kmsg.ACLPermissionType // Permission this deleted ACLs permission.
 
-	Err error // Err is non-nil if this match has an error.
+	Err        error  // Err is non-nil if this match has an error.
+	ErrMessage string // ErrMessage a potential extra message describing any error.
 }
 
 // DeletedACLs contains ACLs that were deleted from a single delete filter.
@@ -794,7 +797,8 @@ type DeleteACLsResult struct {
 
 	Deleted DeletedACLs // Deleted contains all ACLs this delete filter matched.
 
-	Err error // Err is non-nil if this filter has an error.
+	Err        error  // Err is non-nil if this filter has an error.
+	ErrMessage string // ErrMessage a potential extra message describing any error.
 }
 
 // DeleteACLsResults contains all results to deleted ACLs.
@@ -841,6 +845,7 @@ func (cl *Client) DeleteACLs(ctx context.Context, b *ACLBuilder) (DeleteACLsResu
 				Operation:  m.Operation,
 				Permission: m.PermissionType,
 				Err:        kerr.ErrorForCode(m.ErrorCode),
+				ErrMessage: unptrStr(m.ErrorMessage),
 			})
 		}
 		rs = append(rs, DeleteACLsResult{
@@ -853,6 +858,7 @@ func (cl *Client) DeleteACLs(ctx context.Context, b *ACLBuilder) (DeleteACLsResu
 			Permission: f.PermissionType,
 			Deleted:    ms,
 			Err:        kerr.ErrorForCode(r.ErrorCode),
+			ErrMessage: unptrStr(r.ErrorMessage),
 		})
 	}
 	return rs, nil
@@ -892,7 +898,8 @@ type DescribeACLsResult struct {
 
 	Described DescribedACLs // Described contains all ACLs this describe filter matched.
 
-	Err error // Err is non-nil if this filter has an error.
+	Err        error  // Err is non-nil if this filter has an error.
+	ErrMessage string // ErrMessage a potential extra message describing any error.
 }
 
 // DescribeACLsResults contains all results to described ACLs.
@@ -974,6 +981,7 @@ func (cl *Client) DescribeACLs(ctx context.Context, b *ACLBuilder) (DescribeACLs
 			Permission: f.PermissionType,
 			Described:  ds,
 			Err:        kerr.ErrorForCode(r.ErrorCode),
+			ErrMessage: unptrStr(r.ErrorMessage),
 		})
 	}
 	return rs, nil

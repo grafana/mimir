@@ -17,7 +17,9 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -38,6 +40,17 @@ const (
 	statusError   = "error"
 )
 
+var (
+	maxGrafanaConfigSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaConfigSize.MessageWithPerTenantLimitConfig(
+		"Alertmanager configuration is too big, limit: %d bytes",
+		validation.AlertmanagerMaxGrafanaConfigSizeFlag,
+	)
+	maxGrafanaStateSizeMsgFormat = globalerror.AlertmanagerMaxGrafanaStateSize.MessageWithPerTenantLimitConfig(
+		"Alertmanager state is too big, limit: %d bytes",
+		validation.AlertmanagerMaxGrafanaStateSizeFlag,
+	)
+)
+
 type GrafanaAlertmanagerConfig struct {
 	Templates          map[string]string                    `json:"template_files"`
 	AlertmanagerConfig definition.PostableApiAlertingConfig `json:"alertmanager_config"`
@@ -49,6 +62,7 @@ type UserGrafanaConfig struct {
 	Default                   bool                      `json:"default"`
 	Promoted                  bool                      `json:"promoted"`
 	ExternalURL               string                    `json:"external_url"`
+	StaticHeaders             map[string]string         `json:"static_headers"`
 }
 
 func (gc *UserGrafanaConfig) Validate() error {
@@ -168,8 +182,27 @@ func (am *MultitenantAlertmanager) SetUserGrafanaState(w http.ResponseWriter, r 
 		return
 	}
 
-	payload, err := io.ReadAll(r.Body)
+	var input io.Reader
+	maxStateSize := am.limits.AlertmanagerMaxGrafanaStateSize(userID)
+	if maxStateSize > 0 {
+		input = http.MaxBytesReader(w, r.Body, int64(maxStateSize))
+	} else {
+		input = r.Body
+	}
+
+	payload, err := io.ReadAll(input)
 	if err != nil {
+		if maxBytesErr := (&http.MaxBytesError{}); errors.As(err, &maxBytesErr) {
+			msg := fmt.Sprintf(maxGrafanaStateSizeMsgFormat, maxStateSize)
+			level.Warn(logger).Log("msg", msg)
+			w.WriteHeader(http.StatusBadRequest)
+			util.WriteJSONResponse(w, errorResult{
+				Status: statusError,
+				Error:  msg,
+			})
+			return
+		}
+
 		level.Error(logger).Log("msg", errReadingState, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		util.WriteJSONResponse(w, errorResult{
@@ -293,6 +326,7 @@ func (am *MultitenantAlertmanager) GetUserGrafanaConfig(w http.ResponseWriter, r
 			Default:                   cfg.Default,
 			Promoted:                  cfg.Promoted,
 			ExternalURL:               cfg.ExternalUrl,
+			StaticHeaders:             cfg.StaticHeaders,
 		},
 	})
 }
@@ -307,8 +341,27 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	payload, err := io.ReadAll(r.Body)
+	var input io.Reader
+	maxConfigSize := am.limits.AlertmanagerMaxGrafanaConfigSize(userID)
+	if maxConfigSize > 0 {
+		input = http.MaxBytesReader(w, r.Body, int64(maxConfigSize))
+	} else {
+		input = r.Body
+	}
+
+	payload, err := io.ReadAll(input)
 	if err != nil {
+		if maxBytesErr := (&http.MaxBytesError{}); errors.As(err, &maxBytesErr) {
+			msg := fmt.Sprintf(maxGrafanaConfigSizeMsgFormat, maxConfigSize)
+			level.Warn(logger).Log("msg", msg)
+			w.WriteHeader(http.StatusBadRequest)
+			util.WriteJSONResponse(w, errorResult{
+				Status: statusError,
+				Error:  msg,
+			})
+			return
+		}
+
 		level.Error(logger).Log("msg", errReadingGrafanaConfig, "err", err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		util.WriteJSONResponse(w, errorResult{Status: statusError, Error: fmt.Sprintf("%s: %s", errReadingGrafanaConfig, err.Error())})
@@ -332,7 +385,7 @@ func (am *MultitenantAlertmanager) SetUserGrafanaConfig(w http.ResponseWriter, r
 		return
 	}
 
-	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL)
+	cfgDesc := alertspb.ToGrafanaProto(string(rawCfg), userID, cfg.Hash, cfg.CreatedAt, cfg.Default, cfg.Promoted, cfg.ExternalURL, cfg.StaticHeaders)
 	err = am.store.SetGrafanaAlertConfig(r.Context(), cfgDesc)
 	if err != nil {
 		level.Error(logger).Log("msg", errStoringGrafanaConfig, "err", err.Error())

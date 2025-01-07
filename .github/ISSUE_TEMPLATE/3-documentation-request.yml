@@ -1,0 +1,46 @@
+
+name: Documentation request
+description: Ask for documentation to be added, changed, or removed
+title: "Docs: "
+labels: ["type/docs"]
+body:
+- type: textarea
+  id: what
+  attributes:
+    label: Is your documentation request related to a feature? If so, which one?
+    placeholder: A clear and concise description of the feature that you were trying to use, and what you were trying to achieve.
+  validations:
+    required: true
+
+- type: textarea
+  id: solution
+  attributes:
+    label: What is the solution that you would like or the expected outcome?
+    placeholder: A clear and concise description of the documentation that you want to add, change, or remove.
+  validations:
+    required: true
+
+- type: textarea
+  id: expectations
+  attributes:
+    label: What did you think would happen?
+    placeholder: A clear and concise description of what you expected to happen.
+  validations:
+    required: true
+
+- type: textarea
+  id: environment
+  attributes:
+    label: What was your environment?
+    description: When sharing the configs, make sure you have redacted any credentials or other sensitive details.
+    placeholder: Infrastructure (e.g., Kubernetes, bare-metal, laptop), deployment tool (e.g., helm, jsonnet), versions (e.g. Mimir 2.14, Kubernetes 1.30, Helm 3.16).
+  validations:
+    required: true
+
+- type: textarea
+  id: context
+  attributes:
+    label: Any additional context to share?
+    placeholder: Add any other context or screenshots about the feature request here.
+  validations:
+    required: false

@@ -29,6 +29,7 @@ message PrometheusResponse {
   string Error = 4 [(gogoproto.jsontag) = "error,omitempty"];
   repeated PrometheusHeader Headers = 5 [(gogoproto.jsontag) = "-"];
   repeated string Warnings = 6 [(gogoproto.jsontag) = "warnings,omitempty"];
+  repeated string Infos = 7 [(gogoproto.jsontag) = "infos,omitempty"];
 }
 
 message PrometheusData {
@@ -40,6 +41,12 @@ message SampleStream {
   repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "metric", (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
   repeated cortexpb.Sample samples = 2 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "values"];
   repeated cortexpb.FloatHistogramPair histograms = 3 [(gogoproto.nullable) = false, (gogoproto.jsontag) = "histograms"];
+}
+
+message CachedError {
+  string key = 1 [(gogoproto.jsontag) = "key"];
+  string errorType = 2 [(gogoproto.jsontag) = "errorType"];
+  string errorMessage = 3 [(gogoproto.jsontag) = "errorMessage"];
 }
 
 message CachedResponse  {

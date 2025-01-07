@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -25,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -120,6 +122,7 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
 	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
+
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -129,14 +132,27 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		sets = append(sets, newTimeSeriesSeriesSet(results.Timeseries))
 	}
 
+	var chunkInfo *chunkinfologger.ChunkInfoLogger
+	if chunkinfologger.IsChunkInfoLoggingEnabled(ctx) {
+		traceID, spanID, _ := tracing.ExtractTraceSpanID(ctx)
+		chunkInfo = chunkinfologger.NewChunkInfoLogger("ingester message", traceID, spanID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
+		chunkInfo.LogSelect("ingester", minT, maxT)
+	}
+
 	serieses := make([]storage.Series, 0, len(results.Chunkseries))
-	for _, result := range results.Chunkseries {
+	for i, result := range results.Chunkseries {
+		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
+
+		if chunkInfo != nil {
+			chunkInfo.StartSeries(ls)
+			chunkInfo.FormatIngesterChunkInfo(result.FromIngesterId, result.Chunks)
+			chunkInfo.EndSeries(i == len(results.Chunkseries)-1)
+		}
+
 		// Sometimes the ingester can send series that have no data.
 		if len(result.Chunks) == 0 {
 			continue
 		}
-
-		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
 
 		chunks, err := client.FromChunks(ls, result.Chunks)
 		if err != nil {
@@ -160,11 +176,17 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 			queryStats:   stats.FromContext(ctx),
 		}
 
-		for _, s := range results.StreamingSeries {
+		if chunkInfo != nil {
+			chunkInfo.SetMsg("ingester streaming")
+		}
+
+		for i, s := range results.StreamingSeries {
 			streamingSeries = append(streamingSeries, &streamingChunkSeries{
-				labels:  s.Labels,
-				sources: s.Sources,
-				context: streamingChunkSeriesConfig,
+				labels:    s.Labels,
+				sources:   s.Sources,
+				context:   streamingChunkSeriesConfig,
+				lastOne:   i == len(results.StreamingSeries)-1,
+				chunkInfo: chunkInfo,
 			})
 		}
 
@@ -178,10 +200,10 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		return sets[0]
 	}
 	// Sets need to be sorted. Both series.NewConcreteSeriesSetFromUnsortedSeries and newTimeSeriesSeriesSet take care of that.
-	return storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+	return storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
 }
 
-func (q *distributorQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *distributorQuerier) LabelValues(ctx context.Context, name string, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelValues")
 	defer spanLog.Span.Finish()
 
@@ -204,7 +226,7 @@ func (q *distributorQuerier) LabelValues(ctx context.Context, name string, match
 	return lvs, nil, err
 }
 
-func (q *distributorQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *distributorQuerier) LabelNames(ctx context.Context, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelNames")
 	defer spanLog.Span.Finish()
 

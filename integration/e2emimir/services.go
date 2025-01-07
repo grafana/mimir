@@ -123,7 +123,7 @@ func NewQuerier(name string, consulAddress string, flags map[string]string, opti
 			"-querier.frontend-client.backoff-min-period": "100ms",
 			"-querier.frontend-client.backoff-max-period": "100ms",
 			"-querier.frontend-client.backoff-retries":    "1",
-			"-querier.max-concurrent":                     "1",
+			"-querier.max-concurrent":                     "4",
 			// Quickly detect query-frontend and query-scheduler when running it.
 			"-querier.dns-lookup-period": "1s",
 			// Store-gateway ring backend.
@@ -178,7 +178,9 @@ func getBinaryNameForBackwardsCompatibility() string {
 	return "mimir"
 }
 
-func NewQueryFrontend(name string, flags map[string]string, options ...Option) *MimirService {
+// NewQueryFrontend returns a new query-frontend instance. The consulAddress is required to be a valid
+// consul address when Mimir is configured with ingest storage enabled, otherwise it's ignored.
+func NewQueryFrontend(name string, consulAddress string, flags map[string]string, options ...Option) *MimirService {
 	return newMimirServiceFromOptions(
 		name,
 		map[string]string{
@@ -186,8 +188,9 @@ func NewQueryFrontend(name string, flags map[string]string, options ...Option) *
 			"-log.level": "warn",
 			// Quickly detect query-scheduler when running it.
 			"-query-frontend.scheduler-dns-lookup-period": "1s",
-			// Always exercise remote read limits in integration tests.
-			"-query-frontend.remote-read-limits-enabled": "true",
+			// Configure the partitions ring backend.
+			"-ingester.partition-ring.store":           "consul",
+			"-ingester.partition-ring.consul.hostname": consulAddress,
 		},
 		flags,
 		options...,

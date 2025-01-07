@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: imjasonh/setup-crane@v0.3
+      - uses: imjasonh/setup-crane@v0.4
 
       - name: Update/regenerate files
         id: update

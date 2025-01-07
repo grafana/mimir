@@ -1,3 +1,3 @@
-{{- if .Values.ruler.enabled -}}
+{{- if and .Values.ruler.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 {{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "ruler" "memberlist" true) }}
 {{- end -}}

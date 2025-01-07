@@ -29,6 +29,16 @@ func (p *BaseFailurePolicy[R]) HandleErrors(errs ...error) {
 	p.errorsChecked = true
 }
 
+func (p *BaseFailurePolicy[R]) HandleErrorTypes(errs ...any) {
+	for _, target := range errs {
+		t := target
+		p.failureConditions = append(p.failureConditions, func(r R, actualErr error) bool {
+			return util.ErrorTypesMatch(actualErr, t)
+		})
+	}
+	p.errorsChecked = true
+}
+
 func (p *BaseFailurePolicy[R]) HandleResult(result R) {
 	p.failureConditions = append(p.failureConditions, func(r R, err error) bool {
 		return reflect.DeepEqual(r, result)
@@ -99,6 +109,15 @@ func (c *BaseAbortablePolicy[R]) AbortOnErrors(errs ...error) {
 		t := target
 		c.abortConditions = append(c.abortConditions, func(result R, actualErr error) bool {
 			return errors.Is(actualErr, t)
+		})
+	}
+}
+
+func (c *BaseAbortablePolicy[R]) AbortOnErrorTypes(errs ...any) {
+	for _, target := range errs {
+		t := target
+		c.abortConditions = append(c.abortConditions, func(result R, actualErr error) bool {
+			return util.ErrorTypesMatch(actualErr, t)
 		})
 	}
 }

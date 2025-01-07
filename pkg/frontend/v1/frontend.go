@@ -123,11 +123,9 @@ func New(cfg Config, limits Limits, log log.Logger, registerer prometheus.Regist
 		},
 		[]string{"query_component"},
 	)
-	// additional queue dimensions not used in v1/frontend
 	f.requestQueue, err = queue.NewRequestQueue(
 		log,
 		cfg.MaxOutstandingPerTenant,
-		false,
 		cfg.QuerierForgetDelay,
 		f.queueLength,
 		f.discardedRequests,
@@ -231,17 +229,22 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 		return err
 	}
 
-	f.requestQueue.SubmitRegisterQuerierConnection(querierID)
-	defer f.requestQueue.SubmitUnregisterQuerierConnection(querierID)
+	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(server.Context(), querierID)
+	err = f.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn)
+	if err != nil {
+		return err
+	}
+	defer f.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
 
-	lastTenantIndex := queue.FirstTenant()
+	lastTenantIdx := queue.FirstTenant()
 
 	for {
-		reqWrapper, idx, err := f.requestQueue.WaitForRequestForQuerier(server.Context(), lastTenantIndex, querierID)
+		dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
+		reqWrapper, idx, err := f.requestQueue.AwaitRequestForQuerier(dequeueReq)
 		if err != nil {
 			return err
 		}
-		lastTenantIndex = idx
+		lastTenantIdx = idx
 
 		req := reqWrapper.(*request)
 
@@ -251,22 +254,22 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 
 		/*
 		  We want to dequeue the next unexpired request from the chosen tenant queue.
-		  The chance of choosing a particular tenant for dequeueing is (1/active_tenants).
+		  The chance of choosing a particular tenant for dequeuing is (1/active_tenants).
 		  This is problematic under load, especially with other middleware enabled such as
 		  querier.split-by-interval, where one request may fan out into many.
 		  If expired requests aren't exhausted before checking another tenant, it would take
 		  n_active_tenants * n_expired_requests_at_front_of_queue requests being processed
 		  before an active request was handled for the tenant in question.
 		  If this tenant meanwhile continued to queue requests,
-		  it's possible that it's own queue would perpetually contain only expired requests.
+		  it's possible that its own queue would perpetually contain only expired requests.
 		*/
 		if req.originalCtx.Err() != nil {
-			lastTenantIndex = lastTenantIndex.ReuseLastTenant()
+			lastTenantIdx = lastTenantIdx.ReuseLastTenant()
 			continue
 		}
 
 		// Handle the stream sending & receiving on a goroutine so we can
-		// monitoring the contexts in a select and cancel things appropriately.
+		// monitor the contexts in a select and cancel things appropriately.
 		resps := make(chan *frontendv1pb.ClientToFrontend, 1)
 		errs := make(chan error, 1)
 		go func() {
@@ -315,9 +318,9 @@ func (f *Frontend) Process(server frontendv1pb.Frontend_ProcessServer) error {
 	}
 }
 
-func (f *Frontend) NotifyClientShutdown(_ context.Context, req *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
+func (f *Frontend) NotifyClientShutdown(ctx context.Context, req *frontendv1pb.NotifyClientShutdownRequest) (*frontendv1pb.NotifyClientShutdownResponse, error) {
 	level.Info(f.log).Log("msg", "received shutdown notification from querier", "querier", req.GetClientID())
-	f.requestQueue.SubmitNotifyQuerierShutdown(req.GetClientID())
+	f.requestQueue.SubmitNotifyQuerierShutdown(ctx, req.GetClientID())
 
 	return &frontendv1pb.NotifyClientShutdownResponse{}, nil
 }

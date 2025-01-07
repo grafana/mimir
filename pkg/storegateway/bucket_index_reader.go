@@ -36,7 +36,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/util"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -455,7 +454,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				"labels_key", cachedLabelsKey,
 				"block", r.block.meta.ULID,
 				"bytes_len", len(b),
-				"bytes_head_hex", hex.EncodeToString(b[:util_math.Min(8, len(b))]),
+				"bytes_head_hex", hex.EncodeToString(b[:min(8, len(b))]),
 			)
 		}
 

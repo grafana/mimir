@@ -9,6 +9,8 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
+
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 func NewSeriesResponse(series *Series) *SeriesResponse {
@@ -130,4 +132,17 @@ func MatchersToPromMatchers(ms ...LabelMatcher) ([]*labels.Matcher, error) {
 		res = append(res, m)
 	}
 	return res, nil
+}
+
+func (c AggrChunk) GetChunkEncoding() (chunk.Encoding, bool) {
+	switch c.Raw.Type {
+	case Chunk_XOR:
+		return chunk.PrometheusXorChunk, true
+	case Chunk_Histogram:
+		return chunk.PrometheusHistogramChunk, true
+	case Chunk_FloatHistogram:
+		return chunk.PrometheusFloatHistogramChunk, true
+	default:
+		return 0, false
+	}
 }

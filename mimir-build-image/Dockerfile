@@ -3,12 +3,16 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM registry.k8s.io/kustomize/kustomize:v5.4.1 as kustomize
+FROM registry.k8s.io/kustomize/kustomize:v5.4.3 as kustomize
 FROM alpine/helm:3.14.4 as helm
-FROM golang:1.22.4-bookworm
+FROM golang:1.23.2-bookworm
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
+# Override toolchain directive in go.mod, to ensure the image's Go version is used.
+# Be aware that the official Go Dockerfiles already do this, but let's be explicit.
+# https://github.com/docker-library/golang/issues/472
+ENV GOTOOLCHAIN=local
 RUN apt-get update && apt-get install -y curl python3-requests python3-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck libpcap-dev $SKOPEO_DEPS && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 RUN go install golang.org/x/tools/cmd/goimports@3fce476f0a782aeb5034d592c189e63be4ba6c9e
@@ -35,7 +39,7 @@ RUN GOARCH=$(go env GOARCH) && \
     curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
     chmod a+x /usr/bin/tk
 
-RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v1.59.1
+RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v1.60.2
 
 ENV SKOPEO_VERSION=v1.15.1
 RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers/skopeo /go/src/github.com/containers/skopeo && \

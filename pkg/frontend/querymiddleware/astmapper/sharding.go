@@ -18,39 +18,71 @@ import (
 )
 
 // NewSharding creates a new query sharding mapper.
-func NewSharding(ctx context.Context, shards int, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
-	shardSummer, err := newShardSummer(ctx, shards, vectorSquasher, logger, stats)
-	if err != nil {
-		return nil, err
-	}
+func NewSharding(shardSummer ASTMapper) ASTMapper {
 	subtreeFolder := newSubtreeFolder()
 	return NewMultiMapper(
 		shardSummer,
 		subtreeFolder,
-	), nil
+	)
 }
 
-type squasher = func(...parser.Expr) (parser.Expr, error)
+type Squasher = func(...EmbeddedQuery) (parser.Expr, error)
+
+type ShardLabeller interface {
+	GetLabelMatcher(shard int) (*labels.Matcher, error)
+	GetParams(shard int) map[string]string
+}
+
+// queryShardLabeller implements ShardLabeller for query sharding.
+type queryShardLabeller struct {
+	shards int
+}
+
+func newQueryShardLabeller(shards int) ShardLabeller {
+	return &queryShardLabeller{shards: shards}
+}
+
+func (lbl *queryShardLabeller) GetLabelMatcher(shard int) (*labels.Matcher, error) {
+	return labels.NewMatcher(labels.MatchEqual, sharding.ShardLabel, sharding.ShardSelector{ShardIndex: uint64(shard), ShardCount: uint64(lbl.shards)}.LabelValue())
+}
+
+func (lbl *queryShardLabeller) GetParams(_ int) map[string]string {
+	return nil
+}
+
+// NewQueryShardSummer instantiates an ASTMapper which will fan out sum queries by shard.
+func NewQueryShardSummer(ctx context.Context, shards int, squasher Squasher, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
+	return NewShardSummerWithLabeller(ctx, shards, squasher, logger, stats, newQueryShardLabeller(shards))
+}
+
+func NewShardSummerWithLabeller(ctx context.Context, shards int, squasher Squasher, logger log.Logger, stats *MapperStats, labeller ShardLabeller) (ASTMapper, error) {
+	summer, err := newShardSummer(ctx, shards, squasher, logger, stats, labeller)
+	if err != nil {
+		return nil, err
+	}
+	return NewASTExprMapper(summer), nil
+}
 
 type shardSummer struct {
 	ctx context.Context
 
 	shards       int
 	currentShard *int
-	squash       squasher
+	squash       Squasher
 	logger       log.Logger
 	stats        *MapperStats
+
+	shardLabeller ShardLabeller
 
 	canShardAllVectorSelectorsCache map[string]bool
 }
 
-// newShardSummer instantiates an ASTMapper which will fan out sum queries by shard
-func newShardSummer(ctx context.Context, shards int, squasher squasher, logger log.Logger, stats *MapperStats) (ASTMapper, error) {
+func newShardSummer(ctx context.Context, shards int, squasher Squasher, logger log.Logger, stats *MapperStats, shardLabeller ShardLabeller) (*shardSummer, error) {
 	if squasher == nil {
 		return nil, errors.Errorf("squasher required and not passed")
 	}
 
-	return NewASTExprMapper(&shardSummer{
+	return &shardSummer{
 		ctx: ctx,
 
 		shards:       shards,
@@ -59,8 +91,10 @@ func newShardSummer(ctx context.Context, shards int, squasher squasher, logger l
 		logger:       logger,
 		stats:        stats,
 
+		shardLabeller: shardLabeller,
+
 		canShardAllVectorSelectorsCache: make(map[string]bool),
-	}), nil
+	}, nil
 }
 
 // Clone returns a clone of shardSummer with stats and current shard index reset to default.
@@ -98,7 +132,7 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 
 	case *parser.VectorSelector:
 		if summer.currentShard != nil {
-			mapped, err := shardVectorSelector(*summer.currentShard, summer.shards, e)
+			mapped, err := summer.shardVectorSelector(e)
 			return mapped, true, err
 		}
 		return e, true, nil
@@ -217,7 +251,7 @@ func (summer *shardSummer) shardAndSquashFuncCall(expr *parser.Call) (mapped par
 		To find the most outer matrix/vector selector, we need to traverse the AST by using each function arguments.
 	*/
 
-	children := make([]parser.Expr, 0, summer.shards)
+	children := make([]EmbeddedQuery, 0, summer.shards)
 
 	// Create sub-query for each shard.
 	for i := 0; i < summer.shards; i++ {
@@ -248,7 +282,7 @@ func (summer *shardSummer) shardAndSquashFuncCall(expr *parser.Call) (mapped par
 			}
 		}
 
-		children = append(children, clonedCall)
+		children = append(children, NewEmbeddedQuery(clonedCall.String(), summer.shardLabeller.GetParams(i)))
 	}
 
 	// Update stats.
@@ -443,7 +477,7 @@ func (summer *shardSummer) shardAvg(expr *parser.AggregateExpr) (result parser.E
 // queries, where N is the number of shards and each sub-query queries a different shard
 // with the given "op" aggregation operation.
 func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExpr, op parser.ItemType) (parser.Expr, error) {
-	children := make([]parser.Expr, 0, summer.shards)
+	children := make([]EmbeddedQuery, 0, summer.shards)
 
 	// Create sub-query for each shard.
 	for i := 0; i < summer.shards; i++ {
@@ -455,12 +489,13 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 		// Create the child expression, which runs the given aggregation operation
 		// on a single shard. We need to preserve the grouping as it was
 		// in the original one.
-		children = append(children, &parser.AggregateExpr{
+		aggExpr := &parser.AggregateExpr{
 			Op:       op,
 			Expr:     sharded,
 			Grouping: expr.Grouping,
 			Without:  expr.Without,
-		})
+		}
+		children = append(children, NewEmbeddedQuery(aggExpr.String(), summer.shardLabeller.GetParams(i)))
 	}
 
 	// Update stats.
@@ -496,7 +531,7 @@ func (summer *shardSummer) shardAndSquashBinOp(expr *parser.BinaryExpr) (parser.
 		return nil, fmt.Errorf("tried to shard a bin op with vector matching: %s", expr)
 	}
 
-	children := make([]parser.Expr, 0, summer.shards)
+	children := make([]EmbeddedQuery, 0, summer.shards)
 	// Create sub-query for each shard.
 	for i := 0; i < summer.shards; i++ {
 		shardedLHS, err := cloneAndMap(NewASTExprMapper(summer.CopyWithCurShard(i)), expr.LHS)
@@ -508,12 +543,13 @@ func (summer *shardSummer) shardAndSquashBinOp(expr *parser.BinaryExpr) (parser.
 			return nil, err
 		}
 
-		children = append(children, &parser.BinaryExpr{
+		binExpr := &parser.BinaryExpr{
 			LHS:        shardedLHS,
 			Op:         expr.Op,
 			RHS:        shardedRHS,
 			ReturnBool: expr.ReturnBool,
-		})
+		}
+		children = append(children, NewEmbeddedQuery(binExpr.String(), summer.shardLabeller.GetParams(i)))
 	}
 
 	// Update stats.
@@ -522,10 +558,13 @@ func (summer *shardSummer) shardAndSquashBinOp(expr *parser.BinaryExpr) (parser.
 	return summer.squash(children...)
 }
 
-func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) (parser.Expr, error) {
-	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, sharding.ShardLabel, sharding.ShardSelector{ShardIndex: uint64(curshard), ShardCount: uint64(shards)}.LabelValue())
+func (summer *shardSummer) shardVectorSelector(selector *parser.VectorSelector) (parser.Expr, error) {
+	shardMatcher, err := summer.shardLabeller.GetLabelMatcher(*summer.currentShard)
 	if err != nil {
 		return nil, err
+	}
+	if shardMatcher == nil {
+		return selector, nil
 	}
 	return &parser.VectorSelector{
 		Name:                 selector.Name,

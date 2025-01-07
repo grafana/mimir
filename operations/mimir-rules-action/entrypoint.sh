@@ -39,15 +39,49 @@ if [ -z "${ACTION}" ]; then
   exit 1
 fi
 
+# Only one of the namespace selection flags can be provided to diff and sync actions.
+# If more than one selection is made, exit with an error.
+verifyAndConstructNamespaceSelection() {
+  NAMESPACE_SELECTIONS_COUNT=0
+
+  if [ -n "${NAMESPACES}" ]; then
+    NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
+    NAMESPACES_SELECTION="${NAMESPACES:+ --namespaces=${NAMESPACES}}"
+  fi
+  if [ -n "${NAMESPACES_REGEX}" ]; then
+    NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
+    NAMESPACES_SELECTION="${NAMESPACES_REGEX:+ --namespaces-regex=${NAMESPACES_REGEX}}"
+  fi
+  if [ -n "${IGNORED_NAMESPACES}" ]; then
+    NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
+    NAMESPACES_SELECTION="${IGNORED_NAMESPACES:+ --ignored-namespaces=${IGNORED_NAMESPACES}}"
+  fi
+  if [ -n "${IGNORED_NAMESPACES_REGEX}" ]; then
+    NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
+    NAMESPACES_SELECTION="${IGNORED_NAMESPACES_REGEX:+ --ignored-namespaces-regex=${IGNORED_NAMESPACES_REGEX}}"
+  fi
+
+  if [ "${NAMESPACE_SELECTIONS_COUNT}" -gt 1 ]; then
+    err "Only one of the namespace selection flags can be specified."
+    exit 1
+  fi
+}
+
 case "${ACTION}" in
   "$SYNC_CMD")
     verifyTenantAndAddress
-    OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" ${NAMESPACES:+ --namespaces=${NAMESPACES}} "$@")
+    verifyAndConstructNamespaceSelection
+    # Don't quote $NAMESPACES_SELECTION since we don't want an empty string when it's not set
+    # shellcheck disable=SC2086
+    OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" $NAMESPACES_SELECTION "$@")
     STATUS=$?
     ;;
   "$DIFF_CMD")
     verifyTenantAndAddress
-    OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" ${NAMESPACES:+ --namespaces=${NAMESPACES}} --disable-color "$@")
+    verifyAndConstructNamespaceSelection
+    # Don't quote $NAMESPACES_SELECTION since we don't want an empty string when it's not set
+    # shellcheck disable=SC2086
+    OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" $NAMESPACES_SELECTION --disable-color "$@")
     STATUS=$?
     ;;
   "$LINT_CMD")
@@ -72,11 +106,11 @@ case "${ACTION}" in
     ;;
 esac
 
-SINGLE_LINE_OUTPUT=$(echo "${OUTPUT}" | awk 'BEGIN { RS="%0A" } { gsub(/%/, "%25"); gsub(/\r/, "%0D"); gsub(/\n/, "%0A") } { print }')
-echo "detailed=${SINGLE_LINE_OUTPUT}" >> $GITHUB_OUTPUT
+{ echo "detailed<<EOF"; echo "$OUTPUT"; echo "EOF"; } >> "$GITHUB_OUTPUT"
 SUMMARY=$(echo "${OUTPUT}" | grep Summary)
-echo 'summary<<ENDOFSUMMARY' >> $GITHUB_OUTPUT
-echo "${SUMMARY}" >> $GITHUB_OUTPUT
-echo 'ENDOFSUMMARY' >> $GITHUB_OUTPUT
+# shellcheck disable=SC2129
+echo 'summary<<ENDOFSUMMARY' >> "${GITHUB_OUTPUT}"
+echo "${SUMMARY}" >> "${GITHUB_OUTPUT}"
+echo 'ENDOFSUMMARY' >> "${GITHUB_OUTPUT}"
 
 exit $STATUS

@@ -18,6 +18,7 @@ package prometheusremotewrite
 
 import (
 	"context"
+	"log/slog"
 	"math"
 
 	"github.com/prometheus/common/model"
@@ -39,7 +40,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 		labels := createAttributes(
 			resource,
 			pt.Attributes(),
-			settings.ExternalLabels,
+			settings,
 			nil,
 			true,
 			model.MetricNameLabel,
@@ -65,17 +66,19 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 }
 
 func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string) error {
+	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, logger *slog.Logger) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
 		}
 
 		pt := dataPoints.At(x)
+		timestamp := convertTimeStamp(pt.Timestamp())
+		startTimestampMs := convertTimeStamp(pt.StartTimestamp())
 		lbls := createAttributes(
 			resource,
 			pt.Attributes(),
-			settings.ExternalLabels,
+			settings,
 			nil,
 			true,
 			model.MetricNameLabel,
@@ -83,7 +86,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		)
 		sample := &prompb.Sample{
 			// convert ns to ms
-			Timestamp: convertTimeStamp(pt.Timestamp()),
+			Timestamp: timestamp,
 		}
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
@@ -93,6 +96,10 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 		if pt.Flags().NoRecordedValue() {
 			sample.Value = math.Float64frombits(value.StaleNaN)
+		}
+		isMonotonic := metric.Sum().IsMonotonic()
+		if isMonotonic {
+			c.handleStartTime(startTimestampMs, timestamp, lbls, settings, "sum", sample.Value, logger)
 		}
 		ts := c.addSample(sample, lbls)
 		if ts != nil {
@@ -104,9 +111,8 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 		}
 
 		// add created time series if needed
-		if settings.ExportCreatedMetric && metric.Sum().IsMonotonic() {
-			startTimestamp := pt.StartTimestamp()
-			if startTimestamp == 0 {
+		if settings.ExportCreatedMetric && isMonotonic {
+			if startTimestampMs == 0 {
 				return nil
 			}
 
@@ -118,8 +124,9 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 					break
 				}
 			}
-			c.addTimeSeriesIfNeeded(createdLabels, startTimestamp, pt.Timestamp())
+			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
 		}
+		logger.Debug("addSumNumberDataPoints", "labels", labelsStringer(lbls), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "sum")
 	}
 
 	return nil

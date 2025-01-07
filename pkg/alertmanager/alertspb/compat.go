@@ -34,7 +34,7 @@ func ToProto(cfg string, templates map[string]string, user string) AlertConfigDe
 }
 
 // ToGrafanaProto transforms a Grafana Alertmanager config to a GrafanaAlertConfigDesc.
-func ToGrafanaProto(cfg, user, hash string, createdAtTimestamp int64, isDefault, isPromoted bool, externalURL string) GrafanaAlertConfigDesc {
+func ToGrafanaProto(cfg, user, hash string, createdAtTimestamp int64, isDefault, isPromoted bool, externalURL string, staticHeaders map[string]string) GrafanaAlertConfigDesc {
 	return GrafanaAlertConfigDesc{
 		User:               user,
 		RawConfig:          cfg,
@@ -43,6 +43,7 @@ func ToGrafanaProto(cfg, user, hash string, createdAtTimestamp int64, isDefault,
 		Default:            isDefault,
 		Promoted:           isPromoted,
 		ExternalUrl:        externalURL,
+		StaticHeaders:      staticHeaders,
 	}
 }
 

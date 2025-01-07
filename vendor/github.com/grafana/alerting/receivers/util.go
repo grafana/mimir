@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -39,6 +41,62 @@ type HTTPCfg struct {
 	Body     []byte
 	User     string
 	Password string
+}
+
+type TLSConfig struct {
+	CACertificate      string `json:"caCertificate,omitempty" yaml:"caCertificate,omitempty"`
+	ClientCertificate  string `json:"clientCertificate,omitempty" yaml:"clientCertificate,omitempty"`
+	ClientKey          string `json:"clientKey,omitempty" yaml:"clientKey,omitempty"`
+	InsecureSkipVerify bool   `json:"insecureSkipVerify,omitempty" yaml:"insecureSkipVerify,omitempty"`
+	ServerName         string
+}
+
+func (cfg *TLSConfig) ToCryptoTLSConfig() (*tls.Config, error) {
+	tlsCfg := &tls.Config{
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+		ServerName:         cfg.ServerName,
+	}
+
+	if cfg.CACertificate != "" {
+		tlsCfg.RootCAs = x509.NewCertPool()
+		ok := tlsCfg.RootCAs.AppendCertsFromPEM([]byte(cfg.CACertificate))
+		if !ok {
+			return nil, errors.New("Unable to use the provided CA certificate")
+		}
+	}
+
+	if cfg.ClientCertificate != "" || cfg.ClientKey != "" {
+		cert, err := tls.X509KeyPair([]byte(cfg.ClientCertificate), []byte(cfg.ClientKey))
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate: %w", err)
+		}
+		tlsCfg.Certificates = append(tlsCfg.Certificates, cert)
+	}
+
+	return tlsCfg, nil
+}
+
+// NewTLSClient creates a new HTTP client with the provided TLS configuration or with default settings.
+func NewTLSClient(tlsConfig *tls.Config) *http.Client {
+	nc := func(tlsConfig *tls.Config) *http.Client {
+		return &http.Client{
+			Timeout: time.Second * 30,
+			Transport: &http.Transport{
+				TLSClientConfig: tlsConfig,
+				Proxy:           http.ProxyFromEnvironment,
+				Dial: (&net.Dialer{
+					Timeout: 30 * time.Second,
+				}).Dial,
+				TLSHandshakeTimeout: 5 * time.Second,
+			},
+		}
+	}
+
+	if tlsConfig == nil {
+		return nc(&tls.Config{Renegotiation: tls.RenegotiateFreelyAsClient})
+	}
+
+	return nc(tlsConfig)
 }
 
 // SendHTTPRequest sends an HTTP request.

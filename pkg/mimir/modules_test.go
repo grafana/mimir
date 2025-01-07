@@ -159,11 +159,9 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 			require.NoError(t, err)
 
 			if testData.expectedInit {
-				assert.NotNil(t, mimir.RulerDirectStorage)
-				assert.NotNil(t, mimir.RulerCachedStorage)
+				assert.NotNil(t, mimir.RulerStorage)
 			} else {
-				assert.Nil(t, mimir.RulerDirectStorage)
-				assert.Nil(t, mimir.RulerCachedStorage)
+				assert.Nil(t, mimir.RulerStorage)
 			}
 		})
 	}
@@ -195,6 +193,7 @@ func TestMultiKVSetup(t *testing.T) {
 
 		Distributor: func(t *testing.T, c Config) {
 			require.NotNil(t, c.Distributor.DistributorRing.Common.KVStore.Multi.ConfigProvider)
+			require.NotNil(t, c.Distributor.HATrackerConfig.KVStore.MemberlistKV)
 			require.NotNil(t, c.Ingester.IngesterRing.KVStore.Multi.ConfigProvider)
 			require.NotNil(t, c.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider)
 		},

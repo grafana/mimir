@@ -526,7 +526,16 @@ func SaramaHasher(hashFn func([]byte) uint32) PartitionerHasher {
 //
 // In short, to *exactly* match the Sarama defaults, use the following:
 //
-//	kgo.StickyKeyPartitioner(kgo.SaramaCompatHasher(fnv.New32a()))
+//	kgo.StickyKeyPartitioner(kgo.SaramaCompatHasher(fnv32a))
+//
+// Where fnv32a is a function returning a new 32 bit fnv-1a hasher.
+//
+//	func fnv32a(b []byte) uint32 {
+//		h := fnv.New32a()
+//		h.Reset()
+//		h.Write(b)
+//		return h.Sum32()
+//	}
 func SaramaCompatHasher(hashFn func([]byte) uint32) PartitionerHasher {
 	return func(key []byte, n int) int {
 		p := int32(hashFn(key)) % int32(n)

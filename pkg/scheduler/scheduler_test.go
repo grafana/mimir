@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 }
 
 func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedulerpb.SchedulerForFrontendClient, schedulerpb.SchedulerForQuerierClient) {
-	cfg := Config{AdditionalQueryQueueDimensionsEnabled: true}
+	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.MaxOutstandingPerTenant = testMaxOutstandingPerTenant
 

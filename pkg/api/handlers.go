@@ -37,6 +37,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -249,7 +251,7 @@ func NewQuerierHandler(
 
 	const (
 		remoteWriteEnabled = false
-		oltpEnabled        = false
+		otlpEnabled        = false
 	)
 
 	api := v1.NewAPI(
@@ -267,19 +269,24 @@ func NewQuerierHandler(
 		nil,   // Only needed for admin APIs.
 		"",    // This is for snapshots, which is disabled when admin APIs are disabled. Hence empty.
 		false, // Disable admin APIs.
-		logger,
+		util_log.SlogFromGoKit(logger),
 		func(context.Context) v1.RulesRetriever { return &querier.DummyRulesRetriever{} },
 		0, 0, 0, // Remote read samples and concurrency limit.
 		false, // Not an agent.
 		regexp.MustCompile(".*"),
 		func() (v1.RuntimeInfo, error) { return v1.RuntimeInfo{}, errors.New("not implemented") },
 		&v1.PrometheusVersion{},
+		nil,
+		nil,
 		// This is used for the stats API which we should not support. Or find other ways to.
 		prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { return nil, nil }),
 		reg,
-		nil,
+		querier.StatsRenderer,
 		remoteWriteEnabled,
-		oltpEnabled,
+		nil,
+		otlpEnabled,
+		true,
+		0,
 	)
 
 	api.InstallCodec(protobufCodec{})
@@ -287,7 +294,7 @@ func NewQuerierHandler(
 	router := mux.NewRouter()
 	routeInjector := middleware.RouteInjector{RouteMatcher: router}
 	fallbackInjector := compat.EngineFallbackInjector{}
-	router.Use(routeInjector.Wrap, fallbackInjector.Wrap)
+	router.Use(routeInjector.Wrap, fallbackInjector.Wrap, chunkinfologger.Middleware().Wrap)
 
 	// Use a separate metric for the querier in order to differentiate requests from the query-frontend when
 	// running Mimir in monolithic mode.

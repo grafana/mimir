@@ -5,7 +5,6 @@ package ingest
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 	"sync"
 	"time"
@@ -17,8 +16,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/plugin/kprom"
-	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -40,6 +37,8 @@ const (
 	// in the worst case scenario, which is expected to be way above the actual one.
 	maxProducerRecordDataBytesLimit = producerBatchMaxBytes - 16384
 	minProducerRecordDataBytesLimit = 1024 * 1024
+
+	writerMetricsPrefix = "cortex_ingest_storage_writer_"
 )
 
 var (
@@ -62,7 +61,7 @@ type Writer struct {
 	// We support multiple Kafka clients to better parallelize the workload. The number of
 	// clients is fixed during the Writer lifecycle, but they're initialised lazily.
 	writersMx sync.RWMutex
-	writers   []*kgo.Client
+	writers   []*KafkaProducer
 
 	// Metrics.
 	writeLatency      prometheus.Histogram
@@ -78,7 +77,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		kafkaCfg:                   kafkaCfg,
 		logger:                     logger,
 		registerer:                 reg,
-		writers:                    make([]*kgo.Client, kafkaCfg.WriteClients),
+		writers:                    make([]*KafkaProducer, kafkaCfg.WriteClients),
 		maxInflightProduceRequests: 20,
 
 		// Metrics.
@@ -108,7 +107,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 
 func (w *Writer) starting(_ context.Context) error {
 	if w.kafkaCfg.AutoCreateTopicEnabled {
-		setDefaultNumberOfPartitionsForAutocreatedTopics(w.kafkaCfg, w.logger)
+		return CreateTopic(w.kafkaCfg, w.logger)
 	}
 	return nil
 }
@@ -156,7 +155,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	// visibility over this metric if records are rejected by Kafka because of MESSAGE_TOO_LARGE).
 	w.recordsPerRequest.Observe(float64(len(records)))
 
-	res := w.produceSync(ctx, writer, records)
+	res := writer.ProduceSync(ctx, records)
 
 	// Track latency only for successfully written records.
 	if count, sizeBytes := successfulProduceRecordsStats(res); count > 0 {
@@ -175,46 +174,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	return nil
 }
 
-// produceSync produces records to Kafka and returns once all records have been successfully committed,
-// or an error occurred.
-func (w *Writer) produceSync(ctx context.Context, client *kgo.Client, records []*kgo.Record) kgo.ProduceResults {
-	var (
-		remaining = atomic.NewInt64(int64(len(records)))
-		done      = make(chan struct{})
-		resMx     sync.Mutex
-		res       kgo.ProduceResults
-	)
-
-	for _, record := range records {
-		// We use a new context to avoid that other Produce() may be cancelled when this call's context is
-		// canceled. It's important to note that cancelling the context passed to Produce() doesn't actually
-		// prevent the data to be sent over the wire (because it's never removed from the buffer) but in some
-		// cases may cause all requests to fail with context cancelled.
-		client.Produce(context.WithoutCancel(ctx), record, func(r *kgo.Record, err error) {
-			resMx.Lock()
-			res = append(res, kgo.ProduceResult{Record: r, Err: err})
-			resMx.Unlock()
-
-			// In case of error we'll wait for all responses anyway before returning from produceSync().
-			// It allows us to keep code easier, given we don't expect this function to be frequently
-			// called with multiple records.
-			if remaining.Dec() == 0 {
-				close(done)
-			}
-		})
-	}
-
-	// Wait for a response or until the context has done.
-	select {
-	case <-ctx.Done():
-		return kgo.ProduceResults{{Err: context.Cause(ctx)}}
-	case <-done:
-		// Once we're done, it's guaranteed that no more results will be appended, so we can safely return it.
-		return res
-	}
-}
-
-func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*kgo.Client, error) {
+func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, error) {
 	// Check if the writer has already been created.
 	w.writersMx.RLock()
 	clientID := int(partitionID) % len(w.writers)
@@ -233,66 +193,23 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*kgo.Client, err
 	if writer != nil {
 		return writer, nil
 	}
-	newWriter, err := w.newKafkaWriter(clientID)
+
+	// Add the client ID to metrics so that they don't clash when the Writer is configured
+	// to run with multiple Kafka clients.
+	clientReg := prometheus.WrapRegistererWithPrefix(writerMetricsPrefix,
+		prometheus.WrapRegistererWith(prometheus.Labels{"client_id": strconv.Itoa(clientID)}, w.registerer))
+
+	// Add the client ID to logger so that we can easily distinguish Kafka clients in logs.
+	clientLogger := log.With(w.logger, "client_id", clientID)
+
+	newClient, err := NewKafkaWriterClient(w.kafkaCfg, w.maxInflightProduceRequests, clientLogger, clientReg)
 	if err != nil {
 		return nil, err
 	}
+
+	newWriter := NewKafkaProducer(newClient, w.kafkaCfg.ProducerMaxBufferedBytes, clientReg)
 	w.writers[clientID] = newWriter
 	return newWriter, nil
-}
-
-// newKafkaWriter creates a new Kafka client.
-func (w *Writer) newKafkaWriter(clientID int) (*kgo.Client, error) {
-	logger := log.With(w.logger, "client_id", clientID)
-
-	// Do not export the client ID, because we use it to specify options to the backend.
-	metrics := kprom.NewMetrics("cortex_ingest_storage_writer",
-		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"client_id": strconv.Itoa(clientID)}, w.registerer)),
-		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))
-
-	opts := append(
-		commonKafkaClientOptions(w.kafkaCfg, metrics, logger),
-		kgo.RequiredAcks(kgo.AllISRAcks()),
-		kgo.DefaultProduceTopic(w.kafkaCfg.Topic),
-
-		// We set the partition field in each record.
-		kgo.RecordPartitioner(kgo.ManualPartitioner()),
-
-		// Set the upper bounds the size of a record batch.
-		kgo.ProducerBatchMaxBytes(producerBatchMaxBytes),
-
-		// By default, the Kafka client allows 1 Produce in-flight request per broker. Disabling write idempotency
-		// (which we don't need), we can increase the max number of in-flight Produce requests per broker. A higher
-		// number of in-flight requests, in addition to short buffering ("linger") in client side before firing the
-		// next Produce request allows us to reduce the end-to-end latency.
-		//
-		// The result of the multiplication of producer linger and max in-flight requests should match the maximum
-		// Produce latency expected by the Kafka backend in a steady state. For example, 50ms * 20 requests = 1s,
-		// which means the Kafka client will keep issuing a Produce request every 50ms as far as the Kafka backend
-		// doesn't take longer than 1s to process them (if it takes longer, the client will buffer data and stop
-		// issuing new Produce requests until some previous ones complete).
-		kgo.DisableIdempotentWrite(),
-		kgo.ProducerLinger(50*time.Millisecond),
-		kgo.MaxProduceRequestsInflightPerBroker(w.maxInflightProduceRequests),
-
-		// Unlimited number of Produce retries but a deadline on the max time a record can take to be delivered.
-		// With the default config it would retry infinitely.
-		//
-		// Details of the involved timeouts:
-		// - RecordDeliveryTimeout: how long a Kafka client Produce() call can take for a given record. The overhead
-		//   timeout is NOT applied.
-		// - ProduceRequestTimeout: how long to wait for the response to the Produce request (the Kafka protocol message)
-		//   after being sent on the network. The actual timeout is increased by the configured overhead.
-		//
-		// When a Produce request to Kafka fail, the client will retry up until the RecordDeliveryTimeout is reached.
-		// Once the timeout is reached, the Produce request will fail and all other buffered requests in the client
-		// (for the same partition) will fail too. See kgo.RecordDeliveryTimeout() documentation for more info.
-		kgo.RecordRetries(math.MaxInt64),
-		kgo.RecordDeliveryTimeout(w.kafkaCfg.WriteTimeout),
-		kgo.ProduceRequestTimeout(w.kafkaCfg.WriteTimeout),
-		kgo.RequestTimeoutOverhead(writerRequestTimeoutOverhead),
-	)
-	return kgo.NewClient(opts...)
 }
 
 // marshalWriteRequestToRecords marshals a mimirpb.WriteRequest to one or more Kafka records.

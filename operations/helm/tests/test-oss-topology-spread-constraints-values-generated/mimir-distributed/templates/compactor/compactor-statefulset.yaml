@@ -25,7 +25,9 @@ spec:
     type: RollingUpdate
   serviceName: test-oss-topology-spread-constraints-values-mimir-compactor
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:
@@ -61,6 +63,11 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
             app.kubernetes.io/component: compactor
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: DoNotSchedule
@@ -69,6 +76,11 @@ spec:
             app.kubernetes.io/name: mimir
             app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
             app.kubernetes.io/component: compactor
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 900
       volumes:
         - name: config

@@ -53,9 +53,6 @@ func TestNewLazyBinaryReader_ShouldBuildIndexHeaderFromBucket(t *testing.T) {
 
 	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
 		require.NoError(t, err)
-		t.Cleanup(func() {
-			require.NoError(t, r.Close())
-		})
 
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadCount))
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
@@ -84,9 +81,6 @@ func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
 
 	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
 		require.NoError(t, err)
-		t.Cleanup(func() {
-			require.NoError(t, r.Close())
-		})
 
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadCount))
 		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadFailedCount))
@@ -102,48 +96,11 @@ func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
 	})
 }
 
-func TestLazyBinaryReader_ShouldReopenOnUsageAfterClose(t *testing.T) {
-	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
-
-	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
-		require.NoError(t, err)
-
-		// Should lazy load the index upon first usage.
-		labelNames, err := r.LabelNames(context.Background())
-		require.NoError(t, err)
-		require.Equal(t, []string{"a"}, labelNames)
-		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
-		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadFailedCount))
-
-		// Close it.
-		require.NoError(t, r.Close())
-		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.unloadCount))
-		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadFailedCount))
-
-		// Should lazy load again upon next usage.
-		labelNames, err = r.LabelNames(context.Background())
-		require.NoError(t, err)
-		require.Equal(t, []string{"a"}, labelNames)
-		require.Equal(t, float64(2), promtestutil.ToFloat64(r.metrics.loadCount))
-		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.loadFailedCount))
-
-		// Closing an already closed lazy reader should be a no-op.
-		for i := 0; i < 2; i++ {
-			require.NoError(t, r.Close())
-			require.Equal(t, float64(2), promtestutil.ToFloat64(r.metrics.unloadCount))
-			require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadFailedCount))
-		}
-	})
-}
-
 func TestLazyBinaryReader_unload_ShouldReturnErrorIfNotIdle(t *testing.T) {
 	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
 
 	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
 		require.NoError(t, err)
-		t.Cleanup(func() {
-			require.NoError(t, r.Close())
-		})
 
 		// Should lazy load the index upon first usage.
 		labelNames, err := r.LabelNames(context.Background())
@@ -179,9 +136,6 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 
 	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
 		require.NoError(t, err)
-		t.Cleanup(func() {
-			require.NoError(t, r.Close())
-		})
 
 		done := make(chan struct{})
 		time.AfterFunc(runDuration, func() { close(done) })
@@ -222,35 +176,6 @@ func TestLazyBinaryReader_LoadUnloadRaceCondition(t *testing.T) {
 	})
 }
 
-func TestNewLazyBinaryReader_EagerLoadLazyLoadedIndexHeaders(t *testing.T) {
-	tmpDir, bkt, blockID := initBucketAndBlocksForTest(t)
-
-	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
-		r.EagerLoad(context.Background())
-
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			require.NoError(t, r.Close())
-		})
-
-		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
-		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
-
-		// The index should already be loaded, the following call will return reader already loaded above
-		v, err := r.IndexVersion(context.Background())
-		require.NoError(t, err)
-		require.Equal(t, 2, v)
-		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
-		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
-
-		labelNames, err := r.LabelNames(context.Background())
-		require.NoError(t, err)
-		require.Equal(t, []string{"a"}, labelNames)
-		require.Equal(t, float64(1), promtestutil.ToFloat64(r.metrics.loadCount))
-		require.Equal(t, float64(0), promtestutil.ToFloat64(r.metrics.unloadCount))
-	})
-}
-
 func initBucketAndBlocksForTest(t testing.TB) (string, *filesystem.Bucket, ulid.ULID) {
 	ctx := context.Background()
 
@@ -278,6 +203,9 @@ func testLazyBinaryReader(t *testing.T, bkt objstore.BucketReader, dir string, i
 	}
 
 	reader, err := NewLazyBinaryReader(ctx, factory, logger, bkt, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+	if err == nil {
+		t.Cleanup(func() { require.NoError(t, reader.Close()) })
+	}
 	test(t, reader, err)
 }
 
@@ -320,6 +248,8 @@ func TestLazyBinaryReader_ShouldBlockMaxConcurrency(t *testing.T) {
 		var err error
 		lazyReaders[i], err = NewLazyBinaryReader(context.Background(), factory, logger, bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 		require.NoError(t, err)
+		readerToClose := lazyReaders[i]
+		t.Cleanup(func() { require.NoError(t, readerToClose.Close()) })
 	}
 
 	var wg sync.WaitGroup
@@ -352,6 +282,7 @@ func TestLazyBinaryReader_ConcurrentLoadingOfSameIndexReader(t *testing.T) {
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
 	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, lazyReader.Close()) })
 
 	var clientWG sync.WaitGroup
 	clientWG.Add(numClients)
@@ -444,6 +375,7 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading(t
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
 	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, lazyReader.Close()) })
 
 	var clientWG sync.WaitGroup
 	clientWG.Add(numClients)
@@ -490,6 +422,8 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_L
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
 	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
 	require.NoError(t, err)
+
+	t.Cleanup(func() { require.NoError(t, lazyReader.Close()) })
 
 	var clientWG sync.WaitGroup
 	clientWG.Add(numClients)
@@ -540,6 +474,8 @@ func TestLazyBinaryReader_CancellingContextReturnsCallButDoesntStopLazyLoading_N
 
 	lazyLoadingGate := gate.NewInstrumented(prometheus.NewRegistry(), maxLazyLoadConcurrency, gate.NewBlocking(maxLazyLoadConcurrency))
 	lazyReader, err := NewLazyBinaryReader(context.Background(), factory, log.NewNopLogger(), bkt, tmpDir, blockID, NewLazyBinaryReaderMetrics(nil), nil, lazyLoadingGate)
+	t.Cleanup(func() { require.NoError(t, lazyReader.Close()) })
+
 	require.NoError(t, err)
 
 	for i := 0; i < testRuns; i++ {
@@ -566,9 +502,6 @@ func TestLazyBinaryReader_SymbolReaderAndUnload(t *testing.T) {
 
 	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
 		require.NoError(t, err)
-		t.Cleanup(func() {
-			require.NoError(t, r.Close())
-		})
 
 		closed := atomic.NewBool(false)
 
@@ -615,6 +548,8 @@ func BenchmarkNewLazyBinaryReader(b *testing.B) {
 		b.Fatal(err)
 	}
 	ctx := context.Background()
+	b.Cleanup(func() { require.NoError(b, lazyReader.Close()) })
+
 	wg := &sync.WaitGroup{}
 
 	for _, readConcurrency := range []int{1, 2, 10, 20, 50, 100} {

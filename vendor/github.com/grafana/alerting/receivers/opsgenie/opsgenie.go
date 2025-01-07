@@ -28,7 +28,13 @@ var (
 	ValidPriorities = map[string]bool{"P1": true, "P2": true, "P3": true, "P4": true, "P5": true}
 )
 
-// Notifier is responsible for sending alert notifications to Opsgenie.
+// Notifier is responsible for sending alert notifications to Opsgenie. It interacts with OpsGenie platform using
+// Alert API, using endpoints "Create Alert" (https://docs.opsgenie.com/docs/alert-api#create-alert) and "Close Alert" (https://docs.opsgenie.com/docs/alert-api#close-alert)
+// It creates OpsGenie alerts with alias that is a hash of the aggregation group, which is immutable during the lifetime of the group.
+// This alias is used to close alerts when the following conditions are met:
+// 1. Setting Config.AutoClose is set to `true`
+// 2. Setting DisableResolveMessage is set to false.
+// 3. All alerts in the aggregation group are resolved.
 type Notifier struct {
 	*receivers.Base
 	tmpl     *templates.Template

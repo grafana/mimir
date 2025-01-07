@@ -49,6 +49,8 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Flush chunks / blocks](#flush-chunks--blocks) | Ingester | `GET,POST /ingester/flush` |
 | [Prepare for Shutdown](#prepare-for-shutdown) | Ingester | `GET,POST,DELETE /ingester/prepare-shutdown` |
 | [Shutdown](#shutdown) | Ingester | `POST /ingester/shutdown` |
+| [Prepare Partition Downscale](#prepare-partition-downscale) | Ingester | `GET,POST,DELETE /ingester/prepare-partition-downscale` |
+| [Prepare Instance Ring Downscale](#prepare-instance-ring-downscale) | Ingester | `GET,POST,DELETE /ingester/prepare-instance-ring-downscale` |
 | [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
 | [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
 | [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
@@ -419,6 +421,42 @@ During this time, `/ready` does not return 200.
 This endpoint unregisters the ingester from the ring even if you disable `-ingester.ring.unregister-on-shutdown`.
 
 This API endpoint is usually used by scale down automations.
+
+### Prepare partition downscale
+
+```
+GET,POST,DELETE /ingester/prepare-partition-downscale
+```
+
+This endpoint prepares the ingester's partition for downscaling by setting it to the `INACTIVE` state.
+
+A `GET` call to this endpoint returns a timestamp of when the partition was switched to the `INACTIVE` state, or 0, if the partition is not in the `INACTIVE` state.
+
+A `POST` call switches this ingester's partition to the `INACTIVE` state, if it isn't `INACTIVE` already, and returns the timestamp of when the switch to the `INACTIVE` state occurred.
+
+A `DELETE` call sets the partition back from the `INACTIVE` to the `ACTIVE` state.
+
+If the ingester is not configured to use ingest-storage, any call to this endpoint fails.
+
+This API endpoint is usually used by scale down automation, e.g. rollout-operator.
+
+### Prepare instance ring downscale
+
+```
+GET,POST,DELETE /ingester/prepare-instance-ring-downscale
+```
+
+This endpoint prepares the ingester for downscaling by setting it to read-only mode.
+
+A `GET` call to this endpoint returns a timestamp of when the ingester was switched to read-only mode, or 0, if the ingester is not in read-only mode.
+
+A `POST` call switches this ingester's partition to read-only mode, if it isn't read-only already, and returns the timestamp of when the switch to read-only mode occurred.
+
+A `DELETE` call sets the ingester back to read-write mode.
+
+If the ingester is configured to use ingest-storage, any call to this endpoint fails.
+
+This API endpoint is usually used by scale down automation, e.g. rollout-operator.
 
 ### Prepare for unregister
 
@@ -815,7 +853,7 @@ List all tenant rules. This endpoint is not part of ruler-API and is always avai
 ### List Prometheus rules
 
 ```
-GET <prometheus-http-prefix>/api/v1/rules?type={alert|record}&file={}&rule_group={}&rule_name={}
+GET <prometheus-http-prefix>/api/v1/rules?type={alert|record}&file={}&rule_group={}&rule_name={}&exclude_alerts={true|false}
 ```
 
 Prometheus-compatible rules endpoint to list alerting and recording rules that are currently loaded.
@@ -824,6 +862,10 @@ The `type` parameter is optional. If set, only the specified type of rule is ret
 
 The `file`, `rule_group` and `rule_name` parameters are optional, and can accept multiple values. If set, the response content is filtered accordingly.
 
+The `exclude_alerts` parameter is optional. If set, it only returns rules and excludes active alerts.
+
+The `group_limit` and `group_next_token` parameters are optional. If `group_limit` is set, it will limit the number of rule groups returned in a single response. If the total number of rule groups exceeds this value, the response will contain a `groupNextToken`.
+This can be passed into subsequent requests via `group_next_token` to paginate over the remaining groups. The final response will not contain a token.
 For more information, refer to Prometheus [rules](https://prometheus.io/docs/prometheus/latest/querying/api/#rules).
 
 Requires [authentication](#authentication).
@@ -913,6 +955,8 @@ GET <prometheus-http-prefix>/config/v1/rules/{namespace}
 ```
 
 Returns the rule groups defined for a given namespace.
+Escape the `{namespace}` path segment using percent-encoding, as defined by
+[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
@@ -944,6 +988,8 @@ GET <prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
 ```
 
 Returns the rule group matching the request namespace and group name.
+Escape the `{namespace}` and `{groupName}` path segments using percent-encoding, as defined by
+[RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
@@ -962,6 +1008,8 @@ POST /<prometheus-http-prefix>/config/v1/rules/{namespace}
 Creates or updates a rule group.
 This endpoint expects a request with `Content-Type: application/yaml` header and the rules group **YAML** definition in the request body, and returns `202` on success.
 The request body must contain the definition of one and only one rule group.
+Escape the `{namespace}` path segment using percent-encoding, as defined by [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
@@ -995,6 +1043,8 @@ DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}/{groupName}
 ```
 
 Deletes a rule group by namespace and group name. This endpoints returns `202` on success.
+Escape the `{namespace}` and `{groupName}` path segments using percent-encoding, as defined by [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 
@@ -1011,6 +1061,8 @@ DELETE /<prometheus-http-prefix>/config/v1/rules/{namespace}
 ```
 
 Deletes all the rule groups in a namespace (including the namespace itself). This endpoint returns `202` on success.
+Escape the `{namespace}` path segment using percent-encoding, as defined by [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+For example, escape `/` to `%2F`.
 
 This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respective YAML config option).
 

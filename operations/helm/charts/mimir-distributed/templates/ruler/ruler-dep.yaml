@@ -1,4 +1,4 @@
-{{- if .Values.ruler.enabled -}}
+{{- if and .Values.ruler.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -65,7 +65,7 @@ spec:
             {{- end }}
           {{- end }}
           {{- range $key, $value := .Values.ruler.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.ruler.extraVolumeMounts }}

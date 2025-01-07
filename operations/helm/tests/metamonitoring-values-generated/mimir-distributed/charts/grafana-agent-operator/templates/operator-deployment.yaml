@@ -4,13 +4,14 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: metamonitoring-values-grafana-agent-operator
+  namespace: citestns
   labels:
     app.kubernetes.io/name: grafana-agent-operator
     app.kubernetes.io/instance: metamonitoring-values
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: operator
-    helm.sh/chart: grafana-agent-operator-0.3.21
-    app.kubernetes.io/version: "0.40.4"
+    helm.sh/chart: grafana-agent-operator-0.5.0
+    app.kubernetes.io/version: "0.43.3"
 spec:
   replicas: 1
   selector:
@@ -33,7 +34,7 @@ spec:
           type: RuntimeDefault
       containers:
       - name: grafana-agent-operator
-        image: "docker.io/grafana/agent-operator:v0.40.4"
+        image: "docker.io/grafana/agent-operator:v0.43.3"
         imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false

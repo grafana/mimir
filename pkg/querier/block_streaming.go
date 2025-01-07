@@ -17,12 +17,12 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -30,13 +30,17 @@ import (
 
 // Implementation of storage.SeriesSet, based on individual responses from store client.
 type blockStreamingQuerierSeriesSet struct {
-	series       []*storepb.StreamingSeries
+	series       []labels.Labels
 	streamReader chunkStreamReader
 
 	// next response to process
 	nextSeriesIndex int
 
 	currSeries storage.Series
+
+	// For debug logging.
+	chunkInfo     *chunkinfologger.ChunkInfoLogger
+	remoteAddress string
 }
 
 type chunkStreamReader interface {
@@ -50,18 +54,22 @@ func (bqss *blockStreamingQuerierSeriesSet) Next() bool {
 		return false
 	}
 
-	currLabels := bqss.series[bqss.nextSeriesIndex].Labels
+	currLabels := bqss.series[bqss.nextSeriesIndex]
 	seriesIdxStart := bqss.nextSeriesIndex // First series in this group. We might merge with more below.
 	bqss.nextSeriesIndex++
 
 	// Chunks may come in multiple responses, but as soon as the response has chunks for a new series,
 	// we can stop searching. Series are sorted. See documentation for StoreClient.Series call for details.
 	// The actually merging of chunks happens in the Iterator() call where chunks are fetched.
-	for bqss.nextSeriesIndex < len(bqss.series) && mimirpb.CompareLabelAdapters(currLabels, bqss.series[bqss.nextSeriesIndex].Labels) == 0 {
+	for bqss.nextSeriesIndex < len(bqss.series) && labels.Equal(currLabels, bqss.series[bqss.nextSeriesIndex]) {
 		bqss.nextSeriesIndex++
 	}
 
-	bqss.currSeries = newBlockStreamingQuerierSeries(mimirpb.FromLabelAdaptersToLabels(currLabels), seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader)
+	bqss.currSeries = newBlockStreamingQuerierSeries(currLabels, seriesIdxStart, bqss.nextSeriesIndex-1, bqss.streamReader, bqss.chunkInfo, bqss.nextSeriesIndex >= len(bqss.series), bqss.remoteAddress)
+
+	// Clear any labels we no longer need, to allow them to be garbage collected when they're no longer needed elsewhere.
+	clear(bqss.series[seriesIdxStart : bqss.nextSeriesIndex-1])
+
 	return true
 }
 
@@ -78,12 +86,15 @@ func (bqss *blockStreamingQuerierSeriesSet) Warnings() annotations.Annotations {
 }
 
 // newBlockStreamingQuerierSeries makes a new blockQuerierSeries. Input labels must be already sorted by name.
-func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader) *blockStreamingQuerierSeries {
+func newBlockStreamingQuerierSeries(lbls labels.Labels, seriesIdxStart, seriesIdxEnd int, streamReader chunkStreamReader, chunkInfo *chunkinfologger.ChunkInfoLogger, lastOne bool, remoteAddress string) *blockStreamingQuerierSeries {
 	return &blockStreamingQuerierSeries{
 		labels:         lbls,
 		seriesIdxStart: seriesIdxStart,
 		seriesIdxEnd:   seriesIdxEnd,
 		streamReader:   streamReader,
+		chunkInfo:      chunkInfo,
+		lastOne:        lastOne,
+		remoteAddress:  remoteAddress,
 	}
 }
 
@@ -91,6 +102,11 @@ type blockStreamingQuerierSeries struct {
 	labels                       labels.Labels
 	seriesIdxStart, seriesIdxEnd int
 	streamReader                 chunkStreamReader
+
+	// For debug logging.
+	chunkInfo     *chunkinfologger.ChunkInfoLogger
+	lastOne       bool
+	remoteAddress string
 }
 
 func (bqs *blockStreamingQuerierSeries) Labels() labels.Labels {
@@ -107,6 +123,13 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		}
 		allChunks = append(allChunks, chks...)
 	}
+
+	if bqs.chunkInfo != nil {
+		bqs.chunkInfo.StartSeries(bqs.labels)
+		bqs.chunkInfo.FormatStoreGatewayChunkInfo(bqs.remoteAddress, allChunks)
+		bqs.chunkInfo.EndSeries(bqs.lastOne)
+	}
+
 	if len(allChunks) == 0 {
 		// should not happen in practice, but we have a unit test for it
 		return series.NewErrIterator(errors.New("no chunks"))
@@ -116,12 +139,7 @@ func (bqs *blockStreamingQuerierSeries) Iterator(reuse chunkenc.Iterator) chunke
 		return allChunks[i].MinTime < allChunks[j].MinTime
 	})
 
-	it, err := newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)
-	if err != nil {
-		return series.NewErrIterator(err)
-	}
-
-	return it
+	return newBlockQuerierSeriesIterator(reuse, bqs.Labels(), allChunks)
 }
 
 // storeGatewayStreamReader is responsible for managing the streaming of chunks from a storegateway and buffering
@@ -280,6 +298,13 @@ func (s *storeGatewayStreamReader) readStream(log *spanlogger.SpanLogger) error 
 }
 
 func (s *storeGatewayStreamReader) sendBatch(c *storepb.StreamingChunksBatch) error {
+	if err := s.ctx.Err(); err != nil {
+		// If the context is already cancelled, stop now for the same reasons as below.
+		// We do this extra check here to ensure that we don't get unlucky and continue to send to seriesChunksChan even if
+		// the context is cancelled because the consumer of the stream is reading faster than we can read new batches.
+		return fmt.Errorf("aborted stream because query was cancelled: %w", context.Cause(s.ctx))
+	}
+
 	select {
 	case <-s.ctx.Done():
 		// Why do we abort if the context is done?

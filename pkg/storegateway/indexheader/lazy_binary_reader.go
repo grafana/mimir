@@ -88,6 +88,7 @@ type LazyBinaryReader struct {
 	readerFactory func() (Reader, error)
 
 	blockID ulid.ULID
+	done    chan struct{}
 }
 
 type readerRequest struct {
@@ -160,21 +161,31 @@ func NewLazyBinaryReader(
 
 		loadedReader: make(chan readerRequest),
 		unloadReq:    make(chan unloadRequest),
+		done:         make(chan struct{}),
 	}
-	// TODO use a proper service lifecycler here to shut down this goroutine
+
 	go reader.controlLoop()
 	return reader, nil
 }
 
-// Close implements Reader. It unloads the index-header from memory (releasing the mmap
-// area), but a subsequent call to any other Reader function will automatically reload it.
+// Close implements Reader.
 func (r *LazyBinaryReader) Close() error {
+	select {
+	case <-r.done:
+		return nil // already closed
+	default:
+	}
 	if r.onClosed != nil {
 		defer r.onClosed(r)
 	}
 
 	// Unload without checking if idle.
-	return r.unloadIfIdleSince(0)
+	if err := r.unloadIfIdleSince(0); err != nil {
+		return fmt.Errorf("unload index-header: %w", err)
+	}
+
+	close(r.done)
+	return nil
 }
 
 // IndexVersion implements Reader.
@@ -247,22 +258,14 @@ func (r *LazyBinaryReader) LabelNames(ctx context.Context) ([]string, error) {
 	return loaded.reader.LabelNames(ctx)
 }
 
-// EagerLoad attempts to eagerly load this index header.
-func (r *LazyBinaryReader) EagerLoad(ctx context.Context) {
-	loaded := r.getOrLoadReader(ctx)
-	if loaded.err != nil {
-		level.Warn(r.logger).Log("msg", "eager loading of lazy loaded index-header failed; skipping", "err", loaded.err)
-		return
-	}
-	loaded.inUse.Done()
-}
-
 // getOrLoadReader ensures the underlying binary index-header reader has been successfully loaded.
 // Returns the reader, wait group that should be used to signal that usage of reader is finished, and an error on failure.
 // Must be called without lock.
 func (r *LazyBinaryReader) getOrLoadReader(ctx context.Context) loadedReader {
 	readerReq := readerRequest{response: make(chan loadedReader)}
 	select {
+	case <-r.done:
+		return loadedReader{err: errors.New("lazy reader is closed; this shouldn't happen")}
 	case r.loadedReader <- readerReq:
 		select {
 		case loadedR := <-readerReq.response:
@@ -323,14 +326,21 @@ func (r *LazyBinaryReader) unloadIfIdleSince(tsNano int64) error {
 		response:       make(chan error),
 		idleSinceNanos: tsNano,
 	}
-	r.unloadReq <- req
-	return <-req.response
+	select {
+	case r.unloadReq <- req:
+		return <-req.response
+	case <-r.done:
+		return nil // if the control loop has returned we can't do much other than return.
+	}
 }
 
 func (r *LazyBinaryReader) controlLoop() {
 	var loaded loadedReader
+
 	for {
 		select {
+		case <-r.done:
+			return
 		case readerReq := <-r.loadedReader:
 			if loaded.reader == nil {
 				// Try to load the reader if it hasn't been loaded before or if the previous loading failed.

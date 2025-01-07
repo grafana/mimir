@@ -10,10 +10,19 @@ import (
 	"encoding/base64"
 	"fmt"
 	"sync"
+	"testing"
 	"time"
+
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
+	"github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 )
 
 var (
@@ -41,6 +50,19 @@ var (
 	}
 )
 
+func newInMemoryRuleStore(t *testing.T) (*cache.InstrumentedMockCache, *bucketclient.BucketRuleStore) {
+	bkt := objstore.NewInMemBucket()
+	mockCache := cache.NewInstrumentedMockCache()
+	cfg := bucketcache.NewCachingBucketConfig()
+	cfg.CacheIter("iter", mockCache, isNotTenantsDir, time.Minute, &bucketcache.JSONIterCodec{})
+	cfg.CacheGet("rules", mockCache, isRuleGroup, 1024^2, time.Minute, time.Minute, time.Minute)
+
+	cachingBkt, err := bucketcache.NewCachingBucket("rules", bkt, cfg, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	return mockCache, bucketclient.NewBucketRuleStore(cachingBkt, nil, log.NewNopLogger())
+}
+
 type mockRuleStore struct {
 	rules        map[string]rulespb.RuleGroupList
 	missingRules rulespb.RuleGroupList
@@ -61,7 +83,7 @@ func (m *mockRuleStore) setMissingRuleGroups(missing rulespb.RuleGroupList) {
 	m.mtx.Unlock()
 }
 
-func (m *mockRuleStore) ListAllUsers(_ context.Context) ([]string, error) {
+func (m *mockRuleStore) ListAllUsers(_ context.Context, _ ...rulestore.Option) ([]string, error) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -72,7 +94,7 @@ func (m *mockRuleStore) ListAllUsers(_ context.Context) ([]string, error) {
 	return result, nil
 }
 
-func (m *mockRuleStore) ListRuleGroupsForUserAndNamespace(_ context.Context, userID, namespace string) (rulespb.RuleGroupList, error) {
+func (m *mockRuleStore) ListRuleGroupsForUserAndNamespace(_ context.Context, userID, namespace string, _ ...rulestore.Option) (rulespb.RuleGroupList, error) {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 

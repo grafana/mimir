@@ -8,29 +8,40 @@ package distributor
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
+	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/grpcutil"
+	"github.com/grafana/dskit/httpgrpc"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	grpcstatus "google.golang.org/grpc/status"
+	golangproto "google.golang.org/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type validateLabelsCfg struct {
-	maxLabelNamesPerSeries int
-	maxLabelNameLength     int
-	maxLabelValueLength    int
+	maxLabelNamesPerSeries     int
+	maxLabelNamesPerInfoSeries int
+	maxLabelNameLength         int
+	maxLabelValueLength        int
 }
 
 func (v validateLabelsCfg) MaxLabelNamesPerSeries(_ string) int {
 	return v.maxLabelNamesPerSeries
+}
+
+func (v validateLabelsCfg) MaxLabelNamesPerInfoSeries(_ string) int {
+	return v.maxLabelNamesPerInfoSeries
 }
 
 func (v validateLabelsCfg) MaxLabelNameLength(_ string) int {
@@ -64,31 +75,37 @@ func TestValidateLabels(t *testing.T) {
 	cfg.maxLabelValueLength = 25
 	cfg.maxLabelNameLength = 25
 	cfg.maxLabelNamesPerSeries = 2
+	cfg.maxLabelNamesPerInfoSeries = 3
 
 	for _, c := range []struct {
-		metric                  model.Metric
-		skipLabelNameValidation bool
-		err                     error
+		metric                   model.Metric
+		skipLabelNameValidation  bool
+		skipLabelCountValidation bool
+		err                      error
 	}{
 		{
-			map[model.LabelName]model.LabelValue{},
-			false,
-			errors.New(noMetricNameMsgFormat),
+			metric:                   map[model.LabelName]model.LabelValue{},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      errors.New(noMetricNameMsgFormat),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: " "},
-			false,
-			fmt.Errorf(invalidMetricNameMsgFormat, " "),
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: " "},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      fmt.Errorf(invalidMetricNameMsgFormat, " "),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "metric_name_with_\xb0_invalid_utf8_\xb0"},
-			false,
-			fmt.Errorf(invalidMetricNameMsgFormat, "metric_name_with__invalid_utf8_ (non-ascii characters removed)"),
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "metric_name_with_\xb0_invalid_utf8_\xb0"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      fmt.Errorf(invalidMetricNameMsgFormat, "metric_name_with__invalid_utf8_ (non-ascii characters removed)"),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid", "foo ": "bar"},
-			false,
-			fmt.Errorf(
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid", "foo ": "bar"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
 				invalidLabelMsgFormat,
 				"foo ",
 				mimirpb.FromLabelAdaptersToString(
@@ -100,14 +117,16 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid"},
-			false,
-			nil,
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      nil,
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelName", "this_is_a_really_really_long_name_that_should_cause_an_error": "test_value_please_ignore"},
-			false,
-			fmt.Errorf(
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelName", "this_is_a_really_really_long_name_that_should_cause_an_error": "test_value_please_ignore"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
 				labelNameTooLongMsgFormat,
 				"this_is_a_really_really_long_name_that_should_cause_an_error",
 				mimirpb.FromLabelAdaptersToString(
@@ -119,9 +138,10 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here"},
-			false,
-			fmt.Errorf(
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
 				labelValueTooLongMsgFormat,
 				"much_shorter_name",
 				"test_value_please_ignore_no_really_nothing_to_see_here",
@@ -134,9 +154,10 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
-			false,
-			fmt.Errorf(
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
 				tooManyLabelsMsgFormat,
 				tooManyLabelsArgs(
 					[]mimirpb.LabelAdapter{
@@ -149,12 +170,65 @@ func TestValidateLabels(t *testing.T) {
 			),
 		},
 		{
-			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "invalid%label&name": "bar"},
-			true,
-			nil,
+			// *_info metrics have higher label limits.
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo_info", "bar": "baz", "blip": "blop"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      nil,
+		},
+		{
+			// *_info metrics have higher label limits.
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo_info", "bar": "baz", "blip": "blop", "blap": "blup"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
+				tooManyInfoLabelsMsgFormat,
+				tooManyLabelsArgs(
+					[]mimirpb.LabelAdapter{
+						{Name: model.MetricNameLabel, Value: "foo_info"},
+						{Name: "bar", Value: "baz"},
+						{Name: "blip", Value: "blop"},
+						{Name: "blap", Value: "blup"},
+					},
+					3,
+				)...,
+			),
+		},
+		{
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: true,
+			err:                      nil,
+		},
+		{
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "invalid%label&name": "bar"},
+			skipLabelNameValidation:  true,
+			skipLabelCountValidation: false,
+			err:                      nil,
+		},
+		{
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "你好"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err:                      nil,
+		},
+		{
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "abc\xfe\xfddef"},
+			skipLabelNameValidation:  false,
+			skipLabelCountValidation: false,
+			err: fmt.Errorf(
+				invalidLabelValueMsgFormat,
+				"label1", "abc\ufffddef", "foo",
+			),
+		},
+		{
+			metric:                   map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "label1": "abc\xfe\xfddef"},
+			skipLabelNameValidation:  true,
+			skipLabelCountValidation: false,
+			err:                      nil,
 		},
 	} {
-		err := validateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
+		err := validateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation, c.skipLabelCountValidation)
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 
@@ -166,11 +240,12 @@ func TestValidateLabels(t *testing.T) {
 			# TYPE cortex_discarded_samples_total counter
 			cortex_discarded_samples_total{group="custom label",reason="label_invalid",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="label_name_too_long",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="label_value_invalid",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="label_value_too_long",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="max_label_names_per_series",user="testUser"} 1
+			cortex_discarded_samples_total{group="custom label",reason="max_label_names_per_info_series",user="testUser"} 1
 			cortex_discarded_samples_total{group="custom label",reason="metric_name_invalid",user="testUser"} 2
 			cortex_discarded_samples_total{group="custom label",reason="missing_metric_name",user="testUser"} 1
-
 			cortex_discarded_samples_total{group="custom label",reason="random reason",user="different user"} 1
 	`), "cortex_discarded_samples_total"))
 
@@ -357,7 +432,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
-	}, false)
+	}, false, false)
 	expected := fmt.Errorf(
 		duplicateLabelMsgFormat,
 		model.MetricNameLabel,
@@ -374,7 +449,7 @@ func TestValidateLabelDuplication(t *testing.T) {
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
-	}, false)
+	}, false, false)
 	expected = fmt.Errorf(
 		duplicateLabelMsgFormat,
 		"a",
@@ -601,4 +676,62 @@ func tooManyLabelsArgs(series []mimirpb.LabelAdapter, limit int) []any {
 	}
 
 	return []any{len(series), limit, metric, ellipsis}
+}
+
+func TestValidUTF8Message(t *testing.T) {
+	testCases := map[string]struct {
+		body                      []byte
+		containsNonUTF8Characters bool
+	}{
+		"valid message returns no error": {
+			body:                      []byte("valid message"),
+			containsNonUTF8Characters: false,
+		},
+		"message containing only UTF8 characters returns no error": {
+			body:                      []byte("\n\ufffd\u0016\n\ufffd\u0002\n\u001D\n\u0011container.runtime\u0012\b\n\u0006docker\n'\n\u0012container.h"),
+			containsNonUTF8Characters: false,
+		},
+		"message containing non-UTF8 character returns an error": {
+			// \xf6 and \xd3 are not valid UTF8 characters.
+			body:                      []byte("\n\xf6\x1a\n\xd3\x02\n\x1d\n\x11container.runtime\x12\x08\n\x06docker\n'\n\x12container.h"),
+			containsNonUTF8Characters: true,
+		},
+	}
+
+	for name, tc := range testCases {
+		for _, withValidation := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s withValidation: %v", name, withValidation), func(t *testing.T) {
+				msg := string(tc.body)
+				if withValidation {
+					msg = validUTF8Message(msg)
+				}
+				httpgrpcErr := httpgrpc.Error(http.StatusBadRequest, msg)
+
+				// gogo's proto.Marshal() correctly processes both httpgrpc errors with and without non-utf8 characters.
+				st, ok := grpcutil.ErrorToStatus(httpgrpcErr)
+				require.True(t, ok)
+				stBytes, err := proto.Marshal(st.Proto())
+				require.NoError(t, err)
+				require.NotNil(t, stBytes)
+
+				//lint:ignore faillint We want to explicitly use on grpcstatus.FromError()
+				grpcSt, ok := grpcstatus.FromError(httpgrpcErr)
+				require.True(t, ok)
+				stBytes, err = golangproto.Marshal(grpcSt.Proto())
+				if withValidation {
+					// Ensure that errors with validated messages can always be correctly marshaled.
+					require.NoError(t, err)
+					require.NotNil(t, stBytes)
+				} else {
+					if tc.containsNonUTF8Characters {
+						// Ensure that errors with non-validated non-utf8 messages cannot be correctly marshaled.
+						require.Error(t, err)
+					} else {
+						require.NoError(t, err)
+						require.NotNil(t, stBytes)
+					}
+				}
+			})
+		}
+	}
 }

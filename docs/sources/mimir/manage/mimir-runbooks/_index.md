@@ -41,7 +41,15 @@ If nothing obvious from the above, check for increased load:
 
 ### MimirIngesterReachingSeriesLimit
 
-This alert fires when the `max_series` per ingester instance limit is enabled and the actual number of in-memory series in an ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new series, while appending samples to existing ones will continue to succeed.
+This alert fires when the `max_series` per ingester instance limit is enabled and the actual number of in-memory series in an ingester is close to reaching the limit.
+The threshold is set at 80% to give the chance to react before the limit is reached.
+After the limit is reached, write requests to the ingester fail for new series. Appending samples to existing ones continue to succeed.
+
+Note that the error responses sent back to the sender are classified as "server errors" (5xx), which should result in a retry by the sender.
+While this situation continues, these retries stall the flow of data, and newer data queues up on the sender.
+If the condition is cleared in a short time, service can be restored with no data loss.
+
+This is different to what happens when the `max_global_series_per_user` limit is exceeded, which is considered a "client error" (4xx). In this case, excess data is discarded.
 
 In case of **emergency**:
 
@@ -123,7 +131,7 @@ How to **fix** it:
 
 ### MimirIngesterReachingTenantsLimit
 
-This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in an ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
+This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in an ingester is reaching the limit. Once the limit is reached, write requests to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
 
 The per-tenant memory utilisation in ingesters includes the overhead of allocations for TSDB stripes and chunk writer buffers. If the tenant number is high, this may contribute significantly to the total ingester memory utilization. The size of these allocations is controlled by `-blocks-storage.tsdb.stripe-size` (default 16KiB) and `-blocks-storage.tsdb.head-chunks-write-buffer-size-bytes` (default 4MiB), respectively.
 
@@ -624,6 +632,10 @@ How to **investigate**:
         ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Result block exceeds symbol table maximum size" <block-1> <block-2>...
         ```
     - Further reading: [Compaction algorithm]({{< relref "../../references/architecture/components/compactor#compaction-algorithm" >}}).
+  - Compactor network disk unresponsive:
+    - **How to detect**: A telltale sign is having many cores of sustained kernel-mode CPU usage by the compactor process. Check the metric `rate(container_cpu_system_seconds_total{pod="<pod>"}[$__rate_interval])` for the affected pod.
+    - **What it means**: The compactor process has frozen because it's blocked on kernel-mode flushes to an unresponsive network block storage device.
+    - **How to mitigate**: Unknown. This typically self-resolves after ten to twenty minutes.
 
 - Check the [Compactor Dashboard]({{< relref "../monitor-grafana-mimir/dashboards/compactor" >}}) and set it to view the last 7 days.
 
@@ -638,6 +650,26 @@ How to **investigate**:
       - Allow the compactor to run for some hours and see if the runs begin to succeed and the `Average blocks / tenant` starts to decrease.
       - If you encounter any Compactor resource issues, add CPU/Memory as needed temporarily, then scale back later.
       - You can also optionally scale replicas and shards further to split the work up into even smaller pieces until the situation has recovered.
+
+### MimirCompactorHasRunOutOfDiskSpace
+
+This alert fires when the compactor has run out of disk space at least once.
+When this happens the compaction will fail and after some time the compactor will retry the failed compaction.
+It's very likely that on each retry of the job, the compactor will just hit the same disk space limit again and it won't be able to recover on its own.
+Alternatively, if compactor concurrency is higher than 1, it could have been just an unlucky combination of jobs that caused compactor to run out of disk space.
+
+How to **investigate**:
+
+- Look at the disk space usage in the compactor's data volumes.
+- Look for an error with the string `no space left on device` to confirm that the compactor ran out of disk space.
+
+How to **fix** it:
+
+- The only long-term solution is to give the compactor more disk space, as it requires more space to fit the largest single job into its disk.
+- If the number of blocks that the compactor is failing to compact is not very significant and you want to skip compacting them and focus on more recent blocks instead, consider marking the affected blocks for no compaction:
+  ```
+  ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "focus on newer blocks"
+  ```
 
 ### MimirCompactorSkippedUnhealthyBlocks
 
@@ -700,6 +732,9 @@ How to **fix** it:
   -compactor.cleanup-interval=5m
   ```
 
+> [!NOTE]
+> These mitigations may be especially helpful if you are concurrently seeing queries for this tenant fail consistency checks.
+
 ### MimirInconsistentRuntimeConfig
 
 This alert fires if multiple replicas of the same Mimir service are using a different runtime config for a longer period of time.
@@ -740,17 +775,48 @@ The procedure to investigate it is the same as the one for [`MimirSchedulerQueri
 
 This alert fires if queries are piling up in the query-scheduler.
 
-The size of the queue is shown on the `Queue length` dashboard panel on the `Mimir / Reads` (for the standard query path) or `Mimir / Remote Ruler Reads`
+#### Dashboard Panels
+
+The size of the queue is shown on the `Queue Length` dashboard panel on the [`Mimir / Reads`](https://admin-ops-eu-south-0.grafana-ops.net/grafana/d/e327503188913dc38ad571c647eef643) (for the standard query path) or `Mimir / Remote Ruler Reads`
 (for the dedicated rule evaluation query path) dashboards.
 
-How it **works**:
+The `Queue Length` dashboard panel on the `Mimir / Reads` (for the standard query path)
+and `Mimir / Remote Ruler Reads` (for the dedicated rule evaluation query path) dashboards shows the queue size.
+The `Latency (Time in Queue)` is broken out in the dashboard row below by the "Expected Query Component" -
+the scheduler queue itself is partitioned by the Expected Query Component for each query,
+which is an estimate from the query time range of which component the querier utilizes to fetch data
 
-- A query-frontend API endpoint is called to execute a query
-- The query-frontend enqueues the request to the query-scheduler
-- The query-scheduler is responsible for dispatching enqueued queries to idle querier workers
-- The querier runs the query, sends the response back directly to the query-frontend and notifies the query-scheduler that it can process another query
+The row below shows peak values for `Query-scheduler <-> Querier Inflight Requests`, also broken out by query component.
+This shows when the queriers are saturated with inflight query requests,
+as well as which query components are utilized to service the queries.
 
-How to **investigate**:
+#### How it Works
+
+- A query-frontend API endpoint is called to execute a query.
+- The query-frontend enqueues the request to the query-scheduler.
+- The query-scheduler is responsible for dispatching enqueued queries to idle querier workers.
+- The querier fetches data from ingesters, store-gateways, or both, and runs the query against the data.
+  Then, it sends the response back directly to the query-frontend and notifies the query-scheduler that it can process another query.
+
+#### How to Investigate
+
+Note that elevated measures of _inflight_ queries at any part of the read path are likely a symptom and not a cause.
+
+**Ingester or Store-Gateway Issues**
+
+With querier autoscaling in place, the most common cause of a query backlog is that either ingesters or store-gateways
+are not able to keep up with their query load.
+
+Investigate the RPS and Latency panels for ingesters and store-gateways on the `Mimir / Reads` dashboard
+and compare this value to the `Latency (Time in Queue)` or `Query-scheduler <-> Querier Inflight Requests`
+breakouts on the `Mimir / Reads` or `Mimir / Remote Ruler Reads` dashboards.
+Additionally, check the `Mimir / Reads Resources` dashboard for elevated resource utilization or limiting on ingesters or store-gateways.
+
+Generally, this shows that one of either the ingesters or store-gateways is experiencing issues
+and then you can further investigate the query component on its own.
+Scaling up queriers is unlikely to help in this case, as it places more load on an already-overloaded component.
+
+**Querier Issues**
 
 - Are queriers in a crash loop (eg. OOMKilled)?
   - `OOMKilled`: temporarily increase queriers memory request/limit
@@ -764,7 +830,7 @@ How to **investigate**:
   - Check if a specific tenant is running heavy queries
     - Run `sum by (user) (cortex_query_scheduler_queue_length{namespace="<namespace>"}) > 0` to find tenants with enqueued queries
     - If remote ruler evaluation is enabled, make sure you understand which one of the read paths (user or ruler queries?) is being affected - check the alert message.
-    - Check the `Mimir / Slow Queries` dashboard to find slow queries
+    - Check the [Mimir / Slow Queries` dashboard to find slow queries
   - On multi-tenant Mimir cluster with **shuffle-sharing for queriers disabled**, you may consider to enable it for that specific tenant to reduce its blast radius. To enable queriers shuffle-sharding for a single tenant you need to set the `max_queriers_per_tenant` limit override for the specific tenant (the value should be set to the number of queriers assigned to the tenant).
   - On multi-tenant Mimir cluster with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Mimir return errors for that given user once the per-tenant queue is full.
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **more than a few tenants** being affected: The workload exceeds the available downstream capacity. Scaling of queriers and potentially store-gateways should be considered.
@@ -772,6 +838,15 @@ How to **investigate**:
     - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
     - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
   - On a Mimir cluster with **querier auto-scaling enabled** after checking the health of the existing querier replicas, check to see if the auto-scaler has added additional querier replicas or if the maximum number of querier replicas has been reached and is not sufficient and should be increased.
+
+**Query-Scheduler Issues**
+
+In rare cases, the query-scheduler itself may be the bottleneck.
+When querier-connection utilization is low in the `Query-scheduler <-> Querier Inflight Requests` dashboard panels
+but the queue length or latency is high, it indicates that the query-scheduler is very slow in dispatching queries.
+
+In this case if the scheduler is not resource-constrained,
+you can use CPU profiles to see where the scheduler's query dispatch process is spending its time.
 
 ### MimirCacheRequestErrors
 
@@ -895,6 +970,56 @@ How to **investigate**:
     - `memberlist_tcp_transport_packets_received_errors_total`
     - These errors (and others) can be found by searching for messages prefixed with `TCPTransport:`.
 - Logs coming directly from memberlist are also logged by Mimir; they may indicate where to investigate further. These can be identified as such due to being tagged with `caller=memberlist_logger.go:<line>`.
+
+### MimirGossipMembersEndpointsOutOfSync
+
+This alert fires when the list of endpoints returned by the `gossip-ring` service is out-of-sync.
+
+How it **works**:
+
+- The Kubernetes service `gossip-ring` is used by Mimir to find memberlist seed nodes to join at startup. The service
+  DNS returns all Mimir pods by default, which means any Mimir pod can be used as a seed node (this is the safest option).
+- Due to Kubernetes bugs (for example, [this one](https://github.com/kubernetes/kubernetes/issues/127370)) the pod IPs
+  returned by the service DNS address may go out-of-sync, up to a point where none of the returned IPs belongs to any
+  live pod. If that happens, then new Mimir pods can't join memberlist at startup.
+
+How to **investigate**:
+
+- Check the number of endpoints matching the `gossip-ring` service:
+  ```
+  kubectl --namespace <namespace> get endpoints gossip-ring -ojson | jq '.subsets[].addresses | length'
+  ```
+- If the number of endpoints is 1000 then it means you reached the Kubernetes limit, the endpoints get truncated and
+  you could be hit by [this bug](https://github.com/kubernetes/kubernetes/issues/127370). Having more than 1000 pods
+  matched by the `gossip-ring` service and then getting endpoints truncated to 1000 is not an issue per-se, but it's
+  an issue if you're running a version of Kubernetes affected by the mentioned bug.
+- If you've been affected by the Kubernetes bug:
+
+  1. Stop the bleed re-creating the service endpoints list
+
+     ```sh
+     CONTEXT="TODO"
+     NAMESPACE="TODO"
+     SERVICE="gossip-ring"
+
+     # Re-apply the list of bad endpoints as is.
+     kubectl --context "$CONTEXT" --namespace "$NAMESPACE" get endpoints "$SERVICE" -o yaml > /tmp/service-endpoints.yaml
+     kubectl --context "$CONTEXT" --namespace "$NAMESPACE" apply -f /tmp/service-endpoints.yaml
+
+     # Delete a random querier pod to trigger K8S service endpoints reconciliation.
+     POD=$(kubectl --context "$CONTEXT" --namespace "$NAMESPACE" get pods -l name=querier --output="jsonpath={.items[0].metadata.name}")
+     kubectl --context "$CONTEXT" --namespace "$NAMESPACE" delete pod "$POD"
+     ```
+
+  2. Consider removing some deployments from `gossip-ring` selector label, to reduce the number of matching pods below 1000.
+     This is a temporarily workaround, and you should revert it once you upgrade Kubernetes to a version with the bug fixed.
+
+     An example of how you can do it with jsonnet:
+
+     ```
+     querier_deployment+:
+       $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'false' }),
+     ```
 
 ### EtcdAllocatingTooMuchMemory
 
@@ -1126,6 +1251,7 @@ How to **investigate**:
   # Assuming Prometheus is running in namespace "default":
   kubectl --namespace default get pod --selector='name=prometheus'
   ```
+- If Prometheus looks healthy, check that it has enough CPU allocated
 
 For scaled objects with 0 `minReplicas` it is expected for HPA to be inactive when the scaling metric exposed in `keda_scaler_metrics_value` is 0.
 When `keda_scaler_metrics_value` value is 0 or missing, the alert should not be firing.
@@ -1155,6 +1281,7 @@ How to **investigate**:
   # Assuming Prometheus is running in namespace "default":
   kubectl --namespace default get pod --selector='name=prometheus'
   ```
+- If Prometheus looks healthy, check that it has enough CPU allocated
 
 ### MimirContinuousTestNotRunningOnWrites
 
@@ -1319,17 +1446,40 @@ How to **investigate** and **fix** it:
 - Check if disk utilization unbalance is caused by shuffle sharding
 
   - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. To investigate it you can run the following command for a given store-gateway replica. The command returns the top 10 tenants by disk utilization (in megabytes):
+
     ```
-    kubectl --context $CLUSTER --namespace $CELL exec -ti $POD -- sh -c 'du -sm /data/tsdb/* | sort -n -r | head -10'
+    # If you're running the alpine image:
+    kubectl --context $CLUSTER --namespace $NAMESPACE exec -ti $POD -- sh -c 'du -sm /data/tsdb/* | sort -n -r | head -10'
+
+    # If you're running the distroless image:
+    kubectl --context $CLUSTER --namespace $NAMESPACE debug pod/$POD --image=alpine:latest --target=store-gateway --container=debug -ti -- sh -c 'du -sm /proc/1/root/data/tsdb/* | sort -n -r | head -10'
     ```
+
   - Check the configured `-store-gateway.tenant-shard-size` (`store_gateway_tenant_shard_size`) of each tenant that mostly contributes to disk utilization. Consider increase the tenant's the shard size if it's smaller than the number of available store-gateway replicas (a value of `0` disables shuffle sharding for the tenant, effectively sharding their blocks across all replicas).
 
 - Check if disk utilization unbalance is caused by a tenant with uneven block sizes
+
   - Even if a tenant has no shuffle sharding and their blocks are sharded across all replicas, it may still cause unbalance in store-gateway disk utilization if the size of their blocks dramatically changed over time (e.g. because the number of series per block significantly changed over time). As a proxy metric, the number of series per block is roughly the total number of series across all blocks for the largest `-compactor.block-ranges` (default is 24h) divided by the number of `-compactor.split-and-merge-shards` (`compactor_split_and_merge_shards`).
   - If you suspect this may be an issue:
     - Check the number of series in each block in the store-gateway blocks list for the affected tenant, through the web page exposed by the store-gateway at `/store-gateway/tenant/<tenant ID>/blocks`
     - Check the number of in-memory series shown on the `Mimir / Tenants` dashboard for an approximation of the number of series that will be compacted once these blocks are shipped from ingesters.
     - Check the configured `compactor_split_and_merge_shards` for the tenant. A reasonable rule of thumb is 8-10 million series per compactor shard - if the number of series per shard is above this range, increase `compactor_split_and_merge_shards` for the affected tenant(s) accordingly.
+
+- Check if the persistent volume is nearing its limit and determine if it needs to be increased.
+
+  - If persistent volume resizing is required for store-gateways and automatic downscaling is enabled, you must disable it before proceeding with the resizing process. This step is necessary to prevent any unexpected downscaling by the rollout operator while updating the stateful set for each zone. To disable automatic downscaling for store-gateways,
+    set `$._config.store_gateway_automated_downscale_enabled = false`.
+
+  ```jsonnet
+  {
+    _config+:
+    {
+      store_gateway_automated_downscale_enabled: false
+    }
+  }
+  ```
+
+  - After the resizing process finishes, revert this change.
 
 ## Mimir ingest storage (experimental)
 
@@ -1388,7 +1538,9 @@ This alert fires when "receive delay" reported by ingester during "starting" pha
 
 How it **works**:
 
-- When ingester is starting, it needs to fetch and process records from Kafka until preconfigured consumption lag is honored. The maximum tolerated lag before an ingester is considered to have caught up reading from a partition at startup can be configured via `-ingest-storage.kafka.max-consumer-lag-at-startup`.
+- When an ingester starts, it needs to fetch and process records from Kafka until a preconfigured consumption lag is honored. There are two configuration options that control the lag before an ingester is considered to have caught up reading from a partition at startup:
+  - `-ingest-storage.kafka.max-consumer-lag-at-startup`: this is the guaranteed maximum lag before an ingester is considered to have caught up. The ingester doesn't become ACTIVE in the hash ring and doesn't pass the readiness check until the measured lag is below this setting.
+  - `-ingest-storage.kafka.target-consumer-lag-at-startup`: this is the desired maximum lag that an ingester sets to achieve at startup. This setting is a best-effort. The ingester is granted a "grace period" to have the measured lag below this setting. However, the ingester still starts if the target lag hasn't been reached within this "grace period", as long as the max lag is honored. The "grace period" is equal to the configured `-ingest-storage.kafka.max-consumer-lag-at-startup`.
 - Each record has a timestamp when it was sent to Kafka by the distributor. When ingester reads the record, it computes "receive delay" as a difference between current time (when record was read) and time when record was sent to Kafka. This receive delay is reported in the metric `cortex_ingest_storage_reader_receive_delay_seconds`. You can see receive delay on `Mimir / Writes` dashboard, in section "Ingester (ingest storage – end-to-end latency)".
 - Under normal conditions when ingester is processing records faster than records are appearing, receive delay should be decreasing, until `-ingest-storage.kafka.max-consumer-lag-at-startup` is honored.
 - When ingester is starting, and observed "receive delay" is increasing, alert is raised.
@@ -1447,21 +1599,71 @@ How to **investigate**:
   - If the call exists and it's waiting on a lock then there may be a deadlock.
   - If the call doesn't exist then it could either mean processing is not stuck (false positive) or the `pushToStorage` wasn't called at all, and so you should investigate the callers in the code.
 
-### MimirIngesterFailsEnforceStrongConsistencyOnReadPath
+### MimirIngesterMissedRecordsFromKafka
 
-This alert fires when too many read-requests with strong consistency are failing.
+This alert fires when an ingester has missed processing some records from Kafka. In other words, there has been a gap in offsets.
 
 How it **works**:
 
-- When read request asks for strong-consistency guarantee, ingester will read the last produced offset from Kafka, and wait until record with this offset is consumed.
-- If read request times out during this wait, either because of the request timeout or the configured `-ingest-storage.kafka.wait-strong-read-consistency-timeout` (whatever happens first), that is considered to be a failure of request with strong-consistency.
+- The ingester reads records from Kafka and processes them sequentially. It keeps track of the offset of the last record it's processed.
+- Upon fetching the next batch of records, it checks if the first available record has an offset of one greater than the last processed offset. If the first available offset is larger than that, then the ingester has missed some records.
+- Kafka doesn't guarantee sequential offsets. If a record has been manually deleted from Kafka or if the records have been produced in a transaction and the transaction was aborted, then there may be a gap.
+- Mimir doesn't produce in transactions and does not delete records.
+- When the ingester starts, it attempts to resume from the last offset it processed. If the ingester has been unavailable for long enough that the next record is already removed due to retention, then the ingester misses some records.
+
+How to **investigate**:
+
+- Find the offsets which were missed. The ingester logs them along with the message `there is a gap in consumed offsets`.
+- Verify that there have been no deleted records in your Kafka cluster.
+- Verify that the ingester hasn't been down for longer than the retention on the Kafka partition.
+- Report a bug.
+
+### MimirStrongConsistencyEnforcementFailed
+
+This alert fires when too many read requests with strong consistency are failing.
+
+How it **works**:
+
+- When read request asks for strong-consistency guarantee, query-frontend reads the last produced offsets from Kafka and propagates this information down to ingesters. Then, ingesters wait until record with the requested offset is consumed.
+- If fetching the last produced offsets fail or the read request times out when fetching offsets or waiting for the offset to be consumed, that is considered to be a failure of request with strong-consistency. Ingesters waiting fails if the requested offset doesn't get consumed within the configured `-ingest-storage.kafka.wait-strong-read-consistency-timeout`.
 - If requests keep failing due to failure to enforce strong-consistency, this alert is raised.
 
 How to **investigate**:
 
+- Check failures and latency to the "last produced offset" on `Mimir / Queries` dashboard.
 - Check wait latency of requests with strong-consistency on `Mimir / Queries` dashboard.
 - Check if ingesters are processing too many records, and they need to be scaled up (vertically or horizontally).
-- Check actual error in logs to see whether the `-ingest-storage.kafka.wait-strong-read-consistency-timeout` or the request timeout has been hit first.
+- Check actual error in the query-frontend and/or ingester logs to see whether the `-ingest-storage.kafka.wait-strong-read-consistency-timeout` or the request timeout has been hit first.
+
+### MimirStrongConsistencyOffsetNotPropagatedToIngesters
+
+This alert fires when ingesters receive an unexpected high number of strongly consistent requests without an offset specified.
+
+How it **works**:
+
+- See [`MimirStrongConsistencyEnforcementFailed`](#MimirStrongConsistencyEnforcementFailed).
+
+How to **investigate**:
+
+- We expect query-frontend to fetch the last produced offsets and then propagate it down to ingesters. If it's not happening, then it's likely we introduced a bug in Mimir that's breaking the propagation of offsets from query-frontend to ingester. You should investigate the Mimir code changes and fix it.
+
+### MimirKafkaClientBufferedProduceBytesTooHigh
+
+This alert fires when the Kafka client buffer, used to write incoming write requests to Kafka, is getting full.
+
+How it **works**:
+
+- Distributor and ruler encapsulate write requests into Kafka records and send them to Kafka.
+- The Kafka client has a limit on the total byte size of buffered records either sent to Kafka or sent to Kafka but not acknowledged yet.
+- When the limit is reached, the Kafka client stops producing more records and fast fails.
+- The limit is configured via `-ingest-storage.kafka.producer-max-buffered-bytes`.
+- The default limit is configured intentionally high, so that when the buffer utilization gets close to the limit, this indicates that there's probably an issue.
+
+How to **investigate**:
+
+- Query `cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}` metrics to see the actual buffer utilization peaks.
+  - If the high buffer utilization is isolated to a small set of pods, then there might be an issue in the client pods.
+  - If the high buffer utilization is spread across all or most pods, then there might be an issue in Kafka.
 
 ### Ingester is overloaded when consuming from Kafka
 
@@ -1504,6 +1706,47 @@ How to **fix**:
 
   1. Once ingesters are stable, revert the temporarily config applied in the previous step.
 
+### MimirBlockBuilderNoCycleProcessing
+
+This alert fires when the block-builder stops reporting any processed cycles for an unexpectedly long time.
+
+How it **works**:
+
+- The block-builder periodically consumes a portion of the backlog from Kafka partition, and processes the consumed data into TSDB blocks. The block-builder calls these periods "cycles".
+- If the block-builder doesn't process any cycles for an extended period of time, this could indicate that a block-builder instance is stuck and cannot complete cycle processing.
+
+How to **investigate**:
+
+- Check the block-builder logs to see what its pods have been busy with. The block-builder logs the `start consuming` and `done consuming` log messages, that mark per-partition conume-cycles. These log records include the details about the cycle, the Kafka topic's offsets, etc. Troubleshoot based on that.
+
+### MimirBlockBuilderLagging
+
+This alert fires when the block-builder instances report a large number of unprocessed records in the Kafka partitions.
+
+How it **works**:
+
+- When the block-builder starts a new consume cycle, it checks how many records the Kafka partition has in the backlog. This number is tracked in the `cortex_blockbuilder_consumer_lag_records` metric.
+- The block-builder must consume and process these records into TSDB blocks.
+- At the end of the processing, the block-builder commits the offset of the last fully processed record into Kafka.
+- If the block-builder reports high values in the lag, this could indicate that a block-builder instance cannot fully process and commit Kafka record.
+
+How to **investigate**:
+
+- Check if the per-partition lag, reported by the `cortex_blockbuilder_consumer_lag_records` metric, has been growing over the past hours.
+- Explore the block-builder logs for any errors reported while it processed the partition.
+
+### MimirBlockBuilderCompactAndUploadFailed
+
+How it **works**:
+
+- The block-builder periodically consumes data from a Kafka topic and processes the consumed data into TSDB blocks.
+- It compacts and uploads the produced TSDB blocks to object storage.
+- If the block-builder encounters issues while compacting or uploading the blocks, it reports the failure metric, which then triggers the alert.
+
+How to **investigate**:
+
+- Explore the block-builder logs to check what errors are there.
+
 ## Errors catalog
 
 Mimir has some codified error IDs that you might see in HTTP responses or logs.
@@ -1536,6 +1779,16 @@ The limit protects the system’s stability from potential abuse or mistakes. To
 Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
 {{< /admonition >}}
 
+### err-mimir-max-label-names-per-info-series
+
+This non-critical error occurs when Mimir receives a write request that contains an info series with a number of labels that exceeds the configured limit.
+An info series is a series where the metric name ends in `_info`.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `-validation.max-label-names-per-info-series` option.
+
+{{< admonition type="note" >}}
+Invalid series are skipped during ingestion, and valid series in the same request are ingested.
+{{< /admonition >}}
+
 ### err-mimir-max-native-histogram-buckets
 
 This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram that has too many observation buckets.
@@ -1564,7 +1817,7 @@ The series containing such samples are skipped during ingestion, and valid serie
 
 ### err-mimir-native-histogram-count-mismatch
 
-This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
 where the buckets counts don't add up to the overall count recorded in the native histogram, provided that the overall
 sum is a regular float number.
 
@@ -1578,7 +1831,7 @@ When `-ingester.error-sample-rate` is configured to a value greater than `0`, in
 
 ### err-mimir-native-histogram-count-not-big-enough
 
-This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
 where the buckets counts add up to a higher number than the overall count recorded in the native histogram, provided
 that the overall sum is not a float number (NaN).
 
@@ -1592,7 +1845,7 @@ When `-ingester.error-sample-rate` is configured to a value greater than `0`, in
 
 ### err-mimir-native-histogram-negative-bucket-count
 
-This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
 where some bucket count is negative.
 
 {{< admonition type="note" >}}
@@ -1605,7 +1858,7 @@ When `-ingester.error-sample-rate` is configured to a value greater than `0`, in
 
 ### err-mimir-native-histogram-span-negative-offset
 
-This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
 where a bucket span has a negative offset.
 
 {{< admonition type="note" >}}
@@ -1618,8 +1871,21 @@ When `-ingester.error-sample-rate` is configured to a value greater than `0`, in
 
 ### err-mimir-native-histogram-spans-buckets-mismatch
 
-This non-critical error occures when Mimir receives a write request that contains a sample that is a native histogram
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
 where the number of bucket counts does not agree with the number of buckets encoded in the bucket spans.
+
+{{< admonition type="note" >}}
+The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+{{< admonition type="note" >}}
+When `-ingester.error-sample-rate` is configured to a value greater than `0`, invalid native histogram errors are logged only once every `-ingester.error-sample-rate` times.
+{{< /admonition >}}
+
+### err-mimir-native-histogram-ooo-disabled
+
+This non-critical error occurs when Mimir receives a write request that contains a sample that is a native histogram
+where another sample with a more recent timestamp has already been ingested and `-ingester.ooo-native-histograms-ingestion-enabled` is set to `false`.
 
 {{< admonition type="note" >}}
 The series containing such samples are skipped during ingestion, and valid series within the same request are ingested.
@@ -1633,6 +1899,15 @@ When `-ingester.error-sample-rate` is configured to a value greater than `0`, in
 
 This non-critical error occurs when Mimir receives a write request that contains a series with an invalid label name.
 A label name name can only contain characters as defined by Prometheus’ [Metric names and labels](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
+
+{{< admonition type="note" >}}
+Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
+{{< /admonition >}}
+
+### err-mimir-label-value-invalid
+
+This non-critical error occurs when Mimir receives a write request that contains a series with a label that has an invalid value.
+A label value can only contain unicode characters as defined by Prometheus’ [Metric names and labels](https://prometheus.io/docs/concepts/data_model/#metric-names-and-labels).
 
 {{< admonition type="note" >}}
 Invalid series are skipped during the ingestion, and valid series within the same request are ingested.
@@ -2236,6 +2511,20 @@ How to **fix** it:
 
 - Increase the allowed limit by using the `-distributor.max-recv-msg-size` option.
 
+### err-mimir-distributor-max-otlp-request-size
+
+This error occurs when a distributor rejects an OTel write request because its message size is larger than the allowed limit before or after decompression.
+
+How it **works**:
+
+- The distributor implements an upper limit on the message size of incoming OTel write requests before and after decompression regardless of the compression type. Refer to [OTLP collector compression details](https://github.com/open-telemetry/opentelemetry-collector/tree/main/config/confighttp) for more information.
+- Configure this limit in the `-distributor.max-otlp-request-size` setting.
+
+How to **fix** it:
+
+- If you use the batch processor in the OTLP collector, decrease the maximum batch size in the `send_batch_max_size` setting. Refer to [Batch Collector](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md) for details.
+- Increase the allowed limit in the `-distributor.max-otlp-request-size` setting.
+
 ### err-mimir-distributor-max-write-request-data-item-size
 
 This error can only be returned when the experimental ingest storage is enabled and is caused by a write request containing a timeseries or metadata entry which is larger than the allowed limit.
@@ -2264,6 +2553,16 @@ How it **works**:
 How to **fix** it:
 
 This error only occurs when an administrator has explicitly define a blocked list for a given tenant. After assessing whether or not the reason for blocking one or multiple queries you can update the tenant's limits and remove the pattern.
+
+### err-mimir-alertmanager-max-grafana-config-size
+
+This non-critical error occurs when the Alertmanager receives a Grafana Alertmanager configuration larger than the configured size limit.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `alertmanager.max-grafana-config-size-bytes` option.
+
+### err-mimir-alertmanager-max-grafana-state-size
+
+This non-critical error occurs when the Alertmanager receives a Grafana Alertmanager state larger than the configured size limit.
+The limit protects the system’s stability from potential abuse or mistakes. To configure the limit on a per-tenant basis, use the `alertmanager.max-grafana-state-size-bytes` option.
 
 ## Mimir routes by path
 
@@ -2616,6 +2915,8 @@ For example, you can create a tar of the path you are interested in, and then ex
 ```bash
 kubectl --namespace mimir exec compactor-0 -c mimir-debug-container -- tar cf - "/proc/1/root/etc/cortex" | tar xf -
 ```
+
+Note that the container that you're copying files from must still be running. If you have already exited your debugging container before, that container has stopped, and it cannot be used to copy files. In that case you need to start a new container.
 
 ## Cleanup and Limitations
 

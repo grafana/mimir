@@ -78,8 +78,8 @@ func TestWriteRequest_IsEmpty(t *testing.T) {
 
 	t.Run("should return true if a WriteRequest has no Timeseries and Metadata", func(t *testing.T) {
 		req := &WriteRequest{
-			Source:                  API,
-			SkipLabelNameValidation: true,
+			Source:              API,
+			SkipLabelValidation: true,
 		}
 
 		assert.True(t, req.IsEmpty())

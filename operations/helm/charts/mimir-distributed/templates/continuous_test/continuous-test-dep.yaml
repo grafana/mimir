@@ -45,12 +45,14 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=continuous-test"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
             - "-activity-tracker.filepath="
             - "-server.http-listen-port={{ include "mimir.serverHttpListenPort" . }}"
             - "-tests.write-read-series-test.num-series={{ .Values.continuous_test.numSeries }}"
             - "-tests.write-read-series-test.max-query-age={{ .Values.continuous_test.maxQueryAge }}"
-            - "-tests.write-endpoint={{ template "mimir.gatewayUrl" . }}"
-            - "-tests.read-endpoint={{ template "mimir.gatewayUrl" . }}/prometheus"
+            - "-tests.write-endpoint={{ default (include "mimir.gatewayUrl" .) .Values.continuous_test.write }}"
+            - "-tests.read-endpoint={{ default (include "mimir.gatewayUrl" .) .Values.continuous_test.read }}/prometheus"
             - "-tests.run-interval={{ .Values.continuous_test.runInterval }}"
             {{- if eq .Values.continuous_test.auth.type "tenantId" }}
             - "-tests.tenant-id={{ .Values.continuous_test.auth.tenant }}"
@@ -63,9 +65,15 @@ spec:
             - "-tests.bearer-token={{ .Values.continuous_test.auth.bearerToken }}"
             {{- end }}
             {{- range $key, $value := .Values.continuous_test.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
+            - name: config
+              mountPath: /etc/mimir
+            {{- if .Values.enterprise.enabled }}
+            - name: license
+              mountPath: /license
+            {{- end }}
             {{- if .Values.continuous_test.extraVolumeMounts }}
               {{ toYaml .Values.continuous_test.extraVolumeMounts | nindent 12}}
             {{- end }}
@@ -121,6 +129,13 @@ spec:
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.continuous_test.terminationGracePeriodSeconds }}
       volumes:
+        - name: config
+          {{- include "mimir.configVolume" . | nindent 10 }}
+        {{- if .Values.enterprise.enabled }}
+        - name: license
+          secret:
+            secretName: {{ tpl .Values.license.secretName . }}
+        {{- end }}
         {{- if .Values.continuous_test.extraVolumes }}
         {{ toYaml .Values.continuous_test.extraVolumes | nindent 8}}
         {{- end }}

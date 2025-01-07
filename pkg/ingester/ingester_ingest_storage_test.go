@@ -140,7 +140,9 @@ func TestIngester_Start(t *testing.T) {
 				cfg.IngesterRing.InstanceZone,
 				cfg.IngesterRing.customTokenGenerator().GenerateTokens(512, nil),
 				ring.LEAVING,
-				time.Now())
+				time.Now(),
+				false,
+				time.Time{})
 
 			return desc, true, nil
 		}))
@@ -239,8 +241,37 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 		metricName = "series_1"
 	)
 
-	for _, readConsistency := range []string{api.ReadConsistencyEventual, api.ReadConsistencyStrong} {
-		t.Run(fmt.Sprintf("read consistency = %s", readConsistency), func(t *testing.T) {
+	tests := map[string]struct {
+		readConsistencyLevel   string
+		readConsistencyOffsets map[int32]int64
+		expectedQueriedSeries  int
+	}{
+		"eventual read consistency": {
+			readConsistencyLevel: api.ReadConsistencyEventual,
+
+			// We expect no series because the query didn't wait for the read consistency to be guaranteed.
+			expectedQueriedSeries: 0,
+		},
+		"strong read consistency without offsets": {
+			readConsistencyLevel: api.ReadConsistencyStrong,
+
+			// We expect query did wait for the read consistency to be guaranteed.
+			expectedQueriedSeries: 1,
+		},
+		"strong read consistency with offsets": {
+			readConsistencyLevel: api.ReadConsistencyStrong,
+
+			// To keep the test simple, use a trick passing a negative offset so the query will return immediately.
+			// In this test we just want to check that the passed offset is honored.
+			readConsistencyOffsets: map[int32]int64{0: -2},
+			expectedQueriedSeries:  0,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			var (
 				cfg     = defaultIngesterTestConfig(t)
 				limits  = defaultLimitsTestConfig()
@@ -254,7 +285,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 				}
 			)
 
-			limits.IngestStorageReadConsistency = readConsistency
+			limits.IngestStorageReadConsistency = testData.readConsistencyLevel
 
 			// Create the ingester.
 			overrides, err := validation.NewOverrides(limits, nil)
@@ -313,6 +344,11 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 				queryCtx, cancel := context.WithTimeout(user.InjectOrgID(ctx, userID), 5*time.Second)
 				defer cancel()
 
+				// Inject the requested offsets (if any).
+				if len(testData.readConsistencyOffsets) > 0 {
+					queryCtx = api.ContextWithReadConsistencyEncodedOffsets(queryCtx, api.EncodeOffsets(testData.readConsistencyOffsets))
+				}
+
 				close(queryIssued)
 				queryRes, _, err = runTestQuery(queryCtx, t, ingester, labels.MatchEqual, labels.MetricName, metricName)
 				require.NoError(t, err)
@@ -325,15 +361,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 			// Wait until the query returns.
 			queryWg.Wait()
 
-			switch readConsistency {
-			case api.ReadConsistencyEventual:
-				// We expect no series because the query didn't wait for the read consistency to be guaranteed.
-				assert.Len(t, queryRes, 0)
-
-			case api.ReadConsistencyStrong:
-				// We expect query did wait for the read consistency to be guaranteed.
-				assert.Len(t, queryRes, 1)
-			}
+			assert.Len(t, queryRes, testData.expectedQueriedSeries)
 		})
 	}
 }

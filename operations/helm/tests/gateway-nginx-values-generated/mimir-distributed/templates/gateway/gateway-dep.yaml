@@ -43,7 +43,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: docker.io/nginxinc/nginx-unprivileged:1.25-alpine
+          image: docker.io/nginxinc/nginx-unprivileged:1.27-alpine
           imagePullPolicy: IfNotPresent
           volumeMounts:
             - name: nginx-config

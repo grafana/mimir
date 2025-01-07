@@ -102,7 +102,6 @@ func (mm *userMetricsMetadata) toClientMetadata(req *client.MetricsMetadataReque
 			if req.LimitPerMetric > 0 && lengthPerMetric >= req.LimitPerMetric {
 				break
 			}
-			m := m
 			r = append(r, &m)
 			lengthPerMetric++
 		}

@@ -1,0 +1,22 @@
+---
+# Source: mimir-distributed/charts/minio/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-extra-args-values-minio
+  labels:
+    app: minio
+    chart: minio-5.4.0
+    release: test-extra-args-values
+    heritage: Helm
+    monitoring: "true"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 9000
+      protocol: TCP
+      targetPort: 9000
+  selector:
+    app: minio
+    release: test-extra-args-values

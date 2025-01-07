@@ -9,8 +9,8 @@ metadata:
     app.kubernetes.io/instance: metamonitoring-values
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: operator
-    helm.sh/chart: grafana-agent-operator-0.3.21
-    app.kubernetes.io/version: "0.40.4"
+    helm.sh/chart: grafana-agent-operator-0.5.0
+    app.kubernetes.io/version: "0.43.3"
 rules:
 - apiGroups: [monitoring.grafana.com]
   resources:

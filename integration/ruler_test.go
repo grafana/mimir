@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -27,7 +28,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,6 +36,7 @@ import (
 	"github.com/grafana/mimir/integration/ca"
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/querier/api"
+	mimir_ruler "github.com/grafana/mimir/pkg/ruler"
 )
 
 func TestRulerAPI(t *testing.T) {
@@ -72,7 +73,7 @@ func TestRulerAPI(t *testing.T) {
 	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
 
 	// Check to ensure the rules running in the ruler match what was set
-	rgs, err := c.GetRuleGroups()
+	_, rgs, err := c.GetRuleGroups()
 	require.NoError(t, err)
 
 	retrievedNamespace, exists := rgs[namespaceOne]
@@ -85,7 +86,7 @@ func TestRulerAPI(t *testing.T) {
 	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(2), "cortex_prometheus_rule_group_rules"))
 
 	// Check to ensure the rules running in the ruler match what was set
-	rgs, err = c.GetRuleGroups()
+	_, rgs, err = c.GetRuleGroups()
 	require.NoError(t, err)
 
 	retrievedNamespace, exists = rgs[namespaceOne]
@@ -131,7 +132,7 @@ func TestRulerAPI(t *testing.T) {
 	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(0), "cortex_ruler_managers_total"))
 
 	// Check to ensure the rule groups are no longer active
-	groups, err := c.GetRuleGroups()
+	_, groups, err := c.GetRuleGroups()
 	require.NoError(t, err)
 	require.Empty(t, groups)
 
@@ -175,7 +176,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
 
 	// Check to ensure the rules running in the mimir match what was set
-	rgs, err := c.GetRuleGroups()
+	_, rgs, err := c.GetRuleGroups()
 	require.NoError(t, err)
 
 	retrievedNamespace, exists := rgs[namespace]
@@ -203,132 +204,136 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	require.NoError(t, mimirRestarted.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
 }
 
-func TestRulerEvaluationDelay(t *testing.T) {
+func TestRulerAPIRulesPagination(t *testing.T) {
+	const (
+		numNamespaces = 3
+		numRuleGroups = 9
+	)
+
+	type NGPair struct {
+		Namespace string
+		Group     string
+	}
+
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
 
-	namespace := "ns"
-	user := "anonymous"
-
-	evaluationDelay := time.Minute * 5
-
 	// Start dependencies.
-	minio := e2edb.NewMinio(9000, blocksBucketName)
-	require.NoError(t, s.StartAndWaitReady(minio))
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-	flags := mergeFlags(
+	// Configure the ruler.
+	rulerFlags := mergeFlags(
+		CommonStorageBackendFlags(),
+		RulerFlags(),
 		BlocksStorageFlags(),
-		BlocksStorageS3Flags(),
+		RulerShardingFlags(consul.NetworkHTTPEndpoint()),
 		map[string]string{
-			"-ruler-storage.local.directory":   filepath.Join(e2e.ContainerSharedDir, "ruler_configs"),
-			"-ruler.poll-interval":             "2s",
-			"-ruler.rule-path":                 filepath.Join(e2e.ContainerSharedDir, "rule_tmp/"),
-			"-ruler.evaluation-delay-duration": evaluationDelay.String(),
+			// Disable rule group limit
+			"-ruler.max-rule-groups-per-tenant": "0",
 		},
 	)
 
-	// Start Mimir components.
-	require.NoError(t, copyFileToSharedDir(s, "docs/configurations/single-process-config-blocks.yaml", mimirConfigFile))
-	require.NoError(t, writeFileToSharedDir(s, filepath.Join("ruler_configs", user, namespace), []byte(mimirRulerEvalStaleNanConfigYaml)))
-	mimir := e2emimir.NewSingleBinary("mimir", flags, e2emimir.WithConfigFile(mimirConfigFile), e2emimir.WithPorts(9009, 9095))
-	require.NoError(t, s.StartAndWaitReady(mimir))
+	// Start rulers.
+	ruler1 := e2emimir.NewRuler("ruler-1", consul.NetworkHTTPEndpoint(), rulerFlags)
+	ruler2 := e2emimir.NewRuler("ruler-2", consul.NetworkHTTPEndpoint(), rulerFlags)
+	rulers := e2emimir.NewCompositeMimirService(ruler1, ruler2)
+	require.NoError(t, s.StartAndWaitReady(ruler1, ruler2))
 
-	// Create a client with the ruler address configured
-	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", mimir.HTTPEndpoint(), "")
+	// Generate and upload rule groups to one of the rulers.
+	c, err := e2emimir.NewClient("", "", "", ruler1.HTTPEndpoint(), "user-1")
 	require.NoError(t, err)
 
-	now := time.Now()
+	// Generate multiple rule groups, with 1 rule each. Write them in
+	// reverse order and check that they are sorted when returned.
+	expectedGroups := make([]NGPair, 0, numRuleGroups)
+	for i := numRuleGroups - 1; i >= 0; i-- {
+		var recordNode yaml.Node
+		var exprNode yaml.Node
 
-	// Generate series that includes stale nans
-	var samplesToSend = 10
-	series := prompb.TimeSeries{
-		Labels: []prompb.Label{
-			{Name: "__name__", Value: "a_sometimes_stale_nan_series"},
-			{Name: "instance", Value: "sometimes-stale"},
-		},
+		recordNode.SetString(fmt.Sprintf("rule_%d", i))
+		exprNode.SetString(strconv.Itoa(i))
+		ruleGroupName := fmt.Sprintf("test_%d", i)
+
+		expectedGroups = append(expectedGroups,
+			NGPair{
+				Namespace: fmt.Sprintf("namespace_%d", i/numNamespaces),
+				Group:     ruleGroupName,
+			},
+		)
+
+		require.NoError(t, c.SetRuleGroup(rulefmt.RuleGroup{
+			Name:     ruleGroupName,
+			Interval: 60,
+			Rules: []rulefmt.RuleNode{{
+				Record: recordNode,
+				Expr:   exprNode,
+			}},
+		}, fmt.Sprintf("namespace_%d", i/numNamespaces)))
 	}
-	series.Samples = make([]prompb.Sample, samplesToSend)
-	posStale := 2
 
-	// Create samples, that are delayed by the evaluation delay with increasing values.
-	for pos := range series.Samples {
-		series.Samples[pos].Timestamp = e2e.TimeToMilliseconds(now.Add(-evaluationDelay).Add(time.Duration(pos) * time.Second))
-		series.Samples[pos].Value = float64(pos + 1)
+	// Sort expectedGroups as it is currently in reverse order
+	slices.SortFunc(expectedGroups, func(a, b NGPair) int {
+		fileCompare := strings.Compare(a.Namespace, b.Namespace)
 
-		// insert staleness marker at the positions marked by posStale
-		if pos == posStale {
-			series.Samples[pos].Value = math.Float64frombits(value.StaleNaN)
+		// If its 0, then the file names are the same,
+		// so compare the groups
+		if fileCompare != 0 {
+			return fileCompare
 		}
+		return strings.Compare(a.Group, b.Group)
+	})
+
+	// Wait until rulers have loaded all rules.
+	require.NoError(t, rulers.WaitSumMetricsWithOptions(e2e.Equals(numRuleGroups), []string{"cortex_prometheus_rule_group_rules"}, e2e.WaitMissingMetrics))
+
+	// Since rulers have loaded all rules, we expect that rules have been sharded
+	// between the two rulers.
+	require.NoError(t, ruler1.WaitSumMetrics(e2e.Less(float64(numRuleGroups)), "cortex_prometheus_rule_group_rules"))
+	require.NoError(t, ruler2.WaitSumMetrics(e2e.Less(float64(numRuleGroups)), "cortex_prometheus_rule_group_rules"))
+
+	// No page size limit
+	actualGroups, token, err := c.GetPrometheusRules(0, "")
+	require.NoError(t, err)
+	require.Empty(t, token)
+	require.Len(t, actualGroups, len(expectedGroups))
+	for i := 0; i < len(expectedGroups); i++ {
+		require.Equal(t, expectedGroups[i].Namespace, actualGroups[i].File)
+		require.Equal(t, expectedGroups[i].Group, actualGroups[i].Name)
 	}
 
-	// Insert metrics
-	res, err := c.Push([]prompb.TimeSeries{series})
-	require.NoError(t, err)
-	require.Equal(t, 200, res.StatusCode)
+	// We have 9 groups, keep fetching rules with a group page size of 2. The final
+	// page should have size 1 and an empty nextToken. Also check the groups are returned
+	// in order
+	var nextToken string
+	returnedGroups := make([]NGPair, 0, len(expectedGroups))
+	for i := 0; i < 4; i++ {
+		gps, token, err := c.GetPrometheusRules(2, nextToken)
+		require.NoError(t, err)
+		require.Len(t, gps, 2)
+		require.NotEmpty(t, token)
 
-	// Get number of rule evaluations just after push
-	ruleEvaluationsAfterPush, err := mimir.SumMetrics([]string{"cortex_prometheus_rule_evaluations_total"})
-	require.NoError(t, err)
-
-	// Wait until the rule is evaluated for the first time
-	require.NoError(t, mimir.WaitSumMetrics(e2e.Greater(ruleEvaluationsAfterPush[0]), "cortex_prometheus_rule_evaluations_total"))
-
-	// Query the timestamp of the latest result to ensure the evaluation is delayed
-	result, err := c.Query("timestamp(stale_nan_eval)", now)
-	require.NoError(t, err)
-	require.Equal(t, model.ValVector, result.Type())
-
-	vector := result.(model.Vector)
-	require.Equal(t, 1, vector.Len(), "expect one sample returned")
-
-	// 290 seconds gives 10 seconds of slack between the rule evaluation and the query
-	// to account for CI latency, but ensures the latest evaluation was in the past.
-	var maxDiff int64 = 290_000
-	require.GreaterOrEqual(t, e2e.TimeToMilliseconds(time.Now())-int64(vector[0].Value)*1000, maxDiff)
-
-	// Wait until all the pushed samples have been evaluated by the rule. This
-	// ensures that rule results are successfully written even after a
-	// staleness period.
-	require.NoError(t, mimir.WaitSumMetrics(e2e.Greater(ruleEvaluationsAfterPush[0]+float64(samplesToSend)), "cortex_prometheus_rule_evaluations_total"))
-
-	// query all results to verify rules have been evaluated correctly
-	t.Log("querying from ", now.Add(-evaluationDelay), "to", now)
-	result, err = c.QueryRange("stale_nan_eval", now.Add(-evaluationDelay), now, time.Second)
-	require.NoError(t, err)
-	require.Equal(t, model.ValMatrix, result.Type())
-
-	matrix := result.(model.Matrix)
-	require.GreaterOrEqual(t, 1, matrix.Len(), "expect at least a series returned")
-
-	// Iterate through the values recorded and ensure they exist as expected.
-	inputPos := 0
-	for _, m := range matrix {
-		for _, v := range m.Values {
-			// Skip values for stale positions
-			if inputPos == posStale {
-				inputPos++
-			}
-
-			expectedValue := model.SampleValue(2 * (inputPos + 1))
-			assert.Equal(t, expectedValue, v.Value)
-			t.Log(
-				"expected value", expectedValue,
-				"actual value", v.Value,
-				"actual timestamp", v.Timestamp,
-				"expected timestamp", now.Add(-evaluationDelay).Add(time.Duration(inputPos)*time.Second),
-			)
-
-			// Look for next value
-			inputPos++
-
-			// We have found all input values
-			if inputPos >= len(series.Samples) {
-				break
-			}
-		}
+		returnedGroups = append(returnedGroups, NGPair{gps[0].File, gps[0].Name}, NGPair{gps[1].File, gps[1].Name})
+		nextToken = token
 	}
-	assert.Equal(t, len(series.Samples), inputPos, "expect to have returned all evaluations")
+	gps, token, err := c.GetPrometheusRules(2, nextToken)
+	require.NoError(t, err)
+	require.Len(t, gps, 1)
+	require.Empty(t, token)
+	returnedGroups = append(returnedGroups, NGPair{gps[0].File, gps[0].Name})
+
+	// Check the returned rules match the rules written
+	require.Len(t, returnedGroups, len(expectedGroups))
+	for i := 0; i < len(expectedGroups); i++ {
+		require.Equal(t, expectedGroups[i].Namespace, returnedGroups[i].Namespace)
+		require.Equal(t, expectedGroups[i].Group, returnedGroups[i].Group)
+	}
+
+	// Invalid max groups value
+	_, _, err = c.GetPrometheusRules(-1, "")
+	require.Error(t, err)
 }
 
 func TestRulerSharding(t *testing.T) {
@@ -400,7 +405,7 @@ func TestRulerSharding(t *testing.T) {
 	require.NoError(t, ruler2.WaitSumMetrics(e2e.Less(numRulesGroups), "cortex_prometheus_rule_group_rules"))
 
 	// Fetch the rules and ensure they match the configured ones.
-	actualGroups, err := c.GetPrometheusRules()
+	actualGroups, _, err := c.GetPrometheusRules(0, "")
 	require.NoError(t, err)
 
 	var actualNames []string
@@ -722,7 +727,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		addNewRuleAndWait(groupName2, expression2, false)
 
 		// Ensure that samples were returned.
-		require.Less(t, 0, getLastEvalSamples())
+		require.Positive(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was not incremented.
 		require.Equal(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
@@ -735,7 +740,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		addNewRuleAndWait(groupName3, expression3, false)
 
 		// Ensure that samples were returned.
-		require.Less(t, 0, getLastEvalSamples())
+		require.Positive(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was not incremented.
 		require.Equal(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
@@ -744,11 +749,11 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		zeroSeriesQueries = getZeroSeriesQueriesTotal()
 
 		const groupName4 = "good_rule_with_fetched_series_and_samples_and_non_series_selector"
-		const expression4 = `sum(metric{foo=~"1|2"}) + vector(1.2345)`
+		const expression4 = `sum(metric{foo=~"1|2"}) * vector(1.2345)`
 		addNewRuleAndWait(groupName4, expression4, false)
 
-		// Ensure that samples were not returned.
-		require.Less(t, 0, getLastEvalSamples())
+		// Ensure that samples were returned.
+		require.Positive(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was not incremented.
 		require.Equal(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
@@ -764,7 +769,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		require.Zero(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was incremented.
-		require.Less(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
+		require.Greater(t, getZeroSeriesQueriesTotal(), zeroSeriesQueries)
 
 		deleteRuleAndWait(groupName5)
 		zeroSeriesQueries = getZeroSeriesQueriesTotal()
@@ -777,7 +782,7 @@ func TestRulerMetricsForInvalidQueriesAndNoFetchedSeries(t *testing.T) {
 		require.Zero(t, getLastEvalSamples())
 
 		// Ensure that the metric for no fetched series was incremented.
-		require.Less(t, zeroSeriesQueries, getZeroSeriesQueriesTotal())
+		require.Greater(t, getZeroSeriesQueriesTotal(), zeroSeriesQueries)
 	})
 
 	// Now let's stop ingester, and recheck metrics. This should increase cortex_ruler_queries_failed_total failures.
@@ -928,7 +933,7 @@ func TestRulerFederatedRules(t *testing.T) {
 			require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(float64(i+1)), "cortex_ruler_managers_total"))
 
 			// Check to ensure the rules running in the ruler match what was set
-			rgs, err := c.GetRuleGroups()
+			_, rgs, err := c.GetRuleGroups()
 			retrievedNamespace, exists := rgs[namespace]
 			require.NoError(t, err)
 			require.True(t, exists)
@@ -1006,7 +1011,7 @@ func TestRulerRemoteEvaluation(t *testing.T) {
 	)
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.Start(queryFrontend))
 	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
@@ -1139,7 +1144,7 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 	require.NoError(t, s.StartAndWaitReady(minio, consul, kafka))
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags)
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags)
 	require.NoError(t, s.Start(queryFrontend))
 	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
@@ -1159,13 +1164,13 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
 	// Wait until partitions are ACTIVE in the ring.
-	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
-		labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+	for _, service := range []*e2emimir.MimirService{distributor, queryFrontend, querier} {
+		require.NoError(t, service.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+			labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+	}
 
-	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
-		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
-		labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+	waitQueryFrontendToSuccessfullyFetchLastProducedOffsets(t, queryFrontend)
 
 	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
@@ -1205,7 +1210,12 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 
 		// The rules have been evaluated at least once. We expect the rule queries
 		// have run with eventual consistency because they are independent.
+		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_ingest_storage_strong_consistency_requests_total"))
 		require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(0), "cortex_ingest_storage_strong_consistency_requests_total"))
+
+		// Ensure cortex_distributor_replication_factor is not exported when ingest storage is enabled
+		// because it's how we detect whether a Mimir cluster is running with ingest storage.
+		assertServiceMetricsNotMatching(t, "cortex_distributor_replication_factor", queryFrontend, distributor, ingester, querier, ruler)
 	})
 
 	t.Run("evaluation of dependent rules should require strong consistency", func(t *testing.T) {
@@ -1235,7 +1245,15 @@ func TestRulerRemoteEvaluation_ShouldEnforceStrongReadConsistencyForDependentRul
 
 		// The rules have been evaluated at least once. We expect the 2nd rule query
 		// has run with strong consistency because it depends on the 1st one.
-		require.NoError(t, ingester.WaitSumMetrics(e2e.GreaterOrEqual(1), "cortex_ingest_storage_strong_consistency_requests_total"))
+		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.GreaterOrEqual(1), "cortex_ingest_storage_strong_consistency_requests_total"))
+
+		// We expect the offsets to be fetched by query-frontend and then propagated to ingesters.
+		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "true"))))
+		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "false"))))
+
+		// Ensure cortex_distributor_replication_factor is not exported when ingest storage is enabled
+		// because it's how we detect whether a Mimir cluster is running with ingest storage.
+		assertServiceMetricsNotMatching(t, "cortex_distributor_replication_factor", queryFrontend, distributor, ingester, querier, ruler)
 	})
 }
 
@@ -1304,7 +1322,7 @@ func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
 	assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Greater(evalsForAlertToFire), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
 	// Assert that the alert is firing
-	rules, err := c.GetPrometheusRules()
+	rules, _, err := c.GetPrometheusRules(0, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
 
@@ -1321,9 +1339,224 @@ func TestRuler_RestoreWithLongForPeriod(t *testing.T) {
 	assert.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(evalsToRestoredAlertState), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
 	// Assert the alert is already firing
-	rules, err = c.GetPrometheusRules()
+	rules, _, err = c.GetPrometheusRules(0, "")
 	assert.NoError(t, err)
 	assert.Equal(t, "firing", rules[0].Rules[0].(v1.AlertingRule).State)
+}
+
+func TestRulerProtectedNamespaces(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	const (
+		protectedNamespaceOne = "namespace-protected-1"
+		protectedNamespaceTwo = "namespace-protected-2"
+	)
+
+	// Configure the ruler.
+	rulerFlags := mergeFlags(CommonStorageBackendFlags(), RulerFlags(), BlocksStorageFlags(), map[string]string{
+		"-ruler.protected-namespaces": strings.Join([]string{protectedNamespaceOne, protectedNamespaceTwo}, ","),
+	})
+
+	// Start Mimir components.
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
+	require.NoError(t, s.StartAndWaitReady(ruler))
+
+	// Create two clients, one with the override header and one without for the same user - we'll need them both.
+	client, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1")
+	require.NoError(t, err)
+	cWithOverrideHeader, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1", e2emimir.WithAddHeader(
+		mimir_ruler.OverrideProtectionHeader, protectedNamespaceOne))
+	require.NoError(t, err)
+	cWithOverrideHeader2, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1", e2emimir.WithAddHeader(
+		mimir_ruler.OverrideProtectionHeader, protectedNamespaceTwo))
+	require.NoError(t, err)
+
+	const nonProtectedNamespace = "namespace1"
+
+	t.Run("without protection overrides", func(t *testing.T) {
+		// Create a rule group in one of the protected namespaces so that the headers we get back are set correctly.
+		setupRg := createTestRuleGroup(withName("protected-rg"))
+		require.NoError(t, cWithOverrideHeader.SetRuleGroup(setupRg, protectedNamespaceOne))
+
+		t.Run("on a non-protected namespace", func(t *testing.T) {
+			rgnp1 := createTestRuleGroup(withName("rgnp1"))
+			// Create two rule groups successfully.
+			require.NoError(t, client.SetRuleGroup(rgnp1, nonProtectedNamespace))
+			require.NoError(t, client.SetRuleGroup(createTestRuleGroup(withName("rgnp2")), nonProtectedNamespace))
+			// List all rule groups successfully.
+			resp, rgs, err := client.GetRuleGroups()
+			require.Len(t, rgs, 2)
+			require.Len(t, rgs[nonProtectedNamespace], 2)
+			require.Len(t, rgs[protectedNamespaceOne], 1)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), protectedNamespaceOne)
+			require.NoError(t, err)
+			// Get a rule group successfully.
+			resp, err = client.GetRuleGroup(nonProtectedNamespace, rgnp1.Name)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), "") // No namespace header unless requesting the protected namespace.
+			require.NoError(t, err)
+			// Delete a rule group successfully.
+			require.NoError(t, client.DeleteRuleGroup(nonProtectedNamespace, rgnp1.Name))
+			// Delete a namespace successfully.
+			require.NoError(t, client.DeleteRuleNamespace(nonProtectedNamespace))
+		})
+
+		t.Run("on a protected namespace", func(t *testing.T) {
+			// Create a rule group in the protected namespace fails.
+			require.EqualError(t, client.SetRuleGroup(createTestRuleGroup(), protectedNamespaceOne), "unexpected status code: 403")
+			// List all rule groups successfully.
+			resp, rgs, err := client.GetRuleGroups()
+			require.Len(t, rgs, 1)
+			require.Len(t, rgs[protectedNamespaceOne], 1)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), protectedNamespaceOne)
+			require.NoError(t, err)
+			// Get the rule group we originally created successfully.
+			resp, err = client.GetRuleGroup(protectedNamespaceOne, setupRg.Name)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), protectedNamespaceOne)
+			require.NoError(t, err)
+			// Deleting the rule group we created as part of the setup fails.
+			require.EqualError(t, client.DeleteRuleGroup(protectedNamespaceOne, setupRg.Name), "unexpected status code: 403")
+			// Deleting a namespace we create as part of the setup fails.
+			require.EqualError(t, client.DeleteRuleNamespace(protectedNamespaceOne), "unexpected status code: 403")
+		})
+	})
+
+	t.Run("with protection overrides", func(t *testing.T) {
+		t.Run("on a non-protected namespace", func(t *testing.T) {
+			rgnp1 := createTestRuleGroup(withName("rgnp1"))
+			// Create two rule groups successfully.
+			require.NoError(t, cWithOverrideHeader.SetRuleGroup(rgnp1, nonProtectedNamespace))
+			require.NoError(t, cWithOverrideHeader.SetRuleGroup(createTestRuleGroup(withName("rgnp2")), nonProtectedNamespace))
+			// List all rule groups successfully.
+			resp, rgs, err := cWithOverrideHeader.GetRuleGroups()
+			require.Len(t, rgs, 2)
+			require.Len(t, rgs[nonProtectedNamespace], 2)
+			require.Len(t, rgs[protectedNamespaceOne], 1)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), protectedNamespaceOne)
+			require.NoError(t, err)
+			// Get a rule group successfully.
+			resp, err = cWithOverrideHeader.GetRuleGroup(nonProtectedNamespace, rgnp1.Name)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), "") // No namespace header unless requesting the protected namespace.
+			require.NoError(t, err)
+			// Delete a rule group successfully.
+			require.NoError(t, cWithOverrideHeader.DeleteRuleGroup(nonProtectedNamespace, rgnp1.Name))
+			// Delete a namespace successfully.
+			require.NoError(t, cWithOverrideHeader.DeleteRuleNamespace(nonProtectedNamespace))
+		})
+
+		t.Run("on a protected namespace", func(t *testing.T) {
+			rgp1 := createTestRuleGroup(withName("rgp1"))
+			// Create another rule group successfully. We created another one as part of the setup.
+			require.NoError(t, cWithOverrideHeader.SetRuleGroup(rgp1, protectedNamespaceOne))
+			// List all rule groups successfully.
+			resp, rgs, err := cWithOverrideHeader.GetRuleGroups()
+			require.Len(t, rgs, 1)
+			require.Len(t, rgs[protectedNamespaceOne], 2)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), protectedNamespaceOne)
+			require.NoError(t, err)
+			// Get a rule group successfully.
+			resp, err = cWithOverrideHeader.GetRuleGroup(protectedNamespaceOne, rgp1.Name)
+			require.Equal(t, resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), protectedNamespaceOne) // No namespace header unless requesting the protected namespace.
+			require.NoError(t, err)
+			// Delete a rule group successfully.
+			require.NoError(t, cWithOverrideHeader.DeleteRuleGroup(protectedNamespaceOne, rgp1.Name))
+			// Delete a namespace successfully.
+			require.NoError(t, cWithOverrideHeader.DeleteRuleNamespace(protectedNamespaceOne))
+		})
+	})
+
+	t.Run("with multiple namespaces protected", func(t *testing.T) {
+		// Create a rule group in one of the protected namespaces so that the headers we get back are set correctly.
+		setupRg := createTestRuleGroup(withName("protected-rg"))
+		require.NoError(t, cWithOverrideHeader.SetRuleGroup(setupRg, protectedNamespaceOne))
+
+		// You can't modify the protected namespace without the correct override header.
+		// We're using the client that has the override header set for protectedNamespaceOne.
+		rgp2 := createTestRuleGroup(withName("protected-rg2"))
+		require.EqualError(t, cWithOverrideHeader.SetRuleGroup(rgp2, protectedNamespaceTwo), "unexpected status code: 403")
+
+		// With the right client, it succeeds.
+		require.NoError(t, cWithOverrideHeader2.SetRuleGroup(rgp2, protectedNamespaceTwo))
+
+		// When listing rules, the header should give you all protected namespaces.
+		resp, rgs, err := cWithOverrideHeader.GetRuleGroups()
+
+		require.Len(t, rgs, 2)
+		require.Len(t, rgs[protectedNamespaceOne], 1)
+		require.Len(t, rgs[protectedNamespaceTwo], 1)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{protectedNamespaceOne, protectedNamespaceTwo}, strings.Split(resp.Header.Get(mimir_ruler.ProtectedNamespacesHeader), ","))
+	})
+}
+
+func TestRulerPerRuleConcurrency(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, mimirBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	// Configure the ruler.
+	rulerFlags := mergeFlags(CommonStorageBackendFlags(), RulerFlags(), BlocksStorageFlags(), map[string]string{
+		// Evaluate rules often.
+		"-ruler.evaluation-interval": "5s",
+		// No delay
+		"-ruler.evaluation-delay-duration":                                       "0",
+		"-ruler.poll-interval":                                                   "2s",
+		"-ruler.max-independent-rule-evaluation-concurrency":                     "4",
+		"-ruler.max-independent-rule-evaluation-concurrency-per-tenant":          "2",
+		"-ruler.independent-rule-evaluation-concurrency-min-duration-percentage": "0", // This makes sure no matter the ratio, we will attempt concurrency.
+	})
+
+	// Start Mimir components.
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), rulerFlags)
+	require.NoError(t, s.StartAndWaitReady(ruler))
+
+	// Upload rule groups to one of the rulers for two users.
+	c, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1")
+	require.NoError(t, err)
+	c2, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-2")
+	require.NoError(t, err)
+
+	rg := rulefmt.RuleGroup{
+		Name:     "nameX",
+		Interval: 5,
+		Rules: []rulefmt.RuleNode{
+			recordingRule("tenant_vector_one", "count(series_1)"),
+			recordingRule("tenant_vector_two", "count(series_1)"),
+			recordingRule("tenant_vector_three", "count(series_1)"),
+			recordingRule("tenant_vector_four", "count(series_1)"),
+			recordingRule("tenant_vector_five", "count(series_1)"),
+			recordingRule("tenant_vector_six", "count(series_1)"),
+			recordingRule("tenant_vector_seven", "count(series_1)"),
+			recordingRule("tenant_vector_eight", "count(series_1)"),
+			recordingRule("tenant_vector_nine", "count(series_1)"),
+			recordingRule("tenant_vector_ten", "count(series_1)"),
+		},
+	}
+
+	require.NoError(t, c.SetRuleGroup(rg, "fileY"))
+	require.NoError(t, c2.SetRuleGroup(rg, "fileY"))
+
+	// Wait until rulers have loaded all rules.
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(20), []string{"cortex_prometheus_rule_group_rules"}, e2e.WaitMissingMetrics))
+
+	// We should have 20 attempts and 20 or less for failed or successful attempts to acquire the lock.
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.Equals(20), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total"}, e2e.WaitMissingMetrics))
+	// The magic number here is because we have a maximum per tenant concurrency of 2. So we expect at least 4 (2 slots * 2 tenants) to complete successfully.
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(4), []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total"}, e2e.WaitMissingMetrics))
+	require.NoError(t, ruler.WaitSumMetricsWithOptions(func(sums ...float64) bool {
+		return e2e.SumValues(sums) == 20
+	}, []string{"cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total", "cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total"}, e2e.WaitMissingMetrics))
 }
 
 func TestRulerEnableAPIs(t *testing.T) {
@@ -1464,8 +1697,22 @@ func ruleGroupWithRules(groupName string, interval time.Duration, rules ...rulef
 	}
 }
 
-func createTestRuleGroup() rulefmt.RuleGroup {
-	return ruleGroupWithRules("test_encoded_+\"+group_name/?", 100, recordingRule("test_rule", "up"))
+func withName(name string) testRuleGroupsOption {
+	return func(rg *rulefmt.RuleGroup) {
+		rg.Name = name
+	}
+}
+
+type testRuleGroupsOption func(*rulefmt.RuleGroup)
+
+func createTestRuleGroup(opts ...testRuleGroupsOption) rulefmt.RuleGroup {
+	rg := ruleGroupWithRules("test_encoded_+\"+group_name/?", 100, recordingRule("test_rule", "up"))
+
+	for _, opt := range opts {
+		opt(&rg)
+	}
+
+	return rg
 }
 
 func recordingRule(record, expr string) rulefmt.RuleNode {

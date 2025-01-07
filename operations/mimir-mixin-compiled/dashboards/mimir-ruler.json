@@ -28,7 +28,7 @@
             "type": "dashboards"
          }
       ],
-      "refresh": "10s",
+      "refresh": "5m",
       "rows": [
          {
             "collapse": false,
@@ -190,7 +190,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Read from ingesters - QPS\nNote: Even while operating in Remote ruler mode you will still see values for this panel.\n\nThis is because the metrics are inclusive of intermediate services and are showing the requests that ultimately reach the ingesters.\n\nFor a more detailed view of the read path when using remote ruler mode, see the Remote ruler reads dashboard.\n\n",
+                  "description": "### Reads from ingesters - RPS\nNote: Even while operating in Remote ruler mode you will still see values for this panel.\n\nThis is because the metrics are inclusive of intermediate services and are showing the requests that ultimately reach the ingesters.\n\nFor a more detailed view of the read path when using remote ruler mode, see the Remote ruler reads dashboard.\n\n",
                   "fill": 1,
                   "format": "reqps",
                   "id": 3,
@@ -227,7 +227,7 @@
                   "thresholds": "70,80",
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Read from ingesters - QPS",
+                  "title": "Reads from ingesters - RPS",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -293,7 +293,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir|mimir-backend.*))\", operation=\"/cortex.Ingester/Push\"}[$__rate_interval]))\n",
                         "format": "time_series",
                         "instant": true,
                         "refId": "A"
@@ -302,7 +302,7 @@
                   "thresholds": "70,80",
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Write to ingesters - QPS",
+                  "title": "Writes to ingesters - RPS",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
@@ -410,7 +410,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -470,7 +470,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -666,7 +666,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -679,7 +679,7 @@
                         "refId": "A"
                      }
                   ],
-                  "title": "QPS",
+                  "title": "Requests / sec",
                   "type": "timeseries"
                },
                {
@@ -715,7 +715,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -941,7 +941,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -990,7 +990,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1216,7 +1216,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1265,7 +1265,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1356,7 +1356,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1435,7 +1435,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1531,7 +1531,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1592,7 +1592,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1641,7 +1641,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1690,7 +1690,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1750,7 +1750,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1798,7 +1798,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1846,7 +1846,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1906,7 +1906,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1966,7 +1966,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -1999,7 +1999,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2048,7 +2048,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2127,7 +2127,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2218,7 +2218,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2297,7 +2297,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2376,7 +2376,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2455,7 +2455,7 @@
                         "showLegend": true
                      },
                      "tooltip": {
-                        "mode": "single",
+                        "mode": "multi",
                         "sort": "none"
                      }
                   },
@@ -2564,7 +2564,7 @@
                },
                "datasource": "$datasource",
                "hide": 0,
-               "includeAll": true,
+               "includeAll": false,
                "label": "namespace",
                "multi": true,
                "name": "namespace",
@@ -2577,6 +2577,35 @@
                "tags": [ ],
                "tagsQuery": "",
                "type": "query",
+               "useTags": false
+            },
+            {
+               "current": {
+                  "selected": true,
+                  "text": "classic",
+                  "value": "1"
+               },
+               "description": "Choose between showing latencies based on low precision classic or high precision native histogram metrics.",
+               "hide": 0,
+               "includeAll": false,
+               "label": "Latency metrics",
+               "multi": false,
+               "name": "latency_metrics",
+               "options": [
+                  {
+                     "selected": false,
+                     "text": "native",
+                     "value": "-1"
+                  },
+                  {
+                     "selected": true,
+                     "text": "classic",
+                     "value": "1"
+                  }
+               ],
+               "query": "native : -1,classic : 1",
+               "skipUrlSync": false,
+               "type": "custom",
                "useTags": false
             }
          ]

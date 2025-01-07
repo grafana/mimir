@@ -31,12 +31,10 @@ func (fl *FakeLogger) Log(...interface{}) error {
 
 func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 	cfg := Config{}
-	serverCfg := server.Config{
-		HTTPListenAddress: "localhost",
-		GRPCListenAddress: "localhost",
-		MetricsNamespace:  "without_source_ip_extractor",
-	}
+	serverCfg := getServerConfig(t)
+	serverCfg.MetricsNamespace = "without_source_ip_extractor"
 	federationCfg := tenantfederation.Config{}
+
 	require.NoError(t, serverCfg.LogLevel.Set("info"))
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
@@ -48,13 +46,11 @@ func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 
 func TestNewApiWithSourceIPExtractor(t *testing.T) {
 	cfg := Config{}
-	serverCfg := server.Config{
-		LogSourceIPs:      true,
-		HTTPListenAddress: "localhost",
-		GRPCListenAddress: "localhost",
-		MetricsNamespace:  "with_source_ip_extractor",
-	}
+	serverCfg := getServerConfig(t)
+	serverCfg.LogSourceIPs = true
+	serverCfg.MetricsNamespace = "with_source_ip_extractor"
 	federationCfg := tenantfederation.Config{}
+
 	require.NoError(t, serverCfg.LogLevel.Set("info"))
 	srv, err := server.New(serverCfg)
 	require.NoError(t, err)
@@ -69,12 +65,11 @@ func TestNewApiWithInvalidSourceIPExtractor(t *testing.T) {
 	s := server.Server{
 		HTTP: &mux.Router{},
 	}
-	serverCfg := server.Config{
-		LogSourceIPs:       true,
-		LogSourceIPsHeader: "SomeHeader",
-		LogSourceIPsRegex:  "[*",
-		MetricsNamespace:   "with_invalid_source_ip_extractor",
-	}
+	serverCfg := getServerConfig(t)
+	serverCfg.LogSourceIPs = true
+	serverCfg.LogSourceIPsHeader = "SomeHeader"
+	serverCfg.LogSourceIPsRegex = "[*"
+	serverCfg.MetricsNamespace = "with_invalid_source_ip_extractor"
 	federationCfg := tenantfederation.Config{}
 
 	api, err := New(cfg, federationCfg, serverCfg, &s, &FakeLogger{})
@@ -206,36 +201,29 @@ func (mi MockIngester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 func TestApiIngesterShutdown(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
-		setFlag            bool
 		expectedStatusCode int
 	}{
 		{
-			name:               "flag set to true, enable GET request for ingester shutdown",
-			setFlag:            true,
-			expectedStatusCode: http.StatusNoContent,
-		},
-		{
 			name:               "flag not set (default), disable GET request for ingester shutdown",
-			setFlag:            false,
 			expectedStatusCode: http.StatusMethodNotAllowed,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := Config{
-				GETRequestForIngesterShutdownEnabled: tc.setFlag,
-			}
+			cfg := Config{}
 			serverCfg := getServerConfig(t)
 			federationCfg := tenantfederation.Config{}
 			srv, err := server.New(serverCfg)
 			require.NoError(t, err)
 
-			go func() { _ = srv.Run() }()
-			t.Cleanup(srv.Stop)
-
 			api, err := New(cfg, federationCfg, serverCfg, srv, log.NewNopLogger())
 			require.NoError(t, err)
-
 			api.RegisterIngester(&MockIngester{})
+
+			go func() { _ = srv.Run() }()
+			t.Cleanup(func() {
+				srv.Stop()
+				srv.Shutdown()
+			})
 
 			req := httptest.NewRequest("GET", "/ingester/shutdown", nil)
 			w := httptest.NewRecorder()

@@ -63,8 +63,7 @@ while true; do
   echo "1. Ensure VERSION is not changed (keep the same version as in main)."
   echo "2. Fix any conflict."
   echo "3. Clean up CHANGELOG.md: incoming entries from release branch should be under proper release version. There may be duplicate entries already."
-  echo ""
-  echo "Run 'git commit' once done."
+  echo "4. Run 'git commit'."
 
   read -p "Press any key to continue... " -n 1 -r
   echo ""

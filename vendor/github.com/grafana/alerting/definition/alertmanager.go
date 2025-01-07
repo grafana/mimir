@@ -1,16 +1,18 @@
 package definition
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/common/model"
-	"gopkg.in/yaml.v3"
 )
 
 type Provenance string
@@ -37,12 +39,13 @@ type Route struct {
 	// Deprecated. Remove before v1.0 release.
 	Match map[string]string `yaml:"match,omitempty" json:"match,omitempty"`
 	// Deprecated. Remove before v1.0 release.
-	MatchRE           config.MatchRegexps `yaml:"match_re,omitempty" json:"match_re,omitempty"`
-	Matchers          config.Matchers     `yaml:"matchers,omitempty" json:"matchers,omitempty"`
-	ObjectMatchers    ObjectMatchers      `yaml:"object_matchers,omitempty" json:"object_matchers,omitempty"`
-	MuteTimeIntervals []string            `yaml:"mute_time_intervals,omitempty" json:"mute_time_intervals,omitempty"`
-	Continue          bool                `yaml:"continue" json:"continue,omitempty"`
-	Routes            []*Route            `yaml:"routes,omitempty" json:"routes,omitempty"`
+	MatchRE             config.MatchRegexps `yaml:"match_re,omitempty" json:"match_re,omitempty"`
+	Matchers            config.Matchers     `yaml:"matchers,omitempty" json:"matchers,omitempty"`
+	ObjectMatchers      ObjectMatchers      `yaml:"object_matchers,omitempty" json:"object_matchers,omitempty"`
+	MuteTimeIntervals   []string            `yaml:"mute_time_intervals,omitempty" json:"mute_time_intervals,omitempty"`
+	ActiveTimeIntervals []string            `yaml:"active_time_intervals,omitempty" json:"active_time_intervals,omitempty"`
+	Continue            bool                `yaml:"continue" json:"continue,omitempty"`
+	Routes              []*Route            `yaml:"routes,omitempty" json:"routes,omitempty"`
 
 	GroupWait      *model.Duration `yaml:"group_wait,omitempty" json:"group_wait,omitempty"`
 	GroupInterval  *model.Duration `yaml:"group_interval,omitempty" json:"group_interval,omitempty"`
@@ -64,15 +67,16 @@ func (r *Route) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // AsAMRoute returns an Alertmanager route from a Grafana route. The ObjectMatchers are converted to Matchers.
 func (r *Route) AsAMRoute() *config.Route {
 	amRoute := &config.Route{
-		Receiver:          r.Receiver,
-		GroupByStr:        r.GroupByStr,
-		GroupBy:           r.GroupBy,
-		GroupByAll:        r.GroupByAll,
-		Match:             r.Match,
-		MatchRE:           r.MatchRE,
-		Matchers:          append(r.Matchers, r.ObjectMatchers...),
-		MuteTimeIntervals: r.MuteTimeIntervals,
-		Continue:          r.Continue,
+		Receiver:            r.Receiver,
+		GroupByStr:          r.GroupByStr,
+		GroupBy:             r.GroupBy,
+		GroupByAll:          r.GroupByAll,
+		Match:               r.Match,
+		MatchRE:             r.MatchRE,
+		Matchers:            append(r.Matchers, r.ObjectMatchers...),
+		MuteTimeIntervals:   r.MuteTimeIntervals,
+		ActiveTimeIntervals: r.ActiveTimeIntervals,
+		Continue:            r.Continue,
 
 		GroupWait:      r.GroupWait,
 		GroupInterval:  r.GroupInterval,
@@ -90,15 +94,16 @@ func (r *Route) AsAMRoute() *config.Route {
 // AsGrafanaRoute returns a Grafana route from an Alertmanager route.
 func AsGrafanaRoute(r *config.Route) *Route {
 	gRoute := &Route{
-		Receiver:          r.Receiver,
-		GroupByStr:        r.GroupByStr,
-		GroupBy:           r.GroupBy,
-		GroupByAll:        r.GroupByAll,
-		Match:             r.Match,
-		MatchRE:           r.MatchRE,
-		Matchers:          r.Matchers,
-		MuteTimeIntervals: r.MuteTimeIntervals,
-		Continue:          r.Continue,
+		Receiver:            r.Receiver,
+		GroupByStr:          r.GroupByStr,
+		GroupBy:             r.GroupBy,
+		GroupByAll:          r.GroupByAll,
+		Match:               r.Match,
+		MatchRE:             r.MatchRE,
+		Matchers:            r.Matchers,
+		MuteTimeIntervals:   r.MuteTimeIntervals,
+		ActiveTimeIntervals: r.ActiveTimeIntervals,
+		Continue:            r.Continue,
 
 		GroupWait:      r.GroupWait,
 		GroupInterval:  r.GroupInterval,
@@ -173,19 +178,23 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 func checkTimeInterval(r *Route, timeIntervals map[string]struct{}) error {
+	for _, mt := range r.MuteTimeIntervals {
+		if _, ok := timeIntervals[mt]; !ok {
+			return fmt.Errorf("undefined mute time interval %q used in route", mt)
+		}
+	}
+	for _, mt := range r.ActiveTimeIntervals {
+		if _, ok := timeIntervals[mt]; !ok {
+			return fmt.Errorf("undefined active time interval %q used in route", mt)
+		}
+	}
+
 	for _, sr := range r.Routes {
 		if err := checkTimeInterval(sr, timeIntervals); err != nil {
 			return err
 		}
 	}
-	if len(r.MuteTimeIntervals) == 0 {
-		return nil
-	}
-	for _, mt := range r.MuteTimeIntervals {
-		if _, ok := timeIntervals[mt]; !ok {
-			return fmt.Errorf("undefined time interval %q used in route", mt)
-		}
-	}
+
 	return nil
 }
 
@@ -597,4 +606,23 @@ func (r *PostableApiReceiver) GetName() string {
 
 type PostableGrafanaReceivers struct {
 	GrafanaManagedReceivers []*PostableGrafanaReceiver `yaml:"grafana_managed_receiver_configs,omitempty" json:"grafana_managed_receiver_configs,omitempty"`
+}
+
+// DecryptSecureSettings returns a map containing the decoded and decrypted secure settings.
+func (pgr *PostableGrafanaReceiver) DecryptSecureSettings(decryptFn func(payload []byte) ([]byte, error)) (map[string]string, error) {
+	decrypted := make(map[string]string, len(pgr.SecureSettings))
+	for k, v := range pgr.SecureSettings {
+		decoded, err := base64.StdEncoding.DecodeString(v)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode value for key '%s': %w", k, err)
+		}
+
+		b, err := decryptFn(decoded)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt value for key '%s': %w", k, err)
+		}
+
+		decrypted[k] = string(b)
+	}
+	return decrypted, nil
 }

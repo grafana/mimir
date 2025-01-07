@@ -15,8 +15,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wlog"
-
-	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
 func main() {
@@ -28,12 +26,12 @@ func main() {
 	}
 
 	var (
-		printSeriesEntries           bool
-		printSeriesWithSampleEntries bool
+		printSeriesEntries bool
+		printSamples       bool
 	)
 
-	flag.BoolVar(&printSeriesEntries, "series-entries", true, "Print series entries")
-	flag.BoolVar(&printSeriesWithSampleEntries, "print-series-with-samples", false, "Print series information for each sample")
+	flag.BoolVar(&printSeriesEntries, "print-series", true, "Print series entries")
+	flag.BoolVar(&printSamples, "print-samples", false, "Print samples, exemplars, metadata and tombstones.")
 	args, err := flagext.ParseFlagsAndArguments(flag.CommandLine)
 	if err != nil {
 		log.Fatalln(err.Error())
@@ -42,7 +40,7 @@ func main() {
 	log.SetOutput(os.Stdout)
 
 	for _, dir := range args {
-		err := printWal(dir, printSeriesEntries, printSeriesWithSampleEntries)
+		err := printWal(dir, printSeriesEntries, printSamples)
 		if err != nil {
 			log.Fatalln("failed to print WAL from directory", dir, "due to error:", err)
 		}
@@ -124,19 +122,16 @@ func formatTimestamp(ts int64) string {
 	return time.UnixMilli(ts).UTC().Format(timeFormat)
 }
 
-func printWalEntries(r *wlog.Reader, seriesMap map[chunks.HeadSeriesRef]string, printSeriesEntries, printSeriesWithSampleEntries bool, minSampleTime, maxSampleTime *int64) error {
+func printWalEntries(r *wlog.Reader, seriesMap map[chunks.HeadSeriesRef]string, printSeriesEntries, printSamples bool, minSampleTime, maxSampleTime *int64) error {
 	var dec record.Decoder
 
-	seriesInfo := func(ref chunks.HeadSeriesRef) string {
-		if !printSeriesWithSampleEntries {
-			return ""
+	seriesInfo := func(segment int, offset int64, recordType string, ref chunks.HeadSeriesRef) string {
+		seriesInfo, exists := seriesMap[ref]
+		if !exists {
+			seriesInfo = "[series not found]"
+			log.Println("seg:", segment, "off:", offset, recordType, "record for series:", ref, "series not found")
 		}
-
-		ser, found := seriesMap[ref]
-		if !found {
-			ser = "[series not found]"
-		}
-		return ser
+		return seriesInfo
 	}
 
 	for r.Next() {
@@ -170,10 +165,13 @@ func printWalEntries(r *wlog.Reader, seriesMap map[chunks.HeadSeriesRef]string, 
 			}
 
 			for _, s := range samples {
-				log.Println("seg:", seg, "off:", off, "samples record:", s.Ref, s.T, formatTimestamp(s.T), s.V, seriesInfo(s.Ref))
+				si := seriesInfo(seg, off, "samples", s.Ref)
+				if printSamples {
+					log.Println("seg:", seg, "off:", off, "samples record:", s.Ref, s.T, formatTimestamp(s.T), s.V, si)
+				}
 
-				*minSampleTime = util_math.Min(s.T, *minSampleTime)
-				*maxSampleTime = util_math.Max(s.T, *maxSampleTime)
+				*minSampleTime = min(s.T, *minSampleTime)
+				*maxSampleTime = max(s.T, *maxSampleTime)
 			}
 
 		case record.Tombstones:
@@ -182,8 +180,10 @@ func printWalEntries(r *wlog.Reader, seriesMap map[chunks.HeadSeriesRef]string, 
 				return &wlog.CorruptionErr{Err: errors.Wrap(err, "decode tombstones"), Segment: r.Segment(), Offset: r.Offset()}
 			}
 
-			for _, s := range tstones {
-				log.Println("seg:", seg, "off:", off, "tombstones record:", s.Ref, s.Intervals)
+			if printSamples {
+				for _, s := range tstones {
+					log.Println("seg:", seg, "off:", off, "tombstones record:", s.Ref, s.Intervals)
+				}
 			}
 
 		case record.Exemplars:
@@ -193,7 +193,10 @@ func printWalEntries(r *wlog.Reader, seriesMap map[chunks.HeadSeriesRef]string, 
 			}
 
 			for _, s := range exemplars {
-				log.Println("seg:", seg, "off:", off, "exemplars record:", s.Ref, s.Labels, s.T, formatTimestamp(s.T), s.V, seriesInfo(s.Ref))
+				si := seriesInfo(seg, off, "samples", s.Ref)
+				if printSamples {
+					log.Println("seg:", seg, "off:", off, "exemplars record:", s.Ref, s.Labels, s.T, formatTimestamp(s.T), s.V, si)
+				}
 			}
 
 		case record.HistogramSamples:
@@ -203,10 +206,13 @@ func printWalEntries(r *wlog.Reader, seriesMap map[chunks.HeadSeriesRef]string, 
 			}
 
 			for _, s := range hists {
-				log.Println("seg:", seg, "off:", off, "histograms record:", s.Ref, s.T, formatTimestamp(s.T), seriesInfo(s.Ref))
+				si := seriesInfo(seg, off, "samples", s.Ref)
+				if printSamples {
+					log.Println("seg:", seg, "off:", off, "histograms record:", s.Ref, s.T, formatTimestamp(s.T), si)
+				}
 
-				*minSampleTime = util_math.Min(s.T, *minSampleTime)
-				*maxSampleTime = util_math.Max(s.T, *maxSampleTime)
+				*minSampleTime = min(s.T, *minSampleTime)
+				*maxSampleTime = max(s.T, *maxSampleTime)
 			}
 
 		case record.FloatHistogramSamples:
@@ -216,10 +222,13 @@ func printWalEntries(r *wlog.Reader, seriesMap map[chunks.HeadSeriesRef]string, 
 			}
 
 			for _, s := range hists {
-				log.Println("seg:", seg, "off:", off, "float histograms record:", s.Ref, s.T, formatTimestamp(s.T), seriesInfo(s.Ref))
+				si := seriesInfo(seg, off, "samples", s.Ref)
+				if printSamples {
+					log.Println("seg:", seg, "off:", off, "float histograms record:", s.Ref, s.T, formatTimestamp(s.T), si)
+				}
 
-				*minSampleTime = util_math.Min(s.T, *minSampleTime)
-				*maxSampleTime = util_math.Max(s.T, *maxSampleTime)
+				*minSampleTime = min(s.T, *minSampleTime)
+				*maxSampleTime = max(s.T, *maxSampleTime)
 			}
 
 		case record.Metadata:
@@ -229,7 +238,9 @@ func printWalEntries(r *wlog.Reader, seriesMap map[chunks.HeadSeriesRef]string, 
 			}
 
 			for _, s := range meta {
-				log.Println("seg:", seg, "off:", off, "metadata:", s.Ref)
+				if printSamples {
+					log.Println("seg:", seg, "off:", off, "metadata:", s.Ref)
+				}
 			}
 		default:
 			if len(rec) < 1 {

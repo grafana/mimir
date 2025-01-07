@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/tracing"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -32,10 +33,10 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/thanos-io/objstore"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/series"
@@ -48,6 +49,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkinfologger"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -77,7 +79,7 @@ type BlocksFinder interface {
 
 	// GetBlocks returns known blocks for userID containing samples within the range minT
 	// and maxT (milliseconds, both included). Returned blocks are sorted by MaxTime descending.
-	GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, map[ulid.ULID]*bucketindex.BlockDeletionMark, error)
+	GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, error)
 }
 
 // BlocksStoreClient is the interface that should be implemented by any client used
@@ -223,7 +225,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 			IdleTimeout:           storageCfg.BucketStore.BucketIndex.IdleTimeout,
 		},
 		MaxStalePeriod:           storageCfg.BucketStore.BucketIndex.MaxStalePeriod,
-		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksDelay,
+		IgnoreDeletionMarksDelay: storageCfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay,
 	}, bucketClient, limits, logger, reg)
 
 	storesRingCfg := gatewayCfg.ShardingRing.ToRingConfig()
@@ -250,19 +252,11 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	consistency := NewBlocksConsistency(
 		// Exclude blocks which have been recently uploaded, in order to give enough time to store-gateways
 		// to discover and load them (3 times the sync interval).
-		3*storageCfg.BucketStore.SyncInterval,
-		// To avoid any false positive in the consistency check, we do exclude blocks which have been
-		// recently marked for deletion, until the "ignore delay / 2". This means the consistency checker
-		// exclude such blocks about 50% of the time before querier and store-gateway stops querying them.
-		storageCfg.BucketStore.IgnoreDeletionMarksDelay/2,
-		logger,
+		mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
 		reg,
 	)
 
 	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
-	if !querierCfg.PreferStreamingChunksFromStoreGateways {
-		streamingBufferSize = 0
-	}
 
 	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
 }
@@ -338,7 +332,7 @@ func (q *blocksStoreQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 	return q.selectSorted(ctx, sp, tenantID, matchers...)
 }
 
-func (q *blocksStoreQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *blocksStoreQuerier) LabelNames(ctx context.Context, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.LabelNames")
 	defer spanLog.Span.Finish()
 
@@ -355,7 +349,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, matchers ...*labels
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
 	maxQueryLength := q.limits.MaxLabelsQueryLength(tenantID)
 	if maxQueryLength != 0 {
-		minT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
+		minT = clampToMaxLabelQueryLength(spanLog, minT, maxT, time.Now().UnixMilli(), maxQueryLength.Milliseconds())
 	}
 
 	var (
@@ -383,7 +377,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, matchers ...*labels
 	return util.MergeSlices(resNameSets...), resWarnings, nil
 }
 
-func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.LabelValues")
 	defer spanLog.Span.Finish()
 
@@ -400,7 +394,7 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, match
 	// Clamp minT; we cannot push this down into queryWithConsistencyCheck as not all its callers need to clamp minT
 	maxQueryLength := q.limits.MaxLabelsQueryLength(tenantID)
 	if maxQueryLength != 0 {
-		minT = clampMinTime(spanLog, minT, maxT, -maxQueryLength, "max label query length")
+		minT = clampToMaxLabelQueryLength(spanLog, minT, maxT, time.Now().UnixMilli(), maxQueryLength.Milliseconds())
 	}
 
 	var (
@@ -493,7 +487,7 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 	}
 
 	return series.NewSeriesSetWithWarnings(
-		storage.NewMergeSeriesSet(resSeriesSets, storage.ChainedSeriesMerge),
+		storage.NewMergeSeriesSet(resSeriesSets, 0, storage.ChainedSeriesMerge),
 		resWarnings)
 }
 
@@ -513,7 +507,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	maxT = clampMaxTime(spanLog, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
 
 	// Find the list of blocks we need to query given the time range.
-	knownBlocks, knownDeletionMarks, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
+	knownBlocks, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
 	if err != nil {
 		return err
 	}
@@ -548,7 +542,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		touchedStores   = map[string]struct{}{}
 	)
 
-	consistencyTracker := q.consistency.NewTracker(knownBlocks, knownDeletionMarks)
+	consistencyTracker := q.consistency.NewTracker(knownBlocks, spanLog)
 	defer func() {
 		// Do not track consistency check metrics if query failed with an error unrelated to consistency check (e.g. context canceled),
 		// because it means we interrupted the requests, and we don't know whether consistency check would have succeeded
@@ -618,8 +612,8 @@ type storeConsistencyCheckFailedErr struct {
 
 func newStoreConsistencyCheckFailedError(remainingBlocks []ulid.ULID) *storeConsistencyCheckFailedErr {
 	// Sort the blocks, so it's easier to test the error strings.
-	sort.Slice(remainingBlocks, func(i, j int) bool {
-		return remainingBlocks[i].Compare(remainingBlocks[j]) < 0
+	slices.SortFunc(remainingBlocks, func(i, j ulid.ULID) int {
+		return i.Compare(j)
 	})
 
 	return &storeConsistencyCheckFailedErr{
@@ -749,12 +743,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 		streams       []storegatewaypb.StoreGateway_SeriesClient
 	)
 
+	debugQuery := chunkinfologger.IsChunkInfoLoggingEnabled(ctx)
+
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
-		// Change variables scope since it will be used in a goroutine.
-		c := c
-		blockIDs := blockIDs
-
 		g.Go(func() error {
 			log, reqCtx := spanlogger.NewWithLogger(reqCtx, spanLog, "blocksStoreQuerier.fetchSeriesFromStores")
 			defer log.Span.Finish()
@@ -779,17 +771,17 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				err = gCtx.Err()
 			}
 			if err != nil {
-				if shouldStopQueryFunc(err) {
-					return err
+				if shouldRetry(err) {
+					level.Warn(log).Log("msg", "failed to fetch series", "remote", c.RemoteAddress(), "err", err)
+					return nil
 				}
 
-				level.Warn(log).Log("msg", "failed to fetch series", "remote", c.RemoteAddress(), "err", err)
-				return nil
+				return err
 			}
 
-			// A storegateway client will only fill either of mySeries or myStreamingSeries, and not both.
+			// A storegateway client will only fill either of mySeries or myStreamingSeriesLabels, and not both.
 			mySeries := []*storepb.Series(nil)
-			myStreamingSeries := []*storepb.StreamingSeries(nil)
+			myStreamingSeriesLabels := []labels.Labels(nil)
 			var myWarnings annotations.Annotations
 			myQueriedBlocks := []ulid.ULID(nil)
 			indexBytesFetched := uint64(0)
@@ -807,12 +799,12 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					break
 				}
 				if err != nil {
-					if shouldStopQueryFunc(err) {
-						return err
+					if shouldRetry(err) {
+						level.Warn(log).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
+						return nil
 					}
 
-					level.Warn(log).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
-					return nil
+					return err
 				}
 
 				// Response may either contain series, streaming series, warning or hints.
@@ -820,7 +812,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					mySeries = append(mySeries, s)
 
 					// Add series fingerprint to query limiter; will return error if we are over the limit
-					if err := queryLimiter.AddSeries(s.Labels); err != nil {
+					if err := queryLimiter.AddSeries(mimirpb.FromLabelAdaptersToLabels(s.Labels)); err != nil {
 						return err
 					}
 
@@ -860,16 +852,22 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				}
 
 				if ss := resp.GetStreamingSeries(); ss != nil {
+					myStreamingSeriesLabels = slices.Grow(myStreamingSeriesLabels, len(ss.Series))
+
 					for _, s := range ss.Series {
 						// Add series fingerprint to query limiter; will return error if we are over the limit
-						if limitErr := queryLimiter.AddSeries(s.Labels); limitErr != nil {
+						l := mimirpb.FromLabelAdaptersToLabels(s.Labels)
+
+						if limitErr := queryLimiter.AddSeries(l); limitErr != nil {
 							return limitErr
 						}
+
+						myStreamingSeriesLabels = append(myStreamingSeriesLabels, l)
 					}
-					myStreamingSeries = append(myStreamingSeries, ss.Series...)
+
 					if ss.IsEndOfSeriesStream {
 						// If we aren't expecting any series from this stream, close it now.
-						if len(myStreamingSeries) == 0 {
+						if len(myStreamingSeriesLabels) == 0 {
 							util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
 						}
 
@@ -877,6 +875,14 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 						break
 					}
 				}
+			}
+
+			// debug
+			var chunkInfo *chunkinfologger.ChunkInfoLogger
+			if debugQuery {
+				traceID, spanID, _ := tracing.ExtractTraceSpanID(ctx)
+				chunkInfo = chunkinfologger.NewChunkInfoLogger("store-gateway message", traceID, spanID, q.logger, chunkinfologger.ChunkInfoLoggingFromContext(ctx))
+				chunkInfo.LogSelect("store-gateway", minT, maxT)
 			}
 
 			reqStats.AddFetchedIndexBytes(indexBytesFetched)
@@ -896,13 +902,20 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					"fetched index bytes", indexBytesFetched,
 					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
-			} else if len(myStreamingSeries) > 0 {
+				if chunkInfo != nil {
+					for i, s := range mySeries {
+						chunkInfo.StartSeries(mimirpb.FromLabelAdaptersToLabels(s.Labels))
+						chunkInfo.FormatStoreGatewayChunkInfo(c.RemoteAddress(), s.Chunks)
+						chunkInfo.EndSeries(i == len(mySeries)-1)
+					}
+				}
+			} else if len(myStreamingSeriesLabels) > 0 {
 				// FetchedChunks and FetchedChunkBytes are added by the SeriesChunksStreamReader.
-				reqStats.AddFetchedSeries(uint64(len(myStreamingSeries)))
-				streamReader = newStoreGatewayStreamReader(reqCtx, stream, len(myStreamingSeries), queryLimiter, reqStats, q.metrics, q.logger)
+				reqStats.AddFetchedSeries(uint64(len(myStreamingSeriesLabels)))
+				streamReader = newStoreGatewayStreamReader(reqCtx, stream, len(myStreamingSeriesLabels), queryLimiter, reqStats, q.metrics, q.logger)
 				level.Debug(log).Log("msg", "received streaming series from store-gateway",
 					"instance", c.RemoteAddress(),
-					"fetched series", len(myStreamingSeries),
+					"fetched series", len(myStreamingSeriesLabels),
 					"fetched index bytes", indexBytesFetched,
 					"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 					"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
@@ -917,8 +930,16 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			mtx.Lock()
 			if len(mySeries) > 0 {
 				seriesSets = append(seriesSets, &blockQuerierSeriesSet{series: mySeries})
-			} else if len(myStreamingSeries) > 0 {
-				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{series: myStreamingSeries, streamReader: streamReader})
+			} else if len(myStreamingSeriesLabels) > 0 {
+				if chunkInfo != nil {
+					chunkInfo.SetMsg("store-gateway streaming")
+				}
+				seriesSets = append(seriesSets, &blockStreamingQuerierSeriesSet{
+					series:        myStreamingSeriesLabels,
+					streamReader:  streamReader,
+					chunkInfo:     chunkInfo,
+					remoteAddress: c.RemoteAddress(),
+				})
 				streamReaders = append(streamReaders, streamReader)
 			}
 			warnings.Merge(myWarnings)
@@ -960,18 +981,16 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 	return seriesSets, queriedBlocks, warnings, startStreamingChunks, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
 }
 
-func shouldStopQueryFunc(err error) bool {
+func shouldRetry(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return true
+		return false
 	}
 
 	if st, ok := grpcutil.ErrorToStatus(err); ok {
-		if int(st.Code()) == http.StatusUnprocessableEntity {
-			return true
-		}
+		return int(st.Code()) != http.StatusUnprocessableEntity
 	}
 
-	return false
+	return true
 }
 
 func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
@@ -994,10 +1013,6 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
-		// Change variables scope since it will be used in a goroutine.
-		c := c
-		blockIDs := blockIDs
-
 		g.Go(func() error {
 			req, err := createLabelNamesRequest(minT, maxT, blockIDs, matchers)
 			if err != nil {
@@ -1077,10 +1092,6 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
-		// Change variables scope since it will be used in a goroutine.
-		c := c
-		blockIDs := blockIDs
-
 		g.Go(func() error {
 			req, err := createLabelValuesRequest(minT, maxT, name, blockIDs, matchers...)
 			if err != nil {

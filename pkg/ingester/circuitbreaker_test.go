@@ -4,6 +4,7 @@ package ingester
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -52,10 +53,10 @@ func TestCircuitBreaker_TryRecordFailure(t *testing.T) {
 		require.True(t, cb.tryRecordFailure(fmt.Errorf("%w", err)))
 	})
 
-	t.Run("gRPC unavailable with INSTANCE_LIMIT details", func(t *testing.T) {
-		err := newInstanceLimitReachedError("broken")
-		require.True(t, cb.tryRecordFailure(err))
-		require.True(t, cb.tryRecordFailure(fmt.Errorf("%w", err)))
+	t.Run("gRPC unavailable with INSTANCE_LIMIT details is not a failure", func(t *testing.T) {
+		err := newErrorWithStatus(newInstanceLimitReachedError("broken"), codes.Unavailable)
+		require.False(t, cb.tryRecordFailure(err))
+		require.False(t, cb.tryRecordFailure(fmt.Errorf("%w", err)))
 	})
 
 	t.Run("gRPC unavailable with SERVICE_UNAVAILABLE details is not a failure", func(t *testing.T) {
@@ -74,22 +75,166 @@ func TestCircuitBreaker_TryRecordFailure(t *testing.T) {
 	})
 }
 
+func requireCircuitBreakerState(t *testing.T, cb *circuitBreaker, state circuitBreakerState) {
+	require.Equal(t, state, cb.state.Load())
+}
+
+func TestCircuitBreaker_NilImplementation(t *testing.T) {
+	var cb *circuitBreaker
+
+	// A nil *circuitBreaker is a valid implementation
+	require.False(t, cb.tryRecordFailure(errors.New("error")))
+	require.False(t, cb.isActive())
+	cb.activate()
+	cb.deactivate()
+	require.False(t, cb.isOpen())
+	cb.scheduleActivation()
+	f, err := cb.tryAcquirePermit()
+	require.NotNil(t, f)
+	require.NoError(t, err)
+	require.Nil(t, cb.finishRequest(0, 0, nil))
+	require.Nil(t, cb.recordResult(errors.New("error")))
+}
+
 func TestCircuitBreaker_IsActive(t *testing.T) {
 	var cb *circuitBreaker
 
+	cfg := CircuitBreakerConfig{Enabled: true}
+	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
+
+	// Inactive by default
+	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
 	require.False(t, cb.isActive())
 
-	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 10 * time.Millisecond}
-	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
 	cb.activate()
 
-	// When InitialDelay is set, circuit breaker is not immediately active.
+	// Should be active immediately
+	requireCircuitBreakerState(t, cb, circuitBreakerActive)
+	require.True(t, cb.isActive())
+
+	cb.deactivate()
+
+	// Should be inactive immediately
+	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+	require.False(t, cb.isActive())
+}
+
+func TestCircuitBreaker_IsActiveWithDelay(t *testing.T) {
+	var cb *circuitBreaker
+
+	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 5 * time.Millisecond}
+	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
+
+	// Inactive by default
+	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
 	require.False(t, cb.isActive())
 
-	// After InitialDelay passed, circuit breaker becomes active.
-	require.Eventually(t, func() bool {
-		return cb.isActive()
-	}, time.Second, 10*time.Millisecond)
+	cb.activate()
+
+	// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
+	requireCircuitBreakerState(t, cb, circuitBreakerPending)
+	require.False(t, cb.isActive())
+
+	// InitalDelay starts when we first get a request, not when we activate the circuit breaker
+	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+
+	_, err := cb.tryAcquirePermit()
+	require.NoError(t, err)
+
+	// Once we get a request, circuit breaker becomes active after InitialDelay passes
+	requireCircuitBreakerState(t, cb, circuitBreakerActivating)
+	require.False(t, cb.isActive())
+	require.Eventually(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+	requireCircuitBreakerState(t, cb, circuitBreakerActive)
+
+	cb.deactivate()
+
+	// Should be inactive immediately
+	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+	require.False(t, cb.isActive())
+
+	_, err = cb.tryAcquirePermit()
+	require.NoError(t, err)
+
+	// A request while deactivated shouldn't queue an activation
+	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+	require.False(t, cb.isActive())
+	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+}
+
+func TestCircuitBreaker_IsActiveWithDelay_Cancel(t *testing.T) {
+	var cb *circuitBreaker
+
+	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 5 * time.Millisecond}
+	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
+
+	cb.activate()
+
+	// When InitialDelay is set, circuit breaker is not immediately activated, but activation is pending
+	requireCircuitBreakerState(t, cb, circuitBreakerPending)
+	require.False(t, cb.isActive())
+
+	cb.deactivate()
+
+	// Should be inactive immediately, and cancel any pending activation
+	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+	require.False(t, cb.isActive())
+	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+
+	cb.activate()
+	_, err := cb.tryAcquirePermit()
+	require.NoError(t, err)
+
+	// Once we get a request, circuit breaker queues the activation
+	requireCircuitBreakerState(t, cb, circuitBreakerActivating)
+	require.False(t, cb.isActive())
+
+	cb.deactivate()
+
+	// Should be inactive immediately, and cancel any queued activation
+	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+	require.False(t, cb.isActive())
+	require.Never(t, cb.isActive, 10*time.Millisecond, 1*time.Millisecond)
+}
+
+func TestCircuitBreaker_IsActiveWithDelay_CancelThenRestart(t *testing.T) {
+	var cb *circuitBreaker
+
+	cfg := CircuitBreakerConfig{Enabled: true, InitialDelay: 150 * time.Millisecond}
+	cb = newCircuitBreaker(cfg, prometheus.NewRegistry(), "test-request-type", log.NewNopLogger())
+
+	cb.activate()
+	_, err := cb.tryAcquirePermit()
+	require.NoError(t, err)
+
+	// t = 0ms, queue an activation
+	requireCircuitBreakerState(t, cb, circuitBreakerActivating)
+	require.False(t, cb.isActive())
+
+	// We're going to cancel this activation, so it shouldn't trigger at t=150ms
+	go require.Never(t, cb.isActive, 200*time.Millisecond, 1*time.Millisecond)
+
+	time.Sleep(50 * time.Millisecond)
+
+	// t = 50ms, cancel the activation
+	cb.deactivate()
+
+	// Should be inactive immediately, and cancel any queued activation
+	requireCircuitBreakerState(t, cb, circuitBreakerInactive)
+	require.False(t, cb.isActive())
+
+	time.Sleep(50 * time.Millisecond)
+
+	// t = 100ms, queue another activation
+	cb.activate()
+	_, err = cb.tryAcquirePermit()
+	require.NoError(t, err)
+
+	// A new activation should be queued, and activate the breaker at t=250ms
+	requireCircuitBreakerState(t, cb, circuitBreakerActivating)
+	require.False(t, cb.isActive())
+	require.Eventually(t, cb.isActive, 200*time.Millisecond, 1*time.Millisecond)
+	requireCircuitBreakerState(t, cb, circuitBreakerActive)
 }
 
 func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
@@ -107,7 +252,7 @@ func TestCircuitBreaker_TryAcquirePermit(t *testing.T) {
 		"if circuit breaker is not active, finish function and no error are returned": {
 			initialDelay: 1 * time.Minute,
 			circuitBreakerSetup: func(cb *circuitBreaker) {
-				cb.active.Store(false)
+				cb.deactivate()
 			},
 			expectedCircuitBreakerError: false,
 		},
@@ -259,7 +404,6 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 		"cortex_ingester_circuit_breaker_results_total",
 		"cortex_ingester_circuit_breaker_request_timeouts_total",
 	}
-	instanceLimitReachedErr := newInstanceLimitReachedError("error")
 	maxRequestDuration := 2 * time.Second
 	testCases := map[string]struct {
 		requestDuration time.Duration
@@ -362,26 +506,10 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
 			`,
 		},
-		"with circuit breaker active, requestDuration higher than maxRequestDuration and an input error relevant for circuit breakers, finishRequest gives the input error": {
-			requestDuration: 3 * time.Second,
-			isActive:        true,
-			err:             instanceLimitReachedErr,
-			expectedErr:     instanceLimitReachedErr,
-			expectedMetrics: `
-				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
-				# TYPE cortex_ingester_circuit_breaker_results_total counter
-				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="success"} 0
-				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="error"} 1
-				cortex_ingester_circuit_breaker_results_total{request_type="test-request-type",result="circuit_breaker_open"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
-				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
-				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="test-request-type"} 0
-			`,
-		},
 		"with circuit breaker active, requestDuration higher than maxRequestDuration and an input error irrelevant for circuit breakers, finishRequest gives context deadline exceeded error": {
 			requestDuration: 3 * time.Second,
 			isActive:        true,
-			err:             context.Canceled,
+			err:             newInstanceLimitReachedError("error"),
 			expectedErr:     context.DeadlineExceeded,
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
@@ -403,7 +531,9 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 				RequestTimeout: 2 * time.Second,
 			}
 			cb := newCircuitBreaker(cfg, registry, "test-request-type", log.NewNopLogger())
-			cb.active.Store(testCase.isActive)
+			if testCase.isActive {
+				cb.activate()
+			}
 			err := cb.finishRequest(testCase.requestDuration, maxRequestDuration, testCase.err)
 			if testCase.expectedErr == nil {
 				require.NoError(t, err)
@@ -415,7 +545,7 @@ func TestCircuitBreaker_FinishRequest(t *testing.T) {
 	}
 }
 
-func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
+func TestIngester_IngestStorage_PushToStorage_CircuitBreaker(t *testing.T) {
 	pushTimeout := 100 * time.Millisecond
 	tests := map[string]struct {
 		expectedErrorWhenCircuitBreakerClosed error
@@ -448,30 +578,6 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 2
 			`,
 		},
-		"instance limit hit": {
-			expectedErrorWhenCircuitBreakerClosed: instanceLimitReachedError{},
-			limits:                                InstanceLimits{MaxInMemoryTenants: 1},
-			expectedMetrics: `
-				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
-				# TYPE cortex_ingester_circuit_breaker_results_total counter
-        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 2
-        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 2
-        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
-				# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
-				# TYPE cortex_ingester_circuit_breaker_transitions_total counter
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
-        	    cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 1
-				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
-        	    # TYPE cortex_ingester_circuit_breaker_current_state gauge
-        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
-        	    cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
-				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
-				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
-			`,
-		},
 	}
 
 	for initialDelayEnabled, initialDelayStatus := range map[bool]string{false: "disabled", true: "enabled"} {
@@ -496,7 +602,7 @@ func TestIngester_PushToStorage_CircuitBreaker(t *testing.T) {
 				failureThreshold := 2
 				var initialDelay time.Duration
 				if initialDelayEnabled {
-					initialDelay = 200 * time.Millisecond
+					initialDelay = time.Hour
 				}
 				cfg.PushCircuitBreaker = CircuitBreakerConfig{
 					Enabled:                    true,
@@ -730,25 +836,10 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
 			`,
 		},
-		"with a permit acquired, pushRequestDuration higher than RequestTimeout and an input error relevant for the circuit breakers, FinishPushRequest records a failure": {
-			pushRequestDuration:          3 * time.Second,
-			acquiredCircuitBreakerPermit: true,
-			err:                          newInstanceLimitReachedError("error"),
-			expectedMetrics: `
-				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
-				# TYPE cortex_ingester_circuit_breaker_results_total counter
-        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 0
-				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 1
-        	    cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 0
-				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
-				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
-				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 0
-			`,
-		},
 		"with a permit acquired, pushRequestDuration higher than RequestTimeout and an input error irrelevant for the circuit breakers, FinishPushRequest records a failure": {
 			pushRequestDuration:          3 * time.Second,
 			acquiredCircuitBreakerPermit: true,
-			err:                          context.Canceled,
+			err:                          newInstanceLimitReachedError("error"),
 			expectedMetrics: `
 				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
 				# TYPE cortex_ingester_circuit_breaker_results_total counter
@@ -831,7 +922,7 @@ func TestIngester_FinishPushRequest(t *testing.T) {
 }
 
 func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
-	pushTimeout := 100 * time.Millisecond
+	pushTimeout := 1 * time.Second
 	for initialDelayEnabled, initialDelayStatus := range map[bool]string{false: "disabled", true: "enabled"} {
 		t.Run(fmt.Sprintf("test slow push with initial delay %s", initialDelayStatus), func(t *testing.T) {
 			metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
@@ -850,7 +941,7 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
 			failureThreshold := 2
 			var initialDelay time.Duration
 			if initialDelayEnabled {
-				initialDelay = 200 * time.Millisecond
+				initialDelay = time.Hour
 			}
 			cfg.PushCircuitBreaker = CircuitBreakerConfig{
 				Enabled:                    true,
@@ -962,24 +1053,24 @@ func TestIngester_Push_CircuitBreaker_DeadlineExceeded(t *testing.T) {
     				`
 			} else {
 				expectedMetrics = `
-						# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
-						# TYPE cortex_ingester_circuit_breaker_results_total counter
-        	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 2
-        	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 2
-        	            cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
-						# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
-						# TYPE cortex_ingester_circuit_breaker_transitions_total counter
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
-        	            cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 1
-						# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
-        	            # TYPE cortex_ingester_circuit_breaker_current_state gauge
-        	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
-        	            cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
-						# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
-						# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
-						cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 2
+				# HELP cortex_ingester_circuit_breaker_results_total Results of executing requests via the circuit breaker.
+				# TYPE cortex_ingester_circuit_breaker_results_total counter
+				cortex_ingester_circuit_breaker_results_total{request_type="push",result="circuit_breaker_open"} 2
+				cortex_ingester_circuit_breaker_results_total{request_type="push",result="error"} 2
+				cortex_ingester_circuit_breaker_results_total{request_type="push",result="success"} 1
+				# HELP cortex_ingester_circuit_breaker_transitions_total Number of times the circuit breaker has entered a state.
+				# TYPE cortex_ingester_circuit_breaker_transitions_total counter
+				cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="closed"} 0
+				cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="half-open"} 0
+				cortex_ingester_circuit_breaker_transitions_total{request_type="push",state="open"} 1
+				# HELP cortex_ingester_circuit_breaker_current_state Boolean set to 1 whenever the circuit breaker is in a state corresponding to the label name.
+				# TYPE cortex_ingester_circuit_breaker_current_state gauge
+				cortex_ingester_circuit_breaker_current_state{request_type="push",state="closed"} 0
+				cortex_ingester_circuit_breaker_current_state{request_type="push",state="half-open"} 0
+				cortex_ingester_circuit_breaker_current_state{request_type="push",state="open"} 1
+				# HELP cortex_ingester_circuit_breaker_request_timeouts_total Number of times the circuit breaker recorded a request that reached timeout.
+				# TYPE cortex_ingester_circuit_breaker_request_timeouts_total counter
+				cortex_ingester_circuit_breaker_request_timeouts_total{request_type="push"} 2
     				`
 			}
 			assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
@@ -1085,7 +1176,7 @@ func TestPRCircuitBreaker_TryPushAcquirePermit(t *testing.T) {
 	}{
 		"if push circuit breaker is not active, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.push.active.Store(false)
+				cb.push.deactivate()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1240,8 +1331,8 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 	}{
 		"if read circuit breaker is not active and push circuit breaker is not active, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.read.active.Store(false)
-				cb.push.active.Store(false)
+				cb.read.deactivate()
+				cb.push.deactivate()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1273,7 +1364,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is not active and push circuit breaker is closed, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.read.active.Store(false)
+				cb.read.deactivate()
 				cb.push.activate()
 				cb.push.cb.Close()
 			},
@@ -1307,7 +1398,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is not active and push circuit breaker is open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.read.active.Store(false)
+				cb.read.deactivate()
 				cb.push.activate()
 				cb.push.cb.Open()
 			},
@@ -1341,7 +1432,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 		},
 		"if read circuit breaker is not active and push circuit breaker is half-open, finish function and no error are returned": {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
-				cb.read.active.Store(false)
+				cb.read.deactivate()
 				cb.push.activate()
 				cb.push.cb.HalfOpen()
 			},
@@ -1377,7 +1468,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
 				cb.read.activate()
 				cb.read.cb.Close()
-				cb.push.active.Store(false)
+				cb.push.deactivate()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `
@@ -1516,7 +1607,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
 				cb.read.activate()
 				cb.read.cb.Open()
-				cb.push.active.Store(false)
+				cb.push.deactivate()
 			},
 			expectedCircuitBreakerError: true,
 			expectedMetrics: `
@@ -1655,7 +1746,7 @@ func TestPRCircuitBreaker_TryReadAcquirePermit(t *testing.T) {
 			circuitBreakerSetup: func(cb ingesterCircuitBreaker) {
 				cb.read.activate()
 				cb.read.cb.HalfOpen()
-				cb.push.active.Store(false)
+				cb.push.deactivate()
 			},
 			expectedCircuitBreakerError: false,
 			expectedMetrics: `

@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,7 +29,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcutil"
@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -55,12 +56,11 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/chunk"
@@ -70,13 +70,12 @@ import (
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) activeseries.CustomTrackersConfig {
-	m, err := activeseries.NewCustomTrackersConfig(source)
+func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[string]string) asmodel.CustomTrackersConfig {
+	m, err := asmodel.NewCustomTrackersConfig(source)
 	require.NoError(t, err)
 	return m
 }
@@ -249,6 +248,11 @@ func TestIngester_StartReadRequest(t *testing.T) {
 			CooldownPeriod: 10 * time.Second,
 			RequestTimeout: 30 * time.Second,
 		}
+		cfg.PushCircuitBreaker = CircuitBreakerConfig{
+			Enabled:        true,
+			CooldownPeriod: 10 * time.Second,
+			RequestTimeout: 2 * time.Second,
+		}
 		failingIng := newFailingIngester(t, cfg, nil, nil)
 		failingIng.startWaitAndCheck(context.Background(), t)
 		require.Equal(t, services.Running, failingIng.lifecycler.State())
@@ -287,7 +291,7 @@ func TestIngester_StartReadRequest(t *testing.T) {
 				require.ErrorIs(t, err, errTooBusy)
 			},
 		},
-		"fail if circuit breaker is open, and do not acquire a permit": {
+		"fail if read circuit breaker is open, and do not acquire a permit": {
 			setup: func(failingIng *failingIngester) {
 				failingIng.circuitBreaker.read.cb.Open()
 			},
@@ -296,9 +300,18 @@ func TestIngester_StartReadRequest(t *testing.T) {
 				require.ErrorAs(t, err, &circuitBreakerOpenError{})
 			},
 		},
-		"do not fail if circuit breaker is not active, and do not acquire a permit": {
+		"fail if push circuit breaker is open, and do not acquire a permit": {
 			setup: func(failingIng *failingIngester) {
-				failingIng.circuitBreaker.read.active.Store(false)
+				failingIng.circuitBreaker.push.cb.Open()
+			},
+			expectedAcquiredPermitCount: 0,
+			verifyErr: func(err error) {
+				require.ErrorAs(t, err, &circuitBreakerOpenError{})
+			},
+		},
+		"do not fail if read circuit breaker is not active, and do not acquire a permit": {
+			setup: func(failingIng *failingIngester) {
+				failingIng.circuitBreaker.read.deactivate()
 			},
 			expectedAcquiredPermitCount: 0,
 		},
@@ -374,19 +387,21 @@ func TestIngester_Push(t *testing.T) {
 	histogramWithSpansBucketsMismatch.PositiveSpans[1].Length++
 
 	tests := map[string]struct {
-		reqs                      []*mimirpb.WriteRequest
-		expectedErr               error
-		expectedIngested          model.Matrix
-		expectedMetadataIngested  []*mimirpb.MetricMetadata
-		expectedExemplarsIngested []mimirpb.TimeSeries
-		expectedExemplarsDropped  []mimirpb.TimeSeries
-		expectedMetrics           string
-		additionalMetrics         []string
-		disableActiveSeries       bool
-		maxExemplars              int
-		maxMetadataPerUser        int
-		maxMetadataPerMetric      int
-		nativeHistograms          bool
+		reqs                       []*mimirpb.WriteRequest
+		expectedErr                error
+		expectedIngested           model.Matrix
+		expectedMetadataIngested   []*mimirpb.MetricMetadata
+		expectedExemplarsIngested  []mimirpb.TimeSeries
+		expectedExemplarsDropped   []mimirpb.TimeSeries
+		expectedMetrics            string
+		additionalMetrics          []string
+		disableActiveSeries        bool
+		maxExemplars               int
+		maxMetadataPerUser         int
+		maxMetadataPerMetric       int
+		nativeHistograms           bool
+		disableOOONativeHistograms bool
+		ignoreOOOExemplars         bool
 	}{
 		"should succeed on valid series and metadata": {
 			reqs: []*mimirpb.WriteRequest{
@@ -855,6 +870,259 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
 				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
 				cortex_ingester_ingested_exemplars_failures_total 0
+			`,
+		},
+		"should soft fail on new float series and an exemplar and an out of order exemplar": {
+			maxExemplars: 2,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:  []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+							},
+						},
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Exemplars: []mimirpb.Exemplar{
+									{
+										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										TimestampMs: 1000,
+										Value:       1000,
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Exemplars: []mimirpb.Exemplar{
+									{
+										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+										TimestampMs: 500,
+										Value:       2000,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newTSDBIngestExemplarErr(storage.ErrOutOfOrderExemplar, model.Time(500), []mimirpb.LabelAdapter{metricLabelAdapters[0]}, []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}}), userID), codes.InvalidArgument),
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}}},
+			},
+			expectedExemplarsIngested: []mimirpb.TimeSeries{
+				{
+					Labels: metricLabelAdapters,
+					Exemplars: []mimirpb.Exemplar{
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							TimestampMs: 1000,
+							Value:       1000,
+						},
+					},
+				},
+			},
+			expectedMetadataIngested: nil,
+			additionalMetrics: []string{
+				"cortex_ingester_tsdb_exemplar_exemplars_appended_total",
+				"cortex_ingester_tsdb_exemplar_exemplars_in_storage",
+				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
+				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
+				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
+				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
+				cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
+				# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
+				cortex_ingester_tsdb_exemplar_exemplars_in_storage 1
+
+				# HELP cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage Number of TSDB series with exemplars currently in storage.
+				# TYPE cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage gauge
+				cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds The timestamp of the oldest exemplar stored in circular storage. Useful to check for what time range the current exemplar buffer limit allows. This usually means the last timestamp for all exemplars for a typical setup. This is not true though if one of the series timestamp is in future compared to rest series.
+				# TYPE cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds gauge
+				cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
+				# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
+				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
+
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.009
+
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.009
+
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 1
+
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 1
+			`,
+		},
+		"should succeed on new float series and an exemplar and an out of order exemplar but OOO exemplars are ignored": {
+			maxExemplars:       2,
+			ignoreOOOExemplars: true,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:  []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+							},
+						},
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Exemplars: []mimirpb.Exemplar{
+									{
+										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										TimestampMs: 1000,
+										Value:       1000,
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Exemplars: []mimirpb.Exemplar{
+									{
+										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+										TimestampMs: 500,
+										Value:       2000,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: nil, // Explicit to show that we expect no error due to ignoreOOOExemplars.
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}}},
+			},
+			expectedExemplarsIngested: []mimirpb.TimeSeries{
+				{
+					Labels: metricLabelAdapters,
+					Exemplars: []mimirpb.Exemplar{
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							TimestampMs: 1000,
+							Value:       1000,
+						},
+					},
+				},
+			},
+			expectedMetadataIngested: nil,
+			additionalMetrics: []string{
+				"cortex_ingester_tsdb_exemplar_exemplars_appended_total",
+				"cortex_ingester_tsdb_exemplar_exemplars_in_storage",
+				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
+				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
+				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
+				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
+				cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
+				# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
+				cortex_ingester_tsdb_exemplar_exemplars_in_storage 1
+
+				# HELP cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage Number of TSDB series with exemplars currently in storage.
+				# TYPE cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage gauge
+				cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds The timestamp of the oldest exemplar stored in circular storage. Useful to check for what time range the current exemplar buffer limit allows. This usually means the last timestamp for all exemplars for a typical setup. This is not true though if one of the series timestamp is in future compared to rest series.
+				# TYPE cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds gauge
+				cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
+				# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
+				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
+
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.009
+
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.009
+
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 1
+
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 1
 			`,
 		},
 		"should succeed on new histogram series with an exemplar": {
@@ -1621,7 +1889,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
 		},
-		"should soft fail if histogram has different number of buckets then encoded in spans": {
+		"should soft fail if histogram has different number of buckets than encoded in spans": {
 			nativeHistograms: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
@@ -1661,6 +1929,66 @@ func TestIngester_Push(t *testing.T) {
 				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
 				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
 			`,
+		},
+		"should soft fail if OOO native histograms are disabled": {
+			nativeHistograms:           true,
+			disableOOONativeHistograms: true,
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(1))},
+					nil,
+				),
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(-10, util_test.GenerateTestHistogram(1))},
+					nil,
+				),
+			},
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramOOODisabled, fmt.Errorf("out-of-order native histogram ingestion is disabled"), model.Time(-10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 1
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="sample-out-of-order",user="test"} 1
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 1
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.01
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 8
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+			`,
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
+					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: 10}},
+				},
+			},
 		},
 		"should soft fail if histogram has a negative bucket count": {
 			nativeHistograms: true,
@@ -1747,6 +2075,150 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newTSDBIngestExemplarErr(storage.ErrOutOfOrderExemplar, model.Time(1500), []mimirpb.LabelAdapter{metricLabelAdapters[0]}, []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}}), userID), codes.InvalidArgument),
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
+					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: 9},
+					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(2)), Timestamp: 10}},
+				},
+			},
+			expectedExemplarsIngested: []mimirpb.TimeSeries{
+				{
+					Labels: metricLabelAdapters,
+					Exemplars: []mimirpb.Exemplar{
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							TimestampMs: 1000,
+							Value:       1000,
+						},
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							TimestampMs: 2000,
+							Value:       2000,
+						},
+					},
+				},
+			},
+			expectedMetadataIngested: nil,
+			additionalMetrics: []string{
+				"cortex_ingester_tsdb_exemplar_exemplars_appended_total",
+				"cortex_ingester_tsdb_exemplar_exemplars_in_storage",
+				"cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage",
+				"cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds",
+				"cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total",
+				"cortex_ingester_ingested_exemplars_total",
+				"cortex_ingester_ingested_exemplars_failures_total",
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total{user="test"} 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion per user.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_active_native_histogram_buckets Number of currently active native histogram buckets per user.
+				# TYPE cortex_ingester_active_native_histogram_buckets gauge
+				cortex_ingester_active_native_histogram_buckets{user="test"} 8
+				# HELP cortex_ingester_active_native_histogram_series Number of currently active native histogram series per user.
+				# TYPE cortex_ingester_active_native_histogram_series gauge
+				cortex_ingester_active_native_histogram_series{user="test"} 1
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
+				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
+				cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="test"} 2
+
+				# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
+				# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
+				cortex_ingester_tsdb_exemplar_exemplars_in_storage 2
+
+				# HELP cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage Number of TSDB series with exemplars currently in storage.
+				# TYPE cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage gauge
+				cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds The timestamp of the oldest exemplar stored in circular storage. Useful to check for what time range the current exemplar buffer limit allows. This usually means the last timestamp for all exemplars for a typical setup. This is not true though if one of the series timestamp is in future compared to rest series.
+				# TYPE cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds gauge
+				cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{user="test"} 1
+
+				# HELP cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total Total number of out-of-order exemplar ingestion failed attempts.
+				# TYPE cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total counter
+				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
+
+				# HELP cortex_ingester_tsdb_head_min_timestamp_seconds Minimum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_min_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_min_timestamp_seconds 0.009
+
+				# HELP cortex_ingester_tsdb_head_max_timestamp_seconds Maximum timestamp of the head block across all tenants.
+				# TYPE cortex_ingester_tsdb_head_max_timestamp_seconds gauge
+				cortex_ingester_tsdb_head_max_timestamp_seconds 0.01
+
+				# HELP cortex_ingester_ingested_exemplars_total The total number of exemplars ingested.
+				# TYPE cortex_ingester_ingested_exemplars_total counter
+				cortex_ingester_ingested_exemplars_total 2
+
+				# HELP cortex_ingester_ingested_exemplars_failures_total The total number of exemplars that errored on ingestion.
+				# TYPE cortex_ingester_ingested_exemplars_failures_total counter
+				cortex_ingester_ingested_exemplars_failures_total 2
+			`,
+		},
+		"should succeed on existing histogram series if all exemplars are out of order but OOO exemplars are ignored": {
+			maxExemplars:       2,
+			nativeHistograms:   true,
+			ignoreOOOExemplars: true,
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+					nil,
+				).AddExemplarsAt(0, // Add exemplars to the first series.
+					[]*mimirpb.Exemplar{
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							TimestampMs: 1000,
+							Value:       1000,
+						},
+						{
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							TimestampMs: 2000,
+							Value:       2000,
+						},
+					},
+				),
+				mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(
+					[][]mimirpb.LabelAdapter{metricLabelAdapters},
+					[]mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(10, util_test.GenerateTestHistogram(2))},
+					nil,
+				).AddExemplarsAt(0, // Add exemplars to the first series.
+					[]*mimirpb.Exemplar{
+						{
+							// This will never be ingested/appeneded as it is out of order.
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							TimestampMs: 1000,
+							Value:       1000,
+						},
+						{
+							// This will never be ingested/appeneded as it is out of order.
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "333"}},
+							TimestampMs: 1500,
+							Value:       1500,
+						},
+					},
+				),
+			},
+			expectedErr: nil, // Explicit to show that we expect no error due to ignoreOOOExemplars.
 			expectedIngested: model.Matrix{
 				&model.SampleStream{Metric: metricLabelSet, Histograms: []model.SampleHistogramPair{
 					{Histogram: mimirpb.FromHistogramToPromHistogram(util_test.GenerateTestHistogram(1)), Timestamp: 9},
@@ -1993,7 +2465,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2052,7 +2524,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 3
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="test"} 3
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2171,7 +2643,7 @@ func TestIngester_Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="test"} 2
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -2797,6 +3269,13 @@ func TestIngester_Push(t *testing.T) {
 			limits.MaxGlobalMetricsWithMetadataPerUser = testData.maxMetadataPerUser
 			limits.MaxGlobalMetadataPerMetric = testData.maxMetadataPerMetric
 			limits.NativeHistogramsIngestionEnabled = testData.nativeHistograms
+			limits.IgnoreOOOExemplars = testData.ignoreOOOExemplars
+			var oooTimeWindow int64
+			if testData.disableOOONativeHistograms {
+				oooTimeWindow = int64(1 * time.Hour.Seconds())
+				limits.OutOfOrderTimeWindow = model.Duration(1 * time.Hour)
+				limits.OOONativeHistogramsIngestionEnabled = false
+			}
 
 			i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, nil, "", registry)
 			require.NoError(t, err)
@@ -2824,10 +3303,11 @@ func TestIngester_Push(t *testing.T) {
 					if testData.expectedErr == nil {
 						assert.NoError(t, err)
 					} else {
-						handledErr := i.mapPushErrorToErrorWithStatus(err)
+						require.Error(t, err)
+						handledErr := mapPushErrorToErrorWithStatus(err)
 						errWithStatus, ok := handledErr.(globalerror.ErrorWithStatus)
-						assert.True(t, ok)
-						assert.True(t, errWithStatus.Equals(testData.expectedErr))
+						require.True(t, ok)
+						require.Truef(t, errWithStatus.Equals(testData.expectedErr), "errors don't match \nactual:   '%v'\nexpected: '%v'", errWithStatus, testData.expectedErr)
 					}
 				}
 			}
@@ -2846,7 +3326,7 @@ func TestIngester_Push(t *testing.T) {
 			if len(res) == 0 {
 				res = nil
 			}
-			assert.Equal(t, testData.expectedIngested, res)
+			require.Equal(t, testData.expectedIngested, res)
 
 			// Read back samples to see what has been really ingested
 			exemplarRes, err := i.QueryExemplars(ctx, &client.ExemplarQueryRequest{
@@ -2910,9 +3390,10 @@ func TestIngester_Push(t *testing.T) {
 			assert.Equal(t, int64(expectedTenantsCount), usagestats.GetInt(memoryTenantsStatsName).Value())
 			assert.Equal(t, int64(expectedSamplesCount)+appendedSamplesStatsBefore, usagestats.GetCounter(appendedSamplesStatsName).Total())
 			assert.Equal(t, int64(expectedExemplarsCount)+appendedExemplarsStatsBefore, usagestats.GetCounter(appendedExemplarsStatsName).Total())
-			assert.Equal(t, int64(0), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
-			assert.Equal(t, int64(0), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
-			assert.Equal(t, int64(0), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
+
+			assert.Equal(t, testData.disableOOONativeHistograms, usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value() == int64(1))
+			assert.Equal(t, oooTimeWindow, usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
+			assert.Equal(t, oooTimeWindow, usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
 		})
 	}
 }
@@ -4214,50 +4695,39 @@ func TestIngester_LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 }
 
 func TestIngester_Push_ShouldNotCreateTSDBIngesterServiceIsNotInRunningState(t *testing.T) {
-	for _, grpcLimitEnabled := range []bool{false, true} {
-		t.Run(fmt.Sprintf("gRPC limit enabled: %t", grpcLimitEnabled), func(t *testing.T) {
-			cfg := defaultIngesterTestConfig(t)
-			cfg.LimitInflightRequestsUsingGrpcMethodLimiter = grpcLimitEnabled
+	cfg := defaultIngesterTestConfig(t)
 
-			// Configure the lifecycler to not immediately leave the ring, to make sure
-			// the ingester service will stay in Stopping state for longer.
-			cfg.IngesterRing.FinalSleep = 5 * time.Second
+	// Configure the lifecycler to not immediately leave the ring, to make sure
+	// the ingester service will stay in Stopping state for longer.
+	cfg.IngesterRing.FinalSleep = 5 * time.Second
 
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
-			require.NoError(t, err)
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
 
-			// Start the ingester and then stop it.
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-			i.StopAsync()
+	// Start the ingester and then stop it.
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	i.StopAsync()
 
-			// Wait until the ingester service switches to Stopping state.
-			require.Eventually(t, func() bool {
-				return i.State() == services.Stopping
-			}, time.Second, 10*time.Millisecond)
+	// Wait until the ingester service switches to Stopping state.
+	require.Eventually(t, func() bool {
+		return i.State() == services.Stopping
+	}, time.Second, 10*time.Millisecond)
 
-			// Mock request
-			userID := "test"
-			ctx := user.InjectOrgID(context.Background(), userID)
-			req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 0)
+	// Mock request
+	userID := "test"
+	ctx := user.InjectOrgID(context.Background(), userID)
+	req, _, _, _ := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 0)
 
-			var res *mimirpb.WriteResponse
+	res, err := pushWithSimulatedGRPCHandler(ctx, i, req)
 
-			if grpcLimitEnabled {
-				res, err = pushWithSimulatedGRPCHandler(ctx, i, req)
-			} else {
-				res, err = i.Push(ctx, req)
-			}
+	assert.EqualError(t, err, newUnavailableError(services.Stopping).Error())
+	assert.Nil(t, res)
 
-			assert.EqualError(t, err, newUnavailableError(services.Stopping).Error())
-			assert.Nil(t, res)
+	// Check if the TSDB has been created
+	assert.Nil(t, i.getTSDB(userID))
 
-			// Check if the TSDB has been created
-			assert.Nil(t, i.getTSDB(userID))
-
-			// Wait until terminated.
-			require.NoError(t, i.AwaitTerminated(context.Background()))
-		})
-	}
+	// Wait until terminated.
+	require.NoError(t, i.AwaitTerminated(context.Background()))
 }
 
 func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
@@ -4393,8 +4863,6 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 
 	// Run tests
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			req := &client.MetricsForLabelMatchersRequest{
 				StartTimestampMs: testData.from,
@@ -4509,7 +4977,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 
 	for ts := startTimestamp; ts < startTimestamp+(step*int64(numSamplesPerSeries)); ts += step {
 		for o := 0; o < numSeries; o += maxBatchSize {
-			batchSize := util_math.Min(maxBatchSize, numSeries-o)
+			batchSize := min(maxBatchSize, numSeries-o)
 
 			// Generate metrics and samples (1 for each series).
 			metrics := make([][]mimirpb.LabelAdapter, 0, batchSize)
@@ -4598,7 +5066,7 @@ func TestIngester_QueryStream(t *testing.T) {
 
 	// Query back the series using GRPC streaming.
 	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
-	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil))
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -4869,7 +5337,7 @@ func TestIngester_QueryStream_TimeseriesWithManySamples(t *testing.T) {
 
 	// Query back the series using GRPC streaming.
 	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
-	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil))
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -4957,7 +5425,7 @@ func setupQueryingManySamplesAsChunksTest(ctx context.Context, t *testing.T, cfg
 
 	// Query back the series using GRPC streaming.
 	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
-	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck
 
@@ -5147,7 +5615,7 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 	}()
 
 	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
-	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil))
 	require.NoError(t, err)
 	t.Cleanup(func() { c.Close() }) //nolint:errcheck
 
@@ -5279,6 +5747,182 @@ func TestIngester_QueryExemplars(t *testing.T) {
 		require.Equal(t, ingesterTooBusyMsg, stat.Message())
 		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
+}
+
+// This test shows a single ingester returns compacted OOO and in-order chunks separately after compaction, even if they overlap.
+func TestIngester_QueryStream_CounterResets(t *testing.T) {
+	// Create ingester.
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Hour // Long enough to not be reached during the test.
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
+
+	// Set the OOO window to 30 minutes and enable native histograms.
+	limits := map[string]*validation.Limits{
+		userID: {
+			OutOfOrderTimeWindow:                model.Duration(30 * time.Minute),
+			OOONativeHistogramsIngestionEnabled: true,
+			NativeHistogramsIngestionEnabled:    true,
+		},
+	}
+	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
+	require.NoError(t, err)
+
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	// Wait until it's healthy.
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
+
+	// Push series.
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	histLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(0), "type", "histogram")
+	histReq := mockHistogramWriteRequest(histLbls, int64(0), 4, false)
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	histReq = mockHistogramWriteRequest(histLbls, int64(2), 6, false)
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	histReq = mockHistogramWriteRequest(histLbls, int64(4), 8, false)
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	histReq = mockHistogramWriteRequest(histLbls, int64(1), 2, false)
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	histReq = mockHistogramWriteRequest(histLbls, int64(3), 3, false)
+	_, err = i.Push(ctx, histReq)
+	require.NoError(t, err)
+
+	// Create a GRPC server used to query back the data.
+	serv := grpc.NewServer(grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor))
+	defer serv.GracefulStop()
+	client.RegisterIngesterServer(serv, i)
+
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	go func() {
+		require.NoError(t, serv.Serve(listener))
+	}()
+
+	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
+	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil))
+	require.NoError(t, err)
+	defer c.Close()
+
+	runQuery := func() ([]chunkenc.CounterResetHeader, [][]sample) {
+		s, err := c.QueryStream(ctx, &client.QueryRequest{
+			StartTimestampMs: 0,
+			EndTimestampMs:   5,
+
+			Matchers: []*client.LabelMatcher{{
+				Type:  client.EQUAL,
+				Name:  model.MetricNameLabel,
+				Value: "foo",
+			}},
+		})
+		require.NoError(t, err)
+
+		recvMsgs := 0
+
+		chunks := []client.Chunk{}
+		for {
+			resp, err := s.Recv()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			require.NoError(t, err)
+
+			for _, c := range resp.Chunkseries {
+				chunks = append(chunks, c.Chunks...)
+			}
+			recvMsgs++
+		}
+
+		require.Equal(t, recvMsgs, 1)
+		// Sort chunks by time
+		sort.Slice(chunks, func(i, j int) bool {
+			return chunks[i].StartTimestampMs < chunks[j].StartTimestampMs
+		})
+
+		headers := []chunkenc.CounterResetHeader{}
+		var samples [][]sample
+		for _, c := range chunks {
+			require.Equal(t, c.Encoding, int32(chunk.PrometheusHistogramChunk))
+			chk, err := chunkenc.FromData(chunkenc.EncHistogram, c.Data)
+			require.NoError(t, err)
+
+			s := []sample{}
+			it := chk.Iterator(nil)
+			for it.Next() != chunkenc.ValNone {
+				ts, h := it.AtHistogram(nil)
+				s = append(s, sample{t: ts, h: h})
+			}
+			samples = append(samples, s)
+			headers = append(headers, chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
+		}
+		return headers, samples
+	}
+
+	// Check samples before compaction (OOO and in-order samples are merged when both are in the head).
+	actHeaders, actSamples := runQuery()
+	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.CounterReset, chunkenc.CounterReset}, actHeaders)
+	require.Equal(t, [][]sample{
+		{
+			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
+		},
+		{
+			{t: 1, h: histogramWithHint(2, histogram.UnknownCounterReset)},
+			{t: 2, h: histogramWithHint(6, histogram.NotCounterReset)},
+		},
+		{
+			{t: 3, h: histogramWithHint(3, histogram.UnknownCounterReset)},
+			{t: 4, h: histogramWithHint(8, histogram.NotCounterReset)},
+		},
+	}, actSamples)
+
+	time.Sleep(time.Duration(float64(cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout) * (1 + compactionIdleTimeoutJitter)))
+
+	// Compaction
+	i.compactBlocks(context.Background(), false, 0, nil) // Should be compacted because the TSDB is idle.
+	verifyCompactedHead(t, i, true)
+
+	defer c.Close()
+
+	actHeaders, actSamples = runQuery()
+	require.Equal(t, []chunkenc.CounterResetHeader{chunkenc.UnknownCounterReset, chunkenc.UnknownCounterReset}, actHeaders)
+	require.Equal(t, [][]sample{
+		{
+			{t: 0, h: histogramWithHint(4, histogram.UnknownCounterReset)},
+			{t: 2, h: histogramWithHint(6, histogram.NotCounterReset)},
+			{t: 4, h: histogramWithHint(8, histogram.NotCounterReset)},
+		},
+		{
+			{t: 1, h: histogramWithHint(2, histogram.UnknownCounterReset)},
+			{t: 3, h: histogramWithHint(3, histogram.NotCounterReset)},
+		},
+	}, actSamples)
+}
+
+func histogramWithHint(idx int, hint histogram.CounterResetHint) *histogram.Histogram {
+	h := util_test.GenerateTestHistogram(idx)
+	h.CounterResetHint = hint
+	return h
+}
+
+type sample struct {
+	t int64
+	h *histogram.Histogram
 }
 
 func writeRequestSingleSeries(lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {
@@ -7487,186 +8131,13 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			for _, grpcLimiterEnabled := range []bool{false, true} {
-				t.Run(fmt.Sprintf("with gRPC limiter: %t", grpcLimiterEnabled), func(t *testing.T) {
-
-					// Create a mocked ingester
-					cfg := defaultIngesterTestConfig(t)
-					cfg.LimitInflightRequestsUsingGrpcMethodLimiter = grpcLimiterEnabled
-					cfg.InstanceLimitsFn = func() *InstanceLimits {
-						return &testData.limits
-					}
-
-					i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
-					require.NoError(t, err)
-					require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-					defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
-
-					// Wait until the ingester is healthy
-					test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-						return i.lifecycler.HealthyInstancesCount()
-					})
-
-					// Iterate through users in sorted order (by username).
-					uids := []string{}
-					totalPushes := 0
-					for uid, requests := range testData.reqs {
-						uids = append(uids, uid)
-						totalPushes += len(requests)
-					}
-					slices.Sort(uids)
-
-					pushIdx := 0
-					for _, uid := range uids {
-						ctx := user.InjectOrgID(context.Background(), uid)
-
-						for _, origReq := range testData.reqs[uid] {
-							pushIdx++
-
-							// Clone the request so that it's safe to be sent multiple times.
-							reqData, marshalErr := origReq.Marshal()
-							require.NoError(t, marshalErr)
-							req := &mimirpb.WriteRequest{}
-							require.NoError(t, req.Unmarshal(reqData))
-
-							var err error
-
-							// If gRPC limiter is enabled we simulate the sequence of calls done by the gRPC handler.
-							if grpcLimiterEnabled {
-								_, err = pushWithSimulatedGRPCHandler(ctx, i, req)
-							} else {
-								_, err = i.Push(ctx, req)
-							}
-
-							if pushIdx < totalPushes {
-								require.NoError(t, err)
-							} else {
-								// Last push may expect error.
-								if testData.expectedErr != nil {
-									assert.ErrorIs(t, err, testData.expectedErr)
-
-									if testData.expectedOptionalLoggingErr {
-										var optional middleware.OptionalLogging
-										assert.ErrorAs(t, err, &optional)
-									}
-
-									if testData.expectedGRPCErr {
-										s, ok := grpcutil.ErrorToStatus(err)
-										require.True(t, ok, "expected to be able to convert to gRPC status")
-										assert.Equal(t, codes.Unavailable, s.Code())
-									}
-								} else {
-									assert.NoError(t, err)
-								}
-							}
-
-							// imitate time ticking between each push
-							i.ingestionRate.Tick()
-
-							rate := testutil.ToFloat64(i.metrics.ingestionRate)
-							require.NotZero(t, rate)
-						}
-					}
-				})
-			}
-		})
-	}
-}
-
-func TestIngester_PushInstanceLimitsWithCircuitBreaker_LimitInflightRequestsUsingGrpcMethodLimiterDisabled(t *testing.T) {
-	tests := map[string]struct {
-		limits      InstanceLimits
-		reqs        map[string][]*mimirpb.WriteRequest
-		expectedErr error
-	}{
-		"should fail creating two series": {
-			limits: InstanceLimits{MaxInMemorySeries: 1, MaxInMemoryTenants: 1},
-
-			reqs: map[string][]*mimirpb.WriteRequest{
-				"test": {
-					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
-						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
-						nil,
-						nil,
-						mimirpb.API,
-					),
-
-					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test2"}}}, // another series
-						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
-						nil,
-						nil,
-						mimirpb.API,
-					),
-				},
-			},
-			expectedErr: errMaxInMemorySeriesReached,
-		},
-		"should fail creating two users": {
-			limits: InstanceLimits{MaxInMemorySeries: 1, MaxInMemoryTenants: 1},
-
-			reqs: map[string][]*mimirpb.WriteRequest{
-				"user1": {
-					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
-						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
-						nil,
-						nil,
-						mimirpb.API,
-					),
-				},
-
-				"user2": {
-					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test2"}}}, // another series
-						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
-						nil,
-						nil,
-						mimirpb.API,
-					),
-				},
-			},
-			expectedErr: errMaxTenantsReached,
-		},
-
-		"should fail pushing samples in two requests due to rate limit": {
-			limits: InstanceLimits{MaxInMemorySeries: 1, MaxInMemoryTenants: 1, MaxIngestionRate: 0.001},
-
-			reqs: map[string][]*mimirpb.WriteRequest{
-				"user1": {
-					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
-						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
-						nil,
-						nil,
-						mimirpb.API,
-					),
-
-					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
-						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
-						nil,
-						nil,
-						mimirpb.API,
-					),
-				},
-			},
-			expectedErr: errMaxIngestionRateReached,
-		},
-	}
-
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.LimitInflightRequestsUsingGrpcMethodLimiter = false
 			cfg.InstanceLimitsFn = func() *InstanceLimits {
 				return &testData.limits
 			}
 
-			registry := prometheus.NewRegistry()
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
+			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -7675,43 +8146,6 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker_LimitInflightRequestsUsin
 			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
 				return i.lifecycler.HealthyInstancesCount()
 			})
-
-			var lvl dslog.Level
-			require.NoError(t, lvl.Set("info"))
-			logger := dslog.NewGoKitWithLevel(lvl, dslog.LogfmtFormat)
-			serverLog := middleware.GRPCServerLog{
-				Log: logger,
-			}
-			grpcOptions := []grpc.ServerOption{
-				grpc.UnaryInterceptor(middleware.ServerUserHeaderInterceptor),
-				grpc.ChainUnaryInterceptor(serverLog.UnaryServerInterceptor),
-			}
-
-			server := grpc.NewServer(grpcOptions...)
-			defer server.GracefulStop()
-			client.RegisterIngesterServer(server, i)
-
-			listener, err := net.Listen("tcp", "localhost:0")
-			require.NoError(t, err)
-
-			go func() {
-				require.NoError(t, server.Serve(listener))
-			}()
-
-			cbCfg := client.CircuitBreakerConfig{
-				Enabled:                   true,
-				FailureThreshold:          1,
-				FailureExecutionThreshold: 1,
-				ThresholdingPeriod:        60 * time.Second,
-				CooldownPeriod:            60 * time.Second,
-			}
-			clientCfg := defaultClientTestConfig()
-			clientCfg.CircuitBreaker = cbCfg
-
-			inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
-			client, err := client.MakeIngesterClient(inst, clientCfg, client.NewMetrics(registry), util_test.NewTestingLogger(t))
-			require.NoError(t, err)
-			defer client.Close()
 
 			// Iterate through users in sorted order (by username).
 			uids := []string{}
@@ -7726,31 +8160,38 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker_LimitInflightRequestsUsin
 			for _, uid := range uids {
 				ctx := user.InjectOrgID(context.Background(), uid)
 
-				for _, req := range testData.reqs[uid] {
+				for _, origReq := range testData.reqs[uid] {
 					pushIdx++
-					// We expect no error on any request except the last one,
-					// which causes an instance limit error
+
+					// Clone the request so that it's safe to be sent multiple times.
+					reqData, marshalErr := origReq.Marshal()
+					require.NoError(t, marshalErr)
+					req := &mimirpb.WriteRequest{}
+					require.NoError(t, req.Unmarshal(reqData))
+
+					// We simulate the sequence of calls done by the gRPC handler.
+					_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
+
 					if pushIdx < totalPushes {
-						_, err := client.Push(ctx, req)
 						require.NoError(t, err)
 					} else {
-						// We push the last request 2 times.
-						// The first request causes an instance limit error,
-						// and which opens the circuit breaker, but no
-						// circuitbreaker.ErrOpen is returned.
-						_, err := client.Push(ctx, req)
-						require.Error(t, err)
-						require.NotErrorIs(t, err, circuitbreaker.ErrOpen)
-						s, ok := grpcutil.ErrorToStatus(err)
-						require.True(t, ok, "expected to be able to convert to gRPC status")
-						require.Equal(t, codes.Unavailable, s.Code())
-						require.ErrorContains(t, s.Err(), testData.expectedErr.Error())
+						// Last push may expect error.
+						if testData.expectedErr != nil {
+							assert.ErrorIs(t, err, testData.expectedErr)
 
-						// The second request causes a circuitbreaker.ErrOpen,
-						// since the circuit breaker is already open.
-						_, err = client.Push(ctx, req)
-						require.Error(t, err)
-						require.ErrorIs(t, err, circuitbreaker.ErrOpen)
+							if testData.expectedOptionalLoggingErr {
+								var optional middleware.OptionalLogging
+								assert.ErrorAs(t, err, &optional)
+							}
+
+							if testData.expectedGRPCErr {
+								s, ok := grpcutil.ErrorToStatus(err)
+								require.True(t, ok, "expected to be able to convert to gRPC status")
+								assert.Equal(t, codes.Unavailable, s.Code())
+							}
+						} else {
+							assert.NoError(t, err)
+						}
 					}
 
 					// imitate time ticking between each push
@@ -7760,18 +8201,6 @@ func TestIngester_PushInstanceLimitsWithCircuitBreaker_LimitInflightRequestsUsin
 					require.NotZero(t, rate)
 				}
 			}
-			metricNames := []string{
-				"cortex_ingester_client_circuit_breaker_results_total",
-			}
-			expectedMetrics := `
-				# HELP cortex_ingester_client_circuit_breaker_results_total Results of executing requests via the circuit breaker
-				# TYPE cortex_ingester_client_circuit_breaker_results_total counter
-				cortex_ingester_client_circuit_breaker_results_total{ingester="test",result="circuit_breaker_open"} 1
-				cortex_ingester_client_circuit_breaker_results_total{ingester="test",result="success"} 1
-				cortex_ingester_client_circuit_breaker_results_total{ingester="test",result="error"} 1
-			`
-			err = testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...)
-			assert.NoError(t, err)
 		})
 	}
 }
@@ -7845,31 +8274,27 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 }
 
 func TestIngester_inflightPushRequests(t *testing.T) {
-	for _, grpcLimitEnabled := range []bool{false, true} {
-		t.Run(fmt.Sprintf("gRPC limit enabled: %t", grpcLimitEnabled), func(t *testing.T) {
-			limits := InstanceLimits{MaxInflightPushRequests: 1}
+	t.Run("with classic ingester", func(t *testing.T) {
+		limits := InstanceLimits{MaxInflightPushRequests: 1}
 
-			cfg := defaultIngesterTestConfig(t)
-			cfg.LimitInflightRequestsUsingGrpcMethodLimiter = grpcLimitEnabled
-			cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
+		cfg := defaultIngesterTestConfig(t)
+		cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
 
-			// Create a mocked ingester
-			reg := prometheus.NewPedanticRegistry()
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
-			require.NoError(t, err)
+		// Create a mocked ingester
+		reg := prometheus.NewPedanticRegistry()
+		i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+		require.NoError(t, err)
 
-			testIngesterInflightPushRequests(t, i, reg, grpcLimitEnabled)
-		})
-	}
+		testIngesterInflightPushRequests(t, i, reg)
+	})
 
-	t.Run("gRPC limit enabled with ingest storage enabled", func(t *testing.T) {
+	t.Run("with ingest storage enabled", func(t *testing.T) {
 		limits := InstanceLimits{MaxInflightPushRequests: 1}
 
 		overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 		require.NoError(t, err)
 
 		cfg := defaultIngesterTestConfig(t)
-		cfg.LimitInflightRequestsUsingGrpcMethodLimiter = true
 		cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
 
 		reg := prometheus.NewPedanticRegistry()
@@ -7878,11 +8303,11 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 		// Re-enable push gRPC method to simulate migration period, when ingester can receive requests from gRPC
 		i.cfg.PushGrpcMethodEnabled = true
 
-		testIngesterInflightPushRequests(t, i, reg, cfg.LimitInflightRequestsUsingGrpcMethodLimiter)
+		testIngesterInflightPushRequests(t, i, reg)
 	})
 }
 
-func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.Gatherer, grpcLimitEnabled bool) {
+func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.Gatherer) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	t.Cleanup(func() {
 		services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -7906,14 +8331,7 @@ func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.
 		// Signal that we're going to do the real push now.
 		close(startCh)
 
-		var err error
-
-		if grpcLimitEnabled {
-			_, err = pushWithSimulatedGRPCHandler(ctx, i, req)
-		} else {
-			_, err = i.Push(ctx, req)
-		}
-
+		_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
 		return err
 	})
 
@@ -7931,23 +8349,8 @@ func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.
 			return i.inflightPushRequests.Load()
 		})
 
-		if grpcLimitEnabled {
-			_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
-			require.ErrorIs(t, err, errMaxInflightRequestsReached)
-		} else {
-			_, err := i.Push(ctx, req)
-			require.ErrorIs(t, err, errMaxInflightRequestsReached)
-
-			var optional middleware.OptionalLogging
-			require.ErrorAs(t, err, &optional)
-
-			shouldLog, _ := optional.ShouldLog(ctx)
-			require.False(t, shouldLog, "expected not to log via .ShouldLog()")
-
-			s, ok := grpcutil.ErrorToStatus(err)
-			require.True(t, ok, "expected to be able to convert to gRPC status")
-			require.Equal(t, codes.Unavailable, s.Code())
-		}
+		_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
+		require.ErrorIs(t, err, errMaxInflightRequestsReached)
 
 		return nil
 	})
@@ -7970,117 +8373,94 @@ func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.
 }
 
 func TestIngester_inflightPushRequestsBytes(t *testing.T) {
-	for _, grpcLimitEnabled := range []bool{false, true} {
-		t.Run(fmt.Sprintf("gRPC limit enabled: %t", grpcLimitEnabled), func(t *testing.T) {
-			var limitsMx sync.Mutex
-			limits := InstanceLimits{MaxInflightPushRequestsBytes: 0}
+	var limitsMx sync.Mutex
+	limits := InstanceLimits{MaxInflightPushRequestsBytes: 0}
 
-			// Create a mocked ingester
-			cfg := defaultIngesterTestConfig(t)
-			cfg.LimitInflightRequestsUsingGrpcMethodLimiter = grpcLimitEnabled
-			cfg.InstanceLimitsFn = func() *InstanceLimits {
-				limitsMx.Lock()
-				defer limitsMx.Unlock()
+	// Create a mocked ingester
+	cfg := defaultIngesterTestConfig(t)
+	cfg.InstanceLimitsFn = func() *InstanceLimits {
+		limitsMx.Lock()
+		defer limitsMx.Unlock()
 
-				// Make a copy
-				il := limits
-				return &il
-			}
+		// Make a copy
+		il := limits
+		return &il
+	}
 
-			reg := prometheus.NewPedanticRegistry()
-			i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
-			require.NoError(t, err)
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+	reg := prometheus.NewPedanticRegistry()
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-			// Wait until the ingester is healthy
-			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-				return i.lifecycler.HealthyInstancesCount()
-			})
+	// Wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
+	})
 
-			ctx := user.InjectOrgID(context.Background(), "test")
+	ctx := user.InjectOrgID(context.Background(), "test")
 
-			startCh := make(chan int)
+	startCh := make(chan int)
 
-			const targetRequestDuration = time.Second
+	const targetRequestDuration = time.Second
 
-			g, ctx := errgroup.WithContext(ctx)
-			g.Go(func() error {
-				req := prepareRequestForTargetRequestDuration(ctx, t, i, targetRequestDuration)
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		req := prepareRequestForTargetRequestDuration(ctx, t, i, targetRequestDuration)
 
-				// Update instance limits. Set limit to EXACTLY the request size.
-				limitsMx.Lock()
-				limits.MaxInflightPushRequestsBytes = int64(req.Size())
-				limitsMx.Unlock()
+		// Update instance limits. Set limit to EXACTLY the request size.
+		limitsMx.Lock()
+		limits.MaxInflightPushRequestsBytes = int64(req.Size())
+		limitsMx.Unlock()
 
-				// Signal that we're going to do the real push now.
-				startCh <- req.Size()
-				close(startCh)
+		// Signal that we're going to do the real push now.
+		startCh <- req.Size()
+		close(startCh)
 
-				var err error
-				if grpcLimitEnabled {
-					_, err = pushWithSimulatedGRPCHandler(ctx, i, req)
-				} else {
-					_, err = i.Push(ctx, req)
-				}
-				return err
-			})
+		_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
+		return err
+	})
 
-			g.Go(func() error {
-				req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase1"), 1, 1024)
+	g.Go(func() error {
+		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase1"), 1, 1024)
 
-				var requestSize int
-				select {
-				case <-ctx.Done():
-				// failed to setup
-				case requestSize = <-startCh:
-					// we can start the test.
-				}
+		var requestSize int
+		select {
+		case <-ctx.Done():
+		// failed to setup
+		case requestSize = <-startCh:
+			// we can start the test.
+		}
 
-				test.Poll(t, targetRequestDuration/3, int64(1), func() interface{} {
-					return i.inflightPushRequests.Load()
-				})
+		test.Poll(t, targetRequestDuration/3, int64(1), func() interface{} {
+			return i.inflightPushRequests.Load()
+		})
 
-				require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 			# HELP cortex_ingester_inflight_push_requests_bytes Total sum of inflight push request sizes in ingester in bytes.
 			# TYPE cortex_ingester_inflight_push_requests_bytes gauge
 			cortex_ingester_inflight_push_requests_bytes %d
 		`, requestSize)), "cortex_ingester_inflight_push_requests_bytes"))
 
-				// Starting push request fails
-				_, err = i.StartPushRequest(ctx, 100)
-				require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
+		// Starting push request fails
+		_, err = i.StartPushRequest(ctx, 100)
+		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
 
-				// Starting push request with unknown size fails
-				_, err = i.StartPushRequest(ctx, 0)
-				require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
+		// Starting push request with unknown size fails
+		_, err = i.StartPushRequest(ctx, 0)
+		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
 
-				// Sending push request fails
-				if grpcLimitEnabled {
-					_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
-					require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
-				} else {
-					_, err := i.Push(ctx, req)
-					require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
+		// Sending push request fails
+		_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
+		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
 
-					var optional middleware.OptionalLogging
-					require.ErrorAs(t, err, &optional)
+		return nil
+	})
 
-					shouldLog, _ := optional.ShouldLog(ctx)
-					require.False(t, shouldLog, "expected not to log via .ShouldLog()")
+	require.NoError(t, g.Wait())
 
-					s, ok := grpcutil.ErrorToStatus(err)
-					require.True(t, ok, "expected to be able to convert to gRPC status")
-					require.Equal(t, codes.Unavailable, s.Code())
-				}
-
-				return nil
-			})
-
-			require.NoError(t, g.Wait())
-
-			// Ensure the rejected request has been tracked in a metric.
-			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+	// Ensure the rejected request has been tracked in a metric.
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_ingester_instance_rejected_requests_total Requests rejected for hitting per-instance limits
 		# TYPE cortex_ingester_instance_rejected_requests_total counter
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 0
@@ -8089,8 +8469,6 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0
 	`), "cortex_ingester_instance_rejected_requests_total"))
-		})
-	}
 }
 
 func prepareRequestForTargetRequestDuration(ctx context.Context, t *testing.T, i *Ingester, targetRequestDuration time.Duration) *mimirpb.WriteRequest {
@@ -9104,7 +9482,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 		test               func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
 		reqs               []*mimirpb.WriteRequest
 		expectedMetrics    string
-		activeSeriesConfig activeseries.CustomTrackersConfig
+		activeSeriesConfig asmodel.CustomTrackersConfig
 		tenantLimits       *TenantLimitsMock
 	}{
 		"override flag based config with runtime overwrite": {
@@ -9601,10 +9979,21 @@ func TestGetIgnoreSeriesLimitForMetricNamesMap(t *testing.T) {
 // The correctness of changed runtime is already tested in Prometheus, so we only check if the
 // change is being applied here.
 func Test_Ingester_OutOfOrder(t *testing.T) {
+	for name, tc := range ingesterSampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testIngesterOutOfOrder(t, tc.makeWriteRequest, tc.makeExpectedSamples)
+		})
+	}
+}
+
+func testIngesterOutOfOrder(t *testing.T,
+	makeWriteRequest func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest,
+	makeExpectedSamples func(start, end int64, m model.Metric) model.Matrix) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
 
 	l := defaultLimitsTestConfig()
+	l.NativeHistogramsIngestionEnabled = true
 	tenantOverride := new(TenantLimitsMock)
 	tenantOverride.On("ByUserID", "test").Return(nil)
 	override, err := validation.NewOverrides(l, tenantOverride)
@@ -9613,13 +10002,20 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	setOOOTimeWindow := func(oooTW model.Duration) {
 		tenantOverride.ExpectedCalls = nil
 		tenantOverride.On("ByUserID", "test").Return(&validation.Limits{
-			OutOfOrderTimeWindow: oooTW,
+			OutOfOrderTimeWindow:                oooTW,
+			OOONativeHistogramsIngestionEnabled: true,
+
+			// Need to set this in the tenant limits even though it's already set in the global config as once the
+			// tenant limits is not nil, all configs are read from the tenant limits rather than the global one.
+			NativeHistogramsIngestionEnabled: true,
 		})
 		// TSDB config is updated every second.
 		<-time.After(1500 * time.Millisecond)
 	}
 
-	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", nil)
+	registry := prometheus.NewRegistry()
+
+	i, err := prepareIngesterWithBlockStorageAndOverrides(t, cfg, override, nil, "", "", registry)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
@@ -9636,17 +10032,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		end = end * time.Minute.Milliseconds()
 
 		s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
-		var samples []mimirpb.Sample
-		var lbls [][]mimirpb.LabelAdapter
-		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
-			samples = append(samples, mimirpb.Sample{
-				TimestampMs: ts,
-				Value:       float64(ts),
-			})
-			lbls = append(lbls, s)
-		}
-
-		wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
 		if expErr {
 			require.Error(t, err, "should have failed on push")
@@ -9660,17 +10046,7 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
-		var expSamples []model.SamplePair
-		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
-			expSamples = append(expSamples, model.SamplePair{
-				Timestamp: model.Time(ts),
-				Value:     model.SampleValue(ts),
-			})
-		}
-		expMatrix := model.Matrix{{
-			Metric: model.Metric{"__name__": "test_1", "status": "200"},
-			Values: expSamples,
-		}}
+		expMatrix := makeExpectedSamples(start, end, model.Metric{"__name__": "test_1", "status": "200"})
 
 		req := &client.QueryRequest{
 			StartTimestampMs: math.MinInt64,
@@ -9702,6 +10078,27 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	assert.Equal(t, int64(0), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
 	assert.Equal(t, int64(0), usagestats.GetInt(maxOutOfOrderTimeWindowSecondsStatName).Value())
 
+	// no ooo samples appended, but the ooo delta is still calculated
+	expectedMetrics := `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 0
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 10
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 3300
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 10
+		`
+	metricNames := []string{"cortex_ingester_tsdb_out_of_order_samples_appended_total", "cortex_ingester_tsdb_sample_out_of_order_delta_seconds"}
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	// Increasing the OOO time window.
 	setOOOTimeWindow(model.Duration(30 * time.Minute))
 
@@ -9709,13 +10106,72 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	pushSamples(90, 99, false, "")
 	verifySamples(90, 100)
 
+	// 10 ooo samples appended and more observations for the ooo delta
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 10
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 20
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 6600
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 20
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	// Gives an error for sample 69 since it's outside time window, but rest is ingested.
 	pushSamples(69, 99, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
 	verifySamples(70, 100)
 
+	// 20 more ooo samples appended (between 70-89, the other 10 between 90-99 are discarded as dupes of previously ingested samples)
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 30
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 51
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 36360
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 51
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	// All beyond the ooo time window. None ingested.
 	pushSamples(50, 69, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
 	verifySamples(70, 100)
+
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 30
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 71
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 84960
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 71
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
@@ -9727,6 +10183,25 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	pushSamples(50, 69, false, "")
 	verifySamples(50, 100)
 
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 50
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 91
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 133560
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 91
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
 	assert.Equal(t, int64(60*60), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
@@ -9737,6 +10212,25 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 	pushSamples(50, 69, true, "the sample has been rejected because another sample with a more recent timestamp has already been ingested and this sample is beyond the out-of-order time window")
 	verifySamples(50, 100)
 
+	expectedMetrics = `
+		# HELP cortex_ingester_tsdb_out_of_order_samples_appended_total Total number of out-of-order samples appended.
+		# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
+		cortex_ingester_tsdb_out_of_order_samples_appended_total{user="test"} 50
+		# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out-of-order.
+		# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 30
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="1800"} 50
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="3600"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="7200"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="10800"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="21600"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="43200"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 111
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 182160
+        cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 111
+		`
+	require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
+
 	i.updateUsageStats()
 	assert.Equal(t, int64(1), usagestats.GetInt(tenantsWithOutOfOrderEnabledStatName).Value())
 	assert.Equal(t, int64(30*60), usagestats.GetInt(minOutOfOrderTimeWindowSecondsStatName).Value())
@@ -9746,15 +10240,27 @@ func Test_Ingester_OutOfOrder(t *testing.T) {
 // Test_Ingester_OutOfOrder_CompactHead tests that the OOO head is compacted
 // when the compaction is forced or when the TSDB is idle.
 func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
+	for name, tc := range ingesterSampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testIngesterOutOfOrderCompactHead(t, tc.makeWriteRequest, tc.makeExpectedSamples)
+		})
+	}
+}
+
+func testIngesterOutOfOrderCompactHead(t *testing.T,
+	makeWriteRequest func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest,
+	makeExpectedSamples func(start, end int64, m model.Metric) model.Matrix) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Hour      // Long enough to not be reached during the test.
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second // Testing this.
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
 
-	// Set the OOO window to 30 minutes
+	// Set the OOO window to 30 minutes and enable native histograms.
 	limits := map[string]*validation.Limits{
 		userID: {
-			OutOfOrderTimeWindow: model.Duration(30 * time.Minute),
+			OutOfOrderTimeWindow:                model.Duration(30 * time.Minute),
+			OOONativeHistogramsIngestionEnabled: true,
+			NativeHistogramsIngestionEnabled:    true,
 		},
 	}
 	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
@@ -9777,17 +10283,7 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 		end = end * time.Minute.Milliseconds()
 
 		s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
-		var samples []mimirpb.Sample
-		var lbls [][]mimirpb.LabelAdapter
-		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
-			samples = append(samples, mimirpb.Sample{
-				TimestampMs: ts,
-				Value:       float64(ts),
-			})
-			lbls = append(lbls, s)
-		}
-
-		wReq := mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
 		require.NoError(t, err)
 	}
@@ -9796,17 +10292,7 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
-		var expSamples []model.SamplePair
-		for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
-			expSamples = append(expSamples, model.SamplePair{
-				Timestamp: model.Time(ts),
-				Value:     model.SampleValue(ts),
-			})
-		}
-		expMatrix := model.Matrix{{
-			Metric: model.Metric{"__name__": "test_1", "status": "200"},
-			Values: expSamples,
-		}}
+		expMatrix := makeExpectedSamples(start, end, model.Metric{"__name__": "test_1", "status": "200"})
 
 		req := &client.QueryRequest{
 			StartTimestampMs: math.MinInt64,
@@ -9843,11 +10329,29 @@ func Test_Ingester_OutOfOrder_CompactHead(t *testing.T) {
 
 // Test_Ingester_OutOfOrder_CompactHead_StillActive tests that active series correctly tracks OOO series after compaction.
 func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
+	for name, tc := range ingesterSampleTypeScenarios {
+		t.Run(name, func(t *testing.T) {
+			testIngesterOutOfOrderCompactHeadStillActive(t,
+				func(ts int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+					return tc.makeWriteRequest(ts, ts, s)
+				})
+		})
+	}
+}
+
+func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
+	makeWriteRequest func(ts int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.TSDBConfigUpdatePeriod = 1 * time.Second
 
-	// Set the OOO window to 10h.
-	limits := map[string]*validation.Limits{userID: {OutOfOrderTimeWindow: model.Duration(10 * time.Hour)}}
+	// Set the OOO window to 10h and enable native histograms.
+	limits := map[string]*validation.Limits{
+		userID: {
+			OutOfOrderTimeWindow:                model.Duration(10 * time.Hour),
+			NativeHistogramsIngestionEnabled:    true,
+			OOONativeHistogramsIngestionEnabled: true,
+		},
+	}
 	override, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
 	require.NoError(t, err)
 
@@ -9862,9 +10366,8 @@ func Test_Ingester_OutOfOrder_CompactHead_StillActive(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	pushSamples := func(ts int64, series string) {
-		samples := []mimirpb.Sample{{TimestampMs: ts * time.Minute.Milliseconds(), Value: float64(ts)}}
-		lbls := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test_1"}, {Name: "series", Value: series}}}
-		_, err = i.Push(ctx, mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API))
+		wReq := makeWriteRequest(ts*time.Minute.Milliseconds(), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "series", Value: series}})
+		_, err = i.Push(ctx, wReq)
 		require.NoError(t, err)
 	}
 
@@ -10284,8 +10787,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 8
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 2
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-1"} 8
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-2"} 2
 			`,
 		},
 		"should soft fail on all histograms out of bound in a write request": {
@@ -10317,8 +10820,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 4
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 1
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-2"} 1
 			`,
 			nativeHistograms: true,
 		},
@@ -10352,8 +10855,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 12
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 3
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-1"} 12
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-2"} 3
 			`,
 			nativeHistograms: true,
 		},
@@ -10389,8 +10892,8 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-1"} 8
-				cortex_discarded_samples_total{group="",reason="sample-out-of-bounds",user="user-2"} 2
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-1"} 8
+				cortex_discarded_samples_total{group="",reason="sample-timestamp-too-old",user="user-2"} 2
 			`,
 		},
 		"should soft fail on some samples with timestamp too far in future in a write request": {
@@ -10581,7 +11084,7 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 			}()
 
 			inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
-			client, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+			client, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil))
 			require.NoError(t, err)
 			defer client.Close()
 
@@ -10685,7 +11188,7 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 	}()
 
 	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
-	client, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+	client, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil))
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -10789,7 +11292,7 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 	}()
 
 	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
-	client, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), util_test.NewTestingLogger(t))
+	client, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil))
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -11129,12 +11632,6 @@ func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		// Avoid a common gotcha with table driven tests and t.Parallel().
-		// See https://gist.github.com/posener/92a55c4cd441fc5e5e85f27bca008721.
-		// As of writing these tests, Mimir runs on go 1.21. Once go.mod is updated to specify go 1.22, this line can
-		// be dropped. See https://tip.golang.org/wiki/LoopvarExperiment.
-		tc := tc
-
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -11262,4 +11759,87 @@ func pushWithSimulatedGRPCHandler(ctx context.Context, i *Ingester, req *mimirpb
 	defer i.FinishPushRequest(ctx)
 
 	return i.Push(ctx, req)
+}
+
+var ingesterSampleTypeScenarios = map[string]struct {
+	makeWriteRequest    func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest
+	makeExpectedSamples func(start, end int64, m model.Metric) model.Matrix
+}{
+	"float": {
+		makeWriteRequest: func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+			var samples []mimirpb.Sample
+			var lbls [][]mimirpb.LabelAdapter
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				samples = append(samples, mimirpb.Sample{
+					TimestampMs: ts,
+					Value:       float64(ts),
+				})
+				lbls = append(lbls, s)
+			}
+			return mimirpb.ToWriteRequest(lbls, samples, nil, nil, mimirpb.API)
+		},
+		makeExpectedSamples: func(start, end int64, m model.Metric) model.Matrix {
+			var expSamples []model.SamplePair
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				expSamples = append(expSamples, model.SamplePair{
+					Timestamp: model.Time(ts),
+					Value:     model.SampleValue(ts),
+				})
+			}
+			return model.Matrix{{
+				Metric: m,
+				Values: expSamples,
+			}}
+		},
+	},
+	"int histogram": {
+		makeWriteRequest: func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+			var histograms []mimirpb.Histogram
+			var lbls [][]mimirpb.LabelAdapter
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				h := util_test.GenerateTestHistogram(int(ts))
+				histograms = append(histograms, mimirpb.FromHistogramToHistogramProto(ts, h))
+				lbls = append(lbls, s)
+			}
+			return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(lbls, histograms, nil)
+		},
+		makeExpectedSamples: func(start, end int64, m model.Metric) model.Matrix {
+			var expSamples []model.SampleHistogramPair
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				expSamples = append(expSamples, model.SampleHistogramPair{
+					Timestamp: model.Time(ts),
+					Histogram: mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(util_test.GenerateTestFloatHistogram(int(ts)))),
+				})
+			}
+			return model.Matrix{{
+				Metric:     m,
+				Histograms: expSamples,
+			}}
+		},
+	},
+	"float histogram": {
+		makeWriteRequest: func(start, end int64, s []mimirpb.LabelAdapter) *mimirpb.WriteRequest {
+			var histograms []mimirpb.Histogram
+			var lbls [][]mimirpb.LabelAdapter
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				h := util_test.GenerateTestFloatHistogram(int(ts))
+				histograms = append(histograms, mimirpb.FromFloatHistogramToHistogramProto(ts, h))
+				lbls = append(lbls, s)
+			}
+			return mimirpb.NewWriteRequest(nil, mimirpb.API).AddHistogramSeries(lbls, histograms, nil)
+		},
+		makeExpectedSamples: func(start, end int64, m model.Metric) model.Matrix {
+			var expSamples []model.SampleHistogramPair
+			for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
+				expSamples = append(expSamples, model.SampleHistogramPair{
+					Timestamp: model.Time(ts),
+					Histogram: mimirpb.FromMimirSampleToPromHistogram(mimirpb.FromFloatHistogramToSampleHistogram(util_test.GenerateTestFloatHistogram(int(ts)))),
+				})
+			}
+			return model.Matrix{{
+				Metric:     m,
+				Histograms: expSamples,
+			}}
+		},
+	},
 }

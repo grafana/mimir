@@ -23,8 +23,8 @@ The following table contains past releases and tentative dates for upcoming rele
 | 2.11.0  | 2023-12-06 | Justin Lei         |
 | 2.12.0  | 2024-03-11 | Yuri Nikolic       |
 | 2.13.0  | 2024-06-17 | Dimitar Dimitrov   |
-| 2.14.0  | 2024-09-09 | _To be announced_  |
-| 2.15.0  | 2024-12-09 | _To be announced_  |
+| 2.14.0  | 2024-10-07 | Vladimir Varankin  |
+| 2.15.0  | 2024-12-12 | Casie Chen         |
 | 2.16.0  | 2025-03-10 | _To be announced_  |
 
 ## Release shepherd responsibilities
@@ -71,7 +71,7 @@ If something is not clear, you can get back to this document to learn more about
   - [ ] Run `./tools/release/check-changelog.sh LAST-RELEASE-TAG...main` and add missing PRs to CHANGELOG
   - [ ] Ensure CHANGELOG entries are [sorted by type](https://github.com/grafana/mimir/blob/main/docs/internal/contributing/README.md#changelog)
   - [ ] Add a new section for the new release so that `## main / unreleased` is blank and at the top. The new section should say `## x.y.0-rc.0`.
-- [ ] Run `./tools/release/notify-changelog-cut.sh`
+- [ ] Run `./tools/release/notify-changelog-cut.sh CHANGELOG.md`
 - [ ] Run `make mixin-screenshots`
   - Before opening the PR, review all updated screenshots and ensure no sensitive data is disclosed
 - [ ] Create new release branch
@@ -82,10 +82,10 @@ If something is not clear, you can get back to this document to learn more about
     git push -u origin release-<version>
     ```
   - [ ] Remove "main / unreleased" section from the CHANGELOG
-  - [ ] If a new minor or major version is being released, adjust the settings in the `renovate.json` configuration on the `main` branch by adding the new version.
+  - [ ] If a new minor or major version is being released, adjust the settings in the `renovate.json5` configuration on the `main` branch by adding the new version.
         This way we ensure that dependency updates maintain the new version, as well as the latest two minor versions.
         For instance, if versions 3.0 and 2.10 are configured in `renovate.json`, and version 3.1 is being released,
-        during the release process `renovate.json` should keep updated the following branches: `main`, `release-3.1`, `release-3.0` and `release-2.10`.
+        during the release process `renovate.json5` should keep updated the following branches: `main`, `release-3.1`, `release-3.0` and `release-2.10`.
 - [ ] Publish the Mimir release candidate
   - [ ] Update VERSION in the release branch and update CHANGELOG with version and release date.
     - Keep in mind this is a release candidate, so the version string in VERSION and CHANGELOG must end in `-rc.#`, where `#` is the release candidate number, starting at 0.
@@ -104,14 +104,15 @@ If something is not clear, you can get back to this document to learn more about
     ```bash
     ./tools/release/create-pr-to-merge-release-branch-to-main.sh
     ```
+    This prepares a PR into `main` branch. On approval, **use** the `merge-approved-pr-branch-to-main.sh` script, following the [instruction](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main) on how to merge the PR with "Merge commit" (i.e. we DO NOT "Squash and merge" this one).
   - [ ] Publish the Github pre-release draft after getting review from at least one maintainer
   - [ ] Announce the release candidate on social media such as on Mimir community slack using your own Twitter, Mastodon or LinkedIn account
 - [ ] Vendor the release commit of Mimir into Grafana Enterprise Metrics (GEM)
   - _This is addressed by Grafana Labs_
 - [ ] Publish a `mimir-distributed` Helm chart release candidate. Follow the instructions in [Release process for a release candidate](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-release-candidate)
-- [ ] Promote experimental features to experimental and remove deprecated features for the **next** release:
-  - [ ] Open a PR for every experimental feature we want to promote to stable
-  - [ ] Open a PR to remove any deprecated feature or configuration option that should be removed in the next release
+- [ ] Promote experimental features to stable and remove deprecated features for the **next** release:
+  - [ ] Open a PR into `main` branch for every experimental feature we want to promote to stable
+  - [ ] Open a PR into `main` branch with any deprecated feature or configuration option removed in the next release
 
 ### Publish the stable release
 
@@ -138,14 +139,18 @@ If something is not clear, you can get back to this document to learn more about
     ```bash
     ./tools/release/create-pr-to-merge-release-branch-to-main.sh
     ```
-  - [ ] If during the release process settings in the `renovate.json` have been modified in such a way that dependency updates maintain more than the latest two minor versions,
+    This prepares a PR into `main` branch. On approval, **use** the `merge-approved-pr-branch-to-main.sh` script, following the [instruction](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main) on how to merge the PR with "Merge commit" (i.e. we DO NOT "Squash and merge" this one).
+  - [ ] If during the release process settings in the `renovate.json5` have been modified in such a way that dependency updates maintain more than the latest two minor versions,
         modify it again to ensure that only the latest two minor versions get updated.
-        For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json`, `renovate.json` should keep updated the following branches:
+        For instance, if versions 3.1, 3.0 and 2.10 are configured in `renovate.json5`, `renovate.json5` should keep updated the following branches:
         `main`, `release-3.1` and `release-3.0`.
   - [ ] Announce the release on socials
-  - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
+  - [ ] Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility.go`)
     - Keep the last 3 minor releases
+  - [ ] Open a PR to update the mixin in ["Self-hosted Grafana Mimir" integration](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-mimir/)
+    - _This is addressed by Grafana Labs_
   - [ ] [Publish dashboards to grafana.com](https://github.com/grafana/mimir/blob/main/RELEASE.md#publish-a-stable-release)
+    - _This is addressed by Grafana Labs_
   - [ ] After publishing a GEM release publish the `mimir-distributed` Helm chart. Follow the instructions in [Release process for a final release](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/RELEASE.md#release-process-for-a-final-release)
 ````
 
@@ -170,7 +175,7 @@ This helps ongoing PRs to get their changes in the right place, and to consider 
    - Add a new section for the new release so that `## main / unreleased` is blank and at the top.
    - The new section should say `## x.y.0-rc.0`.
 1. Get this PR reviewed and merged.
-1. Run `./tools/release/notify-changelog-cut.sh` to comment on open PRs with a CHANGELOG entry to rebase on `main` and move the CHANGELOG entry to the top under `## main / unreleased`
+1. Run `./tools/release/notify-changelog-cut.sh CHANGELOG.md` to comment on open PRs with a CHANGELOG entry to rebase on `main` and move the CHANGELOG entry to the top under `## main / unreleased`
 
 ### Prepare your release
 
@@ -271,7 +276,11 @@ To publish a stable release:
    1. Update the Mimir version in the following locations:
       - `operations/mimir/images.libsonnet` (`_images.mimir` and `_images.query_tee` fields)
       - `operations/mimir-rules-action/Dockerfile` (`grafana/mimirtool` image tag)
+   1. Update Jsonnet tests: `make build-jsonnet-tests`
+   1. Commit updated tests
 1. Update dashboard screenshots
+   1. Make sure that operations/mimir-mixin-tools/screenshots/.config is configured according to the directions in [operations/mimir-mixin-tools/screenshots/run.sh](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-tools/screenshots/run.sh)
+   1. Make sure that operations/mimir-mixin-tools/serve/.config is configured according to the directions in [operations/mimir-mixin-tools/serve/run.sh](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-tools/serve/run.sh)
    1. Run `make mixin-screenshots`
    1. Review all updated screenshots and ensure no sensitive data is disclosed
    1. Open a PR

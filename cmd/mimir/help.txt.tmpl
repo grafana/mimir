@@ -31,6 +31,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -alertmanager-storage.s3.secret-access-key string
     	S3 secret access key
+  -alertmanager-storage.s3.session-token string
+    	S3 session token
   -alertmanager-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -alertmanager-storage.s3.sse.kms-key-id string
@@ -41,6 +43,12 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -alertmanager-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+  -alertmanager-storage.swift.application-credential-id string
+    	OpenStack Swift application credential id
+  -alertmanager-storage.swift.application-credential-name string
+    	OpenStack Swift application credential name
+  -alertmanager-storage.swift.application-credential-secret string
+    	OpenStack Swift application credential secret
   -alertmanager-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -alertmanager-storage.swift.auth-version int
@@ -78,9 +86,13 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.max-alerts-size-bytes int
     	Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.
   -alertmanager.max-config-size-bytes int
-    	Maximum size of configuration file for Alertmanager that tenant can upload via Alertmanager API. 0 = no limit.
+    	Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.
   -alertmanager.max-dispatcher-aggregation-groups int
     	Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.
+  -alertmanager.max-grafana-config-size-bytes value
+    	Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no limit.
+  -alertmanager.max-grafana-state-size-bytes value
+    	Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.
   -alertmanager.max-silence-size-bytes int
     	Maximum silence size in bytes. 0 = no limit.
   -alertmanager.max-silences-count int
@@ -135,14 +147,6 @@ Usage of ./cmd/mimir/mimir:
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.chunks-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
-  -blocks-storage.bucket-store.chunks-cache.redis.db int
-    	Database index.
-  -blocks-storage.bucket-store.chunks-cache.redis.endpoint comma-separated-list-of-strings
-    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
-  -blocks-storage.bucket-store.chunks-cache.redis.password string
-    	Password to use when connecting to Redis.
-  -blocks-storage.bucket-store.chunks-cache.redis.username string
-    	Username to use when connecting to Redis.
   -blocks-storage.bucket-store.index-cache.backend string
     	The index cache backend type. Supported values: inmemory, memcached, redis. (default "inmemory")
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
@@ -153,14 +157,6 @@ Usage of ./cmd/mimir/mimir:
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.index-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
-  -blocks-storage.bucket-store.index-cache.redis.db int
-    	Database index.
-  -blocks-storage.bucket-store.index-cache.redis.endpoint comma-separated-list-of-strings
-    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
-  -blocks-storage.bucket-store.index-cache.redis.password string
-    	Password to use when connecting to Redis.
-  -blocks-storage.bucket-store.index-cache.redis.username string
-    	Username to use when connecting to Redis.
   -blocks-storage.bucket-store.metadata-cache.backend string
     	Backend for metadata cache, if not empty. Supported values: memcached, redis.
   -blocks-storage.bucket-store.metadata-cache.memcached.addresses comma-separated-list-of-strings
@@ -169,14 +165,6 @@ Usage of ./cmd/mimir/mimir:
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
-  -blocks-storage.bucket-store.metadata-cache.redis.db int
-    	Database index.
-  -blocks-storage.bucket-store.metadata-cache.redis.endpoint comma-separated-list-of-strings
-    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
-  -blocks-storage.bucket-store.metadata-cache.redis.password string
-    	Password to use when connecting to Redis.
-  -blocks-storage.bucket-store.metadata-cache.redis.username string
-    	Username to use when connecting to Redis.
   -blocks-storage.bucket-store.sync-dir string
     	Directory to store synchronized TSDB index headers. This directory is not required to be persisted between restarts, but it's highly recommended in order to improve the store-gateway startup time. (default "./tsdb-sync/")
   -blocks-storage.filesystem.dir string
@@ -195,6 +183,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -blocks-storage.s3.secret-access-key string
     	S3 secret access key
+  -blocks-storage.s3.session-token string
+    	S3 session token
   -blocks-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -blocks-storage.s3.sse.kms-key-id string
@@ -205,6 +195,12 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -blocks-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+  -blocks-storage.swift.application-credential-id string
+    	OpenStack Swift application credential id
+  -blocks-storage.swift.application-credential-name string
+    	OpenStack Swift application credential name
+  -blocks-storage.swift.application-credential-secret string
+    	OpenStack Swift application credential secret
   -blocks-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -blocks-storage.swift.auth-version int
@@ -267,6 +263,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -common.storage.s3.secret-access-key string
     	S3 secret access key
+  -common.storage.s3.session-token string
+    	S3 session token
   -common.storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -common.storage.s3.sse.kms-key-id string
@@ -275,6 +273,12 @@ Usage of ./cmd/mimir/mimir:
     	Enable AWS Server Side Encryption. Supported values: SSE-KMS, SSE-S3.
   -common.storage.s3.sts-endpoint string
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
+  -common.storage.swift.application-credential-id string
+    	OpenStack Swift application credential id
+  -common.storage.swift.application-credential-name string
+    	OpenStack Swift application credential name
+  -common.storage.swift.application-credential-secret string
+    	OpenStack Swift application credential secret
   -common.storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -common.storage.swift.auth-version int
@@ -394,9 +398,9 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.kafka.address string
     	The Kafka backend address.
   -ingest-storage.kafka.auto-create-topic-default-partitions int
-    	When auto-creation of Kafka topic is enabled and this value is positive, Kafka's num.partitions configuration option is set on Kafka brokers with this value when Mimir component that uses Kafka starts. This configuration option specifies the default number of partitions that the Kafka broker uses for auto-created topics. Note that this is a Kafka-cluster wide setting, and applies to any auto-created topic. If the setting of num.partitions fails, Mimir proceeds anyways, but auto-created topics could have an incorrect number of partitions.
+    	When auto-creation of Kafka topic is enabled and this value is positive, Mimir will create the topic with this number of partitions. When the value is -1 the Kafka broker will use the default number of partitions (num.partitions configuration). (default -1)
   -ingest-storage.kafka.auto-create-topic-enabled
-    	Enable auto-creation of Kafka topic if it doesn't exist. (default true)
+    	Enable auto-creation of Kafka topic on startup if it doesn't exist. If creating the topic fails and the topic doesn't already exist, Mimir will fail to start. (default true)
   -ingest-storage.kafka.client-id string
     	The Kafka client ID.
   -ingest-storage.kafka.consume-from-position-at-startup string
@@ -409,16 +413,40 @@ Usage of ./cmd/mimir/mimir:
     	How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left. (default 1s)
   -ingest-storage.kafka.dial-timeout duration
     	The maximum time allowed to open a connection to a Kafka broker. (default 2s)
+  -ingest-storage.kafka.fetch-concurrency-max int
+    	The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.
+  -ingest-storage.kafka.ingestion-concurrency-batch-size int
+    	The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 150)
+  -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample int
+    	The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 500)
+  -ingest-storage.kafka.ingestion-concurrency-max int
+    	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
+  -ingest-storage.kafka.ingestion-concurrency-queue-capacity int
+    	The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 5)
+  -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard int
+    	The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 80)
   -ingest-storage.kafka.last-produced-offset-poll-interval duration
     	How frequently to poll the last produced offset, used to enforce strong read consistency. (default 1s)
   -ingest-storage.kafka.last-produced-offset-retry-timeout duration
     	How long to retry a failed request to get the last produced offset. (default 10s)
+  -ingest-storage.kafka.max-buffered-bytes int
+    	The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit. (default 100000000)
   -ingest-storage.kafka.max-consumer-lag-at-startup duration
-    	The maximum tolerated lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
+    	The guaranteed maximum lag before a consumer is considered to have caught up reading from a partition at startup, becomes ACTIVE in the hash ring and passes the readiness check. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 15s)
+  -ingest-storage.kafka.producer-max-buffered-bytes int
+    	The maximum size of (uncompressed) buffered and unacknowledged produced records sent to Kafka. The produce request fails once this limit is reached. This limit is per Kafka client. 0 to disable the limit. (default 1073741824)
   -ingest-storage.kafka.producer-max-record-size-bytes int
     	The maximum size of a Kafka record data that should be generated by the producer. An incoming write request larger than this size is split into multiple Kafka records. We strongly recommend to not change this setting unless for testing purposes. (default 15983616)
+  -ingest-storage.kafka.sasl-password string
+    	The password used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
+  -ingest-storage.kafka.sasl-username string
+    	The username used to authenticate to Kafka using the SASL plain mechanism. To enable SASL, configure both the username and password.
+  -ingest-storage.kafka.target-consumer-lag-at-startup duration
+    	The best-effort maximum lag a consumer tries to achieve at startup. Set both -ingest-storage.kafka.target-consumer-lag-at-startup and -ingest-storage.kafka.max-consumer-lag-at-startup to 0 to disable waiting for maximum consumer lag being honored at startup. (default 2s)
   -ingest-storage.kafka.topic string
     	The Kafka topic name.
+  -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes
+    	When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently. (default true)
   -ingest-storage.kafka.wait-strong-read-consistency-timeout duration
     	The maximum allowed for a read requests processed by an ingester to wait until strong read consistency is enforced. 0 to disable the timeout. (default 20s)
   -ingest-storage.kafka.write-clients int
@@ -512,7 +540,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.label-values-max-cardinality-label-names-per-request int
     	Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call. (default 100)
   -querier.max-concurrent int
-    	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. (default 20)
+    	The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum (default 20)
   -querier.max-fetched-chunk-bytes-per-query int
     	The maximum size of all chunks in bytes that a query can fetch from ingesters and store-gateways. This limit is enforced in the querier and ruler. 0 to disable.
   -querier.max-fetched-chunks-per-query int
@@ -571,14 +599,6 @@ Usage of ./cmd/mimir/mimir:
     	The connection timeout. (default 200ms)
   -query-frontend.results-cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
-  -query-frontend.results-cache.redis.db int
-    	Database index.
-  -query-frontend.results-cache.redis.endpoint comma-separated-list-of-strings
-    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
-  -query-frontend.results-cache.redis.password string
-    	Password to use when connecting to Redis.
-  -query-frontend.results-cache.redis.username string
-    	Username to use when connecting to Redis.
   -query-frontend.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -query-scheduler.max-outstanding-requests-per-tenant int
@@ -617,14 +637,6 @@ Usage of ./cmd/mimir/mimir:
     	The connection timeout. (default 200ms)
   -ruler-storage.cache.memcached.timeout duration
     	The socket read/write timeout. (default 200ms)
-  -ruler-storage.cache.redis.db int
-    	Database index.
-  -ruler-storage.cache.redis.endpoint comma-separated-list-of-strings
-    	Redis Server or Cluster configuration endpoint to use for caching. A comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
-  -ruler-storage.cache.redis.password string
-    	Password to use when connecting to Redis.
-  -ruler-storage.cache.redis.username string
-    	Username to use when connecting to Redis.
   -ruler-storage.filesystem.dir string
     	Local filesystem storage directory. (default "ruler")
   -ruler-storage.gcs.bucket-name string
@@ -643,6 +655,8 @@ Usage of ./cmd/mimir/mimir:
     	S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.
   -ruler-storage.s3.secret-access-key string
     	S3 secret access key
+  -ruler-storage.s3.session-token string
+    	S3 session token
   -ruler-storage.s3.sse.kms-encryption-context string
     	KMS Encryption Context used for object encryption. It expects JSON formatted string.
   -ruler-storage.s3.sse.kms-key-id string
@@ -653,6 +667,12 @@ Usage of ./cmd/mimir/mimir:
     	Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.
   -ruler-storage.storage-prefix string
     	Prefix for all objects stored in the backend storage. For simplicity, it may only contain digits and English alphabet letters.
+  -ruler-storage.swift.application-credential-id string
+    	OpenStack Swift application credential id
+  -ruler-storage.swift.application-credential-name string
+    	OpenStack Swift application credential name
+  -ruler-storage.swift.application-credential-secret string
+    	OpenStack Swift application credential secret
   -ruler-storage.swift.auth-url string
     	OpenStack Swift authentication URL
   -ruler-storage.swift.auth-version int
@@ -689,6 +709,16 @@ Usage of ./cmd/mimir/mimir:
     	HTTP Basic authentication password. It overrides the password set in the URL (if any).
   -ruler.alertmanager-client.basic-auth-username string
     	HTTP Basic authentication username. It overrides the username set in the URL (if any).
+  -ruler.alertmanager-client.oauth.client_id string
+    	OAuth2 client ID. Enables the use of OAuth2 for authenticating with Alertmanager.
+  -ruler.alertmanager-client.oauth.client_secret string
+    	OAuth2 client secret.
+  -ruler.alertmanager-client.oauth.endpoint-params value
+    	Optional additional URL parameters to send to the token URL. (default {})
+  -ruler.alertmanager-client.oauth.scopes comma-separated-list-of-strings
+    	Optional scopes to include with the token request.
+  -ruler.alertmanager-client.oauth.token_url string
+    	Endpoint used to fetch access token.
   -ruler.alertmanager-url string
     	Comma-separated list of URL(s) of the Alertmanager(s) to send notifications to. Each URL is treated as a separate group. Multiple Alertmanagers in HA per group can be supported by using DNS service discovery format, comprehensive of the scheme. Basic auth is supported as part of the URL.
   -ruler.enable-api
@@ -751,6 +781,10 @@ Usage of ./cmd/mimir/mimir:
     	Log all source IPs instead of only the originating one. Only used if server.log-source-ips-enabled is true
   -server.report-grpc-codes-in-instrumentation-label-enabled
     	If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as "error". (default true)
+  -server.throughput.latency-cutoff duration
+    	Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.
+  -server.throughput.unit string
+    	Unit of the server throughput metric, for example 'processed_bytes' or 'total_samples'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name. (default "total_samples")
   -server.tls-cipher-suites string
     	Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.
   -server.tls-min-version string
@@ -788,21 +822,25 @@ Usage of ./cmd/mimir/mimir:
   -tenant-federation.max-tenants int
     	The max number of tenant IDs that may be supplied for a federated query if enabled. 0 to disable the limit.
   -tests.basic-auth-password string
-    	The password to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
+    	The password to use for HTTP bearer authentication. (mutually exclusive with bearer-token flag)
   -tests.basic-auth-user string
-    	The username to use for HTTP bearer authentication. (mutually exclusive with tenant-id or bearer-token flags)
+    	The username to use for HTTP bearer authentication. (mutually exclusive with bearer-token flag)
   -tests.bearer-token string
-    	The bearer token to use for HTTP bearer authentication. (mutually exclusive with tenant-id flag or basic-auth flags)
+    	The bearer token to use for HTTP bearer authentication. (mutually exclusive with basic-auth flags)
+  -tests.client.user-agent string
+    	The value the Mimir client should send in the User-Agent header. (default "mimir-continuous-test")
   -tests.read-endpoint string
     	The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.
   -tests.read-timeout duration
     	The timeout for a single read request. (default 1m0s)
   -tests.run-interval duration
     	How frequently tests should run. (default 5m0s)
+  -tests.send-chunks-debugging-header
+    	Request debugging on the server side via header.
   -tests.smoke-test
     	Run a smoke test, i.e. run all tests once and exit.
   -tests.tenant-id string
-    	The tenant ID to use to write and read metrics in tests. (mutually exclusive with basic-auth or bearer-token flags) (default "anonymous")
+    	The tenant ID to use to write and read metrics in tests. (default "anonymous")
   -tests.write-batch-size int
     	The maximum number of series to write in a single request. (default 1000)
   -tests.write-endpoint string
@@ -823,6 +861,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable anonymous usage reporting. (default true)
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
+  -validation.max-label-names-per-info-series int
+    	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int
     	Maximum number of label names per series. (default 30)
   -validation.max-length-label-name int

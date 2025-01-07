@@ -152,6 +152,9 @@ func runTestShardActiveSeriesMiddlewareRoundTrip(t *testing.T, useZeroAllocation
 
 			checkResponseErr: func(t *testing.T, err error) (continueTest bool) {
 				assert.Contains(t, err.Error(), errShardCountTooLow.Error())
+				resp, ok := apierror.HTTPResponseFromError(err)
+				require.True(t, ok)
+				assert.Equal(t, int(resp.Code), http.StatusRequestEntityTooLarge)
 				return false
 			},
 		},
@@ -483,7 +486,7 @@ func runTestShardActiveSeriesMiddlewareMergeResponseContextCancellation(t *testi
 	require.NoError(t, err)
 
 	cancelCause := "request canceled while streaming response"
-	cancel(fmt.Errorf(cancelCause))
+	cancel(errors.New(cancelCause))
 
 	_, err = io.Copy(&buf, resp.Body)
 	require.NoError(t, err)

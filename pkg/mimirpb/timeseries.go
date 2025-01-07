@@ -8,6 +8,7 @@ package mimirpb
 import (
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -15,15 +16,17 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/zeropool"
-	"golang.org/x/exp/slices"
 )
 
 const (
-	minPreallocatedTimeseries         = 100
-	minPreallocatedLabels             = 20
-	minPreallocatedSamplesPerSeries   = 10
-	minPreallocatedExemplarsPerSeries = 1
-	maxPreallocatedExemplarsPerSeries = 10
+	minPreallocatedTimeseries          = 100
+	minPreallocatedLabels              = 20
+	maxPreallocatedLabels              = 200
+	minPreallocatedSamplesPerSeries    = 10
+	maxPreallocatedSamplesPerSeries    = 100
+	maxPreallocatedHistogramsPerSeries = 100
+	minPreallocatedExemplarsPerSeries  = 1
+	maxPreallocatedExemplarsPerSeries  = 10
 )
 
 var (
@@ -57,11 +60,17 @@ var (
 // PreallocWriteRequest is a WriteRequest which preallocs slices on Unmarshal.
 type PreallocWriteRequest struct {
 	WriteRequest
+
+	// SkipUnmarshalingExemplars is an optimization to not unmarshal exemplars when they are disabled by the config anyway.
+	SkipUnmarshalingExemplars bool
 }
 
 // Unmarshal implements proto.Message.
+// Copied from the protobuf generated code, the only change is that in case 1 the value of .SkipUnmarshalingExemplars
+// gets copied into the PreallocTimeseries{} object which gets appended to Timeseries.
 func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
+	p.WriteRequest.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
@@ -84,6 +93,8 @@ type PreallocTimeseries struct {
 	// Original data used for unmarshalling this PreallocTimeseries. When set, Marshal methods will return it
 	// instead of doing full marshalling again. This assumes that this instance hasn't changed.
 	marshalledData []byte
+
+	skipUnmarshalingExemplars bool
 }
 
 // RemoveLabel removes the label labelName from this timeseries, if it exists.
@@ -171,6 +182,10 @@ func (p *PreallocTimeseries) ResizeExemplars(newSize int) {
 	p.clearUnmarshalData()
 }
 
+func (p *PreallocTimeseries) SamplesUpdated() {
+	p.clearUnmarshalData()
+}
+
 func (p *PreallocTimeseries) HistogramsUpdated() {
 	p.clearUnmarshalData()
 }
@@ -200,11 +215,14 @@ func (p *PreallocTimeseries) clearUnmarshalData() {
 var TimeseriesUnmarshalCachingEnabled = true
 
 // Unmarshal implements proto.Message. Input data slice is retained.
+// Copied from the protobuf generated code, the only change is that in case 3 the exemplars don't get unmarshaled
+// if p.skipUnmarshalingExemplars is false.
 func (p *PreallocTimeseries) Unmarshal(dAtA []byte) error {
 	if TimeseriesUnmarshalCachingEnabled {
 		p.marshalledData = dAtA
 	}
 	p.TimeSeries = TimeseriesFromPool()
+	p.TimeSeries.SkipUnmarshalingExemplars = p.skipUnmarshalingExemplars
 	return p.TimeSeries.Unmarshal(dAtA)
 }
 
@@ -465,9 +483,28 @@ func ReuseTimeseries(ts *TimeSeries) {
 		ts.Labels[i].Name = ""
 		ts.Labels[i].Value = ""
 	}
-	ts.Labels = ts.Labels[:0]
-	ts.Samples = ts.Samples[:0]
-	ts.Histograms = ts.Histograms[:0]
+
+	// Retain the slices only if their capacity is not bigger than the desired max pre-allocated size.
+	// This allows us to ensure we don't put very large slices back to the pool (e.g. a few requests with
+	// a huge number of samples may cause in-use heap memory to significantly increase, because the slices
+	// allocated by such poison requests would be reused by other requests with a normal number of samples).
+	if cap(ts.Labels) > maxPreallocatedLabels {
+		ts.Labels = nil
+	} else {
+		ts.Labels = ts.Labels[:0]
+	}
+
+	if cap(ts.Samples) > maxPreallocatedSamplesPerSeries {
+		ts.Samples = nil
+	} else {
+		ts.Samples = ts.Samples[:0]
+	}
+
+	if cap(ts.Histograms) > maxPreallocatedHistogramsPerSeries {
+		ts.Histograms = nil
+	} else {
+		ts.Histograms = ts.Histograms[:0]
+	}
 
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)
@@ -704,10 +741,10 @@ func (p *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Writ
 	}
 
 	return &WriteRequest{
-		Timeseries:              timeseries,
-		Metadata:                metadata,
-		Source:                  p.Source,
-		SkipLabelNameValidation: p.SkipLabelNameValidation,
+		Timeseries:          timeseries,
+		Metadata:            metadata,
+		Source:              p.Source,
+		SkipLabelValidation: p.SkipLabelValidation,
 	}
 }
 

@@ -102,6 +102,11 @@ const BatchSize = 12
 type Batch struct {
 	Timestamps [BatchSize]int64
 	// Values stores float values related to this batch if ValueType is chunkenc.ValFloat.
+	// If ValueType is chunkenc.ValHistogram or chunkenc.ValFloatHistogram, it is used to store the iteratorID the
+	// pointer value at the same index comes from. The iteratorID is required to ensure the counter reset is calculated
+	// properly - if we switch between different iterators, we cannot trust the previously calculated counter reset for
+	// the next sample is calculated correctly. See https://github.com/prometheus/prometheus/issues/15346 for more
+	// information. Values is reused in two different scenarios to save space.
 	Values [BatchSize]float64
 	// PointerValues store pointers to non-float complex values like histograms, float histograms or future additions.
 	// Since Batch is expected to be passed by value, the array needs to be constant sized,
@@ -138,6 +143,18 @@ func (b *Batch) AtHistogram() (int64, unsafe.Pointer) {
 
 func (b *Batch) AtFloatHistogram() (int64, unsafe.Pointer) {
 	return b.Timestamps[b.Index], b.PointerValues[b.Index]
+}
+
+// GetIteratorID retrieves the non overlapping iterator id.
+// Only call when type is chunkenc.ValHistogram or chunkenc.ValFloatHistogram.
+func (b *Batch) GetIteratorID() int {
+	return int(b.Values[b.Index])
+}
+
+// SetIteratorID stores the non overlapping iterator id.
+// Only call when type is chunkenc.ValHistogram or chunkenc.ValFloatHistogram.
+func (b *Batch) SetIteratorID(id int) {
+	b.Values[b.Index] = float64(id)
 }
 
 // Chunk contains encoded timeseries data

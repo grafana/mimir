@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/test"
 	"github.com/grafana/e2e"
 	e2ecache "github.com/grafana/e2e/cache"
 	e2edb "github.com/grafana/e2e/db"
@@ -292,7 +293,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -322,13 +323,14 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 
 	// When using the ingest storage, wait until partitions are ACTIVE in the ring.
 	if flags["-ingest-storage.enabled"] == "true" {
-		require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
-			labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
-			labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+		for _, service := range []*e2emimir.MimirService{distributor, queryFrontend, querier} {
+			require.NoErrorf(t, service.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
+				labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))),
+				"service: %s", service.Name())
+		}
 
-		require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_partition_ring_partitions"}, e2e.WithLabelMatchers(
-			labels.MustNewMatcher(labels.MatchEqual, "name", "ingester-partitions"),
-			labels.MustNewMatcher(labels.MatchEqual, "state", "Active"))))
+		waitQueryFrontendToSuccessfullyFetchLastProducedOffsets(t, queryFrontend)
 	}
 
 	// Push a series for each user to Mimir.
@@ -381,7 +383,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		if userID == 0 && cfg.queryStatsEnabled {
 			res, _, err := c.QueryRaw("{instance=~\"hello.*\"}")
 			require.NoError(t, err)
-			require.Regexp(t, "querier_wall_time;dur=[0-9.]*, response_time;dur=[0-9.]*$", res.Header.Values("Server-Timing")[0])
+			require.Regexp(t, "querier_wall_time;dur=[0-9.]*, response_time;dur=[0-9.]*, bytes_processed;val=[0-9.]*, samples_processed;val=[0-9.]*$", res.Header.Values("Server-Timing")[0])
 		}
 
 		// Beyond the range of -querier.query-ingesters-within should return nothing. No need to repeat it for each user.
@@ -435,10 +437,15 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	}
 
 	// When the ingest storage is used, we expect that each query issued by this test was processed
-	// with strong read consistency by the ingester.
+	// with strong read consistency.
 	if flags["-ingest-storage.enabled"] == "true" {
-		require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(expectedIngesterQueriesCount), "cortex_ingest_storage_strong_consistency_requests_total"))
+		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueriesCount), "cortex_ingest_storage_strong_consistency_requests_total"))
+
+		// We expect the offsets to be fetched by query-frontend and then propagated to ingesters.
+		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.Equals(expectedIngesterQueriesCount), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "true"))))
+		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "false"))))
 	} else {
+		require.NoError(t, queryFrontend.WaitRemovedMetric("cortex_ingest_storage_strong_consistency_requests_total"))
 		require.NoError(t, ingester.WaitRemovedMetric("cortex_ingest_storage_strong_consistency_requests_total"))
 	}
 
@@ -448,6 +455,14 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	assertServiceMetricsPrefixes(t, Querier, querier)
 	assertServiceMetricsPrefixes(t, QueryFrontend, queryFrontend)
 	assertServiceMetricsPrefixes(t, QueryScheduler, queryScheduler)
+
+	if flags["-ingest-storage.enabled"] == "true" {
+		// Ensure cortex_distributor_replication_factor is not exported when ingest storage is enabled
+		// because it's how we detect whether a Mimir cluster is running with ingest storage.
+		assertServiceMetricsNotMatching(t, "cortex_distributor_replication_factor", queryFrontend, queryScheduler, distributor, ingester, querier)
+	} else {
+		assertServiceMetricsMatching(t, "cortex_distributor_replication_factor", distributor)
+	}
 }
 
 // This spins up a minimal query-frontend setup and compares if errors returned
@@ -499,7 +514,7 @@ overrides:
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(consul))
 
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
@@ -705,7 +720,7 @@ overrides:
 				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expJSON:       fmt.Sprintf(`{"error":"expanding series: %s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute), 720*time.Hour)),
+			expJSON:       fmt.Sprintf(`{"error":"expanding series: %s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute)-time.Millisecond, 720*time.Hour)),
 		},
 		{
 			name: "query remote read time range exceeds the limit",
@@ -771,8 +786,7 @@ func TestQueryFrontendWithQueryShardingAndTooLargeEntityRequest(t *testing.T) {
 			querySchedulerEnabled: false,
 			setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 				flags = mergeFlags(BlocksStorageFlags(), BlocksStorageS3Flags(), map[string]string{
-					// Set the maximum entity size to 100 bytes.
-					// The query result payload is 107 bytes, so it will be too large for the configured limit.
+					// The query result payload is 202 bytes, so it will be too large for the configured limit.
 					"-querier.frontend-client.grpc-max-send-msg-size": "100",
 				})
 
@@ -886,7 +900,7 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, e2emimir.WithConfigFile(configFile))
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, e2emimir.WithConfigFile(configFile))
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -940,4 +954,18 @@ func runQueryFrontendWithQueryShardingHTTPTest(t *testing.T, cfg queryFrontendTe
 			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_query_frontend_discarded_requests_total"))
 		}
 	}
+}
+
+// waitQueryFrontendToSuccessfullyFetchLastProducedOffsets waits until the query-frontend has successfully fetched
+// the last produced offsets at least once. This is required in integration tests to avoid flakiness, because we
+// bootstrap a new Mimir and Kafka cluster from scratch in each integration test and the query-frontend may start
+// to lookup partitions before the topic is created in Kafka, which will result in a query failure.
+func waitQueryFrontendToSuccessfullyFetchLastProducedOffsets(t *testing.T, queryFrontend *e2emimir.MimirService) {
+	test.Poll(t, 10*time.Second, true, func() interface{} {
+		requests, requestsErr := queryFrontend.SumMetrics([]string{"cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds"}, e2e.WithMetricCount, e2e.WaitMissingMetrics)
+		failures, failuresErr := queryFrontend.SumMetrics([]string{"cortex_ingest_storage_reader_last_produced_offset_failures_total"}, e2e.WaitMissingMetrics)
+
+		t.Logf("Waiting query-frontend to successfully fetch last produced offsets – requestsErr: %v requests: %v failuresErr: %v failures: %v", requestsErr, requests, failuresErr, failures)
+		return requestsErr == nil && failuresErr == nil && len(requests) == 1 && len(failures) == 1 && requests[0] > failures[0]
+	})
 }

@@ -18,7 +18,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -359,7 +358,7 @@ func TestRemoteWriteContainsHistogram(t *testing.T) {
 		Timeseries: []prompb.TimeSeries{
 			{
 				Histograms: []prompb.Histogram{
-					remote.HistogramToHistogramProto(1337, test.GenerateTestHistogram(0)),
+					prompb.FromIntHistogram(1337, test.GenerateTestHistogram(0)),
 				},
 			},
 		},
@@ -393,7 +392,7 @@ func TestFromPromRemoteWriteHistogramToMimir(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			// Prometheus
-			remoteWriteHistogram := remote.HistogramToHistogramProto(1337, test.tsdbHistogram)
+			remoteWriteHistogram := prompb.FromIntHistogram(1337, test.tsdbHistogram)
 			data, err := remoteWriteHistogram.Marshal()
 			assert.NoError(t, err, "marshal to protbuf")
 
@@ -428,7 +427,7 @@ func TestFromPromRemoteWriteFloatHistogramToMimir(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			// Prometheus
-			remoteWriteHistogram := remote.FloatHistogramToHistogramProto(1337, test.tsdbHistogram)
+			remoteWriteHistogram := prompb.FromFloatHistogram(1337, test.tsdbHistogram)
 			data, err := remoteWriteHistogram.Marshal()
 			assert.NoError(t, err, "marshal to protbuf")
 
@@ -476,7 +475,7 @@ func TestFromHistogramToHistogramProto(t *testing.T) {
 	assert.Equal(t, h, h2)
 
 	// Also check via JSON encode/decode
-	promP := remote.HistogramToHistogramProto(ts, h)
+	promP := prompb.FromIntHistogram(ts, h)
 	d, err := promP.Marshal()
 	assert.NoError(t, err)
 	p2 := Histogram{}
@@ -524,7 +523,7 @@ func TestFromFloatHistogramToHistogramProto(t *testing.T) {
 	assert.Equal(t, h, h2)
 
 	// Also check via JSON encode/decode
-	promP := remote.FloatHistogramToHistogramProto(ts, h)
+	promP := prompb.FromFloatHistogram(ts, h)
 	d, err := promP.Marshal()
 	assert.NoError(t, err)
 	p2 := Histogram{}

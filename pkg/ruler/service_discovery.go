@@ -22,6 +22,10 @@ const (
 	mechanismName = "dns_sd"
 )
 
+func init() {
+	discovery.RegisterConfig(dnsServiceDiscovery{})
+}
+
 type dnsServiceDiscovery struct {
 	refreshMetrics discovery.RefreshMetricsInstantiator
 

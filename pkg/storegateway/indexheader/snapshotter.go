@@ -6,13 +6,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/multierror"
+	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 
 	"github.com/grafana/mimir/pkg/util/atomicfs"
@@ -21,6 +23,7 @@ import (
 const lazyLoadedHeadersListFileName = "lazy-loaded.json"
 
 type SnapshotterConfig struct {
+	PersistInterval time.Duration
 	// Path stores where lazy loaded blocks will be tracked in a single file per tenant
 	Path   string
 	UserID string
@@ -28,64 +31,41 @@ type SnapshotterConfig struct {
 
 // Snapshotter manages the snapshots of lazy loaded blocks.
 type Snapshotter struct {
+	services.Service
+
 	logger log.Logger
 	conf   SnapshotterConfig
 
-	// when the running group is positive, this indicates the Snapshotter is active
-	running sync.WaitGroup
-	stop    chan struct{}
+	bl BlocksLoader
 }
 
-func NewSnapshotter(logger log.Logger, conf SnapshotterConfig) *Snapshotter {
-	return &Snapshotter{
+func NewSnapshotter(logger log.Logger, conf SnapshotterConfig, bl BlocksLoader) *Snapshotter {
+	s := &Snapshotter{
 		logger: logger,
 		conf:   conf,
-		stop:   make(chan struct{}),
+		bl:     bl,
 	}
+	s.Service = services.NewTimerService(conf.PersistInterval, nil, s.persist, nil)
+	return s
 }
 
-type blocksLoader interface {
+type BlocksLoader interface {
 	LoadedBlocks() map[ulid.ULID]int64
 }
 
-// Start spawns a background job that periodically persists the list of lazy-loaded index headers.
-func (s *Snapshotter) Start(ctx context.Context, bl blocksLoader) {
-	s.running.Add(1)
-	go func() {
-		defer s.running.Done()
-
-		err := s.PersistLoadedBlocks(bl)
-		if err != nil {
-			// Note, the decision here is to only log the error but not failing the job. We may reconsider that later.
-			level.Warn(s.logger).Log("msg", "failed to persist initial list of lazy-loaded index headers", "err", err)
-		}
-
-		tick := time.NewTicker(time.Minute)
-		defer tick.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-s.stop:
-				return
-			case <-tick.C:
-				if err := s.PersistLoadedBlocks(bl); err != nil {
-					level.Warn(s.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
-				}
-			}
-		}
-	}()
+func (s *Snapshotter) persist(context.Context) error {
+	err := s.PersistLoadedBlocks()
+	if err != nil {
+		// Note, the decision here is to only log the error but not failing the job. We may reconsider that later.
+		level.Warn(s.logger).Log("msg", "failed to persist list of lazy-loaded index headers", "err", err)
+	}
+	// Never return an error because we want to persist the list of lazy-loaded index headers as a best effort
+	return nil
 }
 
-func (s *Snapshotter) Stop() {
-	close(s.stop)
-	s.running.Wait()
-}
-
-func (s *Snapshotter) PersistLoadedBlocks(bl blocksLoader) error {
+func (s *Snapshotter) PersistLoadedBlocks() error {
 	snapshot := &indexHeadersSnapshot{
-		IndexHeaderLastUsedTime: bl.LoadedBlocks(),
+		IndexHeaderLastUsedTime: s.bl.LoadedBlocks(),
 		UserID:                  s.conf.UserID,
 	}
 	data, err := json.Marshal(snapshot)
@@ -97,31 +77,29 @@ func (s *Snapshotter) PersistLoadedBlocks(bl blocksLoader) error {
 	return atomicfs.CreateFile(finalPath, bytes.NewReader(data))
 }
 
-func (s *Snapshotter) RestoreLoadedBlocks() map[ulid.ULID]int64 {
-	var snapshot indexHeadersSnapshot
-	fileName := filepath.Join(s.conf.Path, lazyLoadedHeadersListFileName)
+func RestoreLoadedBlocks(directory string) (map[ulid.ULID]int64, error) {
+	var (
+		snapshot indexHeadersSnapshot
+		multiErr = multierror.MultiError{}
+	)
+	fileName := filepath.Join(directory, lazyLoadedHeadersListFileName)
 	err := loadIndexHeadersSnapshot(fileName, &snapshot)
 	if err != nil {
 		if os.IsNotExist(err) {
 			// We didn't find the snapshot. Could be because the previous binary didn't support eager loading.
-			return nil
+			return nil, nil
 		}
-		level.Warn(s.logger).Log(
-			"msg", "loading the list of index-headers from snapshot file failed; not eagerly loading index-headers for tenant",
-			"tenant", s.conf.UserID,
-			"file", fileName,
-			"err", err,
-		)
+		multiErr.Add(fmt.Errorf("reading list of index headers from snapshot: %w", err))
 		// We will remove the file only on error.
 		// Note, in the case such as snapshot loading causing OOM, an operator will need to
 		// remove the snapshot manually and let it lazy load after server restarts.
 		// The current experience is that this is less of a problem than not eagerly loading
 		// index headers after two consecutive restarts (ref grafana/mimir#8281).
 		if err := os.Remove(fileName); err != nil {
-			level.Warn(s.logger).Log("msg", "removing the lazy-loaded index-header snapshot failed", "file", fileName, "err", err)
+			multiErr.Add(fmt.Errorf("removing the lazy-loaded index-header snapshot: %w", err))
 		}
 	}
-	return snapshot.IndexHeaderLastUsedTime
+	return snapshot.IndexHeaderLastUsedTime, multiErr.Err()
 }
 
 type indexHeadersSnapshot struct {

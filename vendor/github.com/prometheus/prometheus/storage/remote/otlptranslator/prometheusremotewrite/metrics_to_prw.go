@@ -20,7 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
+	"strings"
+	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -28,15 +31,30 @@ import (
 
 	"github.com/prometheus/prometheus/prompb"
 	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type Settings struct {
-	Namespace           string
-	ExternalLabels      map[string]string
-	DisableTargetInfo   bool
-	ExportCreatedMetric bool
-	AddMetricSuffixes   bool
-	SendMetadata        bool
+	Namespace                         string
+	ExternalLabels                    map[string]string
+	DisableTargetInfo                 bool
+	ExportCreatedMetric               bool
+	AddMetricSuffixes                 bool
+	SendMetadata                      bool
+	AllowUTF8                         bool
+	PromoteResourceAttributes         []string
+	KeepIdentifyingResourceAttributes bool
+
+	// Mimir specifics.
+	EnableCreatedTimestampZeroIngestion        bool
+	EnableStartTimeQuietZero                   bool
+	ValidIntervalCreatedTimestampZeroIngestion time.Duration
+}
+
+type StartTsAndTs struct {
+	Labels  []prompb.Label
+	StartTs int64
+	Ts      int64
 }
 
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
@@ -44,6 +62,7 @@ type PrometheusConverter struct {
 	unique    map[uint64]*prompb.TimeSeries
 	conflicts map[uint64][]*prompb.TimeSeries
 	everyN    everyNTimes
+	metadata  []prompb.MetricMetadata
 }
 
 func NewPrometheusConverter() *PrometheusConverter {
@@ -54,9 +73,19 @@ func NewPrometheusConverter() *PrometheusConverter {
 }
 
 // FromMetrics converts pmetric.Metrics to Prometheus remote write format.
-func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings) (errs error) {
+func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings, logger *slog.Logger) (annots annotations.Annotations, errs error) {
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
+
+	numMetrics := 0
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			numMetrics += scopeMetricsSlice.At(j).Metrics().Len()
+		}
+	}
+	c.metadata = make([]prompb.MetricMetadata, 0, numMetrics)
+
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
@@ -82,7 +111,13 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
-				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes, settings.AllowUTF8)
+				c.metadata = append(c.metadata, prompb.MetricMetadata{
+					Type:             otelMetricTypeToPromMetricType(metric),
+					MetricFamilyName: promName,
+					Help:             metric.Description(),
+					Unit:             metric.Unit(),
+				})
 
 				// handle individual metrics based on type
 				//exhaustive:enforce
@@ -105,7 +140,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, promName); err != nil {
+					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, promName, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -117,7 +152,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
+					if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -129,13 +164,15 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addExponentialHistogramDataPoints(
+					ws, err := c.addExponentialHistogramDataPoints(
 						ctx,
 						dataPoints,
 						resource,
 						settings,
 						promName,
-					); err != nil {
+					)
+					annots.Merge(ws)
+					if err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -147,7 +184,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName); err != nil {
+					if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, promName, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -161,7 +198,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		addResourceTargetInfo(resource, settings, mostRecentTimestamp, c)
 	}
 
-	return
+	return annots, errs
 }
 
 func isSameMetric(ts *prompb.TimeSeries, lbls []prompb.Label) bool {
@@ -220,4 +257,19 @@ func (c *PrometheusConverter) addSample(sample *prompb.Sample, lbls []prompb.Lab
 	ts, _ := c.getOrCreateTimeSeries(lbls)
 	ts.Samples = append(ts.Samples, *sample)
 	return ts
+}
+
+type labelsStringer []prompb.Label
+
+func (ls labelsStringer) String() string {
+	var seriesBuilder strings.Builder
+	seriesBuilder.WriteString("{")
+	for i, l := range ls {
+		if i > 0 {
+			seriesBuilder.WriteString(",")
+		}
+		seriesBuilder.WriteString(fmt.Sprintf("%s=%s", l.Name, l.Value))
+	}
+	seriesBuilder.WriteString("}")
+	return seriesBuilder.String()
 }

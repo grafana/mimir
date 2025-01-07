@@ -6,7 +6,7 @@ metadata:
   name: gateway-nginx-values-minio-console
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.4.0
     release: gateway-nginx-values
     heritage: Helm
 spec:

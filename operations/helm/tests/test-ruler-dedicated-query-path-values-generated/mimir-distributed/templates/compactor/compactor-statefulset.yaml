@@ -25,7 +25,9 @@ spec:
     type: RollingUpdate
   serviceName: test-ruler-dedicated-query-path-values-mimir-compactor
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:

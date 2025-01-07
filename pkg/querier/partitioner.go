@@ -47,7 +47,7 @@ func (s *chunkSeries) Labels() labels.Labels {
 
 // Iterator returns a new iterator of the data of the series.
 func (s *chunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
-	return batch.NewChunkMergeIterator(it, s.chunks)
+	return batch.NewChunkMergeIterator(it, s.labels, s.chunks)
 }
 
 // Chunks implements SeriesWithChunks interface.

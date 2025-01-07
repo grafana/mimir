@@ -13,12 +13,14 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/google/go-cmp/cmp"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -1825,10 +1827,17 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_pendingMatchers(t *testing.T) {
 			indexReader := newBucketIndexReader(block, selectAllStrategy{})
 			defer indexReader.Close()
 
-			assert.Equal(t, querySeries(indexReader), querySeries(indexReaderOmittingMatchers))
+			requireEqual(t, querySeries(indexReader), querySeries(indexReaderOmittingMatchers))
 		})
 	}
 
+}
+
+// Wrapper to instruct go-cmp package to compare a list of structs with unexported fields.
+func requireEqual(t *testing.T, expected, actual interface{}, msgAndArgs ...interface{}) {
+	testutil.RequireEqualWithOptions(t, expected, actual,
+		[]cmp.Option{cmp.AllowUnexported(seriesChunkRefsSet{}), cmp.AllowUnexported(seriesChunkRefs{})},
+		msgAndArgs...)
 }
 
 func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
@@ -2171,10 +2180,8 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 	}
 
 	for testName, testCase := range testCases {
-		testCase := testCase
 		t.Run(testName, func(t *testing.T) {
 			for _, batchSize := range testCase.batchSizes {
-				batchSize := batchSize
 				t.Run(fmt.Sprintf("batch size %d", batchSize), func(t *testing.T) {
 					b := newTestBlock()
 					b.indexCache = newInMemoryIndexCache(t)
@@ -2210,7 +2217,7 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 					require.NoError(t, err)
 					lset := extractLabelsFromSeriesChunkRefsSets(readAllSeriesChunkRefsSet(ss))
 					require.NoError(t, ss.Err())
-					assert.Equal(t, testCase.expectedLabelSets, lset)
+					testutil.RequireEqual(t, testCase.expectedLabelSets, lset)
 					assert.Equal(t, testCase.expectedSeriesReadFromBlockWithColdCache, statsColdCache.export().seriesFetched)
 
 					// Run 2 with a warm cache
@@ -2429,9 +2436,9 @@ func createSeriesChunkRefsSet(minSeriesID, maxSeriesID int, releasable bool) ser
 func TestCreateSeriesChunkRefsSet(t *testing.T) {
 	set := createSeriesChunkRefsSet(5, 7, true)
 	require.Len(t, set.series, 3)
-	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000005")}, set.series[0])
-	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000006")}, set.series[1])
-	assert.Equal(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000007")}, set.series[2])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000005")}, set.series[0])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000006")}, set.series[1])
+	requireEqual(t, seriesChunkRefs{lset: labels.FromStrings(labels.MetricName, "metric_000007")}, set.series[2])
 }
 
 func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {
@@ -2489,7 +2496,6 @@ func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {
 	}
 
 	for testName, testCase := range testCases {
-		testCase := testCase
 		b.Run(testName, func(b *testing.B) {
 			ctx := context.Background()
 			logger := log.NewNopLogger()
@@ -2557,7 +2563,6 @@ func BenchmarkStoreCachedSeriesForPostings(b *testing.B) {
 	}
 
 	for testName, testCase := range testCases {
-		testCase := testCase
 		b.Run(testName, func(b *testing.B) {
 			ctx := context.Background()
 			// We use a logger that fails the benchmark when used.

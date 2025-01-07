@@ -9,8 +9,8 @@
     ingest_storage_ingester_instance_ring_dedicated_prefix_enabled: true,
 
     ingest_storage_ingester_autoscaling_enabled: true,
-    ingest_storage_ingester_autoscaling_min_replicas: 3,
-    ingest_storage_ingester_autoscaling_max_replicas: 30,
+    ingest_storage_ingester_autoscaling_min_replicas_per_zone: 2,
+    ingest_storage_ingester_autoscaling_max_replicas_per_zone: 15,
 
     multi_zone_ingester_replicas: 0,
     ingester_automated_downscale_enabled: false,

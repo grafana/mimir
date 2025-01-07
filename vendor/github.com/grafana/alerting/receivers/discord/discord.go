@@ -63,6 +63,12 @@ type discordImage struct {
 	URL string `json:"url"`
 }
 
+// discordError implements https://discord.com/developers/docs/reference#error-messages except for Errors field that is not used in the code
+type discordError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
 type Notifier struct {
 	*receivers.Base
 	log        logging.Logger
@@ -190,8 +196,18 @@ func (d Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) 
 		return false, err
 	}
 
+	cmd.Validation = func(body []byte, statusCode int) error {
+		if statusCode/100 != 2 {
+			d.log.Error("failed to send notification to Discord", "statusCode", statusCode, "responseBody", string(body))
+			errBody := discordError{}
+			if err := json.Unmarshal(body, &errBody); err == nil {
+				return fmt.Errorf("the Discord API responded (status %d) with error code %d: %s", statusCode, errBody.Code, errBody.Message)
+			}
+			return fmt.Errorf("unexpected status code %d from Discord", statusCode)
+		}
+		return nil
+	}
 	if err := d.ns.SendWebhook(ctx, cmd); err != nil {
-		d.log.Error("failed to send notification to Discord", "error", err)
 		return false, err
 	}
 	return true, nil

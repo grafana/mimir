@@ -23,7 +23,7 @@ import (
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 )
 
 func TestMain(m *testing.M) {
@@ -889,7 +889,6 @@ differentuser:
 
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
-
 			t.Cleanup(func() {
 				SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 			})
@@ -915,8 +914,118 @@ differentuser:
 	}
 }
 
+func TestRulerProtectedNamespacesOverrides(t *testing.T) {
+	tc := map[string]struct {
+		inputYAML          string
+		overrides          string
+		expectedNamespaces []string
+	}{
+		"no user specific protected namespaces": {
+			inputYAML: `
+ruler_protected_namespaces: "ns1,ns2"
+`,
+			expectedNamespaces: []string{"ns1", "ns2"},
+		},
+		"default limit for not specific user": {
+			inputYAML: `
+ruler_protected_namespaces: "ns1,ns2"
+`,
+			overrides: `
+randomuser:
+  ruler_protected_namespaces: "ns3"
+`,
+			expectedNamespaces: []string{"ns1", "ns2"},
+		},
+		"overridden limit for specific user": {
+			inputYAML: `
+ruler_protected_namespaces: "ns1,ns2"
+`,
+			overrides: `
+user1:
+  ruler_protected_namespaces: "ns3"
+`,
+			expectedNamespaces: []string{"ns3"},
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			var LimitsYAML Limits
+			err := yaml.Unmarshal([]byte(tt.inputYAML), &LimitsYAML)
+			require.NoError(t, err)
+
+			SetDefaultLimitsForYAMLUnmarshalling(LimitsYAML)
+
+			overrides := map[string]*Limits{}
+			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			require.NoError(t, err)
+
+			tl := NewMockTenantLimits(overrides)
+			ov, err := NewOverrides(LimitsYAML, tl)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedNamespaces, ov.RulerProtectedNamespaces("user1"))
+		})
+	}
+}
+
+func TestRulerMaxConcurrentRuleEvaluationsPerTenantOverrides(t *testing.T) {
+	tc := map[string]struct {
+		inputYAML                    string
+		overrides                    string
+		expectedPerTenantConcurrency int64
+	}{
+		"no user specific concurrency": {
+			inputYAML: `
+ruler_max_independent_rule_evaluation_concurrency_per_tenant: 5
+`,
+			expectedPerTenantConcurrency: 5,
+		},
+		"default limit for not specific user": {
+			inputYAML: `
+ruler_max_independent_rule_evaluation_concurrency_per_tenant: 5
+`,
+			overrides: `
+randomuser:
+  ruler_max_independent_rule_evaluation_concurrency_per_tenant: 10
+`,
+			expectedPerTenantConcurrency: 5,
+		},
+		"overridden limit for specific user": {
+			inputYAML: `
+ruler_max_independent_rule_evaluation_concurrency_per_tenant: 5
+`,
+			overrides: `
+user1:
+  ruler_max_independent_rule_evaluation_concurrency_per_tenant: 15
+`,
+			expectedPerTenantConcurrency: 15,
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			var LimitsYAML Limits
+			err := yaml.Unmarshal([]byte(tt.inputYAML), &LimitsYAML)
+			require.NoError(t, err)
+
+			SetDefaultLimitsForYAMLUnmarshalling(LimitsYAML)
+
+			overrides := map[string]*Limits{}
+			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			require.NoError(t, err)
+
+			tl := NewMockTenantLimits(overrides)
+			ov, err := NewOverrides(LimitsYAML, tl)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedPerTenantConcurrency, ov.RulerMaxIndependentRuleEvaluationConcurrencyPerTenant("user1"))
+		})
+	}
+}
+
 func TestCustomTrackerConfigDeserialize(t *testing.T) {
-	expectedConfig, err := activeseries.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
+	expectedConfig, err := asmodel.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
 	require.NoError(t, err, "creating expected config")
 	cfg := `
     user:
@@ -1244,6 +1353,48 @@ func TestIsLimitError(t *testing.T) {
 	for testName, testData := range testCases {
 		t.Run(testName, func(t *testing.T) {
 			require.Equal(t, testData.expectedOutcome, IsLimitError(testData.err))
+		})
+	}
+}
+
+func TestAlertmanagerSizeLimitsUnmarshal(t *testing.T) {
+	for name, tc := range map[string]struct {
+		inputYAML          string
+		expectedConfigSize int
+		expectedStateSize  int
+	}{
+		"when using strings": {
+			inputYAML: `
+alertmanager_max_grafana_config_size_bytes: "4MiB"
+alertmanager_max_grafana_state_size_bytes: "2MiB"
+`,
+			expectedConfigSize: 1024 * 1024 * 4,
+			expectedStateSize:  1024 * 1024 * 2,
+		},
+		"when using 0B, returns 0": {
+			inputYAML: `
+alertmanager_max_grafana_config_size_bytes: "0"
+alertmanager_max_grafana_state_size_bytes: "0"
+`,
+			expectedConfigSize: 0,
+			expectedStateSize:  0,
+		},
+		"when nothing is given, defaults to 0": {
+			inputYAML:          "",
+			expectedConfigSize: 0,
+			expectedStateSize:  0,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			limitsYAML := Limits{}
+			err := yaml.Unmarshal([]byte(tc.inputYAML), &limitsYAML)
+			require.NoError(t, err, "expected to be able to unmarshal from YAML")
+
+			ov, err := NewOverrides(limitsYAML, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, tc.expectedConfigSize, ov.AlertmanagerMaxGrafanaConfigSize("user"))
+			require.Equal(t, tc.expectedStateSize, ov.AlertmanagerMaxGrafanaStateSize("user"))
 		})
 	}
 }

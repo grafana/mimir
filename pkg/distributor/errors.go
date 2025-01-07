@@ -6,15 +6,14 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
@@ -230,30 +229,6 @@ func (e partitionPushError) Unwrap() error {
 // Ensure that partitionPushError implements Error.
 var _ Error = partitionPushError{}
 
-type circuitBreakerOpenError struct {
-	err client.ErrCircuitBreakerOpen
-}
-
-// newCircuitBreakerOpenError creates a circuitBreakerOpenError wrapping the passed client.ErrCircuitBreakerOpen.
-func newCircuitBreakerOpenError(err client.ErrCircuitBreakerOpen) circuitBreakerOpenError {
-	return circuitBreakerOpenError{err: err}
-}
-
-func (e circuitBreakerOpenError) Error() string {
-	return e.err.Error()
-}
-
-func (e circuitBreakerOpenError) RemainingDelay() time.Duration {
-	return e.err.RemainingDelay()
-}
-
-func (e circuitBreakerOpenError) Cause() mimirpb.ErrorCause {
-	return mimirpb.CIRCUIT_BREAKER_OPEN
-}
-
-// Ensure that circuitBreakerOpenError implements Error.
-var _ Error = circuitBreakerOpenError{}
-
 // toErrorWithGRPCStatus converts the given error into an appropriate gRPC error.
 func toErrorWithGRPCStatus(pushErr error, serviceOverloadErrorEnabled bool) error {
 	var (
@@ -327,12 +302,7 @@ func wrapIngesterPushError(err error, ingesterID string) error {
 
 	stat, ok := grpcutil.ErrorToStatus(err)
 	if !ok {
-		pushErr := err
-		var errCircuitBreakerOpen client.ErrCircuitBreakerOpen
-		if errors.As(pushErr, &errCircuitBreakerOpen) {
-			pushErr = newCircuitBreakerOpenError(errCircuitBreakerOpen)
-		}
-		return errors.Wrap(pushErr, fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID))
+		return errors.Wrap(err, fmt.Sprintf("%s %s", failedPushingToIngesterMessage, ingesterID))
 	}
 	statusCode := stat.Code()
 	if util.IsHTTPStatusCode(statusCode) {
@@ -388,4 +358,22 @@ func isIngestionClientError(err error) bool {
 	}
 
 	return false
+}
+
+type unavailableError struct {
+	state services.State
+}
+
+var _ Error = unavailableError{}
+
+func newUnavailableError(state services.State) unavailableError {
+	return unavailableError{state: state}
+}
+
+func (e unavailableError) Error() string {
+	return fmt.Sprintf("distributor is unavailable (current state: %s)", e.state.String())
+}
+
+func (e unavailableError) Cause() mimirpb.ErrorCause {
+	return mimirpb.SERVICE_UNAVAILABLE
 }

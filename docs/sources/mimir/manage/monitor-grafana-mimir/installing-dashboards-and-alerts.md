@@ -15,7 +15,7 @@ Grafana Mimir is shipped with a comprehensive set of production-ready Grafana [d
 
 ## Requirements
 
-- Grafana Mimir dashboards and alerts [require specific labels]({{< relref "./requirements" >}}) to be set by Prometheus or Grafana Agent when scraping your Mimir cluster metrics
+- Grafana Mimir dashboards and alerts [require specific labels]({{< relref "./requirements" >}}) to be set by Prometheus or Grafana Alloy when scraping your Mimir cluster metrics
 - Some dashboards require recording rules that you should install in your Prometheus
 
 ## Install from package

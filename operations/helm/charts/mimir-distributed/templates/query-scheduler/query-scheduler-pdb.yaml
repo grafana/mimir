@@ -1,3 +1,3 @@
-{{- if .Values.query_scheduler.podDisruptionBudget -}}
+{{- if and .Values.query_scheduler.enabled .Values.query_scheduler.podDisruptionBudget (not .Values.federation_frontend.disableOtherComponents) -}}
 {{- include "mimir.lib.podDisruptionBudget" (dict "ctx" $ "component" "query-scheduler") }}
 {{- end -}}

@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -21,6 +20,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/alerting/definition"
 	alertingmodels "github.com/grafana/alerting/models"
+	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
@@ -56,9 +56,11 @@ type stubReplicator struct{}
 func (*stubReplicator) ReplicateStateForUser(context.Context, string, *clusterpb.Part) error {
 	return nil
 }
+
 func (*stubReplicator) GetPositionForUser(string) int {
 	return 0
 }
+
 func (*stubReplicator) ReadFullStateForUser(context.Context, string) ([]*clusterpb.FullState, error) {
 	return nil, nil
 }
@@ -95,8 +97,8 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	tmpls := make([]io.Reader, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}))
+	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
 
 	now := time.Now()
 
@@ -180,8 +182,8 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	tmpls := make([]io.Reader, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}))
+	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
 
 	now := time.Now()
 	inputAlerts := []*types.Alert{
@@ -531,8 +533,8 @@ route:
 
 	cfg, err := definition.LoadCompat([]byte(cfgRaw))
 	require.NoError(t, err)
-	tmpls := make([]io.Reader, 0)
-	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}))
+	tmpls := make([]alertingTemplates.TemplateDefinition, 0)
+	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, nil))
 
 	doGetReceivers := func() []alertingmodels.Receiver {
 		rr := httptest.NewRecorder()
@@ -587,7 +589,7 @@ route:
 					"alertname": model.LabelValue("Alert-1"),
 					"a":         "b",
 				},
-				Annotations:  model.LabelSet{"foo": "bar"},
+				Annotations:  model.LabelSet{"templates": `{{ template "test" . }}`},
 				StartsAt:     now,
 				EndsAt:       now.Add(5 * time.Minute),
 				GeneratorURL: "http://example.com/prometheus",
@@ -618,4 +620,89 @@ route:
 	assert.Equal(t, "webhook", result[1].Integrations[0].Name)
 	assert.Zero(t, result[1].Integrations[0].LastNotifyAttempt)
 	assert.Equal(t, "", result[1].Integrations[0].LastNotifyAttemptError)
+}
+
+func TestGrafanaAlertmanagerTemplates(t *testing.T) {
+	am, err := New(&Config{
+		UserID:            "test",
+		Logger:            log.NewNopLogger(),
+		Limits:            &mockAlertManagerLimits{},
+		Features:          featurecontrol.NoopFlags{},
+		TenantDataDir:     t.TempDir(),
+		ExternalURL:       &url.URL{Path: "/am"},
+		ShardingEnabled:   true,
+		Store:             prepareInMemoryAlertStore(),
+		Replicator:        &stubReplicator{},
+		ReplicationFactor: 1,
+		// We have to set this interval non-zero, though we don't need the persister to do anything.
+		PersisterConfig: PersisterConfig{Interval: time.Hour},
+	}, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+	defer am.StopAndWait()
+
+	// The webhook message should contain the executed Grafana template.
+	type notification struct {
+		Message string `json:"message"`
+	}
+	c := make(chan notification)
+	s := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		var got notification
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&got))
+		defer func() {
+			require.NoError(t, r.Body.Close())
+		}()
+		c <- got
+	}))
+	defer s.Close()
+
+	cfgRaw := fmt.Sprintf(`{
+            "route": {
+                "receiver": "test_receiver",
+                "group_by": ["alertname"]
+            },
+            "receivers": [{
+                "name": "test_receiver",
+                "grafana_managed_receiver_configs": [{
+                    "uid": "",
+                    "name": "webhook test",
+                    "type": "webhook",
+                    "disableResolveMessage": true,
+                    "settings": {
+                        "url": %q,
+                        "message": %q
+                    },
+                }]
+            }],
+        }`, s.URL, `{{ template "test" . }}`)
+
+	cfg, err := definition.LoadCompat([]byte(cfgRaw))
+	require.NoError(t, err)
+	expMessage := "This is a test template"
+	testTemplate := alertingTemplates.TemplateDefinition{
+		Name:     "test",
+		Template: fmt.Sprintf(`{{ define "test" -}} %s {{- end }}`, expMessage),
+	}
+	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil))
+
+	now := time.Now()
+	alert := types.Alert{
+		Alert: model.Alert{
+			Labels: model.LabelSet{
+				"alertname": model.LabelValue("test-alert"),
+			},
+			StartsAt: now.Add(-5 * time.Minute),
+			EndsAt:   now.Add(5 * time.Minute),
+		},
+		UpdatedAt: now,
+	}
+	require.NoError(t, am.alerts.Put(&alert))
+	require.Equal(t, am.templates[0], testTemplate)
+	require.Eventually(t, func() bool {
+		select {
+		case got := <-c:
+			return got.Message == expMessage
+		default:
+			return false
+		}
+	}, 5*time.Second, 100*time.Millisecond)
 }

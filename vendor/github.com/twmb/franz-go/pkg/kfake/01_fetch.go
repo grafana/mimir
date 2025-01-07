@@ -1,6 +1,8 @@
 package kfake
 
 import (
+	"net"
+	"strconv"
 	"sync"
 	"time"
 
@@ -16,7 +18,7 @@ import (
 // * Out of range fetch causes early return
 // * Raw bytes of batch counts against wait bytes
 
-func init() { regKey(1, 4, 13) }
+func init() { regKey(1, 4, 16) }
 
 func (c *Cluster) handleFetch(creq *clientReq, w *watchFetch) (kmsg.Response, error) {
 	var (
@@ -132,6 +134,21 @@ func (c *Cluster) handleFetch(creq *clientReq, w *watchFetch) (kmsg.Response, er
 		return &st.Partitions[len(st.Partitions)-1]
 	}
 
+	var includeBrokers bool
+	defer func() {
+		if includeBrokers {
+			for _, b := range c.bs {
+				sb := kmsg.NewFetchResponseBroker()
+				h, p, _ := net.SplitHostPort(b.ln.Addr().String())
+				p32, _ := strconv.Atoi(p)
+				sb.NodeID = b.node
+				sb.Host = h
+				sb.Port = int32(p32)
+				resp.Brokers = append(resp.Brokers, sb)
+			}
+		}
+	}()
+
 	var batchesAdded int
 full:
 	for _, rt := range req.Topics {
@@ -146,7 +163,10 @@ full:
 				continue
 			}
 			if pd.leader != creq.cc.b {
-				donep(rt.Topic, rt.TopicID, rp.Partition, kerr.NotLeaderForPartition.Code)
+				p := donep(rt.Topic, rt.TopicID, rp.Partition, kerr.NotLeaderForPartition.Code)
+				p.CurrentLeader.LeaderID = pd.leader.node
+				p.CurrentLeader.LeaderEpoch = pd.epoch
+				includeBrokers = true
 				continue
 			}
 			sp := donep(rt.Topic, rt.TopicID, rp.Partition, 0)

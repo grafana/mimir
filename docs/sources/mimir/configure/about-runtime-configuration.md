@@ -23,6 +23,8 @@ Runtime configuration values take precedence over command-line options.
 
 If multiple runtime configuration files are specified the runtime configuration files will be merged in a left to right order.
 
+Add a `.gz` extension to the configuration files that should be decompressed before parsing YAML.
+
 ## Enable runtime configuration
 
 To enable runtime configuration, specify a comma-separated list of file paths upon startup by using the `-runtime-config.file=<filepath>,<filepath>` CLI flag or from within your YAML configuration file in the `runtime_config` block.

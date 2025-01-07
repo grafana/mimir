@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -62,13 +63,13 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 	const tenantID = "test"
 	const blockID = "01G3FZ0JWJYJC0ZM6Y9778P6KD"
 	bULID := ulid.MustParse(blockID)
-	now := time.Now().UnixMilli()
+	now := time.Now()
 	validMeta := block.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:    bULID,
 			Version: block.TSDBVersion1,
-			MinTime: now - 1000,
-			MaxTime: now,
+			MinTime: now.UnixMilli() - 1000,
+			MaxTime: now.UnixMilli(),
 		},
 		Thanos: block.ThanosMeta{
 			Labels: map[string]string{
@@ -90,6 +91,21 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 		},
 	}
 
+	// Block between 00:00 ... 01:00 the next day (25 hours)
+	blockWithLargeDuration := validMeta
+	blockWithLargeDuration.MinTime = now.Add(-25 * time.Hour).Truncate(24 * time.Hour).UnixMilli()
+	blockWithLargeDuration.MaxTime = timestamp.Time(blockWithLargeDuration.MinTime).Add(25 * time.Hour).UnixMilli()
+
+	// Block between 12:00 and 12:00 the next day (24 hours)
+	blockCrossingDayBoundary := validMeta
+	blockCrossingDayBoundary.MinTime = now.Add(-48 * time.Hour).Truncate(24 * time.Hour).Add(12 * time.Hour).UnixMilli()
+	blockCrossingDayBoundary.MaxTime = timestamp.Time(blockCrossingDayBoundary.MinTime).Add(24 * time.Hour).UnixMilli()
+
+	// Block between 00:00 and 24:00 the next day (24 hours)
+	blockAtTheBoundary := validMeta
+	blockAtTheBoundary.MinTime = now.Add(-48 * time.Hour).Truncate(24 * time.Hour).UnixMilli()
+	blockAtTheBoundary.MaxTime = timestamp.Time(blockAtTheBoundary.MinTime).Add(24 * time.Hour).UnixMilli()
+
 	metaPath := path.Join(tenantID, blockID, block.MetaFilename)
 	uploadingMetaPath := path.Join(tenantID, blockID, fmt.Sprintf("uploading-%s", block.MetaFilename))
 
@@ -102,15 +118,19 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 		bkt.MockUpload(uploadingMetaPath, nil)
 	}
 
-	verifyUpload := func(t *testing.T, bkt *bucket.ClientMock, labels map[string]string) {
+	verifyUploadWithMeta := func(t *testing.T, bkt *bucket.ClientMock, expMeta block.Meta, labels map[string]string) {
 		t.Helper()
 
-		expMeta := validMeta
 		expMeta.Compaction.Parents = nil
 		expMeta.Compaction.Sources = []ulid.ULID{expMeta.ULID}
 		expMeta.Thanos.Source = "upload"
 		expMeta.Thanos.Labels = labels
 		verifyUploadedMeta(t, bkt, expMeta)
+	}
+
+	verifyUpload := func(t *testing.T, bkt *bucket.ClientMock, labels map[string]string) {
+		t.Helper()
+		verifyUploadWithMeta(t, bkt, validMeta, labels)
 	}
 
 	testCases := []struct {
@@ -457,6 +477,34 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 			expBadRequest:           fmt.Sprintf(maxBlockUploadSizeBytesFormat, 1),
 		},
 		{
+			name:                   "block with too big time range",
+			tenantID:               tenantID,
+			blockID:                blockID,
+			setUpBucketMock:        setUpPartialBlock,
+			meta:                   &blockWithLargeDuration,
+			expUnprocessableEntity: "block duration (1d1h) is larger than max configured compactor time range (1d)",
+		},
+		{
+			name:                   "block crossing the day boundary",
+			tenantID:               tenantID,
+			blockID:                blockID,
+			setUpBucketMock:        setUpPartialBlock,
+			meta:                   &blockCrossingDayBoundary,
+			expUnprocessableEntity: "block time range crosses boundary of configured compactor time range (1d)",
+		},
+		{
+			name:            "block spanning entire max time range",
+			tenantID:        tenantID,
+			blockID:         blockID,
+			setUpBucketMock: setUpUpload,
+			meta:            &blockAtTheBoundary,
+			verifyUpload: func(t *testing.T, bkt *bucket.ClientMock) {
+				verifyUploadWithMeta(t, bkt, blockAtTheBoundary, map[string]string{
+					mimir_tsdb.CompactorShardIDExternalLabel: "1_of_3",
+				})
+			},
+		},
+		{
 			name:            "valid request",
 			tenantID:        tenantID,
 			blockID:         blockID,
@@ -477,8 +525,8 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    bULID,
 					Version: block.TSDBVersion1,
-					MinTime: now - 1000,
-					MaxTime: now,
+					MinTime: now.UnixMilli() - 1000,
+					MaxTime: now.UnixMilli(),
 				},
 				Thanos: block.ThanosMeta{
 					Labels: map[string]string{
@@ -512,8 +560,8 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    bULID,
 					Version: block.TSDBVersion1,
-					MinTime: now - 1000,
-					MaxTime: now,
+					MinTime: now.UnixMilli() - 1000,
+					MaxTime: now.UnixMilli(),
 				},
 				Thanos: block.ThanosMeta{
 					Files: []block.File{
@@ -544,8 +592,8 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 				BlockMeta: tsdb.BlockMeta{
 					ULID:    ulid.MustParse("11A2FZ0JWJYJC0ZM6Y9778P6KD"),
 					Version: block.TSDBVersion1,
-					MinTime: now - 1000,
-					MaxTime: now,
+					MinTime: now.UnixMilli() - 1000,
+					MaxTime: now.UnixMilli(),
 				},
 				Thanos: block.ThanosMeta{
 					Files: []block.File{
@@ -583,6 +631,9 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 				logger:       log.NewNopLogger(),
 				bucketClient: &bkt,
 				cfgProvider:  cfgProvider,
+				compactorCfg: Config{
+					BlockRanges: mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour},
+				},
 			}
 			var rdr io.Reader
 			if tc.body != "" {
@@ -730,6 +781,9 @@ func TestMultitenantCompactor_StartBlockUpload(t *testing.T) {
 				logger:       log.NewNopLogger(),
 				bucketClient: bkt,
 				cfgProvider:  cfgProvider,
+				compactorCfg: Config{
+					BlockRanges: mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour},
+				},
 			}
 			r := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/upload/block/%s/start", blockID), bytes.NewReader(metaJSON))
 			r = r.WithContext(user.InjectOrgID(r.Context(), tenantID))
@@ -1795,7 +1849,6 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-
 			bkt := objstore.NewInMemBucket()
 			var injectedBkt objstore.Bucket = bkt
 			if tc.errorInjector != nil {

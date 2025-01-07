@@ -8,16 +8,21 @@ package storegateway
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcutil"
 	dskit_metrics "github.com/grafana/dskit/metrics"
+	"github.com/grafana/dskit/services"
+	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -34,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 var (
@@ -92,7 +98,7 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 
 		// Replace labels to the meta of the second block.
 		meta, err := block.ReadMetaFromDir(dir2)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		meta.Thanos.Labels = map[string]string{"ext2": "value2"}
 		assert.NoError(t, meta.WriteToDir(logger, dir2))
 
@@ -109,17 +115,19 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 type prepareStoreConfig struct {
 	tempDir              string
 	manyParts            bool
-	maxSeriesPerBatch    int
 	chunksLimiterFactory ChunksLimiterFactory
 	seriesLimiterFactory SeriesLimiterFactory
 	series               []labels.Labels
 	indexCache           indexcache.IndexCache
 	metricsRegistry      *prometheus.Registry
+	logger               log.Logger
 	postingsStrategy     postingsSelectionStrategy
 	// When nonOverlappingBlocks is false, prepare store creates 2 blocks per block range.
 	// When nonOverlappingBlocks is true, it shifts the 2nd block ahead by 2hrs for every block range.
 	// This way the first and the last blocks created have no overlapping blocks.
 	nonOverlappingBlocks bool
+	numBlocks            int
+	bucketStoreConfig    mimir_tsdb.BucketStoreConfig
 }
 
 func (c *prepareStoreConfig) apply(opts ...prepareStoreConfigOption) *prepareStoreConfig {
@@ -132,12 +140,24 @@ func (c *prepareStoreConfig) apply(opts ...prepareStoreConfigOption) *prepareSto
 func defaultPrepareStoreConfig(t testing.TB) *prepareStoreConfig {
 	return &prepareStoreConfig{
 		metricsRegistry: prometheus.NewRegistry(),
+		numBlocks:       6,
+		logger:          log.NewNopLogger(),
 		tempDir:         t.TempDir(),
 		manyParts:       false,
-		// We want to force each Series() call to use more than one batch to catch some edge cases.
-		// This should make the implementation slightly slower, although most tests time
-		// is dominated by the setup.
-		maxSeriesPerBatch:    10,
+		bucketStoreConfig: mimir_tsdb.BucketStoreConfig{
+			// We want to force each Series() call to use more than one batch to catch some edge cases.
+			// This should make the implementation slightly slower, although most tests time
+			// is dominated by the setup.
+			StreamingBatchSize:          10,
+			BlockSyncConcurrency:        20,
+			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+			IndexHeader: indexheader.Config{
+				EagerLoadingStartupEnabled:  true,
+				EagerLoadingPersistInterval: time.Minute,
+				LazyLoadingEnabled:          true,
+				LazyLoadingIdleTimeout:      time.Minute,
+			},
+		},
 		seriesLimiterFactory: newStaticSeriesLimiterFactory(0),
 		chunksLimiterFactory: newStaticChunksLimiterFactory(0),
 		indexCache:           noopCache{},
@@ -165,11 +185,10 @@ func withManyParts() prepareStoreConfigOption {
 
 func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareStoreConfig) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
-
-	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, cfg.tempDir, bkt, cfg.series, extLset, cfg.nonOverlappingBlocks)
+	minTime, maxTime := prepareTestBlocks(t, time.Now(), cfg.numBlocks/2, cfg.tempDir, bkt, cfg.series, extLset, cfg.nonOverlappingBlocks)
 
 	s := &storeSuite{
-		logger:          log.NewNopLogger(),
+		logger:          cfg.logger,
 		metricsRegistry: cfg.metricsRegistry,
 		cache:           &swappableCache{IndexCache: cfg.indexCache},
 		minTime:         minTime,
@@ -187,16 +206,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 		objstore.WithNoopInstr(bkt),
 		metaFetcher,
 		cfg.tempDir,
-		mimir_tsdb.BucketStoreConfig{
-			StreamingBatchSize:          cfg.maxSeriesPerBatch,
-			BlockSyncConcurrency:        20,
-			PostingOffsetsInMemSampling: mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-			IndexHeader: indexheader.Config{
-				EagerLoadingStartupEnabled: true,
-				LazyLoadingEnabled:         true,
-				LazyLoadingIdleTimeout:     time.Minute,
-			},
-		},
+		cfg.bucketStoreConfig,
 		cfg.postingsStrategy,
 		cfg.chunksLimiterFactory,
 		cfg.seriesLimiterFactory,
@@ -215,11 +225,12 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	if cfg.manyParts {
 		s.store.partitioners = blockPartitioners{naivePartitioner{}, naivePartitioner{}, naivePartitioner{}}
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	assert.NoError(t, store.SyncBlocks(ctx))
+	ctx := context.Background()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, store))
+	require.NoError(t, store.InitialSync(ctx))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, store))
+	})
 	return s
 }
 
@@ -637,8 +648,6 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			for _, streamingBatchSize := range []int{0, 1, 5} {
 				t.Run(fmt.Sprintf("streamingBatchSize=%d", streamingBatchSize), func(t *testing.T) {
-					ctx, cancel := context.WithCancel(context.Background())
-					defer cancel()
 					bkt := objstore.NewInMemBucket()
 
 					prepConfig := defaultPrepareStoreConfig(t)
@@ -646,7 +655,6 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 					prepConfig.seriesLimiterFactory = newStaticSeriesLimiterFactory(testData.maxSeriesLimit)
 
 					s := prepareStoreWithTestBlocks(t, bkt, prepConfig)
-					assert.NoError(t, s.store.SyncBlocks(ctx))
 
 					req := &storepb.SeriesRequest{
 						Matchers: []storepb.LabelMatcher{
@@ -673,6 +681,154 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBucketStore_EagerLoading(t *testing.T) {
+	testCases := map[string]struct {
+		eagerLoadReaderEnabled       bool
+		expectedEagerLoadedBlocks    int
+		createLoadedBlocksSnapshotFn func([]ulid.ULID) map[ulid.ULID]int64
+	}{
+		"block is present in pre-shutdown loaded blocks and eager-loading is disabled": {
+			eagerLoadReaderEnabled:    false,
+			expectedEagerLoadedBlocks: 0,
+			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) map[ulid.ULID]int64 {
+				snapshot := make(map[ulid.ULID]int64)
+				for _, blockID := range blockIDs {
+					snapshot[blockID] = time.Now().UnixMilli()
+				}
+				return snapshot
+			},
+		},
+		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header during initial sync": {
+			eagerLoadReaderEnabled:    true,
+			expectedEagerLoadedBlocks: 6,
+			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) map[ulid.ULID]int64 {
+				snapshot := make(map[ulid.ULID]int64)
+				for _, blockID := range blockIDs {
+					snapshot[blockID] = time.Now().UnixMilli()
+				}
+				return snapshot
+			},
+		},
+		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header after initial sync": {
+			eagerLoadReaderEnabled:    true,
+			expectedEagerLoadedBlocks: 6,
+			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) map[ulid.ULID]int64 {
+				snapshot := make(map[ulid.ULID]int64)
+				for _, blockID := range blockIDs {
+					snapshot[blockID] = time.Now().UnixMilli()
+				}
+				return snapshot
+			},
+		},
+		"block is not present in pre-shutdown loaded blocks snapshot and eager-loading is enabled": {
+			eagerLoadReaderEnabled:    true,
+			expectedEagerLoadedBlocks: 0, // although eager loading is enabled, this test will not do eager loading because the block ID is not in the lazy loaded file.
+			createLoadedBlocksSnapshotFn: func(_ []ulid.ULID) map[ulid.ULID]int64 {
+				// let's create a random fake blockID to be stored in lazy loaded headers file
+				fakeBlockID := ulid.MustNew(ulid.Now(), nil)
+				// this snapshot will refer to fake block, hence eager load wouldn't be executed for the real block that we test
+				return map[ulid.ULID]int64{fakeBlockID: time.Now().UnixMilli()}
+			},
+		},
+		"pre-shutdown loaded blocks snapshot doesn't exist and eager-loading is enabled": {
+			eagerLoadReaderEnabled:    true,
+			expectedEagerLoadedBlocks: 0,
+		},
+	}
+
+	assertLoadedBlocks := func(t *testing.T, cfg *prepareStoreConfig, expectedLoadedBlocks int) {
+		assert.NoError(t, testutil.GatherAndCompare(cfg.metricsRegistry, strings.NewReader(fmt.Sprintf(`
+ 				# HELP cortex_bucket_store_indexheader_lazy_load_total Total number of index-header lazy load operations.
+				# TYPE cortex_bucket_store_indexheader_lazy_load_total counter
+				cortex_bucket_store_indexheader_lazy_load_total %d
+				`, expectedLoadedBlocks)),
+			"cortex_bucket_store_indexheader_lazy_load_total",
+		))
+	}
+
+	for testName, testData := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+			bkt := objstore.NewInMemBucket()
+			cfg := defaultPrepareStoreConfig(t)
+			cfg.logger = test.NewTestingLogger(t)
+			cfg.bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled = testData.eagerLoadReaderEnabled
+			ctx := context.Background()
+
+			// Start the store so we generate some blocks and can use them in the mock snapshot.
+			store := prepareStoreWithTestBlocks(t, bkt, cfg)
+			assertLoadedBlocks(t, cfg, 0)
+
+			if testData.createLoadedBlocksSnapshotFn != nil {
+				// Create the snapshot manually so that we don't rely on the periodic snapshotting.
+				loadedBlocks := store.store.blockSet.openBlocksULIDs()
+				staticLoader := staticLoadedBlocks(testData.createLoadedBlocksSnapshotFn(loadedBlocks))
+				snapshotter := indexheader.NewSnapshotter(cfg.logger, indexheader.SnapshotterConfig{
+					PersistInterval: time.Hour,
+					Path:            cfg.tempDir,
+				}, staticLoader)
+
+				require.NoError(t, snapshotter.PersistLoadedBlocks())
+			}
+			// Stop store and start a new one using the same directory. It should pick up the stored blocks.
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, store.store))
+			cfg.metricsRegistry = prometheus.NewRegistry() // The store-gateway will reregister its metrics; replace the registry to prevent a panic
+			cfg.numBlocks = 0                              // we don't want to generate blocks again to speed the test up
+
+			_ = prepareStoreWithTestBlocks(t, bkt, cfg) // we create and start the store only to trigger eager loading.
+			assertLoadedBlocks(t, cfg, testData.expectedEagerLoadedBlocks)
+		})
+	}
+}
+
+func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
+	t.Parallel()
+
+	const persistInterval = 100 * time.Millisecond
+	bkt := objstore.NewInMemBucket()
+	cfg := defaultPrepareStoreConfig(t)
+	cfg.logger = test.NewTestingLogger(t)
+	cfg.bucketStoreConfig.IndexHeader.EagerLoadingPersistInterval = persistInterval
+	cfg.bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled = true
+	cfg.bucketStoreConfig.IndexHeader.LazyLoadingIdleTimeout = persistInterval * 3
+	ctx := context.Background()
+	readBlocksInSnapshot := func() map[ulid.ULID]int64 {
+		blocks, err := indexheader.RestoreLoadedBlocks(cfg.tempDir)
+		assert.NoError(t, err)
+		return blocks
+	}
+
+	// Start the store so we generate some blocks and can use them in the mock snapshot.
+	store := prepareStoreWithTestBlocks(t, bkt, cfg)
+	// Wait for the snapshot to be persisted.
+	time.Sleep(persistInterval * 2)
+
+	// The snapshot should be empty.
+	assert.Empty(t, readBlocksInSnapshot())
+
+	// Run a simple request to trigger loading the blocks
+	resp, err := store.store.LabelNames(ctx, &storepb.LabelNamesRequest{End: math.MaxInt64})
+	require.NoError(t, err)
+	assert.NotEmpty(t, resp.Names)
+
+	// The snapshot should now contain the blocks we queried.
+	assert.Eventually(t, func() bool {
+		return len(readBlocksInSnapshot()) == cfg.numBlocks
+	}, persistInterval*5, persistInterval/2)
+
+	// Wait for the blocks to be unloaded due to the lazy loading idle timeout.
+	// The snapshot should be empty.
+	assert.Eventually(t, func() bool {
+		return len(readBlocksInSnapshot()) == 0
+	}, persistInterval*5, persistInterval/2)
+}
+
+type staticLoadedBlocks map[ulid.ULID]int64
+
+func (b staticLoadedBlocks) LoadedBlocks() map[ulid.ULID]int64 {
+	return b
 }
 
 func assertQueryStatsLabelNamesMetricsRecorded(t *testing.T, numLabelNames int, registry *prometheus.Registry) {

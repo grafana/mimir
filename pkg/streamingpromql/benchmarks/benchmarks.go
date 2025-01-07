@@ -94,6 +94,13 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr:  "rate(a_X[1m])",
 			Steps: 10000,
 		},
+		{
+			Expr: "rate(nh_X[1m])",
+		},
+		{
+			Expr:  "rate(nh_X[1m])",
+			Steps: 10000,
+		},
 		//// Holt-Winters and long ranges.
 		//{
 		//	Expr: "holt_winters(a_X[1d], 0.3, 0.3)",
@@ -104,9 +111,35 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "rate(a_X[1d])",
 		},
+		// Test a long range histogram. 1d slows tests down too much, so use 1h.
+		{
+			Expr: "rate(nh_X[1h])",
+		},
+		{
+			Expr: "avg_over_time(a_X[1m])",
+		},
+		{
+			Expr: "avg_over_time(nh_X[1m])",
+		},
+		{
+			Expr: "sum_over_time(a_X[1m])",
+		},
+		{
+			Expr: "sum_over_time(nh_X[1m])",
+		},
 		//{
 		//	Expr: "absent_over_time(a_X[1d])",
 		//},
+		// Subqueries.
+		{
+			Expr: "sum_over_time(a_X[10m:3m])",
+		},
+		{
+			Expr: "sum_over_time(nh_X[10m:3m])",
+		},
+		{
+			Expr: "sum(sum_over_time(a_X[10m:3m]))",
+		},
 		//// Unary operators.
 		//{
 		//	Expr: "-a_X",
@@ -118,6 +151,21 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr:  "a_X - b_X",
 			Steps: 10000,
+		},
+		{
+			Expr: "nh_X + nh_X",
+		},
+		{
+			Expr: "nh_X / a_X",
+		},
+		{
+			Expr: "2 * a_X",
+		},
+		{
+			Expr: "nh_X / 2",
+		},
+		{
+			Expr: "h_X * on(l) group_left() a_X",
 		},
 		// Test the case where one side of a binary operation has many more series than the other.
 		{
@@ -132,25 +180,28 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: `a_2000 - b_2000{l="1234"}`,
 		},
-		//{
-		//	Expr: "a_X and b_X{l=~'.*[0-4]$'}",
-		//},
-		//{
-		//	Expr: "a_X or b_X{l=~'.*[0-4]$'}",
-		//},
-		//{
-		//	Expr: "a_X unless b_X{l=~'.*[0-4]$'}",
-		//},
-		//{
-		//	Expr: "a_X and b_X{l='notfound'}",
-		//},
-		//// Simple functions.
-		//{
-		//	Expr: "abs(a_X)",
-		//},
-		//{
-		//	Expr: "label_replace(a_X, 'l2', '$1', 'l', '(.*)')",
-		//},
+		{
+			Expr: "a_X and b_X{l=~'.*[0-4]$'}",
+		},
+		{
+			Expr: "a_X or b_X{l=~'.*[0-4]$'}",
+		},
+		{
+			Expr: "a_X unless b_X{l=~'.*[0-4]$'}",
+		},
+		{
+			Expr: "a_X and b_X{l='notfound'}",
+		},
+		// Simple functions.
+		{
+			Expr: "abs(a_X)",
+		},
+		{
+			Expr: "clamp(a_X, 100, 1000)",
+		},
+		{
+			Expr: "label_replace(a_X, 'l2', '$1', 'l', '(.*)')",
+		},
 		//{
 		//	Expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
 		//},
@@ -158,17 +209,44 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum(a_X)",
 		},
-		//{
-		//	Expr: "sum without (l)(h_X)",
-		//},
-		//{
-		//	Expr: "sum without (le)(h_X)",
-		//},
+		{
+			Expr: "sum without (l)(h_X)",
+		},
+		{
+			Expr: "sum without (le)(h_X)",
+		},
+		{
+			Expr: "sum(nh_X)",
+		},
 		{
 			Expr: "sum by (l)(h_X)",
 		},
 		{
 			Expr: "sum by (le)(h_X)",
+		},
+		{
+			Expr: "sum by (l)(nh_X)",
+		},
+		{
+			Expr: "avg(a_X)",
+		},
+		{
+			Expr: "avg without (l)(h_X)",
+		},
+		{
+			Expr: "avg without (le)(h_X)",
+		},
+		{
+			Expr: "avg(nh_X)",
+		},
+		{
+			Expr: "avg by (l)(h_X)",
+		},
+		{
+			Expr: "avg by (le)(h_X)",
+		},
+		{
+			Expr: "avg by (l)(nh_X)",
 		},
 		//{
 		//	Expr: "count_values('value', h_X)",
@@ -190,15 +268,18 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum by (le)(rate(h_X[1m]))",
 		},
-		//{
-		//	Expr: "sum without (l)(rate(a_X[1m]))",
-		//},
-		//{
-		//	Expr: "sum without (l)(rate(a_X[1m])) / sum without (l)(rate(b_X[1m]))",
-		//},
-		//{
-		//	Expr: "histogram_quantile(0.9, rate(h_X[5m]))",
-		//},
+		{
+			Expr: "sum without (l)(rate(a_X[1m]))",
+		},
+		{
+			Expr: "sum without (l)(rate(a_X[1m])) / sum without (l)(rate(b_X[1m]))",
+		},
+		{
+			Expr: "histogram_quantile(0.9, h_X)",
+		},
+		{
+			Expr: "histogram_quantile(0.9, nh_X)",
+		},
 		//// Many-to-one join.
 		//{
 		//	Expr: "a_X + on(l) group_right a_one",

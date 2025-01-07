@@ -134,11 +134,51 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: errInvalidEarlyHeadCompactionMinSeriesReduction,
 		},
+		"should not fail on 'ignore deletion marks while querying delay' less than 'ignore deletion marks in store-gateways delay'": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay = 120 * time.Minute
+				cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay = 121 * time.Minute
+			},
+			expectedErr: nil,
+		},
+		"should fail on 'ignore deletion marks while querying delay' equal to 'ignore deletion marks in store-gateways delay'": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay = 2 * time.Hour
+				cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay = 2 * time.Hour
+			},
+			expectedErr: errInvalidIgnoreDeletionMarksDelayConfig,
+		},
+		"should fail on 'ignore deletion marks while querying delay' greater than 'ignore deletion marks in store-gateways delay'": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay = 121 * time.Minute
+				cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay = 120 * time.Minute
+			},
+			expectedErr: errInvalidIgnoreDeletionMarksDelayConfig,
+		},
+		"should not fail on 'ignore deletion marks while querying delay' greater than 3x sync interval": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketStore.SyncInterval = 10 * time.Minute
+				cfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay = 31 * time.Minute
+			},
+			expectedErr: nil,
+		},
+		"should fail on 'ignore deletion marks while query delay' equal to 3x sync interval": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketStore.SyncInterval = 10 * time.Minute
+				cfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay = 30 * time.Minute
+			},
+			expectedErr: errIgnoreDeletionMarksDelayTooShort,
+		},
+		"should fail on 'ignore deletion marks while query delay' less than 3x sync interval": {
+			setup: func(cfg *BlocksStorageConfig, _ *activeseries.Config) {
+				cfg.BucketStore.SyncInterval = 10 * time.Minute
+				cfg.BucketStore.IgnoreDeletionMarksWhileQueryingDelay = 29 * time.Minute
+			},
+			expectedErr: errIgnoreDeletionMarksDelayTooShort,
+		},
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			storageCfg := &BlocksStorageConfig{}
 			activeSeriesCfg := &activeseries.Config{}

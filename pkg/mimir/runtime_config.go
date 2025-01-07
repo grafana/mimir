@@ -17,7 +17,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/distributor"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -231,14 +230,6 @@ func runtimeConfigHandler(runtimeCfgManager *runtimeconfig.Manager, defaultLimit
 func NewRuntimeManager(cfg *Config, name string, reg prometheus.Registerer, logger log.Logger) (*runtimeconfig.Manager, error) {
 	loader := runtimeConfigLoader{validate: cfg.ValidateLimits}
 	cfg.RuntimeConfig.Loader = loader.load
-
-	// DeprecatedAlignQueriesWithStep is moving from a global config that can in the frontend yaml to a limit config
-	// We need to preserve the option in the frontend yaml for two releases
-	// If the frontend config is configured by the user, the default limit is overwritten
-	// TODO: Remove in Mimir 2.14
-	if cfg.Frontend.QueryMiddleware.DeprecatedAlignQueriesWithStep != querymiddleware.DefaultDeprecatedAlignQueriesWithStep {
-		cfg.LimitsConfig.AlignQueriesWithStep = cfg.Frontend.QueryMiddleware.DeprecatedAlignQueriesWithStep
-	}
 
 	// Make sure to set default limits before we start loading configuration into memory.
 	validation.SetDefaultLimitsForYAMLUnmarshalling(cfg.LimitsConfig)

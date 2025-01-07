@@ -122,10 +122,22 @@ func (fp *frontendProcessor) process(execCtx context.Context, c frontendv1pb.Fro
 			go fp.runRequest(ctx, request.HttpRequest, request.StatsEnabled, time.Duration(request.QueueTimeNanos), func(response *httpgrpc.HTTPResponse, stats *querier_stats.Stats) error {
 				defer inflightQuery.Store(false)
 
-				return c.Send(&frontendv1pb.ClientToFrontend{
+				// Ensure responses that are too big are not retried.
+				msgToFrontend := &frontendv1pb.ClientToFrontend{
 					HttpResponse: response,
 					Stats:        stats,
-				})
+				}
+
+				if msgSize := msgToFrontend.Size(); msgSize >= fp.maxMessageSize {
+					errMsg := fmt.Sprintf("response larger than the max (%d vs %d)", msgSize, fp.maxMessageSize)
+					msgToFrontend.HttpResponse = &httpgrpc.HTTPResponse{
+						Code: http.StatusRequestEntityTooLarge,
+						Body: []byte(errMsg),
+					}
+					level.Error(fp.log).Log("msg", "query response larger than limit", "err", errMsg, "response_size", msgSize, "limit", fp.maxMessageSize)
+				}
+
+				return c.Send(msgToFrontend)
 			})
 
 		case frontendv1pb.GET_ID:
@@ -169,17 +181,7 @@ func (fp *frontendProcessor) runRequest(ctx context.Context, request *httpgrpc.H
 		}
 	}
 
-	// Ensure responses that are too big are not retried.
-	if len(response.Body) >= fp.maxMessageSize {
-		errMsg := fmt.Sprintf("response larger than the max (%d vs %d)", len(response.Body), fp.maxMessageSize)
-		response = &httpgrpc.HTTPResponse{
-			Code: http.StatusRequestEntityTooLarge,
-			Body: []byte(errMsg),
-		}
-		level.Error(fp.log).Log("msg", "error processing query", "err", errMsg)
-	}
-
 	if err := sendHTTPResponse(response, stats); err != nil {
-		level.Error(fp.log).Log("msg", "error processing requests", "err", err)
+		level.Error(fp.log).Log("msg", "error sending query response", "err", err)
 	}
 }

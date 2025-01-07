@@ -1,3 +1,4 @@
+{{- if and .Values.ingester.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 {{- $args := dict "ctx" . "component" "ingester" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
@@ -141,7 +142,7 @@ spec:
             - "-server.grpc-max-concurrent-streams=500"
             {{- end }}
             {{- range $key, $value := .Values.ingester.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- if .Values.ingester.extraVolumeMounts }}
@@ -186,6 +187,13 @@ spec:
           {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.ingester }}
           {{- if or .Values.global.extraEnv .Values.ingester.env $jaeger_queue_size }}
           env:
+            {{- $cpu_request := dig "requests" "cpu" nil .Values.ingester.resources }}
+            {{- if $cpu_request }}
+              {{- $cpu_request_between_3_and_6 := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | min 6 | max 3 }}
+            {{/* copy logic from operations/mimir/ingester.libsonnet */}}
+            - name: "GOMAXPROCS"
+              value: {{ addf $cpu_request $cpu_request_between_3_and_6 1 | ceil | toString | toYaml }}
+            {{- end }}
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -207,5 +215,6 @@ spec:
             {{- end }}
           {{- end }}
 ---
+{{ end }}
 {{ end }}
 {{ end }}

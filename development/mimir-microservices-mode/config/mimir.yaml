@@ -1,6 +1,10 @@
 multitenancy_enabled: false
 
 distributor:
+  ha_tracker:
+    enable_ha_tracker: true
+    kvstore:
+      store: consul
   pool:
     health_check_ingesters: true
   ring:
@@ -134,9 +138,7 @@ store_gateway:
 frontend:
   query_stats_enabled: true
   parallelize_shardable_queries: true
-  align_queries_with_step: true
   cache_results: true
-  additional_query_queue_dimensions_enabled: true
   shard_active_series_queries: true
 
   # Uncomment when using "dns" service discovery mode for query-scheduler.
@@ -162,7 +164,6 @@ querier:
 query_scheduler:
   # Change to "dns" to switch to query-scheduler DNS-based service discovery.
   service_discovery_mode: "ring"
-  additional_query_queue_dimensions_enabled: true
 
 limits:
   # Limit max query time range to 31d
@@ -171,9 +172,17 @@ limits:
   query_sharding_total_shards: 16
   query_sharding_max_sharded_queries: 32
   ingestion_rate: 50000
+  # expanded OOO window makes it easier to run continuous-test
+  # otherwise catch-up writes are rejected when metamonitoring is on
+  out_of_order_time_window: 1h
   native_histograms_ingestion_enabled: true
   cardinality_analysis_enabled: true
   query_ingesters_within: 20m
+  # HA tracker configuration
+  accept_ha_samples: true
+  ha_cluster_label: ha_cluster
+  ha_replica_label: ha_replica
+  ha_max_clusters: 10
 
 runtime_config:
   file: ./config/runtime.yaml

@@ -80,9 +80,23 @@ Create the name of the ruler service account
 {{- define "mimir.ruler.serviceAccountName" -}}
 {{- if and .Values.ruler.serviceAccount.create (eq .Values.ruler.serviceAccount.name "") -}}
 {{- $sa := default (include "mimir.fullname" .) .Values.serviceAccount.name }}
-{{- printf "%s-%s" $sa "ruler" }}
+{{- printf "%s-ruler" $sa }}
 {{- else if and .Values.ruler.serviceAccount.create (not (eq .Values.ruler.serviceAccount.name "")) -}}
 {{- .Values.ruler.serviceAccount.name -}}
+{{- else -}}
+{{- include "mimir.serviceAccountName" . -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Create the name of the alertmanager service account
+*/}}
+{{- define "mimir.alertmanager.serviceAccountName" -}}
+{{- if and .Values.alertmanager.serviceAccount.create (eq .Values.alertmanager.serviceAccount.name "") -}}
+{{- $sa := default (include "mimir.fullname" .) .Values.serviceAccount.name }}
+{{- printf "%s-alertmanager" $sa }}
+{{- else if and .Values.alertmanager.serviceAccount.create (not (eq .Values.alertmanager.serviceAccount.name "")) -}}
+{{- .Values.alertmanager.serviceAccount.name -}}
 {{- else -}}
 {{- include "mimir.serviceAccountName" . -}}
 {{- end -}}
@@ -430,6 +444,7 @@ Examples:
   "compactor" "compactor"
   "continuous-test" "continuous_test"
   "distributor" "distributor"
+  "federation-frontend" "federation_frontend"
   "gateway" "gateway"
   "gr-aggr-cache" "gr-aggr-cache"
   "gr-metricname-cache" "gr-metricname-cache"
@@ -438,6 +453,7 @@ Examples:
   "index-cache" "index-cache"
   "ingester" "ingester"
   "memcached" "memcached"
+  "meta-monitoring" "metaMonitoring.grafanaAgent"
   "metadata-cache" "metadata-cache"
   "nginx" "nginx"
   "overrides-exporter" "overrides_exporter"
@@ -647,21 +663,21 @@ mimir.siToBytes takes 1 argument
 */}}
 {{- define "mimir.siToBytes" -}}
     {{- if (hasSuffix "Ki" .value) -}}
-        {{- trimSuffix "Ki" .value | float64 | mul 1024 | ceil | int64 -}}
+        {{- trimSuffix "Ki" .value | float64 | mulf 1024 | ceil | int64 -}}
     {{- else if (hasSuffix "Mi" .value) -}}
-        {{- trimSuffix "Mi" .value | float64 | mul 1048576 | ceil | int64 -}}
+        {{- trimSuffix "Mi" .value | float64 | mulf 1048576 | ceil | int64 -}}
     {{- else if (hasSuffix "Gi" .value) -}}
-        {{- trimSuffix "Gi" .value | float64 | mul 1073741824 | ceil | int64 -}}
+        {{- trimSuffix "Gi" .value | float64 | mulf 1073741824 | ceil | int64 -}}
     {{- else if (hasSuffix "Ti" .value) -}}
-        {{- trimSuffix "Ti" .value | float64 | mul 1099511627776 | ceil | int64 -}}
+        {{- trimSuffix "Ti" .value | float64 | mulf 1099511627776 | ceil | int64 -}}
     {{- else if (hasSuffix "k" .value) -}}
-        {{- trimSuffix "k" .value | float64 | mul 1000 | ceil | int64 -}}
+        {{- trimSuffix "k" .value | float64 | mulf 1000 | ceil | int64 -}}
     {{- else if (hasSuffix "M" .value) -}}
-        {{- trimSuffix "M" .value | float64 | mul 1000000 | ceil | int64 -}}
+        {{- trimSuffix "M" .value | float64 | mulf 1000000 | ceil | int64 -}}
     {{- else if (hasSuffix "G" .value) -}}
-        {{- trimSuffix "G" .value | float64 | mul 1000000000 | ceil | int64 -}}
+        {{- trimSuffix "G" .value | float64 | mulf 1000000000 | ceil | int64 -}}
     {{- else if (hasSuffix "T" .value) -}}
-        {{- trimSuffix "T" .value | float64 | mul 1000000000000 | ceil | int64 -}}
+        {{- trimSuffix "T" .value | float64 | mulf 1000000000000 | ceil | int64 -}}
     {{- else if (hasSuffix "m" .value) -}}
         {{- trimSuffix "m" .value | float64 | mulf 0.001 | ceil | int64 -}}
     {{- else -}}

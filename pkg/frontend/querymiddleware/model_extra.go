@@ -451,6 +451,10 @@ func (r *PrometheusLabelNamesQueryRequest) GetLabelName() string {
 	return ""
 }
 
+func (r *PrometheusSeriesQueryRequest) GetLabelName() string {
+	return ""
+}
+
 func (r *PrometheusLabelNamesQueryRequest) GetStartOrDefault() int64 {
 	if r.GetStart() == 0 {
 		return v1.MinTime.UnixMilli()
@@ -479,6 +483,95 @@ func (r *PrometheusLabelValuesQueryRequest) GetEndOrDefault() int64 {
 	return r.GetEnd()
 }
 
+func (r *PrometheusSeriesQueryRequest) GetStartOrDefault() int64 {
+	if r.GetStart() == 0 {
+		return v1.MinTime.UnixMilli()
+	}
+	return r.GetStart()
+}
+
+func (r *PrometheusSeriesQueryRequest) GetEndOrDefault() int64 {
+	if r.GetEnd() == 0 {
+		return v1.MaxTime.UnixMilli()
+	}
+	return r.GetEnd()
+}
+
+func (r *PrometheusLabelNamesQueryRequest) GetHeaders() []*PrometheusHeader {
+	return r.Headers
+}
+
+func (r *PrometheusLabelValuesQueryRequest) GetHeaders() []*PrometheusHeader {
+	return r.Headers
+}
+
+func (r *PrometheusSeriesQueryRequest) GetHeaders() []*PrometheusHeader {
+	return r.Headers
+}
+
+// WithLabelName clones the current `PrometheusLabelNamesQueryRequest` with a new label name param.
+func (r *PrometheusLabelNamesQueryRequest) WithLabelName(string) (LabelsSeriesQueryRequest, error) {
+	panic("PrometheusLabelNamesQueryRequest.WithLabelName is not implemented")
+}
+
+// WithLabelName clones the current `PrometheusLabelValuesQueryRequest` with a new label name param.
+func (r *PrometheusLabelValuesQueryRequest) WithLabelName(name string) (LabelsSeriesQueryRequest, error) {
+	newRequest := *r
+	newRequest.Path = labelValuesPathSuffix.ReplaceAllString(r.Path, `/api/v1/label/`+name+`/values`)
+	newRequest.LabelName = name
+	return &newRequest, nil
+}
+
+// WithLabelName clones the current `PrometheusSeriesQueryRequest` with a new label name param.
+func (r *PrometheusSeriesQueryRequest) WithLabelName(string) (LabelsSeriesQueryRequest, error) {
+	panic("PrometheusSeriesQueryRequest.WithLabelName is not implemented")
+}
+
+// WithLabelMatcherSets clones the current `PrometheusLabelNamesQueryRequest` with new label matcher sets.
+func (r *PrometheusLabelNamesQueryRequest) WithLabelMatcherSets(labelMatcherSets []string) (LabelsSeriesQueryRequest, error) {
+	newRequest := *r
+	newRequest.LabelMatcherSets = make([]string, len(labelMatcherSets))
+	copy(newRequest.LabelMatcherSets, labelMatcherSets)
+	return &newRequest, nil
+}
+
+// WithLabelMatcherSets clones the current `PrometheusLabelValuesQueryRequest` with new label matcher sets.
+func (r *PrometheusLabelValuesQueryRequest) WithLabelMatcherSets(labelMatcherSets []string) (LabelsSeriesQueryRequest, error) {
+	newRequest := *r
+	newRequest.LabelMatcherSets = make([]string, len(labelMatcherSets))
+	copy(newRequest.LabelMatcherSets, labelMatcherSets)
+	return &newRequest, nil
+}
+
+// WithLabelMatcherSets clones the current `PrometheusSeriesQueryRequest` with new label matcher sets.
+func (r *PrometheusSeriesQueryRequest) WithLabelMatcherSets(labelMatcherSets []string) (LabelsSeriesQueryRequest, error) {
+	newRequest := *r
+	newRequest.LabelMatcherSets = make([]string, len(labelMatcherSets))
+	copy(newRequest.LabelMatcherSets, labelMatcherSets)
+	return &newRequest, nil
+}
+
+// WithHeaders clones the current `PrometheusLabelNamesQueryRequest` with new headers.
+func (r *PrometheusLabelNamesQueryRequest) WithHeaders(headers []*PrometheusHeader) (LabelsSeriesQueryRequest, error) {
+	newRequest := *r
+	newRequest.Headers = cloneHeaders(headers)
+	return &newRequest, nil
+}
+
+// WithHeaders clones the current `PrometheusLabelValuesQueryRequest` with new headers.
+func (r *PrometheusLabelValuesQueryRequest) WithHeaders(headers []*PrometheusHeader) (LabelsSeriesQueryRequest, error) {
+	newRequest := *r
+	newRequest.Headers = cloneHeaders(headers)
+	return &newRequest, nil
+}
+
+// WithHeaders clones the current `PrometheusSeriesQueryRequest` with new headers.
+func (r *PrometheusSeriesQueryRequest) WithHeaders(headers []*PrometheusHeader) (LabelsSeriesQueryRequest, error) {
+	newRequest := *r
+	newRequest.Headers = cloneHeaders(headers)
+	return &newRequest, nil
+}
+
 // AddSpanTags writes query information about the current `PrometheusLabelNamesQueryRequest`
 // to a span's tag ("attributes" in OpenTelemetry parlance).
 func (r *PrometheusLabelNamesQueryRequest) AddSpanTags(sp opentracing.Span) {
@@ -496,11 +589,19 @@ func (r *PrometheusLabelValuesQueryRequest) AddSpanTags(sp opentracing.Span) {
 	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
 }
 
+// AddSpanTags writes query information about the current `PrometheusSeriesQueryRequest`
+// to a span's tag ("attributes" in OpenTelemetry parlance).
+func (r *PrometheusSeriesQueryRequest) AddSpanTags(sp opentracing.Span) {
+	sp.SetTag("matchers", fmt.Sprintf("%v", r.GetLabelMatcherSets()))
+	sp.SetTag("start", timestamp.Time(r.GetStart()).String())
+	sp.SetTag("end", timestamp.Time(r.GetEnd()).String())
+}
+
 type PrometheusLabelNamesQueryRequest struct {
 	Path  string
 	Start int64
 	End   int64
-	// labelMatcherSets is a repeated field here in order to enable the representation
+	// LabelMatcherSets is a repeated field here in order to enable the representation
 	// of labels queries which have not yet been split; the prometheus querier code
 	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
 	// into separate queries, one for each matcher set
@@ -508,7 +609,8 @@ type PrometheusLabelNamesQueryRequest struct {
 	// ID of the request used to correlate downstream requests and responses.
 	ID int64
 	// Limit the number of label names returned. A value of 0 means no limit
-	Limit uint64
+	Limit   uint64
+	Headers []*PrometheusHeader
 }
 
 func (r *PrometheusLabelNamesQueryRequest) GetPath() string {
@@ -540,7 +642,7 @@ type PrometheusLabelValuesQueryRequest struct {
 	LabelName string
 	Start     int64
 	End       int64
-	// labelMatcherSets is a repeated field here in order to enable the representation
+	// LabelMatcherSets is a repeated field here in order to enable the representation
 	// of labels queries which have not yet been split; the prometheus querier code
 	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
 	// into separate queries, one for each matcher set
@@ -548,7 +650,8 @@ type PrometheusLabelValuesQueryRequest struct {
 	// ID of the request used to correlate downstream requests and responses.
 	ID int64
 	// Limit the number of label values returned. A value of 0 means no limit.
-	Limit uint64
+	Limit   uint64
+	Headers []*PrometheusHeader
 }
 
 func (r *PrometheusLabelValuesQueryRequest) GetLabelName() string {
@@ -575,6 +678,88 @@ func (r *PrometheusLabelValuesQueryRequest) GetID() int64 {
 func (r *PrometheusLabelValuesQueryRequest) GetLimit() uint64 {
 	return r.Limit
 }
+
+type PrometheusSeriesQueryRequest struct {
+	Path  string
+	Start int64
+	End   int64
+	// LabelMatcherSets is a repeated field here in order to enable the representation
+	// of labels queries which have not yet been split; the prometheus querier code
+	// will eventually split requests like `?match[]=up&match[]=process_start_time_seconds{job="prometheus"}`
+	// into separate queries, one for each matcher set
+	LabelMatcherSets []string
+	// ID of the request used to correlate downstream requests and responses.
+	ID int64
+	// Limit the number of label names returned. A value of 0 means no limit
+	Limit   uint64
+	Headers []*PrometheusHeader
+}
+
+func (r *PrometheusSeriesQueryRequest) GetPath() string {
+	return r.Path
+}
+
+func (r *PrometheusSeriesQueryRequest) GetStart() int64 {
+	return r.Start
+}
+
+func (r *PrometheusSeriesQueryRequest) GetEnd() int64 {
+	return r.End
+}
+
+func (r *PrometheusSeriesQueryRequest) GetLabelMatcherSets() []string {
+	return r.LabelMatcherSets
+}
+
+func (r *PrometheusSeriesQueryRequest) GetID() int64 {
+	return r.ID
+}
+
+func (r *PrometheusSeriesQueryRequest) GetLimit() uint64 {
+	return r.Limit
+}
+
+type PrometheusLabelsResponse struct {
+	Status    string              `json:"status"`
+	Data      []string            `json:"data"`
+	ErrorType string              `json:"errorType,omitempty"`
+	Error     string              `json:"error,omitempty"`
+	Headers   []*PrometheusHeader `json:"-"`
+}
+
+func (m *PrometheusLabelsResponse) GetHeaders() []*PrometheusHeader {
+	if m != nil {
+		return m.Headers
+	}
+	return nil
+}
+
+func (m *PrometheusLabelsResponse) Reset()         { *m = PrometheusLabelsResponse{} }
+func (*PrometheusLabelsResponse) ProtoMessage()    {}
+func (m *PrometheusLabelsResponse) String() string { return fmt.Sprintf("%+v", *m) }
+
+type SeriesData map[string]string
+
+func (d *SeriesData) String() string { return fmt.Sprintf("%+v", *d) }
+
+type PrometheusSeriesResponse struct {
+	Status    string              `json:"status"`
+	Data      []SeriesData        `json:"data"`
+	ErrorType string              `json:"errorType,omitempty"`
+	Error     string              `json:"error,omitempty"`
+	Headers   []*PrometheusHeader `json:"-"`
+}
+
+func (m *PrometheusSeriesResponse) GetHeaders() []*PrometheusHeader {
+	if m != nil {
+		return m.Headers
+	}
+	return nil
+}
+
+func (m *PrometheusSeriesResponse) Reset()         { *m = PrometheusSeriesResponse{} }
+func (*PrometheusSeriesResponse) ProtoMessage()    {}
+func (m *PrometheusSeriesResponse) String() string { return fmt.Sprintf("%+v", *m) }
 
 func (d *PrometheusData) UnmarshalJSON(b []byte) error {
 	v := struct {

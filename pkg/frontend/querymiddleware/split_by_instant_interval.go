@@ -130,7 +130,7 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	if err != nil {
 		level.Warn(spanLog).Log("msg", "failed to parse query", "err", err)
 		s.metrics.splittingSkipped.WithLabelValues(skippedReasonParsingFailed).Inc()
-		return nil, apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
+		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 
 	instantSplitQuery, err := mapper.Map(expr)
@@ -179,7 +179,9 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 	if err != nil {
 		return nil, err
 	}
-	shardedQueryable := newShardedQueryable(req, s.next)
+
+	annotationAccumulator := NewAnnotationAccumulator()
+	shardedQueryable := NewShardedQueryable(req, annotationAccumulator, s.next, nil)
 
 	qry, err := newQuery(ctx, req, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
@@ -193,17 +195,30 @@ func (s *splitInstantQueryByIntervalMiddleware) Do(ctx context.Context, req Metr
 		level.Warn(spanLog).Log("msg", "failed to execute split instant query", "err", err)
 		return nil, mapEngineError(err)
 	}
+
+	// Note that the positions based on the original query may be wrong as the rewritten
+	// query which is actually used is different, but the user does not see the rewritten
+	// query, so we pass in an empty string as the query so the positions will be hidden.
+	warn, info := res.Warnings.AsStrings("", 0, 0)
+
+	// Add any annotations returned by the sharded queries, and remove any duplicates.
+	// We remove any position information for the same reason as above: the position information
+	// relates to the rewritten expression sent to queriers, not the original expression provided by the user.
+	accumulatedWarnings, accumulatedInfos := annotationAccumulator.getAll()
+	warn = append(warn, removeAllAnnotationPositionInformation(accumulatedWarnings)...)
+	info = append(info, removeAllAnnotationPositionInformation(accumulatedInfos)...)
+	warn = removeDuplicates(warn)
+	info = removeDuplicates(info)
+
 	return &PrometheusResponse{
 		Status: statusSuccess,
 		Data: &PrometheusData{
 			ResultType: string(res.Value.Type()),
 			Result:     extracted,
 		},
-		Headers: shardedQueryable.getResponseHeaders(),
-		// Note that the positions based on the original query may be wrong as the rewritten
-		// query which is actually used is different, but the user does not see the rewritten
-		// query, so we pass in an empty string as the query so the positions will be hidden.
-		Warnings: res.Warnings.AsStrings("", 0),
+		Headers:  shardedQueryable.getResponseHeaders(),
+		Warnings: warn,
+		Infos:    info,
 	}, nil
 }
 

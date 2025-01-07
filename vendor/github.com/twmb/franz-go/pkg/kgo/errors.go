@@ -53,7 +53,7 @@ func isRetryableBrokerErr(err error) bool {
 	}
 	// We could have a retryable producer ID failure, which then bubbled up
 	// as errProducerIDLoadFail so as to be retried later.
-	if errors.Is(err, errProducerIDLoadFail) {
+	if pe := (*errProducerIDLoadFail)(nil); errors.As(err, &pe) {
 		return true
 	}
 	// We could have chosen a broker, and then a concurrent metadata update
@@ -139,8 +139,6 @@ var (
 	// restart a new connection ourselves.
 	errSaslReauthLoop = errors.New("the broker is repeatedly giving us sasl lifetimes that are too short to write a request")
 
-	errProducerIDLoadFail = errors.New("unable to initialize a producer ID due to request failures")
-
 	// A temporary error returned when Kafka replies with a different
 	// correlation ID than we were expecting for the request the client
 	// issued.
@@ -223,6 +221,19 @@ type ErrFirstReadEOF struct {
 	kind uint8
 	err  error
 }
+
+type errProducerIDLoadFail struct {
+	err error
+}
+
+func (e *errProducerIDLoadFail) Error() string {
+	if e.err == nil {
+		return "unable to initialize a producer ID due to request failures"
+	}
+	return fmt.Sprintf("unable to initialize a producer ID due to request failures: %v", e.err)
+}
+
+func (e *errProducerIDLoadFail) Unwrap() error { return e.err }
 
 const (
 	firstReadSASL uint8 = iota

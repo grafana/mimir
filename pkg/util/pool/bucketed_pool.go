@@ -6,41 +6,35 @@
 package pool
 
 import (
+	"fmt"
+	"math/bits"
+
 	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 // BucketedPool is a bucketed pool for variably sized slices.
-// It is similar to prometheus/prometheus' pool.Pool, but uses zeropool.Pool internally, and
-// generics to avoid reflection.
+// It is similar to prometheus/prometheus' pool.Pool, but:
+// - uses zeropool.Pool internally
+// - uses generics to avoid reflection
+// - only supports using a factor of 2
 type BucketedPool[T ~[]E, E any] struct {
 	buckets []zeropool.Pool[T]
-	sizes   []int
+	maxSize uint
 	// make is the function used to create an empty slice when none exist yet.
 	make func(int) T
 }
 
-// NewBucketedPool returns a new BucketedPool with size buckets for minSize to maxSize
-// increasing by the given factor.
-func NewBucketedPool[T ~[]E, E any](minSize, maxSize int, factor float64, makeFunc func(int) T) *BucketedPool[T, E] {
-	if minSize < 1 {
-		panic("invalid minimum pool size")
-	}
-	if maxSize < 1 {
+// NewBucketedPool returns a new BucketedPool with buckets separated by a factor of 2 up to maxSize.
+func NewBucketedPool[T ~[]E, E any](maxSize uint, makeFunc func(int) T) *BucketedPool[T, E] {
+	if maxSize <= 1 {
 		panic("invalid maximum pool size")
 	}
-	if factor < 1 {
-		panic("invalid factor")
-	}
 
-	var sizes []int
-
-	for s := minSize; s <= maxSize; s = int(float64(s) * factor) {
-		sizes = append(sizes, s)
-	}
+	bucketCount := bits.Len(maxSize)
 
 	p := &BucketedPool[T, E]{
-		buckets: make([]zeropool.Pool[T], len(sizes)),
-		sizes:   sizes,
+		buckets: make([]zeropool.Pool[T], bucketCount),
+		maxSize: maxSize,
 		make:    makeFunc,
 	}
 
@@ -48,40 +42,55 @@ func NewBucketedPool[T ~[]E, E any](minSize, maxSize int, factor float64, makeFu
 }
 
 // Get returns a new slice with capacity greater than or equal to size.
+// If no bucket large enough exists, a slice larger than the requested size
+// of the next power of two is returned.
+// Get guarantees the resulting slice always has a capacity in power of twos.
 func (p *BucketedPool[T, E]) Get(size int) T {
-	for i, bktSize := range p.sizes {
-		if size > bktSize {
-			continue
-		}
-		b := p.buckets[i].Get()
-		if b == nil {
-			b = p.make(bktSize)
-		}
-		return b
+	if size < 0 {
+		panic(fmt.Sprintf("BucketedPool.Get with negative size %v", size))
 	}
-	return p.make(size)
+
+	if size == 0 {
+		return nil
+	}
+
+	bucketIndex := bits.Len(uint(size - 1))
+
+	// If bucketIndex exceeds the number of available buckets, return a slice of the next power of two.
+	if bucketIndex >= len(p.buckets) {
+		nextPowerOfTwo := 1 << bucketIndex
+		return p.make(nextPowerOfTwo)
+	}
+
+	s := p.buckets[bucketIndex].Get()
+
+	if s == nil {
+		nextPowerOfTwo := 1 << bucketIndex
+		s = p.make(nextPowerOfTwo)
+	}
+
+	return s
 }
 
 // Put adds a slice to the right bucket in the pool.
 // If the slice does not belong to any bucket in the pool, it is ignored.
 func (p *BucketedPool[T, E]) Put(s T) {
-	if cap(s) < p.sizes[0] {
+	size := uint(cap(s))
+
+	if size == 0 || size > p.maxSize {
 		return
 	}
 
-	for i, size := range p.sizes {
-		if cap(s) > size {
-			continue
-		}
+	bucketIndex := bits.Len(size - 1)
+	if bucketIndex >= len(p.buckets) {
+		return // Ignore slices larger than the largest bucket
+	}
 
-		if cap(s) == size {
-			// Slice is exactly the minimum size for this bucket. Add it to this bucket.
-			p.buckets[i].Put(s[0:0])
-		} else {
-			// Slice belongs in previous bucket.
-			p.buckets[i-1].Put(s[0:0])
-		}
-
+	// Ignore slices that do not align to the current power of 2
+	// (this will only happen where a slice did not originally come from the pool).
+	if size != (1 << bucketIndex) {
 		return
 	}
+
+	p.buckets[bucketIndex].Put(s[0:0])
 }

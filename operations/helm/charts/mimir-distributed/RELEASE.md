@@ -48,6 +48,14 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
    - Merge the PR upon approval.
 
+1. Notify open PRs about the cut change log.
+
+   - From the root directory of the repository run
+
+     ```bash
+     ./tools/release/notify-changelog-cut.sh operations/helm/charts/mimir-distributed/CHANGELOG.md
+     ```
+
 1. Create a release branch.
 
    - Create (if the branch is not created yet), switch to and push a branch starting from the commit created by the prepare changelog PR and name it `mimir-distributed-release-x.y`.
@@ -55,6 +63,13 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
      For example, `mimir-distributed-release-4.5` for any `4.5.x` release.
 
    - Push the branch to origin without any commit added.
+
+     ```bash
+     git fetch
+     git checkout origin/main
+     git checkout -b mimir-distributed-release-<version>
+     git push -u origin mimir-distributed-release-<version>
+     ```
 
    - Once the branch is pushed, all changes to `mimir-distributed-release-x.y` branch must be done through PR.
 
@@ -81,6 +96,8 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
      For example, `2.6.0`.
 
+   - Add a changelog entry in `mimir-distributed/CHANGELOG.md` about upgading the chart's versions of Mimir and GEM.
+
    - Create or update the release notes in `docs/sources/helm-charts/mimir-distributed/release-notes` directory.
 
      The release notes should refer to the correct Mimir and GEM versions and their specific documentation version.
@@ -89,7 +106,7 @@ Weekly releases have the version `x.y.z-weekly.w`, for example `3.1.0-weekly.196
 
    - Update the Mimir and GEM documentation version parameters in [\_index.md](https://github.com/grafana/mimir/blob/main/docs/sources/helm-charts/mimir-distributed/_index.md)
 
-     The two parameters are `MIMIR_DOCS_VERSION` and `gem_docs_version`. With the exception of the release notes, the Helm chart documentation should refer to the documentation or Mimir and GEM that is actually included in the Helm chart.
+     The two parameters are `MIMIR_VERSION` and `GEM_VERSION`. With the exception of the release notes, the Helm chart documentation should refer to the documentation or Mimir and GEM that is actually included in the Helm chart.
 
    - From the root directory of the repository, run `make doc` to update [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) file.
 
@@ -136,9 +153,13 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
    For example `user/update-mimir-distributed-release-x.y-final`.
 
-1. Optionally finalise release note and update version in the `user/update-mimir-distributed-release-x.y-final` branch.
+1. Optionally finalize release note and update version in the `user/update-mimir-distributed-release-x.y-final` branch.
 
    - Update and finalize the release notes in `docs/sources/helm-charts/mimir-distributed/release-notes` directory if there has been some changes after release candidate.
+
+   - Finalize the chart's changelog. Update the title of the release section by setting it to the final release version number.
+
+     For example, `## 4.5.0`.
 
    - Set the `version` field, in the [Chart.yaml](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/Chart.yaml) file, to the desired final release version.
 
@@ -147,6 +168,8 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
      > **Note:** Once this change is merged to `mimir-distributed-x.y` branch, it will trigger the release process GitHub Action.
 
    - There shouldn't be anymore update needed in documentation because that has been done in the release candidate step above.
+
+     > **Note:** Check that the final versions of Mimir and GEM defined in the chart match those mentioned in the changelog and the release notes.
 
    - From the root directory of the repository, run `make doc` to update [README.md](https://github.com/grafana/mimir/blob/main/operations/helm/charts/mimir-distributed/README.md) file.
 
@@ -166,7 +189,7 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
      You might have to wait a few minutes.
 
-   - In a browser, go to [https://grafana.com/docs/helm-charts/mimir-distributed](https://grafana.com/docs/helm-charts/mimir-distributed) and refresh the page.
+   - For stable releases (i.e. excluding release candidates): In a browser, go to the [helm chart docs versions](https://grafana.com/docs/versions/?project=/docs/helm-charts/mimir-distributed/) and verify that the new version is selectable. This might take up to 15 minutes.
 
 1. After the release tag in Git is created, merge the branch back into `main` by following the same procedure as for Mimir releases: [Merging release branch into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main).
 

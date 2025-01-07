@@ -6,7 +6,7 @@ metadata:
   name: gateway-enterprise-values-minio-console
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.4.0
     release: gateway-enterprise-values
     heritage: Helm
 spec:

@@ -22,7 +22,9 @@ spec:
     type: RollingUpdate
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-compactor
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:

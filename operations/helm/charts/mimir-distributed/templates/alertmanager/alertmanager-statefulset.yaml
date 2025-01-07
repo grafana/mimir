@@ -1,4 +1,4 @@
-{{- if .Values.alertmanager.enabled -}}
+{{- if and .Values.alertmanager.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 {{- if .Values.alertmanager.statefulSet.enabled -}}
 {{- $args := dict "ctx" . "component" "alertmanager" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
@@ -33,7 +33,9 @@ spec:
   serviceName: {{ template "mimir.fullname" . }}-alertmanager
   {{- if .Values.alertmanager.persistentVolume.enabled }}
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
         {{- if .Values.alertmanager.persistentVolume.annotations }}
         annotations:
@@ -68,7 +70,7 @@ spec:
       {{- with .Values.alertmanager.schedulerName }}
       schedulerName: {{ . | quote }}
       {{- end }}
-      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.alertmanager.serviceAccountName" . }}
       {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.alertmanager.priorityClassName }}
       {{- end }}
@@ -145,13 +147,13 @@ spec:
             {{- if .Values.alertmanager.zoneAwareReplication.enabled }}
             - "-alertmanager.sharding-ring.instance-availability-zone=zone-default"
             {{- end }}
+            {{- end }}
             # Prometheus HTTP client used to send alerts has a hard-coded idle
             # timeout of 5 minutes, therefore the server timeout for Alertmanager
             # needs to be higher to avoid connections being closed abruptly.
             - "-server.http-idle-timeout=6m"
-            {{- end }}
             {{- range $key, $value := .Values.alertmanager.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- if .Values.alertmanager.extraVolumeMounts }}

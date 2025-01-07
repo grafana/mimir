@@ -27,6 +27,10 @@
   headers:
     {{- toYaml . | nindent 4 }}
   {{- end }}
+  {{- with .sigv4 }}
+  sigv4:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end -}}
 
 {{- define "mimir.metaMonitoring.logs.client" -}}

@@ -1,5 +1,4 @@
-{{- if .Values.enterprise.enabled -}}
-{{ if .Values.tokengenJob.enable }}
+{{- if and .Values.enterprise.enabled .Values.tokengenJob.enable (not .Values.federation_frontend.disableOtherComponents) -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -48,7 +47,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- range $key, $value := .Values.tokengenJob.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- if .Values.tokengenJob.extraVolumeMounts }}
@@ -100,5 +99,4 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
-{{- end -}}
 {{- end -}}

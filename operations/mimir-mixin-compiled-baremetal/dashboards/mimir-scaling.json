@@ -28,7 +28,7 @@
             "type": "dashboards"
          }
       ],
-      "refresh": "10s",
+      "refresh": "5m",
       "rows": [
          {
             "collapse": false,
@@ -339,7 +339,7 @@
                },
                "datasource": "$datasource",
                "hide": 0,
-               "includeAll": true,
+               "includeAll": false,
                "label": "namespace",
                "multi": true,
                "name": "namespace",

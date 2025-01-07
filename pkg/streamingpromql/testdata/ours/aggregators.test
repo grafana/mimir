@@ -8,19 +8,109 @@ load 1m
   some_metric{env="prod", cluster="us"} 0+2x4
   some_metric{env="test", cluster="eu"} 0+3x4
   some_metric{env="test", cluster="us"} 0+4x4
+  some_other_metric{env="test", cluster="us"} 0+5x4
 
 # Range query, aggregating to one group.
 eval range from 0 to 4m step 1m sum(some_metric)
   {} 0 10 20 30 40
 
-# Range query, aggregating to multiple groups.
+eval range from 0 to 4m step 1m avg(some_metric)
+  {} 0 2.5 5 7.5 10
+
+# Range query, aggregating to multiple groups with 'by'.
 eval range from 0 to 4m step 1m sum by (env) (some_metric)
   {env="prod"} 0 3 6 9 12
   {env="test"} 0 7 14 21 28
 
+eval range from 0 to 4m step 1m avg by (env) (some_metric)
+  {env="prod"} 0 1.5 3 4.5 6
+  {env="test"} 0 3.5 7 10.5 14
+
+# Range query, aggregating to multiple groups with 'without'.
+eval range from 0 to 4m step 1m sum without (env) (some_metric)
+  {cluster="eu"} 0 4 8 12 16
+  {cluster="us"} 0 6 12 18 24
+
+eval range from 0 to 4m step 1m avg without (env) (some_metric)
+  {cluster="eu"} 0 2 4 6 8
+  {cluster="us"} 0 3 6 9 12
+
+# Range query, aggregating to a single group with 'without'.
+eval range from 0 to 4m step 1m sum without (env, cluster) (some_metric)
+  {} 0 10 20 30 40
+
+eval range from 0 to 4m step 1m avg without (env, cluster) (some_metric)
+  {} 0 2.5 5 7.5 10
+
+# 'without' should always ignore the metric name.
+eval range from 0 to 4m step 1m sum without(cluster) ({cluster="us"})
+  {env="prod"} 0 2 4 6 8
+  {env="test"} 0 9 18 27 36
+
+eval range from 0 to 4m step 1m avg without(cluster) ({cluster="us"})
+  {env="prod"} 0 2 4 6 8
+  {env="test"} 0 4.5 9 13.5 18
+
 # If no series are matched, we shouldn't return any results.
 eval range from 0 to 4m step 1m sum(some_nonexistent_metric)
   # Should return no results.
+
+clear
+
+load 1m
+  some_metric{env="prod", cluster="eu", group="a", subgroup="1"} 0+1x4
+  some_metric{env="prod", cluster="eu", group="a", subgroup="2"} 0+2x4
+  some_metric{env="prod", cluster="eu", group="b", subgroup="1"} 0+3x4
+  some_metric{env="prod", cluster="us", group="a", subgroup="1"} 0+4x4
+  some_metric{env="prod", cluster="us", group="a", subgroup="2"} 0+5x4
+  some_metric{env="test", cluster="us", group="a", subgroup="2"} 0+6x4
+
+# 'without' with many input and output labels.
+eval range from 0 to 4m step 1m sum without(env) (some_metric)
+  {cluster="eu", group="a", subgroup="1"} 0 1 2 3 4
+  {cluster="eu", group="a", subgroup="2"} 0 2 4 6 8
+  {cluster="eu", group="b", subgroup="1"} 0 3 6 9 12
+  {cluster="us", group="a", subgroup="1"} 0 4 8 12 16
+  {cluster="us", group="a", subgroup="2"} 0 11 22 33 44
+
+eval range from 0 to 4m step 1m avg without(env) (some_metric)
+  {cluster="eu", group="a", subgroup="1"} 0 1 2 3 4
+  {cluster="eu", group="a", subgroup="2"} 0 2 4 6 8
+  {cluster="eu", group="b", subgroup="1"} 0 3 6 9 12
+  {cluster="us", group="a", subgroup="1"} 0 4 8 12 16
+  {cluster="us", group="a", subgroup="2"} 0 5.5 11 16.5 22
+
+eval range from 0 to 4m step 1m sum without(env, cluster) (some_metric)
+  {group="a", subgroup="1"} 0 5 10 15 20
+  {group="a", subgroup="2"} 0 13 26 39 52
+  {group="b", subgroup="1"} 0 3 6 9 12
+
+eval range from 0 to 4m step 1m avg without(env, cluster) (some_metric)
+  {group="a", subgroup="1"} 0 2.5 5 7.5 10
+  {group="a", subgroup="2"} 0 4.333333333333333 8.666666666666666 13 17.333333333333332
+  {group="b", subgroup="1"} 0 3 6 9 12
+
+# 'without' with duplicate labels to remove.
+eval range from 0 to 4m step 1m sum without(env, cluster, env) (some_metric)
+  {group="a", subgroup="1"} 0 5 10 15 20
+  {group="a", subgroup="2"} 0 13 26 39 52
+  {group="b", subgroup="1"} 0 3 6 9 12
+
+eval range from 0 to 4m step 1m avg without(env, cluster, env) (some_metric)
+  {group="a", subgroup="1"} 0 2.5 5 7.5 10
+  {group="a", subgroup="2"} 0 4.333333333333333 8.666666666666666 13 17.333333333333332
+  {group="b", subgroup="1"} 0 3 6 9 12
+
+# 'by' with duplicate grouping labels.
+eval range from 0 to 4m step 1m sum by(env, cluster, env) (some_metric)
+  {cluster="eu", env="prod"} 0 6 12 18 24
+  {cluster="us", env="prod"} 0 9 18 27 36
+  {cluster="us", env="test"} 0 6 12 18 24
+
+eval range from 0 to 4m step 1m avg by(env, cluster, env) (some_metric)
+  {cluster="eu", env="prod"} 0 2 4 6 8
+  {cluster="us", env="prod"} 0 4.5 9 13.5 18
+  {cluster="us", env="test"} 0 6 12 18 24
 
 clear
 
@@ -31,23 +121,43 @@ load 1m
 eval range from 1m to 1m30s step 1s sum(some_metric_with_staleness)
   # Should return no results.
 
+eval range from 1m to 1m30s step 1s avg(some_metric_with_staleness)
+  # Should return no results.
+
 clear
 
 # Test native histogram aggregations
 load 1m
 	single_histogram{label="value"} {{schema:0 sum:2 count:4 buckets:[1 2 1]}} {{sum:2 count:4 buckets:[1 2 1]}}
-	single_histogram{label="value2"} {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:0 sum:2 count:4 buckets:[1 2 1]}}
+	single_histogram{label="value2"} {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:0 sum:2 count:4 buckets:[1 2 1]}} {{schema:0 sum:4 count:6 buckets:[2 2 2]}}
 	single_histogram{label="value2", another="value"} {{schema:1 sum:10 count:9 buckets:[3 3 3]}} {{schema:2 sum:2 count:4 buckets:[1 2 1]}}
 
 eval instant at 0m sum(single_histogram)
 	{} {{schema:0 sum:17 count:18 buckets:[5 12 1]}}
 
+eval instant at 0m avg(single_histogram)
+	{} {{schema:0 sum:5.666666666666667 count:6 buckets:[1.6666666666666667 4 0.33333333333333337]}}
+
 eval instant at 0m sum by (label) (single_histogram)
 	{label="value"} {{schema:0 count:4 sum:2 buckets:[1 2 1]}}
 	{label="value2"} {{schema:1 count:14 sum:15 buckets:[4 6 4]}}
 
-eval range from 0 to 1m step 1m  sum(single_histogram)
-	{} {{schema:0 sum:17 count:18 buckets:[5 12 1]}} {{schema:0 sum:6 count:12 buckets:[3 7 2]}}
+eval instant at 0m avg by (label) (single_histogram)
+	{label="value"} {{count:4 sum:2 buckets:[1 2 1]}}
+	{label="value2"} {{schema:1 count:7 sum:7.5 buckets:[2 3 2]}}
+
+# Test aggregation over a range with lookback behaviour.
+eval range from 0 to 3m step 1m sum(single_histogram)
+	{} {{schema:0 sum:17 count:18 buckets:[5 12 1]}} {{schema:0 sum:6 count:12 buckets:[3 7 2]}} {{schema:0 sum:8 count:14 buckets:[4 7 3]}} {{schema:0 sum:8 count:14 buckets:[4 7 3]}}
+
+eval range from 2m to 3m step 1m sum(single_histogram)
+	{} {{schema:0 sum:8 count:14 buckets:[4 7 3]}} {{schema:0 sum:8 count:14 buckets:[4 7 3]}}
+
+eval range from 0 to 3m step 1m avg(single_histogram)
+	{} {{schema:0 sum:5.666666666666667 count:6 buckets:[1.6666666666666667 4 0.33333333333333337]}} {{schema:0 sum:2 count:4 buckets:[1 2.333333333333333 0.6666666666666666]}} {{schema:0 sum:2.6666666666666665 count:4.666666666666667 buckets:[1.3333333333333333 2.333333333333333 1]}} {{schema:0 sum:2.6666666666666665 count:4.666666666666667 buckets:[1.3333333333333333 2.333333333333333 1]}}
+
+eval range from 2m to 3m step 1m avg(single_histogram)
+	{} {{schema:0 sum:2.6666666666666665 count:4.666666666666667 buckets:[1.3333333333333333 2.333333333333333 1]}} {{schema:0 sum:2.6666666666666665 count:4.666666666666667 buckets:[1.3333333333333333 2.333333333333333 1]}}
 
 clear
 
@@ -64,11 +174,19 @@ load 1m
 # eval range from 0 to 4m step 1m  sum by (label) (single_histogram)
 #	{label="value"}  0 1 {{count:4 sum:2 buckets:[1 2 1]}}            {{sum:2 count:4 buckets:[1 2 1]}}          2
 #	{label="value2"} 0 5 {{schema:1 count:14 sum:15 buckets:[4 6 4]}} {{schema:2 count:8 sum:4 buckets:[4 6 4]}} 10
+#
+# eval range from 0 to 4m step 1m  avg by (label) (single_histogram)
+#	{label="value"}  0 1   {{count:4 sum:2 buckets:[1 2 1]}}            {{sum:2 count:4 buckets:[1 2 1]}}          2
+#	{label="value2"} 0 2.5 {{schema:1 count:7 sum:7.5 buckets:[2 3 2]}} {{schema:2 count:4 sum:2 buckets:[1 2 1]}} 5
 
 # What both engines return
 eval range from 0 to 4m step 1m  sum by (label) (single_histogram)
 	{label="value"}  0 1 1 1 2
 	{label="value2"} 0 5 5 5 10
+
+eval range from 0 to 4m step 1m  avg by (label) (single_histogram)
+	{label="value"}  0 1   1   1   2
+	{label="value2"} 0 2.5 2.5 2.5 5
 
 clear
 
@@ -82,6 +200,9 @@ load 1m
 eval range from 0 to 5m step 1m  sum(single_histogram)
 	{} 0 1 1 5 8 {{sum:4 count:8 buckets:[2 4 2]}}
 
+eval range from 0 to 5m step 1m  avg(single_histogram)
+	{} 0 0.5 0.5 2.5 4 {{sum:2 count:4 buckets:[1 2 1]}}
+
 clear
 
 # Test a mix of float and histogram values at the same point
@@ -90,16 +211,119 @@ load 1m
 	single_histogram{label="value2"}  {{sum:5 count:5 buckets:[1 3 1]}}
 
 # "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
-eval instant at 1m sum(single_histogram)
+eval_warn instant at 1m sum(single_histogram)
+
+eval_warn instant at 1m avg(single_histogram)
 
 clear
 
 # Test a mix of float and histogram values at the same point
 load 1m
-	single_histogram{label="value"}  {{sum:5 count:5 buckets:[1 3 1]}}
-	single_histogram{label="value2"}   3
+	single_histogram{label="value"}   {{sum:5 count:5 buckets:[1 3 1]}}
+	single_histogram{label="value2"}  3
 
 # "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
+eval_warn instant at 1m sum(single_histogram)
+
+eval_warn instant at 1m avg(single_histogram)
+
+clear
+
+# Test a mix of float and histogram values at the same point, where after adding 2 conflicting series and removing a point,
+# that a third series doesn't add the point back in.
+load 1m
+	single_histogram{label="value"}   1
+	single_histogram{label="value2"}  {{sum:5 count:5 buckets:[1 3 1]}}
+	single_histogram{label="value3"}  3
+
+# "If either operator has to aggregate a mix of histogram samples and float samples, the corresponding vector element is removed from the output vector entirely."
+eval_warn instant at 1m sum(single_histogram)
+
+eval_warn instant at 1m avg(single_histogram)
+
+clear
+
+# Test min/max aggregation with histograms and a mix of histogram+float values
+load 1m
+	series{label="value"}   -10 -10 -10                                        10                                         -10                                        {{schema:1 sum:10 count:5 buckets:[1 3 1]}}
+	series{label="value2"}  0   -9  {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}}
+	series{label="value3"}  -20 -9  -9                                         {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}}
+	histogram_only_series   {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}} {{schema:1 sum:5 count:5 buckets:[1 3 1]}}
+
+eval_info range from 0 to 5m step 1m max(series)
+	{} 0 -9 -9 10 -10 _
+
+eval_info range from 0 to 5m step 1m min(series)
+	{} -20 -10 -10 10 -10 _
+
+eval_info range from 0 to 2m step 1m max(histogram_only_series)
+
+eval_info range from 0 to 2m step 1m min(histogram_only_series)
+
+clear
+
+# Test min/max with NaN
+load 1m
+	mixed_series{type="float", label="value"}   NaN
+	mixed_series{type="float", label="value2"}  -5
+	mixed_series{type="float", label="value3"}  10
+	mixed_series{type="histogram", label="value"}   {{schema:1 sum:5 count:5 buckets:[1 3 1]}}
+	mixed_series{type="histogram", label="value2"}  NaN
+  mixed_series{type="onlyNaN"} NaN
+
+eval_info instant at 1m min by (type) (mixed_series)
+	{type="float"} -5
+	{type="histogram"} NaN
+  {type="onlyNaN"} NaN
+
+eval_info instant at 1m max by (type) (mixed_series)
+	{type="float"} 10
+	{type="histogram"} NaN
+  {type="onlyNaN"} NaN
+
+clear
+
+# Test native histogram compaction
+load 1m
+    single_histogram{label="value"}  {{schema:1 sum:5 count:5 buckets:[1 3 1 4 0 2]}}
+    single_histogram{label="value2"} {{schema:1 sum:5 count:5 buckets:[1 3 1]}}
+
+# Compaction will happen in this sum. It will fail without it.
 eval instant at 1m sum(single_histogram)
+    {} {{schema:1 count:10 sum:10 buckets:[2 6 2 4 0 2]}}
+
+clear
+
+# This test is for checking NH's do not have a copied PositiveSpan
+# It works because a sum will modify a span that a subsequent value is using.
+load 5m
+  native_histogram{instance="1"} {{schema:5 sum:10 count:7 buckets:[1 2 3 1]}} {{schema:5 sum:8 count:7 buckets:[1 5 1]}}  {{schema:5 sum:18 count:17 buckets:[1 5 1]}}
+  native_histogram{instance="2"} {{schema:3 sum:4 count:4 buckets:[4]}}
+
+# Test range query with native histograms
+eval range from 0m to 10m step 5m sum(native_histogram)
+  {} {{schema:3 count:11 sum:14 buckets:[5 6]}} {{schema:5 sum:8 count:7 buckets:[1 5 1]}} {{schema:5 count:17 sum:18 buckets:[1 5 1]}}
+
+clear
+
+load 1m
+	series{label="a"} {{schema:5 sum:15 count:10 buckets:[3 2 5]}} {{schema:5 sum:20 count:15 buckets:[4 5 6]}} {{schema:5 sum:25 count:20 buckets:[5 7 8]}} {{schema:5 sum:30 count:25 buckets:[6 9 10]}} {{schema:5 sum:35 count:30 buckets:[7 10 13]}}
+	series{label="b"} {{schema:4 sum:12 count:8 buckets:[2 3 3]}} {{schema:4 sum:14 count:9 buckets:[3 3 3]}} _ {{schema:4 sum:16 count:10 buckets:[3 4 3]}} {{schema:4 sum:18 count:11 buckets:[4 4 3]}}
+
+eval range from 0m to 4m step 1m avg(series)
+  {} {{schema:4 count:9 sum:13.5 buckets:[2.5 5 1.5]}} {{schema:4 count:12 sum:17 buckets:[3.5 7 1.5]}} {{schema:4 count:14.5 sum:19.5 buckets:[4 9 1.5]}} {{schema:4 count:17.5 sum:23 buckets:[4.5 11.5 1.5]}} {{schema:4 count:20.5 sum:26.5 buckets:[5.5 13.5 1.5]}}
+
+clear
+
+# Make sure count and group don't emit a 0 when there are no values
+load 1m
+	series{label="a"} _ 9
+	series{label="b"} _ 9
+
+eval range from 0m to 1m step 1m count(series)
+  {} _ 2
+
+eval range from 0m to 1m step 1m group(series)
+  {} _ 1
 
 clear

@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# Most cases for functions are covered already in the upstream test cases.
+# These test cases cover scenarios not covered by the upstream test cases, such as range queries, or edge cases that are uniquely likely to cause issues in the streaming engine.
+
+eval range from 0m to 2m step 1m 1
+  {} 1 1 1
+
+eval range from 0m to 2m step 1m (2)
+  {} 2 2 2
+
+# Test unary negation of scalars.
+# The use of parentheses causes the expression to be treated as unary negation rather than a simple literal.
+eval range from 0m to 2m step 1m -(2)
+  {} -2 -2 -2
+
+eval range from 0m to 2m step 1m -(-2)
+  {} 2 2 2
+
+eval range from 0m to 2m step 1m -(Inf)
+  {} -Inf -Inf -Inf
+
+eval range from 0m to 2m step 1m -(-Inf)
+  {} Inf Inf Inf
+
+eval range from 0m to 2m step 1m -(NaN)
+  {} NaN NaN NaN
+
+# Same thing as above, with with unary addition.
+# Unary addition is a no-op.
+eval range from 0m to 2m step 1m +(2)
+  {} 2 2 2
+
+eval range from 0m to 2m step 1m +(-2)
+  {} -2 -2 -2
+
+eval range from 0m to 2m step 1m +(Inf)
+  {} Inf Inf Inf
+
+eval range from 0m to 2m step 1m +(-Inf)
+  {} -Inf -Inf -Inf
+
+eval range from 0m to 2m step 1m +(NaN)
+  {} NaN NaN NaN

@@ -61,21 +61,37 @@ The following features are currently experimental:
   - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
   - `-ruler.max-rules-per-rule-group-by-namespace`
   - `-ruler.max-rule-groups-per-tenant-by-namespace`
+  - Allow protecting rule groups from modification by namespace. Rule groups can always be read, and you can use the `X-Mimir-Ruler-Override-Namespace-Protection` header with namespace names as values to override protection from modification.
+  - `-ruler.protected-namespaces`
+  - Allow control over independent rules to be evaluated concurrently as long as they exceed a certain threshold on their rule group last duration runtime against their interval. We have both a limit on the number of rules that can be executed per ruler and per tenant:
+  - `-ruler.max-independent-rule-evaluation-concurrency`
+  - `-ruler.max-independent-rule-evaluation-concurrency-per-tenant`
+  - `-ruler.independent-rule-evaluation-concurrency-min-duration-percentage`
+  - `-ruler.rule-evaluation-write-enabled`
+  - Allow control over rule sync intervals.
+    - `ruler.outbound-sync-queue-poll-interval`
+    - `ruler.inbound-sync-queue-poll-interval`
+  - Cache rule group contents.
+    - `-ruler-storage.cache.rule-group-enabled`
 - Distributor
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
   - Using status code 529 instead of 429 upon rate limit exhaustion.
-    - `distributor.service-overload-status-code-on-rate-limit-enabled`
-  - Set Retry-After header in recoverable error responses
-    - `-distributor.retry-after-header.enabled`
-    - `-distributor.retry-after-header.base-seconds`
-    - `-distributor.retry-after-header.max-backoff-exponent`
+    - `-distributor.service-overload-status-code-on-rate-limit-enabled`
   - Limit exemplars per series per request
     - `-distributor.max-exemplars-per-series-per-request`
+  - Limit OTLP write request byte size
+    - `-distributor.max-otlp-request-size`
   - Enforce a maximum pool buffer size for write requests
     - `-distributor.max-request-pool-buffer-size`
-  - Enable direct translation from OTLP write requests to Mimir equivalents
-    - `-distributor.direct-otlp-translation-enabled`
+  - Enable conversion of OTel start timestamps to Prometheus zero samples to mark series start
+    - `-distributor.otel-created-timestamp-zero-ingestion-enabled`
+  - Promote a certain set of OTel resource attributes to labels
+    - `-distributor.promote-otel-resource-attributes`
+  - Add experimental `memberlist` key-value store for ha_tracker. Note that this feature is `experimental`, as the upper limits of propagation times have not yet been validated. Additionally, cleanup operations have not yet been implemented for the memberlist entries.
+    - `-distributor.ha-tracker.kvstore.store`
+  - Allow keeping OpenTelemetry `service.instance.id`, `service.name` and `service.namespace` resource attributes in `target_info` on top of converting them to the `instance` and `job` labels.
+    - `-distributor.otel-keep-identifying-resource-attributes`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -96,7 +112,8 @@ The following features are currently experimental:
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
-  - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
+  - Out-of-order samples ingestion (`-ingester.ooo-native-histograms-ingestion-enabled`)
+  - Out-of-order native histogram samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
   - Postings for matchers cache configuration:
     - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
@@ -133,39 +150,27 @@ The following features are currently experimental:
     - `-ingester.read-circuit-breaker.cooldown-period`
     - `-ingester.read-circuit-breaker.initial-delay`
     - `-ingester.read-circuit-breaker.request-timeout`
-- Ingester client
-  - Per-ingester circuit breaking based on requests timing out or hitting per-instance limits
-    - `-ingester.client.circuit-breaker.enabled`
-    - `-ingester.client.circuit-breaker.failure-threshold`
-    - `-ingester.client.circuit-breaker.failure-execution-threshold`
-    - `-ingester.client.circuit-breaker.thresholding-period`
-    - `-ingester.client.circuit-breaker.cooldown-period`
 - Querier
-  - Use of Redis cache backend (`-blocks-storage.bucket-store.metadata-cache.backend=redis`)
-  - Streaming chunks from store-gateway to querier (`-querier.prefer-streaming-chunks-from-store-gateways`)
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
-  - Mimir query engine (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`)
+  - Mimir query engine (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
+  - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
 - Query-frontend
   - `-query-frontend.querier-forget-delay`
   - Instant query splitting (`-query-frontend.split-instant-queries-by-interval`)
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
-  - Use of Redis cache backend (`-query-frontend.results-cache.backend=redis`)
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
-  - Remote read request limits (`-query-frontend.remote-read-limits-enabled`)
+  - Caching of non-transient error responses (`-query-frontend.cache-errors`, `-query-frontend.results-cache-ttl-for-errors`)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
-  - Use of Redis cache backend (`-blocks-storage.bucket-store.chunks-cache.backend=redis`, `-blocks-storage.bucket-store.index-cache.backend=redis`, `-blocks-storage.bucket-store.metadata-cache.backend=redis`)
-  - `-blocks-storage.bucket-store.series-selection-strategy`
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
-  - Set a timeout for index-header lazy loading (`-blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout`)
 - Read-write deployment mode
 - API endpoints:
   - `/api/v1/user_limits`
@@ -207,20 +212,8 @@ The following features are currently experimental:
 Deprecated features are usable up until the release that indicates their removal.
 For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "./configuration-parameters#parameter-lifecycle" >}}).
 
-The following features or configuration parameters are currently deprecated and will be **removed in Mimir 2.14**:
-
-- Distributor
-  - the metric `cortex_distributor_sample_delay_seconds`
-- Ingester
-  - `-ingester.return-only-grpc-errors`
-- Ingester client
-  - `-ingester.client.report-grpc-codes-in-instrumentation-label-enabled`
-- Mimirtool
-  - the flag `--rule-files`
-- Querier
-  - the flag `-querier.prefer-streaming-chunks-from-store-gateways`
-
 The following features or configuration parameters are currently deprecated and will be **removed in a future release (to be announced)**:
 
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
+- Support for Redis-based caching

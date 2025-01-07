@@ -63,7 +63,7 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 	adapter := &frontendToSchedulerAdapter{
 		cfg:    Config{QueryStoreAfter: 12 * time.Hour},
 		limits: limits{queryIngestersWithin: 13 * time.Hour},
-		codec:  querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json"),
+		codec:  querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil),
 	}
 
 	now := time.Now()
@@ -196,7 +196,7 @@ func TestQueryDecoding(t *testing.T) {
 	adapter := &frontendToSchedulerAdapter{
 		cfg:    Config{QueryStoreAfter: 12 * time.Hour},
 		limits: limits{queryIngestersWithin: 13 * time.Hour},
-		codec:  querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json"),
+		codec:  querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil),
 	}
 
 	now := time.Now()

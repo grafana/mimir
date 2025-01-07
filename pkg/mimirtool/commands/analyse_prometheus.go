@@ -34,7 +34,9 @@ type PrometheusAnalyzeCommand struct {
 	address              string
 	prometheusHTTPPrefix string
 	username             string
+	tenantID             string
 	password             string
+	authToken            string
 	readTimeout          time.Duration
 
 	grafanaMetricsFile string
@@ -89,12 +91,21 @@ func (cmd *PrometheusAnalyzeCommand) parseUsedMetrics() (model.LabelValues, erro
 func (cmd *PrometheusAnalyzeCommand) newAPI() (v1.API, error) {
 	rt := api.DefaultRoundTripper
 	rt = config.NewUserAgentRoundTripper(client.UserAgent(), rt)
-	if cmd.username != "" {
-		rt = &setTenantIDTransport{
-			RoundTripper: rt,
-			tenantID:     cmd.username,
-		}
+
+	switch {
+	case cmd.username != "":
 		rt = config.NewBasicAuthRoundTripper(config.NewInlineSecret(cmd.username), config.NewInlineSecret(cmd.password), rt)
+
+	case cmd.password != "":
+		rt = config.NewBasicAuthRoundTripper(config.NewInlineSecret(cmd.tenantID), config.NewInlineSecret(cmd.password), rt)
+
+	case cmd.authToken != "":
+		rt = config.NewAuthorizationCredentialsRoundTripper("Bearer", config.NewInlineSecret(cmd.authToken), rt)
+	}
+
+	rt = &setTenantIDTransport{
+		RoundTripper: rt,
+		tenantID:     cmd.tenantID,
 	}
 
 	address, err := url.JoinPath(cmd.address, cmd.prometheusHTTPPrefix)

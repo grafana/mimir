@@ -1,4 +1,4 @@
-{{- if .Values.alertmanager.enabled -}}
+{{- if and .Values.alertmanager.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 {{- if not .Values.alertmanager.statefulSet.enabled -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -27,7 +27,7 @@ spec:
         {{- end }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
-      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.alertmanager.serviceAccountName" . }}
       {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.query_frontend.priorityClassName }}
       {{- end }}
@@ -52,7 +52,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           {{- range $key, $value := .Values.alertmanager.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.alertmanager.extraVolumeMounts }}

@@ -11,7 +11,6 @@ import (
 	"github.com/grafana/dskit/ring"
 
 	"github.com/grafana/mimir/pkg/util"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
 // limiterTenantLimits provides access to limits used by Limiter.
@@ -122,8 +121,8 @@ type limiterRingStrategy interface {
 // ingesterRingLimiterRingCount is the interface exposed by a ring implementation which allows
 // to count members
 type ingesterRingLimiterRingCount interface {
-	InstancesWithTokensCount() int
-	InstancesWithTokensInZoneCount(zone string) int
+	WritableInstancesWithTokensCount() int
+	WritableInstancesWithTokensInZoneCount(zone string) int
 	ZonesCount() int
 }
 
@@ -157,18 +156,18 @@ func (is *ingesterRingLimiterStrategy) convertGlobalToLocalLimit(userID string, 
 	var ingestersInZoneCount int
 	if zonesCount > 1 {
 		// In this case zone-aware replication is enabled, and ingestersInZoneCount is initially set to
-		// the total number of ingesters with tokens in the corresponding zone
-		ingestersInZoneCount = is.ring.InstancesWithTokensInZoneCount(is.ingesterZone)
+		// the total number of writable ingesters with tokens in the corresponding zone
+		ingestersInZoneCount = is.ring.WritableInstancesWithTokensInZoneCount(is.ingesterZone)
 	} else {
 		// In this case zone-aware replication is disabled, and ingestersInZoneCount is initially set to
-		// the total number of ingesters with tokens
-		ingestersInZoneCount = is.ring.InstancesWithTokensCount()
+		// the total number of writable ingesters with tokens
+		ingestersInZoneCount = is.ring.WritableInstancesWithTokensCount()
 	}
 	// If shuffle sharding is enabled and the total number of ingesters in the zone is greater than the
 	// expected number of ingesters per sharded zone, then we should honor the latter because series/metadata
 	// cannot be written to more ingesters than that.
 	if userShardSize > 0 {
-		ingestersInZoneCount = util_math.Min(ingestersInZoneCount, util.ShuffleShardExpectedInstancesPerZone(userShardSize, zonesCount))
+		ingestersInZoneCount = min(ingestersInZoneCount, util.ShuffleShardExpectedInstancesPerZone(userShardSize, zonesCount))
 	}
 
 	// This may happen, for example when the total number of ingesters is asynchronously updated, or
@@ -190,7 +189,7 @@ func (is *ingesterRingLimiterStrategy) getShardSize(userID string) int {
 
 func (is *ingesterRingLimiterStrategy) getZonesCount() int {
 	if is.zoneAwarenessEnabled {
-		return util_math.Max(is.ring.ZonesCount(), 1)
+		return max(is.ring.ZonesCount(), 1)
 	}
 	return 1
 }

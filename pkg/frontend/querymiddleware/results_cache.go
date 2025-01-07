@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -33,7 +34,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/math"
 )
 
 const (
@@ -159,6 +159,7 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 		Data:     data,
 		Headers:  promRes.Headers,
 		Warnings: promRes.Warnings,
+		Infos:    promRes.Infos,
 	}
 }
 
@@ -177,6 +178,7 @@ func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Respons
 		Status:   promRes.Status,
 		Data:     data,
 		Warnings: promRes.Warnings,
+		Infos:    promRes.Infos,
 	}
 }
 
@@ -188,6 +190,9 @@ var ErrUnsupportedRequest = errors.New("request is not cacheable")
 type CacheKeyGenerator interface {
 	// QueryRequest should generate a cache key based on the tenant ID and MetricsQueryRequest.
 	QueryRequest(ctx context.Context, tenantID string, r MetricsQueryRequest) string
+
+	// QueryRequestError should generate a cache key based on errors for the tenant ID and MetricsQueryRequest.
+	QueryRequestError(ctx context.Context, tenantID string, r MetricsQueryRequest) string
 
 	// LabelValues should return a cache key for a label values request. The cache key does not need to contain the tenant ID.
 	// LabelValues can return ErrUnsupportedRequest, in which case the response won't be treated as an error, but the item will still not be cached.
@@ -216,16 +221,20 @@ func NewDefaultCacheKeyGenerator(codec Codec, interval time.Duration) DefaultCac
 }
 
 // QueryRequest generates a cache key based on the userID, MetricsQueryRequest and interval.
-func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, userID string, r MetricsQueryRequest) string {
+func (g DefaultCacheKeyGenerator) QueryRequest(_ context.Context, tenantID string, r MetricsQueryRequest) string {
 	startInterval := r.GetStart() / g.interval.Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
 
 	// Use original format for step-aligned request, so that we can use existing cached results for such requests.
 	if stepOffset == 0 {
-		return fmt.Sprintf("%s:%s:%d:%d", userID, r.GetQuery(), r.GetStep(), startInterval)
+		return fmt.Sprintf("%s:%s:%d:%d", tenantID, r.GetQuery(), r.GetStep(), startInterval)
 	}
 
-	return fmt.Sprintf("%s:%s:%d:%d:%d", userID, r.GetQuery(), r.GetStep(), startInterval, stepOffset)
+	return fmt.Sprintf("%s:%s:%d:%d:%d", tenantID, r.GetQuery(), r.GetStep(), startInterval, stepOffset)
+}
+
+func (g DefaultCacheKeyGenerator) QueryRequestError(_ context.Context, tenantID string, r MetricsQueryRequest) string {
+	return fmt.Sprintf("EC:%s:%s:%d:%d:%d", tenantID, r.GetQuery(), r.GetStart(), r.GetEnd(), r.GetStep())
 }
 
 // shouldCacheFn checks whether the current request should go to cache
@@ -234,6 +243,12 @@ type shouldCacheFn func(r MetricsQueryRequest) bool
 
 // resultsCacheAlwaysEnabled is a shouldCacheFn function always returning true.
 var resultsCacheAlwaysEnabled = func(_ MetricsQueryRequest) bool { return true }
+
+var resultsCacheAlwaysDisabled = func(_ MetricsQueryRequest) bool { return false }
+
+var resultsCacheEnabledByOption = func(r MetricsQueryRequest) bool {
+	return !r.GetOptions().CacheDisabled
+}
 
 // isRequestCachable says whether the request is eligible for caching.
 func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalignedRequests bool, logger log.Logger) (cachable bool, reason string) {
@@ -255,13 +270,12 @@ func isRequestCachable(req MetricsQueryRequest, maxCacheTime int64, cacheUnalign
 	return true, ""
 }
 
-// isResponseCachable says whether the response should be cached or not.
-func isResponseCachable(r Response, logger log.Logger) bool {
-	headerValues := getHeaderValuesWithName(r, cacheControlHeader)
-	for _, v := range headerValues {
-		if v == noStoreValue {
-			level.Debug(logger).Log("msg", fmt.Sprintf("%s header in response is equal to %s, not caching the response", cacheControlHeader, noStoreValue))
-			return false
+// isResponseCachable returns true if a response hasn't explicitly disabled caching
+// via an HTTP header, false otherwise.
+func isResponseCachable(r Response) bool {
+	for _, hv := range r.GetHeaders() {
+		if hv.GetName() == cacheControlHeader {
+			return !slices.Contains(hv.GetValues(), noStoreValue)
 		}
 	}
 
@@ -323,18 +337,6 @@ func areEvaluationTimeModifiersCachable(r MetricsQueryRequest, maxCacheTime int6
 	return cachable
 }
 
-func getHeaderValuesWithName(r Response, headerName string) (headerValues []string) {
-	for _, hv := range r.GetHeaders() {
-		if hv.GetName() != headerName {
-			continue
-		}
-
-		headerValues = append(headerValues, hv.GetValues()...)
-	}
-
-	return
-}
-
 // mergeCacheExtentsForRequest merges the provided cache extents for the input request and returns merged extents.
 // The input extents can be overlapping and are not required to be sorted.
 func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, merger Merger, extents []Extent) ([]Extent, error) {
@@ -391,11 +393,11 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 
 		if accumulator.QueryTimestampMs > 0 && extents[i].QueryTimestampMs > 0 {
 			// Keep older (minimum) timestamp.
-			accumulator.QueryTimestampMs = math.Min(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
+			accumulator.QueryTimestampMs = min(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
 		} else {
 			// Some old extents may have zero timestamps. In that case we keep the non-zero one.
 			// (Hopefully one of them is not zero, since we're only merging if there are some new extents.)
-			accumulator.QueryTimestampMs = math.Max(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
+			accumulator.QueryTimestampMs = max(accumulator.QueryTimestampMs, extents[i].QueryTimestampMs)
 		}
 	}
 
@@ -634,6 +636,6 @@ func cacheHashKey(key string) string {
 	hasher := fnv.New64a()
 	_, _ = hasher.Write([]byte(key)) // This'll never error.
 
-	// Hex because memcache errors for the bytes produced by the hash.
+	// Hex because memcache keys must be non-whitespace non-control ASCII
 	return hex.EncodeToString(hasher.Sum(nil))
 }

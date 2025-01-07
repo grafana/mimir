@@ -19,7 +19,6 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -166,9 +165,7 @@ func TestBlockStreamingQuerierSeriesSet(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ss := &blockStreamingQuerierSeriesSet{streamReader: &mockChunkStreamer{series: c.input, causeError: c.errorChunkStreamer}}
 			for _, s := range c.input {
-				ss.series = append(ss.series, &storepb.StreamingSeries{
-					Labels: mimirpb.FromLabelsToLabelAdapters(s.lbls),
-				})
+				ss.series = append(ss.series, s.lbls)
 			}
 			idx := 0
 			var it chunkenc.Iterator
@@ -645,7 +642,6 @@ func batchesToMessages(estimatedChunks uint64, batches ...storepb.StreamingChunk
 	messages[0] = storepb.NewStreamingChunksEstimate(estimatedChunks)
 
 	for i, b := range batches {
-		b := b
 		messages[i+1] = storepb.NewStreamingChunksResponse(&b)
 	}
 

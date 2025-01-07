@@ -9,7 +9,7 @@ weight: 20
 
 # Grafana Mimir distributor
 
-The distributor is a stateless component that receives time-series data from Prometheus or the Grafana agent.
+The distributor is a stateless component that receives time-series data from Prometheus or Grafana Alloy.
 The distributor validates the data for correctness and ensures that it is within the configured limits for a given tenant.
 The distributor then divides the data into batches and sends it to multiple [ingesters]({{< relref "./ingester" >}}) in parallel, shards the series among ingesters, and replicates each series by the configured replication factor. By default, the configured replication factor is three.
 
@@ -18,7 +18,7 @@ The distributor then divides the data into batches and sends it to multiple [ing
 The distributor cleans and validates data that it receives before writing the data to the ingesters.
 Because a single request can contain valid and invalid metrics, samples, metadata, and exemplars, the distributor only passes valid data to the ingesters. The distributor does not include invalid data in its requests to the ingesters.
 If the request contains invalid data, the distributor returns a 400 HTTP status code and the details appear in the response body.
-The details about the first invalid data are typically logged by the sender, be it Prometheus or Grafana Agent.
+The details about the first invalid data are typically logged by the sender, be it Prometheus or Grafana Alloy.
 
 The distributor data cleanup includes the following transformation:
 

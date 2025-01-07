@@ -1,3 +1,4 @@
+{{- if and .Values.store_gateway.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 {{- $args := dict "ctx" $ "component" "store-gateway" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
@@ -139,7 +140,7 @@ spec:
             {{- end }}
             {{- end }}
             {{- range $key, $value := .Values.store_gateway.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- if .Values.store_gateway.extraVolumeMounts }}
@@ -218,5 +219,6 @@ spec:
           {{- end }}
 
 ---
+{{ end }}
 {{ end }}
 {{ end }}

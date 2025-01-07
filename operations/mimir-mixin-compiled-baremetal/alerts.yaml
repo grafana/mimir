@@ -20,12 +20,31 @@ groups:
             # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
             # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
             (
-              sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",status_code!~"529|598",route!~"ready|debug_pprof"}[1m]))
+              sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..", status_code!~"529|598", route!~"ready|debug_pprof"}[1m]))
               /
               sum by (cluster, namespace, job, route) (rate(cortex_request_duration_seconds_count{route!~"ready|debug_pprof"}[1m]))
             ) * 100 > 1
           for: 15m
           labels:
+            histogram: classic
+            severity: critical
+        - alert: MimirRequestErrors
+          annotations:
+            message: |
+                The route {{ $labels.route }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrequesterrors
+          expr: |
+            # The following 5xx errors considered as non-error:
+            # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
+            # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
+            (
+              sum by (cluster, namespace, job, route) (histogram_count(rate(cortex_request_duration_seconds{status_code=~"5..", status_code!~"529|598", route!~"ready|debug_pprof"}[1m])))
+              /
+              sum by (cluster, namespace, job, route) (histogram_count(rate(cortex_request_duration_seconds{route!~"ready|debug_pprof"}[1m])))
+            ) * 100 > 1
+          for: 15m
+          labels:
+            histogram: native
             severity: critical
         - alert: MimirRequestLatency
           annotations:
@@ -88,15 +107,11 @@ groups:
           expr: |
             (
               sum by(cluster, namespace, name, operation) (
-                rate(thanos_memcached_operation_failures_total[1m])
-                or
-                rate(thanos_cache_operation_failures_total[1m])
+                rate(thanos_cache_operation_failures_total{operation!~"add|delete"}[1m])
               )
               /
               sum by(cluster, namespace, name, operation) (
-                rate(thanos_memcached_operations_total[1m])
-                or
-                rate(thanos_cache_operations_total[1m])
+                rate(thanos_cache_operations_total{operation!~"add|delete"}[1m])
               )
             ) * 100 > 5
           for: 5m
@@ -149,7 +164,11 @@ groups:
             message: Mimir ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has no tenants assigned.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterinstancehasnotenants
           expr: |
-            (min by(cluster, namespace, instance) (cortex_ingester_memory_users) == 0)
+            (
+              (min by(cluster, namespace, instance) (cortex_ingester_memory_users) == 0)
+              unless
+              (max by(cluster, namespace, instance) (cortex_lifecycler_read_only) > 0)
+            )
             and on (cluster, namespace)
             # Only if there are more timeseries than would be expected due to continuous testing load
             (
@@ -204,7 +223,7 @@ groups:
             severity: warning
         - alert: MimirStoreGatewayTooManyFailedOperations
           annotations:
-            message: Mimir store-gateway {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.
+            message: Mimir store-gateway in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ $value | humanizePercentage }} errors while doing {{ $labels.operation }} on the object storage.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstoregatewaytoomanyfailedoperations
           expr: |
             sum by(cluster, namespace, operation) (rate(thanos_objstore_bucket_operation_failures_total{component="store-gateway"}[1m])) > 0
@@ -218,8 +237,8 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirringmembersmismatch
           expr: |
             (
-              avg by(cluster, namespace) (sum by(cluster, namespace, instance) (cortex_ring_members{name="ingester",job=~".*/(ingester.*|cortex|mimir|mimir-write.*)"}))
-              != sum by(cluster, namespace) (up{job=~".*/(ingester.*|cortex|mimir|mimir-write.*)"})
+              avg by(cluster, namespace) (sum by(cluster, namespace, instance) (cortex_ring_members{name="ingester",job=~".*/(ingester.*|cortex|mimir|mimir-write.*)",job!~".*/(ingester.*-partition)"}))
+              != sum by(cluster, namespace) (up{job=~".*/(ingester.*|cortex|mimir|mimir-write.*)",job!~".*/(ingester.*-partition)"})
             )
             and
             (
@@ -463,13 +482,29 @@ groups:
                 Mimir rulers in {{ $labels.cluster }}/{{ $labels.namespace }} are failing to perform {{ printf "%.2f" $value }}% of remote evaluations through the ruler-query-frontend.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulerremoteevaluationfailing
           expr: |
-            100 * (
-            sum by (cluster, namespace) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", status_code=~"5..", job=~".*/(ruler-query-frontend.*)"}[5m]))
+            (
+              sum by (cluster, namespace) (rate(cortex_request_duration_seconds_count{status_code=~"5..", route="/httpgrpc.HTTP/Handle", job=~".*/(ruler-query-frontend.*)"}[5m]))
               /
-            sum by (cluster, namespace) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", job=~".*/(ruler-query-frontend.*)"}[5m]))
-            ) > 1
+              sum by (cluster, namespace) (rate(cortex_request_duration_seconds_count{route="/httpgrpc.HTTP/Handle", job=~".*/(ruler-query-frontend.*)"}[5m]))
+            ) * 100 > 1
           for: 5m
           labels:
+            histogram: classic
+            severity: warning
+        - alert: MimirRulerRemoteEvaluationFailing
+          annotations:
+            message: |
+                Mimir rulers in {{ $labels.cluster }}/{{ $labels.namespace }} are failing to perform {{ printf "%.2f" $value }}% of remote evaluations through the ruler-query-frontend.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulerremoteevaluationfailing
+          expr: |
+            (
+              sum by (cluster, namespace) (histogram_count(rate(cortex_request_duration_seconds{status_code=~"5..", route="/httpgrpc.HTTP/Handle", job=~".*/(ruler-query-frontend.*)"}[5m])))
+              /
+              sum by (cluster, namespace) (histogram_count(rate(cortex_request_duration_seconds{route="/httpgrpc.HTTP/Handle", job=~".*/(ruler-query-frontend.*)"}[5m])))
+            ) * 100 > 1
+          for: 5m
+          labels:
+            histogram: native
             severity: warning
     - name: gossip_alerts
       rules:
@@ -480,7 +515,7 @@ groups:
           expr: |
             max by (cluster, namespace) (memberlist_client_cluster_members_count)
             >
-            (sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) + 10)
+            (sum by (cluster, namespace) (up{job=~".*/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|query-frontend.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) + 10)
           for: 20m
           labels:
             severity: warning
@@ -491,10 +526,54 @@ groups:
           expr: |
             min by (cluster, namespace) (memberlist_client_cluster_members_count)
             <
-            (sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) * 0.5)
+            (sum by (cluster, namespace) (up{job=~".+/(admin-api|alertmanager|compactor.*|distributor.*|ingester.*|query-frontend.*|querier.*|ruler|ruler-querier.*|store-gateway.*|cortex|mimir|mimir-write.*|mimir-read.*|mimir-backend.*)"}) * 0.5)
           for: 20m
           labels:
             severity: warning
+        - alert: MimirGossipMembersEndpointsOutOfSync
+          annotations:
+            message: Mimir gossip-ring service endpoints list in {{ $labels.cluster }}/{{ $labels.namespace }} is out of sync.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgossipmembersendpointsoutofsync
+          expr: |
+            (
+              count by(cluster, namespace) (
+                kube_endpoint_address{endpoint="gossip-ring"}
+                unless on (cluster, namespace, ip)
+                label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
+              /
+              count by(cluster, namespace) (
+                kube_endpoint_address{endpoint="gossip-ring"}
+              )
+              * 100 > 10
+            )
+
+            # Filter by Mimir only.
+            and (count by(cluster, namespace) (cortex_build_info) > 0)
+          for: 15m
+          labels:
+            severity: warning
+        - alert: MimirGossipMembersEndpointsOutOfSync
+          annotations:
+            message: Mimir gossip-ring service endpoints list in {{ $labels.cluster }}/{{ $labels.namespace }} is out of sync.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirgossipmembersendpointsoutofsync
+          expr: |
+            (
+              count by(cluster, namespace) (
+                kube_endpoint_address{endpoint="gossip-ring"}
+                unless on (cluster, namespace, ip)
+                label_replace(kube_pod_info, "ip", "$1", "pod_ip", "(.*)"))
+              /
+              count by(cluster, namespace) (
+                kube_endpoint_address{endpoint="gossip-ring"}
+              )
+              * 100 > 50
+            )
+
+            # Filter by Mimir only.
+            and (count by(cluster, namespace) (cortex_build_info) > 0)
+          for: 5m
+          labels:
+            severity: critical
     - name: etcd_alerts
       rules:
         - alert: EtcdAllocatingTooMuchMemory
@@ -504,7 +583,7 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#etcdallocatingtoomuchmemory
           expr: |
             (
-              container_memory_working_set_bytes{container="etcd"}
+              container_memory_rss{container="etcd"}
                 /
               ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
             ) > 0.65
@@ -518,7 +597,7 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#etcdallocatingtoomuchmemory
           expr: |
             (
-              container_memory_working_set_bytes{container="etcd"}
+              container_memory_rss{container="etcd"}
                 /
               ( container_spec_memory_limit_bytes{container="etcd"} > 0 )
             ) > 0.8
@@ -706,7 +785,7 @@ groups:
             severity: warning
         - alert: MimirIngesterTSDBWALCorrupted
           annotations:
-            message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} got a corrupted TSDB WAL.
+            message: Mimir Ingester in {{ $labels.cluster }}/{{ $labels.namespace }} got a corrupted TSDB WAL.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalcorrupted
           expr: |
             # alert when there are more than one corruptions
@@ -719,7 +798,7 @@ groups:
             severity: critical
         - alert: MimirIngesterTSDBWALCorrupted
           annotations:
-            message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} got a corrupted TSDB WAL.
+            message: Mimir Ingester in {{ $labels.cluster }}/{{ $labels.namespace }} got a corrupted TSDB WAL.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestertsdbwalcorrupted
           expr: |
             # alert when there are more than one corruptions
@@ -815,6 +894,15 @@ groups:
           labels:
             reason: consecutive-failures
             severity: critical
+        - alert: MimirCompactorHasRunOutOfDiskSpace
+          annotations:
+            message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has run out of disk space.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorhasrunoutofdiskspace
+          expr: |
+            increase(cortex_compactor_disk_out_of_space_errors_total{}[24h]) >= 1
+          labels:
+            reason: non-transient
+            severity: critical
         - alert: MimirCompactorHasNotUploadedBlocks
           annotations:
             message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not uploaded any block in the last 24 hours.
@@ -876,7 +964,11 @@ groups:
                   # Match only Mimir namespaces.
                   * on(cluster, namespace) group_left max by(cluster, namespace) (cortex_build_info)
                   # Add "metric" label.
-                  + on(cluster, namespace, horizontalpodautoscaler) group_right label_replace(kube_horizontalpodautoscaler_spec_target_metric*0, "metric", "$1", "metric_name", "(.+)")
+                  + on(cluster, namespace, horizontalpodautoscaler) group_right
+                    # Using `max by ()` so that series churn doesn't break the promQL join
+                    max by (cluster, namespace, horizontalpodautoscaler) (
+                      label_replace(kube_horizontalpodautoscaler_spec_target_metric*0, "metric", "$1", "metric_name", "(.+)")
+                    )
                   > 0),
                   "scaledObject", "$1", "horizontalpodautoscaler", "keda-hpa-(.*)"
                 )
@@ -884,8 +976,11 @@ groups:
             # Alert only if the scaling metric exists and is > 0. If the KEDA ScaledObject is configured to scale down 0,
             # then HPA ScalingActive may be false when expected to run 0 replicas. In this case, the scaling metric exported
             # by KEDA could not exist at all or being exposed with a value of 0.
-            and on (cluster, namespace, metric, scaledObject)
-            (label_replace(keda_scaler_metrics_value, "namespace", "$0", "exported_namespace", ".+") > 0)
+            and on (cluster, namespace, metric, scaledObject) (
+              max by (cluster, namespace, metric, scaledObject) (
+                label_replace(keda_scaler_metrics_value, "namespace", "$0", "exported_namespace", ".+") > 0
+              )
+            )
           for: 1h
           labels:
             severity: critical
@@ -986,7 +1081,12 @@ groups:
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to consume write requests read from Kafka due to internal errors.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailstoprocessrecordsfromkafka
           expr: |
-            sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])) > 0
+            sum by (cluster, namespace, instance) (
+                # This is the old metric name. We're keeping support for backward compatibility.
+              rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])
+              or
+              rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[1m])
+            ) > 0
           for: 5m
           labels:
             severity: critical
@@ -996,22 +1096,86 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterstuckprocessingrecordsfromkafka
           expr: |
             # Alert if the reader is not processing any records, but there buffered records to process in the Kafka client.
-            (sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_reader_records_total[5m])) == 0)
+            (sum by (cluster, namespace, instance) (
+                # This is the old metric name. We're keeping support for backward compatibility.
+              rate(cortex_ingest_storage_reader_records_total[5m])
+              or
+              rate(cortex_ingest_storage_reader_requests_total[5m])
+            ) == 0)
             and
-            # NOTE: the cortex_ingest_storage_reader_buffered_fetch_records_total metric is a gauge showing the current number of buffered records.
-            (sum by (cluster, namespace, instance) (cortex_ingest_storage_reader_buffered_fetch_records_total) > 0)
+            (sum by (cluster, namespace, instance) (cortex_ingest_storage_reader_buffered_fetched_records) > 0)
           for: 5m
           labels:
             severity: critical
-        - alert: MimirIngesterFailsEnforceStrongConsistencyOnReadPath
+        - alert: MimirIngesterMissedRecordsFromKafka
+          annotations:
+            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} missed processing records from Kafka. There may be data loss.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringestermissedrecordsfromkafka
+          expr: |
+            # Alert if the ingester missed some records from Kafka.
+            increase(cortex_ingest_storage_reader_missed_records_total[10m]) > 0
+          labels:
+            severity: critical
+        - alert: MimirStrongConsistencyEnforcementFailed
           annotations:
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to enforce strong-consistency on read-path.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailsenforcestrongconsistencyonreadpath
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstrongconsistencyenforcementfailed
           expr: |
             sum by (cluster, namespace, instance) (rate(cortex_ingest_storage_strong_consistency_failures_total[1m])) > 0
           for: 5m
           labels:
             severity: critical
+        - alert: MimirStrongConsistencyOffsetNotPropagatedToIngesters
+          annotations:
+            message: Mimir ingesters in {{ $labels.cluster }}/{{ $labels.namespace }} are receiving an unexpected high number of strongly consistent requests without an offset specified.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstrongconsistencyoffsetnotpropagatedtoingesters
+          expr: |
+            sum by (cluster, namespace) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="false"}[1m]))
+            /
+            sum by (cluster, namespace) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader"}[1m]))
+            * 100 > 5
+          for: 5m
+          labels:
+            severity: warning
+        - alert: MimirKafkaClientBufferedProduceBytesTooHigh
+          annotations:
+            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} Kafka client produce buffer utilization is {{ printf "%.2f" $value }}%.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirkafkaclientbufferedproducebytestoohigh
+          expr: |
+            max by(cluster, namespace, instance) (max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}[1m]))
+            /
+            min by(cluster, namespace, instance) (min_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_limit[1m]))
+            * 100 > 50
+          for: 5m
+          labels:
+            severity: critical
+        - alert: MimirBlockBuilderNoCycleProcessing
+          annotations:
+            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not processed cycles in the past hour.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuildernocycleprocessing
+          expr: |
+            max by(cluster, namespace, instance) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[60m]))) == 0
+          for: 5m
+          labels:
+            severity: warning
+        - alert: MimirBlockBuilderLagging
+          annotations:
+            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}%.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderlagging
+          expr: |
+            max by(cluster, namespace, instance) (max_over_time(cortex_blockbuilder_consumer_lag_records[10m])) > 4e6
+          for: 75m
+          labels:
+            severity: warning
+        - alert: MimirBlockBuilderCompactAndUploadFailed
+          annotations:
+            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to compact and upload blocks.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuildercompactanduploadfailed
+          expr: |
+            sum by (cluster, namespace, instance) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1m])) > 0
+          for: 5m
+          labels:
+            severity: warning
     - name: mimir_continuous_test
       rules:
         - alert: MimirContinuousTestNotRunningOnWrites

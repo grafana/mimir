@@ -4,11 +4,11 @@ package compactor
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"

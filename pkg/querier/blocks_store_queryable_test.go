@@ -15,6 +15,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"text/template"
@@ -33,15 +34,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -57,6 +60,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -79,8 +83,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 	)
 
 	type valueResult struct {
-		t int64
-		v float64
+		t  int64
+		v  float64
+		fh *histogram.FloatHistogram
 	}
 
 	type seriesResult struct {
@@ -1508,6 +1513,88 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			`
 			},
 		},
+		"histograms with counter resets in overlapping chunks": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 1, H: test.GenerateTestFloatHistogram(40)},
+							promql.HPoint{T: minT + 7, H: test.GenerateTestFloatHistogram(50)},
+						),
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 2, H: test.GenerateTestFloatHistogram(20)},
+							promql.HPoint{T: minT + 3, H: test.GenerateTestFloatHistogram(60)},
+							promql.HPoint{T: minT + 4, H: test.GenerateTestFloatHistogram(70)},
+							promql.HPoint{T: minT + 5, H: test.GenerateTestFloatHistogram(80)},
+							promql.HPoint{T: minT + 6, H: test.GenerateTestFloatHistogram(90)},
+						),
+						mockHintsResponse(block1, block2),
+						mockStatsResponse(50),
+					}}: {block1, block2},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedSeries: []seriesResult{
+				{
+					lbls: metricNameLabel,
+					values: []valueResult{
+						{t: minT + 1, fh: test.GenerateTestFloatHistogram(40)},
+						{t: minT + 2, fh: test.GenerateTestFloatHistogram(20)},
+						{t: minT + 3, fh: tsdbutil.SetFloatHistogramNotCounterReset(test.GenerateTestFloatHistogram(60))},
+						{t: minT + 4, fh: tsdbutil.SetFloatHistogramNotCounterReset(test.GenerateTestFloatHistogram(70))},
+						{t: minT + 5, fh: tsdbutil.SetFloatHistogramNotCounterReset(test.GenerateTestFloatHistogram(80))},
+						{t: minT + 6, fh: tsdbutil.SetFloatHistogramNotCounterReset(test.GenerateTestFloatHistogram(90))},
+						{t: minT + 7, fh: test.GenerateTestFloatHistogram(50)},
+					},
+				},
+			},
+		},
+		"histograms with counter resets with partially matching chunks": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			},
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 1, H: test.GenerateTestFloatHistogram(40)},
+						),
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 3, H: test.GenerateTestFloatHistogram(20)},
+						),
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 1, H: test.GenerateTestFloatHistogram(40)},
+						),
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 2, H: test.GenerateTestFloatHistogram(30)},
+						),
+						mockSeriesResponseWithFloatHistogramSamples(metricNameLabel,
+							promql.HPoint{T: minT + 3, H: test.GenerateTestFloatHistogram(20)},
+						),
+						mockHintsResponse(block1, block2),
+						mockStatsResponse(50),
+					}}: {block1, block2},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedSeries: []seriesResult{
+				{
+					lbls: metricNameLabel,
+					values: []valueResult{
+						{t: minT + 1, fh: test.GenerateTestFloatHistogram(40)},
+						{t: minT + 2, fh: test.GenerateTestFloatHistogram(30)},
+						{t: minT + 3, fh: test.GenerateTestFloatHistogram(20)},
+					},
+				},
+			},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -1549,7 +1636,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 					stores := &blocksStoreSetMock{mockedResponses: storeSetResponses}
 					finder := &blocksFinderMock{}
-					finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), testData.finderErr)
+					finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, testData.finderErr)
 
 					ctx, cancel := context.WithCancel(context.Background())
 					t.Cleanup(cancel)
@@ -1562,7 +1649,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 						maxT:        maxT,
 						finder:      finder,
 						stores:      stores,
-						consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), reg),
+						consistency: NewBlocksConsistency(0, reg),
 						logger:      log.NewNopLogger(),
 						metrics:     newBlocksStoreQueryableMetrics(reg),
 						limits:      testData.limits,
@@ -1609,12 +1696,22 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 							it = set.At().Iterator(it)
 							for valType := it.Next(); valType != chunkenc.ValNone; valType = it.Next() {
-								assert.Equal(t, valType, chunkenc.ValFloat)
-								t, v := it.At()
-								actualValues = append(actualValues, valueResult{
-									t: t,
-									v: v,
-								})
+								switch valType {
+								case chunkenc.ValFloat:
+									t, v := it.At()
+									actualValues = append(actualValues, valueResult{
+										t: t,
+										v: v,
+									})
+								case chunkenc.ValFloatHistogram:
+									t, fh := it.AtFloatHistogram(nil)
+									actualValues = append(actualValues, valueResult{
+										t:  t,
+										fh: fh,
+									})
+								default:
+									require.FailNow(t, "unhandled type")
+								}
 							}
 
 							require.NoError(t, it.Err())
@@ -1676,7 +1773,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 		// Mock the blocks finder.
 		finder := &blocksFinderMock{}
-		finder.On("GetBlocks", mock.Anything, tenantID, minT, maxT).Return(bucketindex.Blocks{{ID: block1}}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
+		finder.On("GetBlocks", mock.Anything, tenantID, minT, maxT).Return(bucketindex.Blocks{{ID: block1}}, nil)
 
 		// Create a real gRPC client connecting to the gRPC server we control in this test.
 		clientCfg := grpcclient.Config{}
@@ -1703,7 +1800,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			maxT:        maxT,
 			finder:      finder,
 			stores:      stores,
-			consistency: NewBlocksConsistency(0, 0, logger, reg),
+			consistency: NewBlocksConsistency(0, reg),
 			logger:      logger,
 			metrics:     newBlocksStoreQueryableMetrics(reg),
 			limits:      &blocksStoreLimitsMock{},
@@ -1787,7 +1884,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			close(continueExecution)
 		}()
 
-		_, _, err := q.LabelNames(ctx, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
+		_, _, err := q.LabelNames(ctx, &storage.LabelHints{}, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName))
 
 		// We expect the returned error to be context.Canceled and not a gRPC error.
 		assert.ErrorIs(t, err, context.Canceled)
@@ -1835,7 +1932,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 			close(continueExecution)
 		}()
 
-		_, _, err := q.LabelValues(ctx, labels.MetricName)
+		_, _, err := q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
 
 		// We expect the returned error to be context.Canceled and not a gRPC error.
 		assert.ErrorIs(t, err, context.Canceled)
@@ -1924,14 +2021,14 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
 				{ID: block},
-			}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
+			}, nil)
 
 			q := &blocksStoreQuerier{
 				minT:        minT,
 				maxT:        maxT,
 				finder:      finder,
 				stores:      stores,
-				consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
+				consistency: NewBlocksConsistency(0, nil),
 				logger:      log.NewNopLogger(),
 				metrics:     newBlocksStoreQueryableMetrics(reg),
 				limits:      &blocksStoreLimitsMock{},
@@ -2427,21 +2524,21 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				reg := prometheus.NewPedanticRegistry()
 				stores := &blocksStoreSetMock{mockedResponses: testData.storeSetResponses}
 				finder := &blocksFinderMock{}
-				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), testData.finderErr)
+				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, testData.finderErr)
 
 				q := &blocksStoreQuerier{
 					minT:        minT,
 					maxT:        maxT,
 					finder:      finder,
 					stores:      stores,
-					consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
+					consistency: NewBlocksConsistency(0, nil),
 					logger:      log.NewNopLogger(),
 					metrics:     newBlocksStoreQueryableMetrics(reg),
 					limits:      &blocksStoreLimitsMock{},
 				}
 
 				if testFunc == "LabelNames" {
-					names, warnings, err := q.LabelNames(ctx)
+					names, warnings, err := q.LabelNames(ctx, &storage.LabelHints{})
 					if testData.expectedErr != "" {
 						require.Equal(t, testData.expectedErr, err.Error())
 						continue
@@ -2458,7 +2555,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				}
 
 				if testFunc == "LabelValues" {
-					values, warnings, err := q.LabelValues(ctx, labels.MetricName)
+					values, warnings, err := q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
 					if testData.expectedErr != "" {
 						require.Equal(t, testData.expectedErr, err.Error())
 						continue
@@ -2498,14 +2595,14 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				finder := &blocksFinderMock{}
 				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
 					{ID: block1},
-				}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), nil)
+				}, nil)
 
 				q := &blocksStoreQuerier{
 					minT:        minT,
 					maxT:        maxT,
 					finder:      finder,
 					stores:      stores,
-					consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
+					consistency: NewBlocksConsistency(0, nil),
 					logger:      log.NewNopLogger(),
 					metrics:     newBlocksStoreQueryableMetrics(reg),
 					limits:      &blocksStoreLimitsMock{},
@@ -2514,9 +2611,9 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				var err error
 				switch testFunc {
 				case "LabelNames":
-					_, _, err = q.LabelNames(ctx)
+					_, _, err = q.LabelNames(ctx, &storage.LabelHints{})
 				case "LabelValues":
-					_, _, err = q.LabelValues(ctx, labels.MetricName)
+					_, _, err = q.LabelValues(ctx, labels.MetricName, &storage.LabelHints{})
 				}
 
 				require.Error(t, err)
@@ -2570,7 +2667,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			finder := &blocksFinderMock{}
-			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
+			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), error(nil))
 
 			const tenantID = "user-1"
 			ctx = user.InjectOrgID(ctx, tenantID)
@@ -2579,7 +2676,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 				maxT:            testData.queryMaxT,
 				finder:          finder,
 				stores:          &blocksStoreSetMock{},
-				consistency:     NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
+				consistency:     NewBlocksConsistency(0, nil),
 				logger:          log.NewNopLogger(),
 				metrics:         newBlocksStoreQueryableMetrics(nil),
 				limits:          &blocksStoreLimitsMock{},
@@ -2640,12 +2737,41 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 			expectedMinT:         util.TimeToMillis(now.Add(-sevenDays)),
 			expectedMaxT:         util.TimeToMillis(now),
 		},
+
+		"should manipulate query on large time range over the limit": {
+			maxLabelsQueryLength: thirtyDays,
+			queryMinT:            util.TimeToMillis(now.Add(-thirtyDays).Add(-100 * time.Hour)),
+			queryMaxT:            util.TimeToMillis(now),
+			expectedMinT:         util.TimeToMillis(now.Add(-thirtyDays)),
+			expectedMaxT:         util.TimeToMillis(now),
+		},
+		"should manipulate the start of a query without start time": {
+			maxLabelsQueryLength: thirtyDays,
+			queryMinT:            util.TimeToMillis(v1.MinTime),
+			queryMaxT:            util.TimeToMillis(now),
+			expectedMinT:         util.TimeToMillis(now.Add(-thirtyDays)),
+			expectedMaxT:         util.TimeToMillis(now),
+		},
+		"should not manipulate query without end time, we allow querying arbitrarily into the future": {
+			maxLabelsQueryLength: thirtyDays,
+			queryMinT:            util.TimeToMillis(now.Add(-time.Hour)),
+			queryMaxT:            util.TimeToMillis(v1.MaxTime),
+			expectedMinT:         util.TimeToMillis(now.Add(-time.Hour)),
+			expectedMaxT:         util.TimeToMillis(v1.MaxTime),
+		},
+		"should manipulate the start of a query without start or end time, we allow querying arbitrarily into the future, but not the past": {
+			maxLabelsQueryLength: thirtyDays,
+			queryMinT:            util.TimeToMillis(v1.MinTime),
+			queryMaxT:            util.TimeToMillis(v1.MaxTime),
+			expectedMinT:         util.TimeToMillis(now.Add(-thirtyDays)),
+			expectedMaxT:         util.TimeToMillis(v1.MaxTime),
+		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			finder := &blocksFinderMock{}
-			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
+			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), error(nil))
 
 			ctx := user.InjectOrgID(context.Background(), "user-1")
 			q := &blocksStoreQuerier{
@@ -2653,7 +2779,7 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 				maxT:        testData.queryMaxT,
 				finder:      finder,
 				stores:      &blocksStoreSetMock{},
-				consistency: NewBlocksConsistency(0, 0, log.NewNopLogger(), nil),
+				consistency: NewBlocksConsistency(0, nil),
 				logger:      log.NewNopLogger(),
 				metrics:     newBlocksStoreQueryableMetrics(nil),
 				limits: &blocksStoreLimitsMock{
@@ -2661,17 +2787,28 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 				},
 			}
 
-			_, _, err := q.LabelNames(ctx)
-			require.NoError(t, err)
-			require.Len(t, finder.Calls, 1)
-			assert.Equal(t, testData.expectedMinT, finder.Calls[0].Arguments.Get(2))
-			assert.Equal(t, testData.expectedMaxT, finder.Calls[0].Arguments.Get(3))
+			assertCalledWithMinMaxTime := func() {
+				const delta = float64(5000)
+				require.Len(t, finder.Calls, 1)
+				gotStartMillis := finder.Calls[0].Arguments.Get(2).(int64)
+				assert.InDeltaf(t, testData.expectedMinT, gotStartMillis, delta, "expected start %s, got %s", util.TimeFromMillis(testData.expectedMinT).UTC(), util.TimeFromMillis(gotStartMillis).UTC())
+				gotEndMillis := finder.Calls[0].Arguments.Get(3).(int64)
+				assert.InDeltaf(t, testData.expectedMaxT, gotEndMillis, delta, "expected end %s, got %s", util.TimeFromMillis(testData.expectedMinT).UTC(), util.TimeFromMillis(gotEndMillis).UTC())
+				finder.Calls = finder.Calls[1:]
+			}
 
-			_, _, err = q.LabelValues(ctx, "foo")
-			require.Len(t, finder.Calls, 2)
-			require.NoError(t, err)
-			assert.Equal(t, testData.expectedMinT, finder.Calls[1].Arguments.Get(2))
-			assert.Equal(t, testData.expectedMaxT, finder.Calls[1].Arguments.Get(3))
+			// Assert on the time range of the actual executed query (5s delta).
+			t.Run("LabelNames", func(t *testing.T) {
+				_, _, err := q.LabelNames(ctx, &storage.LabelHints{})
+				require.NoError(t, err)
+				assertCalledWithMinMaxTime()
+			})
+
+			t.Run("LabelValues", func(t *testing.T) {
+				_, _, err := q.LabelValues(ctx, "foo", &storage.LabelHints{})
+				require.NoError(t, err)
+				assertCalledWithMinMaxTime()
+			})
 		})
 	}
 }
@@ -2761,7 +2898,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 					finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks{
 						{ID: block1},
 						{ID: block2},
-					}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
+					}, error(nil))
 
 					// Mock the store-gateway response, to simulate the case each block is queried from a different gateway.
 					gateway1 := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: append(testData.storeGateway1Responses, mockHintsResponse(block1))}
@@ -2783,13 +2920,13 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 					// Instantiate the querier that will be executed to run the query.
 					logger := log.NewNopLogger()
-					queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistency(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
+					queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistency(0, nil), &blocksStoreLimitsMock{}, 0, 0, logger, nil)
 					require.NoError(t, err)
 					require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
 					defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
 
 					engine := promql.NewEngine(promql.EngineOpts{
-						Logger:     logger,
+						Logger:     util_log.SlogFromGoKit(logger),
 						Timeout:    10 * time.Second,
 						MaxSamples: 1e6,
 					})
@@ -2941,9 +3078,9 @@ type blocksFinderMock struct {
 	mock.Mock
 }
 
-func (m *blocksFinderMock) GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, map[ulid.ULID]*bucketindex.BlockDeletionMark, error) {
+func (m *blocksFinderMock) GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, error) {
 	args := m.Called(ctx, userID, minT, maxT)
-	return args.Get(0).(bucketindex.Blocks), args.Get(1).(map[ulid.ULID]*bucketindex.BlockDeletionMark), args.Error(2)
+	return args.Get(0).(bucketindex.Blocks), args.Error(1)
 }
 
 type storeGatewayClientMock struct {
@@ -3089,6 +3226,10 @@ func mockSeriesResponse(lbls labels.Labels, timeMillis int64, value float64) *st
 
 func mockSeriesResponseWithSamples(lbls labels.Labels, samples ...promql.FPoint) *storepb.SeriesResponse {
 	return mockSeriesResponseWithChunks(lbls, createAggrChunkWithSamples(samples...))
+}
+
+func mockSeriesResponseWithFloatHistogramSamples(lbls labels.Labels, samples ...promql.HPoint) *storepb.SeriesResponse {
+	return mockSeriesResponseWithChunks(lbls, createAggrChunkWithFloatHistogramSamples(samples...))
 }
 
 func mockSeriesResponseWithChunks(lbls labels.Labels, chunks ...storepb.AggrChunk) *storepb.SeriesResponse {
@@ -3243,84 +3384,96 @@ func TestStoreConsistencyCheckFailedErr(t *testing.T) {
 	})
 }
 
-func TestShouldStopQueryFunc(t *testing.T) {
+func TestShouldRetry(t *testing.T) {
 	tests := map[string]struct {
 		err      error
 		expected bool
 	}{
-		"should return true on context canceled": {
+		"should not retry on context canceled": {
 			err:      context.Canceled,
-			expected: true,
+			expected: false,
 		},
-		"should return true on wrapped context canceled": {
+		"should not retry on wrapped context canceled": {
 			err:      errors.Wrap(context.Canceled, "test"),
-			expected: true,
+			expected: false,
 		},
-		"should return true on deadline exceeded": {
+		"should not retry on deadline exceeded": {
 			err:      context.DeadlineExceeded,
-			expected: true,
+			expected: false,
 		},
-		"should return true on wrapped deadline exceeded": {
+		"should not retry on wrapped deadline exceeded": {
 			err:      errors.Wrap(context.DeadlineExceeded, "test"),
-			expected: true,
+			expected: false,
 		},
-		"should return true on gRPC error with status code = 422": {
+		"should not retry on gRPC error with status code = 422": {
 			err:      status.Error(http.StatusUnprocessableEntity, "test"),
-			expected: true,
+			expected: false,
 		},
-		"should return true on wrapped gRPC error with status code = 422": {
+		"should not retry on wrapped gRPC error with status code = 422": {
 			err:      errors.Wrap(status.Error(http.StatusUnprocessableEntity, "test"), "test"),
-			expected: true,
+			expected: false,
 		},
-		"should return true on gogo error with status code = 422": {
+		"should not retry on gogo error with status code = 422": {
 			err:      gogoStatus.Error(http.StatusUnprocessableEntity, "test"),
-			expected: true,
+			expected: false,
 		},
-		"should return true on wrapped gogo error with status code = 422": {
+		"should not retry on wrapped gogo error with status code = 422": {
 			err:      errors.Wrap(gogoStatus.Error(http.StatusUnprocessableEntity, "test"), "test"),
+			expected: false,
+		},
+		"should retry on gRPC error with status code != 422": {
+			err:      status.Error(http.StatusInternalServerError, "test"),
 			expected: true,
 		},
-		"should return false on gRPC error with status code != 422": {
-			err:      status.Error(http.StatusInternalServerError, "test"),
-			expected: false,
+		"should retry on grpc.ErrClientConnClosing": {
+			// Ignore deprecation warning for now
+			// nolint:staticcheck
+			err:      grpc.ErrClientConnClosing,
+			expected: true,
 		},
-		"should return false on generic error": {
+		"should retry on wrapped grpc.ErrClientConnClosing": {
+			// Ignore deprecation warning for now
+			// nolint:staticcheck
+			err:      globalerror.WrapGRPCErrorWithContextError(context.Background(), grpc.ErrClientConnClosing),
+			expected: true,
+		},
+		"should retry on generic error": {
 			err:      errors.New("test"),
-			expected: false,
+			expected: true,
 		},
-		"should not stop query on store-gateway instance limit": {
+		"should retry stop query on store-gateway instance limit": {
 			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Aborted, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}).Err(),
-			expected: false,
+			expected: true,
 		},
-		"should not stop query on store-gateway instance limit; shouldn't look at the gRPC code, only Mimir error cause": {
+		"should retry on store-gateway instance limit; shouldn't look at the gRPC code, only Mimir error cause": {
 			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT}).Err(),
-			expected: false,
+			expected: true,
 		},
-		"should not stop query on any other mimirpb error": {
+		"should retry on any other mimirpb error": {
 			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Internal, &mimirpb.ErrorDetails{Cause: mimirpb.TOO_BUSY}).Err(),
-			expected: false,
+			expected: true,
 		},
-		"should not stop query on any unknown error detail": {
+		"should retry on any unknown error detail": {
 			err: func() error {
 				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"})
 				require.NoError(t, createErr)
 				return st.Err()
 			}(),
-			expected: false,
+			expected: true,
 		},
-		"should not stop query on multiple error details": {
+		"should retry on multiple error details": {
 			err: func() error {
 				st, createErr := status.New(codes.Internal, "test").WithDetails(&hintspb.Block{Id: "123"}, &mimirpb.ErrorDetails{Cause: mimirpb.INSTANCE_LIMIT})
 				require.NoError(t, createErr)
 				return st.Err()
 			}(),
-			expected: false,
+			expected: true,
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, testData.expected, shouldStopQueryFunc(testData.err))
+			assert.Equal(t, testData.expected, shouldRetry(testData.err))
 		})
 	}
 }

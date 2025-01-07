@@ -78,6 +78,18 @@ mimir_continuous_test_writes_total{test="<name>"}
 # TYPE mimir_continuous_test_writes_failed_total counter
 mimir_continuous_test_writes_failed_total{test="<name>",status_code="<code>"}
 
+# HELP mimir_continuous_test_writes_request_duration_seconds Duration of the requests
+# TYPE mimir_continuous_test_writes_request_duration_seconds histogram
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.001"}
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.004"}
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.016"}
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.064"}
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="0.256"}
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="1.024"}
+mimir_continuous_test_writes_request_duration_seconds_bucket{test="<name>",le="+Inf"}
+mimir_continuous_test_writes_request_duration_seconds_sum{test="<name>"}
+mimir_continuous_test_writes_request_duration_seconds_count{test="<name>"}
+
 # HELP mimir_continuous_test_queries_total Total number of attempted query requests.
 # TYPE mimir_continuous_test_queries_total counter
 mimir_continuous_test_queries_total{test="<name>"}
@@ -93,6 +105,27 @@ mimir_continuous_test_query_result_checks_total{test="<name>"}
 # HELP mimir_continuous_test_query_result_checks_failed_total Total number of query results failed when checking for correctness.
 # TYPE mimir_continuous_test_query_result_checks_failed_total counter
 mimir_continuous_test_query_result_checks_failed_total{test="<name>"}
+
+# HELP mimir_continuous_test_queries_request_duration_seconds Duration of the requests
+# TYPE mimir_continuous_test_queries_request_duration_seconds histogram
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.001"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.004"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.016"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.064"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="0.256"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="1.024"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="false",test="<name>",le="+Inf"}
+mimir_continuous_test_queries_request_duration_seconds_sum{results_cache="false",test="<name>"}
+mimir_continuous_test_queries_request_duration_seconds_count{results_cache="false",test="<name>"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.001"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.004"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.016"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.064"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="0.256"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="1.024"}
+mimir_continuous_test_queries_request_duration_seconds_bucket{results_cache="true",test="<name>",le="+Inf"}
+mimir_continuous_test_queries_request_duration_seconds_sum{results_cache="true",test="<name>"}
+mimir_continuous_test_queries_request_duration_seconds_count{results_cache="true",test="<name>"}
 ```
 
 ### Alerts

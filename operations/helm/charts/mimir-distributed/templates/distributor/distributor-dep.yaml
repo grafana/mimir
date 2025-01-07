@@ -1,3 +1,4 @@
+{{- if and .Values.distributor.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -67,7 +68,7 @@ spec:
             {{- end }}
           {{- end }}
           {{- range $key, $value := .Values.distributor.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.distributor.extraVolumeMounts }}
@@ -176,4 +177,4 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
-
+{{- end }}

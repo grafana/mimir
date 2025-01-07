@@ -108,7 +108,7 @@ jobs:
   doc-validator:
     runs-on: ubuntu-latest
     container:
-      image: grafana/doc-validator:v5.1.0
+      image: grafana/doc-validator:v5.2.0
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -117,7 +117,7 @@ jobs:
       - name: Run doc-validator tool (mimir)
         run: >
           doc-validator
-          '--skip-checks=^canonical-does-not-match-pretty-URL$'
+          '--skip-checks=^canonical-does-not-match-pretty-URL|image.+$'
           docs/sources/mimir
           /docs/mimir/latest
           | reviewdog

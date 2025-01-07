@@ -16,10 +16,13 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-openapi/strfmt"
 	alertingmodels "github.com/grafana/alerting/models"
+	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
+	v2_models "github.com/prometheus/alertmanager/api/v2/models"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
@@ -563,7 +566,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 				return alertmanagers.WaitSumMetricsWithOptions(
 					e2e.Equals(float64(amount)),
 					[]string{"cortex_alertmanager_silences"},
-					e2e.WaitMissingMetrics,
+					e2e.SkipMissingMetrics,
 					e2e.WithLabelMatchers(
 						labels.MustNewMatcher(labels.MatchEqual, "state", state),
 					),
@@ -924,9 +927,10 @@ func TestAlertmanagerShardingScaling(t *testing.T) {
 					e2e.Equals(float64(numUsers*expectedReplication)),
 					"cortex_alertmanager_config_last_reload_successful"))
 
-				require.NoError(t, ams.WaitSumMetrics(
+				require.NoError(t, ams.WaitSumMetricsWithOptions(
 					e2e.Equals(float64(expectedSilences*expectedReplication)),
-					"cortex_alertmanager_silences"))
+					[]string{"cortex_alertmanager_silences"},
+					e2e.SkipMissingMetrics))
 			}
 
 			// Start up the first instance and use it to create some silences.
@@ -1032,6 +1036,11 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 			"templates": null
 		}
 	}`
+
+	staticHeaders := map[string]string{
+		"Header-1": "Value-1",
+		"Header-2": "Value-2",
+	}
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -1064,7 +1073,7 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 
 			// Now, let's set a config.
 			now := time.Now().UnixMilli()
-			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", false)
+			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", "http://test.com", false, true, staticHeaders)
 			require.NoError(t, err)
 
 			// With that set, let's get it back.
@@ -1085,7 +1094,7 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 
 			// Now, let's set a config.
 			now := time.Now().UnixMilli()
-			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", false)
+			err = c.SetGrafanaAlertmanagerConfig(context.Background(), now, testGrafanaConfig, "bb788eaa294c05ec556c1ed87546b7a9", "http://test.com", false, true, staticHeaders)
 			require.NoError(t, err)
 
 			// With that set, let's get it back.
@@ -1155,4 +1164,136 @@ func TestAlertmanagerGrafanaAlertmanagerAPI(t *testing.T) {
 		}
 
 	}
+}
+
+func TestAlertmanagerTestTemplates(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, alertsBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	flags := mergeFlags(AlertmanagerFlags(),
+		AlertmanagerS3Flags(),
+		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+		AlertmanagerGrafanaCompatibilityFlags())
+
+	am := e2emimir.NewAlertmanager(
+		"alertmanager",
+		flags,
+	)
+	require.NoError(t, s.StartAndWaitReady(am))
+
+	c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
+	require.NoError(t, err)
+
+	startTime, err := time.Parse(time.RFC3339, "2024-01-01T00:00:00Z")
+	require.NoError(t, err)
+	endTime, err := time.Parse(time.RFC3339, "2024-01-01T02:00:00Z")
+	require.NoError(t, err)
+
+	// Endpoint: POST /api/v1/grafana/templates/test
+	ttConfig := alertingNotify.TestTemplatesConfigBodyParams{
+		Alerts: []*alertingNotify.PostableAlert{
+			{
+				StartsAt:    strfmt.DateTime(startTime),
+				EndsAt:      strfmt.DateTime(endTime),
+				Annotations: v2_models.LabelSet{"annotation": "test annotation"},
+				Alert: v2_models.Alert{
+					GeneratorURL: strfmt.URI("http://www.grafana.com"),
+					Labels:       v2_models.LabelSet{"label": "test label"},
+				},
+			},
+		},
+		Template: `{{ define "Testing123" }}\n  This is a test template\n{{ end }}`,
+		Name:     "Testing123",
+	}
+
+	res, err := c.TestTemplatesExperimental(context.Background(), ttConfig)
+	require.NoError(t, err)
+
+	require.Len(t, res.Results, 1)
+	require.Len(t, res.Errors, 0)
+
+	tmplResult := res.Results[0]
+	require.Equal(t, tmplResult.Name, "Testing123")
+	require.Equal(t, tmplResult.Text, `\n  This is a test template\n`)
+}
+
+func TestAlertmanagerTestReceivers(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, alertsBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	flags := mergeFlags(AlertmanagerFlags(),
+		AlertmanagerS3Flags(),
+		AlertmanagerShardingFlags(consul.NetworkHTTPEndpoint(), 1),
+		AlertmanagerGrafanaCompatibilityFlags())
+
+	am := e2emimir.NewAlertmanager(
+		"alertmanager",
+		flags,
+	)
+	require.NoError(t, s.StartAndWaitReady(am))
+
+	c, err := e2emimir.NewClient("", "", am.HTTPEndpoint(), "", "user-1")
+	require.NoError(t, err)
+
+	// Endpoint: POST /api/v1/grafana/receivers/test
+	trConfig := alertingNotify.TestReceiversConfigBodyParams{
+		Alert: &alertingNotify.TestReceiversConfigAlertParams{
+			Annotations: model.LabelSet{"annotation": "test annotation"},
+			Labels:      model.LabelSet{"label": "test label"},
+		},
+		Receivers: []*alertingNotify.APIReceiver{
+			{
+				GrafanaIntegrations: alertingNotify.GrafanaIntegrations{
+					Integrations: []*alertingNotify.GrafanaIntegrationConfig{
+						{
+							UID:                   "uid",
+							Name:                  "test integration",
+							Type:                  "oncall",
+							DisableResolveMessage: false,
+							Settings:              json.RawMessage(`{ "url" : "http://www.grafana.com" }`),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	res, err := c.TestReceiversExperimental(context.Background(), trConfig)
+	require.NoError(t, err)
+
+	// Default annotations from Test Alert
+	// "summary":          "Notification test",
+	// "__value_string__": "[ metric='foo' labels={instance=bar} value=10 ]"
+	expectedAnnotations := model.LabelSet{
+		"annotation":       "test annotation",
+		"summary":          "Notification test",
+		"__value_string__": "[ metric='foo' labels={instance=bar} value=10 ]",
+	}
+	require.Equal(t, expectedAnnotations, res.Alert.Annotations)
+
+	// Default labels from Test Alert
+	// "alertname": "TestAlert"
+	// "instance":  "Grafana"
+	expectedLabels := model.LabelSet{
+		"label":     "test label",
+		"alertname": "TestAlert",
+		"instance":  "Grafana",
+	}
+	require.Equal(t, expectedLabels, res.Alert.Labels)
+
+	require.Len(t, res.Receivers, 1)
+	require.Len(t, res.Receivers[0].Configs, 1)
+	require.Equal(t, trConfig.Receivers[0].GrafanaIntegrations.Integrations[0].UID, res.Receivers[0].Configs[0].UID)
+	require.Equal(t, trConfig.Receivers[0].GrafanaIntegrations.Integrations[0].Name, res.Receivers[0].Configs[0].Name)
+	require.Equal(t, "", res.Receivers[0].Configs[0].Error)
 }

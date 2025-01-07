@@ -6,7 +6,7 @@ metadata:
   name: test-requests-and-limits-values-minio
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.4.0
     release: test-requests-and-limits-values
     heritage: Helm
 spec:

@@ -21,12 +21,14 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	alertingmodels "github.com/grafana/alerting/models"
+	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/klauspost/compress/s2"
 	alertConfig "github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/types"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	promConfig "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	"github.com/prometheus/prometheus/storage/remote"
@@ -350,7 +352,7 @@ func parseRemoteReadSamples(resp *http.Response) (*prompb.QueryResult, error) {
 }
 
 func parseRemoteReadChunks(resp *http.Response) ([]prompb.ChunkedReadResponse, error) {
-	stream := remote.NewChunkedReader(resp.Body, remote.DefaultChunkedReadLimit, nil)
+	stream := remote.NewChunkedReader(resp.Body, promConfig.DefaultChunkedReadLimit, nil)
 
 	var results []prompb.ChunkedReadResponse
 	for {
@@ -393,29 +395,29 @@ func (c *Client) QueryRawAt(query string, ts time.Time) (*http.Response, []byte,
 }
 
 // Series finds series by label matchers.
-func (c *Client) Series(matches []string, start, end time.Time) ([]model.LabelSet, error) {
+func (c *Client) Series(matches []string, start, end time.Time, opts ...promv1.Option) ([]model.LabelSet, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.Series(ctx, matches, start, end)
+	result, _, err := c.querierClient.Series(ctx, matches, start, end, opts...)
 	return result, err
 }
 
 // LabelValues gets label values
-func (c *Client) LabelValues(label string, start, end time.Time, matches []string) (model.LabelValues, error) {
+func (c *Client) LabelValues(label string, start, end time.Time, matches []string, opts ...promv1.Option) (model.LabelValues, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.LabelValues(ctx, label, matches, start, end)
+	result, _, err := c.querierClient.LabelValues(ctx, label, matches, start, end, opts...)
 	return result, err
 }
 
 // LabelNames gets label names
-func (c *Client) LabelNames(start, end time.Time) ([]string, error) {
+func (c *Client) LabelNames(start, end time.Time, matches []string, opts ...promv1.Option) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.LabelNames(ctx, nil, start, end)
+	result, _, err := c.querierClient.LabelNames(ctx, matches, start, end, opts...)
 	return result, err
 }
 
@@ -672,11 +674,27 @@ type successResult struct {
 }
 
 // GetPrometheusRules fetches the rules from the Prometheus endpoint /api/v1/rules.
-func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
-	// Create HTTP request
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/prometheus/api/v1/rules", c.rulerAddress), nil)
+func (c *Client) GetPrometheusRules(maxGroups int, token string) ([]*promv1.RuleGroup, string, error) {
+	url, err := url.Parse(fmt.Sprintf("http://%s/prometheus/api/v1/rules", c.rulerAddress))
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	if token != "" {
+		q := url.Query()
+		q.Add("group_next_token", token)
+		url.RawQuery = q.Encode()
+	}
+
+	if maxGroups != 0 {
+		q := url.Query()
+		q.Add("group_limit", strconv.Itoa(maxGroups))
+		url.RawQuery = q.Encode()
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequest("GET", url.String(), nil)
+	if err != nil {
+		return nil, "", err
 	}
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
@@ -686,13 +704,13 @@ func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
 	// Execute HTTP request
 	res, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	// Decode the response.
@@ -700,27 +718,28 @@ func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
 		Status string `json:"status"`
 		Data   struct {
 			RuleGroups []*promv1.RuleGroup `json:"groups"`
+			NextToken  string              `json:"groupNextToken,omitempty"`
 		} `json:"data"`
 	}
 
 	decoded := response{}
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if decoded.Status != "success" {
-		return nil, fmt.Errorf("unexpected response status '%s'", decoded.Status)
+		return nil, "", fmt.Errorf("unexpected response status '%s'", decoded.Status)
 	}
 
-	return decoded.Data.RuleGroups, nil
+	return decoded.Data.RuleGroups, decoded.Data.NextToken, nil
 }
 
 // GetRuleGroups gets the configured rule groups from the ruler.
-func (c *Client) GetRuleGroups() (map[string][]rulefmt.RuleGroup, error) {
+func (c *Client) GetRuleGroups() (*http.Response, map[string][]rulefmt.RuleGroup, error) {
 	// Create HTTP request
 	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/prometheus/config/v1/rules", c.rulerAddress), nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
@@ -728,25 +747,25 @@ func (c *Client) GetRuleGroups() (map[string][]rulefmt.RuleGroup, error) {
 	defer cancel()
 
 	// Execute HTTP request
-	res, err := c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	defer res.Body.Close()
+	defer resp.Body.Close()
 	rgs := map[string][]rulefmt.RuleGroup{}
 
-	data, err := io.ReadAll(res.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	err = yaml.Unmarshal(data, rgs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return rgs, nil
+	return resp, rgs, nil
 }
 
 // SetRuleGroup configures the provided rulegroup to the ruler.
@@ -817,12 +836,16 @@ func (c *Client) DeleteRuleGroup(namespace string, groupName string) error {
 	defer cancel()
 
 	// Execute HTTP request
-	res, err := c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
-	defer res.Body.Close()
+	if resp.StatusCode != 202 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
 	return nil
 }
 
@@ -840,9 +863,16 @@ func (c *Client) DeleteRuleNamespace(namespace string) error {
 	defer cancel()
 
 	// Execute HTTP request
-	_, err = c.httpClient.Do(req.WithContext(ctx))
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return err
+	}
+
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 202 {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+
 	}
 
 	return nil
@@ -1041,7 +1071,7 @@ func (c *Client) GetGrafanaAlertmanagerConfig(ctx context.Context) (*alertmanage
 	return ugc, err
 }
 
-func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTimestamp int64, cfg, hash string, isDefault bool) error {
+func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTimestamp int64, cfg, hash, externalURL string, isDefault, isPromoted bool, staticHeaders map[string]string) error {
 	var grafanaConfig alertmanager.GrafanaAlertmanagerConfig
 	if err := json.Unmarshal([]byte(cfg), &grafanaConfig); err != nil {
 		return err
@@ -1053,6 +1083,9 @@ func (c *Client) SetGrafanaAlertmanagerConfig(ctx context.Context, createdAtTime
 		Hash:                      hash,
 		CreatedAt:                 createdAtTimestamp,
 		Default:                   isDefault,
+		Promoted:                  isPromoted,
+		ExternalURL:               externalURL,
+		StaticHeaders:             staticHeaders,
 	})
 	if err != nil {
 		return err
@@ -1463,6 +1496,76 @@ func (c *Client) GetReceiversExperimental(ctx context.Context) ([]alertingmodels
 	}
 
 	return decoded, nil
+}
+
+func (c *Client) TestTemplatesExperimental(ctx context.Context, ttConf alertingNotify.TestTemplatesConfigBodyParams) (*alertingNotify.TestTemplatesResults, error) {
+	u := c.alertmanagerClient.URL("api/v1/grafana/templates/test", nil)
+
+	data, err := json.Marshal(ttConf)
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling test templates config: %s", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %s", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("testing templates failed with status %d and error %s", resp.StatusCode, string(body))
+	}
+
+	decoded := alertingNotify.TestTemplatesResults{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, err
+	}
+
+	return &decoded, nil
+}
+
+func (c *Client) TestReceiversExperimental(ctx context.Context, trConf alertingNotify.TestReceiversConfigBodyParams) (*alertingNotify.TestReceiversResult, error) {
+	u := c.alertmanagerClient.URL("api/v1/grafana/receivers/test", nil)
+
+	data, err := json.Marshal(trConf)
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling test receivers config: %s", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %s", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("testing receivers failed with status %d and error %s", resp.StatusCode, string(body))
+	}
+
+	decoded := alertingNotify.TestReceiversResult{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, err
+	}
+
+	return &decoded, nil
 }
 
 // DoGet performs a HTTP GET request towards the supplied URL. The request

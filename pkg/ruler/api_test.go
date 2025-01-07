@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
@@ -31,22 +32,26 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	mimirtest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestRuler_ListRules(t *testing.T) {
 	const (
-		userID   = "user1"
-		interval = time.Minute
+		userID                      = "user1"
+		interval                    = time.Minute
+		skippedMissingRuleGroupsMsg = "list rules API skipped some rule groups, because missing when loading them after listing the storage"
 	)
 
 	testCases := map[string]struct {
-		requestPath        string
-		configuredRules    rulespb.RuleGroupList
-		missingRules       rulespb.RuleGroupList
-		expectedStatusCode int
-		expectedRules      map[string][]rulefmt.RuleGroup
-		expectedErr        string
+		requestPath          string
+		configuredRules      rulespb.RuleGroupList
+		missingRules         rulespb.RuleGroupList
+		expectedStatusCode   int
+		expectedRules        map[string][]rulefmt.RuleGroup
+		expectedErr          string
+		expectLogsContain    []string
+		expectLogsNotContain []string
 	}{
 		"should list all rule groups of an user if the namespace parameter is missing": {
 			requestPath: "/prometheus/config/v1/rules",
@@ -87,6 +92,7 @@ func TestRuler_ListRules(t *testing.T) {
 					}),
 				},
 			},
+			expectLogsNotContain: []string{skippedMissingRuleGroupsMsg},
 		},
 		"should list all rule groups of an user belonging to the input namespace": {
 			requestPath: "/prometheus/config/v1/rules/namespace1",
@@ -118,10 +124,19 @@ func TestRuler_ListRules(t *testing.T) {
 					}),
 				},
 			},
+			expectLogsNotContain: []string{skippedMissingRuleGroupsMsg},
 		},
-		"should fail if some rule groups were missing when loading them": {
+		"should succeed if a rule group was missing when loading it, because the rule group could have just been deleted between listing and loading (missing rule group at the beginning of the list)": {
 			requestPath: "/prometheus/config/v1/rules",
 			configuredRules: rulespb.RuleGroupList{
+				// Include the missing rule group to make sure it will be filtered out by the API.
+				// Keep it at the beginning of the list in this test.
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace3",
+					User:      userID,
+				},
+
 				&rulespb.RuleGroupDesc{
 					Name:      "group1",
 					Namespace: "namespace1",
@@ -144,8 +159,172 @@ func TestRuler_ListRules(t *testing.T) {
 					User:      userID,
 				},
 			},
-			expectedStatusCode: http.StatusInternalServerError,
-			expectedErr:        "an error occurred while loading 1 rule groups",
+			expectedStatusCode: http.StatusOK,
+			expectedRules: map[string][]rulefmt.RuleGroup{
+				"namespace1": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace1",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up"), createAlertingRule("UP_ALERT", "up < 1")},
+						Interval:  interval,
+					}),
+				},
+				"namespace2": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace2",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{createRecordingRule("COUNT_UP_RULE", "count(up)")},
+						Interval:  interval,
+					}),
+				},
+			},
+			expectLogsContain: []string{skippedMissingRuleGroupsMsg},
+		},
+		"should succeed if a rule group was missing when loading it, because the rule group could have just been deleted between listing and loading (missing rule group in the middle of the list)": {
+			requestPath: "/prometheus/config/v1/rules",
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up"), createAlertingRule("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+
+				// Include the missing rule group to make sure it will be filtered out by the API.
+				// Keep it in the middle the list in this test.
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace3",
+					User:      userID,
+				},
+
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace2",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{createRecordingRule("COUNT_UP_RULE", "count(up)")},
+					Interval:  interval,
+				},
+			},
+			missingRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace3",
+					User:      userID,
+				},
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedRules: map[string][]rulefmt.RuleGroup{
+				"namespace1": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace1",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up"), createAlertingRule("UP_ALERT", "up < 1")},
+						Interval:  interval,
+					}),
+				},
+				"namespace2": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace2",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{createRecordingRule("COUNT_UP_RULE", "count(up)")},
+						Interval:  interval,
+					}),
+				},
+			},
+			expectLogsContain: []string{skippedMissingRuleGroupsMsg},
+		},
+		"should succeed if a rule group was missing when loading it, because the rule group could have just been deleted between listing and loading (missing rule group at the end of the list)": {
+			requestPath: "/prometheus/config/v1/rules",
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up"), createAlertingRule("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace2",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{createRecordingRule("COUNT_UP_RULE", "count(up)")},
+					Interval:  interval,
+				},
+
+				// Include the missing rule group to make sure it will be filtered out by the API.
+				// Keep it at the end of the list in this test.
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace3",
+					User:      userID,
+				},
+			},
+			missingRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace3",
+					User:      userID,
+				},
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedRules: map[string][]rulefmt.RuleGroup{
+				"namespace1": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace1",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{createRecordingRule("UP_RULE", "up"), createAlertingRule("UP_ALERT", "up < 1")},
+						Interval:  interval,
+					}),
+				},
+				"namespace2": {
+					rulespb.FromProto(&rulespb.RuleGroupDesc{
+						Name:      "group1",
+						Namespace: "namespace2",
+						User:      userID,
+						Rules:     []*rulespb.RuleDesc{createRecordingRule("COUNT_UP_RULE", "count(up)")},
+						Interval:  interval,
+					}),
+				},
+			},
+			expectLogsContain: []string{skippedMissingRuleGroupsMsg},
+		},
+		"should succeed if all rule groups were missing when loading it, because the rule group could have just been deleted between listing and loading": {
+			requestPath: "/prometheus/config/v1/rules",
+			configuredRules: rulespb.RuleGroupList{
+				// Include the missing rule groups to make sure they will be filtered out by the API.
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+				},
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace2",
+					User:      userID,
+				},
+			},
+			missingRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+				},
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace2",
+					User:      userID,
+				},
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedRules:      map[string][]rulefmt.RuleGroup{},
+			expectLogsContain:  []string{skippedMissingRuleGroupsMsg},
 		},
 	}
 
@@ -162,8 +341,9 @@ func TestRuler_ListRules(t *testing.T) {
 			store := newMockRuleStore(map[string]rulespb.RuleGroupList{userID: tc.configuredRules})
 			store.setMissingRuleGroups(tc.missingRules)
 
+			logs := &concurrency.SyncBuffer{}
 			r := prepareRuler(t, cfg, store, withStart())
-			a := NewAPI(r, r.directStore, log.NewNopLogger())
+			a := NewAPI(r, r.store, log.NewLogfmtLogger(logs))
 
 			router := mux.NewRouter()
 			router.Path("/prometheus/config/v1/rules").Methods("GET").HandlerFunc(a.ListRules)
@@ -183,6 +363,14 @@ func TestRuler_ListRules(t *testing.T) {
 				require.YAMLEq(t, string(expectedYAML), string(body))
 			} else {
 				require.Contains(t, string(body), tc.expectedErr)
+			}
+
+			// Check logs.
+			for _, expect := range tc.expectLogsContain {
+				require.Contains(t, logs.String(), expect)
+			}
+			for _, expect := range tc.expectLogsNotContain {
+				require.NotContains(t, logs.String(), expect)
 			}
 		})
 
@@ -542,6 +730,77 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				},
 			},
 		},
+		"API request with exclude_alerts=true returns alerting rules without alerts": {
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{createAlertingRule("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+			},
+			expectedConfigured: 1,
+			queryParams:        "?exclude_alerts=true",
+			limits:             validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: "group1",
+					File: "namespace1",
+					Rules: []rule{
+						&alertingRule{
+							Name:   "UP_ALERT",
+							Query:  "up < 1",
+							State:  "inactive",
+							Health: "unknown",
+							Type:   "alerting",
+							Alerts: nil,
+						},
+					},
+					Interval: 60,
+				},
+			},
+		},
+		"API request with exclude_alerts=false returns alerting rules including alerts": {
+			configuredRules: rulespb.RuleGroupList{
+				&rulespb.RuleGroupDesc{
+					Name:      "group1",
+					Namespace: "namespace1",
+					User:      userID,
+					Rules:     []*rulespb.RuleDesc{createAlertingRule("UP_ALERT", "up < 1")},
+					Interval:  interval,
+				},
+			},
+			expectedConfigured: 1,
+			queryParams:        "?exclude_alerts=false",
+			limits:             validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: "group1",
+					File: "namespace1",
+					Rules: []rule{
+						&alertingRule{
+							Name:   "UP_ALERT",
+							Query:  "up < 1",
+							State:  "inactive",
+							Health: "unknown",
+							Type:   "alerting",
+							Alerts: []*Alert{},
+						},
+					},
+					Interval: 60,
+				},
+			},
+		},
+		"Invalid exclude_alerts param": {
+			configuredRules:    rulespb.RuleGroupList{},
+			expectedConfigured: 0,
+			queryParams:        "?exclude_alerts=foo",
+			limits:             validation.MockDefaultOverrides(),
+			expectedStatusCode: http.StatusBadRequest,
+			expectedErrorType:  v1.ErrBadData,
+			expectedRules:      []*RuleGroup{},
+		},
 		"Invalid type param": {
 			configuredRules:    rulespb.RuleGroupList{},
 			expectedConfigured: 0,
@@ -865,7 +1124,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				return len(rls.Groups)
 			})
 
-			a := NewAPI(r, r.directStore, log.NewNopLogger())
+			a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 			req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/rules"+tc.queryParams, nil, userID)
 			w := httptest.NewRecorder()
@@ -922,7 +1181,7 @@ func TestRuler_PrometheusAlerts(t *testing.T) {
 		return len(rls.Groups)
 	})
 
-	a := NewAPI(r, r.directStore, log.NewNopLogger())
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 	req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/alerts", nil, "user1")
 	w := httptest.NewRecorder()
@@ -1096,11 +1355,12 @@ rules:
 			// Configure the ruler to only sync the rules based on notifications upon API changes.
 			rulerCfg := tt.cfg
 			rulerCfg.PollInterval = time.Hour
-			rulerCfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+			rulerCfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
+			rulerCfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
 
 			reg := prometheus.NewPedanticRegistry()
 			r := prepareRuler(t, rulerCfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg))
-			a := NewAPI(r, r.directStore, log.NewNopLogger())
+			a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 			router := mux.NewRouter()
 			router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
@@ -1135,11 +1395,98 @@ rules:
 	}
 }
 
+func TestAPI_CreateRuleGroupWithCaching(t *testing.T) {
+	// Configure the ruler to only sync the rules based on notifications upon API changes.
+	cfg := defaultRulerConfig(t)
+	cfg.PollInterval = time.Hour
+	cfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+	cfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
+
+	const successResponse = `{"status":"success","data":null,"errorType":"","error":""}`
+
+	ruleGroupVersion1 := `name: group1
+interval: 15s
+rules:
+    - record: up_rule
+      expr: up
+    - alert: up_alert
+      expr: up < 1
+`
+	ruleGroupVersion2 := `name: group1
+interval: 15s
+rules:
+    - record: up_rule
+      expr: up
+    - alert: up_alert
+      expr: up <= 1
+`
+
+	mockCache, store := newInMemoryRuleStore(t)
+
+	reg := prometheus.NewPedanticRegistry()
+	// Set rule group limits since this performs a list call to count the current number of rule groups
+	// and we're testing if the API layer is correctly telling the rule store not to serve cached results.
+	r := prepareRuler(t, cfg, store, withStart(), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		defaults.RulerMaxRuleGroupsPerTenant = 2
+		defaults.RulerMaxRulesPerRuleGroup = 2
+	})))
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
+
+	router := mux.NewRouter()
+	router.Path("/prometheus/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodGet).HandlerFunc(a.GetRuleGroup)
+	router.Path("/prometheus/config/v1/rules/{namespace}").Methods(http.MethodPost).HandlerFunc(a.CreateRuleGroup)
+
+	// Pre-condition check: the ruler should have run the initial rules sync.
+	verifySyncRulesMetric(t, reg, 1, 0)
+
+	// Store the initial version of the rule group
+	req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace1", strings.NewReader(ruleGroupVersion1), "user1")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusAccepted, w.Code)
+	assert.Equal(t, successResponse, w.Body.String())
+	// Invalidation of exists and content
+	assert.Equal(t, 2, mockCache.CountDeleteCalls())
+
+	verifySyncRulesMetric(t, reg, 1, 1)
+
+	// Fetch it back and ensure the content is what we expect even though content can be cached
+	req = requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/config/v1/rules/namespace1/group1", nil, "user1")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, ruleGroupVersion1, w.Body.String())
+	// Iter from initial sync, get, iter from sync
+	assert.Equal(t, 3, mockCache.CountFetchCalls())
+
+	// Store a new version of the group that is slightly different
+	req = requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace1", strings.NewReader(ruleGroupVersion2), "user1")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusAccepted, w.Code)
+	assert.Equal(t, successResponse, w.Body.String())
+	// Invalidating exists and content again
+	assert.Equal(t, 4, mockCache.CountDeleteCalls())
+
+	verifySyncRulesMetric(t, reg, 1, 2)
+
+	// Fetch it back and ensure content is updated to the new version meaning the cache was invalidated
+	req = requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/config/v1/rules/namespace1/group1", nil, "user1")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, ruleGroupVersion2, w.Body.String())
+	// Iter from initial sync, get, iter from sync, another get, iter from sync
+	assert.Equal(t, 5, mockCache.CountFetchCalls())
+
+}
+
 func TestAPI_DeleteNamespace(t *testing.T) {
 	// Configure the ruler to only sync the rules based on notifications upon API changes.
 	cfg := defaultRulerConfig(t)
 	cfg.PollInterval = time.Hour
-	cfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+	cfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+	cfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
 
 	// Keep this inside the test, not as global var, otherwise running tests with -count higher than 1 fails,
 	// as newMockRuleStore modifies the underlying map.
@@ -1164,7 +1511,7 @@ func TestAPI_DeleteNamespace(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	r := prepareRuler(t, cfg, newMockRuleStore(mockRulesNamespaces), withStart(), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg))
-	a := NewAPI(r, r.directStore, log.NewNopLogger())
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 	router := mux.NewRouter()
 	router.Path("/prometheus/config/v1/rules/{namespace}").Methods(http.MethodDelete).HandlerFunc(a.DeleteNamespace)
@@ -1207,7 +1554,8 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 	// Configure the ruler to only sync the rules based on notifications upon API changes.
 	cfg := defaultRulerConfig(t)
 	cfg.PollInterval = time.Hour
-	cfg.rulerSyncQueuePollFrequency = 100 * time.Millisecond
+	cfg.OutboundSyncQueuePollInterval = 100 * time.Millisecond
+	cfg.InboundSyncQueuePollInterval = 100 * time.Millisecond
 
 	// Keep this inside the test, not as global var, otherwise running tests with -count higher than 1 fails,
 	// as newMockRuleStore modifies the underlying map.
@@ -1220,7 +1568,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	r := prepareRuler(t, cfg, newMockRuleStore(mockRulesNamespaces), withStart(), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg))
-	a := NewAPI(r, r.directStore, log.NewNopLogger())
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 	router := mux.NewRouter()
 	router.Path("/prometheus/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodDelete).HandlerFunc(a.DeleteRuleGroup)
@@ -1230,7 +1578,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 
 	// Pre-condition check: the tenant should have 2 rule groups.
 	test.Poll(t, time.Second, 2, func() interface{} {
-		actualRuleGroups, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
+		actualRuleGroups, _, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
 		return len(actualRuleGroups)
 	})
@@ -1248,7 +1596,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 
 	// Ensure the rule group has been deleted.
 	test.Poll(t, time.Second, 1, func() interface{} {
-		actualRuleGroups, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
+		actualRuleGroups, _, err := r.GetRules(user.InjectOrgID(context.Background(), userID), RulesRequest{Filter: AnyRule})
 		require.NoError(t, err)
 		return len(actualRuleGroups)
 	})
@@ -1262,7 +1610,7 @@ func TestRuler_LimitsPerGroup(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 1
 	})))
 
-	a := NewAPI(r, r.directStore, log.NewNopLogger())
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 	tc := []struct {
 		name   string
@@ -1315,7 +1663,7 @@ func TestRuler_RulerGroupLimits(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 1
 	})))
 
-	a := NewAPI(r, r.directStore, log.NewNopLogger())
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 	tc := []struct {
 		name   string
@@ -1375,7 +1723,7 @@ func TestRuler_RulerGroupLimitsDisabled(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 0
 	})))
 
-	a := NewAPI(r, r.directStore, log.NewNopLogger())
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 	tc := []struct {
 		name   string
@@ -1452,6 +1800,52 @@ func TestAlertStateDescToPrometheusAlert(t *testing.T) {
 		require.NotNil(t, actual.KeepFiringSince)
 		assert.Equal(t, ts, *actual.KeepFiringSince)
 	})
+}
+
+func TestAPIRoutesCorrectlyHandleInvalidTenantID(t *testing.T) {
+	tcs := []struct {
+		route  string
+		method string
+	}{
+		{route: "/api/v1/rules", method: http.MethodGet},
+		{route: "/api/v1/alerts", method: http.MethodGet},
+		{route: "/config/v1/rules", method: http.MethodGet},
+		{route: "/config/v1/rules/{namespace}", method: http.MethodGet},
+		{route: "/config/v1/rules/{namespace}/{groupName}", method: http.MethodGet},
+		{route: "/config/v1/rules/{namespace}", method: http.MethodPost},
+		{route: "/config/v1/rules/{namespace}/{groupName}", method: http.MethodDelete},
+		{route: "/config/v1/rules/{namespace}", method: http.MethodDelete},
+	}
+
+	for _, tc := range tcs {
+		for _, tenantID := range []string{"", "team1|team2"} {
+			t.Run(fmt.Sprintf("method=%s, route=%s, tenantID=%s", tc.method, tc.route, tenantID), func(t *testing.T) {
+				cfg := defaultRulerConfig(t)
+				cfg.TenantFederation.Enabled = true
+
+				r := prepareRuler(t, cfg, newMockRuleStore(map[string]rulespb.RuleGroupList{}), withStart())
+				a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
+
+				router := mux.NewRouter()
+				router.Path("/api/v1/rules").Methods(http.MethodGet).HandlerFunc(a.PrometheusRules)
+				router.Path("/api/v1/alerts").Methods(http.MethodGet).HandlerFunc(a.PrometheusAlerts)
+				router.Path("/config/v1/rules").Methods(http.MethodGet).HandlerFunc(a.ListRules)
+				router.Path("/config/v1/rules/{namespace}").Methods(http.MethodGet).HandlerFunc(a.ListRules)
+				router.Path("/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodGet).HandlerFunc(a.GetRuleGroup)
+				router.Path("/config/v1/rules/{namespace}").Methods(http.MethodPost).HandlerFunc(a.CreateRuleGroup)
+				router.Path("/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodDelete).HandlerFunc(a.DeleteRuleGroup)
+				router.Path("/config/v1/rules/{namespace}").Methods(http.MethodDelete).HandlerFunc(a.DeleteNamespace)
+
+				req := requestFor(t, tc.method, "https://localhost:8080"+tc.route, nil, tenantID)
+
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, req)
+
+				resp := w.Result()
+				require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			})
+		}
+	}
 }
 
 func requestFor(t *testing.T, method string, url string, body io.Reader, userID string) *http.Request {

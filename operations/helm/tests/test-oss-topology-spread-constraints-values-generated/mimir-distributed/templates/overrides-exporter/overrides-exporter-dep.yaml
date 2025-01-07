@@ -95,6 +95,11 @@ spec:
         labelSelector:
           matchLabels:
             foo: bar
+        matchLabelKeys:
+          - pod-template-hash
+        nodeAffinityPolicy: Honor
+        nodeTaintsPolicy: Honor
+        minDomains: 1
       terminationGracePeriodSeconds: 30
       volumes:
         - name: config

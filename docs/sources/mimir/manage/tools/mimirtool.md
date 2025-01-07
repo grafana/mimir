@@ -70,12 +70,22 @@ chmod +x mimirtool
 
 For Mimirtools to interact with Grafana Mimir, Grafana Enterprise Metrics, Prometheus, or Grafana, set the following environment variables or CLI flags.
 
-| Environment variable | Flag        | Description                                                                                                                                                                                      |
-| -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `MIMIR_ADDRESS`      | `--address` | Sets the address of the API of the Grafana Mimir cluster.                                                                                                                                        |
-| `MIMIR_API_USER`     | `--user`    | Sets the basic auth username. If this variable is empty and `MIMIR_API_KEY` is set, the system uses `MIMIR_TENANT_ID` instead. If you're using Grafana Cloud, this variable is your instance ID. |
-| `MIMIR_API_KEY`      | `--key`     | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.                                                                                                      |
-| `MIMIR_TENANT_ID`    | `--id`      | Sets the tenant ID of the Grafana Mimir instance that Mimirtools interacts with.                                                                                                                 |
+| Environment variable  | Flag              | Description                                                                                                                                                                                                |
+| --------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MIMIR_ADDRESS`       | `--address`       | Sets the address of the API of the Grafana Mimir cluster.                                                                                                                                                  |
+| `MIMIR_API_USER`      | `--user`          | Sets the basic authentication username. If this variable is empty and `MIMIR_API_KEY` is set, the system uses `MIMIR_TENANT_ID` instead. If you're using Grafana Cloud, this variable is your instance ID. |
+| `MIMIR_API_KEY`       | `--key`           | Sets the basic authentication password. If you're using Grafana Cloud, this variable is your API key.                                                                                                      |
+| `MIMIR_TENANT_ID`     | `--id`            | Sets the tenant ID of the Grafana Mimir instance that Mimirtool interacts with.                                                                                                                            |
+| `MIMIR_EXTRA_HEADERS` | `--extra-headers` | Extra headers to add to the requests in header=value format. You can specify this flag multiple times. You must newline separate environment values.                                                       |
+
+It is also possible to set TLS-related options with the following environment variables or CLI flags:
+
+| Environment variable             | Flag                         | Description                                                                                                            |
+| -------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `MIMIR_TLS_CA_PATH`              | `--tls-ca-path`              | Sets the path to the CA certificate to use to verify the connection to the Grafana Mimir cluster.                      |
+| `MIMIR_TLS_CERT_PATH`            | `--tls-cert-path`            | Sets the path to the client certificate to use to authenticate to the Grafana Mimir cluster.                           |
+| `MIMIR_TLS_KEY_PATH`             | `--tls-key-path`             | Sets the path to the private key to use to authenticate to the Grafana Mimir cluster.                                  |
+| `MIMIR_TLS_INSECURE_SKIP_VERIFY` | `--tls-insecure-skip-verify` | If `true`, disables verification of the Grafana Mimir cluster's TLS certificate. This is insecure and not recommended. |
 
 ## Commands
 
@@ -135,6 +145,8 @@ route:
   group_by: ["example_groupby"]
 receivers:
   - name: "example_receiver"
+templates:
+  - example_template.tpl
 ```
 
 `./example_alertmanager_template.tpl`:
@@ -163,11 +175,39 @@ The following command deletes the Alertmanager configuration in the Grafana Mimi
 mimirtool alertmanager delete
 ```
 
-#### Migrate Alertmanager configuration for UTF-8 in Alertmanager 0.27 and later
+#### Migrate Alertmanager configuration for UTF-8 in Mimir 2.12 and later
 
-The migrate-utf8 command translates any matchers that are incompatible with the UTF-8 parser into
-equivalent matchers that are compatible by enforcing double quoting on the right hand side
-of the matcher. The translation does not change their behavior.
+This requires mimirtool version 2.12 or later. To check your version of mimirtool, run `mimirtool version`.
+
+In accordance with [prometheus/prometheus#13095](https://github.com/prometheus/prometheus/issues/13095)
+and [prometheus/alertmanager#3486](https://github.com/prometheus/alertmanager/issues/3486), Mimir is
+adding support for UTF-8. To support UTF-8 in alerts, routes, silences, and inhibition rules,
+Alertmanager has added a new parser for matchers that has a number of backwards incompatible changes.
+More information about these changes can be found [here](https://prometheus.io/docs/alerting/latest/configuration/#label-matchers).
+
+The migrate-utf8 command migrates an existing Alertmanager configuration in preparation for when
+UTF-8 is enabled in a Mimir installation. To do this, it translates matchers that are incompatible
+with UTF-8 into equivalent matchers that are compatible. This translation is backwards compatible,
+does not change the behavior of existing matchers, and works even in Mimir installations that
+do not have UTF-8 enabled.
+
+The need to migrate an Alertmanager configuration depends on whether it contains matchers
+incompatible with UTF-8. You can verify if an existing Alertmanager configuration needs to be
+migrated for UTF-8 by running the verify command:
+
+```bash
+mimirtool alertmanager verify <config_file> [template_files...]
+```
+
+If the command succeeds without any warnings, the configuration is compatible with UTF-8 and you
+don't need to migrate it.
+
+However, if the command prints the following warning, then you need to migrate the Alertmanager
+configuration with the migrate-utf8 command.
+
+```
+Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible. Alertmanager has instead parsed the input using the classic matchers parser as a fallback. To make this input compatible with the UTF-8 matchers parser please make sure all regular expressions and values are double-quoted. If you are still seeing this message please open an issue.
+```
 
 The command takes as input an existing configuration and template files, and prints as output
 the migrated configuration and template files:
@@ -193,15 +233,30 @@ Within the output dir, the configuration file is named `config.yaml` and the tem
 When you use the `--output-dir` flag, the command only writes the output to files and doesn't print the configuration to the console.
 {{< /admonition >}}
 
-Once you have migrated your configuration, verify it using the verify command and the
-`--utf8-strict-mode` flag:
+After you migrate an Alertmanager configuration, use the verify command to verify it:
+
+```bash
+mimirtool alertmanager verify <config_file> [template_files...]
+```
+
+It should succeed without warnings.
+
+You can also run the verify command with the `--utf8-strict-mode` flag to verify if an Alertmanager
+configuration is compatible with UTF-8:
 
 ```bash
 mimirtool alertmanager verify <config_file> [template_files...] --utf8-strict-mode
 ```
 
-The command prints a warning with the text `UTF-8 mode enabled` to let you know the command is using
-UTF-8 strict mode to validate your configuration.
+When using this flag, the verify command prints a warning with the text `UTF-8 mode enabled` to let
+you know the command is using UTF-8 strict mode to validate the Alertmanager configuration. Unlike
+when the flag is omitted, it doesn't print warnings if a configuration is incompatible with UTF-8.
+Instead, the command exits with an error. For example:
+
+```bash
+level=warn msg="UTF-8 strict mode enabled"
+mimirtool: error: end of input: expected label value, try --help
+```
 
 If the command exits without error, and you're satisfied with the changes made to the migrated
 configuration and template files, reload it using the `load` command.
@@ -255,10 +310,9 @@ For more information, refer to the [documentation of Mimirtool Github Action](ht
 
 Configuration options relevant to rules commands:
 
-| Flag              | Description                                                                               |
-| ----------------- | ----------------------------------------------------------------------------------------- |
-| `--auth-token`    | Authentication token for bearer token or JWT auth.                                        |
-| `--extra-headers` | Extra headers to add to the requests in header=value format. (Can specify multiple times) |
+| Flag           | Description                                        |
+| -------------- | -------------------------------------------------- |
+| `--auth-token` | Authentication token for bearer token or JWT auth. |
 
 #### List rules
 
@@ -686,12 +740,13 @@ mimirtool analyze ruler --address=<url> --id=<tenant_id>
 
 ##### Configuration
 
-| Environment variable | Flag        | Description                                                                                     |
-| -------------------- | ----------- | ----------------------------------------------------------------------------------------------- |
-| `MIMIR_ADDRESS`      | `--address` | Sets the address of the Prometheus instance.                                                    |
-| `MIMIR_TENANT_ID`    | `--id`      | Sets the basic auth username. If you're using Grafana Cloud, this variable is your instance ID. |
-| `MIMIR_API_KEY`      | `--key`     | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.     |
-| -                    | `--output`  | Sets the output file path, which by default is `metrics-in-ruler.json`.                         |
+| Environment variable | Flag           | Description                                                                                               |
+| -------------------- | -------------- | --------------------------------------------------------------------------------------------------------- |
+| `MIMIR_ADDRESS`      | `--address`    | Sets the address of the Prometheus instance.                                                              |
+| `MIMIR_TENANT_ID`    | `--id`         | Sets the basic authentication username. If you're using Grafana Cloud, this variable is your instance ID. |
+| `MIMIR_API_KEY`      | `--key`        | Sets the basic authentication password. If you're using Grafana Cloud, this variable is your API key.     |
+| `MIMIR_AUTH_TOKEN`   | `--auth-token` | Sets the bearer or JWT token that is required for Mimir clusters authenticating with this method.         |
+| -                    | `--output`     | Sets the output file path, which by default is `metrics-in-ruler.json`.                                   |
 
 ##### Example output file
 
@@ -766,15 +821,16 @@ mimirtool analyze prometheus --address=<url> --id=<tenant_id>
 
 ##### Configuration
 
-| Environment variable | Flag                       | Description                                                                                                              |
-| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `MIMIR_ADDRESS`      | `--address`                | Sets the address of the Prometheus instance.                                                                             |
-| `MIMIR_TENANT_ID`    | `--id`                     | Sets the basic auth username. If you're using Grafana Cloud this variable is your instance ID, also set as tenant ID.    |
-| `MIMIR_API_KEY`      | `--key`                    | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.                              |
-| -                    | `--grafana-metrics-file`   | `mimirtool analyze grafana` or `mimirtool analyze dashboard` output file, which by default is `metrics-in-grafana.json`. |
-| -                    | `--ruler-metrics-file`     | `mimirtool analyze ruler` or `mimirtool analyze rule-file` output file, which by default is `metrics-in-ruler.json`.     |
-| -                    | `--output`                 | Sets the output file path, which by default is `prometheus-metrics.json`.                                                |
-| -                    | `--prometheus-http-prefix` | Sets the HTTP URL path under which the Prometheus api will be served.                                                    |
+| Environment variable | Flag                       | Description                                                                                                                     |
+| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `MIMIR_ADDRESS`      | `--address`                | Sets the address of the Prometheus instance.                                                                                    |
+| `MIMIR_TENANT_ID`    | `--id`                     | Sets the basic authentication username. If you're using Grafana Cloud this variable is your instance ID, also set as tenant ID. |
+| `MIMIR_API_KEY`      | `--key`                    | Sets the basic authentication password. If you're using Grafana Cloud, this variable is your API key.                           |
+| `MIMIR_AUTH_TOKEN`   | `--auth-token`             | Sets the bearer or JWT token that is required for Mimir clusters authenticating with this method.                               |
+| -                    | `--grafana-metrics-file`   | `mimirtool analyze grafana` or `mimirtool analyze dashboard` output file, which by default is `metrics-in-grafana.json`.        |
+| -                    | `--ruler-metrics-file`     | `mimirtool analyze ruler` or `mimirtool analyze rule-file` output file, which by default is `metrics-in-ruler.json`.            |
+| -                    | `--output`                 | Sets the output file path, which by default is `prometheus-metrics.json`.                                                       |
+| -                    | `--prometheus-http-prefix` | Sets the HTTP URL path under which the Prometheus api will be served.                                                           |
 
 ##### Example output
 

@@ -264,7 +264,7 @@ func checkQueries(
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			// Start query-frontend.
-			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, c.queryFrontendOptions...)
+			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", consul.NetworkHTTPEndpoint(), flags, c.queryFrontendOptions...)
 			require.NoError(t, s.Start(queryFrontend))
 			defer func() {
 				require.NoError(t, s.Stop(queryFrontend))

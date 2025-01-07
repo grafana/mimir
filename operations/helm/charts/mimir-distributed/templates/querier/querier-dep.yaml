@@ -1,3 +1,4 @@
+{{- if and .Values.querier.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -62,7 +63,7 @@ spec:
             {{- end }}
           {{- end }}
           {{- range $key, $value := .Values.querier.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.querier.extraVolumeMounts }}
@@ -172,3 +173,4 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
+{{- end }}

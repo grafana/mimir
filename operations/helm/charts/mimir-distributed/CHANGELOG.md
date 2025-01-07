@@ -29,10 +29,65 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards. #7674
-  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric.
+* [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
+* [ENHANCEMENT] Minio: update subchart to v5.4.0. #10346
+* [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
 
-## 5.4.0-rc.0
+## 5.6.0-rc.0
+
+* [CHANGE] Update rollout-operator version to 0.20.0. #9995
+* [CHANGE] Remove the `track_sizes` feature for Memcached pods since it is unused. #10032
+* [FEATURE] Add support for GEM's federation-frontend. See the `federation_frontend` section in the values file. #9673
+* [ENHANCEMENT] Add support for setting type and internal traffic policy for Kubernetes service. Set `internalTrafficPolicy=Cluster` by default in all services with type `ClusterIP`. #9619
+* [ENHANCEMENT] Add the possibility to create a dedicated serviceAccount for the `alertmanager` component by setting `alertmanager.serviceAcount.create` to true in the values. #9781
+* [ENHANCEMENT] helm: add `enabled` field for admin-api, compactor, distributor, gateway, ingester, querier, query-frontend and store-gateway components. This helps when deploying the GEM federation-frontend on its own. #9734
+* [BUGFIX] Do not quote container command args passed via *.extraArgs values. #10029
+* [BUGFIX] Update `serviceAccountName` in the `alertmanager-statefulset` template. #10016
+* [BUGFIX] Fix PVC template in AlertManager to not show diff in ArgoCD. #9774
+* [BUGFIX] Fix how `fullnameOverride` is reflected in generated manifests. #9564
+* [BUGFIX] Fix `extraObjects` linting with helm lint by padding with an extra new line. #9863
+* [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler, also for zone aware Alertmanager #9851
+
+## 5.5.1
+* [BUGFIX] Fix incorrect use of topology spread constraints in `GrafanaAgent` CRD of metamonitoring. #9669
+
+## 5.5.0
+
+* [ENHANCEMENT] Upgrade Mimir and GEM to [2.14.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#2140). #9591
+* [ENHANCEMENT] Dashboards: allow switching between using classic or native histograms in dashboards.
+  * Overview dashboard: status, read/write latency and queries/ingestion per sec panels, `cortex_request_duration_seconds` metric. #7674
+  * Writes dashboard: `cortex_request_duration_seconds` metric. #8757
+  * Reads dashboard: `cortex_request_duration_seconds` metric. #8752
+  * Rollout progress dashboard: `cortex_request_duration_seconds` metric. #8779
+  * Alertmanager dashboard: `cortex_request_duration_seconds` metric. #8792
+  * Ruler dashboard: `cortex_request_duration_seconds` metric. #8795
+  * Queries dashboard: `cortex_request_duration_seconds` metric. #8800
+  * Remote ruler reads dashboard: `cortex_request_duration_seconds` metric. #8801
+* [ENHANCEMENT] Memcached: Update to Memcached 1.6.31 and memcached-exporter 0.14.4. #8557 #9305
+* [ENHANCEMENT] Add missing fields in multiple topology spread constraints. #8533
+* [ENHANCEMENT] Add support for setting the image pull secrets, node selectors, tolerations and topology spread constraints for the Grafana Agent pods used for metamonitoring. #8670
+* [ENHANCEMENT] Add support for setting resource requests and limits in the Grafana Agent pods used for metamonitoring. #8715
+* [ENHANCEMENT] Add support for setting namespace for dashboard config maps. #8813
+* [ENHANCEMENT] Add support for string `extraObjects` for better support with templating. #8825
+* [ENHANCEMENT] Allow setting read and write urls in continous-test. #8741
+* [ENHANCEMENT] Add support for running continuous-test with GEM. #8837
+* [ENHANCEMENT] Alerts: `RequestErrors` and `RulerRemoteEvaluationFailing` have been enriched with a native histogram version. #9004
+* [ENHANCEMENT] Add support for sigv4 authentication for remote write in metamonitoring. #9279
+* [ENHANCEMENT] Ingester: set GOMAXPROCS to help with Go scheduling overhead when running on machines with lots of CPU cores. #9283
+* [ENHANCEMENT] GEM: enable logging of access policy name and token name that execute query in query-frontend. #9348
+* [ENHANCEMENT] Update rollout-operator to `v0.19.1` (Helm chart version `v0.18.0`). #9388
+* [BUGFIX] Add missing container security context to run `continuous-test` under the restricted security policy. #8653
+* [BUGFIX] Add `global.extraVolumeMounts` to the exporter container on memcached statefulsets #8787
+* [BUGFIX] Fix helm releases failing when `querier.kedaAutoscaling.predictiveScalingEnabled=true`. #8731
+* [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler. #8192
+* [BUGFIX] Helm: fix second relabeling in ServiceMonitor and PVC template in compactor to not show diff in ArgoCD. #9195
+* [BUGFIX] Helm: create query-scheduler `PodDisruptionBudget` only when the component is enabled. #9270
+
+## 5.4.1
+
+* [CHANGE] Upgrade GEM version to v2.13.1.
+
+## 5.4.0
 
 * [FEATURE] Add support for a dedicated query path for the ruler. This allows for the isolation of ruler and user query paths. Enable it via `ruler.remoteEvaluationDedicatedQueryPath: true`. #7964
 * [CHANGE] Fine-tuned `terminationGracePeriodSeconds` for the following components: #7361 #7364
@@ -61,7 +116,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Helm: Allowed setting static NodePort for nginx gateway via `gateway.service.nodePort`. #6966
 * [BUGFIX] Helm: Expose AM configs in the `gateway` NGINX configuration. #8248
 * [BUGFIX] Helm: fix ServiceMonitor and PVC template to not show diff in ArgoCD. #8829
-* [BUGFIX] Alertmanager: Set -server.http-idle-timeout to avoid EOF errors in ruler. #8192
 
 ## 5.3.0
 

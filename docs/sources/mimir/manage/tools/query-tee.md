@@ -89,6 +89,14 @@ A request sent from the query-tee to a backend includes HTTP basic authenticatio
 - If the backend endpoint URL is configured only with a username, then query-tee keeps the configured username and injects the password received in the incoming request.
 - If the backend endpoint URL is configured without a username and password, then query-tee forwards the authentication credentials found in the incoming request.
 
+### Backend selection
+
+You can use the query-tee to either send requests to all backends, or to send a proportion of requests to all backends and the remaining requests to only the preferred backend.
+You can configure this with the `-proxy.secondary-backends-request-proportion` CLI flag.
+
+For example, if you set the `-proxy.secondary-backends-request-proportion` CLI flag to `1.0`, then all requests are sent to all backends.
+Alternatively, if you set the `-proxy.secondary-backends-request-proportion` CLI flag to `0.2`, then 20% of requests are sent to all backends, and the remaining 80% of requests are sent only to your preferred backend.
+
 ### Backend response selection
 
 The query-tee enables you to configure a preferred backend that selects the response to send back to the client.
@@ -96,11 +104,7 @@ The query-tee returns the `Content-Type` header, HTTP status code, and body of t
 The preferred backend can be configured via `-backend.preferred=<hostname>`.
 The value of the preferred backend configuration option must be the hostname of one of the configured backends.
 
-When a preferred backend is configured, the query-tee uses the following algorithm to select the backend response to send back to the client:
-
-1. If the preferred backend response status code is 2xx or 4xx, the query-tee selects the response from the preferred backend.
-1. If at least one backend response status code is 2xx or 4xx, the query-tee selects the first received response whose status code is 2xx or 4xx.
-1. If no backend response status code is 2xx or 4xx, the query-tee selects the first received response regardless of the status code.
+When a preferred backend is configured, the query-tee always returns the response from the preferred backend.
 
 When a preferred backend is not configured, the query-tee uses the following algorithm to select the backend response to send back to the client:
 
@@ -108,7 +112,7 @@ When a preferred backend is not configured, the query-tee uses the following alg
 1. If no backend response status code is 2xx or 4xx, the query-tee selects the first received response regardless of the status code.
 
 {{< admonition type="note" >}}
-The query-tee considers a 4xx response as a valid response to select because a 4xx status code generally an invalid request and not a server side issue.
+The query-tee considers a 4xx response as a valid response to select because a 4xx status code is generally an invalid request and not a server-side issue.
 {{< /admonition >}}
 
 ### Backend results comparison
@@ -121,8 +125,12 @@ The query results comparison can be enabled setting the flag `-proxy.compare-res
 
 When the query results comparison is enabled, the query-tee compares the response received from the two configured backends and logs a message for each query whose results don't match. Query-tee keeps track of the number of successful and failed comparison through the metric `cortex_querytee_responses_compared_total`.
 
+By default, query-tee considers equivalent error messages as matching, even if they are not exactly the same.
+This ensures that comparison does not fail for known situations where error messages are non-deterministic.
+Set `-proxy.compare-exact-error-matching=true` to require that error messages match exactly.
+
 {{< admonition type="note" >}}
-Query-tee compares Floating point sample values with a tolerance that you can configure with the `-proxy.value-comparison-tolerance` option.
+Query-tee compares floating point sample values with a tolerance that you can configure with the `-proxy.value-comparison-tolerance` option.
 
 The configured tolerance prevents false positives due to differences in floating point values rounding introduced by the non-deterministic series ordering within the Prometheus PromQL engine.
 {{< /admonition >}}
