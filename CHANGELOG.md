@@ -34,6 +34,7 @@
 * [CHANGE] Update rollout-operator version to 0.22.0. #10229
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [BUGFIX] Ports in container rollout-operator. #10273
+* [BUGFIX] When downscaling is enabled, the components must annotate `prepare-downscale-http-port` with the value set in `$._config.server_http_port`. #10367
 
 ### Mimirtool
 
