@@ -296,6 +296,7 @@ To publish a stable release:
    - Keep the last 3 minor releases
 1. Publish dashboards (done by a Grafana Labs member)
    1. Login to [https://grafana.com](https://grafana.com) with your Grafana Labs account
+      1. Make sure your user in the Grafana Labs organization members list has Admin access.
    1. Open [https://grafana.com/orgs/grafana/dashboards](https://grafana.com/orgs/grafana/dashboards)
    1. For each dashboard at `operations/mimir-mixin-compiled/dashboards`:
       1. Open the respective dashboard page
