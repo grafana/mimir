@@ -69,7 +69,7 @@ func NewManagerMetrics(logger log.Logger) *ManagerMetrics {
 		EvalFailures: prometheus.NewDesc(
 			"cortex_prometheus_rule_evaluation_failures_total",
 			"The total number of rule evaluation failures.",
-			[]string{"user", "rule_group"},
+			[]string{"user", "rule_group", "failure_type"},
 			nil,
 		),
 		GroupInterval: prometheus.NewDesc(
@@ -160,7 +160,7 @@ func (m *ManagerMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCountersPerTenant(out, m.IterationsMissed, "prometheus_rule_group_iterations_missed_total", dskit_metrics.WithLabels("rule_group"))
 	data.SendSumOfCountersPerTenant(out, m.IterationsScheduled, "prometheus_rule_group_iterations_total", dskit_metrics.WithLabels("rule_group"))
 	data.SendSumOfCountersPerTenant(out, m.EvalTotal, "prometheus_rule_evaluations_total", dskit_metrics.WithLabels("rule_group"))
-	data.SendSumOfCountersPerTenant(out, m.EvalFailures, "prometheus_rule_evaluation_failures_total", dskit_metrics.WithLabels("rule_group"))
+	data.SendSumOfCountersPerTenant(out, m.EvalFailures, "prometheus_rule_evaluation_failures_total", dskit_metrics.WithLabels("rule_group", "failure_type"))
 	data.SendSumOfGaugesPerTenant(out, m.GroupInterval, "prometheus_rule_group_interval_seconds", dskit_metrics.WithLabels("rule_group"))
 	data.SendSumOfGaugesPerTenant(out, m.GroupLastEvalTime, "prometheus_rule_group_last_evaluation_timestamp_seconds", dskit_metrics.WithLabels("rule_group"))
 	data.SendSumOfGaugesPerTenant(out, m.GroupLastDuration, "prometheus_rule_group_last_duration_seconds", dskit_metrics.WithLabels("rule_group"))

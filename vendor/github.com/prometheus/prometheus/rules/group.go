@@ -40,6 +40,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	grpc_codes "google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Group is a set of rules that have a logical relation.
@@ -117,7 +119,8 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.IterationsMissed.WithLabelValues(key)
 	metrics.IterationsScheduled.WithLabelValues(key)
 	metrics.EvalTotal.WithLabelValues(key)
-	metrics.EvalFailures.WithLabelValues(key)
+	metrics.EvalFailures.WithLabelValues(key, FailureTypeUser)
+	metrics.EvalFailures.WithLabelValues(key, FailureTypeSystem)
 	metrics.GroupLastEvalTime.WithLabelValues(key)
 	metrics.GroupLastDuration.WithLabelValues(key)
 	metrics.GroupLastRuleDurationSum.WithLabelValues(key)
@@ -568,13 +571,14 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
 				sp.SetStatus(codes.Error, err.Error())
-				g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
+				failureType := errorToFailureType(err)
+				g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name()), failureType).Inc()
 
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
 				var eqc promql.ErrQueryCanceled
 				if !errors.As(err, &eqc) {
-					logger.Warn("Evaluating rule failed", "rule", rule, "err", err)
+					logger.Warn("Evaluating rule failed", "rule", rule, "err", err, "failureType", failureType)
 				}
 				return
 			}
@@ -598,7 +602,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					rule.SetHealth(HealthBad)
 					rule.SetLastError(err)
 					sp.SetStatus(codes.Error, err.Error())
-					g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
+					g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name()), FailureTypeSystem).Inc()
 
 					logger.Warn("Rule sample appending failed", "err", err)
 					return
@@ -688,6 +692,44 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 	g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
 	g.cleanupStaleSeries(ctx, ts)
+}
+
+func errorToFailureType(err error) string {
+	// Local execution mode: check for Go error types.
+	var eqc promql.ErrQueryCanceled
+	var es promql.ErrStorage
+	if errors.Is(err, &eqc) || errors.Is(err, &es) {
+		return FailureTypeSystem
+	}
+
+	var eqt promql.ErrQueryTimeout
+	if errors.As(err, &eqt) {
+		return FailureTypeUser
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return FailureTypeUser
+	}
+
+	// Remote execution mode: check for gRPC errors.
+	status, ok := status.FromError(err)
+	if !ok {
+		// Not a remote error, and it doesn't fit any of the categories above. Assume user error?
+		return FailureTypeUser
+	}
+
+	if (status.Code() >= 400 && status.Code() <= 499) {
+		// We sometimes set the gRPC status code to the HTTP status code.
+		return FailureTypeUser
+	}
+
+	switch status.Code() {
+	case grpc_codes.InvalidArgument, grpc_codes.DeadlineExceeded, grpc_codes.ResourceExhausted, grpc_codes.FailedPrecondition:
+		return FailureTypeUser
+	default:
+		// Assume it's a system failure if it's any other kind of error.
+		return FailureTypeSystem
+	}
 }
 
 func (g *Group) QueryOffset() time.Duration {
@@ -946,6 +988,10 @@ type Metrics struct {
 	GroupSamples             *prometheus.GaugeVec
 }
 
+// 'failure_type' values for 'rule_evaluation_failures_total' metric.
+const FailureTypeUser = "user" // Rule evaluation failed due to something controllable by the author of the rule. For example, a rule that results in a one-to-many matching error.
+const FailureTypeSystem = "system" // Rule evaluation failed due to something outside the control of the author of the rule. For example, loading a chunk from disk failed due to an I/O error.
+
 // NewGroupMetrics creates a new instance of Metrics and registers it with the provided registerer,
 // if not nil.
 func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
@@ -993,7 +1039,7 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 				Name:      "rule_evaluation_failures_total",
 				Help:      "The total number of rule evaluation failures.",
 			},
-			[]string{"rule_group"},
+			[]string{"rule_group", "failure_type"},
 		),
 		GroupInterval: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
