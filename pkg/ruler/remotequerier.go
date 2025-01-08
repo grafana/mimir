@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -67,6 +68,8 @@ type QueryFrontendConfig struct {
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the rulers and query-frontends."`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
+
+	MaxRetriesRate float64 `yaml:"max_retries_rate"`
 }
 
 func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
@@ -80,6 +83,7 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
 
 	f.StringVar(&c.QueryResultResponseFormat, "ruler.query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from query-frontends. Supported values: %s", strings.Join(allFormats, ", ")))
+	f.Float64Var(&c.MaxRetriesRate, "ruler.query-frontend.max-retries-rate", 170, "Maximum number of retries for failed queries per second.")
 }
 
 func (c *QueryFrontendConfig) Validate() error {
@@ -115,6 +119,7 @@ type Middleware func(ctx context.Context, req *httpgrpc.HTTPRequest) error
 // RemoteQuerier executes read operations against a httpgrpc.HTTPClient.
 type RemoteQuerier struct {
 	client                             httpgrpc.HTTPClient
+	retryLimiter                       *rate.Limiter
 	timeout                            time.Duration
 	middlewares                        []Middleware
 	promHTTPPrefix                     string
@@ -130,6 +135,7 @@ var protobufDecoderInstance = protobufDecoder{}
 func NewRemoteQuerier(
 	client httpgrpc.HTTPClient,
 	timeout time.Duration,
+	maxRetryRate float64, // maxRetryRate is the maximum number of retries for failed queries per second.
 	preferredQueryResultResponseFormat string,
 	prometheusHTTPPrefix string,
 	logger log.Logger,
@@ -138,6 +144,7 @@ func NewRemoteQuerier(
 	return &RemoteQuerier{
 		client:                             client,
 		timeout:                            timeout,
+		retryLimiter:                       rate.NewLimiter(rate.Limit(maxRetryRate), 1),
 		middlewares:                        middlewares,
 		promHTTPPrefix:                     prometheusHTTPPrefix,
 		logger:                             logger,
@@ -349,12 +356,19 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 		if !retry.Ongoing() {
 			return nil, err
 		}
-		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
 		retry.Wait()
+
+		// The backoff wait spreads the retries. We check the rate limiter only after that spread.
+		// That should give queries a bigger chance at passing through the rate limiter
+		// in cases of short error bursts and the rate of failed queries being larger than the rate limit.
+		if !q.retryLimiter.Allow() {
+			return nil, fmt.Errorf("exhausted global retry budget for remote ruler execution (ruler.query-frontend.max-retries-rate); last error was: %w", err)
+		}
+		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
 
 		// Avoid masking last known error if context was cancelled while waiting.
 		if ctx.Err() != nil {
-			return nil, fmt.Errorf("%s while retrying request, last err was: %w", ctx.Err(), err)
+			return nil, fmt.Errorf("%s while retrying request, last error was: %w", ctx.Err(), err)
 		}
 	}
 }

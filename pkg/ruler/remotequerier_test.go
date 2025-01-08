@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -64,7 +65,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 	t.Run("should issue a remote read request", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
 		_, err := q.Read(context.Background(), &prompb.Query{}, false)
 		require.NoError(t, err)
 
@@ -76,7 +77,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 	t.Run("should not inject the read consistency header if none is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
 		_, err := q.Read(context.Background(), &prompb.Query{}, false)
 		require.NoError(t, err)
 
@@ -86,7 +87,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 	t.Run("should inject the read consistency header if it is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
 
 		ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
 		_, err := q.Read(ctx, &prompb.Query{}, false)
@@ -101,7 +102,7 @@ func TestRemoteQuerier_ReadReqTimeout(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Second, formatJSON, "/prometheus", log.NewNopLogger())
+	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Second, 1, formatJSON, "/prometheus", log.NewNopLogger())
 
 	_, err := q.Read(context.Background(), &prompb.Query{}, false)
 	require.Error(t, err)
@@ -139,7 +140,7 @@ func TestRemoteQuerier_Query(t *testing.T) {
 			t.Run(fmt.Sprintf("format = %s", format), func(t *testing.T) {
 				client, inReq := setup()
 
-				q := NewRemoteQuerier(client, time.Minute, format, "/prometheus", log.NewNopLogger())
+				q := NewRemoteQuerier(client, time.Minute, 1, format, "/prometheus", log.NewNopLogger())
 				_, err := q.Query(context.Background(), "qs", tm)
 				require.NoError(t, err)
 
@@ -165,7 +166,7 @@ func TestRemoteQuerier_Query(t *testing.T) {
 	t.Run("should not inject the read consistency header if none is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
 		_, err := q.Query(context.Background(), "qs", tm)
 		require.NoError(t, err)
 
@@ -175,7 +176,7 @@ func TestRemoteQuerier_Query(t *testing.T) {
 	t.Run("should inject the read consistency header if it is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
 
 		ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
 		_, err := q.Query(ctx, "qs", tm)
@@ -276,7 +277,7 @@ func TestRemoteQuerier_QueryRetryOnFailure(t *testing.T) {
 				}
 				return testCase.response, nil
 			}
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
 			require.Equal(t, int64(0), count.Load())
 			_, err := q.Query(ctx, "qs", time.Now())
 			if testCase.err == nil {
@@ -284,12 +285,12 @@ func TestRemoteQuerier_QueryRetryOnFailure(t *testing.T) {
 					require.NoError(t, err)
 				} else {
 					require.Error(t, err)
-					require.EqualError(t, err, testCase.expectedError.Error())
+					require.ErrorContains(t, err, testCase.expectedError.Error())
 				}
 				require.Equal(t, int64(1), count.Load())
 			} else {
 				require.Error(t, err)
-				require.EqualError(t, err, testCase.expectedError.Error())
+				require.ErrorContains(t, err, testCase.expectedError.Error())
 				if testCase.expectedRetries {
 					require.Greater(t, count.Load(), int64(1))
 				} else {
@@ -298,6 +299,34 @@ func TestRemoteQuerier_QueryRetryOnFailure(t *testing.T) {
 			}
 		})
 	}
+}
+func TestRemoteQuerier_QueryRetryBudgetExhaustion(t *testing.T) {
+	ctx := context.Background()
+	attempts := &atomic.Int64{}
+
+	// Mock client that always returns a 500 error to trigger retries
+	mockClientFn := func(context.Context, *httpgrpc.HTTPRequest, ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
+		attempts.Add(1)
+		return nil, httpgrpc.Errorf(http.StatusInternalServerError, assert.AnError.Error())
+	}
+
+	// Create querier with very low retry rate to trigger budget exhaustion quickly
+	q := NewRemoteQuerier(
+		mockHTTPGRPCClient(mockClientFn),
+		time.Minute, // timeout
+		0.0001,      // retry rate
+		formatJSON,
+		"/prometheus",
+		log.NewNopLogger(),
+	)
+
+	_, err := q.Query(ctx, "test_query", time.Now())
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "exhausted global retry budget for remote ruler execution (ruler.query-frontend.max-retries-rate)")
+
+	// Should have attempted at least one retry before exhausting budget
+	require.GreaterOrEqual(t, attempts.Load(), int64(2))
 }
 
 func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
@@ -405,7 +434,7 @@ func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
 					Body: []byte(scenario.body),
 				}, nil
 			}
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
 
 			tm := time.Unix(1649092025, 515834)
 			actual, err := q.Query(context.Background(), "qs", tm)
@@ -678,7 +707,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 					Body: b,
 				}, nil
 			}
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatProtobuf, "/prometheus", log.NewNopLogger())
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatProtobuf, "/prometheus", log.NewNopLogger())
 
 			tm := time.Unix(1649092025, 515834)
 			actual, err := q.Query(context.Background(), "qs", tm)
@@ -701,7 +730,7 @@ func TestRemoteQuerier_QueryUnknownResponseContentType(t *testing.T) {
 			Body: []byte("some body content"),
 		}, nil
 	}
-	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", log.NewNopLogger())
+	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
 
 	tm := time.Unix(1649092025, 515834)
 	_, err := q.Query(context.Background(), "qs", tm)
@@ -713,7 +742,7 @@ func TestRemoteQuerier_QueryReqTimeout(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Second, formatJSON, "/prometheus", log.NewNopLogger())
+	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Second, 1, formatJSON, "/prometheus", log.NewNopLogger())
 
 	tm := time.Unix(1649092025, 515834)
 	_, err := q.Query(context.Background(), "qs", tm)
@@ -771,7 +800,7 @@ func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 				return testCase.resp, testCase.err
 			}
 			logger := newLoggerWithCounter()
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, formatJSON, "/prometheus", logger)
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, "/prometheus", logger)
 
 			tm := time.Unix(1649092025, 515834)
 
