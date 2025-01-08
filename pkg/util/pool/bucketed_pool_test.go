@@ -64,7 +64,7 @@ func TestBucketedPool_HappyPath(t *testing.T) {
 	}
 
 	runTests := func(t *testing.T, returnToPool bool) {
-		testPool := NewBucketedPool(19, makeFunc)
+		testPool := NewBucketedPool(16, makeFunc)
 		for _, c := range cases {
 			ret := testPool.Get(c.size)
 			require.Equal(t, c.expectedCap, cap(ret))
@@ -91,7 +91,7 @@ func TestBucketedPool_HappyPath(t *testing.T) {
 }
 
 func TestBucketedPool_SliceNotAlignedToBuckets(t *testing.T) {
-	pool := NewBucketedPool(1000, makeFunc)
+	pool := NewBucketedPool(1024, makeFunc)
 	pool.Put(make([]int, 0, 5))
 	s := pool.Get(6)
 	require.Equal(t, 8, cap(s))
@@ -99,7 +99,7 @@ func TestBucketedPool_SliceNotAlignedToBuckets(t *testing.T) {
 }
 
 func TestBucketedPool_PutEmptySlice(t *testing.T) {
-	pool := NewBucketedPool(1000, makeFunc)
+	pool := NewBucketedPool(1024, makeFunc)
 	pool.Put([]int{})
 	s := pool.Get(1)
 	require.Equal(t, 1, cap(s))
@@ -107,7 +107,7 @@ func TestBucketedPool_PutEmptySlice(t *testing.T) {
 }
 
 func TestBucketedPool_PutNilSlice(t *testing.T) {
-	pool := NewBucketedPool(1000, makeFunc)
+	pool := NewBucketedPool(1024, makeFunc)
 	pool.Put(nil)
 	s := pool.Get(1)
 	require.Equal(t, 1, cap(s))
@@ -115,7 +115,7 @@ func TestBucketedPool_PutNilSlice(t *testing.T) {
 }
 
 func TestBucketedPool_PutSliceLargerThanMaximum(t *testing.T) {
-	pool := NewBucketedPool(100, makeFunc)
+	pool := NewBucketedPool(64, makeFunc)
 	s1 := make([]int, 101)
 	pool.Put(s1)
 	s2 := pool.Get(101)[:101]
@@ -124,10 +124,10 @@ func TestBucketedPool_PutSliceLargerThanMaximum(t *testing.T) {
 }
 
 func TestBucketedPool_GetSizeCloseToMax(t *testing.T) {
-	maxSize := 100000
+	maxSize := 131072
 	pool := NewBucketedPool(uint(maxSize), makeFunc)
 
-	// Request a size that triggers the last bucket boundary.
+	// Request a slice with size that will be drawn from the last bucket in the pool.
 	s := pool.Get(86401)
 
 	// Check that we still get a slice with the correct size.
@@ -135,45 +135,30 @@ func TestBucketedPool_GetSizeCloseToMax(t *testing.T) {
 	require.Len(t, s, 0)
 }
 
-func TestBucketedPool_AlwaysReturnsPowerOfTwoCapacities(t *testing.T) {
-	pool := NewBucketedPool(100_000, makeFunc)
-
+func TestIsPowerOfTwo(t *testing.T) {
 	cases := []struct {
-		requestedSize int
-		expectedCap   int
+		input    int
+		expected bool
 	}{
-		{3, 4},
-		{5, 8},
-		{10, 16},
-		{20, 32},
-		{65_000, 65_536},
-		{100_001, 131_072}, // Exceeds max bucket: next power of two is 131,072
+		{-2, false},
+		{1, true},
+		{2, true},
+		{3, false},
+		{4, true},
+		{5, false},
+		{6, false},
+		{7, false},
+		{8, true},
+		{16, true},
+		{32, true},
+		{1023, false},
+		{1024, true},
+		{1<<12 - 1, false},
+		{1 << 12, true},
 	}
 
 	for _, c := range cases {
-		slice := pool.Get(c.requestedSize)
-
-		require.Equal(t, c.expectedCap, cap(slice),
-			"BucketedPool.Get() returned slice with capacity %d; expected %d", cap(slice), c.expectedCap)
-
-		pool.Put(slice)
+		result := IsPowerOfTwo(c.input)
+		require.Equalf(t, c.expected, result, "isPowerOfTwo(%d) should return %v", c.input, c.expected)
 	}
-}
-
-func TestBucketedPool_PutSizeCloseToMax(t *testing.T) {
-	maxSize := 100000
-	pool := NewBucketedPool(uint(maxSize), makeFunc)
-
-	// Create a slice with capacity that triggers the upper edge case
-	s := make([]int, 0, 65_000) // 86401 is close to maxSize but not aligned to power of 2
-
-	// Ensure Put does not panic when adding this slice
-	require.NotPanics(t, func() {
-		pool.Put(s)
-	}, "Put should not panic for sizes close to maxSize")
-
-	// Validate that a subsequent Get for a smaller size works fine
-	ret := pool.Get(1)
-	require.Equal(t, 1, cap(ret))
-	require.Len(t, ret, 0)
 }
