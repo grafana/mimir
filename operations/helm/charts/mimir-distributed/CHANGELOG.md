@@ -31,7 +31,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [ENHANCEMENT] Minio: update subchart to v5.4.0. #10346
-* [ENHANCEMENT] Add support for individual components to override their container image. #10340
+* [ENHANCEMENT] Individual mimir components can override their container images via the *.image values. The component's image definitions always override the values set in global `image` or `enterprise.image`. #10340
 * [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
 
 ## 5.6.0-rc.0
