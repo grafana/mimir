@@ -89,7 +89,7 @@ spec:
             secretName: tls-certs
       containers:
         - name: alertmanager
-          image: grafana/enterprise-metrics:r323-bf0aeaa5
+          image: grafana/enterprise-metrics:r324-e2048427
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
