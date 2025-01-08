@@ -47,6 +47,7 @@ type Query struct {
 	cancel                   context.CancelCauseFunc
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
+	stats                    *types.QueryStats
 
 	// Time range of the top-level query.
 	// Subqueries may use a different range.
@@ -79,6 +80,7 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 		qs:                       qs,
 		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, engine.queriesRejectedDueToPeakMemoryConsumption),
 		annotations:              annotations.New(),
+		stats:                    &types.QueryStats{},
 
 		statement: &parser.EvalStmt{
 			Expr:          expr,
@@ -164,6 +166,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 
 				ExpressionPosition: e.PositionRange(),
 			},
+			Stats: q.stats,
 		}, nil
 	case *parser.AggregateExpr:
 		if !q.engine.featureToggles.EnableAggregationOperations {
@@ -350,7 +353,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 			ExpressionPosition: e.PositionRange(),
 		}
 
-		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker), nil
+		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker, q.stats), nil
 
 	case *parser.SubqueryExpr:
 		if !q.engine.featureToggles.EnableSubqueries {
@@ -836,8 +839,12 @@ func (q *Query) Statement() parser.Statement {
 }
 
 func (q *Query) Stats() *stats.Statistics {
-	// Not yet supported.
-	return nil
+	return &stats.Statistics{
+		Timers: stats.NewQueryTimers(),
+		Samples: &stats.QuerySamples{
+			TotalSamples: q.stats.TotalSamples,
+		},
+	}
 }
 
 func (q *Query) Cancel() {
