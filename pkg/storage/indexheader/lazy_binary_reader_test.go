@@ -77,7 +77,7 @@ func TestNewLazyBinaryReader_ShouldRebuildCorruptedIndexHeader(t *testing.T) {
 
 	// Write a corrupted index-header for the block.
 	headerFilename := filepath.Join(tmpDir, blockID.String(), block.IndexHeaderFilename)
-	require.NoError(t, os.WriteFile(headerFilename, []byte("xxx"), os.ModePerm))
+	require.NoError(t, os.WriteFile(headerFilename, []byte("xxx"), 0600))
 
 	testLazyBinaryReader(t, bkt, tmpDir, blockID, func(t *testing.T, r *LazyBinaryReader, err error) {
 		require.NoError(t, err)

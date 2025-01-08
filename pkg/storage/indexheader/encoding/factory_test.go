@@ -220,7 +220,7 @@ func createDecbufFactoryWithBytes(t testing.TB, filePoolSize uint, len int, enc 
 
 	dir := t.TempDir()
 	filePath := path.Join(dir, "test-file")
-	require.NoError(t, os.WriteFile(filePath, bytes, 0700))
+	require.NoError(t, os.WriteFile(filePath, bytes, 0600))
 
 	reg := prometheus.NewPedanticRegistry()
 	factory := NewDecbufFactory(filePath, filePoolSize, NewDecbufFactoryMetrics(reg))

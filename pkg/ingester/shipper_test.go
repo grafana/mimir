@@ -292,9 +292,9 @@ func TestShipperAddsSegmentFiles(t *testing.T) {
 			},
 		},
 	}.WriteToDir(log.NewNopLogger(), path.Join(dir, id.String())))
-	require.NoError(t, os.WriteFile(filepath.Join(blockDir, "index"), []byte("index file"), 0666))
+	require.NoError(t, os.WriteFile(filepath.Join(blockDir, "index"), []byte("index file"), 0600))
 	segmentFile := "00001"
-	require.NoError(t, os.WriteFile(filepath.Join(chunksDir, segmentFile), []byte("hello world"), 0666))
+	require.NoError(t, os.WriteFile(filepath.Join(chunksDir, segmentFile), []byte("hello world"), 0600))
 
 	uploaded, err := s.Sync(context.Background())
 	require.NoError(t, err)

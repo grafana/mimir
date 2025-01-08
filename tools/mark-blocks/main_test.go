@@ -182,7 +182,7 @@ func TestGetBlocks(t *testing.T) {
 	filePath := path.Join(tmp, "blockfile")
 
 	data := []byte(strings.Join(blockStrings, "\n"))
-	err = os.WriteFile(filePath, data, os.ModePerm)
+	err = os.WriteFile(filePath, data, 0600)
 	require.NoError(t, err)
 
 	fileBlocks, err := getBlocks(nil, filePath)

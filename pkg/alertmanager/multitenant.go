@@ -1389,8 +1389,8 @@ func storeTemplateFile(templateFilepath, content string) (bool, error) {
 	} else if err != nil && !os.IsNotExist(err) {
 		return false, err
 	}
-
-	if err := os.WriteFile(templateFilepath, []byte(content), 0644); err != nil {
+	err = os.WriteFile(templateFilepath, []byte(content), 0644) // #nosec G306 -- Uses system umask to restrict file permissions instead of hardcoding values
+	if err != nil {
 		return false, fmt.Errorf("unable to create Alertmanager template file %q: %s", templateFilepath, err)
 	}
 

@@ -64,7 +64,7 @@ func TestSymbolsV1(t *testing.T) {
 
 	dir := t.TempDir()
 	filePath := path.Join(dir, "index")
-	require.NoError(t, os.WriteFile(filePath, buf.Get(), 0700))
+	require.NoError(t, os.WriteFile(filePath, buf.Get(), 0600))
 
 	reg := prometheus.NewPedanticRegistry()
 	df := streamencoding.NewDecbufFactory(filePath, 0, streamencoding.NewDecbufFactoryMetrics(reg))
@@ -166,7 +166,7 @@ func TestSymbolsV2(t *testing.T) {
 
 	dir := t.TempDir()
 	filePath := path.Join(dir, "index")
-	require.NoError(t, os.WriteFile(filePath, buf.Get(), 0700))
+	require.NoError(t, os.WriteFile(filePath, buf.Get(), 0600))
 
 	reg := prometheus.NewPedanticRegistry()
 	df := streamencoding.NewDecbufFactory(filePath, 0, streamencoding.NewDecbufFactoryMetrics(reg))

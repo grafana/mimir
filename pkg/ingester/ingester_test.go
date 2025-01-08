@@ -6524,10 +6524,10 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			setup: func(t *testing.T, dir string) {
 				// Create a fake TSDB on disk with an empty chunks head segment file (it's invalid unless
 				// it's the last one and opening TSDB should fail).
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "wal", ""), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "chunks_head", ""), 0700))
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "user0", "chunks_head", "00000001"), nil, 0700))
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "user0", "chunks_head", "00000002"), nil, 0700))
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "wal", ""), 0600))
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user0", "chunks_head", ""), 0600))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "user0", "chunks_head", "00000001"), nil, 0600))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "user0", "chunks_head", "00000002"), nil, 0600))
 
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user1", "dummy"), 0700))
 			},
@@ -6548,10 +6548,10 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 
 				// Create a fake TSDB on disk with an empty chunks head segment file (it's invalid unless
 				// it's the last one and opening TSDB should fail).
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user2", "wal", ""), 0700))
-				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user2", "chunks_head", ""), 0700))
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000001"), nil, 0700))
-				require.NoError(t, os.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000002"), nil, 0700))
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user2", "wal", ""), 0600))
+				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user2", "chunks_head", ""), 0600))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000001"), nil, 0600))
+				require.NoError(t, os.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000002"), nil, 0600))
 			},
 			check: func(t *testing.T, i *Ingester) {
 				for _, userID := range []string{"user0", "user1"} {

@@ -87,7 +87,7 @@ func writeFileToSharedDir(s *e2e.Scenario, dst string, content []byte) error {
 	return os.WriteFile(
 		dst,
 		content,
-		os.ModePerm)
+		os.ModePerm) // #nosec G306 -- Uses system umask to restrict file permissions instead of hardcoding values
 }
 
 func copyFileToSharedDir(s *e2e.Scenario, src, dst string) error {

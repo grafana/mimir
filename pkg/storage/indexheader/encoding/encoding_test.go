@@ -711,7 +711,7 @@ func TestDecbuf_Crc32(t *testing.T) {
 func createDecbufWithBytes(t testing.TB, b []byte) Decbuf {
 	dir := t.TempDir()
 	filePath := path.Join(dir, "test-file")
-	require.NoError(t, os.WriteFile(filePath, b, 0700))
+	require.NoError(t, os.WriteFile(filePath, b, 0600))
 
 	reg := prometheus.NewPedanticRegistry()
 	factory := NewDecbufFactory(filePath, 0, NewDecbufFactoryMetrics(reg))
