@@ -551,6 +551,11 @@ alertmanager:
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
   replicas: 1
 
+  # -- Allows to override the container image of the alertmanager component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   statefulSet:
     enabled: true
 
@@ -814,6 +819,11 @@ distributor:
   # -- Whether to render the manifests related to the distributor component.
   enabled: true
 
+  # -- Allows to override the container image of the distributor component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
@@ -926,6 +936,11 @@ distributor:
 ingester:
   # -- Whether to render the manifests related to the ingester component.
   enabled: true
+
+  # -- Allows to override the container image of the ingester component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
 
   # -- Total number of replicas for the ingester across all availability zones
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -1152,6 +1167,12 @@ ingester:
 
 overrides_exporter:
   enabled: true
+
+  # -- Allows to override the container image of the overrides-exporter component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 1
 
   annotations: {}
@@ -1241,6 +1262,12 @@ overrides_exporter:
 
 ruler:
   enabled: true
+
+  # -- Allows to override the container image of the ruler component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 1
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
@@ -1363,6 +1390,11 @@ ruler:
 
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_querier:
+  # -- Allows to override the container image of the ruler-querier component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 2
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
@@ -1481,6 +1513,11 @@ ruler_querier:
 
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_frontend:
+  # -- Allows to override the container image of the ruler-query-frontend component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
@@ -1591,6 +1628,11 @@ ruler_query_frontend:
 
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_scheduler:
+  # -- Allows to override the container image of the ruler-query-scheduler component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 2
 
   service:
@@ -1679,6 +1721,11 @@ ruler_query_scheduler:
 querier:
   # -- Whether to render the manifests related to the querier component.
   enabled: true
+
+  # -- Allows to override the container image of the querier component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
 
   replicas: 2
 
@@ -1811,6 +1858,11 @@ query_frontend:
   # -- Whether to render the manifests related to the query-frontend component.
   enabled: true
 
+  # -- Allows to override the container image of the query-frontend component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
@@ -1921,6 +1973,12 @@ query_frontend:
 
 query_scheduler:
   enabled: true
+
+  # -- Allows to override the container image of the query-scheduler component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 2
 
   service:
@@ -2009,6 +2067,11 @@ query_scheduler:
 store_gateway:
   # -- Whether to render the manifests related to the store-gateway component.
   enabled: true
+
+  # -- Allows to override the container image of the store-gateway component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
 
   # -- Total number of replicas for the store-gateway across all availability zones
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -2226,6 +2289,11 @@ store_gateway:
 compactor:
   # -- Whether to render the manifests related to the compactor component.
   enabled: true
+
+  # -- Allows to override the container image of the compactor component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
 
   replicas: 1
 
@@ -3258,6 +3326,12 @@ gateway:
   # The value of this field is ignored when gateway.enabled=false.
   enabledNonEnterprise: false
 
+  # -- Allows to override the container image of the gateway component.
+  # Only applies to the GEM gateway. Use gateway.nginx.image for the nginx gateway.
+  image:
+    # repository: grafana/mimir-enterprise
+    # tag: 2.15.0
+
   # -- Number of replicas for the Deployment
   replicas: 1
 
@@ -3990,6 +4064,11 @@ admin_api:
   # -- Whether to render the manifests related to the admin-api component.
   enabled: true
 
+  # -- Allows to override the container image of the admin-api component.
+  image:
+    # repository: grafana/enterprise-metrics
+    # tag: 2.15.0
+
   replicas: 1
 
   annotations: {}
@@ -4466,6 +4545,11 @@ federation_frontend:
   # -- Specifies whether the federation-frontend should be enabled
   enabled: false
 
+  # -- Allows to override the container image of the federation-frontend component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # -- Specifies whether other components should be deployed. This is an easy way to deploy the resources necessary for a standalone
   # federation-frontend without the rest of the GEM components.
   disableOtherComponents: false
@@ -4559,6 +4643,10 @@ federation_frontend:
 # that writing and reading metrics works. Currently not supported for
 # installations using GEM token-based authentication.
 smoke_test:
+  # -- Allows to override the container image of the smoke-test component.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
   # -- Controls the backoffLimit on the Kubernetes Job. The Job is marked as failed after that many retries.
   backoffLimit: 5
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
@@ -4577,6 +4665,10 @@ smoke_test:
 # https://grafana.com/docs/mimir/latest/manage/tools/mimir-continuous-test/
 continuous_test:
   enabled: false
+  # -- Allows to override the container image of the continuous-test component.
+  image:
+    # repository: grafana/mimir-continuous-test
+    # tag: 2.15.0
   # -- Number of replicas to start of continuous test
   replicas: 1
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
