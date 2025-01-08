@@ -172,7 +172,7 @@ func trimEntryToSize(entry string, size int) string {
 }
 
 func getMappedFile(filename string, filesize int) (*os.File, mmap.MMap, error) {
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to create activity file")
 	}
