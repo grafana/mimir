@@ -8,14 +8,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+
 	"io"
 	"net/http"
 
 	"github.com/go-kit/log/level"
-	spb "github.com/gogo/googleapis/google/rpc"
-	"github.com/gogo/protobuf/types"
-	"github.com/gogo/status"
+	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/log"
@@ -131,7 +132,7 @@ func ErrorFromHTTPResponse(resp *HTTPResponse) error {
 
 // ErrorFromHTTPResponseWithMessage converts an HTTP response into a grpc error, and uses supplied message for Error message.
 func ErrorFromHTTPResponseWithMessage(resp *HTTPResponse, msg string) error {
-	a, err := types.MarshalAny(resp)
+	a, err := anypb.New(resp)
 	if err != nil {
 		return err
 	}
@@ -139,13 +140,13 @@ func ErrorFromHTTPResponseWithMessage(resp *HTTPResponse, msg string) error {
 	return status.ErrorProto(&spb.Status{
 		Code:    resp.Code,
 		Message: msg,
-		Details: []*types.Any{a},
+		Details: []*anypb.Any{a},
 	})
 }
 
 // HTTPResponseFromError converts a grpc error into an HTTP response
 func HTTPResponseFromError(err error) (*HTTPResponse, bool) {
-	s, ok := grpcutil.ErrorToStatus(err)
+	s, ok := grpcutil.ErrorToGRPCStatus(err)
 	if !ok {
 		return nil, false
 	}
@@ -156,7 +157,7 @@ func HTTPResponseFromError(err error) (*HTTPResponse, bool) {
 	}
 
 	var resp HTTPResponse
-	if err := types.UnmarshalAny(status.Details[0], &resp); err != nil {
+	if err := status.Details[0].UnmarshalTo(&resp); err != nil {
 		level.Error(log.Global()).Log("msg", "got error containing non-response", "err", err)
 		return nil, false
 	}

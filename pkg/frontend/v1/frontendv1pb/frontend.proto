@@ -33,6 +33,8 @@ enum Type {
 }
 
 message FrontendToClient {
+  option (gogoproto.equal) = false;
+  option (gogoproto.marshaler) = false;
   httpgrpc.HTTPRequest httpRequest = 1;
   Type type = 2;
 
@@ -45,6 +47,8 @@ message FrontendToClient {
 }
 
 message ClientToFrontend {
+  option (gogoproto.equal) = false;
+  option (gogoproto.marshaler) = false;
   httpgrpc.HTTPResponse httpResponse = 1;
   string clientID = 2;
   stats.Stats stats = 3;

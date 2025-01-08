@@ -23,6 +23,8 @@ service FrontendForQuerier {
 }
 
 message QueryResultRequest {
+    option (gogoproto.equal) = false;
+    option (gogoproto.marshaler) = false;
     uint64 queryID = 1;
     httpgrpc.HTTPResponse httpResponse = 2;
     stats.Stats stats = 3;
@@ -32,6 +34,8 @@ message QueryResultRequest {
 }
 
 message QueryResultStreamRequest {
+  option (gogoproto.equal) = false;
+  option (gogoproto.marshaler) = false;
   uint64 queryID = 1;
   oneof data {
     QueryResultMetadata metadata = 2;
@@ -40,6 +44,8 @@ message QueryResultStreamRequest {
 }
 
 message QueryResultMetadata {
+    option (gogoproto.equal) = false;
+    option (gogoproto.marshaler) = false;
     int32 code = 1;
     repeated httpgrpc.Header headers = 2;
     stats.Stats stats = 3;
