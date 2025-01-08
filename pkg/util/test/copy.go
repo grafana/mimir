@@ -32,7 +32,7 @@ func copyRecursive(src, dst string) error {
 		}
 
 		if info.IsDir() {
-			return os.MkdirAll(filepath.Join(dst, relPath), os.ModePerm)
+			return os.MkdirAll(filepath.Join(dst, relPath), 0700)
 		}
 
 		if !info.Mode().IsRegular() {
