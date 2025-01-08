@@ -53,7 +53,7 @@ Create chart name and version as used by the chart label.
 Build mimir image reference based on whether enterprise features are requested. The component local values always take precedence.
 Params:
   ctx = . context
-  component = component name (optional)
+  component = component name
 */}}
 {{- define "mimir.imageReference" -}}
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
