@@ -5,8 +5,9 @@ package types
 import (
 	"testing"
 
-	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 func TestMaxExpectedSeriesPerResultConstantIsPowerOfTwo(t *testing.T) {
