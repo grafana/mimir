@@ -89,7 +89,6 @@ spec:
             name: test-vault-agent-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
-          image: grafana/mimir:r324-9e94f1c
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"

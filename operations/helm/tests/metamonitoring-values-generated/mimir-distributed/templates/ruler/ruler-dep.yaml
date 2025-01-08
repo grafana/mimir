@@ -46,7 +46,6 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ruler
-          image: grafana/mimir:r324-9e94f1c
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ruler"

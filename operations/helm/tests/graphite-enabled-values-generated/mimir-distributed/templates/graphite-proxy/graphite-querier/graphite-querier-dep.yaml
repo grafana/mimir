@@ -44,7 +44,6 @@ spec:
           type: RuntimeDefault
       containers:
         - name: graphite-querier
-          image: grafana/enterprise-metrics:r324-e2048427
           imagePullPolicy: IfNotPresent
           args:
             - -target=graphite-querier

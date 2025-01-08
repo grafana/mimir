@@ -78,7 +78,6 @@ spec:
             name: test-enterprise-legacy-label-values-enterprise-metrics-alertmanager-fallback-config
       containers:
         - name: alertmanager
-          image: grafana/enterprise-metrics:r324-e2048427
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"

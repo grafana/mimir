@@ -40,7 +40,6 @@ spec:
           type: RuntimeDefault
       containers:
         - name: query-scheduler
-          image: grafana/enterprise-metrics:r324-e2048427
           imagePullPolicy: IfNotPresent
           args:
             - "-target=query-scheduler"

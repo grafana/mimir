@@ -43,7 +43,6 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ruler-query-scheduler
-          image: grafana/mimir:r324-9e94f1c
           imagePullPolicy: IfNotPresent
           args:
             - "-target=query-scheduler"

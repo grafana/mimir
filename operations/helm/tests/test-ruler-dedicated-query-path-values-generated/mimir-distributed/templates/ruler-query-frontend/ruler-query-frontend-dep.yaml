@@ -45,7 +45,6 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ruler-query-frontend
-          image: grafana/mimir:r324-9e94f1c
           imagePullPolicy: IfNotPresent
           args:
             - "-target=query-frontend"
