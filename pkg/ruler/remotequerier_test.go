@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -307,7 +306,7 @@ func TestRemoteQuerier_QueryRetryBudgetExhaustion(t *testing.T) {
 	// Mock client that always returns a 500 error to trigger retries
 	mockClientFn := func(context.Context, *httpgrpc.HTTPRequest, ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
 		attempts.Add(1)
-		return nil, httpgrpc.Errorf(http.StatusInternalServerError, assert.AnError.Error())
+		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "some error")
 	}
 
 	// Create querier with very low retry rate to trigger budget exhaustion quickly
