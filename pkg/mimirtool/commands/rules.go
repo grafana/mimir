@@ -885,7 +885,7 @@ func save(nss map[string]rules.RuleNamespace, i bool) error {
 			filepath = filepath + ".result"
 		}
 
-		if err := os.WriteFile(filepath, payload, 0644); err != nil {
+		if err := os.WriteFile(filepath, payload, 0600); err != nil {
 			return err
 		}
 	}

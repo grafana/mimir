@@ -87,7 +87,7 @@ func writeFileToSharedDir(s *e2e.Scenario, dst string, content []byte) error {
 	return os.WriteFile(
 		dst,
 		content,
-		os.ModePerm)
+		0600)
 }
 
 func copyFileToSharedDir(s *e2e.Scenario, src, dst string) error {

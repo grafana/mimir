@@ -2492,7 +2492,7 @@ func TestMultitenantAlertmanager_computeFallbackConfig(t *testing.T) {
 	// If a fallback configuration file is set, it returns its content.
 	configDir := t.TempDir()
 	configFile := filepath.Join(configDir, "test.yaml")
-	err = os.WriteFile(configFile, []byte(simpleConfigOne), 0664)
+	err = os.WriteFile(configFile, []byte(simpleConfigOne), 0600)
 	assert.NoError(t, err)
 
 	fallbackConfig, err = ComputeFallbackConfig(configFile)

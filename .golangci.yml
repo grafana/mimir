@@ -71,6 +71,7 @@ linters-settings:
       - G114
       - G301
       - G302
+      - G306
 
 run:
   timeout: 10m

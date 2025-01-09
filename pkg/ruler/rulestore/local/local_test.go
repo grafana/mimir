@@ -56,7 +56,7 @@ func TestClient_LoadRuleGroups(t *testing.T) {
 	err = os.Symlink(user1, path.Join(dir, user2))
 	require.NoError(t, err)
 
-	err = os.WriteFile(path.Join(dir, user1, namespace1), b, 0777)
+	err = os.WriteFile(path.Join(dir, user1, namespace1), b, 0600)
 	require.NoError(t, err)
 
 	const ignoredDir = "ignored-dir"

@@ -33,11 +33,11 @@ func TestStore_ListAllUsers(t *testing.T) {
 	{
 		user1Cfg := prepareAlertmanagerConfig("user-1")
 		user2Cfg := prepareAlertmanagerConfig("user-2")
-		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-1.yaml"), []byte(user1Cfg), os.ModePerm))
-		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-2.yaml"), []byte(user2Cfg), os.ModePerm))
+		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-1.yaml"), []byte(user1Cfg), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-2.yaml"), []byte(user2Cfg), 0600))
 
 		// The following file is expected to be skipped.
-		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-3.unsupported-extension"), []byte{}, os.ModePerm))
+		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-3.unsupported-extension"), []byte{}, 0600))
 
 		users, err := store.ListAllUsers(ctx)
 		require.NoError(t, err)
@@ -59,8 +59,8 @@ func TestStore_GetAlertConfig(t *testing.T) {
 	{
 		user1Cfg := prepareAlertmanagerConfig("user-1")
 		user2Cfg := prepareAlertmanagerConfig("user-2")
-		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-1.yaml"), []byte(user1Cfg), os.ModePerm))
-		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-2.yaml"), []byte(user2Cfg), os.ModePerm))
+		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-1.yaml"), []byte(user1Cfg), 0600))
+		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-2.yaml"), []byte(user2Cfg), 0600))
 
 		config, err := store.GetAlertConfig(ctx, "user-1")
 		require.NoError(t, err)
@@ -86,7 +86,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 	// The storage contains some configs.
 	{
 		user1Cfg := prepareAlertmanagerConfig("user-1")
-		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-1.yaml"), []byte(user1Cfg), os.ModePerm))
+		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-1.yaml"), []byte(user1Cfg), 0600))
 
 		configs, err := store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
 		require.NoError(t, err)
@@ -96,7 +96,7 @@ func TestStore_GetAlertConfigs(t *testing.T) {
 
 		// Add another user config.
 		user2Cfg := prepareAlertmanagerConfig("user-2")
-		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-2.yaml"), []byte(user2Cfg), os.ModePerm))
+		require.NoError(t, os.WriteFile(filepath.Join(storeDir, "user-2.yaml"), []byte(user2Cfg), 0600))
 
 		configs, err = store.GetAlertConfigs(ctx, []string{"user-1", "user-2"})
 		require.NoError(t, err)
