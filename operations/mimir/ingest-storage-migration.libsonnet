@@ -70,6 +70,13 @@
       'grafana.com/prepare-downscale-http-port': '80',
     }),
 
+  local partitionIngesterStatefulSetPolicies =
+    // We must guarantee that the PVCs are retained by the partition ingesters because during the migration
+    // we have a step during which the partition ingesters StatefulSet is deleted (one zone at a time) and
+    // PVCs need to be renamed, but their volumes preserved.
+    statefulSet.spec.persistentVolumeClaimRetentionPolicy.withWhenScaled('Retain') +
+    statefulSet.spec.persistentVolumeClaimRetentionPolicy.withWhenDeleted('Retain'),
+
   local gossipLabel = if !$._config.memberlist_ring_enabled then {} else
     $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
 
@@ -93,6 +100,7 @@
     self.newIngesterZoneStatefulSet('a-partition', $.ingester_partition_zone_a_container, $.ingester_partition_zone_a_node_affinity_matchers) +
     statefulSet.mixin.spec.withReplicas($._config.ingest_storage_migration_partition_ingester_zone_a_replicas) +
     partitionIngesterStatefulSetLabelsAndAnnotations +
+    partitionIngesterStatefulSetPolicies +
     (if !$._config.ingest_storage_migration_partition_ingester_zone_a_scale_down then {} else statefulSet.mixin.spec.withReplicas(0)),
 
   ingester_partition_zone_a_service: if !$._config.ingest_storage_migration_partition_ingester_zone_a_enabled then null else
@@ -106,6 +114,7 @@
     self.newIngesterZoneStatefulSet('b-partition', $.ingester_partition_zone_b_container, $.ingester_partition_zone_b_node_affinity_matchers) +
     statefulSet.mixin.spec.withReplicas($._config.ingest_storage_migration_partition_ingester_zone_b_replicas) +
     partitionIngesterStatefulSetLabelsAndAnnotations +
+    partitionIngesterStatefulSetPolicies +
     (if !$._config.ingest_storage_migration_partition_ingester_zone_b_scale_down then {} else statefulSet.mixin.spec.withReplicas(0)),
 
   ingester_partition_zone_b_service: if !$._config.ingest_storage_migration_partition_ingester_zone_b_enabled then null else
@@ -119,6 +128,7 @@
     self.newIngesterZoneStatefulSet('c-partition', $.ingester_partition_zone_c_container, $.ingester_partition_zone_c_node_affinity_matchers) +
     statefulSet.mixin.spec.withReplicas($._config.ingest_storage_migration_partition_ingester_zone_c_replicas) +
     partitionIngesterStatefulSetLabelsAndAnnotations +
+    partitionIngesterStatefulSetPolicies +
     (if !$._config.ingest_storage_migration_partition_ingester_zone_c_scale_down then {} else statefulSet.mixin.spec.withReplicas(0)),
 
   ingester_partition_zone_c_service: if !$._config.ingest_storage_migration_partition_ingester_zone_c_enabled then null else
