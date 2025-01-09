@@ -281,8 +281,7 @@ func rateSeriesValidator() RangeVectorSeriesValidationFunction {
 	}
 }
 
-func delta() RangeVectorStepFunction {
-	return func(step *types.RangeVectorStepData, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func delta(step *types.RangeVectorStepData, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints()
 		fCount := len(fHead) + len(fTail)
 
