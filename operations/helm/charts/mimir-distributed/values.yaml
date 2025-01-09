@@ -77,6 +77,10 @@ global:
   # scope: admin-api, alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway, tokengen, federation-frontend
   podLabels: {}
 
+  # -- Common labels for all object directly managed this chart.
+  # scope: *
+  commonLabels: {}
+
 serviceAccount:
   # -- Whether to create a service account or not. In case 'create' is false, do set 'name' to an existing service account name.
   create: true
