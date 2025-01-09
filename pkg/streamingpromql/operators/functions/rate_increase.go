@@ -352,10 +352,6 @@ func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, ra
 		emitAnnotation(annotations.NewNativeHistogramNotGaugeWarning)
 	}
 
-	if delta.Schema != desiredSchema {
-		delta = delta.CopyToSchema(desiredSchema)
-	}
-
 	val := calculateHistogramRate(false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount)
 	return val, nil
 }
