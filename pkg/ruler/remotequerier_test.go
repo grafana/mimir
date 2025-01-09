@@ -299,34 +299,6 @@ func TestRemoteQuerier_QueryRetryOnFailure(t *testing.T) {
 		})
 	}
 }
-func TestRemoteQuerier_QueryRetryBudgetExhaustion(t *testing.T) {
-	ctx := context.Background()
-	attempts := &atomic.Int64{}
-
-	// Mock client that always returns a 500 error to trigger retries
-	mockClientFn := func(context.Context, *httpgrpc.HTTPRequest, ...grpc.CallOption) (*httpgrpc.HTTPResponse, error) {
-		attempts.Add(1)
-		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "some error")
-	}
-
-	// Create querier with very low retry rate to trigger budget exhaustion quickly
-	q := NewRemoteQuerier(
-		mockHTTPGRPCClient(mockClientFn),
-		time.Minute, // timeout
-		0.0001,      // retry rate
-		formatJSON,
-		"/prometheus",
-		log.NewNopLogger(),
-	)
-
-	_, err := q.Query(ctx, "test_query", time.Now())
-
-	require.Error(t, err)
-	require.ErrorContains(t, err, "exhausted global retry budget for remote ruler execution (ruler.query-frontend.max-retries-rate)")
-
-	// Should have attempted at least one retry before exhausting budget
-	require.GreaterOrEqual(t, attempts.Load(), int64(2))
-}
 
 func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
 	scenarios := map[string]struct {

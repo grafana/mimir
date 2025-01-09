@@ -356,18 +356,21 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 		if !retry.Ongoing() {
 			return nil, err
 		}
-		retry.Wait()
 
-		// The backoff wait spreads the retries. We check the rate limiter only after that spread.
-		// That should give queries a bigger chance at passing through the rate limiter
-		// in cases of short error bursts and the rate of failed queries being larger than the rate limit.
-		if !q.retryLimiter.Allow() {
-			return nil, fmt.Errorf("exhausted global retry budget for remote ruler execution (ruler.query-frontend.max-retries-rate); last error was: %w", err)
+		retryReservation := q.retryLimiter.Reserve()
+		if !retryReservation.OK() {
+			// This should only happen if we've misconfigured the limiter.
+			return nil, fmt.Errorf("couldn't reserve a retry token")
 		}
-		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
+		// We want to wait at least the time for the backoff, but also don't want to exceed the rate limit.
+		// All of this is capped to the max backoff, so that we are less likely to overrun into the next evaluation.
+		retryDelay := max(retry.NextDelay(), min(retryConfig.MaxBackoff, retryReservation.Delay()))
+		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err, "retry_delay", retryDelay)
 
-		// Avoid masking last known error if context was cancelled while waiting.
-		if ctx.Err() != nil {
+		select {
+		case <-time.After(retryDelay):
+		case <-ctx.Done():
+			// Avoid masking last known error if context was cancelled while waiting.
 			return nil, fmt.Errorf("%s while retrying request, last error was: %w", ctx.Err(), err)
 		}
 	}
