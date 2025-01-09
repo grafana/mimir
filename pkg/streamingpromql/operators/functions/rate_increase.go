@@ -35,10 +35,7 @@ var Delta = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-// rate is utility function for rate/increase/delta.
-// It calculates the rate (allowing for counter resets if isCounter is true for rate and increase),
-// extrapolates if the first/last sample is close to the boundary, and returns
-// the result as either per-second (if isRate is true) or overall (this is increase function).
+// isRate is true for `rate` function, or false for `instant` function
 func rate(isRate bool) RangeVectorStepFunction {
 	return func(step *types.RangeVectorStepData, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints()
