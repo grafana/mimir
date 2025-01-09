@@ -2054,6 +2054,11 @@ func TestAnnotations(t *testing.T) {
 		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
     `
 
+	nativeHistogramsWithResetHintsMix := `
+		metric{reset_hint="unknown"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+		metric{reset_hint="gauge"} {{schema:0 sum:0 count:0 counter_reset_hint:gauge}}+{{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}x3
+    `
+
 	testCases := map[string]annotationTestCase{
 		"sum() with float and native histogram at same step": {
 			data:                       mixedFloatHistogramData,
@@ -2074,9 +2079,13 @@ func TestAnnotations(t *testing.T) {
 		},
 
 		"delta() native histogram unknown CounterResetHint": {
-			data:                       mixedFloatHistogramData,
-			expr:                       `delta(metric{type="histogram"}[3m])`,
+			data:                       nativeHistogramsWithResetHintsMix,
+			expr:                       `delta(metric{reset_hint="unknown"}[3m])`,
 			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
+		},
+		"delta() native histogram gauge CounterResetHint": {
+			data: nativeHistogramsWithResetHintsMix,
+			expr: `delta(metric{reset_hint="gauge"}[3m])`,
 		},
 
 		"stdvar() with only floats": {
