@@ -3,6 +3,8 @@
 package aggregations
 
 import (
+	"strings"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -35,3 +37,43 @@ var AggregationGroupFactories = map[parser.ItemType]AggregationGroupFactory{
 //
 // Invalid combinations include exponential and custom buckets, and histograms with incompatible custom buckets.
 var invalidCombinationOfHistograms = &histogram.FloatHistogram{}
+
+func IsAggregationDisabled(op parser.ItemType, disabledAggregations []string) bool {
+	for _, aggName := range disabledAggregations {
+		switch strings.ToLower(aggName) {
+		case "avg":
+			if op == parser.AVG {
+				return true
+			}
+		case "count":
+			if op == parser.COUNT {
+				return true
+			}
+		case "group":
+			if op == parser.GROUP {
+				return true
+			}
+		case "max":
+			if op == parser.MAX {
+				return true
+			}
+		case "min":
+			if op == parser.MIN {
+				return true
+			}
+		case "stddev":
+			if op == parser.STDDEV {
+				return true
+			}
+		case "stdvar":
+			if op == parser.STDVAR {
+				return true
+			}
+		case "sum":
+			if op == parser.SUM {
+				return true
+			}
+		}
+	}
+	return false
+}

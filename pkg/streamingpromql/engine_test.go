@@ -45,7 +45,7 @@ func init() {
 }
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
-	featureToggles := EnableAllFeatures
+	mqeOpts := MQEOptsAllFeatures
 
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
@@ -58,132 +58,142 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
-			requireQueryIsUnsupported(t, featureToggles, expression, expectedError)
+			requireQueryIsUnsupported(t, mqeOpts, expression, expectedError)
 		})
 	}
 }
 
-func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
+func TestUnsupportedPromQLFeaturesWithMQEOpts(t *testing.T) {
 	t.Run("aggregation operations", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableAggregationOperations = false
+		mqeOpts := MQEOptsAllFeatures
+		mqeOpts.EnableAggregationOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "sum by (label) (metric)", "aggregation operations")
+		requireQueryIsUnsupported(t, mqeOpts, "sum by (label) (metric)", "aggregation operations")
 	})
 
 	t.Run("vector/vector binary expressions with comparison operation", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableVectorVectorBinaryComparisonOperations = false
+		mqeOpts := MQEOptsAllFeatures
+		mqeOpts.EnableVectorVectorBinaryComparisonOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "metric{} > other_metric{}", "vector/vector binary expression with '>'")
+		requireQueryIsUnsupported(t, mqeOpts, "metric{} > other_metric{}", "vector/vector binary expression with '>'")
 
 		// Other operations should still be supported.
-		requireQueryIsSupported(t, featureToggles, "metric{} > 1")
-		requireQueryIsSupported(t, featureToggles, "1 > metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 > bool 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
-		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 + 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} and other_metric{}")
+		requireQueryIsSupported(t, mqeOpts, "metric{} > 1")
+		requireQueryIsSupported(t, mqeOpts, "1 > metric{}")
+		requireQueryIsSupported(t, mqeOpts, "2 > bool 1")
+		requireQueryIsSupported(t, mqeOpts, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, mqeOpts, "metric{} + 1")
+		requireQueryIsSupported(t, mqeOpts, "1 + metric{}")
+		requireQueryIsSupported(t, mqeOpts, "2 + 1")
+		requireQueryIsSupported(t, mqeOpts, "metric{} and other_metric{}")
 	})
 
 	t.Run("vector/scalar binary expressions with comparison operation", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableVectorScalarBinaryComparisonOperations = false
+		mqeOpts := MQEOptsAllFeatures
+		mqeOpts.EnableVectorScalarBinaryComparisonOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "metric{} > 1", "vector/scalar binary expression with '>'")
-		requireQueryIsUnsupported(t, featureToggles, "1 > metric{}", "vector/scalar binary expression with '>'")
+		requireQueryIsUnsupported(t, mqeOpts, "metric{} > 1", "vector/scalar binary expression with '>'")
+		requireQueryIsUnsupported(t, mqeOpts, "1 > metric{}", "vector/scalar binary expression with '>'")
 
 		// Other operations should still be supported.
-		requireQueryIsSupported(t, featureToggles, "metric{} > other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 > bool 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
-		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 + 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} and other_metric{}")
+		requireQueryIsSupported(t, mqeOpts, "metric{} > other_metric{}")
+		requireQueryIsSupported(t, mqeOpts, "2 > bool 1")
+		requireQueryIsSupported(t, mqeOpts, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, mqeOpts, "metric{} + 1")
+		requireQueryIsSupported(t, mqeOpts, "1 + metric{}")
+		requireQueryIsSupported(t, mqeOpts, "2 + 1")
+		requireQueryIsSupported(t, mqeOpts, "metric{} and other_metric{}")
 	})
 
 	t.Run("scalar/scalar binary expressions with comparison operation", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableScalarScalarBinaryComparisonOperations = false
+		mqeOpts := MQEOptsAllFeatures
+		mqeOpts.EnableScalarScalarBinaryComparisonOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "2 > bool 1", "scalar/scalar binary expression with '>'")
+		requireQueryIsUnsupported(t, mqeOpts, "2 > bool 1", "scalar/scalar binary expression with '>'")
 
 		// Other operations should still be supported.
-		requireQueryIsSupported(t, featureToggles, "metric{} > other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} > 1")
-		requireQueryIsSupported(t, featureToggles, "1 > metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
-		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 + 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} and other_metric{}")
+		requireQueryIsSupported(t, mqeOpts, "metric{} > other_metric{}")
+		requireQueryIsSupported(t, mqeOpts, "metric{} > 1")
+		requireQueryIsSupported(t, mqeOpts, "1 > metric{}")
+		requireQueryIsSupported(t, mqeOpts, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, mqeOpts, "metric{} + 1")
+		requireQueryIsSupported(t, mqeOpts, "1 + metric{}")
+		requireQueryIsSupported(t, mqeOpts, "2 + 1")
+		requireQueryIsSupported(t, mqeOpts, "metric{} and other_metric{}")
 	})
 
 	t.Run("binary expressions with logical operations", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableBinaryLogicalOperations = false
+		mqeOpts := MQEOptsAllFeatures
+		mqeOpts.EnableBinaryLogicalOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "metric{} and other_metric{}", "binary expression with 'and'")
-		requireQueryIsUnsupported(t, featureToggles, "metric{} or other_metric{}", "binary expression with 'or'")
-		requireQueryIsUnsupported(t, featureToggles, "metric{} unless other_metric{}", "binary expression with 'unless'")
+		requireQueryIsUnsupported(t, mqeOpts, "metric{} and other_metric{}", "binary expression with 'and'")
+		requireQueryIsUnsupported(t, mqeOpts, "metric{} or other_metric{}", "binary expression with 'or'")
+		requireQueryIsUnsupported(t, mqeOpts, "metric{} unless other_metric{}", "binary expression with 'unless'")
 
 		// Other operations should still be supported.
-		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
-		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 + 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} > other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} > 1")
-		requireQueryIsSupported(t, featureToggles, "1 > metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 > bool 1")
+		requireQueryIsSupported(t, mqeOpts, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, mqeOpts, "metric{} + 1")
+		requireQueryIsSupported(t, mqeOpts, "1 + metric{}")
+		requireQueryIsSupported(t, mqeOpts, "2 + 1")
+		requireQueryIsSupported(t, mqeOpts, "metric{} > other_metric{}")
+		requireQueryIsSupported(t, mqeOpts, "metric{} > 1")
+		requireQueryIsSupported(t, mqeOpts, "1 > metric{}")
+		requireQueryIsSupported(t, mqeOpts, "2 > bool 1")
 	})
 
 	t.Run("scalars", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableScalars = false
+		mqeOpts := MQEOptsAllFeatures
+		mqeOpts.EnableScalars = false
 
-		requireQueryIsUnsupported(t, featureToggles, "2", "scalar values")
+		requireQueryIsUnsupported(t, mqeOpts, "2", "scalar values")
 	})
 
 	t.Run("subqueries", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableSubqueries = false
+		mqeOpts := MQEOptsAllFeatures
+		mqeOpts.EnableSubqueries = false
 
-		requireQueryIsUnsupported(t, featureToggles, "sum_over_time(metric[1m:10s])", "subquery")
-	})
-
-	t.Run("histogram_quantile function", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableHistogramQuantileFunction = false
-
-		requireQueryIsUnsupported(t, featureToggles, "histogram_quantile(0.5, metric)", "'histogram_quantile' function")
+		requireQueryIsUnsupported(t, mqeOpts, "sum_over_time(metric[1m:10s])", "subquery")
 	})
 
 	t.Run("one-to-many and many-to-one binary operations", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableOneToManyAndManyToOneBinaryOperations = false
+		mqeOpts := MQEOptsAllFeatures
+		mqeOpts.EnableOneToManyAndManyToOneBinaryOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "metric{} + on() group_left() other_metric{}", "binary expression with many-to-one matching")
-		requireQueryIsUnsupported(t, featureToggles, "metric{} + on() group_right() other_metric{}", "binary expression with one-to-many matching")
+		requireQueryIsUnsupported(t, mqeOpts, "metric{} + on() group_left() other_metric{}", "binary expression with many-to-one matching")
+		requireQueryIsUnsupported(t, mqeOpts, "metric{} + on() group_right() other_metric{}", "binary expression with one-to-many matching")
+	})
+
+	t.Run("function disabled by name", func(t *testing.T) {
+		mqeOpts := MQEOptsAllFeatures
+		mqeOpts.DisabledFunctions = []string{"ceil", "histogram_quantile", "nonexistant"}
+
+		requireQueryIsUnsupported(t, mqeOpts, "ceil(metric{})", "'ceil' function is disabled")
+		requireQueryIsUnsupported(t, mqeOpts, "histogram_quantile(0.9, h{})", "'histogram_quantile' function is disabled")
+	})
+
+	t.Run("aggregation disabled by name", func(t *testing.T) {
+		mqeOpts := MQEOptsAllFeatures
+		mqeOpts.DisabledAggregations = []string{"avg", "MAX", "sum"}
+
+		requireQueryIsUnsupported(t, mqeOpts, "avg by (label) (metric{})", "'avg' aggregation disabled")
+		requireQueryIsUnsupported(t, mqeOpts, "max(metric{})", "'max' aggregation disabled")
+		requireQueryIsUnsupported(t, mqeOpts, "SUM(metric{})", "'sum' aggregation disabled")
 	})
 }
 
-func requireQueryIsUnsupported(t *testing.T, toggles FeatureToggles, expression string, expectedError string) {
-	requireRangeQueryIsUnsupported(t, toggles, expression, expectedError)
-	requireInstantQueryIsUnsupported(t, toggles, expression, expectedError)
+func requireQueryIsUnsupported(t *testing.T, mqeOpts MQEOpts, expression string, expectedError string) {
+	requireRangeQueryIsUnsupported(t, mqeOpts, expression, expectedError)
+	requireInstantQueryIsUnsupported(t, mqeOpts, expression, expectedError)
 }
 
-func requireQueryIsSupported(t *testing.T, toggles FeatureToggles, expression string) {
-	requireRangeQueryIsSupported(t, toggles, expression)
-	requireInstantQueryIsSupported(t, toggles, expression)
+func requireQueryIsSupported(t *testing.T, mqeOpts MQEOpts, expression string) {
+	requireRangeQueryIsSupported(t, mqeOpts, expression)
+	requireInstantQueryIsSupported(t, mqeOpts, expression)
 }
 
-func requireRangeQueryIsUnsupported(t *testing.T, featureToggles FeatureToggles, expression string, expectedError string) {
+func requireRangeQueryIsUnsupported(t *testing.T, mqeOpts MQEOpts, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
-	opts.FeatureToggles = featureToggles
+	opts.MQEOpts = mqeOpts
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -194,9 +204,9 @@ func requireRangeQueryIsUnsupported(t *testing.T, featureToggles FeatureToggles,
 	require.Nil(t, qry)
 }
 
-func requireInstantQueryIsUnsupported(t *testing.T, featureToggles FeatureToggles, expression string, expectedError string) {
+func requireInstantQueryIsUnsupported(t *testing.T, mqeOpts MQEOpts, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
-	opts.FeatureToggles = featureToggles
+	opts.MQEOpts = mqeOpts
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -207,9 +217,9 @@ func requireInstantQueryIsUnsupported(t *testing.T, featureToggles FeatureToggle
 	require.Nil(t, qry)
 }
 
-func requireRangeQueryIsSupported(t *testing.T, featureToggles FeatureToggles, expression string) {
+func requireRangeQueryIsSupported(t *testing.T, mqeOpts MQEOpts, expression string) {
 	opts := NewTestEngineOpts()
-	opts.FeatureToggles = featureToggles
+	opts.MQEOpts = mqeOpts
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -217,9 +227,9 @@ func requireRangeQueryIsSupported(t *testing.T, featureToggles FeatureToggles, e
 	require.NoError(t, err)
 }
 
-func requireInstantQueryIsSupported(t *testing.T, featureToggles FeatureToggles, expression string) {
+func requireInstantQueryIsSupported(t *testing.T, mqeOpts MQEOpts, expression string) {
 	opts := NewTestEngineOpts()
-	opts.FeatureToggles = featureToggles
+	opts.MQEOpts = mqeOpts
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 

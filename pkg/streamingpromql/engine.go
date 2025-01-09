@@ -49,7 +49,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		timeout:                  opts.CommonOpts.Timeout,
 		limitsProvider:           limitsProvider,
 		activeQueryTracker:       opts.CommonOpts.ActiveQueryTracker,
-		featureToggles:           opts.FeatureToggles,
+		mqeOpts:                  opts.MQEOpts,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 
 		logger: logger,
@@ -69,7 +69,7 @@ type Engine struct {
 	timeout                  time.Duration
 	limitsProvider           QueryLimitsProvider
 	activeQueryTracker       promql.QueryTracker
-	featureToggles           FeatureToggles
+	mqeOpts                  MQEOpts
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
 	logger                                    log.Logger
