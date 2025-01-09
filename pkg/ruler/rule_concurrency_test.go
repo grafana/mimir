@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/semaphore"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -342,39 +344,57 @@ func TestIsRuleIndependent(t *testing.T) {
 }
 
 func TestGroupAtRisk(t *testing.T) {
+	// Write group file with 100 independent rules.
+	ruleCt := 100
+	dummyRules := []map[string]interface{}{}
+	for i := 0; i < ruleCt; i++ {
+		dummyRules = append(dummyRules, map[string]interface{}{
+			"record": fmt.Sprintf("test_rule%d", i),
+			"expr":   "vector(1)",
+		})
+	}
+
+	groupFileContent := map[string]interface{}{
+		"groups": []map[string]interface{}{
+			{
+				"name":  "test",
+				"rules": dummyRules,
+			},
+		},
+	}
+
+	groupFile := t.TempDir() + "/test.rules"
+	f, err := os.Create(groupFile)
+	require.NoError(t, err)
+	encoder := yaml.NewEncoder(f)
+	require.NoError(t, encoder.Encode(groupFileContent))
+	require.NoError(t, f.Close())
+
 	createAndEvalTestGroup := func(interval time.Duration, evalConcurrently bool) *rules.Group {
 		st := teststorage.New(t)
 		defer st.Close()
 
-		// Create 100 rules that all take 1ms to evaluate.
-		var createdRules []rules.Rule
-		ruleCt := 100
 		ruleWaitTime := 1 * time.Millisecond
-		for i := 0; i < ruleCt; i++ {
-			q, err := parser.ParseExpr("vector(1)")
-			require.NoError(t, err)
-			rule := rules.NewRecordingRule(fmt.Sprintf("test_rule%d", i), q, labels.Labels{})
-			rule.SetDependencyRules([]rules.Rule{})
-			rule.SetDependentRules([]rules.Rule{})
-			createdRules = append(createdRules, rule)
-		}
-
-		// Create the group and evaluate it
-		opts := rules.GroupOptions{
-			Interval: interval,
-			Opts: &rules.ManagerOptions{
-				Appendable: st,
-				QueryFunc: func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
-					time.Sleep(ruleWaitTime)
-					return promql.Vector{}, nil
-				},
+		opts := &rules.ManagerOptions{
+			Appendable: st,
+			// Make the rules take 1ms to evaluate.
+			QueryFunc: func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
+				time.Sleep(ruleWaitTime)
+				return promql.Vector{}, nil
 			},
-			Rules: createdRules,
 		}
 		if evalConcurrently {
-			opts.Opts.RuleConcurrencyController = &allowAllConcurrencyController{}
+			opts.RuleConcurrencyController = &allowAllConcurrencyController{}
 		}
-		g := rules.NewGroup(opts)
+		manager := rules.NewManager(opts)
+		groups, errs := manager.LoadGroups(interval, labels.EmptyLabels(), "", nil, groupFile)
+		require.Empty(t, errs)
+
+		var g *rules.Group
+		for _, group := range groups {
+			g = group
+		}
+
 		rules.DefaultEvalIterationFunc(context.Background(), g, time.Now())
 
 		// Sanity check that we're actually running the rules concurrently.
