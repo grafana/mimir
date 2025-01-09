@@ -337,14 +337,11 @@ func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, ra
 		lastPoint = hHead[len(hHead)-2]
 	}
 
-	desiredSchema := min(firstPoint.H.Schema, lastPoint.H.Schema)
-
 	if firstPoint.H.UsesCustomBuckets() != lastPoint.H.UsesCustomBuckets() {
 		return nil, histogram.ErrHistogramsIncompatibleSchema
 	}
 
-	delta := lastPoint.H.CopyToSchema(desiredSchema)
-	_, err := delta.Sub(firstPoint.H)
+	delta, err := lastPoint.H.Copy().Sub(firstPoint.H)
 	if err != nil {
 		return nil, err
 	}
