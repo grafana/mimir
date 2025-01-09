@@ -344,10 +344,7 @@ func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, ra
 		emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
 	}
 
-	desiredSchema := firstPoint.H.Schema
-	if lastPoint.H.Schema < desiredSchema {
-		desiredSchema = lastPoint.H.Schema
-	}
+	desiredSchema := min(firstPoint.H.Schema, lastPoint.H.Schema)
 
 	usingCustomBuckets := firstPoint.H.UsesCustomBuckets()
 	if lastPoint.H.UsesCustomBuckets() != usingCustomBuckets {
