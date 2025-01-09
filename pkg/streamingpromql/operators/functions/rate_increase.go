@@ -296,7 +296,6 @@ func delta(step *types.RangeVectorStepData, rangeSeconds float64, emitAnnotation
 	}
 
 	if fCount >= 2 {
-		// TODO: just pass step here? (and below)
 		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds)
 		return val, true, nil, nil
 	}
