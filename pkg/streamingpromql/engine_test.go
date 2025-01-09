@@ -2073,6 +2073,12 @@ func TestAnnotations(t *testing.T) {
 			expr: `sum(metric{type="histogram"})`,
 		},
 
+		"delta() native histogram unknown CounterResetHint": {
+			data:                       mixedFloatHistogramData,
+			expr:                       `delta(metric{type="histogram"}[3m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
+		},
+
 		"stdvar() with only floats": {
 			data: mixedFloatHistogramData,
 			expr: `stdvar(metric{type="float"})`,
