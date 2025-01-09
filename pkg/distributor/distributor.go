@@ -209,7 +209,7 @@ type Config struct {
 
 	MaxRecvMsgSize           int           `yaml:"max_recv_msg_size" category:"advanced"`
 	MaxOTLPRequestSize       int           `yaml:"max_otlp_request_size" category:"experimental"`
-	MaxInfluxRequestSize     int           `yaml:"max_influx_request_size" category:"experimental"`
+	MaxInfluxRequestSize     int           `yaml:"max_influx_request_size" category:"experimental" doc:"hidden"`
 	MaxRequestPoolBufferSize int           `yaml:"max_request_pool_buffer_size" category:"experimental"`
 	RemoteTimeout            time.Duration `yaml:"remote_timeout" category:"advanced"`
 
@@ -252,6 +252,9 @@ type Config struct {
 	// OTelResourceAttributePromotionConfig allows for specializing OTel resource attribute promotion.
 	OTelResourceAttributePromotionConfig OTelResourceAttributePromotionConfig `yaml:"-"`
 
+	// Influx endpoint disabled by default
+	EnableInfluxEndpoint bool `yaml:"influx_endpoint_enabled" category:"experimental" doc:"hidden"`
+
 	// Change the implementation of OTel startTime from a real zero to a special NaN value.
 	EnableStartTimeQuietZero bool `yaml:"start_time_quiet_zero" category:"advanced" doc:"hidden"`
 }
@@ -272,6 +275,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxRequestPoolBufferSize, "distributor.max-request-pool-buffer-size", 0, "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
+	f.BoolVar(&cfg.EnableInfluxEndpoint, "distributor.influx-endpoint-enabled", false, "Enable Influx endpoint.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
 

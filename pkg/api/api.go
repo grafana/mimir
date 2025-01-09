@@ -267,10 +267,12 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		a.cfg.SkipLabelCountValidationHeader, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
 	), true, false, "POST")
 
-	// The Influx Push endpoint is experimental.
-	a.RegisterRoute(InfluxPushEndpoint, distributor.InfluxHandler(
-		pushConfig.MaxInfluxRequestSize, d.RequestBufferPool, a.sourceIPs, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
-	), true, false, "POST")
+	if pushConfig.EnableInfluxEndpoint {
+		// The Influx Push endpoint is experimental.
+		a.RegisterRoute(InfluxPushEndpoint, distributor.InfluxHandler(
+			pushConfig.MaxInfluxRequestSize, d.RequestBufferPool, a.sourceIPs, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
+		), true, false, "POST")
+	}
 
 	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(
 		pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, limits, pushConfig.OTelResourceAttributePromotionConfig,
