@@ -30,7 +30,7 @@ var Increase = FunctionOverRangeVectorDefinition{
 }
 
 var Delta = FunctionOverRangeVectorDefinition{
-	StepFunc:                       delta(),
+	StepFunc:                       delta,
 	SeriesMetadataFunction:         DropSeriesName,
 	NeedsSeriesNamesForAnnotations: true,
 }
@@ -282,36 +282,35 @@ func rateSeriesValidator() RangeVectorSeriesValidationFunction {
 }
 
 func delta(step *types.RangeVectorStepData, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-		fHead, fTail := step.Floats.UnsafePoints()
-		fCount := len(fHead) + len(fTail)
+	fHead, fTail := step.Floats.UnsafePoints()
+	fCount := len(fHead) + len(fTail)
 
-		hHead, hTail := step.Histograms.UnsafePoints()
-		hCount := len(hHead) + len(hTail)
+	hHead, hTail := step.Histograms.UnsafePoints()
+	hCount := len(hHead) + len(hTail)
 
-		if fCount > 0 && hCount > 0 {
-			// We need either at least two histograms and no floats, or at least two floats and no histograms to calculate a delta.
-			// Otherwise, emit a warning and drop this sample.
-			emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
-			return 0, false, nil, nil
-		}
-
-		if fCount >= 2 {
-			// TODO: just pass step here? (and below)
-			val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds)
-			return val, true, nil, nil
-		}
-
-		if hCount >= 2 {
-			val, err := histogramDelta(hCount, hHead, hTail, step.RangeStart, step.RangeEnd, rangeSeconds, emitAnnotation)
-			if err != nil {
-				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
-				return 0, false, nil, err
-			}
-			return 0, false, val, nil
-		}
-
+	if fCount > 0 && hCount > 0 {
+		// We need either at least two histograms and no floats, or at least two floats and no histograms to calculate a delta.
+		// Otherwise, emit a warning and drop this sample.
+		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 		return 0, false, nil, nil
 	}
+
+	if fCount >= 2 {
+		// TODO: just pass step here? (and below)
+		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds)
+		return val, true, nil, nil
+	}
+
+	if hCount >= 2 {
+		val, err := histogramDelta(hCount, hHead, hTail, step.RangeStart, step.RangeEnd, rangeSeconds, emitAnnotation)
+		if err != nil {
+			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+			return 0, false, nil, err
+		}
+		return 0, false, val, nil
+	}
+
+	return 0, false, nil, nil
 }
 
 func floatDelta(fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64) float64 {
