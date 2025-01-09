@@ -2109,6 +2109,10 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.query-result-response-format
   [query_result_response_format: <string> | default = "protobuf"]
 
+  # Maximum number of retries for failed queries per second.
+  # CLI flag: -ruler.query-frontend.max-retries-rate
+  [max_retries_rate: <float> | default = 170]
+
 tenant_federation:
   # Enable rule groups to query against multiple tenants. The tenant IDs
   # involved need to be in the rule group's 'source_tenants' field. If this flag
