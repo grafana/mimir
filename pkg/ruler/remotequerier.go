@@ -366,10 +366,10 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 		// All of this is capped to the max backoff, so that we are less likely to overrun into the next evaluation.
 		retryDelay := max(retry.NextDelay(), min(retryConfig.MaxBackoff, retryReservation.Delay()))
 		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err, "retry_delay", retryDelay)
-
 		select {
 		case <-time.After(retryDelay):
 		case <-ctx.Done():
+			retryReservation.Cancel()
 			// Avoid masking last known error if context was cancelled while waiting.
 			return nil, fmt.Errorf("%s while retrying request, last error was: %w", ctx.Err(), err)
 		}
