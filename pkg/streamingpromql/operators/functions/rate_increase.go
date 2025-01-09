@@ -136,6 +136,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 	err = accumulate(hTail)
 	if err != nil {
 		return nil, err
+
 	}
 
 	if delta.Schema != desiredSchema {
