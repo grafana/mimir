@@ -1972,6 +1972,9 @@ metadata:
   name: ingester-zone-a-partition
   namespace: default
 spec:
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   podManagementPolicy: Parallel
   replicas: 1
   selector:
@@ -2250,6 +2253,9 @@ metadata:
   name: ingester-zone-b-partition
   namespace: default
 spec:
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   podManagementPolicy: Parallel
   replicas: 1
   selector:
@@ -2522,6 +2528,9 @@ metadata:
   name: ingester-zone-c-partition
   namespace: default
 spec:
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
   podManagementPolicy: Parallel
   replicas: 1
   selector:
