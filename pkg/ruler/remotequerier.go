@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
@@ -31,7 +32,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
-	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -55,6 +55,10 @@ const (
 
 	formatJSON     = "json"
 	formatProtobuf = "protobuf"
+
+	cbRetryFailurePercentage = 50 // 50%
+	cbRetryFailureThreshold  = 10 // 10 failed queries
+	cbPeriod                 = 5 * time.Second
 )
 
 var allFormats = []string{formatJSON, formatProtobuf}
@@ -68,8 +72,6 @@ type QueryFrontendConfig struct {
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the rulers and query-frontends."`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
-
-	MaxRetriesRate float64 `yaml:"max_retries_rate"`
 }
 
 func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
@@ -83,7 +85,6 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
 
 	f.StringVar(&c.QueryResultResponseFormat, "ruler.query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from query-frontends. Supported values: %s", strings.Join(allFormats, ", ")))
-	f.Float64Var(&c.MaxRetriesRate, "ruler.query-frontend.max-retries-rate", 170, "Maximum number of retries for failed queries per second.")
 }
 
 func (c *QueryFrontendConfig) Validate() error {
@@ -119,7 +120,7 @@ type Middleware func(ctx context.Context, req *httpgrpc.HTTPRequest) error
 // RemoteQuerier executes read operations against a httpgrpc.HTTPClient.
 type RemoteQuerier struct {
 	client                             httpgrpc.HTTPClient
-	retryLimiter                       *rate.Limiter
+	retryCB                            circuitbreaker.CircuitBreaker[struct{}]
 	timeout                            time.Duration
 	middlewares                        []Middleware
 	promHTTPPrefix                     string
@@ -135,16 +136,19 @@ var protobufDecoderInstance = protobufDecoder{}
 func NewRemoteQuerier(
 	client httpgrpc.HTTPClient,
 	timeout time.Duration,
-	maxRetryRate float64, // maxRetryRate is the maximum number of retries for failed queries per second.
 	preferredQueryResultResponseFormat string,
 	prometheusHTTPPrefix string,
 	logger log.Logger,
 	middlewares ...Middleware,
 ) *RemoteQuerier {
+	retryCB := circuitbreaker.Builder[struct{}]().
+		WithDelay(cbPeriod). // disable retries for 5s when the CB opens
+		WithFailureRateThreshold(cbRetryFailurePercentage, cbRetryFailureThreshold, cbPeriod).
+		Build()
 	return &RemoteQuerier{
 		client:                             client,
 		timeout:                            timeout,
-		retryLimiter:                       rate.NewLimiter(rate.Limit(maxRetryRate), 1),
+		retryCB:                            retryCB,
 		middlewares:                        middlewares,
 		promHTTPPrefix:                     prometheusHTTPPrefix,
 		logger:                             logger,
@@ -313,6 +317,13 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 	return req, nil
 }
 
+// sendRequest sends the request and retries if possible. It attempts each query 3 times. Only server errors are retried.
+// It also respects a circuit breaker for retries. All evaluations are attempted at least once, but retries aren't guaranteed.
+// Retries are disabled when the CB is open. The CB opens and closes based on the outcomes of all requests, not only retries.
+// The goal is to
+//   - have a more predictable load on the remote query-frontend
+//   - not shed query evaluations unnecessarily
+//   - limit the added load of retries when most queries are failing already.
 func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPRequest, logger log.Logger) (*httpgrpc.HTTPResponse, error) {
 	// Ongoing request may be cancelled during evaluation due to some transient error or server shutdown,
 	// so we'll keep retrying until we get a successful response or backoff is terminated.
@@ -325,44 +336,25 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 
 	for {
 		resp, err := q.client.Handle(ctx, req)
-		if err == nil {
-			// Responses with status codes 4xx should always be considered erroneous.
-			// These errors shouldn't be retried because it is expected that
-			// running the same query gives rise to the same 4xx error.
-			if resp.Code/100 == 4 {
-				return nil, httpgrpc.ErrorFromHTTPResponse(resp)
-			}
-			return resp, nil
+		canRetry, err := parseRemoteEvalError(err, resp)
+		if err == nil || !canRetry {
+			// An error we can't retry is the same as a successful request. For example, invalid promQL queries.
+			q.retryCB.RecordSuccess()
+			return resp, err
 		}
-
-		// Bail out if the error is known to be not retriable.
-		switch code := grpcutil.ErrorToStatusCode(err); code {
-		case codes.ResourceExhausted:
-			// In case the server is configured with "grpc-max-send-msg-size-bytes",
-			// and the response exceeds this limit, there is no point retrying the request.
-			// This is a special case, refer to grafana/mimir#7216.
-			if strings.Contains(err.Error(), "message larger than max") {
-				return nil, err
-			}
-		default:
-			// In case the error was a wrapped HTTPResponse, its code represents HTTP status;
-			// 4xx errors shouldn't be retried because it is expected that
-			// running the same query gives rise to the same 4xx error.
-			if code/100 == 4 {
-				return nil, err
-			}
-		}
+		q.retryCB.RecordFailure()
 
 		if !retry.Ongoing() {
 			return nil, err
 		}
 		retry.Wait()
 
-		// The backoff wait spreads the retries. We check the rate limiter only after that spread.
-		// That should give queries a bigger chance at passing through the rate limiter
-		// in cases of short error bursts and the rate of failed queries being larger than the rate limit.
-		if !q.retryLimiter.Allow() {
-			return nil, fmt.Errorf("exhausted global retry budget for remote ruler execution (ruler.query-frontend.max-retries-rate); last error was: %w", err)
+		// The backoff wait spreads the retries. We check the circuit breaker (CB) only after that spread.
+		// That should give queries a bigger chance at passing through the CB
+		// in cases when the CB closed of half-closed while we were waiting.
+		if !q.retryCB.TryAcquirePermit() {
+			return nil, fmt.Errorf("remote evaluation retries have been disabled because there were too many failed evaluations recently (more than %d%% in the last %s); last error was: %w",
+				cbRetryFailurePercentage, cbPeriod, err)
 		}
 		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
 
@@ -371,6 +363,39 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 			return nil, fmt.Errorf("%s while retrying request, last error was: %w", ctx.Err(), err)
 		}
 	}
+}
+
+// parseRemoteEvalError returns the error to be propagated and a boolean indicating whether the error is retriable.
+// If the error is nil, then it is not considered retriable.
+func parseRemoteEvalError(err error, resp *httpgrpc.HTTPResponse) (bool, error) {
+	if err == nil {
+		// Responses with status codes 4xx should always be considered erroneous.
+		// These errors shouldn't be retried because it is expected that
+		// running the same query gives rise to the same 4xx error.
+		if resp.Code/100 == 4 {
+			return false, httpgrpc.ErrorFromHTTPResponse(resp)
+		}
+		return false, nil
+	}
+
+	// Bail out if the error is known to be not retriable.
+	switch code := grpcutil.ErrorToStatusCode(err); code {
+	case codes.ResourceExhausted:
+		// In case the server is configured with "grpc-max-send-msg-size-bytes",
+		// and the response exceeds this limit, there is no point retrying the request.
+		// This is a special case, refer to grafana/mimir#7216.
+		if strings.Contains(err.Error(), "message larger than max") {
+			return false, err
+		}
+	default:
+		// In case the error was a wrapped HTTPResponse, its code represents HTTP status;
+		// 4xx errors shouldn't be retried because it is expected that
+		// running the same query gives rise to the same 4xx error.
+		if code/100 == 4 {
+			return false, err
+		}
+	}
+	return true, err
 }
 
 // WithOrgIDMiddleware attaches 'X-Scope-OrgID' header value to the outgoing request by inspecting the passed context.
