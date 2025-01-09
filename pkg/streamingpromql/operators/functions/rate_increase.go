@@ -315,13 +315,12 @@ func delta(step *types.RangeVectorStepData, rangeSeconds float64, emitAnnotation
 
 func floatDelta(fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64) float64 {
 	firstPoint := fHead[0]
-	fHead = fHead[1:]
 
 	var lastPoint promql.FPoint
 	if len(fTail) > 0 {
 		lastPoint = fTail[len(fTail)-1]
 	} else {
-		lastPoint = fHead[len(fHead)-1]
+		lastPoint = fHead[len(fHead)-2]
 	}
 
 	delta := lastPoint.F - firstPoint.F
@@ -330,13 +329,12 @@ func floatDelta(fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeS
 
 func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	firstPoint := hHead[0]
-	hHead = hHead[1:]
 
 	var lastPoint promql.HPoint
 	if len(hTail) > 0 {
 		lastPoint = hTail[len(hTail)-1]
 	} else {
-		lastPoint = hHead[len(hHead)-1]
+		lastPoint = hHead[len(hHead)-2]
 	}
 
 	if firstPoint.H.CounterResetHint == histogram.GaugeType || lastPoint.H.CounterResetHint == histogram.GaugeType {
