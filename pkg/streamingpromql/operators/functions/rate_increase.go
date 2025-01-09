@@ -319,7 +319,7 @@ func floatDelta(fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeS
 	if len(fTail) > 0 {
 		lastPoint = fTail[len(fTail)-1]
 	} else {
-		lastPoint = fHead[len(fHead)-2]
+		lastPoint = fHead[len(fHead)-1]
 	}
 
 	delta := lastPoint.F - firstPoint.F
@@ -333,7 +333,7 @@ func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, ra
 	if len(hTail) > 0 {
 		lastPoint = hTail[len(hTail)-1]
 	} else {
-		lastPoint = hHead[len(hHead)-2]
+		lastPoint = hHead[len(hHead)-1]
 	}
 
 	if firstPoint.H.UsesCustomBuckets() != lastPoint.H.UsesCustomBuckets() {
