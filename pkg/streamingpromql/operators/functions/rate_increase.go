@@ -289,7 +289,7 @@ func delta(step *types.RangeVectorStepData, rangeSeconds float64, emitAnnotation
 		hCount := len(hHead) + len(hTail)
 
 		if fCount > 0 && hCount > 0 {
-			// We need either at least two histograms and no floats, or at least two floats and no histograms to calculate a rate.
+			// We need either at least two histograms and no floats, or at least two floats and no histograms to calculate a delta.
 			// Otherwise, emit a warning and drop this sample.
 			emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 			return 0, false, nil, nil
