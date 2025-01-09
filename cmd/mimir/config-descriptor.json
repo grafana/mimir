@@ -13121,6 +13121,16 @@
               "fieldDefaultValue": "protobuf",
               "fieldFlag": "ruler.query-frontend.query-result-response-format",
               "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries_rate",
+              "required": false,
+              "desc": "Maximum number of retries for failed queries per second.",
+              "fieldValue": null,
+              "fieldDefaultValue": 170,
+              "fieldFlag": "ruler.query-frontend.max-retries-rate",
+              "fieldType": "float"
             }
           ],
           "fieldValue": null,
