@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/rules"
@@ -115,6 +116,7 @@ func NewMultiTenantConcurrencyController(logger log.Logger, maxGlobalConcurrency
 // NewTenantConcurrencyControllerFor returns a new rules.RuleConcurrencyController to use for the input tenantID.
 func (c *MultiTenantConcurrencyController) NewTenantConcurrencyControllerFor(tenantID string) rules.RuleConcurrencyController {
 	return &TenantConcurrencyController{
+		logger:                  log.With(c.logger, "tenant", tenantID),
 		slotsInUse:              c.metrics.SlotsInUse.WithLabelValues(tenantID),
 		attemptsStartedTotal:    c.metrics.AttemptsStartedTotal.WithLabelValues(tenantID),
 		attemptsIncompleteTotal: c.metrics.AttemptsIncompleteTotal.WithLabelValues(tenantID),
@@ -132,6 +134,7 @@ func (c *MultiTenantConcurrencyController) NewTenantConcurrencyControllerFor(ten
 // TenantConcurrencyController is a concurrency controller that limits the number of concurrent rule evaluations per tenant.
 // It also takes into account the global concurrency limit.
 type TenantConcurrencyController struct {
+	logger                   log.Logger
 	tenantID                 string
 	thresholdRuleConcurrency float64 // Percentage of the rule interval at which we consider the rule group at risk of missing its evaluation.
 
@@ -187,6 +190,71 @@ func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Grou
 	return false
 }
 
+func (c *TenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, g *rules.Group) []rules.ConcurrentRules {
+	logger := log.With(c.logger, "group", g.Name())
+
+	type ruleInfo struct {
+		ruleIdx                 int
+		unevaluatedDependencies map[rules.Rule]struct{}
+	}
+	remainingRules := make(map[rules.Rule]ruleInfo)
+	firstBatch := rules.ConcurrentRules{}
+	for i, r := range g.Rules() {
+		if r.NoDependencyRules() {
+			firstBatch = append(firstBatch, i)
+			continue
+		}
+		// Initialize the rule info with the rule's dependencies.
+		// Use a copy of the dependencies to avoid mutating the rule.
+		info := ruleInfo{ruleIdx: i, unevaluatedDependencies: map[rules.Rule]struct{}{}}
+		for _, dep := range r.DependencyRules() {
+			info.unevaluatedDependencies[dep] = struct{}{}
+		}
+		remainingRules[r] = info
+	}
+	if len(firstBatch) == 0 {
+		// There are no rules without dependencies.
+		// Fall back to sequential evaluation.
+		level.Info(logger).Log("No rules without dependencies found, falling back to sequential rule evaluation. This may be due to indeterminate rule dependencies.")
+		return sequentialRules(g)
+	}
+	order := []rules.ConcurrentRules{firstBatch}
+
+	// Build the order of rules to evaluate based on dependencies.
+	for len(remainingRules) > 0 {
+		previousBatch := order[len(order)-1]
+		// Remove the batch's rules from the dependencies of its dependents.
+		for _, idx := range previousBatch {
+			rule := g.Rules()[idx]
+			for _, dependent := range rule.DependentRules() {
+				dependentInfo := remainingRules[dependent]
+				delete(dependentInfo.unevaluatedDependencies, rule)
+			}
+		}
+
+		var batch rules.ConcurrentRules
+		// Find rules that have no remaining dependencies.
+		for name, info := range remainingRules {
+			if len(info.unevaluatedDependencies) == 0 {
+				batch = append(batch, info.ruleIdx)
+				delete(remainingRules, name)
+			}
+		}
+
+		if len(batch) == 0 {
+			// There is a cycle in the rules' dependencies.
+			// We can't evaluate them concurrently.
+			// Fall back to sequential evaluation.
+			level.Warn(logger).Log("Cyclic rule dependencies detected, falling back to sequential rule evaluation")
+			return sequentialRules(g)
+		}
+
+		order = append(order, batch)
+	}
+
+	return order
+}
+
 // isGroupAtRisk checks if the rule group's last evaluation time is within the risk threshold.
 func (c *TenantConcurrencyController) isGroupAtRisk(group *rules.Group) bool {
 	interval := group.Interval().Seconds()
@@ -221,6 +289,19 @@ func (n *NoopMultiTenantConcurrencyController) NewTenantConcurrencyControllerFor
 type NoopTenantConcurrencyController struct{}
 
 func (n *NoopTenantConcurrencyController) Done(_ context.Context) {}
+func (n *NoopTenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, g *rules.Group) []rules.ConcurrentRules {
+	return sequentialRules(g)
+}
+
 func (n *NoopTenantConcurrencyController) Allow(_ context.Context, _ *rules.Group, _ rules.Rule) bool {
 	return false
+}
+
+func sequentialRules(g *rules.Group) []rules.ConcurrentRules {
+	// Split the group into batches of 1 rule each.
+	order := make([]rules.ConcurrentRules, len(g.Rules()))
+	for i := range g.Rules() {
+		order[i] = []int{i}
+	}
+	return order
 }
