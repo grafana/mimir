@@ -35,6 +35,7 @@
 
 * [CHANGE] Update rollout-operator version to 0.22.0. #10229
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
+* [ENHANCEMENT] Enforce `persistentVolumeClaimRetentionPolicy` `Retain` policy on partition ingesters during migration to experimental ingest storage. #10394
 * [BUGFIX] Ports in container rollout-operator. #10273
 
 ### Mimirtool
