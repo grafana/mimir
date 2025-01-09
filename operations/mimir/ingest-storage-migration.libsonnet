@@ -250,3 +250,16 @@
   local overrideSuperIfExists(name, override) = if !( name in super) || super[name] == null || super[name] == {} then null else
     (if override == null then null else super[name] + override),
 }
+
+// Assert on required specs, to make sure they don't get overridden elsewhere. These assertions are
+// executed at a later stage in the jsonnet evaluation, so they can detect overrides done in files
+// imported after this one too.
+{
+  assert $.ingester_partition_zone_a_statefulset == null || $.ingester_partition_zone_a_statefulset.spec.persistentVolumeClaimRetentionPolicy.whenScaled == 'Retain' : 'persistentVolumeClaimRetentionPolicy.whenScaled must be set to Retain on ingester_partition_zone_a_statefulset',
+  assert $.ingester_partition_zone_b_statefulset == null || $.ingester_partition_zone_b_statefulset.spec.persistentVolumeClaimRetentionPolicy.whenScaled == 'Retain' : 'persistentVolumeClaimRetentionPolicy.whenScaled must be set to Retain on ingester_partition_zone_b_statefulset',
+  assert $.ingester_partition_zone_c_statefulset == null || $.ingester_partition_zone_c_statefulset.spec.persistentVolumeClaimRetentionPolicy.whenScaled == 'Retain' : 'persistentVolumeClaimRetentionPolicy.whenScaled must be set to Retain on ingester_partition_zone_c_statefulset',
+
+  assert $.ingester_partition_zone_a_statefulset == null || $.ingester_partition_zone_a_statefulset.spec.persistentVolumeClaimRetentionPolicy.whenDeleted == 'Retain' : 'persistentVolumeClaimRetentionPolicy.whenDeleted must be set to Retain on ingester_partition_zone_a_statefulset',
+  assert $.ingester_partition_zone_b_statefulset == null || $.ingester_partition_zone_b_statefulset.spec.persistentVolumeClaimRetentionPolicy.whenDeleted == 'Retain' : 'persistentVolumeClaimRetentionPolicy.whenDeleted must be set to Retain on ingester_partition_zone_b_statefulset',
+  assert $.ingester_partition_zone_c_statefulset == null || $.ingester_partition_zone_c_statefulset.spec.persistentVolumeClaimRetentionPolicy.whenDeleted == 'Retain' : 'persistentVolumeClaimRetentionPolicy.whenDeleted must be set to Retain on ingester_partition_zone_c_statefulset',
+}
