@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/rules"
@@ -115,6 +116,7 @@ func NewMultiTenantConcurrencyController(logger log.Logger, maxGlobalConcurrency
 // NewTenantConcurrencyControllerFor returns a new rules.RuleConcurrencyController to use for the input tenantID.
 func (c *MultiTenantConcurrencyController) NewTenantConcurrencyControllerFor(tenantID string) rules.RuleConcurrencyController {
 	return &TenantConcurrencyController{
+		logger:                  log.With(c.logger, "tenant", tenantID),
 		slotsInUse:              c.metrics.SlotsInUse.WithLabelValues(tenantID),
 		attemptsStartedTotal:    c.metrics.AttemptsStartedTotal.WithLabelValues(tenantID),
 		attemptsIncompleteTotal: c.metrics.AttemptsIncompleteTotal.WithLabelValues(tenantID),
@@ -132,6 +134,7 @@ func (c *MultiTenantConcurrencyController) NewTenantConcurrencyControllerFor(ten
 // TenantConcurrencyController is a concurrency controller that limits the number of concurrent rule evaluations per tenant.
 // It also takes into account the global concurrency limit.
 type TenantConcurrencyController struct {
+	logger                   log.Logger
 	tenantID                 string
 	thresholdRuleConcurrency float64 // Percentage of the rule interval at which we consider the rule group at risk of missing its evaluation.
 
@@ -156,18 +159,6 @@ func (c *TenantConcurrencyController) Done(_ context.Context) {
 
 // Allow tries to acquire a slot from the concurrency controller.
 func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Group, rule rules.Rule) bool {
-	// To allow a rule to be executed concurrently, we need 3 conditions:
-	// 1. The rule group must be at risk of missing its evaluation.
-	// 2. The rule must not have any rules that depend on it.
-	// 3. The rule itself must not depend on any other rules.
-	if !c.isGroupAtRisk(group) {
-		return false
-	}
-
-	if !isRuleIndependent(rule) {
-		return false
-	}
-
 	// Next, try to acquire a global concurrency slot.
 	c.attemptsStartedTotal.Inc()
 	if !c.globalConcurrency.TryAcquire(1) {
@@ -185,6 +176,78 @@ func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Grou
 	c.slotsInUse.Dec()
 	c.attemptsIncompleteTotal.Inc()
 	return false
+}
+
+func (c *TenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, g *rules.Group) []rules.ConcurrentRules {
+	if !c.isGroupAtRisk(g) {
+		// If the group is not at risk, we can evaluate the rules sequentially.
+		return sequentialRules(g)
+	}
+
+	logger := log.With(c.logger, "group", g.Name())
+
+	type ruleInfo struct {
+		ruleIdx                 int
+		unevaluatedDependencies map[rules.Rule]struct{}
+	}
+	remainingRules := make(map[rules.Rule]ruleInfo)
+	firstBatch := rules.ConcurrentRules{}
+	for i, r := range g.Rules() {
+		if r.NoDependencyRules() {
+			firstBatch = append(firstBatch, i)
+			continue
+		}
+		// Initialize the rule info with the rule's dependencies.
+		// Use a copy of the dependencies to avoid mutating the rule.
+		info := ruleInfo{ruleIdx: i, unevaluatedDependencies: map[rules.Rule]struct{}{}}
+		for _, dep := range r.DependencyRules() {
+			info.unevaluatedDependencies[dep] = struct{}{}
+		}
+		remainingRules[r] = info
+	}
+	if len(firstBatch) == 0 {
+		// There are no rules without dependencies.
+		// Fall back to sequential evaluation.
+		level.Info(logger).Log("msg", "No rules without dependencies found, falling back to sequential rule evaluation. This may be due to indeterminate rule dependencies.")
+		return sequentialRules(g)
+	}
+	order := []rules.ConcurrentRules{firstBatch}
+
+	// Build the order of rules to evaluate based on dependencies.
+	for len(remainingRules) > 0 {
+		previousBatch := order[len(order)-1]
+		// Remove the batch's rules from the dependencies of its dependents.
+		for _, idx := range previousBatch {
+			rule := g.Rules()[idx]
+			for _, dependent := range rule.DependentRules() {
+				dependentInfo := remainingRules[dependent]
+				delete(dependentInfo.unevaluatedDependencies, rule)
+			}
+		}
+
+		var batch rules.ConcurrentRules
+		// Find rules that have no remaining dependencies.
+		for name, info := range remainingRules {
+			if len(info.unevaluatedDependencies) == 0 {
+				batch = append(batch, info.ruleIdx)
+				delete(remainingRules, name)
+			}
+		}
+
+		if len(batch) == 0 {
+			// There is a cycle in the rules' dependencies.
+			// We can't evaluate them concurrently.
+			// Fall back to sequential evaluation.
+			level.Warn(logger).Log("msg", "Cyclic rule dependencies detected, falling back to sequential rule evaluation")
+			return sequentialRules(g)
+		}
+
+		order = append(order, batch)
+	}
+
+	level.Info(logger).Log("msg", "Batched rules into concurrent blocks", "rules", len(g.Rules()), "batches", len(order))
+
+	return order
 }
 
 // isGroupAtRisk checks if the rule group's last evaluation time is within the risk threshold.
@@ -205,11 +268,6 @@ func (c *TenantConcurrencyController) isGroupAtRisk(group *rules.Group) bool {
 	return false
 }
 
-// isRuleIndependent checks if the rule is independent of other rules.
-func isRuleIndependent(rule rules.Rule) bool {
-	return rule.NoDependentRules() && rule.NoDependencyRules()
-}
-
 // NoopMultiTenantConcurrencyController is a concurrency controller that does not allow for concurrency.
 type NoopMultiTenantConcurrencyController struct{}
 
@@ -221,6 +279,19 @@ func (n *NoopMultiTenantConcurrencyController) NewTenantConcurrencyControllerFor
 type NoopTenantConcurrencyController struct{}
 
 func (n *NoopTenantConcurrencyController) Done(_ context.Context) {}
+func (n *NoopTenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, g *rules.Group) []rules.ConcurrentRules {
+	return sequentialRules(g)
+}
+
 func (n *NoopTenantConcurrencyController) Allow(_ context.Context, _ *rules.Group, _ rules.Rule) bool {
 	return false
+}
+
+func sequentialRules(g *rules.Group) []rules.ConcurrentRules {
+	// Split the group into batches of 1 rule each.
+	order := make([]rules.ConcurrentRules, len(g.Rules()))
+	for i := range g.Rules() {
+		order[i] = []int{i}
+	}
+	return order
 }

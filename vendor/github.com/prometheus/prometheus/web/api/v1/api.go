@@ -144,6 +144,8 @@ type PrometheusVersion struct {
 type RuntimeInfo struct {
 	StartTime           time.Time `json:"startTime"`
 	CWD                 string    `json:"CWD"`
+	Hostname            string    `json:"hostname"`
+	ServerTime          time.Time `json:"serverTime"`
 	ReloadConfigSuccess bool      `json:"reloadConfigSuccess"`
 	LastConfigTime      time.Time `json:"lastConfigTime"`
 	CorruptionCount     int64     `json:"corruptionCount"`
@@ -437,6 +439,10 @@ func (api *API) options(*http.Request) apiFuncResult {
 }
 
 func (api *API) query(r *http.Request) (result apiFuncResult) {
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
 	ts, err := parseTimeParam(r, "time", api.now())
 	if err != nil {
 		return invalidParamError(err, "time")
@@ -478,6 +484,15 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
 
+	warnings := res.Warnings
+	if limit > 0 {
+		var isTruncated bool
+
+		res, isTruncated = truncateResults(res, limit)
+		if isTruncated {
+			warnings = warnings.Add(errors.New("results truncated due to limit"))
+		}
+	}
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
 	if sr == nil {
@@ -489,7 +504,7 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 		Stats:      qs,
-	}, nil, res.Warnings, qry.Close}
+	}, nil, warnings, qry.Close}
 }
 
 func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
@@ -525,6 +540,10 @@ func extractQueryOpts(r *http.Request) (promql.QueryOpts, error) {
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
+	limit, err := parseLimitParam(r.FormValue("limit"))
+	if err != nil {
+		return invalidParamError(err, "limit")
+	}
 	start, err := parseTime(r.FormValue("start"))
 	if err != nil {
 		return invalidParamError(err, "start")
@@ -589,6 +608,16 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
 	}
 
+	warnings := res.Warnings
+	if limit > 0 {
+		var isTruncated bool
+
+		res, isTruncated = truncateResults(res, limit)
+		if isTruncated {
+			warnings = warnings.Add(errors.New("results truncated due to limit"))
+		}
+	}
+
 	// Optional stats field in response if parameter "stats" is not empty.
 	sr := api.statsRenderer
 	if sr == nil {
@@ -600,7 +629,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 		Stats:      qs,
-	}, nil, res.Warnings, qry.Close}
+	}, nil, warnings, qry.Close}
 }
 
 func (api *API) queryExemplars(r *http.Request) apiFuncResult {
@@ -2015,7 +2044,7 @@ func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (
 	}
 	result, err := parseTime(val)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("Invalid time value for '%s': %w", paramName, err)
+		return time.Time{}, fmt.Errorf("invalid time value for '%s': %w", paramName, err)
 	}
 	return result, nil
 }
@@ -2100,4 +2129,26 @@ func toHintLimit(limit int) int {
 		return limit + 1
 	}
 	return limit
+}
+
+// truncateResults truncates result for queryRange() and query().
+// No truncation for other types(Scalars or Strings).
+func truncateResults(result *promql.Result, limit int) (*promql.Result, bool) {
+	isTruncated := false
+
+	switch v := result.Value.(type) {
+	case promql.Matrix:
+		if len(v) > limit {
+			result.Value = v[:limit]
+			isTruncated = true
+		}
+	case promql.Vector:
+		if len(v) > limit {
+			result.Value = v[:limit]
+			isTruncated = true
+		}
+	}
+
+	// Return the modified result. Unchanged for other types.
+	return result, isTruncated
 }

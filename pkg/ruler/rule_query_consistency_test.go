@@ -50,7 +50,7 @@ func TestWrapQueryFuncWithReadConsistency(t *testing.T) {
 
 	t.Run("should inject strong read consistency if the rule has dependencies", func(t *testing.T) {
 		r := rules.NewRecordingRule("", &parser.StringLiteral{}, labels.New())
-		r.SetNoDependencyRules(false)
+		r.SetDependencyRules([]rules.Rule{rules.NewRecordingRule("other", &parser.StringLiteral{}, labels.New())})
 
 		ctx := rules.NewOriginContext(context.Background(), rules.NewRuleDetail(r))
 		hasReadConsistency, readConsistencyLevel := runWrappedFunc(ctx)
@@ -60,7 +60,7 @@ func TestWrapQueryFuncWithReadConsistency(t *testing.T) {
 
 	t.Run("should not inject read consistency level if the rule has no dependencies, to let run with the per-tenant default", func(t *testing.T) {
 		r := rules.NewRecordingRule("", &parser.StringLiteral{}, labels.New())
-		r.SetNoDependencyRules(true)
+		r.SetDependencyRules([]rules.Rule{})
 
 		ctx := rules.NewOriginContext(context.Background(), rules.NewRuleDetail(r))
 		hasReadConsistency, _ := runWrappedFunc(ctx)
