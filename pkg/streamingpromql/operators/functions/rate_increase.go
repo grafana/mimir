@@ -337,10 +337,6 @@ func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, ra
 		lastPoint = hHead[len(hHead)-2]
 	}
 
-	if firstPoint.H.CounterResetHint == histogram.GaugeType || lastPoint.H.CounterResetHint == histogram.GaugeType {
-		emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
-	}
-
 	desiredSchema := min(firstPoint.H.Schema, lastPoint.H.Schema)
 
 	if firstPoint.H.UsesCustomBuckets() != lastPoint.H.UsesCustomBuckets() {
