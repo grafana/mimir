@@ -4,6 +4,7 @@ package ruler
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -178,6 +179,16 @@ func (c *TenantConcurrencyController) Allow(_ context.Context, _ *rules.Group, _
 	return false
 }
 
+// stringableConcurrentRules is a type that allows us to print a slice of rules.ConcurrentRules.
+// This prevents premature evaluation, it will only be evaluated when the logger needs to print it.
+type stringableConcurrentRules []rules.ConcurrentRules
+
+func (p stringableConcurrentRules) String() string {
+	return fmt.Sprintf("%v", []rules.ConcurrentRules(p))
+}
+
+var _ fmt.Stringer = stringableConcurrentRules{}
+
 // SplitGroupIntoBatches splits the group into batches of rules that can be evaluated concurrently.
 // It tries to batch rules that have no dependencies together and rules that have dependencies in separate batches.
 // Returning no batches or nil means that the group should be evaluated sequentially.
@@ -251,7 +262,7 @@ func (c *TenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, g
 	}
 
 	level.Info(logger).Log("msg", "Batched rules into concurrent blocks", "rules", len(g.Rules()), "batches", len(result))
-	level.Debug(logger).Log("msg", "Batched rules into concurrent blocks", "batches", result)
+	level.Debug(logger).Log("msg", "Batched rules into concurrent blocks", "batches", stringableConcurrentRules(result))
 
 	return result
 }
