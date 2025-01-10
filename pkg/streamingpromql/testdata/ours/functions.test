@@ -670,10 +670,6 @@ eval range from 0 to 8m step 1m delta(metric[3m1s])
   {case="all nh up down"} _ {{schema:3 counter_reset_hint:gauge buckets:[4.5]}} {{schema:3 counter_reset_hint:gauge buckets:[1.5083333333333333]}} {{schema:3 counter_reset_hint:gauge buckets:[1.5083333333333333]}} {{schema:3 counter_reset_hint:gauge buckets:[-3.033333333333333]}}
   {case="all nhcb up down"} _ {{schema:-53 custom_values:[5 10] counter_reset_hint:gauge buckets:[4.5]}} {{schema:-53 custom_values:[5 10] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] counter_reset_hint:gauge buckets:[-4.55]}}
 
-
-
-
-
 clear
 
 load 1m
