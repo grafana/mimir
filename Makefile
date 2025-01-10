@@ -240,7 +240,7 @@ images: ## Print all image names.
 	@echo > /dev/null
 
 # Generating proto code is automated.
-PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
+PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*_custom_types.proto' -prune -o -name '*.proto' -print)
 PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 
 # Generating OTLP translation code is automated.
@@ -324,7 +324,14 @@ GENERATE_FILES ?= true
 
 %.pb.go: %.proto
 ifeq ($(GENERATE_FILES),true)
-	protoc -I $(GOPATH)/src:./vendor/github.com/gogo/protobuf:./vendor:./$(@D):./pkg/storegateway/storepb --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
+	if case "$@" in *_custom_types.pb.go) false ;; *) true ;; esac; then \
+		protoc \
+			-I ./vendor -I ./ -I ./vendor/github.com/gogo/protobuf \
+			--gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types:. \
+			./$(patsubst %.pb.go,%.proto,$@); \
+	else \
+		echo "Skipping $@"; \
+	fi
 else
 	@echo "Warning: generating files has been disabled, but the following file needs to be regenerated: $@"
 	@echo "If this is unexpected, check if the last modified timestamps on $@ and $(patsubst %.pb.go,%.proto,$@) are correct."

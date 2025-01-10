@@ -20,7 +20,7 @@ function apply_expected_diffs {
         fi
 
         echo "$file: applying expected diff: $expdiff_file"
-        git apply -R "$expdiff_file"
+        git apply --allow-empty -R "$expdiff_file"
     done
 }
 
