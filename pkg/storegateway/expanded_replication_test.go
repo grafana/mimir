@@ -45,17 +45,26 @@ func TestMaxTimeExpandedReplication(t *testing.T) {
 		},
 		"max time on boundary": {
 			block: bucketindex.Block{
-				MinTime:    now.Add(-25 * time.Hour).UnixMilli(),
-				MaxTime:    now.Add(-13 * time.Hour).UnixMilli(),
+				MinTime:    now.Add(-49 * time.Hour).UnixMilli(),
+				MaxTime:    now.Add(-25 * time.Hour).UnixMilli(),
+				UploadedAt: now.Add(-6 * time.Hour).Unix(),
+			},
+			expectedSync:  true,
+			expectedQuery: false,
+		},
+		"max time on boundary including grace period": {
+			block: bucketindex.Block{
+				MinTime:    now.Add(-49 * time.Hour).UnixMilli(),
+				MaxTime:    now.Add(-(24*time.Hour + 15*time.Minute)).UnixMilli(),
 				UploadedAt: now.Add(-6 * time.Hour).Unix(),
 			},
 			expectedSync:  true,
 			expectedQuery: true,
 		},
-		"max time on boundary recent upload": {
+		"max time on boundary including grace period recent upload": {
 			block: bucketindex.Block{
-				MinTime:    now.Add(-25 * time.Hour).UnixMilli(),
-				MaxTime:    now.Add(-13 * time.Hour).UnixMilli(),
+				MinTime:    now.Add(-49 * time.Hour).UnixMilli(),
+				MaxTime:    now.Add(-(24*time.Hour + 15*time.Minute)).UnixMilli(),
 				UploadedAt: now.Add(-30 * time.Minute).Unix(),
 			},
 			expectedSync:  true,
@@ -77,8 +86,8 @@ func TestMaxTimeExpandedReplication(t *testing.T) {
 			canSync := replication.EligibleForSync(&tc.block)
 			canQuery := replication.EligibleForQuerying(&tc.block)
 
-			require.Equal(t, tc.expectedSync, canSync, "expected to be able to sync block %+v using %+v", tc.block, replication)
-			require.Equal(t, tc.expectedQuery, canQuery, "expected to be able to query block %+v using %+v", tc.block, replication)
+			require.Equal(t, tc.expectedSync, canSync, "expected to be able/not-able to sync block %+v using %+v", tc.block, replication)
+			require.Equal(t, tc.expectedQuery, canQuery, "expected to be able/not-able to query block %+v using %+v", tc.block, replication)
 		})
 	}
 }
