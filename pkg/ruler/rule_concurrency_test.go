@@ -244,6 +244,10 @@ func TestSplitGroupIntoBatches(t *testing.T) {
 
 			batches := controller.SplitGroupIntoBatches(context.Background(), group)
 			requireConcurrentRulesEqual(t, tc.expectedGroups, batches)
+
+			// Make sure the group is not mutated and will still return the same batches when called again.
+			batches = controller.SplitGroupIntoBatches(context.Background(), group)
+			requireConcurrentRulesEqual(t, tc.expectedGroups, batches)
 		})
 	}
 }
