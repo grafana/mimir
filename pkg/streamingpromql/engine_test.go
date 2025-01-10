@@ -2057,6 +2057,8 @@ func TestAnnotations(t *testing.T) {
 	nativeHistogramsWithResetHintsMix := `
 		metric{reset_hint="unknown"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
 		metric{reset_hint="gauge"} {{schema:0 sum:0 count:0 counter_reset_hint:gauge}}+{{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}x3
+		metric{reset_hint="gauge-unknown"} {{schema:0 sum:0 count:0 counter_reset_hint:gauge}} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+		metric{reset_hint="unknown-gauge"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}x3
     `
 
 	testCases := map[string]annotationTestCase{
@@ -2086,6 +2088,16 @@ func TestAnnotations(t *testing.T) {
 		"delta() native histogram gauge CounterResetHint": {
 			data: nativeHistogramsWithResetHintsMix,
 			expr: `delta(metric{reset_hint="gauge"}[3m])`,
+		},
+		"delta() native histogram first gauge last unknown CounterResetHint": {
+			data:                       nativeHistogramsWithResetHintsMix,
+			expr:                       `delta(metric{reset_hint="gauge-unknown"}[3m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
+		},
+		"delta() native histogram first unknown last gauge CounterResetHint": {
+			data:                       nativeHistogramsWithResetHintsMix,
+			expr:                       `delta(metric{reset_hint="unknown-gauge"}[3m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
 		},
 
 		"stdvar() with only floats": {
