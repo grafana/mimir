@@ -18,15 +18,14 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	influxio "github.com/influxdata/influxdb/v2/kit/io"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 
 	"github.com/grafana/mimir/pkg/distributor/influxpush"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
-
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/prompb"
 )
 
 func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, _ *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) (int, error) {
