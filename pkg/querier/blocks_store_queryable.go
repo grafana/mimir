@@ -244,7 +244,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "failed to create store-gateway ring client")
 	}
 
-	var expandedReplication storegateway.ExpandedReplication
+	var expandedReplication storegateway.ExpandedReplication = storegateway.NewNopExpandedReplication()
 	if gatewayCfg.ExpandedReplication.Enabled {
 		expandedReplication = storegateway.NewMaxTimeExpandedReplication(
 			gatewayCfg.ExpandedReplication.MaxTimeThreshold,
@@ -252,8 +252,6 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 			// enough time to store-gateways to discover and load them (3 times the sync interval)
 			mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
 		)
-	} else {
-		expandedReplication = storegateway.NewNopExpandedReplication()
 	}
 
 	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, expandedReplication, limits, querierCfg.StoreGatewayClient, logger, reg)
