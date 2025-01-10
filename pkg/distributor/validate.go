@@ -239,7 +239,7 @@ func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMe
 // validateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample, cat *costattribution.Tracker) error {
+func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample, cat *costattribution.SampleTracker) error {
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInFuture, now.Time())
@@ -260,7 +260,7 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 // validateSampleHistogram returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram, cat *costattribution.Tracker) (bool, error) {
+func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram, cat *costattribution.SampleTracker) (bool, error) {
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
 		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInFuture, now.Time())
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
@@ -400,7 +400,7 @@ func removeNonASCIIChars(in string) (out string) {
 
 // validateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
-func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.Tracker, ts time.Time) error {
+func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		cat.IncrementDiscardedSamples(ls, 1, reasonMissingMetricName, ts)

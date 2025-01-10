@@ -51,7 +51,7 @@ type ActiveSeries struct {
 	matchers         *asmodel.Matchers
 	lastConfigUpdate time.Time
 
-	cat *costattribution.Tracker
+	cat *costattribution.SampleTracker
 
 	// The duration after which series become inactive.
 	// Also used to determine if enough time has passed since configuration reload for valid results.
@@ -78,7 +78,7 @@ type seriesStripe struct {
 	activeNativeHistogramBuckets          uint32   // Number of buckets in active native histogram entries in this stripe. Only decreased during purge or clear.
 	activeMatchingNativeHistogramBuckets  []uint32 // Number of buckets in active native histogram entries in this stripe matching each matcher of the configured Matchers.
 
-	cat *costattribution.Tracker
+	cat *costattribution.SampleTracker
 }
 
 // seriesEntry holds a timestamp for single series.
@@ -90,7 +90,7 @@ type seriesEntry struct {
 	deleted bool // This series was marked as deleted, so before purging we need to remove the refence to it from the deletedSeries.
 }
 
-func NewActiveSeries(asm *asmodel.Matchers, timeout time.Duration, cat *costattribution.Tracker) *ActiveSeries {
+func NewActiveSeries(asm *asmodel.Matchers, timeout time.Duration, cat *costattribution.SampleTracker) *ActiveSeries {
 	c := &ActiveSeries{matchers: asm, timeout: timeout, cat: cat}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
@@ -107,7 +107,7 @@ func (c *ActiveSeries) CurrentMatcherNames() []string {
 	return c.matchers.MatcherNames()
 }
 
-func (c *ActiveSeries) ConfigDiffers(ctCfg asmodel.CustomTrackersConfig, caCfg *costattribution.Tracker) bool {
+func (c *ActiveSeries) ConfigDiffers(ctCfg asmodel.CustomTrackersConfig, caCfg *costattribution.SampleTracker) bool {
 	c.configMutex.RLock()
 	defer c.configMutex.RUnlock()
 	return ctCfg.String() != c.matchers.Config().String() || caCfg != c.cat
@@ -430,7 +430,7 @@ func (s *seriesStripe) clear() {
 }
 
 // Reinitialize assigns new matchers and corresponding size activeMatching slices.
-func (s *seriesStripe) reinitialize(asm *asmodel.Matchers, deleted *deletedSeries, cat *costattribution.Tracker) {
+func (s *seriesStripe) reinitialize(asm *asmodel.Matchers, deleted *deletedSeries, cat *costattribution.SampleTracker) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deleted = deleted

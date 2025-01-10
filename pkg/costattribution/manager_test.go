@@ -30,7 +30,7 @@ func newTestManager() *Manager {
 func TestManager_New(t *testing.T) {
 	manager := newTestManager()
 	assert.NotNil(t, manager)
-	assert.NotNil(t, manager.trackersByUserID)
+	assert.NotNil(t, manager.sampleTrackersByUserID)
 	assert.Equal(t, 10*time.Second, manager.inactiveTimeout)
 }
 
@@ -84,7 +84,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		manager.limits, err = testutils.NewMockCostAttributionLimits(1)
 		assert.NoError(t, err)
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(11, 0)))
-		assert.Equal(t, 1, len(manager.trackersByUserID))
+		assert.Equal(t, 1, len(manager.sampleTrackersByUserID))
 
 		expectedMetrics := `
 		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
@@ -99,7 +99,7 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		manager.limits, err = testutils.NewMockCostAttributionLimits(2)
 		assert.NoError(t, err)
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(12, 0)))
-		assert.Equal(t, 1, len(manager.trackersByUserID))
+		assert.Equal(t, 1, len(manager.sampleTrackersByUserID))
 		assert.True(t, manager.Tracker("user3").hasSameLabels([]string{"feature", "team"}))
 
 		manager.Tracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(13, 0))
@@ -133,7 +133,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 
 	t.Run("Purge before inactive timeout", func(t *testing.T) {
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(0, 0)))
-		assert.Equal(t, 2, len(manager.trackersByUserID))
+		assert.Equal(t, 2, len(manager.sampleTrackersByUserID))
 
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
@@ -150,7 +150,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(5, 0)))
 
 		// User3's tracker should remain since it's active, user1's tracker should be removed
-		assert.Equal(t, 1, len(manager.trackersByUserID), "Expected one active tracker after purging")
+		assert.Equal(t, 1, len(manager.sampleTrackersByUserID), "Expected one active tracker after purging")
 		assert.Nil(t, manager.Tracker("user1"), "Expected user1 tracker to be purged")
 
 		expectedMetrics := `
@@ -166,7 +166,7 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(20, 0)))
 
 		// Tracker would stay at 1 since user1's tracker is disabled
-		assert.Equal(t, 1, len(manager.trackersByUserID), "Expected one active tracker after full purge")
+		assert.Equal(t, 1, len(manager.sampleTrackersByUserID), "Expected one active tracker after full purge")
 
 		// No metrics should remain after all purged
 		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(""), "cortex_discarded_attributed_samples_total", "cortex_received_attributed_samples_total"))

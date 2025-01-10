@@ -751,9 +751,9 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 		return nil
 	}
 
-	cat := d.costAttributionMgr.Tracker(userID)
+	cast := d.costAttributionMgr.SampleTracker(userID)
 	if len(ts.Samples) == 1 {
-		return validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, ts.Samples[0], cat)
+		return validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, ts.Samples[0], cast)
 	}
 
 	timestamps := make(map[int64]struct{}, min(len(ts.Samples), 100))
@@ -767,7 +767,7 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 		}
 
 		timestamps[s.TimestampMs] = struct{}{}
-		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s, cat); err != nil {
+		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s, cast); err != nil {
 			return err
 		}
 
@@ -792,9 +792,9 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 		return nil
 	}
 
-	cat := d.costAttributionMgr.Tracker(userID)
+	cast := d.costAttributionMgr.SampleTracker(userID)
 	if len(ts.Histograms) == 1 {
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[0], cat)
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[0], cast)
 		if err != nil {
 			return err
 		}
@@ -815,7 +815,7 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 		}
 
 		timestamps[ts.Histograms[idx].Timestamp] = struct{}{}
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx], cat)
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx], cast)
 		if err != nil {
 			return err
 		}
@@ -879,8 +879,8 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
 func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) (bool, error) {
-	cat := d.costAttributionMgr.Tracker(userID)
-	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt); err != nil {
+	cast := d.costAttributionMgr.SampleTracker(userID)
+	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cast, nowt); err != nil {
 		return true, err
 	}
 
@@ -988,7 +988,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 
 			if errors.As(err, &tooManyClustersError{}) {
 				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(numSamples))
-				d.costAttributionMgr.Tracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(numSamples), reasonTooManyHAClusters, now)
+				d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(req.Timeseries[0].Labels, float64(numSamples), reasonTooManyHAClusters, now)
 			}
 
 			return err
@@ -1833,7 +1833,7 @@ func (d *Distributor) updateReceivedMetrics(req *mimirpb.WriteRequest, userID st
 		receivedSamples += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 		receivedExemplars += len(ts.TimeSeries.Exemplars)
 	}
-	d.costAttributionMgr.Tracker(userID).IncrementReceivedSamples(req, mtime.Now())
+	d.costAttributionMgr.SampleTracker(userID).IncrementReceivedSamples(req, mtime.Now())
 	receivedMetadata = len(req.Metadata)
 
 	d.receivedSamples.WithLabelValues(userID).Add(float64(receivedSamples))

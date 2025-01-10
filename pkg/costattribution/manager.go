@@ -25,25 +25,32 @@ const (
 
 type Manager struct {
 	services.Service
-	logger          log.Logger
-	inactiveTimeout time.Duration
-	limits          *validation.Overrides
+	logger log.Logger
+	limits *validation.Overrides
+	reg    *prometheus.Registry
 
-	mtx              sync.RWMutex
-	trackersByUserID map[string]*Tracker
-	reg              *prometheus.Registry
-	cleanupInterval  time.Duration
+	mstx                   sync.RWMutex
+	sampleTrackersByUserID map[string]*SampleTracker
+	inactiveTimeout        time.Duration
+	cleanupInterval        time.Duration
+
+	matx                   sync.RWMutex
+	activeTrackersByUserID map[string]*ActiveSeriesTracker
 }
 
 func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg *prometheus.Registry) (*Manager, error) {
 	m := &Manager{
-		trackersByUserID: make(map[string]*Tracker),
-		limits:           limits,
-		mtx:              sync.RWMutex{},
-		inactiveTimeout:  inactiveTimeout,
-		logger:           logger,
-		reg:              reg,
-		cleanupInterval:  cleanupInterval,
+		mstx:                   sync.RWMutex{},
+		sampleTrackersByUserID: make(map[string]*SampleTracker),
+
+		matx:                   sync.RWMutex{},
+		activeTrackersByUserID: make(map[string]*ActiveSeriesTracker),
+
+		limits:          limits,
+		inactiveTimeout: inactiveTimeout,
+		logger:          logger,
+		reg:             reg,
+		cleanupInterval: cleanupInterval,
 	}
 
 	m.Service = services.NewTimerService(cleanupInterval, nil, m.iteration, nil).WithName("cost attribution manager")
@@ -64,15 +71,15 @@ func (m *Manager) enabledForUser(userID string) bool {
 	return len(m.limits.CostAttributionLabels(userID)) > 0
 }
 
-func (m *Manager) Tracker(userID string) *Tracker {
+func (m *Manager) SampleTracker(userID string) *SampleTracker {
 	if !m.enabledForUser(userID) {
 		return nil
 	}
 
 	// Check if the tracker already exists, if exists return it. Otherwise lock and create a new tracker.
-	m.mtx.RLock()
-	tracker, exists := m.trackersByUserID[userID]
-	m.mtx.RUnlock()
+	m.mstx.RLock()
+	tracker, exists := m.sampleTrackersByUserID[userID]
+	m.mstx.RUnlock()
 	if exists {
 		return tracker
 	}
@@ -82,22 +89,56 @@ func (m *Manager) Tracker(userID string) *Tracker {
 	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-	if tracker, exists = m.trackersByUserID[userID]; exists {
+	m.mstx.Lock()
+	defer m.mstx.Unlock()
+	if tracker, exists = m.sampleTrackersByUserID[userID]; exists {
 		return tracker
 	}
-	tracker = newTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
-	m.trackersByUserID[userID] = tracker
+	tracker = newSampleTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
+	m.sampleTrackersByUserID[userID] = tracker
+	return tracker
+}
+
+func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
+	if !m.enabledForUser(userID) {
+		return nil
+	}
+
+	// Check if the tracker already exists, if exists return it. Otherwise lock and create a new tracker.
+	m.matx.RLock()
+	tracker, exists := m.activeTrackersByUserID[userID]
+	m.matx.RUnlock()
+	if exists {
+		return tracker
+	}
+
+	// We need to create a new tracker, get all the necessary information from the limits before locking and creating the tracker.
+	labels := m.limits.CostAttributionLabels(userID)
+	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
+	cooldownDuration := m.limits.CostAttributionCooldown(userID)
+
+	m.matx.Lock()
+	defer m.matx.Unlock()
+	if tracker, exists = m.activeTrackersByUserID[userID]; exists {
+		return tracker
+	}
+	tracker = newActiveSeriesTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
+	m.activeTrackersByUserID[userID] = tracker
 	return tracker
 }
 
 func (m *Manager) Collect(out chan<- prometheus.Metric) {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-	for _, tracker := range m.trackersByUserID {
+	m.mstx.RLock()
+	for _, tracker := range m.sampleTrackersByUserID {
 		tracker.Collect(out)
 	}
+	m.mstx.RUnlock()
+
+	m.matx.RLock()
+	for _, tracker := range m.activeTrackersByUserID {
+		tracker.Collect(out)
+	}
+	m.matx.RUnlock()
 }
 
 func (m *Manager) Describe(chan<- *prometheus.Desc) {
@@ -105,61 +146,77 @@ func (m *Manager) Describe(chan<- *prometheus.Desc) {
 	// For more details, refer to the documentation: https://pkg.go.dev/github.com/prometheus/client_golang/prometheus#hdr-Custom_Collectors_and_constant_Metrics
 }
 
-func (m *Manager) deleteTracker(userID string) {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
-	delete(m.trackersByUserID, userID)
+func (m *Manager) deleteSampleTracker(userID string) {
+	m.mstx.Lock()
+	delete(m.sampleTrackersByUserID, userID)
+	m.mstx.Unlock()
 }
 
-func (m *Manager) updateTracker(userID string) *Tracker {
+func (m *Manager) deleteActiveTracker(userID string) {
+	m.matx.Lock()
+	delete(m.activeTrackersByUserID, userID)
+	m.matx.Unlock()
+}
+
+func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTracker) {
 	if !m.enabledForUser(userID) {
-		m.deleteTracker(userID)
-		return nil
+		m.deleteSampleTracker(userID)
+		m.deleteActiveTracker(userID)
+		return nil, nil
 	}
 
-	t := m.Tracker(userID)
+	st := m.SampleTracker(userID)
+	at := m.ActiveSeriesTracker(userID)
 	lbls := slices.Clone(m.limits.CostAttributionLabels(userID))
 
 	// sort the labels to ensure the order is consistent
 	slices.Sort(lbls)
 
 	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker
-	if !t.hasSameLabels(lbls) || t.maxCardinality != m.limits.MaxCostAttributionCardinalityPerUser(userID) || t.cooldownDuration != m.limits.CostAttributionCooldown(userID) {
-		m.mtx.Lock()
-		t = newTracker(userID, lbls, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
-		m.trackersByUserID[userID] = t
-		m.mtx.Unlock()
-		return t
+	if !st.hasSameLabels(lbls) || st.maxCardinality != m.limits.MaxCostAttributionCardinalityPerUser(userID) || st.cooldownDuration != m.limits.CostAttributionCooldown(userID) {
+		m.mstx.Lock()
+		st = newSampleTracker(userID, lbls, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
+		m.sampleTrackersByUserID[userID] = st
+		m.mstx.Unlock()
 	}
 
-	return t
+	if !at.hasSameLabels(lbls) || at.maxCardinality != m.limits.MaxCostAttributionCardinalityPerUser(userID) || at.cooldownDuration != m.limits.CostAttributionCooldown(userID) {
+		m.matx.Lock()
+		at = newActiveSeriesTracker(userID, lbls, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
+		m.activeTrackersByUserID[userID] = at
+		m.matx.Unlock()
+	}
+
+	return st, at
 }
 
 func (m *Manager) purgeInactiveAttributionsUntil(deadline time.Time) error {
-	m.mtx.RLock()
-	userIDs := make([]string, 0, len(m.trackersByUserID))
-	for userID := range m.trackersByUserID {
+	m.mstx.RLock()
+	userIDs := make([]string, 0, len(m.sampleTrackersByUserID))
+	for userID := range m.sampleTrackersByUserID {
 		userIDs = append(userIDs, userID)
 	}
-	m.mtx.RUnlock()
+	m.mstx.RUnlock()
 
 	for _, userID := range userIDs {
-		t := m.updateTracker(userID)
-		if t == nil {
+		st, at := m.updateTracker(userID)
+		if st == nil && at == nil {
 			continue
 		}
 
-		invalidKeys := t.inactiveObservations(deadline)
+		invalidKeys := st.inactiveObservations(deadline)
 		for _, key := range invalidKeys {
-			t.cleanupTrackerAttribution(key)
+			st.cleanupTrackerAttribution(key)
 		}
 
-		if t.recoveredFromOverflow(deadline) {
-			// We delete the current tracker here,
-			// this will cause the creation of a new one later.
-			// ActiveSeries tracker compares the pointer of the tracker,
-			// and this change will cause a reload there.
-			m.deleteTracker(userID)
+		// only sample tracker can recovered from overflow, the activeseries tracker after the cooldown would just be deleted and recreated
+		if st.recoveredFromOverflow(deadline) {
+			m.deleteSampleTracker(userID)
+		}
+
+		// if the activeseries tracker has been in overflow for more than the cooldown duration, delete it
+		if at.overflowSince.Load() > 0 && time.Unix(at.overflowSince.Load(), 0).Add(at.cooldownDuration).Before(deadline) {
+			m.deleteActiveTracker(userID)
 		}
 	}
 	return nil
