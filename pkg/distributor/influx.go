@@ -3,9 +3,13 @@
 package distributor
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -20,6 +24,9 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, _ *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) (int, error) {
@@ -151,4 +158,43 @@ func InfluxHandler(
 			w.WriteHeader(http.StatusNoContent) // Needed for Telegraf, otherwise it tries to marshal JSON and considers the write a failure.
 		}
 	})
+}
+
+// TimeseriesToInfluxRequest is used in tests.
+func TimeseriesToInfluxRequest(timeseries []prompb.TimeSeries) string {
+	var retBuffer bytes.Buffer
+
+	for _, ts := range timeseries {
+		name := ""
+		others := make([]string, 0, 10)
+
+		for _, l := range ts.Labels {
+			if l.Name == model.MetricNameLabel {
+				name = l.Value
+				continue
+			}
+			if l.Name != "__mimir_source__" {
+				others = append(others, l.Name+"="+l.Value)
+			}
+		}
+
+		// We are going to assume that the __name__ value is the measurement name
+		// and does not have a field name suffix (e.g. measurement,t1=v1 f1=1.5" -> "measurement_f1")
+		// as we can't work out whether it was "measurement_f1 value=3" or "measurement f1=3" from the
+		// created series.
+		line := name
+		if len(others) > 0 {
+			line += "," + strings.Join(others, ",")
+		}
+
+		if len(ts.Samples) > 0 {
+			// We only take the first sample
+			// data: "measurement,t1=v1 value=1.5 1465839830100400200",
+			line += fmt.Sprintf(" value=%f %d", ts.Samples[0].Value, ts.Samples[0].Timestamp*time.Millisecond.Nanoseconds())
+		}
+		retBuffer.WriteString(line)
+		retBuffer.WriteString("\n")
+	}
+
+	return retBuffer.String()
 }
