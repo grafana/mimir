@@ -18,19 +18,19 @@ func GenerateTestFloatHistograms(i int) []*histogram.FloatHistogram {
 }
 
 func GenerateTestHistogram(i int) *histogram.Histogram {
-	return tsdbutil.GenerateTestHistogram(i)
+	return tsdbutil.GenerateTestHistogram(int64(i))
 }
 
 func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
-	return tsdbutil.GenerateTestFloatHistogram(i)
+	return tsdbutil.GenerateTestFloatHistogram(int64(i))
 }
 
 func GenerateTestGaugeHistogram(i int) *histogram.Histogram {
-	return tsdbutil.GenerateTestGaugeHistogram(i)
+	return tsdbutil.GenerateTestGaugeHistogram(int64(i))
 }
 
 func GenerateTestGaugeFloatHistogram(i int) *histogram.FloatHistogram {
-	return tsdbutil.GenerateTestGaugeFloatHistogram(i)
+	return tsdbutil.GenerateTestGaugeFloatHistogram(int64(i))
 }
 
 // explicit decoded version of GenerateTestHistogram and GenerateTestFloatHistogram

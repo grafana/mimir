@@ -25,11 +25,21 @@ eval range from 0 to 4m step 1m increase(some_metric_count[1m1s])
   {env="test", cluster="eu"} _ 180 183 183 183
   {env="test", cluster="us"} _ 240 244 244 244
 
+# Range query with delta.
+eval range from 0 to 4m step 1m delta(some_metric_count[1m1s])
+  {env="prod", cluster="eu"} _ 61 61 61 61
+  {env="prod", cluster="us"} _ 122 122 122 122
+  {env="test", cluster="eu"} _ 183 183 183 183
+  {env="test", cluster="us"} _ 244 244 244 244
+
 # If no series are matched, we shouldn't return any results.
 eval range from 0 to 4m step 1m rate(some_nonexistent_metric[1m])
   # Should return no results.
 
 eval range from 0 to 4m step 1m increase(some_nonexistent_metric[1m])
+  # Should return no results.
+
+eval range from 0 to 4m step 1m delta(some_nonexistent_metric[1m])
   # Should return no results.
 
 # Ensure we don't include points outside the range of each individual step.
@@ -108,7 +118,7 @@ eval range from 0 to 7m step 1m present_over_time(some_metric_count[3m1s])
 eval range from 0 to 7m step 1m present_over_time(some_metric_count[6s])
   {foo="bar"} 1 1 1 1 _ _ 1 1
 
-eval range from 0 to 7m step 1m min_over_time(some_metric_count[3m1s])
+eval_info range from 0 to 7m step 1m min_over_time(some_metric_count[3m1s])
   {foo="bar"} 0 0 0 0 1 2 3 _
 
 eval range from 0 to 7m step 1m min_over_time(some_metric_count[6s])
@@ -117,7 +127,7 @@ eval range from 0 to 7m step 1m min_over_time(some_metric_count[6s])
 eval range from 0 to 16m step 1m min_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 0 0 0 1 2 3 Inf Inf Inf NaN 8 7 6 6 6 6
 
-eval range from 0 to 7m step 1m max_over_time(some_metric_count[3m1s])
+eval_info range from 0 to 7m step 1m max_over_time(some_metric_count[3m1s])
   {foo="bar"} 0 1 2 3 3 3 3 _
 
 eval range from 0 to 7m step 1m max_over_time(some_metric_count[6s])
@@ -544,7 +554,7 @@ load 1m
   metric{case="nhcb"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
   metric{case="floats, nh and nhcb"} 0 1 2 3 2 1 0 _ {{schema:3 sum:0 count:2 buckets:[1 2 1]}} {{schema:3 sum:0 count:1 buckets:[1 2 1]}} {{schema:3 sum:0 count:1 buckets:[1 0 1]}} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
 
-eval range from 0 to 20m step 1m deriv(metric[3m1s])
+eval_info range from 0 to 20m step 1m deriv(metric[3m1s])
   {case="all Inf"} _ NaN NaN NaN NaN NaN NaN NaN NaN NaN
   {case="all NaN"} _ NaN NaN NaN NaN NaN NaN NaN NaN NaN
   {case="all floats 1"} _ 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666 0.016666666666666666
@@ -619,6 +629,46 @@ eval range from 0 to 8m step 1m irate(metric[3m1s])
   {case="all Inf"} _ NaN NaN NaN NaN NaN
   {case="all NaN"} _ NaN NaN NaN NaN NaN
   {case="all floats with reset"} _ 0.1 0.016666666666666666 0.1 0.016666666666666666 0.1 0.016666666666666666 0.1 0.1
+
+clear
+
+# Testing irate and idelta
+# nh stands for native histogram
+# nhcb stands for native histogram custom bucket
+load 1m
+  metric{case="1 float"} 9
+  metric{case="2 floats"} 1 5
+  metric{case="all floats with reset"} 1 7 1 7 1 7 1 7
+  metric{case="2 floats with missing middle sample"} 1 _ 5
+  metric{case="2 floats with missing 2 middle samples"} 1 _ _ 5
+  metric{case="2 floats with missing last sample"} 1 5 _
+  metric{case="2 floats with NaN middle sample"} 1 NaN 5
+  metric{case="2 floats with NaN 2 middle samples"} 1 NaN NaN 5
+  metric{case="2 floats with NaN last sample"} 1 5 NaN
+  metric{case="2 floats with Inf middle sample"} 1 Inf 5
+  metric{case="2 floats with Inf 2 middle samples"} 1 Inf Inf 5
+  metric{case="2 floats with Inf last sample"} 1 5 Inf
+  metric{case="all NaN"} NaN NaN NaN NaN
+  metric{case="all Inf"} Inf Inf Inf Inf
+  metric{case="all nh up down"} {{schema:3 sum:0 count:0 buckets:[1 1 1] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[4 1 1] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[2 1 1] counter_reset_hint:gauge}}
+  metric{case="all nhcb up down"} {{schema:-53 sum:0 count:0 buckets:[1 1 1] custom_values:[5 10] counter_reset_hint:gauge}} {{schema:-53 sum:0 count:0 buckets:[4 1 1] custom_values:[5 10] counter_reset_hint:gauge}} {{schema:-53 sum:0 count:0 buckets:[1 1 1] custom_values:[5 10] counter_reset_hint:gauge}}
+
+eval range from 0 to 8m step 1m delta(metric[3m1s])
+  {case="2 floats"} _ 6 12.066666666666666 6.066666666666666
+  {case="2 floats with Inf 2 middle samples"} _ +Inf +Inf 4.022222222222222 -Inf -Inf
+  {case="2 floats with Inf last sample"} _ 6 +Inf +Inf +Inf
+  {case="2 floats with Inf middle sample"} _ +Inf 6.033333333333333 6.033333333333333 -Inf
+  {case="2 floats with NaN 2 middle samples"} _ NaN NaN 4.022222222222222 NaN NaN
+  {case="2 floats with NaN last sample"} _ 6 NaN NaN NaN
+  {case="2 floats with NaN middle sample"} _ NaN 6.033333333333333 6.033333333333333 NaN
+  {case="2 floats with missing 2 middle samples"} _ _ _ 4.022222222222222
+  {case="2 floats with missing last sample"} _ 6 12.066666666666666 6.066666666666666
+  {case="2 floats with missing middle sample"} _ _ 6.033333333333333 6.033333333333333
+  {case="all Inf"} _ NaN NaN NaN NaN NaN
+  {case="all NaN"} _ NaN NaN NaN NaN NaN
+  {case="all floats with reset"} _ 9 0 6.033333333333333 -6.033333333333333 6.033333333333333 -6.033333333333333 6.033333333333333 0
+  {case="all nh up down"} _ {{schema:3 counter_reset_hint:gauge buckets:[4.5]}} {{schema:3 counter_reset_hint:gauge buckets:[1.5083333333333333]}} {{schema:3 counter_reset_hint:gauge buckets:[1.5083333333333333]}} {{schema:3 counter_reset_hint:gauge buckets:[-3.033333333333333]}}
+  {case="all nhcb up down"} _ {{schema:-53 custom_values:[5 10] counter_reset_hint:gauge buckets:[4.5]}} {{schema:-53 custom_values:[5 10] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] counter_reset_hint:gauge buckets:[-4.55]}}
 
 clear
 

@@ -301,6 +301,22 @@ func (v HPointRingBufferView) Count() int {
 	return v.size
 }
 
+// EquivalentFloatSampleCount returns the equivalent number of float samples in this ring buffer view.
+func (v HPointRingBufferView) EquivalentFloatSampleCount() int64 {
+	count := int64(0)
+	head, tail := v.UnsafePoints()
+
+	for _, p := range head {
+		count += EquivalentFloatSampleCount(p.H)
+	}
+
+	for _, p := range tail {
+		count += EquivalentFloatSampleCount(p.H)
+	}
+
+	return count
+}
+
 // Any returns true if this ring buffer view contains any points.
 func (v HPointRingBufferView) Any() bool {
 	return v.size != 0
