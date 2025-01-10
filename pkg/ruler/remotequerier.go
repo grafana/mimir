@@ -363,8 +363,9 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 			return nil, fmt.Errorf("couldn't reserve a retry token")
 		}
 		// We want to wait at least the time for the backoff, but also don't want to exceed the rate limit.
-		// All of this is capped to the max backoff, so that we are less likely to overrun into the next evaluation.
-		retryDelay := max(retry.NextDelay(), min(retryConfig.MaxBackoff, retryReservation.Delay()))
+		// All of this is capped to 1m, so that we are less likely to overrun into the next evaluation.
+		// 1m was selected as giving enough time to spread out the retries.
+		retryDelay := max(retry.NextDelay(), min(time.Minute, retryReservation.Delay()))
 		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err, "retry_delay", retryDelay)
 		select {
 		case <-time.After(retryDelay):
