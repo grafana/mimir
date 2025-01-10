@@ -37,16 +37,11 @@ func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, _ *u
 	spanLogger.SetTag("content_length", r.ContentLength)
 
 	pts, bytesRead, err := influxpush.ParseInfluxLineReader(ctx, r, maxSize)
-	level.Debug(spanLogger).Log("msg", "decodeAndConvert complete", "bytesRead", bytesRead)
+	level.Debug(spanLogger).Log("msg", "decodeAndConvert complete", "bytesRead", bytesRead, "metric_count", len(pts), "err", err)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to parse Influx push request", "err", err)
 		return bytesRead, err
 	}
-
-	level.Debug(spanLogger).Log(
-		"msg", "Influx to Prometheus conversion complete",
-		"metric_count", len(pts),
-	)
 
 	req.Timeseries = pts
 	return bytesRead, nil
