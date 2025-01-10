@@ -79,8 +79,7 @@ func maxOverTime(step *types.RangeVectorStepData, _ float64, emitAnnotation type
 		return 0, false, nil, nil
 	}
 
-	hHead, hTail := step.Histograms.UnsafePoints()
-	if len(hHead) > 0 || len(hTail) > 0 {
+	if step.Histograms.Any() {
 		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 	}
 
@@ -115,8 +114,7 @@ func minOverTime(step *types.RangeVectorStepData, _ float64, emitAnnotation type
 		return 0, false, nil, nil
 	}
 
-	hHead, hTail := step.Histograms.UnsafePoints()
-	if len(hHead) > 0 || len(hTail) > 0 {
+	if step.Histograms.Any() {
 		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 	}
 
@@ -487,11 +485,8 @@ var Deriv = FunctionOverRangeVectorDefinition{
 
 func deriv(step *types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
-	hHead, hTail := step.Histograms.UnsafePoints()
 
-	haveHistograms := len(hHead) > 0 || len(hTail) > 0
-
-	if len(fHead)+len(fTail) == 1 && haveHistograms {
+	if len(fHead)+len(fTail) == 1 && step.Histograms.Any() {
 		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 		return 0, false, nil, nil
 	}
@@ -502,7 +497,7 @@ func deriv(step *types.RangeVectorStepData, _ float64, emitAnnotation types.Emit
 
 	slope, _ := linearRegression(fHead, fTail, fHead[0].T)
 
-	if haveHistograms {
+	if step.Histograms.Any() {
 		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 	}
 
