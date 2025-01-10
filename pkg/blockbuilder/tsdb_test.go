@@ -281,6 +281,30 @@ func TestTSDBBuilder(t *testing.T) {
 	}
 }
 
+func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
+	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	require.NoError(t, err)
+	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	t.Cleanup(func() {
+		require.NoError(t, builder.Close())
+	})
+
+	userID := strconv.Itoa(rand.Int())
+	tenant := tsdbTenant{
+		partitionID: 0,
+		tenantID:    userID,
+	}
+	_, err = builder.getOrCreateTSDB(tenant)
+	require.NoError(t, err)
+
+	errUploadFailed := fmt.Errorf("upload failed")
+	_, err = builder.CompactAndUpload(context.Background(), func(_ context.Context, _, _ string, _ []string) error {
+		return errUploadFailed
+	})
+	require.ErrorIs(t, err, errUploadFailed)
+}
+
 func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHistograms []mimirpb.Histogram, matchers ...*labels.Matcher) {
 	querier, err := db.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)

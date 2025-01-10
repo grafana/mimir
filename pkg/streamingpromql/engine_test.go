@@ -2075,6 +2075,13 @@ func TestAnnotations(t *testing.T) {
 		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
     `
 
+	nativeHistogramsWithResetHintsMix := `
+		metric{reset_hint="unknown"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+		metric{reset_hint="gauge"} {{schema:0 sum:0 count:0 counter_reset_hint:gauge}}+{{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}x3
+		metric{reset_hint="gauge-unknown"} {{schema:0 sum:0 count:0 counter_reset_hint:gauge}} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+		metric{reset_hint="unknown-gauge"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}x3
+    `
+
 	testCases := map[string]annotationTestCase{
 		"sum() with float and native histogram at same step": {
 			data:                       mixedFloatHistogramData,
@@ -2092,6 +2099,26 @@ func TestAnnotations(t *testing.T) {
 		"sum() with only native histograms": {
 			data: mixedFloatHistogramData,
 			expr: `sum(metric{type="histogram"})`,
+		},
+
+		"delta() over a native histogram with unknown CounterResetHint": {
+			data:                       nativeHistogramsWithResetHintsMix,
+			expr:                       `delta(metric{reset_hint="unknown"}[3m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
+		},
+		"delta() over a native histogram with gauge CounterResetHint": {
+			data: nativeHistogramsWithResetHintsMix,
+			expr: `delta(metric{reset_hint="gauge"}[3m])`,
+		},
+		"delta() with first point having gauge CounterResetHint and last point having unknown CounterResetHint": {
+			data:                       nativeHistogramsWithResetHintsMix,
+			expr:                       `delta(metric{reset_hint="gauge-unknown"}[3m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
+		},
+		"delta() with first point having unknown CounterResetHint and last point having gauge CounterResetHint": {
+			data:                       nativeHistogramsWithResetHintsMix,
+			expr:                       `delta(metric{reset_hint="unknown-gauge"}[3m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
 		},
 
 		"stdvar() with only floats": {
@@ -2357,6 +2384,31 @@ func TestRateIncreaseAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		}
+	}
+	runAnnotationTests(t, testCases)
+}
+
+func TestDeltaAnnotations(t *testing.T) {
+	nativeHistogramsWithGaugeResetHints := `
+		metric{series="mix-float-nh"} 10 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
+		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+	`
+
+	testCases := map[string]annotationTestCase{
+		"delta() over series with mixed floats and native histograms": {
+			data: nativeHistogramsWithGaugeResetHints,
+			expr: `delta(metric{series="mix-float-nh"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: encountered a mix of histograms and floats for metric name "metric" (1:7)`,
+			},
+		},
+		"delta() over metric with incompatible schema": {
+			data: nativeHistogramsWithGaugeResetHints,
+			expr: `delta(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:7)`,
+			},
+		},
 	}
 	runAnnotationTests(t, testCases)
 }
@@ -2822,7 +2874,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta"} {
+		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta", "delta"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[45s])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[1m])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[2m15s]))`, function, labelRegex))

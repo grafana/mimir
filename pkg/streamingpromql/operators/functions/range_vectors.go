@@ -468,18 +468,31 @@ func resetsChanges(isReset bool) RangeVectorStepFunction {
 }
 
 var Deriv = FunctionOverRangeVectorDefinition{
-	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               deriv,
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       deriv,
+	NeedsSeriesNamesForAnnotations: true,
 }
 
-func deriv(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	head, tail := step.Floats.UnsafePoints()
+func deriv(step *types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := step.Floats.UnsafePoints()
+	hHead, hTail := step.Histograms.UnsafePoints()
 
-	if (len(head) + len(tail)) < 2 {
+	haveHistograms := len(hHead) > 0 || len(hTail) > 0
+
+	if len(fHead)+len(fTail) == 1 && haveHistograms {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 		return 0, false, nil, nil
 	}
 
-	slope, _ := linearRegression(head, tail, head[0].T)
+	if (len(fHead) + len(fTail)) < 2 {
+		return 0, false, nil, nil
+	}
+
+	slope, _ := linearRegression(fHead, fTail, fHead[0].T)
+
+	if haveHistograms {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
+	}
 
 	return slope, true, nil, nil
 }
