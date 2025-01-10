@@ -246,7 +246,12 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 
 	var expandedReplication storegateway.ExpandedReplication
 	if gatewayCfg.ExpandedReplication.Enabled {
-		expandedReplication = storegateway.NewMaxTimeExpandedReplication(gatewayCfg.ExpandedReplication.MaxTimeThreshold)
+		expandedReplication = storegateway.NewMaxTimeExpandedReplication(
+			gatewayCfg.ExpandedReplication.MaxTimeThreshold,
+			// Exclude blocks which have recently become eligible for expanded replication, in order to give
+			// enough time to store-gateways to discover and load them (3 times the sync interval)
+			mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
+		)
 	} else {
 		expandedReplication = storegateway.NewNopExpandedReplication()
 	}
