@@ -104,11 +104,11 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 			continue
 		}
 
-		name := string(pt.Name()) + "_" + field
-		if field == "value" {
-			name = string(pt.Name())
+		name := string(replaceInvalidChars(pt.Name()))
+		if field != "value" {
+			// If the field name is not "value" then we append it to the name, fixing chars as we go
+			name += "_" + string(replaceInvalidChars([]byte(field)))
 		}
-		replaceInvalidChars(&name)
 
 		tags := pt.Tags()
 		lbls := make([]mimirpb.LabelAdapter, 0, len(tags)+2) // An additional one for __name__, and one for internal label
@@ -121,13 +121,11 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 			Value: "influx",
 		})
 		for _, tag := range tags {
-			key := string(tag.Key)
-			if key == "__name__" || key == internalLabel {
+			if string(tag.Key) == "__name__" || string(tag.Key) == internalLabel {
 				continue
 			}
-			replaceInvalidChars(&key)
 			lbls = append(lbls, mimirpb.LabelAdapter{
-				Name:  key,
+				Name:  string(replaceInvalidChars(tag.Key)),
 				Value: yoloString(tag.Value),
 			})
 		}
@@ -150,8 +148,7 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 }
 
 // analog of invalidChars = regexp.MustCompile("[^a-zA-Z0-9_]")
-func replaceInvalidChars(in *string) {
-	bSlice := []byte(*in)
+func replaceInvalidChars(bSlice []byte) []byte {
 	for bIndex, b := range bSlice {
 		if !((b >= 'a' && b <= 'z') || // a-z
 			(b >= 'A' && b <= 'Z') || // A-Z
@@ -163,10 +160,9 @@ func replaceInvalidChars(in *string) {
 
 	// prefix with _ if first char is 0-9
 	if len(bSlice) > 0 && bSlice[0] >= '0' && bSlice[0] <= '9' {
-		*in = "_" + string(bSlice)
-	} else {
-		*in = string(bSlice)
+		bSlice = append([]byte{'_'}, bSlice...)
 	}
+	return bSlice
 }
 
 // batchReadCloser (potentially) wraps an io.ReadCloser in Gzip
