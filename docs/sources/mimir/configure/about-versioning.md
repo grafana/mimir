@@ -76,6 +76,7 @@ The following features are currently experimental:
 - Distributor
   - Influx ingestion
     - `/api/v1/influx/push` endpoint
+    - `-distributor.influx-endpoint-enabled`
     - `-distributor.max-influx-request-size`
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
