@@ -67,15 +67,21 @@ func presentOverTime(step *types.RangeVectorStepData, _ float64, _ types.EmitAnn
 }
 
 var MaxOverTime = FunctionOverRangeVectorDefinition{
-	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               maxOverTime,
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       maxOverTime,
+	NeedsSeriesNamesForAnnotations: true,
 }
 
-func maxOverTime(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func maxOverTime(step *types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	head, tail := step.Floats.UnsafePoints()
 
 	if len(head) == 0 && len(tail) == 0 {
 		return 0, false, nil, nil
+	}
+
+	hHead, hTail := step.Histograms.UnsafePoints()
+	if len(hHead) > 0 || len(hTail) > 0 {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 	}
 
 	maxSoFar := head[0].F
@@ -97,15 +103,21 @@ func maxOverTime(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotat
 }
 
 var MinOverTime = FunctionOverRangeVectorDefinition{
-	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               minOverTime,
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       minOverTime,
+	NeedsSeriesNamesForAnnotations: true,
 }
 
-func minOverTime(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func minOverTime(step *types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	head, tail := step.Floats.UnsafePoints()
 
 	if len(head) == 0 && len(tail) == 0 {
 		return 0, false, nil, nil
+	}
+
+	hHead, hTail := step.Histograms.UnsafePoints()
+	if len(hHead) > 0 || len(hTail) > 0 {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 	}
 
 	minSoFar := head[0].F
