@@ -9,7 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log"
@@ -48,20 +48,18 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 	}
 
 	// Sort DisabledFunctions to optimise lookups
-	sort.Strings(opts.Features.DisabledFunctions)
+	slices.Sort(opts.Features.DisabledFunctions)
 
 	opts.Features.DisabledAggregationsItems = make([]parser.ItemType, 0, len(opts.Features.DisabledAggregations))
 	for _, agg := range opts.Features.DisabledAggregations {
 		item, ok := aggregations.GetAggregationItemType(agg)
 		if !ok {
-			return nil, errors.New(fmt.Sprintf("disabled aggregation '%s' does not exist", agg))
+			return nil, fmt.Errorf("disabled aggregation '%s' does not exist", agg)
 		}
 		opts.Features.DisabledAggregationsItems = append(opts.Features.DisabledAggregationsItems, item)
 	}
 	// No point sorting DisabledAggregations earlier, as ItemType ints are not in order.
-	sort.Slice(opts.Features.DisabledAggregationsItems, func(i, j int) bool {
-		return opts.Features.DisabledAggregationsItems[i] < opts.Features.DisabledAggregationsItems[j]
-	})
+	slices.Sort(opts.Features.DisabledAggregationsItems)
 
 	return &Engine{
 		lookbackDelta:            lookbackDelta,

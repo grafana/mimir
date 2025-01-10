@@ -40,8 +40,8 @@ var invalidCombinationOfHistograms = &histogram.FloatHistogram{}
 
 func GetAggregationItemType(aggregation string) (parser.ItemType, bool) {
 	// The parser key is not exported, but the item types are. It's safe to assume the keys will continue to map their names onto their values.
+	// (ie, "avg" will be parser.AVG).
 	var key = map[string]parser.ItemType{
-		// Aggregators.
 		"avg":          parser.AVG,
 		"bottomk":      parser.BOTTOMK,
 		"count_values": parser.COUNT_VALUES,

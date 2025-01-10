@@ -34,8 +34,8 @@ type Features struct {
 	DisabledFunctions         flagext.StringSliceCSV `yaml:"disabled_functions" category:"experimental"`
 }
 
-// MQEAllFeatures enables all features supported by MQE, including experimental or incomplete features.
-var MQEAllFeatures = Features{
+// EnableAllFeatures enables all features supported by MQE, including experimental or incomplete features.
+var EnableAllFeatures = Features{
 	// Note that we deliberately use a keyless literal here to force a compilation error if we don't keep this in sync with new fields added to FeatureToggles.
 	true,
 	true,

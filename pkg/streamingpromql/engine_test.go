@@ -45,7 +45,7 @@ func init() {
 }
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
-	features := MQEAllFeatures
+	features := EnableAllFeatures
 
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
@@ -65,14 +65,14 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 
 func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 	t.Run("aggregation operations", func(t *testing.T) {
-		features := MQEAllFeatures
+		features := EnableAllFeatures
 		features.EnableAggregationOperations = false
 
 		requireQueryIsUnsupported(t, features, "sum by (label) (metric)", "aggregation operations")
 	})
 
 	t.Run("vector/vector binary expressions with comparison operation", func(t *testing.T) {
-		features := MQEAllFeatures
+		features := EnableAllFeatures
 		features.EnableVectorVectorBinaryComparisonOperations = false
 
 		requireQueryIsUnsupported(t, features, "metric{} > other_metric{}", "vector/vector binary expression with '>'")
@@ -89,7 +89,7 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 	})
 
 	t.Run("vector/scalar binary expressions with comparison operation", func(t *testing.T) {
-		features := MQEAllFeatures
+		features := EnableAllFeatures
 		features.EnableVectorScalarBinaryComparisonOperations = false
 
 		requireQueryIsUnsupported(t, features, "metric{} > 1", "vector/scalar binary expression with '>'")
@@ -106,7 +106,7 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 	})
 
 	t.Run("scalar/scalar binary expressions with comparison operation", func(t *testing.T) {
-		features := MQEAllFeatures
+		features := EnableAllFeatures
 		features.EnableScalarScalarBinaryComparisonOperations = false
 
 		requireQueryIsUnsupported(t, features, "2 > bool 1", "scalar/scalar binary expression with '>'")
@@ -123,7 +123,7 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 	})
 
 	t.Run("binary expressions with logical operations", func(t *testing.T) {
-		features := MQEAllFeatures
+		features := EnableAllFeatures
 		features.EnableBinaryLogicalOperations = false
 
 		requireQueryIsUnsupported(t, features, "metric{} and other_metric{}", "binary expression with 'and'")
@@ -142,21 +142,21 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 	})
 
 	t.Run("scalars", func(t *testing.T) {
-		features := MQEAllFeatures
+		features := EnableAllFeatures
 		features.EnableScalars = false
 
 		requireQueryIsUnsupported(t, features, "2", "scalar values")
 	})
 
 	t.Run("subqueries", func(t *testing.T) {
-		features := MQEAllFeatures
+		features := EnableAllFeatures
 		features.EnableSubqueries = false
 
 		requireQueryIsUnsupported(t, features, "sum_over_time(metric[1m:10s])", "subquery")
 	})
 
 	t.Run("one-to-many and many-to-one binary operations", func(t *testing.T) {
-		features := MQEAllFeatures
+		features := EnableAllFeatures
 		features.EnableOneToManyAndManyToOneBinaryOperations = false
 
 		requireQueryIsUnsupported(t, features, "metric{} + on() group_left() other_metric{}", "binary expression with many-to-one matching")
@@ -164,7 +164,7 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 	})
 
 	t.Run("function disabled by name", func(t *testing.T) {
-		features := MQEAllFeatures
+		features := EnableAllFeatures
 		features.DisabledFunctions = []string{"histogram_quantile", "ceil", "nonexistant"}
 
 		requireQueryIsUnsupported(t, features, "ceil(metric{})", "'ceil' function is disabled")
@@ -172,7 +172,7 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 	})
 
 	t.Run("aggregation disabled by name", func(t *testing.T) {
-		features := MQEAllFeatures
+		features := EnableAllFeatures
 		features.DisabledAggregations = []string{"sum", "avg", "MAX"}
 
 		requireQueryIsUnsupported(t, features, "avg by (label) (metric{})", "'avg' aggregation disabled")
@@ -181,7 +181,7 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 	})
 
 	t.Run("wrong aggregation name disabled", func(t *testing.T) {
-		features := MQEAllFeatures
+		features := EnableAllFeatures
 		features.DisabledAggregations = []string{"sum", "avg", "NotAnAgg"}
 
 		opts := NewTestEngineOpts()
