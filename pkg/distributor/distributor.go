@@ -304,7 +304,6 @@ type PushMetrics struct {
 	// Influx metrics.
 	influxRequestCounter       *prometheus.CounterVec
 	influxUncompressedBodySize *prometheus.HistogramVec
-	// TODO(alexg): more influx metrics here?
 	// OTLP metrics.
 	otlpRequestCounter   *prometheus.CounterVec
 	uncompressedBodySize *prometheus.HistogramVec
@@ -316,7 +315,6 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 			Name: "cortex_distributor_influx_requests_total",
 			Help: "The total number of Influx requests that have come in to the distributor.",
 		}, []string{"user"}),
-		// TODO(alexg): separate from uncompressedBodySize?
 		influxUncompressedBodySize: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_distributor_influx_uncompressed_request_body_size_bytes",
 			Help:                            "Size of uncompressed request body in bytes.",
