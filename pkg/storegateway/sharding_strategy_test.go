@@ -203,7 +203,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 		},
 		"multiple ACTIVE instances in the ring with RF = 1 and SS = 3 and ER = true": {
 			replicationFactor:   1,
-			expandedReplication: NewMaxTimeExpandedReplication(25 * time.Hour),
+			expandedReplication: NewMaxTimeExpandedReplication(25*time.Hour, 45*time.Minute),
 			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 3},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})

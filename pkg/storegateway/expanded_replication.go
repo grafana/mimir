@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	errInvalidExpandedReplicationMaxTimeThreshold = errors.New("invalid expanded replication max time threshold, the value must be greater than 0")
+	errInvalidExpandedReplicationMaxTimeThreshold = errors.New("invalid expanded replication max time threshold, the value must be at least one hour")
 )
 
 type ExpandedReplicationConfig struct {
@@ -23,24 +23,38 @@ func (cfg *ExpandedReplicationConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, p
 }
 
 func (cfg *ExpandedReplicationConfig) Validate() error {
-	if cfg.Enabled && cfg.MaxTimeThreshold <= 0 {
+	if cfg.Enabled && cfg.MaxTimeThreshold < time.Hour {
 		return errInvalidExpandedReplicationMaxTimeThreshold
 	}
 
 	return nil
 }
 
-// ReplicatedBlock is metadata about a TSDB block that may be eligible for expanded
-// replication (replication by more store-gateways than the configured replication factor).
+// ReplicatedBlock is a TSDB block that may be eligible to be synced to more store-gateways
+// than the configured replication factor based on metadata about the block.
 type ReplicatedBlock interface {
 	GetMinTime() time.Time
 	GetMaxTime() time.Time
 }
 
-// ExpandedReplication implementations determine if a block should be replicated to more
-// store-gateways than the configured replication factor based on its metadata.
+// QueryableReplicatedBlock is a TSDB block that may be eligible to be queried from more
+// store-gateways than the configured replication factor based on metadata about the block.
+type QueryableReplicatedBlock interface {
+	ReplicatedBlock
+
+	GetUploadedAt() time.Time
+}
+
+// ExpandedReplication determines if a TSDB block is eligible to be sync to and queried from more
+// store-gateways than the configured replication factor based on metadata about the block.
 type ExpandedReplication interface {
-	Eligible(b ReplicatedBlock) bool
+	// EligibleForSync returns true if the block can be synced to more than the configured (via
+	// replication factor) number of store-gateways, false otherwise.
+	EligibleForSync(b ReplicatedBlock) bool
+
+	// EligibleForQuerying returns true if the block can be safely queried from more than the
+	// configured (via replication factor) number of store-gateways, false otherwise.
+	EligibleForQuerying(b QueryableReplicatedBlock) bool
 }
 
 func NewNopExpandedReplication() *NopExpandedReplication {
@@ -50,24 +64,44 @@ func NewNopExpandedReplication() *NopExpandedReplication {
 // NopExpandedReplication is an ExpandedReplication implementation that always returns false.
 type NopExpandedReplication struct{}
 
-func (n NopExpandedReplication) Eligible(ReplicatedBlock) bool {
+func (n NopExpandedReplication) EligibleForSync(ReplicatedBlock) bool {
 	return false
 }
 
-func NewMaxTimeExpandedReplication(maxTime time.Duration) *MaxTimeExpandedReplication {
-	return &MaxTimeExpandedReplication{maxTime: maxTime, now: time.Now}
+func (n NopExpandedReplication) EligibleForQuerying(QueryableReplicatedBlock) bool {
+	return false
+}
+
+func NewMaxTimeExpandedReplication(maxTime time.Duration, gracePeriod time.Duration) *MaxTimeExpandedReplication {
+	return &MaxTimeExpandedReplication{
+		maxTime:     maxTime,
+		gracePeriod: gracePeriod,
+		now:         time.Now,
+	}
 }
 
 // MaxTimeExpandedReplication is an ExpandedReplication implementation that determines
 // if a block is eligible for expanded replication based on how recent its MaxTime (most
-// recent sample) is.
+// recent sample) is. An upload grace period can optionally be used during queries to ensure
+// that blocks are not expected to be replicated to store-gateways that may not have yet had
+// a chance to sync them.
 type MaxTimeExpandedReplication struct {
-	maxTime time.Duration
-	now     func() time.Time
+	maxTime     time.Duration
+	gracePeriod time.Duration
+	now         func() time.Time
 }
 
-func (e *MaxTimeExpandedReplication) Eligible(b ReplicatedBlock) bool {
+func (e *MaxTimeExpandedReplication) isMaxTimeInWindow(b ReplicatedBlock, now time.Time) bool {
+	maxTimeDelta := now.Sub(b.GetMaxTime())
+	return maxTimeDelta <= e.maxTime
+}
+
+func (e *MaxTimeExpandedReplication) EligibleForSync(b ReplicatedBlock) bool {
+	return e.isMaxTimeInWindow(b, e.now())
+}
+
+func (e *MaxTimeExpandedReplication) EligibleForQuerying(b QueryableReplicatedBlock) bool {
 	now := e.now()
-	delta := now.Sub(b.GetMaxTime())
-	return delta <= e.maxTime
+	uploadedDelta := now.Sub(b.GetUploadedAt())
+	return uploadedDelta > e.gracePeriod && e.isMaxTimeInWindow(b, now)
 }
