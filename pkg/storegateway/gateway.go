@@ -179,11 +179,9 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		return nil, errors.Wrap(err, "create ring client")
 	}
 
-	var expandedReplication ExpandedReplication
+	var expandedReplication ExpandedReplication = NewNopExpandedReplication()
 	if gatewayCfg.ExpandedReplication.Enabled {
 		expandedReplication = NewMaxTimeExpandedReplication(gatewayCfg.ExpandedReplication.MaxTimeThreshold, 0)
-	} else {
-		expandedReplication = NewNopExpandedReplication()
 	}
 
 	shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, expandedReplication, limits, logger)
