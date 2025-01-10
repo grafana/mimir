@@ -37,6 +37,7 @@
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [ENHANCEMENT] Enforce `persistentVolumeClaimRetentionPolicy` `Retain` policy on partition ingesters during migration to experimental ingest storage. #10395
 * [BUGFIX] Ports in container rollout-operator. #10273
+* [BUGFIX] Remove run as root user from Statefulsets and Flusher job
 
 ### Mimirtool
 
