@@ -258,7 +258,7 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	if err := os.RemoveAll(udir); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(udir, os.ModePerm); err != nil {
+	if err := os.MkdirAll(udir, 0750); err != nil {
 		return nil, err
 	}
 

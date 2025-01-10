@@ -444,7 +444,7 @@ func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
 		log.Infof("Created TSDB in path '%s'", c.tsdbPath)
 	} else {
 		if _, err := os.Stat(c.tsdbPath); err != nil && os.IsNotExist(err) {
-			if err = os.Mkdir(c.tsdbPath, 0755); err != nil {
+			if err = os.Mkdir(c.tsdbPath, 0750); err != nil {
 				return err
 			}
 			log.Infof("Created TSDB in path '%s'", c.tsdbPath)
@@ -483,7 +483,7 @@ func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
 	// ensure that tsdb directory has WAL, otherwise 'promtool tsdb dump' fails
 	walPath := filepath.Join(c.tsdbPath, "wal")
 	if _, err := os.Stat(walPath); err != nil && os.IsNotExist(err) {
-		if err := os.Mkdir(walPath, 0755); err != nil {
+		if err := os.Mkdir(walPath, 0750); err != nil {
 			return err
 		}
 	}

@@ -160,7 +160,7 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 	cacheDir := ""
 	if dir != "" {
 		cacheDir = filepath.Join(dir, "meta-syncer")
-		if err := os.MkdirAll(cacheDir, os.ModePerm); err != nil {
+		if err := os.MkdirAll(cacheDir, 0750); err != nil {
 			return nil, err
 		}
 	}
@@ -269,7 +269,7 @@ func (f *MetaFetcher) loadMeta(ctx context.Context, id ulid.ULID) (*Meta, error)
 
 	// Best effort cache in local dir.
 	if f.cacheDir != "" {
-		if err := os.MkdirAll(cachedBlockDir, os.ModePerm); err != nil {
+		if err := os.MkdirAll(cachedBlockDir, 0750); err != nil {
 			level.Warn(f.logger).Log("msg", "best effort mkdir of the meta.json block dir failed; ignoring", "dir", cachedBlockDir, "err", err)
 		}
 
