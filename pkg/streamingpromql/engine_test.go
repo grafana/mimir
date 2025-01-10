@@ -2375,14 +2375,14 @@ func TestDeltaAnnotations(t *testing.T) {
 	testCases := map[string]annotationTestCase{}
 	testCases["delta() over metric with mixed float and nh"] = annotationTestCase{
 		data: nativeHistogramsWithGaugeResetHints,
-		expr: fmt.Sprintf(`delta(metric{series="mix-float-nh"}[1m1s])`),
+		expr: `delta(metric{series="mix-float-nh"}[1m1s])`,
 		expectedWarningAnnotations: []string{
 			`PromQL warning: encountered a mix of histograms and floats for metric name "metric" (1:7)`,
 		},
 	}
 	testCases["delta() over metric with incompatible schema"] = annotationTestCase{
 		data: nativeHistogramsWithGaugeResetHints,
-		expr: fmt.Sprintf(`delta(metric{series="mixed-exponential-custom-buckets"}[1m1s])`),
+		expr: `delta(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
 		expectedWarningAnnotations: []string{
 			`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:7)`,
 		},
