@@ -3,6 +3,7 @@
 ## main / unreleased
 
 * [CHANGE] Query-frontend: Add `topic` label to `cortex_ingest_storage_strong_consistency_requests_total`, `cortex_ingest_storage_strong_consistency_failures_total`, and `cortex_ingest_storage_strong_consistency_wait_duration_seconds` metrics. #10220
+* [FEATURE] Distributor: Add experimental Influx handler. #10153
 
 ### Grafana Mimir
 
