@@ -118,7 +118,7 @@ eval range from 0 to 7m step 1m present_over_time(some_metric_count[3m1s])
 eval range from 0 to 7m step 1m present_over_time(some_metric_count[6s])
   {foo="bar"} 1 1 1 1 _ _ 1 1
 
-eval range from 0 to 7m step 1m min_over_time(some_metric_count[3m1s])
+eval_info range from 0 to 7m step 1m min_over_time(some_metric_count[3m1s])
   {foo="bar"} 0 0 0 0 1 2 3 _
 
 eval range from 0 to 7m step 1m min_over_time(some_metric_count[6s])
@@ -127,7 +127,7 @@ eval range from 0 to 7m step 1m min_over_time(some_metric_count[6s])
 eval range from 0 to 16m step 1m min_over_time(some_inf_and_nan_metric[3m1s])
   {foo="baz"} 0 0 0 0 1 2 3 Inf Inf Inf NaN 8 7 6 6 6 6
 
-eval range from 0 to 7m step 1m max_over_time(some_metric_count[3m1s])
+eval_info range from 0 to 7m step 1m max_over_time(some_metric_count[3m1s])
   {foo="bar"} 0 1 2 3 3 3 3 _
 
 eval range from 0 to 7m step 1m max_over_time(some_metric_count[6s])

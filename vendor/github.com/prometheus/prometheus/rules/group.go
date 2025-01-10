@@ -75,8 +75,6 @@ type Group struct {
 	// defaults to DefaultEvalIterationFunc.
 	evalIterationFunc GroupEvalIterationFunc
 
-	// concurrencyController controls the rules evaluation concurrency.
-	concurrencyController         RuleConcurrencyController
 	appOpts                       *storage.AppendOptions
 	alignEvaluationTimeOnInterval bool
 }
@@ -130,11 +128,6 @@ func NewGroup(o GroupOptions) *Group {
 		evalIterationFunc = DefaultEvalIterationFunc
 	}
 
-	concurrencyController := opts.RuleConcurrencyController
-	if concurrencyController == nil {
-		concurrencyController = sequentialRuleEvalController{}
-	}
-
 	if opts.Logger == nil {
 		opts.Logger = promslog.NewNopLogger()
 	}
@@ -156,7 +149,6 @@ func NewGroup(o GroupOptions) *Group {
 		logger:                        opts.Logger.With("file", o.File, "group", o.Name),
 		metrics:                       metrics,
 		evalIterationFunc:             evalIterationFunc,
-		concurrencyController:         concurrencyController,
 		appOpts:                       &storage.AppendOptions{DiscardOutOfOrder: true},
 		alignEvaluationTimeOnInterval: o.AlignEvaluationTimeOnInterval,
 	}
@@ -659,29 +651,51 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	}
 
 	var wg sync.WaitGroup
-	for i, rule := range g.rules {
-		select {
-		case <-g.done:
-			// There's a chance that the group is asked to return early. In that case, we should
-			// wait for any in-flight rules to finish evaluating before returning so that we can preserve the same semantics.
-			// At the time of writing, the main reason for this was to make sure we don't clear seriesInPreviousEval before we're done using it.
-			wg.Wait()
-			return
-		default:
-		}
+	ctrl := g.opts.RuleConcurrencyController
+	if ctrl == nil {
+		ctrl = sequentialRuleEvalController{}
+	}
 
-		if ctrl := g.concurrencyController; ctrl.Allow(ctx, g, rule) {
-			wg.Add(1)
-
-			go eval(i, rule, func() {
-				wg.Done()
-				ctrl.Done(ctx)
-			})
-		} else {
+	batches := ctrl.SplitGroupIntoBatches(ctx, g)
+	if len(batches) == 0 {
+		// Sequential evaluation when batches aren't set.
+		// This is the behaviour without a defined RuleConcurrencyController
+		for i, rule := range g.rules {
+			// Check if the group has been stopped.
+			select {
+			case <-g.done:
+				return
+			default:
+			}
 			eval(i, rule, nil)
 		}
+	} else {
+		// Concurrent evaluation.
+		for _, batch := range batches {
+			for _, ruleIndex := range batch {
+				// Check if the group has been stopped.
+				select {
+				case <-g.done:
+					wg.Wait()
+					return
+				default:
+				}
+				rule := g.rules[ruleIndex]
+				if len(batch) > 1 && ctrl.Allow(ctx, g, rule) {
+					wg.Add(1)
+
+					go eval(ruleIndex, rule, func() {
+						wg.Done()
+						ctrl.Done(ctx)
+					})
+				} else {
+					eval(ruleIndex, rule, nil)
+				}
+			}
+			// It is important that we finish processing any rules in this current batch - before we move into the next one.
+			wg.Wait()
+		}
 	}
-	wg.Wait()
 
 	g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
 	g.cleanupStaleSeries(ctx, ts)
@@ -1076,27 +1090,25 @@ func NewGroupMetrics(reg prometheus.Registerer) *Metrics {
 // output metric produced by another rule in its expression (i.e. as its "input").
 type dependencyMap map[Rule][]Rule
 
-// dependents returns the count of rules which use the output of the given rule as one of their inputs.
-func (m dependencyMap) dependents(r Rule) int {
-	return len(m[r])
+// dependents returns the rules which use the output of the given rule as one of their inputs.
+func (m dependencyMap) dependents(r Rule) []Rule {
+	return m[r]
 }
 
-// dependencies returns the count of rules on which the given rule is dependent for input.
-func (m dependencyMap) dependencies(r Rule) int {
+// dependencies returns the rules on which the given rule is dependent for input.
+func (m dependencyMap) dependencies(r Rule) []Rule {
 	if len(m) == 0 {
-		return 0
+		return []Rule{}
 	}
 
-	var count int
-	for _, children := range m {
-		for _, child := range children {
-			if child == r {
-				count++
-			}
+	var dependencies []Rule
+	for rule, dependents := range m {
+		if slices.Contains(dependents, r) {
+			dependencies = append(dependencies, rule)
 		}
 	}
 
-	return count
+	return dependencies
 }
 
 // isIndependent determines whether the given rule is not dependent on another rule for its input, nor is any other rule
@@ -1106,7 +1118,7 @@ func (m dependencyMap) isIndependent(r Rule) bool {
 		return false
 	}
 
-	return m.dependents(r)+m.dependencies(r) == 0
+	return len(m.dependents(r)) == 0 && len(m.dependencies(r)) == 0
 }
 
 // buildDependencyMap builds a data-structure which contains the relationships between rules within a group.

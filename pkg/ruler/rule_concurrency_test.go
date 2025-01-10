@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/semaphore"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -106,8 +108,8 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 	exp, err := parser.ParseExpr("vector(1)")
 	require.NoError(t, err)
 	rule1 := rules.NewRecordingRule("test", exp, labels.Labels{})
-	rule1.SetNoDependencyRules(true)
-	rule1.SetNoDependentRules(true)
+	rule1.SetDependencyRules([]rules.Rule{})
+	rule1.SetDependentRules([]rules.Rule{})
 
 	globalController := NewMultiTenantConcurrencyController(logger, 3, 50.0, reg, limits)
 	user1Controller := globalController.NewTenantConcurrencyControllerFor("user1")
@@ -171,40 +173,6 @@ cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{us
 	user2Controller.Done(ctx)
 	user2Controller.Done(ctx)
 
-	// Finally, let's try a few edge cases.
-	rg2 := rules.NewGroup(rules.GroupOptions{
-		File:     "test.rules",
-		Name:     "test",
-		Interval: 1 * time.Minute, // group not at risk.
-		Opts:     &rules.ManagerOptions{},
-	})
-	require.False(t, user1Controller.Allow(ctx, rg2, rule1)) // Should not be allowed with a group that is not at risk.
-	rule1.SetNoDependencyRules(false)
-	require.False(t, user1Controller.Allow(ctx, rg, rule1)) // Should not be allowed as the rule is no longer independent.
-
-	// Check the metrics one final time to ensure there are no active slots in use.
-	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total Total number of incomplete attempts to acquire concurrency slots across all tenants
-# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total counter
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total{user="user1"} 2
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total{user="user2"} 1
-# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total Total number of started attempts to acquire concurrency slots across all tenants
-# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total counter
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total{user="user1"} 4
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total{user="user2"} 3
-# HELP cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use Current number of concurrency slots currently in use across all tenants
-# TYPE cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use gauge
-cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use{user="user1"} 0
-cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use{user="user2"} 0
-# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total Total number of concurrency slots we're done using across all tenants
-# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total counter
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{user="user1"} 2
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{user="user2"} 2
-`)))
-
-	// Make the rule independent again.
-	rule1.SetNoDependencyRules(true)
-
 	// Now let's test having a controller two times for the same tenant.
 	user3Controller := globalController.NewTenantConcurrencyControllerFor("user3")
 	user3ControllerTwo := globalController.NewTenantConcurrencyControllerFor("user3")
@@ -215,91 +183,143 @@ cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{us
 	require.True(t, user3ControllerTwo.Allow(ctx, rg, rule1))
 }
 
-func TestIsRuleIndependent(t *testing.T) {
+func TestSplitGroupIntoBatches(t *testing.T) {
+	limits := validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+		tenantLimits["user1"] = validation.MockDefaultLimits()
+		tenantLimits["user1"].RulerMaxIndependentRuleEvaluationConcurrencyPerTenant = 2
+	})
+
+	mtController := NewMultiTenantConcurrencyController(log.NewNopLogger(), 3, 50.0, prometheus.NewPedanticRegistry(), limits)
+	controller := mtController.NewTenantConcurrencyControllerFor("user1")
+
+	ruleManager := rules.NewManager(&rules.ManagerOptions{
+		RuleConcurrencyController: controller,
+	})
+
 	tests := map[string]struct {
-		rule     rules.Rule
-		expected bool
+		inputFile      string
+		expectedGroups []rules.ConcurrentRules
 	}{
-		"rule has neither dependencies nor dependents": {
-			rule: func() rules.Rule {
-				r := rules.NewRecordingRule("test", nil, labels.Labels{})
-				r.SetNoDependentRules(true)
-				r.SetNoDependencyRules(true)
-				return r
-			}(),
-			expected: true,
+		"chained": {
+			inputFile: "fixtures/rules_chain.yaml",
+			expectedGroups: []rules.ConcurrentRules{
+				{0, 1},
+				{2},
+				{3, 4},
+				{5, 6},
+			},
 		},
-		"rule has both dependencies and dependents": {
-			rule: func() rules.Rule {
-				r := rules.NewRecordingRule("test", nil, labels.Labels{})
-				r.SetNoDependentRules(false)
-				r.SetNoDependencyRules(false)
-				return r
-			}(),
-			expected: false,
+		"indeterminates": {
+			inputFile:      "fixtures/rules_indeterminates.yaml",
+			expectedGroups: nil,
 		},
-		"rule has dependents": {
-			rule: func() rules.Rule {
-				r := rules.NewRecordingRule("test", nil, labels.Labels{})
-				r.SetNoDependentRules(false)
-				r.SetNoDependencyRules(true)
-				return r
-			}(),
-			expected: false,
+		"all independent": {
+			inputFile: "fixtures/rules_multiple_independent.yaml",
+			expectedGroups: []rules.ConcurrentRules{
+				{0, 1, 2, 3, 4, 5},
+			},
 		},
-		"rule has dependencies": {
-			rule: func() rules.Rule {
-				r := rules.NewRecordingRule("test", nil, labels.Labels{})
-				r.SetNoDependentRules(true)
-				r.SetNoDependencyRules(false)
-				return r
-			}(),
-			expected: false,
+		"topological sort": {
+			inputFile: "fixtures/rules_topological_sort_needed.json",
+			expectedGroups: []rules.ConcurrentRules{
+				{0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 37, 38, 58},
+				{1, 2, 5, 6, 9, 10, 13, 14, 17, 18, 21, 22, 25, 26, 29, 30, 33, 34, 39, 40, 41, 42, 45, 46, 51, 52, 55, 56},
+				{3, 7, 11, 15, 19, 23, 27, 31, 35},
+				{43, 44, 47, 48, 49, 50, 53, 54, 57},
+			},
 		},
 	}
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			result := isRuleIndependent(tc.rule)
-			require.Equal(t, tc.expected, result)
+			// Load group with a -1 interval so it's always at risk.
+			groups, errs := ruleManager.LoadGroups(-1*time.Second, labels.EmptyLabels(), "", nil, []string{tc.inputFile}...)
+			require.Empty(t, errs)
+			require.Len(t, groups, 1)
+
+			var group *rules.Group
+			for _, g := range groups {
+				group = g
+			}
+
+			batches := controller.SplitGroupIntoBatches(context.Background(), group)
+			requireConcurrentRulesEqual(t, tc.expectedGroups, batches)
+
+			// Make sure the group is not mutated and will still return the same batches when called again.
+			batches = controller.SplitGroupIntoBatches(context.Background(), group)
+			requireConcurrentRulesEqual(t, tc.expectedGroups, batches)
 		})
 	}
 }
 
+func requireConcurrentRulesEqual(t *testing.T, expected, actual []rules.ConcurrentRules) {
+	t.Helper()
+
+	if expected == nil {
+		require.Nil(t, actual)
+		return
+	}
+
+	// Like require.Equals but ignores the order of elements in the slices.
+	require.Len(t, actual, len(expected))
+	for i, expectedBatch := range expected {
+		actualBatch := actual[i]
+		require.ElementsMatch(t, expectedBatch, actualBatch)
+	}
+}
+
 func TestGroupAtRisk(t *testing.T) {
+	// Write group file with 100 independent rules.
+	ruleCt := 100
+	dummyRules := []map[string]interface{}{}
+	for i := 0; i < ruleCt; i++ {
+		dummyRules = append(dummyRules, map[string]interface{}{
+			"record": fmt.Sprintf("test_rule%d", i),
+			"expr":   "vector(1)",
+		})
+	}
+
+	groupFileContent := map[string]interface{}{
+		"groups": []map[string]interface{}{
+			{
+				"name":  "test",
+				"rules": dummyRules,
+			},
+		},
+	}
+
+	groupFile := t.TempDir() + "/test.rules"
+	f, err := os.Create(groupFile)
+	require.NoError(t, err)
+	encoder := yaml.NewEncoder(f)
+	require.NoError(t, encoder.Encode(groupFileContent))
+	require.NoError(t, f.Close())
+
 	createAndEvalTestGroup := func(interval time.Duration, evalConcurrently bool) *rules.Group {
 		st := teststorage.New(t)
 		defer st.Close()
 
-		// Create 100 rules that all take 1ms to evaluate.
-		var createdRules []rules.Rule
-		ruleCt := 100
 		ruleWaitTime := 1 * time.Millisecond
-		for i := 0; i < ruleCt; i++ {
-			q, err := parser.ParseExpr("vector(1)")
-			require.NoError(t, err)
-			rule := rules.NewRecordingRule(fmt.Sprintf("test_rule%d", i), q, labels.Labels{})
-			rule.SetNoDependencyRules(true)
-			rule.SetNoDependentRules(true)
-			createdRules = append(createdRules, rule)
-		}
-
-		// Create the group and evaluate it
-		opts := rules.GroupOptions{
-			Interval: interval,
-			Opts: &rules.ManagerOptions{
-				Appendable: st,
-				QueryFunc: func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
-					time.Sleep(ruleWaitTime)
-					return promql.Vector{}, nil
-				},
+		opts := &rules.ManagerOptions{
+			Appendable: st,
+			// Make the rules take 1ms to evaluate.
+			QueryFunc: func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
+				time.Sleep(ruleWaitTime)
+				return promql.Vector{}, nil
 			},
-			Rules: createdRules,
 		}
 		if evalConcurrently {
-			opts.Opts.RuleConcurrencyController = &allowAllConcurrencyController{}
+			opts.RuleConcurrencyController = &allowAllConcurrencyController{}
 		}
-		g := rules.NewGroup(opts)
+		manager := rules.NewManager(opts)
+		groups, errs := manager.LoadGroups(interval, labels.EmptyLabels(), "", nil, groupFile)
+		require.Empty(t, errs)
+
+		var g *rules.Group
+		for _, group := range groups {
+			g = group
+		}
+
 		rules.DefaultEvalIterationFunc(context.Background(), g, time.Now())
 
 		// Sanity check that we're actually running the rules concurrently.
@@ -369,6 +389,14 @@ type allowAllConcurrencyController struct{}
 
 func (a *allowAllConcurrencyController) Allow(_ context.Context, _ *rules.Group, _ rules.Rule) bool {
 	return true
+}
+
+func (a *allowAllConcurrencyController) SplitGroupIntoBatches(_ context.Context, g *rules.Group) []rules.ConcurrentRules {
+	batch := rules.ConcurrentRules{}
+	for i := range g.Rules() {
+		batch = append(batch, i)
+	}
+	return []rules.ConcurrentRules{batch}
 }
 
 func (a *allowAllConcurrencyController) Done(_ context.Context) {}
