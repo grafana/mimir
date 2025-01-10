@@ -364,6 +364,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"cosh":               InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
 	"count_over_time":    FunctionOverRangeVectorOperatorFactory("count_over_time", functions.CountOverTime),
 	"deg":                InstantVectorTransformationFunctionOperatorFactory("deg", functions.Deg),
+	"delta":              FunctionOverRangeVectorOperatorFactory("delta", functions.Delta),
 	"deriv":              FunctionOverRangeVectorOperatorFactory("deriv", functions.Deriv),
 	"exp":                InstantVectorTransformationFunctionOperatorFactory("exp", functions.Exp),
 	"floor":              InstantVectorTransformationFunctionOperatorFactory("floor", functions.Floor),

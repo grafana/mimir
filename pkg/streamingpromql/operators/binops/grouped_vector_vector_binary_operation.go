@@ -11,10 +11,8 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -618,13 +616,13 @@ func (g *GroupedVectorVectorBinaryOperation) updateOneSidePresence(side *oneSide
 
 		for _, p := range seriesData.Floats {
 			if otherSeriesIdx := matchGroup.updatePresence(g.timeRange.PointIndex(p.T), seriesIdx); otherSeriesIdx != -1 {
-				return g.formatConflictError(otherSeriesIdx, seriesIdx, "duplicate series", p.T, g.oneSideMetadata, g.oneSideHandedness())
+				return formatConflictError(otherSeriesIdx, seriesIdx, "duplicate series", p.T, g.oneSideMetadata, g.oneSideHandedness(), g.VectorMatching, g.Op, g.ReturnBool)
 			}
 		}
 
 		for _, p := range seriesData.Histograms {
 			if otherSeriesIdx := matchGroup.updatePresence(g.timeRange.PointIndex(p.T), seriesIdx); otherSeriesIdx != -1 {
-				return g.formatConflictError(otherSeriesIdx, seriesIdx, "duplicate series", p.T, g.oneSideMetadata, g.oneSideHandedness())
+				return formatConflictError(otherSeriesIdx, seriesIdx, "duplicate series", p.T, g.oneSideMetadata, g.oneSideHandedness(), g.VectorMatching, g.Op, g.ReturnBool)
 			}
 		}
 	}
@@ -646,7 +644,8 @@ func (g *GroupedVectorVectorBinaryOperation) mergeOneSide(data []types.InstantVe
 	}
 
 	if conflict != nil {
-		return types.InstantVectorSeriesData{}, g.formatConflictError(conflict.FirstConflictingSeriesIndex, conflict.SecondConflictingSeriesIndex, conflict.Description, conflict.Timestamp, g.oneSideMetadata, g.oneSideHandedness())
+		err := formatConflictError(conflict.FirstConflictingSeriesIndex, conflict.SecondConflictingSeriesIndex, conflict.Description, conflict.Timestamp, g.oneSideMetadata, g.oneSideHandedness(), g.VectorMatching, g.Op, g.ReturnBool)
+		return types.InstantVectorSeriesData{}, err
 	}
 
 	return merged, nil
@@ -687,40 +686,6 @@ func (g *GroupedVectorVectorBinaryOperation) mergeManySide(data []types.InstantV
 	}
 
 	return merged, nil
-}
-
-func (g *GroupedVectorVectorBinaryOperation) formatConflictError(
-	firstConflictingSeriesIndex int,
-	secondConflictingSeriesIndex int,
-	description string,
-	ts int64,
-	sourceSeriesMetadata []types.SeriesMetadata,
-	side string,
-) error {
-	firstConflictingSeriesLabels := sourceSeriesMetadata[firstConflictingSeriesIndex].Labels
-	groupLabels := groupLabelsFunc(g.VectorMatching, g.Op, g.ReturnBool)(firstConflictingSeriesLabels)
-
-	if secondConflictingSeriesIndex == -1 {
-		return fmt.Errorf(
-			"found %s for the match group %s on the %s side of the operation at timestamp %s",
-			description,
-			groupLabels,
-			side,
-			timestamp.Time(ts).Format(time.RFC3339Nano),
-		)
-	}
-
-	secondConflictingSeriesLabels := sourceSeriesMetadata[secondConflictingSeriesIndex].Labels
-
-	return fmt.Errorf(
-		"found %s for the match group %s on the %s side of the operation at timestamp %s: %s and %s",
-		description,
-		groupLabels,
-		side,
-		timestamp.Time(ts).Format(time.RFC3339Nano),
-		firstConflictingSeriesLabels,
-		secondConflictingSeriesLabels,
-	)
 }
 
 func (g *GroupedVectorVectorBinaryOperation) oneSideHandedness() string {

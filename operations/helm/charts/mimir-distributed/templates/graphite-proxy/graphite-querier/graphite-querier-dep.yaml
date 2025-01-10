@@ -44,7 +44,7 @@ spec:
         {{ toYaml .Values.graphite.querier.extraContainers | nindent 8 }}
         {{- end }}
         - name: graphite-querier
-          image: {{ include "mimir.imageReference" . | quote }}
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "graphite-querier") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - -target=graphite-querier

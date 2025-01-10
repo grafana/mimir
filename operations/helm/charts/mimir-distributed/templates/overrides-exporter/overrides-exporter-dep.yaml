@@ -41,7 +41,7 @@ spec:
       {{- end }}
       containers:
         - name: overrides-exporter
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "overrides-exporter") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=overrides-exporter"

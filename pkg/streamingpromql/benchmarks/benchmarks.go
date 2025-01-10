@@ -159,6 +159,9 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr: "nh_X / a_X",
 		},
 		{
+			Expr: "a_X == b_X",
+		},
+		{
 			Expr: "2 * a_X",
 		},
 		{

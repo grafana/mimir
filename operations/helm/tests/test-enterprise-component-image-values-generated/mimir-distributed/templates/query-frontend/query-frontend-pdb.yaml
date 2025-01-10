@@ -1,0 +1,19 @@
+---
+# Source: mimir-distributed/templates/query-frontend/query-frontend-pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata:
+  name: test-enterprise-component-image-values-mimir-query-frontend
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-component-image-values
+    app.kubernetes.io/component: query-frontend
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mimir
+      app.kubernetes.io/instance: test-enterprise-component-image-values
+      app.kubernetes.io/component: query-frontend
+  maxUnavailable: 1

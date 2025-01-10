@@ -125,6 +125,7 @@ If something is not clear, you can get back to this document to learn more about
     - `operations/mimir/images.libsonnet` (`_images.mimir` and `_images.query_tee` fields)
     - `operations/mimir-rules-action/Dockerfile` (`grafana/mimirtool` image tag)
   - [ ] [Tag the release](https://github.com/grafana/mimir/blob/main/RELEASE.md#how-to-tag-a-release)
+    - NOTE: The release notes should be included at `docs/sources/mimir/release-notes` on the branch _before_ tagging the release.
     ```bash
     git checkout release-<version>
     ./tools/release/tag-release.sh
@@ -296,6 +297,7 @@ To publish a stable release:
    - Keep the last 3 minor releases
 1. Publish dashboards (done by a Grafana Labs member)
    1. Login to [https://grafana.com](https://grafana.com) with your Grafana Labs account
+      1. Make sure your user in the Grafana Labs organization members list has Admin access.
    1. Open [https://grafana.com/orgs/grafana/dashboards](https://grafana.com/orgs/grafana/dashboards)
    1. For each dashboard at `operations/mimir-mixin-compiled/dashboards`:
       1. Open the respective dashboard page

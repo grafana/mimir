@@ -2054,6 +2054,13 @@ func TestAnnotations(t *testing.T) {
 		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
     `
 
+	nativeHistogramsWithResetHintsMix := `
+		metric{reset_hint="unknown"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+		metric{reset_hint="gauge"} {{schema:0 sum:0 count:0 counter_reset_hint:gauge}}+{{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}x3
+		metric{reset_hint="gauge-unknown"} {{schema:0 sum:0 count:0 counter_reset_hint:gauge}} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+		metric{reset_hint="unknown-gauge"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}x3
+    `
+
 	testCases := map[string]annotationTestCase{
 		"sum() with float and native histogram at same step": {
 			data:                       mixedFloatHistogramData,
@@ -2071,6 +2078,26 @@ func TestAnnotations(t *testing.T) {
 		"sum() with only native histograms": {
 			data: mixedFloatHistogramData,
 			expr: `sum(metric{type="histogram"})`,
+		},
+
+		"delta() over a native histogram with unknown CounterResetHint": {
+			data:                       nativeHistogramsWithResetHintsMix,
+			expr:                       `delta(metric{reset_hint="unknown"}[3m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
+		},
+		"delta() over a native histogram with gauge CounterResetHint": {
+			data: nativeHistogramsWithResetHintsMix,
+			expr: `delta(metric{reset_hint="gauge"}[3m])`,
+		},
+		"delta() with first point having gauge CounterResetHint and last point having unknown CounterResetHint": {
+			data:                       nativeHistogramsWithResetHintsMix,
+			expr:                       `delta(metric{reset_hint="gauge-unknown"}[3m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
+		},
+		"delta() with first point having unknown CounterResetHint and last point having gauge CounterResetHint": {
+			data:                       nativeHistogramsWithResetHintsMix,
+			expr:                       `delta(metric{reset_hint="unknown-gauge"}[3m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
 		},
 
 		"stdvar() with only floats": {
@@ -2336,6 +2363,31 @@ func TestRateIncreaseAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		}
+	}
+	runAnnotationTests(t, testCases)
+}
+
+func TestDeltaAnnotations(t *testing.T) {
+	nativeHistogramsWithGaugeResetHints := `
+		metric{series="mix-float-nh"} 10 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
+		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+	`
+
+	testCases := map[string]annotationTestCase{
+		"delta() over series with mixed floats and native histograms": {
+			data: nativeHistogramsWithGaugeResetHints,
+			expr: `delta(metric{series="mix-float-nh"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: encountered a mix of histograms and floats for metric name "metric" (1:7)`,
+			},
+		},
+		"delta() over metric with incompatible schema": {
+			data: nativeHistogramsWithGaugeResetHints,
+			expr: `delta(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:7)`,
+			},
+		},
 	}
 	runAnnotationTests(t, testCases)
 }
@@ -2651,14 +2703,14 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 				q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
 				require.NoError(t, err)
 				defer q.Close()
-				expectedResults := q.Exec(context.Background())
+				prometheusResults := q.Exec(context.Background())
 
 				q, err = mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
 				require.NoError(t, err)
 				defer q.Close()
 				mimirResults := q.Exec(context.Background())
 
-				testutils.RequireEqualResults(t, expr, expectedResults, mimirResults, skipAnnotationComparison)
+				testutils.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
 			})
 		}
 	}
@@ -2801,7 +2853,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta"} {
+		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta", "delta"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[45s])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[1m])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[2m15s]))`, function, labelRegex))
@@ -2846,4 +2898,140 @@ func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
+}
+
+func TestQueryStats(t *testing.T) {
+	opts := NewTestEngineOpts()
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+	start := timestamp.Time(0)
+	end := start.Add(10 * time.Minute)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			dense_series  0 1 2 3 4 5 6 7 8 9 10
+			start_series  0 1 _ _ _ _ _ _ _ _ _
+			end_series    _ _ _ _ _ 5 6 7 8 9 10
+			sparse_series 0 _ _ _ _ _ _ 7 _ _ _
+			stale_series  0 1 2 3 4 5 stale 7 8 9 10
+			nan_series    NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
+			native_histogram_series {{schema:0 sum:2 count:4 buckets:[1 2 1]}} {{sum:2 count:4 buckets:[1 2 1]}}
+	`)
+
+	runQueryAndGetTotalSamples := func(t *testing.T, engine promql.QueryEngine, expr string, isInstantQuery bool) int64 {
+		var q promql.Query
+		var err error
+
+		if isInstantQuery {
+			q, err = engine.NewInstantQuery(context.Background(), storage, nil, expr, end)
+		} else {
+			q, err = engine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, time.Minute)
+		}
+
+		require.NoError(t, err)
+
+		defer q.Close()
+
+		res := q.Exec(context.Background())
+		require.NoError(t, res.Err)
+
+		return q.Stats().Samples.TotalSamples
+	}
+
+	testCases := map[string]struct {
+		expr                 string
+		isInstantQuery       bool
+		expectedTotalSamples int64
+	}{
+		"instant vector selector with point at every time step": {
+			expr:                 `dense_series{}`,
+			expectedTotalSamples: 11,
+		},
+		"instant vector selector with points only in start of time range": {
+			expr:                 `start_series{}`,
+			expectedTotalSamples: 2 + 4, // 2 for original points, plus 4 for lookback to last point.
+		},
+		"instant vector selector with points only at end of time range": {
+			expr:                 `end_series{}`,
+			expectedTotalSamples: 6,
+		},
+		"instant vector selector with sparse points": {
+			expr:                 `sparse_series{}`,
+			expectedTotalSamples: 5 + 4, // 5 for first point at T=0, and 4 for second point at T=7
+		},
+		"instant vector selector with stale marker": {
+			expr:                 `stale_series{}`,
+			expectedTotalSamples: 10, // Instant vector selectors ignore stale markers.
+		},
+
+		"raw range vector selector with single point": {
+			expr:                 `dense_series[45s]`,
+			isInstantQuery:       true,
+			expectedTotalSamples: 1,
+		},
+		"raw range vector selector with multiple points": {
+			expr:                 `dense_series[3m45s]`,
+			isInstantQuery:       true,
+			expectedTotalSamples: 4,
+		},
+
+		"range vector selector with point at every time step": {
+			expr:                 `sum_over_time(dense_series{}[30s])`,
+			expectedTotalSamples: 11,
+		},
+		"range vector selector with points only in start of time range": {
+			expr:                 `sum_over_time(start_series{}[30s])`,
+			expectedTotalSamples: 2,
+		},
+		"range vector selector with points only at end of time range": {
+			expr:                 `sum_over_time(end_series{}[30s])`,
+			expectedTotalSamples: 6,
+		},
+		"range vector selector with sparse points": {
+			expr:                 `sum_over_time(sparse_series{}[30s])`,
+			expectedTotalSamples: 2,
+		},
+		"range vector selector where range overlaps previous step's range": {
+			expr:                 `sum_over_time(dense_series{}[1m30s])`,
+			expectedTotalSamples: 21, // Each step except the first selects two points.
+		},
+		"range vector selector with stale marker": {
+			expr:                 `count_over_time(stale_series{}[1m30s])`,
+			expectedTotalSamples: 19, // Each step except the first selects two points. Range vector selectors ignore stale markers.
+		},
+
+		"expression with multiple selectors": {
+			expr:                 `dense_series{} + end_series{}`,
+			expectedTotalSamples: 11 + 6,
+		},
+		"instant vector selector with NaNs": {
+			expr:                 `nan_series{}`,
+			expectedTotalSamples: 11,
+		},
+		"range vector selector with NaNs": {
+			expr:                 `sum_over_time(nan_series{}[1m])`,
+			expectedTotalSamples: 11,
+		},
+		"instant vector selector with native histograms": {
+			expr:                 `native_histogram_series{}`,
+			expectedTotalSamples: 78,
+		},
+		"range vector selector with native histograms": {
+			expr:                 `sum_over_time(native_histogram_series{}[1m])`,
+			expectedTotalSamples: 26,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			prometheusCount := runQueryAndGetTotalSamples(t, prometheusEngine, testCase.expr, testCase.isInstantQuery)
+			require.Equal(t, testCase.expectedTotalSamples, prometheusCount, "invalid test case: expected samples does not match value from Prometheus' engine")
+
+			mimirCount := runQueryAndGetTotalSamples(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
+			require.Equal(t, testCase.expectedTotalSamples, mimirCount)
+		})
+	}
 }

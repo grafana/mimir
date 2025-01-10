@@ -107,7 +107,7 @@ func (c *ConfigCommand) output(yamlContents []byte, flags []string, notices conf
 		if path == "" {
 			return defaultWriter, func() {}, nil
 		}
-		outWriter, err := os.OpenFile(path, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0666)
+		outWriter, err := os.OpenFile(path, os.O_TRUNC|os.O_CREATE|os.O_WRONLY, 0600)
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "could not open "+path)
 		}
