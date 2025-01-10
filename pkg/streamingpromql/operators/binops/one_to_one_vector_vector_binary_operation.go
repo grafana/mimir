@@ -220,44 +220,17 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	groupKeyFunc := vectorMatchingGroupKeyFunc(b.VectorMatching)
 
 	// If the left side is smaller than the right, build a map of the possible groups from the left side
-	// to allow us to avoid creating unnecessary groups when iterating through the right side below.
+	// to allow us to avoid creating unnecessary groups when iterating through the right side in computeRightSideGroups.
 	// This optimisation assumes that most series on either side match at most one series on the other side,
 	// which is generally true for one-to-one matching.
-	leftSideIsSmaller := len(b.leftMetadata) < len(b.rightMetadata)
+	// FIXME: a possible improvement would be to only bother with this if the left side is significantly smaller
 	var leftSideGroupsMap map[string]struct{}
 
-	if leftSideIsSmaller {
-		leftSideGroupsMap = map[string]struct{}{}
-
-		for _, s := range b.leftMetadata {
-			groupKey := groupKeyFunc(s.Labels)
-			if _, exists := leftSideGroupsMap[string(groupKey)]; !exists {
-				leftSideGroupsMap[string(groupKey)] = struct{}{}
-			}
-		}
+	if len(b.leftMetadata) < len(b.rightMetadata) {
+		leftSideGroupsMap = b.computeLeftSideGroups(groupKeyFunc)
 	}
 
-	rightSideGroupsMap := map[string]*oneToOneBinaryOperationRightSide{}
-
-	for idx, s := range b.rightMetadata {
-		groupKey := groupKeyFunc(s.Labels)
-
-		if leftSideIsSmaller {
-			if _, exists := leftSideGroupsMap[string(groupKey)]; !exists {
-				// There are no matching series from the left side for this right side series.
-				continue
-			}
-		}
-
-		group, exists := rightSideGroupsMap[string(groupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
-
-		if !exists {
-			group = &oneToOneBinaryOperationRightSide{}
-			rightSideGroupsMap[string(groupKey)] = group
-		}
-
-		group.rightSeriesIndices = append(group.rightSeriesIndices, idx)
-	}
+	rightSideGroupsMap := b.computeRightSideGroups(leftSideGroupsMap, groupKeyFunc)
 
 	outputSeriesMap := map[string]oneToOneBinaryOperationOutputSeriesWithLabels{}
 
@@ -322,6 +295,46 @@ func (b *OneToOneVectorVectorBinaryOperation) computeOutputSeries() ([]types.Ser
 	}
 
 	return allMetadata, allSeries, leftSeriesUsed, rightSeriesUsed, nil
+}
+
+func (b *OneToOneVectorVectorBinaryOperation) computeLeftSideGroups(groupKeyFunc func(labels.Labels) []byte) map[string]struct{} {
+	m := map[string]struct{}{}
+
+	for _, s := range b.leftMetadata {
+		groupKey := groupKeyFunc(s.Labels)
+		if _, exists := m[string(groupKey)]; !exists {
+			m[string(groupKey)] = struct{}{}
+		}
+	}
+
+	return m
+}
+
+func (b *OneToOneVectorVectorBinaryOperation) computeRightSideGroups(leftSideGroupsMap map[string]struct{}, groupKeyFunc func(labels.Labels) []byte) map[string]*oneToOneBinaryOperationRightSide {
+	m := map[string]*oneToOneBinaryOperationRightSide{}
+
+	for idx, s := range b.rightMetadata {
+		groupKey := groupKeyFunc(s.Labels)
+
+		if leftSideGroupsMap != nil {
+			// Left side is smaller than the right, check if there's any series on the left that could match this right side series.
+
+			if _, exists := leftSideGroupsMap[string(groupKey)]; !exists {
+				continue
+			}
+		}
+
+		group, exists := m[string(groupKey)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
+
+		if !exists {
+			group = &oneToOneBinaryOperationRightSide{}
+			m[string(groupKey)] = group
+		}
+
+		group.rightSeriesIndices = append(group.rightSeriesIndices, idx)
+	}
+
+	return m
 }
 
 // sortSeries sorts metadata and series in place to try to minimise the number of input series we'll need to buffer in memory.
