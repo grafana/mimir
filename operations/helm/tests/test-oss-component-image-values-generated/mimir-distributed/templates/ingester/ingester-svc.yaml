@@ -1,0 +1,105 @@
+---
+# Source: mimir-distributed/templates/ingester/ingester-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-oss-component-image-values-mimir-ingester-zone-a
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-component-image-values
+    app.kubernetes.io/component: ingester
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/managed-by: Helm
+    name: "ingester-zone-a"
+    rollout-group: ingester
+    zone: zone-a
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-component-image-values
+    app.kubernetes.io/component: ingester
+    rollout-group: ingester
+    zone: zone-a
+---
+# Source: mimir-distributed/templates/ingester/ingester-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-oss-component-image-values-mimir-ingester-zone-b
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-component-image-values
+    app.kubernetes.io/component: ingester
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/managed-by: Helm
+    name: "ingester-zone-b"
+    rollout-group: ingester
+    zone: zone-b
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-component-image-values
+    app.kubernetes.io/component: ingester
+    rollout-group: ingester
+    zone: zone-b
+---
+# Source: mimir-distributed/templates/ingester/ingester-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-oss-component-image-values-mimir-ingester-zone-c
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-component-image-values
+    app.kubernetes.io/component: ingester
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/managed-by: Helm
+    name: "ingester-zone-c"
+    rollout-group: ingester
+    zone: zone-c
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-component-image-values
+    app.kubernetes.io/component: ingester
+    rollout-group: ingester
+    zone: zone-c

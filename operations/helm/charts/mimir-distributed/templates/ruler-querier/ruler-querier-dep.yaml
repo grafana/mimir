@@ -45,7 +45,7 @@ spec:
       {{- end }}
       containers:
         - name: ruler-querier
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "ruler-querier") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=querier"

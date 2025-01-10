@@ -40,7 +40,7 @@ spec:
       {{- end }}
       containers:
         - name: ruler-query-scheduler
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "ruler-query-scheduler") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=query-scheduler"

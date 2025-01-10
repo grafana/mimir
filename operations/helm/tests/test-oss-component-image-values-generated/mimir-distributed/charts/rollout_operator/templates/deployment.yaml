@@ -1,0 +1,65 @@
+---
+# Source: mimir-distributed/charts/rollout_operator/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-oss-component-image-values-rollout-operator
+  labels:
+    helm.sh/chart: rollout-operator-0.22.0
+    app.kubernetes.io/name: rollout-operator
+    app.kubernetes.io/instance: test-oss-component-image-values
+    app.kubernetes.io/version: "v0.22.0"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  minReadySeconds: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rollout-operator
+      app.kubernetes.io/instance: test-oss-component-image-values
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: rollout-operator
+        app.kubernetes.io/instance: test-oss-component-image-values
+    spec:
+      serviceAccountName: test-oss-component-image-values-rollout-operator
+      securityContext:
+        fsGroup: 10001
+        runAsGroup: 10001
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: rollout-operator
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          image: "grafana/rollout-operator:v0.22.0"
+          imagePullPolicy: IfNotPresent
+          args:
+          - -kubernetes.namespace=citestns
+          ports:
+            - name: http-metrics
+              containerPort: 8001
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http-metrics
+            initialDelaySeconds: 5
+            timeoutSeconds: 1
+          resources:
+            limits:
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 100Mi

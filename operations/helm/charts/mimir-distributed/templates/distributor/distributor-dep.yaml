@@ -46,7 +46,7 @@ spec:
       {{- end }}
       containers:
         - name: distributor
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "distributor") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=distributor"
