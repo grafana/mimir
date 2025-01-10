@@ -2098,9 +2098,9 @@ Usage of ./cmd/mimir/mimir:
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
   -querier.mimir-query-engine.disabled-aggregations comma-separated-list-of-strings
-    	[experimental] Comma-separated list of aggregations to disable. Queries using a disabled aggregation will fall back to Prometheus' query engine. Only applies if MQE is in use.
+    	[experimental] Comma-separated list of aggregations to disable support for. Only applies if MQE is in use.
   -querier.mimir-query-engine.disabled-functions comma-separated-list-of-strings
-    	[experimental] Comma-separated list of function names to disable. Queries using a disabled function will fall back to Prometheus' query engine. Only applies if MQE is in use.
+    	[experimental] Comma-separated list of function names to disable support for. Only applies if MQE is in use.
   -querier.mimir-query-engine.enable-aggregation-operations
     	[experimental] Enable support for aggregation operations in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-binary-logical-operations

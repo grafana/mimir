@@ -33,7 +33,7 @@ type Config struct {
 
 	PromQLExperimentalFunctionsEnabled bool `yaml:"promql_experimental_functions_enabled" category:"experimental"`
 
-	MimirQueryEngine streamingpromql.MQEOpts `yaml:"mimir_query_engine" category:"experimental"`
+	MimirQueryEngine streamingpromql.Features `yaml:"mimir_query_engine" category:"experimental"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -74,7 +74,7 @@ func NewPromQLEngineOptions(cfg Config, activityTracker *activitytracker.Activit
 
 	mqeOpts := streamingpromql.EngineOpts{
 		CommonOpts: commonOpts,
-		MQEOpts:    cfg.MimirQueryEngine,
+		Features:   cfg.MimirQueryEngine,
 	}
 
 	return commonOpts, mqeOpts, cfg.PromQLExperimentalFunctionsEnabled

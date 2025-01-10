@@ -1533,15 +1533,13 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
   [enable_vector_vector_binary_comparison_operations: <boolean> | default = true]
 
-  # (experimental) Comma-separated list of aggregations to disable. Queries
-  # using a disabled aggregation will fall back to Prometheus' query engine.
+  # (experimental) Comma-separated list of aggregations to disable support for.
   # Only applies if MQE is in use.
   # CLI flag: -querier.mimir-query-engine.disabled-aggregations
   [disabled_aggregations: <string> | default = ""]
 
-  # (experimental) Comma-separated list of function names to disable. Queries
-  # using a disabled function will fall back to Prometheus' query engine. Only
-  # applies if MQE is in use.
+  # (experimental) Comma-separated list of function names to disable support
+  # for. Only applies if MQE is in use.
   # CLI flag: -querier.mimir-query-engine.disabled-functions
   [disabled_functions: <string> | default = ""]
 ```

@@ -169,10 +169,10 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			Stats: q.stats,
 		}, nil
 	case *parser.AggregateExpr:
-		if !q.engine.mqeOpts.EnableAggregationOperations {
+		if !q.engine.features.EnableAggregationOperations {
 			return nil, compat.NewNotSupportedError("aggregation operations")
 		}
-		if aggregations.IsAggregationDisabled(e.Op, q.engine.mqeOpts.DisabledAggregations) {
+		if _, found := slices.BinarySearch(q.engine.features.DisabledAggregationsItems, e.Op); found {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' aggregation disabled", e.Op.String()))
 		}
 
@@ -206,7 +206,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		// We don't need to handle scalars on both sides here, as that would produce a scalar and so is handled in convertToScalarOperator.
 
 		if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
-			if e.Op.IsComparisonOperator() && !q.engine.mqeOpts.EnableVectorScalarBinaryComparisonOperations {
+			if e.Op.IsComparisonOperator() && !q.engine.features.EnableVectorScalarBinaryComparisonOperations {
 				return nil, compat.NewNotSupportedError(fmt.Sprintf("vector/scalar binary expression with '%v'", e.Op))
 			}
 
@@ -247,15 +247,15 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		}
 
 		// Vectors on both sides.
-		if e.Op.IsComparisonOperator() && !q.engine.mqeOpts.EnableVectorVectorBinaryComparisonOperations {
+		if e.Op.IsComparisonOperator() && !q.engine.features.EnableVectorVectorBinaryComparisonOperations {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("vector/vector binary expression with '%v'", e.Op))
 		}
 
-		if e.Op.IsSetOperator() && !q.engine.mqeOpts.EnableBinaryLogicalOperations {
+		if e.Op.IsSetOperator() && !q.engine.features.EnableBinaryLogicalOperations {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%v'", e.Op))
 		}
 
-		if !e.Op.IsSetOperator() && e.VectorMatching.Card != parser.CardOneToOne && !q.engine.mqeOpts.EnableOneToManyAndManyToOneBinaryOperations {
+		if !e.Op.IsSetOperator() && e.VectorMatching.Card != parser.CardOneToOne && !q.engine.features.EnableOneToManyAndManyToOneBinaryOperations {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching", e.VectorMatching.Card))
 		}
 
@@ -313,12 +313,10 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 }
 
 func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
-	for _, fName := range q.engine.mqeOpts.DisabledFunctions {
-		// e.Func.Name is already validated by the parser. Meaning we don't need to check if the function name
-		// is real before checking if it is disabled.
-		if e.Func.Name == fName {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function is disabled", e.Func.Name))
-		}
+	// e.Func.Name is already validated by the parser. Meaning we don't need to check if the function name
+	// is real before checking if it is disabled.
+	if _, found := slices.BinarySearch(q.engine.features.DisabledFunctions, e.Func.Name); found {
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function is disabled", e.Func.Name))
 	}
 
 	factory, ok := instantVectorFunctionOperatorFactories[e.Func.Name]
@@ -360,7 +358,7 @@ func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.Q
 		return selectors.NewRangeVectorSelector(selector, q.memoryConsumptionTracker, q.stats), nil
 
 	case *parser.SubqueryExpr:
-		if !q.engine.mqeOpts.EnableSubqueries {
+		if !q.engine.features.EnableSubqueries {
 			return nil, compat.NewNotSupportedError("subquery")
 		}
 
@@ -432,7 +430,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 		return nil, fmt.Errorf("cannot create scalar operator for expression that produces a %s", parser.DocumentedType(expr.Type()))
 	}
 
-	if !q.engine.mqeOpts.EnableScalars {
+	if !q.engine.features.EnableScalars {
 		return nil, compat.NewNotSupportedError("scalar values")
 	}
 
@@ -473,7 +471,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 	case *parser.ParenExpr:
 		return q.convertToScalarOperator(e.Expr, timeRange)
 	case *parser.BinaryExpr:
-		if e.Op.IsComparisonOperator() && !q.engine.mqeOpts.EnableScalarScalarBinaryComparisonOperations {
+		if e.Op.IsComparisonOperator() && !q.engine.features.EnableScalarScalarBinaryComparisonOperations {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("scalar/scalar binary expression with '%v'", e.Op))
 		}
 

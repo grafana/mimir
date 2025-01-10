@@ -38,42 +38,26 @@ var AggregationGroupFactories = map[parser.ItemType]AggregationGroupFactory{
 // Invalid combinations include exponential and custom buckets, and histograms with incompatible custom buckets.
 var invalidCombinationOfHistograms = &histogram.FloatHistogram{}
 
-func IsAggregationDisabled(op parser.ItemType, disabledAggregations []string) bool {
-	for _, aggName := range disabledAggregations {
-		switch strings.ToLower(aggName) {
-		case "avg":
-			if op == parser.AVG {
-				return true
-			}
-		case "count":
-			if op == parser.COUNT {
-				return true
-			}
-		case "group":
-			if op == parser.GROUP {
-				return true
-			}
-		case "max":
-			if op == parser.MAX {
-				return true
-			}
-		case "min":
-			if op == parser.MIN {
-				return true
-			}
-		case "stddev":
-			if op == parser.STDDEV {
-				return true
-			}
-		case "stdvar":
-			if op == parser.STDVAR {
-				return true
-			}
-		case "sum":
-			if op == parser.SUM {
-				return true
-			}
-		}
+func GetAggregationItemType(aggregation string) (parser.ItemType, bool) {
+	// The parser key is not exported, but the item types are. It's safe to assume the keys will continue to map their names onto their values.
+	var key = map[string]parser.ItemType{
+		// Aggregators.
+		"avg":          parser.AVG,
+		"bottomk":      parser.BOTTOMK,
+		"count_values": parser.COUNT_VALUES,
+		"count":        parser.COUNT,
+		"group":        parser.GROUP,
+		"limit_ratio":  parser.LIMIT_RATIO,
+		"limitk":       parser.LIMITK,
+		"max":          parser.MAX,
+		"min":          parser.MIN,
+		"quantile":     parser.QUANTILE,
+		"stddev":       parser.STDDEV,
+		"stdvar":       parser.STDVAR,
+		"sum":          parser.SUM,
+		"topk":         parser.TOPK,
 	}
-	return false
+
+	item, ok := key[strings.ToLower(aggregation)]
+	return item, ok
 }

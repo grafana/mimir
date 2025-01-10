@@ -9,15 +9,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 )
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
@@ -44,12 +47,28 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		return nil, errors.New("enabling delayed name removal not supported by Mimir query engine")
 	}
 
+	// Sort DisabledFunctions to optimise lookups
+	sort.Strings(opts.Features.DisabledFunctions)
+
+	opts.Features.DisabledAggregationsItems = make([]parser.ItemType, 0, len(opts.Features.DisabledAggregations))
+	for _, agg := range opts.Features.DisabledAggregations {
+		item, ok := aggregations.GetAggregationItemType(agg)
+		if !ok {
+			return nil, errors.New(fmt.Sprintf("disabled aggregation '%s' does not exist", agg))
+		}
+		opts.Features.DisabledAggregationsItems = append(opts.Features.DisabledAggregationsItems, item)
+	}
+	// No point sorting DisabledAggregations earlier, as ItemType ints are not in order.
+	sort.Slice(opts.Features.DisabledAggregationsItems, func(i, j int) bool {
+		return opts.Features.DisabledAggregationsItems[i] < opts.Features.DisabledAggregationsItems[j]
+	})
+
 	return &Engine{
 		lookbackDelta:            lookbackDelta,
 		timeout:                  opts.CommonOpts.Timeout,
 		limitsProvider:           limitsProvider,
 		activeQueryTracker:       opts.CommonOpts.ActiveQueryTracker,
-		mqeOpts:                  opts.MQEOpts,
+		features:                 opts.Features,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
 
 		logger: logger,
@@ -69,7 +88,7 @@ type Engine struct {
 	timeout                  time.Duration
 	limitsProvider           QueryLimitsProvider
 	activeQueryTracker       promql.QueryTracker
-	mqeOpts                  MQEOpts
+	features                 Features
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
 	logger                                    log.Logger
