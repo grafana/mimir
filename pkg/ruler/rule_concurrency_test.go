@@ -211,7 +211,7 @@ func TestSplitGroupIntoBatches(t *testing.T) {
 		},
 		"indeterminates": {
 			inputFile:      "fixtures/rules_indeterminates.yaml",
-			expectedGroups: []rules.ConcurrentRules{{0}, {1}, {2}, {3}, {4}, {5}, {6}}, // Sequential
+			expectedGroups: nil,
 		},
 		"all independent": {
 			inputFile: "fixtures/rules_multiple_independent.yaml",
@@ -250,6 +250,11 @@ func TestSplitGroupIntoBatches(t *testing.T) {
 
 func requireConcurrentRulesEqual(t *testing.T, expected, actual []rules.ConcurrentRules) {
 	t.Helper()
+
+	if expected == nil {
+		require.Nil(t, actual)
+		return
+	}
 
 	// Like require.Equals but ignores the order of elements in the slices.
 	require.Len(t, actual, len(expected))

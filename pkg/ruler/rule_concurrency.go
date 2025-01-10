@@ -181,7 +181,7 @@ func (c *TenantConcurrencyController) Allow(_ context.Context, _ *rules.Group, _
 func (c *TenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, g *rules.Group) []rules.ConcurrentRules {
 	if !c.isGroupAtRisk(g) {
 		// If the group is not at risk, we can evaluate the rules sequentially.
-		return sequentialRules(g)
+		return nil
 	}
 
 	logger := log.With(c.logger, "group", g.Name())
@@ -209,7 +209,7 @@ func (c *TenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, g
 		// There are no rules without dependencies.
 		// Fall back to sequential evaluation.
 		level.Info(logger).Log("msg", "No rules without dependencies found, falling back to sequential rule evaluation. This may be due to indeterminate rule dependencies.")
-		return sequentialRules(g)
+		return nil
 	}
 	order := []rules.ConcurrentRules{firstBatch}
 
@@ -239,7 +239,7 @@ func (c *TenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, g
 			// We can't evaluate them concurrently.
 			// Fall back to sequential evaluation.
 			level.Warn(logger).Log("msg", "Cyclic rule dependencies detected, falling back to sequential rule evaluation")
-			return sequentialRules(g)
+			return nil
 		}
 
 		order = append(order, batch)
@@ -279,19 +279,10 @@ func (n *NoopMultiTenantConcurrencyController) NewTenantConcurrencyControllerFor
 type NoopTenantConcurrencyController struct{}
 
 func (n *NoopTenantConcurrencyController) Done(_ context.Context) {}
-func (n *NoopTenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, g *rules.Group) []rules.ConcurrentRules {
-	return sequentialRules(g)
+func (n *NoopTenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, _ *rules.Group) []rules.ConcurrentRules {
+	return nil
 }
 
 func (n *NoopTenantConcurrencyController) Allow(_ context.Context, _ *rules.Group, _ rules.Rule) bool {
 	return false
-}
-
-func sequentialRules(g *rules.Group) []rules.ConcurrentRules {
-	// Split the group into batches of 1 rule each.
-	order := make([]rules.ConcurrentRules, len(g.Rules()))
-	for i := range g.Rules() {
-		order[i] = []int{i}
-	}
-	return order
 }
