@@ -158,7 +158,7 @@ func (c *TenantConcurrencyController) Done(_ context.Context) {
 }
 
 // Allow tries to acquire a slot from the concurrency controller.
-func (c *TenantConcurrencyController) Allow(_ context.Context, group *rules.Group, rule rules.Rule) bool {
+func (c *TenantConcurrencyController) Allow(_ context.Context, _ *rules.Group, _ rules.Rule) bool {
 	// Next, try to acquire a global concurrency slot.
 	c.attemptsStartedTotal.Inc()
 	if !c.globalConcurrency.TryAcquire(1) {
