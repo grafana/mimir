@@ -6,56 +6,79 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
-func TestMaxTimeExpandedReplication_Eligible(t *testing.T) {
+func TestMaxTimeExpandedReplication(t *testing.T) {
 	// Round "now" to the nearest millisecond since we are using millisecond precision
 	// for min/max times for the blocks.
 	now := time.Now().Round(time.Millisecond)
-	replication := NewMaxTimeExpandedReplication(2 * time.Hour)
+	replication := NewMaxTimeExpandedReplication(25*time.Hour, 45*time.Minute)
 	replication.now = func() time.Time { return now }
 
-	t.Run("max time outside limit", func(t *testing.T) {
-		b := block.Meta{
-			BlockMeta: tsdb.BlockMeta{
-				MinTime: now.Add(-5 * time.Hour).UnixMilli(),
-				MaxTime: now.Add(-4 * time.Hour).UnixMilli(),
-			},
-		}
-		require.False(t, replication.Eligible(&b))
-	})
+	type testCase struct {
+		block         bucketindex.Block
+		expectedSync  bool
+		expectedQuery bool
+	}
 
-	t.Run("max time on limit", func(t *testing.T) {
-		b := block.Meta{
-			BlockMeta: tsdb.BlockMeta{
-				MinTime: now.Add(-4 * time.Hour).UnixMilli(),
-				MaxTime: now.Add(-2 * time.Hour).UnixMilli(),
+	testCases := map[string]testCase{
+		"max time eligible": {
+			block: bucketindex.Block{
+				MinTime:    now.Add(-24 * time.Hour).UnixMilli(),
+				MaxTime:    now.Add(-12 * time.Hour).UnixMilli(),
+				UploadedAt: now.Add(-6 * time.Hour).Unix(),
 			},
-		}
-		require.True(t, replication.Eligible(&b))
-	})
+			expectedSync:  true,
+			expectedQuery: true,
+		},
+		"max time eligible recent upload": {
+			block: bucketindex.Block{
+				MinTime:    now.Add(-24 * time.Hour).UnixMilli(),
+				MaxTime:    now.Add(-12 * time.Hour).UnixMilli(),
+				UploadedAt: now.Add(-15 * time.Minute).Unix(),
+			},
+			expectedSync:  true,
+			expectedQuery: false,
+		},
+		"max time on boundary": {
+			block: bucketindex.Block{
+				MinTime:    now.Add(-25 * time.Hour).UnixMilli(),
+				MaxTime:    now.Add(-13 * time.Hour).UnixMilli(),
+				UploadedAt: now.Add(-6 * time.Hour).Unix(),
+			},
+			expectedSync:  true,
+			expectedQuery: true,
+		},
+		"max time on boundary recent upload": {
+			block: bucketindex.Block{
+				MinTime:    now.Add(-25 * time.Hour).UnixMilli(),
+				MaxTime:    now.Add(-13 * time.Hour).UnixMilli(),
+				UploadedAt: now.Add(-30 * time.Minute).Unix(),
+			},
+			expectedSync:  true,
+			expectedQuery: false,
+		},
+		"max time too old": {
+			block: bucketindex.Block{
+				MinTime:    now.Add(-72 * time.Hour).UnixMilli(),
+				MaxTime:    now.Add(-48 * time.Hour).UnixMilli(),
+				UploadedAt: now.Add(-24 * time.Hour).Unix(),
+			},
+			expectedSync:  false,
+			expectedQuery: false,
+		},
+	}
 
-	t.Run("max time inside min time outside limit", func(t *testing.T) {
-		b := block.Meta{
-			BlockMeta: tsdb.BlockMeta{
-				MinTime: now.Add(-3 * time.Hour).UnixMilli(),
-				MaxTime: now.Add(-time.Hour).UnixMilli(),
-			},
-		}
-		require.True(t, replication.Eligible(&b))
-	})
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			canSync := replication.EligibleForSync(&tc.block)
+			canQuery := replication.EligibleForQuerying(&tc.block)
 
-	t.Run("max and min time inside limit", func(t *testing.T) {
-		b := block.Meta{
-			BlockMeta: tsdb.BlockMeta{
-				MinTime: now.Add(-1 * time.Hour).UnixMilli(),
-				MaxTime: now.UnixMilli(),
-			},
-		}
-		require.True(t, replication.Eligible(&b))
-	})
+			require.Equal(t, tc.expectedSync, canSync, "expected to be able to sync block %+v using %+v", tc.block, replication)
+			require.Equal(t, tc.expectedQuery, canQuery, "expected to be able to query block %+v using %+v", tc.block, replication)
+		})
+	}
 }

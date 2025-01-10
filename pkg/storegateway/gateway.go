@@ -181,7 +181,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 
 	var expandedReplication ExpandedReplication
 	if gatewayCfg.ExpandedReplication.Enabled {
-		expandedReplication = NewMaxTimeExpandedReplication(gatewayCfg.ExpandedReplication.MaxTimeThreshold)
+		expandedReplication = NewMaxTimeExpandedReplication(gatewayCfg.ExpandedReplication.MaxTimeThreshold, 0)
 	} else {
 		expandedReplication = NewNopExpandedReplication()
 	}

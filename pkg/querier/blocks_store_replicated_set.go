@@ -111,7 +111,7 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 	// Find the replication set of each block we need to query.
 	for _, block := range blocks {
 		var ringOpts []ring.Option
-		if s.expandedReplication.Eligible(block) {
+		if s.expandedReplication.EligibleForQuerying(block) {
 			ringOpts = append(ringOpts, expandedReplicationOption)
 		}
 

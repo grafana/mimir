@@ -7,6 +7,7 @@ package storegateway
 
 import (
 	"context"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
@@ -118,7 +119,7 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 
 	for blockID := range metas {
 		ringOpts := []ring.Option{bufOption}
-		if s.expandedReplication.Eligible(metas[blockID]) {
+		if s.expandedReplication.EligibleForSync(metas[blockID]) {
 			ringOpts = append(ringOpts, expandedReplicationOption)
 		}
 
