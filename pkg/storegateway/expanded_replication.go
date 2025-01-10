@@ -91,17 +91,20 @@ type MaxTimeExpandedReplication struct {
 	now         func() time.Time
 }
 
-func (e *MaxTimeExpandedReplication) isMaxTimeInWindow(b ReplicatedBlock, now time.Time) bool {
+func (e *MaxTimeExpandedReplication) EligibleForSync(b ReplicatedBlock) bool {
+	now := e.now()
 	maxTimeDelta := now.Sub(b.GetMaxTime())
 	return maxTimeDelta <= e.maxTime
-}
-
-func (e *MaxTimeExpandedReplication) EligibleForSync(b ReplicatedBlock) bool {
-	return e.isMaxTimeInWindow(b, e.now())
 }
 
 func (e *MaxTimeExpandedReplication) EligibleForQuerying(b QueryableReplicatedBlock) bool {
 	now := e.now()
 	uploadedDelta := now.Sub(b.GetUploadedAt())
-	return uploadedDelta > e.gracePeriod && e.isMaxTimeInWindow(b, now)
+	maxTimeDelta := now.Sub(b.GetMaxTime())
+	// To be eligible for querying a block must:
+	// * Have been uploaded more than `gracePeriod` ago since we need to allow store-gateways
+	//   to sync recently uploaded blocks.
+	// * Have a max time within `maxTime-gracePeriod` since we need to allow store-gateways to
+	//   sync blocks that have recently become eligible for expanded replication.
+	return uploadedDelta > e.gracePeriod && maxTimeDelta <= (e.maxTime-e.gracePeriod)
 }
