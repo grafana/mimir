@@ -247,19 +247,16 @@ eval instant at 20m delta(http_requests[20m])
 	{path="/foo"} 200
 	{path="/bar"} -200
 
-# Unsupported by streaming engine.
-# eval instant at 20m delta(http_requests_gauge[20m])
-# 	{path="/foo"} {{schema:0 sum:4 count:8 buckets:[4 4 4]}}
+eval instant at 20m delta(http_requests_gauge[20m])
+	{path="/foo"} {{schema:0 sum:4 count:8 buckets:[4 4 4]}}
 
-# Unsupported by streaming engine.
-# # delta emits warn annotation for non-gauge histogram types.
-# eval_warn instant at 20m delta(http_requests_counter[20m])
-# 	{path="/foo"} {{schema:0 sum:4 count:8 buckets:[4 4 4]}}
+# delta emits warn annotation for non-gauge histogram types.
+eval_warn instant at 20m delta(http_requests_counter[20m])
+	{path="/foo"} {{schema:0 sum:4 count:8 buckets:[4 4 4]}}
 
-# Unsupported by streaming engine.
-# # delta emits warn annotation for mix of histogram and floats.
-# eval_warn instant at 20m delta(http_requests_mix[20m])
-# 	#empty
+# delta emits warn annotation for mix of histogram and floats.
+eval_warn instant at 20m delta(http_requests_mix[20m])
+	#empty
 
 clear
 
