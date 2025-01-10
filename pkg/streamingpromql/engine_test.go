@@ -2373,7 +2373,7 @@ func TestDeltaAnnotations(t *testing.T) {
 	`
 
 	testCases := map[string]annotationTestCase{}
-	testCases["delta() over metric with mixed float and nh"] = annotationTestCase{
+	testCases["delta() over series with mixed floats and native histograms"] = annotationTestCase{
 		data: nativeHistogramsWithGaugeResetHints,
 		expr: `delta(metric{series="mix-float-nh"}[1m1s])`,
 		expectedWarningAnnotations: []string{
