@@ -2085,7 +2085,7 @@ func TestAnnotations(t *testing.T) {
 			expr:                       `delta(metric{reset_hint="unknown"}[3m])`,
 			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
 		},
-		"delta() native histogram gauge CounterResetHint": {
+		"delta() over a native histogram with gauge CounterResetHint": {
 			data: nativeHistogramsWithResetHintsMix,
 			expr: `delta(metric{reset_hint="gauge"}[3m])`,
 		},
