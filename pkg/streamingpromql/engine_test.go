@@ -2364,6 +2364,7 @@ func TestRateIncreaseAnnotations(t *testing.T) {
 			expectedInfoAnnotations:    []string{},
 		}
 	}
+	runAnnotationTests(t, testCases)
 }
 
 func TestDeltaAnnotations(t *testing.T) {
@@ -2372,19 +2373,20 @@ func TestDeltaAnnotations(t *testing.T) {
 		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
 	`
 
-	testCases := map[string]annotationTestCase{}
-	testCases["delta() over series with mixed floats and native histograms"] = annotationTestCase{
-		data: nativeHistogramsWithGaugeResetHints,
-		expr: `delta(metric{series="mix-float-nh"}[1m1s])`,
-		expectedWarningAnnotations: []string{
-			`PromQL warning: encountered a mix of histograms and floats for metric name "metric" (1:7)`,
+	testCases := map[string]annotationTestCase{
+		"delta() over series with mixed floats and native histograms": {
+			data: nativeHistogramsWithGaugeResetHints,
+			expr: `delta(metric{series="mix-float-nh"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: encountered a mix of histograms and floats for metric name "metric" (1:7)`,
+			},
 		},
-	}
-	testCases["delta() over metric with incompatible schema"] = annotationTestCase{
-		data: nativeHistogramsWithGaugeResetHints,
-		expr: `delta(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
-		expectedWarningAnnotations: []string{
-			`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:7)`,
+		"delta() over metric with incompatible schema": {
+			data: nativeHistogramsWithGaugeResetHints,
+			expr: `delta(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:7)`,
+			},
 		},
 	}
 	runAnnotationTests(t, testCases)
