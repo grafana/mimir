@@ -359,7 +359,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 	)
 
 	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		nameSets, warnings, queriedBlocks, err := q.fetchLabelNamesFromStore(ctx, clients, minT, maxT, tenantID, convertedMatchers)
+		nameSets, warnings, queriedBlocks, err := q.fetchLabelNamesFromStore(ctx, clients, minT, maxT, tenantID, hints, convertedMatchers)
 		if err != nil {
 			return nil, err
 		}
@@ -377,7 +377,7 @@ func (q *blocksStoreQuerier) LabelNames(ctx context.Context, hints *storage.Labe
 	return util.MergeSlices(resNameSets...), resWarnings, nil
 }
 
-func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, labelHints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.LabelValues")
 	defer spanLog.Span.Finish()
 
@@ -403,7 +403,7 @@ func (q *blocksStoreQuerier) LabelValues(ctx context.Context, name string, _ *st
 	)
 
 	queryF := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		valueSets, warnings, queriedBlocks, err := q.fetchLabelValuesFromStore(ctx, name, clients, minT, maxT, tenantID, matchers...)
+		valueSets, warnings, queriedBlocks, err := q.fetchLabelValuesFromStore(ctx, name, clients, minT, maxT, tenantID, labelHints, matchers...)
 		if err != nil {
 			return nil, err
 		}
@@ -1015,12 +1015,12 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
 		g.Go(func() error {
-			req, err := createLabelNamesRequest(minT, maxT, blockIDs, matchers)
+			req, err := createLabelNamesRequest(minT, maxT, blockIDs, matchers, hints)
 			if err != nil {
 				return errors.Wrapf(err, "failed to create label names request")
 			}
 
-			namesResp, err := c.LabelNames(gCtx, hints, req)
+			namesResp, err := c.LabelNames(gCtx, req)
 			if err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return err
@@ -1079,7 +1079,7 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 	minT int64,
 	maxT int64,
 	tenantID string,
-	hints *storage.LabelHints,
+	labelHints *storage.LabelHints,
 	matchers ...*labels.Matcher,
 ) ([][]string, annotations.Annotations, []ulid.ULID, error) {
 	var (
@@ -1095,12 +1095,12 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
 		g.Go(func() error {
-			req, err := createLabelValuesRequest(minT, maxT, name, blockIDs, matchers...)
+			req, err := createLabelValuesRequest(minT, maxT, name, blockIDs, labelHints, matchers...)
 			if err != nil {
 				return errors.Wrapf(err, "failed to create label values request")
 			}
 
-			valuesResp, err := c.LabelValues(gCtx, hints, req)
+			valuesResp, err := c.LabelValues(gCtx, req)
 			if err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return err
@@ -1185,11 +1185,16 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 	}, nil
 }
 
-func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, matchers []storepb.LabelMatcher) (*storepb.LabelNamesRequest, error) {
+func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, matchers []storepb.LabelMatcher, labelHints *storage.LabelHints) (*storepb.LabelNamesRequest, error) {
+	limit := 0
+	if labelHints != nil {
+		limit = labelHints.Limit
+	}
 	req := &storepb.LabelNamesRequest{
 		Start:    minT,
 		End:      maxT,
 		Matchers: matchers,
+		Limit:    int64(limit),
 	}
 
 	// Selectively query only specific blocks.
@@ -1213,12 +1218,18 @@ func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, matchers []
 	return req, nil
 }
 
-func createLabelValuesRequest(minT, maxT int64, label string, blockIDs []ulid.ULID, matchers ...*labels.Matcher) (*storepb.LabelValuesRequest, error) {
+func createLabelValuesRequest(minT, maxT int64, label string, blockIDs []ulid.ULID, labelHints *storage.LabelHints, matchers ...*labels.Matcher) (*storepb.LabelValuesRequest, error) {
+	limit := 0
+	if labelHints != nil {
+		limit = labelHints.Limit
+	}
+
 	req := &storepb.LabelValuesRequest{
 		Start:    minT,
 		End:      maxT,
 		Label:    label,
 		Matchers: convertMatchersToLabelMatcher(matchers),
+		Limit:    int64(limit),
 	}
 
 	// Selectively query only specific blocks.

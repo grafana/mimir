@@ -1930,13 +1930,13 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 		return nil, err
 	}
 
-	req, err := ingester_client.ToLabelValuesRequest(labelName, from, to, matchers)
+	req, err := ingester_client.ToLabelValuesRequest(labelName, from, to, hints, matchers)
 	if err != nil {
 		return nil, err
 	}
 
 	resps, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.LabelValuesResponse, error) {
-		return client.LabelValues(ctx, hints, req)
+		return client.LabelValues(ctx, req)
 	})
 	if err != nil {
 		return nil, err
@@ -2646,19 +2646,19 @@ func maxFromZones[T ~float64 | ~uint64](seriesCountByZone map[string]T) (val T) 
 
 // LabelNames returns the names of all labels from series with samples timestamp between from and to, and matching
 // the input optional series label matchers. The returned label names are sorted.
-func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
+func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, labelHints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := ingester_client.ToLabelNamesRequest(from, to, matchers)
+	req, err := ingester_client.ToLabelNamesRequest(from, to, labelHints, matchers)
 	if err != nil {
 		return nil, err
 	}
 
 	resps, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.LabelNamesResponse, error) {
-		return client.LabelNames(ctx, hints, req)
+		return client.LabelNames(ctx, req)
 	})
 	if err != nil {
 		return nil, err

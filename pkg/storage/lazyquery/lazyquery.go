@@ -71,13 +71,13 @@ func copyParams(params *storage.SelectHints) *storage.SelectHints {
 }
 
 // LabelValues implements Storage.Querier
-func (l LazyQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return l.next.LabelValues(ctx, name, hints, matchers...)
+func (l LazyQuerier) LabelValues(ctx context.Context, name string, labelHints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return l.next.LabelValues(ctx, name, labelHints, matchers...)
 }
 
 // LabelNames implements Storage.Querier
-func (l LazyQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return l.next.LabelNames(ctx, hints, matchers...)
+func (l LazyQuerier) LabelNames(ctx context.Context, labelHints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return l.next.LabelNames(ctx, labelHints, matchers...)
 }
 
 // Close implements Storage.Querier

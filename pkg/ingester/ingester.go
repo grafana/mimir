@@ -1678,7 +1678,7 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 	return result, nil
 }
 
-func (i *Ingester) LabelValues(ctx context.Context, hints *storage.LabelHints, req *client.LabelValuesRequest) (resp *client.LabelValuesResponse, err error) {
+func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (resp *client.LabelValuesResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	finishReadRequest, err := i.startReadRequest()
 	if err != nil {
@@ -1686,7 +1686,7 @@ func (i *Ingester) LabelValues(ctx context.Context, hints *storage.LabelHints, r
 	}
 	defer func() { finishReadRequest(err) }()
 
-	labelName, startTimestampMs, endTimestampMs, matchers, err := client.FromLabelValuesRequest(req)
+	labelName, startTimestampMs, endTimestampMs, matchers, hints, err := client.FromLabelValuesRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1725,12 +1725,16 @@ func (i *Ingester) LabelValues(ctx context.Context, hints *storage.LabelHints, r
 		vals[i] = strings.Clone(s)
 	}
 
+	if hints != nil && hints.Limit > 0 && len(vals) > hints.Limit {
+		vals = vals[:hints.Limit]
+	}
+
 	return &client.LabelValuesResponse{
 		LabelValues: vals,
 	}, nil
 }
 
-func (i *Ingester) LabelNames(ctx context.Context, hints *storage.LabelHints, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
+func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	finishReadRequest, err := i.startReadRequest()
 	if err != nil {
@@ -1757,7 +1761,7 @@ func (i *Ingester) LabelNames(ctx context.Context, hints *storage.LabelHints, re
 		return &client.LabelNamesResponse{}, nil
 	}
 
-	mint, maxt, matchers, err := client.FromLabelNamesRequest(req)
+	mint, maxt, matchers, labelHints, err := client.FromLabelNamesRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1771,9 +1775,13 @@ func (i *Ingester) LabelNames(ctx context.Context, hints *storage.LabelHints, re
 	// Log the actual matchers passed down to TSDB. This can be useful for troubleshooting purposes.
 	spanlog.DebugLog("num_matchers", len(matchers), "matchers", util.LabelMatchersToString(matchers))
 
-	names, _, err := q.LabelNames(ctx, hints, matchers...)
+	names, _, err := q.LabelNames(ctx, labelHints, matchers...)
 	if err != nil {
 		return nil, err
+	}
+
+	if labelHints != nil && labelHints.Limit > 0 && len(names) > labelHints.Limit {
+		names = names[:labelHints.Limit]
 	}
 
 	return &client.LabelNamesResponse{
