@@ -1678,7 +1678,7 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 	return result, nil
 }
 
-func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (resp *client.LabelValuesResponse, err error) {
+func (i *Ingester) LabelValues(ctx context.Context, hints *storage.LabelHints, req *client.LabelValuesRequest) (resp *client.LabelValuesResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	finishReadRequest, err := i.startReadRequest()
 	if err != nil {
@@ -1713,7 +1713,6 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	}
 	defer q.Close()
 
-	hints := &storage.LabelHints{}
 	vals, _, err := q.LabelValues(ctx, labelName, hints, matchers...)
 	if err != nil {
 		return nil, err
@@ -1731,7 +1730,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	}, nil
 }
 
-func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
+func (i *Ingester) LabelNames(ctx context.Context, hints *storage.LabelHints, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 	finishReadRequest, err := i.startReadRequest()
 	if err != nil {
@@ -1772,7 +1771,6 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 	// Log the actual matchers passed down to TSDB. This can be useful for troubleshooting purposes.
 	spanlog.DebugLog("num_matchers", len(matchers), "matchers", util.LabelMatchersToString(matchers))
 
-	hints := &storage.LabelHints{}
 	names, _, err := q.LabelNames(ctx, hints, matchers...)
 	if err != nil {
 		return nil, err

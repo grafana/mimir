@@ -332,7 +332,7 @@ func (q *blocksStoreQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 	return q.selectSorted(ctx, sp, tenantID, matchers...)
 }
 
-func (q *blocksStoreQuerier) LabelNames(ctx context.Context, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *blocksStoreQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "blocksStoreQuerier.LabelNames")
 	defer spanLog.Span.Finish()
 
@@ -999,6 +999,7 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 	minT int64,
 	maxT int64,
 	tenantID string,
+	hints *storage.LabelHints,
 	matchers []storepb.LabelMatcher,
 ) ([][]string, annotations.Annotations, []ulid.ULID, error) {
 	var (
@@ -1019,7 +1020,7 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 				return errors.Wrapf(err, "failed to create label names request")
 			}
 
-			namesResp, err := c.LabelNames(gCtx, req)
+			namesResp, err := c.LabelNames(gCtx, hints, req)
 			if err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return err
@@ -1078,6 +1079,7 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 	minT int64,
 	maxT int64,
 	tenantID string,
+	hints *storage.LabelHints,
 	matchers ...*labels.Matcher,
 ) ([][]string, annotations.Annotations, []ulid.ULID, error) {
 	var (
@@ -1098,7 +1100,7 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 				return errors.Wrapf(err, "failed to create label values request")
 			}
 
-			valuesResp, err := c.LabelValues(gCtx, req)
+			valuesResp, err := c.LabelValues(gCtx, hints, req)
 			if err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return err

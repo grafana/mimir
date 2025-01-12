@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/storage"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -1923,7 +1924,7 @@ func queryIngesterPartitionsRingZoneSorter(preferredZone string) ring.ZoneSorter
 
 // LabelValuesForLabelName returns the label values associated with the given labelName, among all series with samples
 // timestamp between from and to, and series labels matching the optional matchers.
-func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, matchers ...*labels.Matcher) ([]string, error) {
+func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -1935,7 +1936,7 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 	}
 
 	resps, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.LabelValuesResponse, error) {
-		return client.LabelValues(ctx, req)
+		return client.LabelValues(ctx, hints, req)
 	})
 	if err != nil {
 		return nil, err
@@ -2645,7 +2646,7 @@ func maxFromZones[T ~float64 | ~uint64](seriesCountByZone map[string]T) (val T) 
 
 // LabelNames returns the names of all labels from series with samples timestamp between from and to, and matching
 // the input optional series label matchers. The returned label names are sorted.
-func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]string, error) {
+func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
@@ -2657,7 +2658,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 	}
 
 	resps, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.LabelNamesResponse, error) {
-		return client.LabelNames(ctx, req)
+		return client.LabelNames(ctx, hints, req)
 	})
 	if err != nil {
 		return nil, err
