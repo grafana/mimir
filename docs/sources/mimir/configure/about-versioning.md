@@ -84,6 +84,8 @@ The following features are currently experimental:
     - `-distributor.max-otlp-request-size`
   - Enforce a maximum pool buffer size for write requests
     - `-distributor.max-request-pool-buffer-size`
+  - ZSTD GRPC compression support
+    - `-ingester.client.grpc-compression=zstd`
   - Enable conversion of OTel start timestamps to Prometheus zero samples to mark series start
     - `-distributor.otel-created-timestamp-zero-ingestion-enabled`
 - Hash ring
