@@ -4057,7 +4057,21 @@ func Test_Ingester_LabelNames(t *testing.T) {
 			labels.MustNewMatcher(labels.MatchNotEqual, "route", "get_user"),
 		}
 
-		req, err := client.ToLabelNamesRequest(0, model.Latest, matchers)
+		req, err := client.ToLabelNamesRequest(0, model.Latest, nil, matchers)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.LabelNames(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
+	})
+
+	t.Run("without matchers, with limit", func(t *testing.T) {
+		expected := []string{"__name__", "route"}
+
+		hints := &storage.LabelHints{Limit: 2}
+
+		req, err := client.ToLabelNamesRequest(0, model.Latest, hints, nil)
 		require.NoError(t, err)
 
 		// Get label names
@@ -4129,6 +4143,20 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expectedValues, res.LabelValues)
 	}
+
+	t.Run("with limit", func(t *testing.T) {
+		expected := []string{"test_1"}
+
+		hints := &storage.LabelHints{Limit: 1}
+
+		req, err := client.ToLabelValuesRequest("__name__", 0, model.Latest, hints, nil)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.LabelValues(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelValues)
+	})
 
 	t.Run("limited due to resource utilization", func(t *testing.T) {
 		origLimiter := i.utilizationBasedLimiter

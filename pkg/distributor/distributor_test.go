@@ -42,6 +42,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/storage"
 	promtestutil "github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -3290,6 +3291,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 
 	tests := map[string]struct {
 		shuffleShardSize  int
+		hints             *storage.LabelHints
 		matchers          []*labels.Matcher
 		expectedResult    []string
 		expectedIngesters int
@@ -3308,6 +3310,14 @@ func TestDistributor_LabelNames(t *testing.T) {
 			expectedResult:    []string{labels.MetricName, "reason", "status"},
 			expectedIngesters: numIngesters,
 		},
+		"should filter metrics by single matcher and apply limit": {
+			hints: &storage.LabelHints{Limit: 2},
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName, "reason"},
+			expectedIngesters: numIngesters,
+		},
 		"should filter metrics by multiple matchers": {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, "status", "200"),
@@ -3316,12 +3326,30 @@ func TestDistributor_LabelNames(t *testing.T) {
 			expectedResult:    []string{labels.MetricName, "status"},
 			expectedIngesters: numIngesters,
 		},
+		"should filter metrics by multiple matchers and apply limit": {
+			hints: &storage.LabelHints{Limit: 1},
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, "status", "200"),
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName},
+			expectedIngesters: numIngesters,
+		},
 		"should query only ingesters belonging to tenant's subring if shuffle sharding is enabled": {
 			shuffleShardSize: 3,
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
 			expectedResult:    []string{labels.MetricName, "reason", "status"},
+			expectedIngesters: 3,
+		},
+		"should query only ingesters belonging to tenant's subring if shuffle sharding is enabled and apply limit": {
+			shuffleShardSize: 3,
+			hints:            &storage.LabelHints{Limit: 1},
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName},
 			expectedIngesters: 3,
 		},
 	}
@@ -3365,7 +3393,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 						require.NoError(t, err)
 					}
 
-					names, err := ds[0].LabelNames(ctx, now, now, testData.matchers...)
+					names, err := ds[0].LabelNames(ctx, now, now, testData.hints, testData.matchers...)
 					require.NoError(t, err)
 					assert.ElementsMatch(t, testData.expectedResult, names)
 
@@ -3551,6 +3579,7 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 	tests := map[string]struct {
 		from, to            model.Time
 		expectedLabelValues []string
+		hints               *storage.LabelHints
 		matchers            []*labels.Matcher
 	}{
 		"all time selected, no matchers": {
@@ -3568,6 +3597,18 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 			to:                  300_000,
 			expectedLabelValues: []string{"label_1"},
 			matchers:            []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "reason", "broken")},
+		},
+		"all time selected, no matchers, hints provided without limit": {
+			from:                0,
+			to:                  300_000,
+			hints:               &storage.LabelHints{Limit: 0},
+			expectedLabelValues: []string{"label_0", "label_1"},
+		},
+		"all time selected, no matchers, limit provided": {
+			from:                0,
+			to:                  300_000,
+			hints:               &storage.LabelHints{Limit: 1},
+			expectedLabelValues: []string{"label_0"},
 		},
 	}
 
@@ -3599,7 +3640,7 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 						require.NoError(t, err)
 					}
 
-					response, err := ds[0].LabelValuesForLabelName(ctx, testCase.from, testCase.to, labels.MetricName, testCase.matchers...)
+					response, err := ds[0].LabelValuesForLabelName(ctx, testCase.from, testCase.to, labels.MetricName, testCase.hints, testCase.matchers...)
 					require.NoError(t, err)
 					assert.ElementsMatch(t, response, testCase.expectedLabelValues)
 				})
@@ -6447,7 +6488,7 @@ func (i *mockIngester) LabelValues(ctx context.Context, req *client.LabelValuesR
 		return nil, errFail
 	}
 
-	labelName, from, to, matchers, err := client.FromLabelValuesRequest(req)
+	labelName, from, to, hints, matchers, err := client.FromLabelValuesRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -6481,6 +6522,9 @@ func (i *mockIngester) LabelValues(ctx context.Context, req *client.LabelValuesR
 
 	slices.Sort(response)
 
+	if hints != nil && hints.Limit > 0 && len(response) > hints.Limit {
+		response = response[:hints.Limit]
+	}
 	return &client.LabelValuesResponse{LabelValues: response}, nil
 }
 
@@ -6498,20 +6542,31 @@ func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesReq
 		return nil, errFail
 	}
 
-	_, _, matchers, err := client.FromLabelNamesRequest(req)
+	_, _, hints, matchers, err := client.FromLabelNamesRequest(req)
 	if err != nil {
 		return nil, err
 	}
 
 	response := client.LabelNamesResponse{}
+	labelsSet := map[string]struct{}{}
+
 	for _, ts := range i.timeseries {
 		if match(ts.Labels, matchers) {
 			for _, lbl := range ts.Labels {
+				if _, ok := labelsSet[lbl.Name]; ok {
+					continue
+				}
+
+				labelsSet[lbl.Name] = struct{}{}
 				response.LabelNames = append(response.LabelNames, lbl.Name)
 			}
 		}
 	}
 	slices.Sort(response.LabelNames)
+
+	if hints != nil && hints.Limit > 0 && len(response.LabelNames) > hints.Limit {
+		response.LabelNames = response.LabelNames[:hints.Limit]
+	}
 
 	return &response, nil
 }
