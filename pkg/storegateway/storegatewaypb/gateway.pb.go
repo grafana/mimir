@@ -8,7 +8,6 @@ import (
 	fmt "fmt"
 	proto "github.com/gogo/protobuf/proto"
 	storepb "github.com/grafana/mimir/pkg/storegateway/storepb"
-	"github.com/prometheus/prometheus/storage"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -144,9 +143,9 @@ type StoreGatewayServer interface {
 	// Series are sorted.
 	Series(*storepb.SeriesRequest, StoreGateway_SeriesServer) error
 	// LabelNames returns all label names that is available.
-	LabelNames(context.Context, *storage.LabelHints, *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error)
+	LabelNames(context.Context, *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error)
 	// LabelValues returns all label values for given label name.
-	LabelValues(context.Context, *storage.LabelHints, *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error)
+	LabelValues(context.Context, *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error)
 }
 
 // UnimplementedStoreGatewayServer can be embedded to have forward compatible implementations.
@@ -156,10 +155,10 @@ type UnimplementedStoreGatewayServer struct {
 func (*UnimplementedStoreGatewayServer) Series(req *storepb.SeriesRequest, srv StoreGateway_SeriesServer) error {
 	return status.Errorf(codes.Unimplemented, "method Series not implemented")
 }
-func (*UnimplementedStoreGatewayServer) LabelNames(ctx context.Context, hints *storage.LabelHints, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
+func (*UnimplementedStoreGatewayServer) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LabelNames not implemented")
 }
-func (*UnimplementedStoreGatewayServer) LabelValues(ctx context.Context, hints *storage.LabelHints, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
+func (*UnimplementedStoreGatewayServer) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LabelValues not implemented")
 }
 
