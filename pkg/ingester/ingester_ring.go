@@ -66,7 +66,8 @@ type RingConfig struct {
 	SpreadMinimizingZones           flagext.StringSliceCSV `yaml:"spread_minimizing_zones" category:"advanced"`
 
 	// Injected internally
-	ListenPort int `yaml:"-"`
+	ListenPort             int  `yaml:"-"`
+	HideTokensInStatusPage bool `yaml:"-"`
 
 	// Used only for testing.
 	JoinAfter time.Duration `yaml:"-"`
@@ -155,6 +156,7 @@ func (cfg *RingConfig) ToRingConfig() ring.Config {
 	rc.ZoneAwarenessEnabled = cfg.ZoneAwarenessEnabled
 	rc.ExcludedZones = cfg.ExcludedZones
 	rc.SubringCacheDisabled = false // Enable subring caching.
+	rc.HideTokensInStatusPage = cfg.HideTokensInStatusPage
 
 	return rc
 }
@@ -185,6 +187,7 @@ func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	lc.ListenPort = cfg.ListenPort
 	lc.EnableInet6 = cfg.EnableIPv6
 	lc.RingTokenGenerator = cfg.customTokenGenerator()
+	lc.HideTokensInStatusPage = cfg.HideTokensInStatusPage
 
 	return lc
 }
