@@ -29,6 +29,7 @@
 * [BUGFIX] MQE: Fix deriv with histograms #10383
 * [BUGFIX] PromQL: Fix <aggr_over_time> functions with histograms https://github.com/prometheus/prometheus/pull/15711 #10400
 * [BUGFIX] MQE: Fix <aggr_over_time> functions with histograms #10400
+* [BUGFIX] Distributor: return HTTP status 415 Unsupported medica type instead of success for Remote Write 2.0 until we support it. #10423
 
 ### Mixin
 
