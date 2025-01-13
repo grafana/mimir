@@ -89,11 +89,20 @@ const SCRAPE_INTERVAL_SECONDS = parseInt(__ENV.K6_SCRAPE_INTERVAL_SECONDS || 20)
  * @constant {number}
  */
 const HA_REPLICAS = parseInt(__ENV.K6_HA_REPLICAS || 1);
+
+/**
+ * Iterations per ha_replicas group. Default is 4*K6_SCRAPE_INTERVAL_SECONDS
+ * @constant {number}
+ */
+const ITERATIONS_PER_HA_REPLICAS_GROUP = parseInt(__ENV.K6_ITERATIONS_PER_HA_REPLICAS_GROUP ||4 );
+
 /**
  * Number of HA clusters to simulate.
  * @constant {number}
  */
 const HA_CLUSTERS = parseInt(__ENV.K6_HA_CLUSTERS || 1);
+
+
 /**
  * Tenant ID to write to. Note that this option is mutually exclusive with
  * using the write username (HTTP basic auth).
@@ -189,45 +198,45 @@ export const options = {
                 },
             ]
         },
-        reads_range_queries: {
-            executor: 'constant-arrival-rate',
-            rate: query_request_rates.range_queries,
-            timeUnit: '1s',
-
-            duration: `${DURATION_MIN}m`,
-            exec: 'run_range_query',
-
-            // The number of VUs should be adjusted based on how much load we're pushing on the read path.
-            // We estimated about 10 VU every query/sec.
-            preAllocatedVUs: query_request_rates.range_queries*10,
-            maxVus: query_request_rates.range_queries*10
-        },
-        reads_instant_queries_low_cardinality: {
-            executor: 'constant-arrival-rate',
-            rate: query_request_rates.instant_low_cardinality_queries,
-            timeUnit: '1s',
-
-            duration: `${DURATION_MIN}m`,
-            exec: 'run_instant_query_low_cardinality',
-
-            // The number of VUs should be adjusted based on how much load we're pushing on the read path.
-            // We estimated about 5 VU every query/sec.
-            preAllocatedVUs: query_request_rates.instant_low_cardinality_queries*5,
-            maxVus: query_request_rates.instant_low_cardinality_queries*5,
-        },
-        reads_instant_queries_high_cardinality: {
-            executor: 'constant-arrival-rate',
-            rate: query_request_rates.instant_high_cardinality_queries,
-            timeUnit: '1s',
-
-            duration: `${DURATION_MIN}m`,
-            exec: 'run_instant_query_high_cardinality',
-
-            // The number of VUs should be adjusted based on how much load we're pushing on the read path.
-            // We estimated about 10 VU every query/sec.
-            preAllocatedVUs: query_request_rates.instant_high_cardinality_queries*10,
-            maxVus: query_request_rates.instant_high_cardinality_queries*10,
-        },
+        // reads_range_queries: {
+        //     executor: 'constant-arrival-rate',
+        //     rate: query_request_rates.range_queries,
+        //     timeUnit: '1s',
+        //
+        //     duration: `${DURATION_MIN}m`,
+        //     exec: 'run_range_query',
+        //
+        //     // The number of VUs should be adjusted based on how much load we're pushing on the read path.
+        //     // We estimated about 10 VU every query/sec.
+        //     preAllocatedVUs: query_request_rates.range_queries*10,
+        //     maxVus: query_request_rates.range_queries*10
+        // },
+        // reads_instant_queries_low_cardinality: {
+        //     executor: 'constant-arrival-rate',
+        //     rate: query_request_rates.instant_low_cardinality_queries,
+        //     timeUnit: '1s',
+        //
+        //     duration: `${DURATION_MIN}m`,
+        //     exec: 'run_instant_query_low_cardinality',
+        //
+        //     // The number of VUs should be adjusted based on how much load we're pushing on the read path.
+        //     // We estimated about 5 VU every query/sec.
+        //     preAllocatedVUs: query_request_rates.instant_low_cardinality_queries*5,
+        //     maxVus: query_request_rates.instant_low_cardinality_queries*5,
+        // },
+        // reads_instant_queries_high_cardinality: {
+        //     executor: 'constant-arrival-rate',
+        //     rate: query_request_rates.instant_high_cardinality_queries,
+        //     timeUnit: '1s',
+        //
+        //     duration: `${DURATION_MIN}m`,
+        //     exec: 'run_instant_query_high_cardinality',
+        //
+        //     // The number of VUs should be adjusted based on how much load we're pushing on the read path.
+        //     // We estimated about 10 VU every query/sec.
+        //     preAllocatedVUs: query_request_rates.instant_high_cardinality_queries*10,
+        //     maxVus: query_request_rates.instant_high_cardinality_queries*10,
+        // },
     },
 };
 
@@ -240,9 +249,16 @@ export function write() {
         // iteration only advances after every second test iteration,
         // because we want to send every series twice to simulate HA pairs.
         const iteration = Math.floor(exec.scenario.iterationInTest / HA_REPLICAS);
-
+        console.debug("IterationInTest", exec.scenario.iterationInTest)
+        console.debug("HA_REPLICAS", HA_REPLICAS)
+        console.debug("Iteration:",iteration)
         // ha_replica indicates which ha replica is sending this request (simulated).
-        const ha_replica = exec.scenario.iterationInTest % HA_REPLICAS;
+        // starting Value based on the iteration. We have taken the assumption that:
+        // after 4 * iteration = 4 * SCRAPE_INTERVAL_SECONDS the ha_replica will change
+        const startingValue = Math.floor(iteration  / ITERATIONS_PER_HA_REPLICAS_GROUP ) * HA_REPLICAS
+        const replica_id = exec.scenario.iterationInTest  % HA_REPLICAS
+        const ha_replica = startingValue + replica_id
+        console.log("ha_replica", ha_replica)
 
         // ha_cluster is the id of the ha cluster sending this request (simulated).
         const ha_cluster = iteration % HA_CLUSTERS;
@@ -269,17 +285,10 @@ export function write() {
             {
                 __name__: 'k6_generated_metric_${series_id/1000}', // Name of the series.
                 series_id: '${series_id}',                         // Each value of this label will match 1 series.
-                cardinality_1e1: '${series_id/10}',                // Each value of this label will match 10 series.
-                cardinality_1e2: '${series_id/100}',               // Each value of this label will match 100 series.
-                cardinality_1e3: '${series_id/1000}',              // Each value of this label will match 1000 series.
-                cardinality_1e4: '${series_id/10000}',             // Each value of this label will match 10000 series.
-                cardinality_1e5: '${series_id/100000}',            // Each value of this label will match 100000 series.
-                cardinality_1e6: '${series_id/1000000}',           // Each value of this label will match 1000000 series.
-                cardinality_1e7: '${series_id/10000000}',          // Each value of this label will match 10000000 series.
-                cardinality_1e8: '${series_id/100000000}',         // Each value of this label will match 100000000 series.
-                cardinality_1e9: '${series_id/1000000000}',        // Each value of this label will match 1000000000 series.
-                cluster: `cluster_${ha_cluster}`,                  // Name of the ha cluster sending this.
+                cluster: `cluster_${ha_cluster}`,                // Name of the ha cluster sending this.
                 __replica__: `replica_${ha_replica}`,              // Name of the ha replica sending this.
+                ha_cluster: `cluster_${ha_cluster}`,
+                ha_replica: `replica_${ha_replica}`
             }
         );
         check(res, {
