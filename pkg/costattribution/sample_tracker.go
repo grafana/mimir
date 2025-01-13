@@ -36,7 +36,7 @@ type SampleTracker struct {
 	observed                   map[string]*observation
 	observedMtx                sync.RWMutex
 	overflowSince              atomic.Int64
-	overflowCounter            *observation
+	overflowCounter            observation
 	cooldownDuration           time.Duration
 	logger                     log.Logger
 }
@@ -62,7 +62,7 @@ func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown
 		cooldownDuration: cooldown,
 		logger:           logger,
 		overflowLabels:   overflowLabels,
-		overflowCounter:  &observation{},
+		overflowCounter:  observation{},
 	}
 
 	variableLabels := slices.Clone(orderedLables)
