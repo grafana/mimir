@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -149,49 +150,63 @@ func handler(
 				logger = utillog.WithSourceIPs(source, logger)
 			}
 		}
-		supplier := func() (*mimirpb.WriteRequest, func(), error) {
-			rb := util.NewRequestBuffers(requestBufferPool)
-			var req mimirpb.PreallocWriteRequest
 
-			userID, err := tenant.TenantID(ctx)
-			if err != nil && !errors.Is(err, user.ErrNoOrgID) { // ignore user.ErrNoOrgID
-				return nil, nil, errors.Wrap(err, "failed to get tenant ID")
+		var supplier supplierFunc
+		isRW2, err := isRemoteWrite2(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
+		if isRW2 {
+			supplier = func() (*mimirpb.WriteRequest, func(), error) {
+				// Return 415 Unsupported Media Type for remote-write v2 requests for now. This is not retryable
+				// unless the client switches to remote-write v1.
+				return nil, nil, httpgrpc.Error(http.StatusUnsupportedMediaType, "remote-write v2 is not supported")
 			}
+		} else {
+			supplier = func() (*mimirpb.WriteRequest, func(), error) {
+				rb := util.NewRequestBuffers(requestBufferPool)
+				var req mimirpb.PreallocWriteRequest
 
-			// userID might be empty if none was in the ctx, in this case just use the default setting.
-			if limits.MaxGlobalExemplarsPerUser(userID) == 0 {
-				// The user is not allowed to send exemplars, so there is no need to unmarshal them.
-				// Optimization to avoid the allocations required for unmarshaling exemplars.
-				req.SkipUnmarshalingExemplars = true
-			}
-
-			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
-				// Check for httpgrpc error, default to client error if parsing failed
-				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
-					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
+				userID, err := tenant.TenantID(ctx)
+				if err != nil && !errors.Is(err, user.ErrNoOrgID) { // ignore user.ErrNoOrgID
+					return nil, nil, errors.Wrap(err, "failed to get tenant ID")
 				}
 
-				rb.CleanUp()
-				return nil, nil, err
-			}
+				// userID might be empty if none was in the ctx, in this case just use the default setting.
+				if limits.MaxGlobalExemplarsPerUser(userID) == 0 {
+					// The user is not allowed to send exemplars, so there is no need to unmarshal them.
+					// Optimization to avoid the allocations required for unmarshaling exemplars.
+					req.SkipUnmarshalingExemplars = true
+				}
 
-			if allowSkipLabelNameValidation {
-				req.SkipLabelValidation = req.SkipLabelValidation && r.Header.Get(SkipLabelNameValidationHeader) == "true"
-			} else {
-				req.SkipLabelValidation = false
-			}
+				if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+					// Check for httpgrpc error, default to client error if parsing failed
+					if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
+						err = httpgrpc.Error(http.StatusBadRequest, err.Error())
+					}
 
-			if allowSkipLabelCountValidation {
-				req.SkipLabelCountValidation = req.SkipLabelCountValidation && r.Header.Get(SkipLabelCountValidationHeader) == "true"
-			} else {
-				req.SkipLabelCountValidation = false
-			}
+					rb.CleanUp()
+					return nil, nil, err
+				}
 
-			cleanup := func() {
-				mimirpb.ReuseSlice(req.Timeseries)
-				rb.CleanUp()
+				if allowSkipLabelNameValidation {
+					req.SkipLabelValidation = req.SkipLabelValidation && r.Header.Get(SkipLabelNameValidationHeader) == "true"
+				} else {
+					req.SkipLabelValidation = false
+				}
+
+				if allowSkipLabelCountValidation {
+					req.SkipLabelCountValidation = req.SkipLabelCountValidation && r.Header.Get(SkipLabelCountValidationHeader) == "true"
+				} else {
+					req.SkipLabelCountValidation = false
+				}
+
+				cleanup := func() {
+					mimirpb.ReuseSlice(req.Timeseries)
+					rb.CleanUp()
+				}
+				return &req.WriteRequest, cleanup, nil
 			}
-			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
 		if err := push(ctx, req); err != nil {
@@ -224,6 +239,40 @@ func handler(
 			http.Error(w, validUTF8Message(msg), code)
 		}
 	})
+}
+
+func isRemoteWrite2(r *http.Request) (bool, error) {
+	const appProtoContentType = "application/x-protobuf"
+
+	contentType := r.Header.Get("Content-Type")
+	if contentType == "" {
+		// If the content type is not set, we assume it is remote write v1.
+		return false, nil
+	}
+	parts := strings.Split(contentType, ";")
+	if parts[0] != appProtoContentType {
+		return false, fmt.Errorf("expected %v as the first (media) part, got %v content-type", appProtoContentType, contentType)
+	}
+
+	// Parse potential https://www.rfc-editor.org/rfc/rfc9110#parameter
+	for _, p := range parts[1:] {
+		pair := strings.Split(p, "=")
+		if len(pair) != 2 {
+			return false, fmt.Errorf("as per https://www.rfc-editor.org/rfc/rfc9110#parameter expected parameters to be key-values, got %v in %v content-type", p, contentType)
+		}
+		if pair[0] == "proto" {
+			switch pair[1] {
+			case "prometheus.WriteRequest":
+				return false, nil
+			case "io.prometheus.write.v2.Request":
+				return true, nil
+			default:
+				return false, fmt.Errorf("got %v content type; expected prometheus.WriteRequest or io.prometheus.write.v2.Request", contentType)
+			}
+		}
+	}
+	// No "proto=" parameter, assuming v1.
+	return false, nil
 }
 
 func calculateRetryAfter(retryAttemptHeader string, minBackoff, maxBackoff time.Duration) string {
