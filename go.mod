@@ -90,7 +90,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	golang.org/x/term v0.27.0
 	google.golang.org/api v0.213.0
-	google.golang.org/protobuf v1.36.1
+	google.golang.org/protobuf v1.36.2
 	sigs.k8s.io/kustomize/kyaml v0.18.1
 )
 
