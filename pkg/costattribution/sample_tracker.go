@@ -197,8 +197,7 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 
 	// if not overflow, we need to check if the key exists in the observed map,
 	// if yes, we update the observation, otherwise we create a new observation, and set the overflowSince if the max cardinality is exceeded
-	st.observedMtx.Lock()
-	defer st.observedMtx.Unlock()
+	st.observedMtx.RLock()
 	o, known := st.observed[key]
 	if known && st.overflowSince.Load() == 0 {
 		o.lastUpdate.Store(ts.Unix())
@@ -212,14 +211,39 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 			}
 			o.discardedSampleMtx.Unlock()
 		}
+		st.observedMtx.RUnlock()
 		return
 	}
+	st.observedMtx.RUnlock()
 
-	// if it is not known, we need to check if the max cardinality is exceeded
-	if len(st.observed) >= st.maxCardinality {
-		st.overflowSince.Store(ts.Unix())
+	// If it is not known, we take the write lock, but still check whether the key is added in the meantime
+	st.observedMtx.Lock()
+	defer st.observedMtx.Unlock()
+	// If not in overflow, we update the observation if it exists, otherwise we check if create a new observation would exceed the max cardinality
+	// if it does, we set the overflowSince
+	if st.overflowSince.Load() == 0 {
+		o, known = st.observed[key]
+		if known {
+			o.lastUpdate.Store(ts.Unix())
+			o.receivedSample.Add(receivedSampleIncrement)
+			if discardedSampleIncrement > 0 && reason != nil {
+				o.discardedSampleMtx.Lock()
+				if _, ok := o.discardedSample[*reason]; ok {
+					o.discardedSample[*reason].Add(discardedSampleIncrement)
+				} else {
+					o.discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
+				}
+				o.discardedSampleMtx.Unlock()
+			}
+			return
+		}
+		// if it is not known, we need to check if the max cardinality is exceeded
+		if len(st.observed) >= st.maxCardinality {
+			st.overflowSince.Store(ts.Unix())
+		}
 	}
 
+	// if overflowSince is set, we only update the overflow counter
 	if st.overflowSince.Load() > 0 {
 		st.overflowCounter.receivedSample.Add(receivedSampleIncrement)
 		if discardedSampleIncrement > 0 && reason != nil {
@@ -228,7 +252,7 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 		return
 	}
 
-	// If adding the new observation would exceed the max cardinality, we need to update the state
+	// create a new observation
 	st.observed[key] = &observation{
 		lastUpdate:         *atomic.NewInt64(ts.Unix()),
 		discardedSample:    make(map[string]*atomic.Float64),

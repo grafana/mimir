@@ -75,6 +75,7 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
 	buf.Reset()
 	defer bufferPool.Put(buf)
 	at.fillKeyFromLabels(lbls, buf)
+
 	at.observedMtx.RLock()
 	as, ok := at.observed[string(buf.Bytes())]
 	if ok {
