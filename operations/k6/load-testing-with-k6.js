@@ -116,6 +116,15 @@ const READ_TENANT_ID = __ENV.K6_READ_TENANT_ID || '';
  */
 const PROJECT_ID = __ENV.K6_PROJECT_ID || '';
 
+/**
+ * SysEleven API Key
+ *
+ */
+const S11_BEARER_TOKEN = __ENV.K6_S11_BEARER_TOKEN || '';
+
+const FGA_ORG_ID = __ENV.K6_FGA_ORG_ID || '';
+const FGA_PROJECT_ID = __ENV.K6_FGA_PROJECT_ID || '';
+
 const remote_write_url = get_remote_write_url();
 console.debug("Remote write URL:", remote_write_url)
 
@@ -133,7 +142,7 @@ get_read_authentication_headers().forEach((value, key) => {
 })
 
 const query_client = new Httpx({
-    baseURL: `${SCHEME}://${READ_HOSTNAME}/prometheus/api/v1`,
+    baseURL: `${SCHEME}://${READ_HOSTNAME}/${FGA_ORG_ID}/${FGA_PROJECT_ID}/prometheus/api/v1`,
     headers: query_client_headers,
     timeout: 120e3 // 120s timeout.
 });
@@ -511,7 +520,7 @@ function align_timestamp_to_step(ts, step) {
  * @returns {string}
  */
 function get_remote_write_url() {
-    return `${SCHEME}://${WRITE_HOSTNAME}/api/v1/push`;
+    return `${SCHEME}://${WRITE_HOSTNAME}/${FGA_ORG_ID}/${FGA_PROJECT_ID}/api/v1/push`;
 }
 
 /**
@@ -520,6 +529,8 @@ function get_remote_write_url() {
  */
 function get_read_authentication_headers() {
     let auth_headers = new Map();
+
+    auth_headers.set('Authorization', `Bearer ${S11_BEARER_TOKEN}`)
 
     if (READ_USERNAME !== '' || READ_TOKEN !== '') {
         auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${READ_USERNAME}:${READ_TOKEN}`)}`)
@@ -538,6 +549,8 @@ function get_read_authentication_headers() {
  */
 function get_write_authentication_headers() {
     let auth_headers = new Map();
+
+    auth_headers.set('Authorization', `Bearer ${S11_BEARER_TOKEN}`)
 
     if (WRITE_USERNAME !== '' || WRITE_TOKEN !== '') {
         auth_headers.set('Authorization', `Basic ${encoding.b64encode(`${WRITE_USERNAME}:${WRITE_TOKEN}`)}`)
