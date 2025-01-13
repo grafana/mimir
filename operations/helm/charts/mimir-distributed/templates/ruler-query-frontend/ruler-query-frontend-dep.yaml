@@ -46,7 +46,7 @@ spec:
       {{- end }}
       containers:
         - name: ruler-query-frontend
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "ruler-query-frontend") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=query-frontend"

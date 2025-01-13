@@ -67,15 +67,20 @@ func presentOverTime(step *types.RangeVectorStepData, _ float64, _ types.EmitAnn
 }
 
 var MaxOverTime = FunctionOverRangeVectorDefinition{
-	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               maxOverTime,
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       maxOverTime,
+	NeedsSeriesNamesForAnnotations: true,
 }
 
-func maxOverTime(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func maxOverTime(step *types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	head, tail := step.Floats.UnsafePoints()
 
 	if len(head) == 0 && len(tail) == 0 {
 		return 0, false, nil, nil
+	}
+
+	if step.Histograms.Any() {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 	}
 
 	maxSoFar := head[0].F
@@ -97,15 +102,20 @@ func maxOverTime(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotat
 }
 
 var MinOverTime = FunctionOverRangeVectorDefinition{
-	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               minOverTime,
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       minOverTime,
+	NeedsSeriesNamesForAnnotations: true,
 }
 
-func minOverTime(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func minOverTime(step *types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	head, tail := step.Floats.UnsafePoints()
 
 	if len(head) == 0 && len(tail) == 0 {
 		return 0, false, nil, nil
+	}
+
+	if step.Histograms.Any() {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 	}
 
 	minSoFar := head[0].F
@@ -468,18 +478,28 @@ func resetsChanges(isReset bool) RangeVectorStepFunction {
 }
 
 var Deriv = FunctionOverRangeVectorDefinition{
-	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               deriv,
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       deriv,
+	NeedsSeriesNamesForAnnotations: true,
 }
 
-func deriv(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	head, tail := step.Floats.UnsafePoints()
+func deriv(step *types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := step.Floats.UnsafePoints()
 
-	if (len(head) + len(tail)) < 2 {
+	if len(fHead)+len(fTail) == 1 && step.Histograms.Any() {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 		return 0, false, nil, nil
 	}
 
-	slope, _ := linearRegression(head, tail, head[0].T)
+	if (len(fHead) + len(fTail)) < 2 {
+		return 0, false, nil, nil
+	}
+
+	slope, _ := linearRegression(fHead, fTail, fHead[0].T)
+
+	if step.Histograms.Any() {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
+	}
 
 	return slope, true, nil, nil
 }
@@ -532,4 +552,66 @@ func linearRegression(head, tail []promql.FPoint, interceptTime int64) (slope, i
 	slope = covXY / varX
 	intercept = sumY/n - slope*sumX/n
 	return slope, intercept
+}
+
+var Irate = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               irateIdelta(true),
+}
+
+var Idelta = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction: DropSeriesName,
+	StepFunc:               irateIdelta(false),
+}
+
+func irateIdelta(isRate bool) RangeVectorStepFunction {
+	return func(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+		// Histograms are ignored
+		fHead, fTail := step.Floats.UnsafePoints()
+
+		lenTail := len(fTail)
+		lenHead := len(fHead)
+
+		// We need at least two samples to calculate irate or idelta
+		if lenHead+lenTail < 2 {
+			return 0, false, nil, nil
+		}
+
+		var lastSample promql.FPoint
+		var previousSample promql.FPoint
+
+		// If tail has more than two samples, we should use the last two samples from tail.
+		// If tail has only one sample, the last sample is from the tail and the previous sample is last point in the head.
+		// Otherwise, last two samples are all in the head.
+		if lenTail >= 2 {
+			lastSample = fTail[lenTail-1]
+			previousSample = fTail[lenTail-2]
+		} else if lenTail == 1 {
+			lastSample = fTail[0]
+			previousSample = fHead[lenHead-1]
+		} else {
+			lastSample = fHead[lenHead-1]
+			previousSample = fHead[lenHead-2]
+		}
+
+		var resultValue float64
+		if isRate && lastSample.F < previousSample.F {
+			// Counter reset.
+			resultValue = lastSample.F
+		} else {
+			resultValue = lastSample.F - previousSample.F
+		}
+
+		sampledInterval := lastSample.T - previousSample.T
+		if sampledInterval == 0 {
+			// Avoid dividing by 0.
+			return 0, false, nil, nil
+		}
+
+		if isRate {
+			// Convert to per-second.
+			resultValue /= float64(sampledInterval) / 1000
+		}
+		return resultValue, true, nil, nil
+	}
 }
