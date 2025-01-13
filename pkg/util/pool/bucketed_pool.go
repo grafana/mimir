@@ -84,6 +84,7 @@ func (p *BucketedPool[T, E]) Put(s T) {
 
 	bucketIndex := bits.Len(size - 1)
 	if bucketIndex >= len(p.buckets) {
+		// This should never happen as maxSize is checked above, and enforced to be a power of 2
 		return // Ignore slices larger than the largest bucket
 	}
 
