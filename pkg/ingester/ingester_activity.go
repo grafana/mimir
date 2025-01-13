@@ -11,6 +11,7 @@ import (
 
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/tracing"
+	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -53,22 +54,22 @@ func (i *ActivityTrackerWrapper) QueryExemplars(ctx context.Context, request *cl
 	return i.ing.QueryExemplars(ctx, request)
 }
 
-func (i *ActivityTrackerWrapper) LabelValues(ctx context.Context, request *client.LabelValuesRequest) (*client.LabelValuesResponse, error) {
+func (i *ActivityTrackerWrapper) LabelValues(ctx context.Context, hints *storage.LabelHints, request *client.LabelValuesRequest) (*client.LabelValuesResponse, error) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(ctx, "Ingester/LabelValues", request)
 	})
 	defer i.tracker.Delete(ix)
 
-	return i.ing.LabelValues(ctx, request)
+	return i.ing.LabelValues(ctx, hints, request)
 }
 
-func (i *ActivityTrackerWrapper) LabelNames(ctx context.Context, request *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
+func (i *ActivityTrackerWrapper) LabelNames(ctx context.Context, hints *storage.LabelHints, request *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
 	ix := i.tracker.Insert(func() string {
 		return requestActivity(ctx, "Ingester/LabelNames", request)
 	})
 	defer i.tracker.Delete(ix)
 
-	return i.ing.LabelNames(ctx, request)
+	return i.ing.LabelNames(ctx, hints, request)
 }
 
 func (i *ActivityTrackerWrapper) UserStats(ctx context.Context, request *client.UserStatsRequest) (*client.UserStatsResponse, error) {
