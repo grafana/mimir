@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/frontend/v1/frontendv1pb/frontend.proto
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
 
 syntax = "proto3";
 
@@ -23,9 +20,11 @@ message JobSpec {
     int32 partition = 2;
     int64 start_offset = 3;
     int64 end_offset = 4;
-    google.protobuf.Timestamp commitRecTs = 5  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
-	int64 lastSeenOffset = 6;
-    google.protobuf.Timestamp lastBlockEndTs = 7  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
+    google.protobuf.Timestamp commit_rec_ts = 5  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
+	int64 last_seen_offset = 6;
+    google.protobuf.Timestamp last_block_end_ts = 7  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
+    int64 cycle_end_offset = 8;
+    google.protobuf.Timestamp cycle_end_ts = 9  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
 }
 
 service BlockBuilderScheduler {

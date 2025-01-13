@@ -108,3 +108,13 @@ func blockBuilderConfig(t *testing.T, addr string) (Config, *validation.Override
 
 	return cfg, overrides
 }
+
+func blockBuilderPullModeConfig(t *testing.T, addr string) (Config, *validation.Overrides) {
+	cfg, overrides := blockBuilderConfig(t, addr)
+	cfg.SchedulerConfig = SchedulerConfig{
+		Address:        "localhost:099", // Trigger pull mode initialization.
+		UpdateInterval: 20 * time.Millisecond,
+		MaxUpdateAge:   1 * time.Second,
+	}
+	return cfg, overrides
+}
