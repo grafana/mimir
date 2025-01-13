@@ -57,20 +57,20 @@ receivers:
                 cluster: 'docker-compose'
                 namespace: 'mimir-microservices-mode'
                 container: 'query-frontend'
-        - job_name: mimir-microservices-mode/store-gateway
-          static_configs:
-            - targets: ['store-gateway-1:8008', 'store-gateway-2:8009']
-              labels:
-                cluster: 'docker-compose'
-                namespace: 'mimir-microservices-mode'
-                container: 'store-gateway'
         - job_name: mimir-microservices-mode/query-scheduler
           static_configs:
-            - targets: ['query-scheduler:8011']
+            - targets: ['query-scheduler:8008']
               labels:
                 cluster: 'docker-compose'
                 namespace: 'mimir-microservices-mode'
                 container: 'query-scheduler'
+        - job_name: mimir-microservices-mode/store-gateway
+          static_configs:
+            - targets: ['store-gateway-1:8011', 'store-gateway-2:8012', 'store-gateway-3:8013']
+              labels:
+                cluster: 'docker-compose'
+                namespace: 'mimir-microservices-mode'
+                container: 'store-gateway'
         - job_name: mimir-microservices-mode/memcached-exporter
           static_configs:
             - targets: ['memcached-exporter:9150']

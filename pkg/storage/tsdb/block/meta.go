@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
@@ -49,7 +50,15 @@ type Meta struct {
 	Thanos ThanosMeta `json:"thanos"`
 }
 
-func (m *Meta) String() string {
+func (m Meta) GetMinTime() time.Time {
+	return time.UnixMilli(m.MinTime)
+}
+
+func (m Meta) GetMaxTime() time.Time {
+	return time.UnixMilli(m.MaxTime)
+}
+
+func (m Meta) String() string {
 	return fmt.Sprintf("%s (min time: %d, max time: %d)", m.ULID, m.MinTime, m.MaxTime)
 }
 
