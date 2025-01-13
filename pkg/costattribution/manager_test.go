@@ -38,23 +38,23 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	manager := newTestManager()
 
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
-		user1Tracker := manager.Tracker("user1")
+		user1Tracker := manager.SampleTracker("user1")
 		assert.NotNil(t, user1Tracker)
 		assert.True(t, user1Tracker.hasSameLabels([]string{"team"}))
 		assert.Equal(t, 5, user1Tracker.maxCardinality)
 
-		assert.Nil(t, manager.Tracker("user2"))
+		assert.Nil(t, manager.SampleTracker("user2"))
 
-		user3Tracker := manager.Tracker("user3")
+		user3Tracker := manager.ActiveSeriesTracker("user3")
 		assert.NotNil(t, user3Tracker)
 		assert.True(t, user3Tracker.hasSameLabels([]string{"department", "service"}))
 		assert.Equal(t, 2, user3Tracker.maxCardinality)
 	})
 
 	t.Run("Metrics tracking", func(t *testing.T) {
-		manager.Tracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
-		manager.Tracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
-		manager.Tracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
+		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "bar"}}, 1, "invalid-metrics-name", time.Unix(6, 0))
+		manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(12, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"department", "foo", "service", "dodo"}, SamplesCount: 1}}), time.Unix(20, 0))
 
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
@@ -100,9 +100,9 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(12, 0)))
 		assert.Equal(t, 1, len(manager.sampleTrackersByUserID))
-		assert.True(t, manager.Tracker("user3").hasSameLabels([]string{"feature", "team"}))
+		assert.True(t, manager.SampleTracker("user3").hasSameLabels([]string{"feature", "team"}))
 
-		manager.Tracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(13, 0))
+		manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(13, 0))
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 		# TYPE cortex_discarded_attributed_samples_total counter
@@ -112,9 +112,9 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	})
 
 	t.Run("Overflow metrics on cardinality limit", func(t *testing.T) {
-		manager.Tracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "bar", "feature", "bar"}, SamplesCount: 1}}), time.Unix(15, 0))
-		manager.Tracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "baz", "feature", "baz"}, SamplesCount: 1}}), time.Unix(16, 0))
-		manager.Tracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "foo", "feature", "foo"}, SamplesCount: 1}}), time.Unix(17, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "bar", "feature", "bar"}, SamplesCount: 1}}), time.Unix(15, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "baz", "feature", "baz"}, SamplesCount: 1}}), time.Unix(16, 0))
+		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "foo", "feature", "foo"}, SamplesCount: 1}}), time.Unix(17, 0))
 		expectedMetrics := `
 		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
 		# TYPE cortex_received_attributed_samples_total counter
@@ -127,9 +127,9 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 	manager := newTestManager()
 
-	manager.Tracker("user1").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "foo"}, SamplesCount: 1}}), time.Unix(1, 0))
-	manager.Tracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(1, 0))
-	manager.Tracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "bar"}}, 1, "out-of-window", time.Unix(10, 0))
+	manager.SampleTracker("user1").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "foo"}, SamplesCount: 1}}), time.Unix(1, 0))
+	manager.SampleTracker("user1").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(1, 0))
+	manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "bar"}}, 1, "out-of-window", time.Unix(10, 0))
 
 	t.Run("Purge before inactive timeout", func(t *testing.T) {
 		assert.NoError(t, manager.purgeInactiveAttributionsUntil(time.Unix(0, 0)))
@@ -151,7 +151,8 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 
 		// User3's tracker should remain since it's active, user1's tracker should be removed
 		assert.Equal(t, 1, len(manager.sampleTrackersByUserID), "Expected one active tracker after purging")
-		assert.Nil(t, manager.Tracker("user1"), "Expected user1 tracker to be purged")
+		assert.Nil(t, manager.SampleTracker("user1"), "Expected user1 tracker to be purged")
+		assert.Nil(t, manager.ActiveSeriesTracker("user1"), "Expected user1 tracker to be purged")
 
 		expectedMetrics := `
 		# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.

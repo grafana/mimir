@@ -254,7 +254,7 @@ func TestActiveSeries_UpdateSeries_WithCostAttribution(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, reg)
 	require.NoError(t, err)
-	c := NewActiveSeries(&asmodel.Matchers{}, DefaultTimeout, manager.Tracker("user5"))
+	c := NewActiveSeries(&asmodel.Matchers{}, DefaultTimeout, manager.ActiveSeriesTracker("user5"))
 	testCostAttributionUpdateSeries(t, c, reg)
 }
 

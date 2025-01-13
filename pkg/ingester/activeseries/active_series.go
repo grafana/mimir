@@ -51,7 +51,7 @@ type ActiveSeries struct {
 	matchers         *asmodel.Matchers
 	lastConfigUpdate time.Time
 
-	cat *costattribution.SampleTracker
+	caat *costattribution.ActiveSeriesTracker
 
 	// The duration after which series become inactive.
 	// Also used to determine if enough time has passed since configuration reload for valid results.
@@ -78,7 +78,7 @@ type seriesStripe struct {
 	activeNativeHistogramBuckets          uint32   // Number of buckets in active native histogram entries in this stripe. Only decreased during purge or clear.
 	activeMatchingNativeHistogramBuckets  []uint32 // Number of buckets in active native histogram entries in this stripe matching each matcher of the configured Matchers.
 
-	cat *costattribution.SampleTracker
+	caat *costattribution.ActiveSeriesTracker
 }
 
 // seriesEntry holds a timestamp for single series.
@@ -90,12 +90,12 @@ type seriesEntry struct {
 	deleted bool // This series was marked as deleted, so before purging we need to remove the refence to it from the deletedSeries.
 }
 
-func NewActiveSeries(asm *asmodel.Matchers, timeout time.Duration, cat *costattribution.SampleTracker) *ActiveSeries {
-	c := &ActiveSeries{matchers: asm, timeout: timeout, cat: cat}
+func NewActiveSeries(asm *asmodel.Matchers, timeout time.Duration, caat *costattribution.ActiveSeriesTracker) *ActiveSeries {
+	c := &ActiveSeries{matchers: asm, timeout: timeout, caat: caat}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted, cat)
+		c.stripes[i].reinitialize(asm, &c.deleted, caat)
 	}
 
 	return c
@@ -107,10 +107,10 @@ func (c *ActiveSeries) CurrentMatcherNames() []string {
 	return c.matchers.MatcherNames()
 }
 
-func (c *ActiveSeries) ConfigDiffers(ctCfg asmodel.CustomTrackersConfig, caCfg *costattribution.SampleTracker) bool {
+func (c *ActiveSeries) ConfigDiffers(ctCfg asmodel.CustomTrackersConfig, caCfg *costattribution.ActiveSeriesTracker) bool {
 	c.configMutex.RLock()
 	defer c.configMutex.RUnlock()
-	return ctCfg.String() != c.matchers.Config().String() || caCfg != c.cat
+	return ctCfg.String() != c.matchers.Config().String() || caCfg != c.caat
 }
 
 func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
@@ -118,7 +118,7 @@ func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
 	defer c.configMutex.Unlock()
 
 	for i := 0; i < numStripes; i++ {
-		c.stripes[i].reinitialize(asm, &c.deleted, c.cat)
+		c.stripes[i].reinitialize(asm, &c.deleted, c.caat)
 	}
 	c.matchers = asm
 	c.lastConfigUpdate = now
@@ -408,7 +408,7 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 		numNativeHistogramBuckets: numNativeHistogramBuckets,
 	}
 
-	s.cat.IncrementActiveSeries(series, time.Unix(0, nowNanos))
+	s.caat.Increment(series, time.Unix(0, nowNanos))
 	s.refs[ref] = e
 	return e.nanos, true
 }
@@ -430,7 +430,7 @@ func (s *seriesStripe) clear() {
 }
 
 // Reinitialize assigns new matchers and corresponding size activeMatching slices.
-func (s *seriesStripe) reinitialize(asm *asmodel.Matchers, deleted *deletedSeries, cat *costattribution.SampleTracker) {
+func (s *seriesStripe) reinitialize(asm *asmodel.Matchers, deleted *deletedSeries, cat *costattribution.ActiveSeriesTracker) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.deleted = deleted
@@ -443,7 +443,7 @@ func (s *seriesStripe) reinitialize(asm *asmodel.Matchers, deleted *deletedSerie
 	s.activeMatching = resizeAndClear(len(asm.MatcherNames()), s.activeMatching)
 	s.activeMatchingNativeHistograms = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistograms)
 	s.activeMatchingNativeHistogramBuckets = resizeAndClear(len(asm.MatcherNames()), s.activeMatchingNativeHistogramBuckets)
-	s.cat = cat
+	s.caat = cat
 }
 
 func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
@@ -468,11 +468,11 @@ func (s *seriesStripe) purge(keepUntil time.Time, idx tsdb.IndexReader) {
 	for ref, entry := range s.refs {
 		ts := entry.nanos.Load()
 		if ts < keepUntilNanos {
-			if s.cat != nil {
+			if s.caat != nil {
 				if err := idx.Series(ref, &buf, nil); err != nil {
 					s.activeSeriesAttributionFailureCounter.Add(1)
 				} else {
-					s.cat.DecrementActiveSeries(buf.Labels())
+					s.caat.Decrement(buf.Labels())
 				}
 			}
 			if entry.deleted {
@@ -532,12 +532,12 @@ func (s *seriesStripe) remove(ref storage.SeriesRef, idx tsdb.IndexReader) {
 	}
 
 	s.active--
-	if s.cat != nil {
+	if s.caat != nil {
 		buf := labels.NewScratchBuilder(128)
 		if err := idx.Series(ref, &buf, nil); err != nil {
 			s.activeSeriesAttributionFailureCounter.Add(1)
 		} else {
-			s.cat.DecrementActiveSeries(buf.Labels())
+			s.caat.Decrement(buf.Labels())
 		}
 	}
 	if entry.numNativeHistogramBuckets >= 0 {

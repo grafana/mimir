@@ -79,8 +79,8 @@ func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown
 	return tracker
 }
 
-func (t *SampleTracker) hasSameLabels(labels []string) bool {
-	return slices.Equal(t.labels, labels)
+func (st *SampleTracker) hasSameLabels(labels []string) bool {
+	return slices.Equal(st.labels, labels)
 }
 
 var bufferPool = sync.Pool{
@@ -89,51 +89,49 @@ var bufferPool = sync.Pool{
 	},
 }
 
-func (t *SampleTracker) cleanupTrackerAttribution(key string) {
-	t.observedMtx.Lock()
-	defer t.observedMtx.Unlock()
-	delete(t.observed, key)
+func (st *SampleTracker) cleanupTrackerAttribution(key string) {
+	st.observedMtx.Lock()
+	defer st.observedMtx.Unlock()
+	delete(st.observed, key)
 }
 
-func (t *SampleTracker) Collect(out chan<- prometheus.Metric) {
-	if t.overflowSince.Load() > 0 {
-		t.observedMtx.RLock()
-		t.observedMtx.RUnlock()
-		out <- prometheus.MustNewConstMetric(t.receivedSamplesAttribution, prometheus.CounterValue, t.overflowCounter.receivedSample.Load(), t.overflowLabels[:len(t.overflowLabels)-1]...)
-		out <- prometheus.MustNewConstMetric(t.discardedSampleAttribution, prometheus.CounterValue, t.overflowCounter.totalDiscarded.Load(), t.overflowLabels...)
+func (st *SampleTracker) Collect(out chan<- prometheus.Metric) {
+	if st.overflowSince.Load() > 0 {
+		out <- prometheus.MustNewConstMetric(st.receivedSamplesAttribution, prometheus.CounterValue, st.overflowCounter.receivedSample.Load(), st.overflowLabels[:len(st.overflowLabels)-1]...)
+		out <- prometheus.MustNewConstMetric(st.discardedSampleAttribution, prometheus.CounterValue, st.overflowCounter.totalDiscarded.Load(), st.overflowLabels...)
 		return
 	}
 	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
 	var prometheusMetrics []prometheus.Metric
-	t.observedMtx.RLock()
-	for key, o := range t.observed {
+	st.observedMtx.RLock()
+	for key, o := range st.observed {
 		keys := strings.Split(key, string(sep))
-		keys = append(keys, t.userID)
+		keys = append(keys, st.userID)
 		if o.receivedSample.Load() > 0 {
-			prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(t.receivedSamplesAttribution, prometheus.CounterValue, o.receivedSample.Load(), keys...))
+			prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(st.receivedSamplesAttribution, prometheus.CounterValue, o.receivedSample.Load(), keys...))
 		}
 		o.discardedSampleMtx.Lock()
 		for reason, discarded := range o.discardedSample {
-			prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(t.discardedSampleAttribution, prometheus.CounterValue, discarded.Load(), append(keys, reason)...))
+			prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(st.discardedSampleAttribution, prometheus.CounterValue, discarded.Load(), append(keys, reason)...))
 		}
 		o.discardedSampleMtx.Unlock()
 	}
-	t.observedMtx.RUnlock()
+	st.observedMtx.RUnlock()
 
 	for _, m := range prometheusMetrics {
 		out <- m
 	}
 }
 
-func (t *SampleTracker) IncrementDiscardedSamples(lbs []mimirpb.LabelAdapter, value float64, reason string, now time.Time) {
-	if t == nil {
+func (st *SampleTracker) IncrementDiscardedSamples(lbs []mimirpb.LabelAdapter, value float64, reason string, now time.Time) {
+	if st == nil {
 		return
 	}
-	t.updateCountersWithLabelAdapter(lbs, now, 0, 0, value, &reason)
+	st.updateCountersWithLabelAdapter(lbs, now, 0, value, &reason)
 }
 
-func (t *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.Time) {
-	if t == nil {
+func (st *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.Time) {
+	if st == nil {
 		return
 	}
 
@@ -143,7 +141,7 @@ func (t *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now 
 	buf.Reset()
 	defer bufferPool.Put(buf)
 	for _, ts := range req.Timeseries {
-		t.fillKeyFromLabelAdapters(ts.Labels, buf)
+		st.fillKeyFromLabelAdapters(ts.Labels, buf)
 		dict[string(buf.Bytes())] += len(ts.TimeSeries.Samples) + len(ts.TimeSeries.Histograms)
 	}
 
@@ -152,23 +150,23 @@ func (t *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now 
 	var total float64
 	for k, v := range dict {
 		count := float64(v)
-		t.updateObservations(k, now, count, 0, nil)
+		st.updateObservations(k, now, count, 0, nil)
 		total += count
 	}
 }
 
-func (t *SampleTracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts time.Time, activeSeriesIncrement, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
+func (st *SampleTracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts time.Time, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufferPool.Put(buf)
-	t.fillKeyFromLabelAdapters(lbls, buf)
-	t.updateObservations(buf.String(), ts, receivedSampleIncrement, discardedSampleIncrement, reason)
+	st.fillKeyFromLabelAdapters(lbls, buf)
+	st.updateObservations(buf.String(), ts, receivedSampleIncrement, discardedSampleIncrement, reason)
 }
 
-func (t *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, buf *bytes.Buffer) {
+func (st *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, buf *bytes.Buffer) {
 	buf.Reset()
 	var exists bool
-	for idx, cal := range t.labels {
+	for idx, cal := range st.labels {
 		if idx > 0 {
 			buf.WriteRune(sep)
 		}
@@ -187,22 +185,22 @@ func (t *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, bu
 }
 
 // updateObservations updates or creates a new observation in the 'observed' map.
-func (t *SampleTracker) updateObservations(key string, ts time.Time, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
+func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
 	// if overflowSince is set, we only update the overflow counter
-	if t.overflowSince.Load() > 0 {
-		t.overflowCounter.receivedSample.Add(receivedSampleIncrement)
+	if st.overflowSince.Load() > 0 {
+		st.overflowCounter.receivedSample.Add(receivedSampleIncrement)
 		if discardedSampleIncrement > 0 && reason != nil {
-			t.overflowCounter.totalDiscarded.Add(discardedSampleIncrement)
+			st.overflowCounter.totalDiscarded.Add(discardedSampleIncrement)
 		}
 		return
 	}
 
 	// if not overflow, we need to check if the key exists in the observed map,
 	// if yes, we update the observation, otherwise we create a new observation, and set the overflowSince if the max cardinality is exceeded
-	t.observedMtx.Lock()
-	defer t.observedMtx.Unlock()
-	o, known := t.observed[key]
-	if known && t.overflowSince.Load() == 0 {
+	st.observedMtx.Lock()
+	defer st.observedMtx.Unlock()
+	o, known := st.observed[key]
+	if known && st.overflowSince.Load() == 0 {
 		o.lastUpdate.Store(ts.Unix())
 		o.receivedSample.Add(receivedSampleIncrement)
 		if discardedSampleIncrement > 0 && reason != nil {
@@ -217,16 +215,21 @@ func (t *SampleTracker) updateObservations(key string, ts time.Time, receivedSam
 		return
 	}
 
-	if t.overflowSince.Load() > 0 {
-		t.overflowCounter.receivedSample.Add(receivedSampleIncrement)
+	// if it is not known, we need to check if the max cardinality is exceeded
+	if len(st.observed) >= st.maxCardinality {
+		st.overflowSince.Store(ts.Unix())
+	}
+
+	if st.overflowSince.Load() > 0 {
+		st.overflowCounter.receivedSample.Add(receivedSampleIncrement)
 		if discardedSampleIncrement > 0 && reason != nil {
-			t.overflowCounter.totalDiscarded.Add(discardedSampleIncrement)
+			st.overflowCounter.totalDiscarded.Add(discardedSampleIncrement)
 		}
 		return
 	}
 
 	// If adding the new observation would exceed the max cardinality, we need to update the state
-	t.observed[key] = &observation{
+	st.observed[key] = &observation{
 		lastUpdate:         *atomic.NewInt64(ts.Unix()),
 		discardedSample:    make(map[string]*atomic.Float64),
 		receivedSample:     *atomic.NewFloat64(receivedSampleIncrement),
@@ -234,45 +237,41 @@ func (t *SampleTracker) updateObservations(key string, ts time.Time, receivedSam
 	}
 
 	if discardedSampleIncrement > 0 && reason != nil {
-		t.observed[key].discardedSampleMtx.Lock()
-		t.observed[key].discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
-		t.observed[key].discardedSampleMtx.Unlock()
-	}
-
-	if len(t.observed) >= t.maxCardinality {
-		t.overflowSince.Store(ts.Unix())
+		st.observed[key].discardedSampleMtx.Lock()
+		st.observed[key].discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
+		st.observed[key].discardedSampleMtx.Unlock()
 	}
 }
 
-func (t *SampleTracker) recoveredFromOverflow(deadline time.Time) bool {
-	t.observedMtx.RLock()
-	if t.overflowSince.Load() > 0 && time.Unix(t.overflowSince.Load(), 0).Add(t.cooldownDuration).Before(deadline) {
-		if len(t.observed) <= t.maxCardinality {
-			t.observedMtx.RUnlock()
+func (st *SampleTracker) recoveredFromOverflow(deadline time.Time) bool {
+	st.observedMtx.RLock()
+	if st.overflowSince.Load() > 0 && time.Unix(st.overflowSince.Load(), 0).Add(st.cooldownDuration).Before(deadline) {
+		if len(st.observed) <= st.maxCardinality {
+			st.observedMtx.RUnlock()
 			return true
 		}
-		t.observedMtx.RUnlock()
+		st.observedMtx.RUnlock()
 
 		// Increase the cooldown duration if the number of observations is still above the max cardinality
-		t.observedMtx.Lock()
-		if len(t.observed) <= t.maxCardinality {
-			t.observedMtx.Unlock()
+		st.observedMtx.Lock()
+		if len(st.observed) <= st.maxCardinality {
+			st.observedMtx.Unlock()
 			return true
 		}
-		t.overflowSince.Store(deadline.Unix())
-		t.observedMtx.Unlock()
+		st.overflowSince.Store(deadline.Unix())
+		st.observedMtx.Unlock()
 	} else {
-		t.observedMtx.RUnlock()
+		st.observedMtx.RUnlock()
 	}
 	return false
 }
 
-func (t *SampleTracker) inactiveObservations(deadline time.Time) []string {
+func (st *SampleTracker) inactiveObservations(deadline time.Time) []string {
 	// otherwise, we need to check all observations and clean up the ones that are inactive
 	var invalidKeys []string
-	t.observedMtx.RLock()
-	defer t.observedMtx.RUnlock()
-	for labkey, ob := range t.observed {
+	st.observedMtx.RLock()
+	defer st.observedMtx.RUnlock()
+	for labkey, ob := range st.observed {
 		if ob != nil && ob.lastUpdate.Load() <= deadline.Unix() {
 			invalidKeys = append(invalidKeys, labkey)
 		}

@@ -84,7 +84,7 @@ func TestValidateLabels(t *testing.T) {
 	careg := prometheus.NewRegistry()
 	manager, err := costattribution.NewManager(5*time.Second, 10*time.Second, log.NewNopLogger(), limits, careg)
 	require.NoError(t, err)
-	cat := manager.Tracker(userID)
+	cast := manager.SampleTracker(userID)
 
 	for _, c := range []struct {
 		metric                   model.Metric
@@ -242,7 +242,7 @@ func TestValidateLabels(t *testing.T) {
 			err:                      nil,
 		},
 	} {
-		err := validateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation, c.skipLabelCountValidation, cat, ts)
+		err := validateLabels(s, cfg, userID, "custom label", mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation, c.skipLabelCountValidation, cast, ts)
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 

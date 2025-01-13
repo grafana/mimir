@@ -122,6 +122,7 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	if tracker, exists = m.activeTrackersByUserID[userID]; exists {
 		return tracker
 	}
+
 	tracker = newActiveSeriesTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
 	m.activeTrackersByUserID[userID] = tracker
 	return tracker
@@ -173,16 +174,19 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 	slices.Sort(lbls)
 
 	// if the labels have changed or the max cardinality or cooldown duration have changed, create a new tracker
-	if !st.hasSameLabels(lbls) || st.maxCardinality != m.limits.MaxCostAttributionCardinalityPerUser(userID) || st.cooldownDuration != m.limits.CostAttributionCooldown(userID) {
+	newMaxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
+	newCooldownDuration := m.limits.CostAttributionCooldown(userID)
+
+	if !st.hasSameLabels(lbls) || st.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
 		m.mstx.Lock()
-		st = newSampleTracker(userID, lbls, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
+		st = newSampleTracker(userID, lbls, newMaxCardinality, newCooldownDuration, m.logger)
 		m.sampleTrackersByUserID[userID] = st
 		m.mstx.Unlock()
 	}
 
-	if !at.hasSameLabels(lbls) || at.maxCardinality != m.limits.MaxCostAttributionCardinalityPerUser(userID) || at.cooldownDuration != m.limits.CostAttributionCooldown(userID) {
+	if !at.hasSameLabels(lbls) || at.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
 		m.matx.Lock()
-		at = newActiveSeriesTracker(userID, lbls, m.limits.MaxCostAttributionCardinalityPerUser(userID), m.limits.CostAttributionCooldown(userID), m.logger)
+		at = newActiveSeriesTracker(userID, lbls, newMaxCardinality, newCooldownDuration, m.logger)
 		m.activeTrackersByUserID[userID] = at
 		m.matx.Unlock()
 	}

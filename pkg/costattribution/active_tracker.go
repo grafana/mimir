@@ -30,7 +30,7 @@ type ActiveSeriesTracker struct {
 	logger                         log.Logger
 }
 
-func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration, logger log.Logger) *ActiveSeriesTracker {
+func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
 	orderedLables := slices.Clone(trackedLabels)
 	slices.Sort(orderedLables)
 
@@ -43,141 +43,142 @@ func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, co
 	overflowLabels[len(orderedLables)] = userID
 	overflowLabels[len(orderedLables)+1] = overflowValue
 
-	tracker := &ActiveSeriesTracker{
-		userID:         userID,
-		labels:         orderedLables,
-		maxCardinality: limit,
-		observed:       make(map[string]*atomic.Int64),
-		logger:         logger,
-		overflowLabels: overflowLabels,
+	ast := &ActiveSeriesTracker{
+		userID:           userID,
+		labels:           orderedLables,
+		maxCardinality:   limit,
+		observed:         make(map[string]*atomic.Int64),
+		logger:           logger,
+		overflowLabels:   overflowLabels,
+		cooldownDuration: cooldownDuration,
 	}
 
 	variableLabels := slices.Clone(orderedLables)
 	variableLabels = append(variableLabels, tenantLabel, "reason")
 
-	tracker.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",
+	ast.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",
 		"The total number of active series per user and attribution.", variableLabels[:len(variableLabels)-1],
 		prometheus.Labels{trackerLabel: defaultTrackerName})
 
-	return tracker
+	return ast
 }
 
-func (t *ActiveSeriesTracker) hasSameLabels(labels []string) bool {
-	return slices.Equal(t.labels, labels)
+func (at *ActiveSeriesTracker) hasSameLabels(labels []string) bool {
+	return slices.Equal(at.labels, labels)
 }
 
-func (t *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
-	if t == nil {
+func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
+	if at == nil {
 		return
 	}
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufferPool.Put(buf)
-	t.fillKeyFromLabels(lbls, buf)
-	t.observedMtx.RLock()
-	as, ok := t.observed[string(buf.Bytes())]
+	at.fillKeyFromLabels(lbls, buf)
+	at.observedMtx.RLock()
+	as, ok := at.observed[string(buf.Bytes())]
 	if ok {
 		as.Inc()
-		t.observedMtx.RUnlock()
+		at.observedMtx.RUnlock()
 		return
 	}
-	t.observedMtx.RUnlock()
+	at.observedMtx.RUnlock()
 
-	if t.overflowSince.Load() > 0 {
-		t.overflowCounter.Inc()
+	if at.overflowSince.Load() > 0 {
+		at.overflowCounter.Inc()
 		return
 	}
 
-	t.observedMtx.Lock()
-	defer t.observedMtx.Unlock()
-	as, ok = t.observed[string(buf.Bytes())]
+	at.observedMtx.Lock()
+	defer at.observedMtx.Unlock()
+	as, ok = at.observed[string(buf.Bytes())]
 	if ok {
 		as.Inc()
 		return
 	}
 
-	if t.overflowSince.Load() > 0 {
-		t.overflowCounter.Inc()
+	if at.overflowSince.Load() > 0 {
+		at.overflowCounter.Inc()
 		return
 	}
 
-	if len(t.observed) >= t.maxCardinality {
-		t.overflowSince.Store(now.Unix())
-		t.overflowCounter.Inc()
+	if len(at.observed) >= at.maxCardinality {
+		at.overflowSince.Store(now.Unix())
+		at.overflowCounter.Inc()
 		return
 	}
 
-	t.observed[string(buf.Bytes())] = atomic.NewInt64(1)
+	at.observed[string(buf.Bytes())] = atomic.NewInt64(1)
 
 }
 
-func (t *ActiveSeriesTracker) Decrement(lbls labels.Labels) {
-	if t == nil {
+func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels) {
+	if at == nil {
 		return
 	}
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer bufferPool.Put(buf)
-	t.fillKeyFromLabels(lbls, buf)
-	t.observedMtx.RLock()
-	as, ok := t.observed[string(buf.Bytes())]
+	at.fillKeyFromLabels(lbls, buf)
+	at.observedMtx.RLock()
+	as, ok := at.observed[string(buf.Bytes())]
 	if ok {
 		nv := as.Dec()
 		if nv > 0 {
-			t.observedMtx.RUnlock()
+			at.observedMtx.RUnlock()
 			return
 		}
-		t.observedMtx.RUnlock()
-		t.observedMtx.Lock()
-		as, ok := t.observed[string(buf.Bytes())]
+		at.observedMtx.RUnlock()
+		at.observedMtx.Lock()
+		as, ok := at.observed[string(buf.Bytes())]
 		if ok && as.Load() == 0 {
 			// use buf.String() instead of string(buf.Bytes()) to fix the lint issue
-			delete(t.observed, buf.String())
+			delete(at.observed, buf.String())
 		}
-		t.observedMtx.Unlock()
+		at.observedMtx.Unlock()
 		return
 	}
-	t.observedMtx.RUnlock()
+	at.observedMtx.RUnlock()
 
-	if t.overflowSince.Load() > 0 {
-		t.overflowCounter.Dec()
+	if at.overflowSince.Load() > 0 {
+		at.overflowCounter.Dec()
 		return
 	}
 
-	t.observedMtx.RLock()
-	defer t.observedMtx.RUnlock()
-	panic(fmt.Errorf("decrementing non-existent active series: labels=%v, cost attribution keys: %v, the current observation map length: %d, the current cost attribution key: %s", lbls, t.labels, len(t.observed), buf.String()))
+	at.observedMtx.RLock()
+	defer at.observedMtx.RUnlock()
+	panic(fmt.Errorf("decrementing non-existent active series: labels=%v, cost attribution keys: %v, the current observation map length: %d, the current cost attribution key: %s", lbls, at.labels, len(at.observed), buf.String()))
 }
 
-func (t *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
-	if t.overflowSince.Load() > 0 {
+func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
+	if at.overflowSince.Load() > 0 {
 		var activeSeries int64
-		t.observedMtx.RLock()
-		for _, as := range t.observed {
+		at.observedMtx.RLock()
+		for _, as := range at.observed {
 			activeSeries += as.Load()
 		}
-		t.observedMtx.RUnlock()
-		out <- prometheus.MustNewConstMetric(t.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(activeSeries+t.overflowCounter.Load()), t.overflowLabels[:len(t.overflowLabels)-1]...)
+		at.observedMtx.RUnlock()
+		out <- prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(activeSeries+at.overflowCounter.Load()), at.overflowLabels[:len(at.overflowLabels)-1]...)
 		return
 	}
 	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
 	var prometheusMetrics []prometheus.Metric
-	t.observedMtx.RLock()
-	for key, as := range t.observed {
+	at.observedMtx.RLock()
+	for key, as := range at.observed {
 		keys := strings.Split(key, string(sep))
-		keys = append(keys, t.userID)
-		prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(t.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(as.Load()), keys...))
+		keys = append(keys, at.userID)
+		prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(as.Load()), keys...))
 	}
-	t.observedMtx.RUnlock()
+	at.observedMtx.RUnlock()
 
 	for _, m := range prometheusMetrics {
 		out <- m
 	}
 }
 
-func (t *ActiveSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.Buffer) {
+func (at *ActiveSeriesTracker) fillKeyFromLabels(lbls labels.Labels, buf *bytes.Buffer) {
 	buf.Reset()
-	for idx, cal := range t.labels {
+	for idx, cal := range at.labels {
 		if idx > 0 {
 			buf.WriteRune(sep)
 		}
