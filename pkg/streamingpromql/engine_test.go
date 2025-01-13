@@ -180,7 +180,7 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		requireQueryIsUnsupported(t, features, "SUM(metric{})", "'sum' aggregation disabled")
 	})
 
-	t.Run("wrong aggregation name disabled", func(t *testing.T) {
+	t.Run("unknown aggregation name disabled", func(t *testing.T) {
 		features := EnableAllFeatures
 		features.DisabledAggregations = []string{"sum", "avg", "NotAnAgg"}
 

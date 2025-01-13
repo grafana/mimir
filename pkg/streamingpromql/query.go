@@ -313,8 +313,8 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 }
 
 func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
-	// e.Func.Name is already validated by the parser. Meaning we don't need to check if the function name
-	// is real before checking if it is disabled.
+	// e.Func.Name is already validated and canonicalised by the parser. Meaning we don't need to check if the function name
+	// refers to a function that exists, nor normalise the casing etc. before checking if it is disabled.
 	if _, found := slices.BinarySearch(q.engine.features.DisabledFunctions, e.Func.Name); found {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function is disabled", e.Func.Name))
 	}

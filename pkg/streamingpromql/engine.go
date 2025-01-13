@@ -47,7 +47,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		return nil, errors.New("enabling delayed name removal not supported by Mimir query engine")
 	}
 
-	// Sort DisabledFunctions to optimise lookups
+	// We must sort DisabledFunctions as we use a binary search on it later.
 	slices.Sort(opts.Features.DisabledFunctions)
 
 	opts.Features.DisabledAggregationsItems = make([]parser.ItemType, 0, len(opts.Features.DisabledAggregations))
@@ -59,6 +59,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		opts.Features.DisabledAggregationsItems = append(opts.Features.DisabledAggregationsItems, item)
 	}
 	// No point sorting DisabledAggregations earlier, as ItemType ints are not in order.
+	// We must sort DisabledAggregationsItems as we use a binary search on it later.
 	slices.Sort(opts.Features.DisabledAggregationsItems)
 
 	return &Engine{
