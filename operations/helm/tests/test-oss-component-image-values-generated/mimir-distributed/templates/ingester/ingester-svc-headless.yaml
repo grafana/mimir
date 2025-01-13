@@ -1,0 +1,32 @@
+---
+# Source: mimir-distributed/templates/ingester/ingester-svc-headless.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-oss-component-image-values-mimir-ingester-headless
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-component-image-values
+    app.kubernetes.io/component: ingester
+    app.kubernetes.io/part-of: memberlist
+    app.kubernetes.io/managed-by: Helm
+    prometheus.io/service-monitor: "false"
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: 8080
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: 9095
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-oss-component-image-values
+    app.kubernetes.io/component: ingester

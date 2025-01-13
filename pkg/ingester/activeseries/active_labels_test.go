@@ -23,7 +23,7 @@ func (m *mockPostingsReader) Postings(ctx context.Context, name string, values .
 	valuePostings := make([]index.Postings, 0, len(values))
 
 	for _, value := range values {
-		valuePostings = append(valuePostings, m.postings.Get(name, value))
+		valuePostings = append(valuePostings, m.postings.Postings(ctx, name, value))
 	}
 
 	return index.Merge(ctx, valuePostings...), nil

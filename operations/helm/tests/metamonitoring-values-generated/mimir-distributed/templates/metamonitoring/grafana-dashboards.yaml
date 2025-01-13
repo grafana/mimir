@@ -18978,7 +18978,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
+                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -19017,18 +19017,18 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "label_replace(histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
+                            "expr": "label_replace(histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
                             "format": "time_series",
                             "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A"
                          }
                       ],
-                      "title": "99th Percentile Latency by Queue Dimension",
+                      "title": "99th Percentile Latency by Expected Query Component",
                       "type": "timeseries"
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### 50th Percentile Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
+                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -19067,18 +19067,18 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "label_replace(histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
+                            "expr": "label_replace(histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
                             "format": "time_series",
                             "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A"
                          }
                       ],
-                      "title": "50th Percentile Latency by Queue Dimension",
+                      "title": "50th Percentile Latency by Expected Query Component",
                       "type": "timeseries"
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Average Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
+                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -19117,13 +19117,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "label_replace(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (additional_queue_dimensions) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (additional_queue_dimensions), \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
+                            "expr": "label_replace(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (additional_queue_dimensions) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"}[$__rate_interval])) by (additional_queue_dimensions), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
                             "format": "time_series",
                             "legendFormat": "Average: {{ additional_queue_dimensions }}",
                             "refId": "C"
                          }
                       ],
-                      "title": "Average Latency by Queue Dimension",
+                      "title": "Average Latency by Expected Query Component",
                       "type": "timeseries"
                    }
                 ],
@@ -19131,7 +19131,74 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions",
+                "title": "Query-scheduler Latency (Time in Queue) Breakout by Expected Query Component",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 16,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 12,
+                      "targets": [
+                         {
+                            "expr": "sum by(query_component) (cortex_query_scheduler_querier_inflight_requests{quantile=\"0.99\", cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"})",
+                            "format": "time_series",
+                            "legendFormat": "99th Percentile Inflight Requests: {{query_component}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "sum(cortex_query_scheduler_connected_querier_clients{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*|mimir-backend.*))\"})",
+                            "format": "time_series",
+                            "legendFormat": "Total Connected Queriers",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Query-scheduler <-> Querier Inflight Requests",
                 "titleSize": "h6"
              },
              {
@@ -19163,7 +19230,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 16,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -19211,7 +19278,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 17,
+                      "id": 18,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -19438,7 +19505,7 @@ data:
                             }
                          ]
                       },
-                      "id": 18,
+                      "id": 19,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -19486,7 +19553,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 19,
+                      "id": 20,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -19547,7 +19614,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 20,
+                      "id": 21,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -19745,7 +19812,7 @@ data:
                             }
                          ]
                       },
-                      "id": 21,
+                      "id": 22,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -19799,7 +19866,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 23,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -19878,7 +19945,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 23,
+                      "id": 24,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20083,7 +20150,7 @@ data:
                             }
                          ]
                       },
-                      "id": 24,
+                      "id": 25,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20137,7 +20204,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 26,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -20216,7 +20283,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 26,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20335,7 +20402,7 @@ data:
                             }
                          ]
                       },
-                      "id": 27,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20396,7 +20463,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 28,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20445,7 +20512,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20641,7 +20708,7 @@ data:
                             }
                          ]
                       },
-                      "id": 30,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20689,7 +20756,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 32,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -20780,7 +20847,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20828,7 +20895,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 34,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -20908,7 +20975,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 35,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -20968,7 +21035,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21016,7 +21083,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 37,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -21095,7 +21162,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 38,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21155,7 +21222,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 38,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21203,7 +21270,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 40,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -21282,7 +21349,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 41,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21342,7 +21409,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 41,
+                      "id": 42,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21390,7 +21457,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 43,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -21469,7 +21536,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 43,
+                      "id": 44,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21529,7 +21596,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 44,
+                      "id": 45,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21562,7 +21629,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 45,
+                      "id": 46,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -21610,7 +21677,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 46,
+                      "id": 47,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -21689,7 +21756,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 47,
+                      "id": 48,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -21780,7 +21847,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 48,
+                      "id": 49,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -21859,7 +21926,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 49,
+                      "id": 50,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -21938,7 +22005,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 50,
+                      "id": 51,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -22017,7 +22084,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 51,
+                      "id": 52,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -22108,7 +22175,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 52,
+                      "id": 53,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -22141,7 +22208,7 @@ data:
                             "unit": "percentunit"
                          }
                       },
-                      "id": 53,
+                      "id": 54,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -22189,7 +22256,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 54,
+                      "id": 55,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -22268,7 +22335,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 55,
+                      "id": 56,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -22359,7 +22426,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 56,
+                      "id": 57,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -22438,7 +22505,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 57,
+                      "id": 58,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -22517,7 +22584,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 58,
+                      "id": 59,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -22596,7 +22663,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 59,
+                      "id": 60,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -25696,7 +25763,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
+                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -25735,18 +25802,18 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "label_replace(histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
+                            "expr": "label_replace(histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
                             "format": "time_series",
                             "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A"
                          }
                       ],
-                      "title": "99th Percentile Latency by Queue Dimension",
+                      "title": "99th Percentile Latency by Expected Query Component",
                       "type": "timeseries"
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### 50th Percentile Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
+                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -25785,18 +25852,18 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "label_replace(histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
+                            "expr": "label_replace(histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
                             "format": "time_series",
                             "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A"
                          }
                       ],
-                      "title": "50th Percentile Latency by Queue Dimension",
+                      "title": "50th Percentile Latency by Expected Query Component",
                       "type": "timeseries"
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Average Latency by Queue Dimension\n<p>\n  The query scheduler can optionally create subqueues\n  in order to enforce round-robin query queuing fairness\n  across additional queue dimensions beyond the default.\n\n  By default, query queuing fairness is only applied by tenant ID.\n  Queries without additional queue dimensions are labeled 'none'.\n</p>\n\n",
+                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -25835,13 +25902,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "label_replace(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions), \"additional_queue_dimensions\", \"none\", \"additional_queue_dimensions\", \"^$\")\n",
+                            "expr": "label_replace(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
                             "format": "time_series",
                             "legendFormat": "Average: {{ additional_queue_dimensions }}",
                             "refId": "C"
                          }
                       ],
-                      "title": "Average Latency by Queue Dimension",
+                      "title": "Average Latency by Expected Query Component",
                       "type": "timeseries"
                    }
                 ],
@@ -25849,7 +25916,74 @@ data:
                 "repeatIteration": null,
                 "repeatRowId": null,
                 "showTitle": true,
-                "title": "Ruler-query-scheduler Latency (Time in Queue) Breakout by Additional Queue Dimensions",
+                "title": "Ruler-query-scheduler Latency (Time in Queue) Breakout by Expected Query Component",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 12,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 12,
+                      "targets": [
+                         {
+                            "expr": "sum by(query_component) (cortex_query_scheduler_querier_inflight_requests{quantile=\"0.99\", cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"})",
+                            "format": "time_series",
+                            "legendFormat": "99th Percentile Inflight Requests: {{query_component}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "sum(cortex_query_scheduler_connected_querier_clients{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"})",
+                            "format": "time_series",
+                            "legendFormat": "Total Connected Queriers",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Ruler-query-scheduler <-> Querier Inflight Requests",
                 "titleSize": "h6"
              },
              {
@@ -26017,7 +26151,7 @@ data:
                             }
                          ]
                       },
-                      "id": 12,
+                      "id": 13,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -26065,7 +26199,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 13,
+                      "id": 14,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -26126,7 +26260,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 14,
+                      "id": 15,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -26238,7 +26372,7 @@ data:
                             }
                          ]
                       },
-                      "id": 15,
+                      "id": 16,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -26299,7 +26433,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 16,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -26360,7 +26494,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 17,
+                      "id": 18,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -26409,7 +26543,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 18,
+                      "id": 19,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -26458,7 +26592,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 19,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {

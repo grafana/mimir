@@ -37,6 +37,9 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 		// Handle compression
 		reader, err := gzip.NewReader(request.Body)
 		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, reader.Close())
+		})
 
 		// Then Unmarshal
 		body, err := io.ReadAll(reader)

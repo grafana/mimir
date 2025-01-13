@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r321-3410e68
+  tag: r325-ed3160e
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -551,6 +551,12 @@ alertmanager:
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
   replicas: 1
 
+  # -- Allows to override the container image of the alertmanager component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   statefulSet:
     enabled: true
 
@@ -814,6 +820,12 @@ distributor:
   # -- Whether to render the manifests related to the distributor component.
   enabled: true
 
+  # -- Allows to override the container image of the distributor component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
@@ -926,6 +938,12 @@ distributor:
 ingester:
   # -- Whether to render the manifests related to the ingester component.
   enabled: true
+
+  # -- Allows to override the container image of the ingester component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
 
   # -- Total number of replicas for the ingester across all availability zones
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -1152,6 +1170,13 @@ ingester:
 
 overrides_exporter:
   enabled: true
+
+  # -- Allows to override the container image of the overrides-exporter component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 1
 
   annotations: {}
@@ -1241,6 +1266,13 @@ overrides_exporter:
 
 ruler:
   enabled: true
+
+  # -- Allows to override the container image of the ruler component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 1
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
@@ -1363,6 +1395,12 @@ ruler:
 
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_querier:
+  # -- Allows to override the container image of the ruler-querier component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 2
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
@@ -1481,6 +1519,12 @@ ruler_querier:
 
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_frontend:
+  # -- Allows to override the container image of the ruler-query-frontend component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
@@ -1591,6 +1635,12 @@ ruler_query_frontend:
 
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_scheduler:
+  # -- Allows to override the container image of the ruler-query-scheduler component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 2
 
   service:
@@ -1679,6 +1729,12 @@ ruler_query_scheduler:
 querier:
   # -- Whether to render the manifests related to the querier component.
   enabled: true
+
+  # -- Allows to override the container image of the querier component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
 
   replicas: 2
 
@@ -1811,6 +1867,12 @@ query_frontend:
   # -- Whether to render the manifests related to the query-frontend component.
   enabled: true
 
+  # -- Allows to override the container image of the query-frontend component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
@@ -1921,6 +1983,13 @@ query_frontend:
 
 query_scheduler:
   enabled: true
+
+  # -- Allows to override the container image of the query-scheduler component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 2
 
   service:
@@ -2009,6 +2078,12 @@ query_scheduler:
 store_gateway:
   # -- Whether to render the manifests related to the store-gateway component.
   enabled: true
+
+  # -- Allows to override the container image of the store-gateway component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
 
   # -- Total number of replicas for the store-gateway across all availability zones
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -2227,6 +2302,12 @@ compactor:
   # -- Whether to render the manifests related to the compactor component.
   enabled: true
 
+  # -- Allows to override the container image of the compactor component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 1
 
   service:
@@ -2357,7 +2438,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.33-alpine
+    tag: 1.6.34-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -3258,6 +3339,13 @@ gateway:
   # The value of this field is ignored when gateway.enabled=false.
   enabledNonEnterprise: false
 
+  # -- Allows to override the container image of the gateway component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # Only applies to the GEM gateway. Use gateway.nginx.image for the nginx gateway.
+  image:
+    # repository: grafana/mimir-enterprise
+    # tag: 2.15.0
+
   # -- Number of replicas for the Deployment
   replicas: 1
 
@@ -3949,7 +4037,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r321-15e82100
+    tag: r325-624b3501
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -3989,6 +4077,12 @@ tokengenJob:
 admin_api:
   # -- Whether to render the manifests related to the admin-api component.
   enabled: true
+
+  # -- Allows to override the container image of the admin-api component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/enterprise-metrics
+    # tag: 2.15.0
 
   replicas: 1
 
@@ -4466,6 +4560,12 @@ federation_frontend:
   # -- Specifies whether the federation-frontend should be enabled
   enabled: false
 
+  # -- Allows to override the container image of the federation-frontend component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # -- Specifies whether other components should be deployed. This is an easy way to deploy the resources necessary for a standalone
   # federation-frontend without the rest of the GEM components.
   disableOtherComponents: false
@@ -4559,6 +4659,11 @@ federation_frontend:
 # that writing and reading metrics works. Currently not supported for
 # installations using GEM token-based authentication.
 smoke_test:
+  # -- Allows to override the container image of the smoke-test component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
   # -- Controls the backoffLimit on the Kubernetes Job. The Job is marked as failed after that many retries.
   backoffLimit: 5
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
@@ -4577,6 +4682,11 @@ smoke_test:
 # https://grafana.com/docs/mimir/latest/manage/tools/mimir-continuous-test/
 continuous_test:
   enabled: false
+  # -- Allows to override the container image of the continuous-test component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir-continuous-test
+    # tag: 2.15.0
   # -- Number of replicas to start of continuous test
   replicas: 1
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
