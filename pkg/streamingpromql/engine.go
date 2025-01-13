@@ -50,25 +50,26 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 	// We must sort DisabledFunctions as we use a binary search on it later.
 	slices.Sort(opts.Features.DisabledFunctions)
 
-	opts.Features.DisabledAggregationsItems = make([]parser.ItemType, 0, len(opts.Features.DisabledAggregations))
+	disabledAggregationsItems := make([]parser.ItemType, 0, len(opts.Features.DisabledAggregations))
 	for _, agg := range opts.Features.DisabledAggregations {
 		item, ok := aggregations.GetAggregationItemType(agg)
 		if !ok {
 			return nil, fmt.Errorf("disabled aggregation '%s' does not exist", agg)
 		}
-		opts.Features.DisabledAggregationsItems = append(opts.Features.DisabledAggregationsItems, item)
+		disabledAggregationsItems = append(disabledAggregationsItems, item)
 	}
 	// No point sorting DisabledAggregations earlier, as ItemType ints are not in order.
 	// We must sort DisabledAggregationsItems as we use a binary search on it later.
-	slices.Sort(opts.Features.DisabledAggregationsItems)
+	slices.Sort(disabledAggregationsItems)
 
 	return &Engine{
-		lookbackDelta:            lookbackDelta,
-		timeout:                  opts.CommonOpts.Timeout,
-		limitsProvider:           limitsProvider,
-		activeQueryTracker:       opts.CommonOpts.ActiveQueryTracker,
-		features:                 opts.Features,
-		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
+		lookbackDelta:             lookbackDelta,
+		timeout:                   opts.CommonOpts.Timeout,
+		limitsProvider:            limitsProvider,
+		activeQueryTracker:        opts.CommonOpts.ActiveQueryTracker,
+		features:                  opts.Features,
+		disabledAggregationsItems: disabledAggregationsItems,
+		noStepSubqueryIntervalFn:  opts.CommonOpts.NoStepSubqueryIntervalFn,
 
 		logger: logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
@@ -83,11 +84,13 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 }
 
 type Engine struct {
-	lookbackDelta            time.Duration
-	timeout                  time.Duration
-	limitsProvider           QueryLimitsProvider
-	activeQueryTracker       promql.QueryTracker
-	features                 Features
+	lookbackDelta             time.Duration
+	timeout                   time.Duration
+	limitsProvider            QueryLimitsProvider
+	activeQueryTracker        promql.QueryTracker
+	features                  Features
+	disabledAggregationsItems []parser.ItemType
+
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
 	logger                                    log.Logger

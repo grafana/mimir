@@ -172,7 +172,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		if !q.engine.features.EnableAggregationOperations {
 			return nil, compat.NewNotSupportedError("aggregation operations")
 		}
-		if _, found := slices.BinarySearch(q.engine.features.DisabledAggregationsItems, e.Op); found {
+		if _, found := slices.BinarySearch(q.engine.disabledAggregationsItems, e.Op); found {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' aggregation disabled", e.Op.String()))
 		}
 

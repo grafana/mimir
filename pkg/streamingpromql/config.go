@@ -7,7 +7,6 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 )
 
 type EngineOpts struct {
@@ -29,9 +28,8 @@ type Features struct {
 	EnableVectorScalarBinaryComparisonOperations bool `yaml:"enable_vector_scalar_binary_comparison_operations" category:"experimental"`
 	EnableVectorVectorBinaryComparisonOperations bool `yaml:"enable_vector_vector_binary_comparison_operations" category:"experimental"`
 
-	DisabledAggregations      flagext.StringSliceCSV `yaml:"disabled_aggregations" category:"experimental"`
-	DisabledAggregationsItems []parser.ItemType
-	DisabledFunctions         flagext.StringSliceCSV `yaml:"disabled_functions" category:"experimental"`
+	DisabledAggregations flagext.StringSliceCSV `yaml:"disabled_aggregations" category:"experimental"`
+	DisabledFunctions    flagext.StringSliceCSV `yaml:"disabled_functions" category:"experimental"`
 }
 
 // EnableAllFeatures enables all features supported by MQE, including experimental or incomplete features.
@@ -46,7 +44,6 @@ var EnableAllFeatures = Features{
 	true,
 	true,
 	[]string{},
-	[]parser.ItemType{},
 	[]string{},
 }
 
