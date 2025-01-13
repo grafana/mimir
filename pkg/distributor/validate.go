@@ -99,7 +99,6 @@ var (
 		"received a sample whose timestamp is too far in the past, timestamp: %d series: '%.200s'",
 		validation.PastGracePeriodFlag,
 	)
-	duplicateTimestampMsgFormat  = globalerror.SampleDuplicateTimestamp.Message("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s'")
 	exemplarEmptyLabelsMsgFormat = globalerror.ExemplarLabelsMissing.Message(
 		"received an exemplar with no valid labels, timestamp: %d series: %s labels: %s",
 	)
