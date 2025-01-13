@@ -899,7 +899,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeser
 	if deduplicatedSamplesAndHistograms > 0 {
 		d.sampleValidationMetrics.duplicateTimestamp.WithLabelValues(userID, group).Add(float64(deduplicatedSamplesAndHistograms))
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ts.Labels)
-		return false, fmt.Errorf(duplicateTimestampMsgFormat, deduplicatedSamplesAndHistograms, unsafeMetricName)
+		level.Warn(d.log).Log("msg", "samples with duplicated timestamps have been discarded", "series", fmt.Sprintf("'%.200s'", unsafeMetricName), "samples discarded", deduplicatedSamplesAndHistograms)
 	}
 
 	return false, nil
