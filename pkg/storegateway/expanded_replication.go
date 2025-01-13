@@ -30,19 +30,12 @@ func (cfg *ExpandedReplicationConfig) Validate() error {
 	return nil
 }
 
-// ReplicatedBlock is a TSDB block that may be eligible to be synced to more store-gateways
-// than the configured replication factor based on metadata about the block.
+// ReplicatedBlock is a TSDB block that may be eligible to be synced to and queried from
+// more store-gateways than the configured replication factor based on metadata about the
+// block.
 type ReplicatedBlock interface {
 	GetMinTime() time.Time
 	GetMaxTime() time.Time
-}
-
-// QueryableReplicatedBlock is a TSDB block that may be eligible to be queried from more
-// store-gateways than the configured replication factor based on metadata about the block.
-type QueryableReplicatedBlock interface {
-	ReplicatedBlock
-
-	GetUploadedAt() time.Time
 }
 
 // ExpandedReplication determines if a TSDB block is eligible to be sync to and queried from more
@@ -54,7 +47,7 @@ type ExpandedReplication interface {
 
 	// EligibleForQuerying returns true if the block can be safely queried from more than the
 	// configured (via replication factor) number of store-gateways, false otherwise.
-	EligibleForQuerying(b QueryableReplicatedBlock) bool
+	EligibleForQuerying(b ReplicatedBlock) bool
 }
 
 func NewNopExpandedReplication() *NopExpandedReplication {
@@ -68,7 +61,7 @@ func (n NopExpandedReplication) EligibleForSync(ReplicatedBlock) bool {
 	return false
 }
 
-func (n NopExpandedReplication) EligibleForQuerying(QueryableReplicatedBlock) bool {
+func (n NopExpandedReplication) EligibleForQuerying(ReplicatedBlock) bool {
 	return false
 }
 
@@ -97,14 +90,11 @@ func (e *MaxTimeExpandedReplication) EligibleForSync(b ReplicatedBlock) bool {
 	return maxTimeDelta <= e.maxTime
 }
 
-func (e *MaxTimeExpandedReplication) EligibleForQuerying(b QueryableReplicatedBlock) bool {
+func (e *MaxTimeExpandedReplication) EligibleForQuerying(b ReplicatedBlock) bool {
 	now := e.now()
-	uploadedDelta := now.Sub(b.GetUploadedAt())
 	maxTimeDelta := now.Sub(b.GetMaxTime())
-	// To be eligible for querying a block must:
-	// * Have been uploaded more than `gracePeriod` ago since we need to allow store-gateways
-	//   to sync recently uploaded blocks.
-	// * Have a max time within `maxTime-gracePeriod` since we need to allow store-gateways to
-	//   sync blocks that have recently become eligible for expanded replication.
-	return uploadedDelta > e.gracePeriod && maxTimeDelta <= (e.maxTime-e.gracePeriod)
+	// To be eligible for querying a block must have a max time within `maxTime-gracePeriod` since
+	// we need to allow store-gateways to sync blocks that have recently become eligible for expanded
+	// replication.
+	return maxTimeDelta <= (e.maxTime - e.gracePeriod)
 }
