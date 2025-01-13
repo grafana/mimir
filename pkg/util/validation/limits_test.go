@@ -22,8 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
-
-	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 )
 
 func TestMain(m *testing.M) {
@@ -1024,20 +1022,63 @@ user1:
 	}
 }
 
-func TestCustomTrackerConfigDeserialize(t *testing.T) {
-	expectedConfig, err := asmodel.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
-	require.NoError(t, err, "creating expected config")
-	cfg := `
-    user:
-        active_series_custom_trackers:
-            baz: '{foo="bar"}'
-    `
+func TestActiveSeriesCustomTrackersConfig(t *testing.T) {
+	tests := map[string]struct {
+		cfg                      string
+		expectedBaseConfig       string
+		expectedAdditionalConfig string
+		expectedMergedConfig     string
+	}{
+		"no base and no additional config": {
+			cfg:                      "",
+			expectedBaseConfig:       "",
+			expectedAdditionalConfig: "",
+			expectedMergedConfig:     "",
+		},
+		"only base config is set": {
+			cfg: `
+active_series_custom_trackers:
+  base_1: '{foo="base_1"}'`,
+			expectedBaseConfig:       `base_1:{foo="base_1"}`,
+			expectedAdditionalConfig: "",
+			expectedMergedConfig:     `base_1:{foo="base_1"}`,
+		},
+		"only additional config is set": {
+			cfg: `
+active_series_additional_custom_trackers:
+  additional_1: '{foo="additional_1"}'`,
+			expectedBaseConfig:       "",
+			expectedAdditionalConfig: `additional_1:{foo="additional_1"}`,
+			expectedMergedConfig:     `additional_1:{foo="additional_1"}`,
+		},
+		"both base and additional configs are set": {
+			cfg: `
+active_series_custom_trackers:
+  base_1: '{foo="base_1"}'
+  common_1: '{foo="base"}'
 
-	overrides := map[string]*Limits{}
-	require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+active_series_additional_custom_trackers:
+  additional_1: '{foo="additional_1"}'
+  common_1: '{foo="additional"}'`,
+			expectedBaseConfig:       `base_1:{foo="base_1"};common_1:{foo="base"}`,
+			expectedAdditionalConfig: `additional_1:{foo="additional_1"};common_1:{foo="additional"}`,
+			expectedMergedConfig:     `additional_1:{foo="additional_1"};base_1:{foo="base_1"};common_1:{foo="additional"}`,
+		},
+	}
 
-	assert.False(t, overrides["user"].ActiveSeriesCustomTrackersConfig.Empty())
-	assert.Equal(t, expectedConfig.String(), overrides["user"].ActiveSeriesCustomTrackersConfig.String())
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			limitsYAML := Limits{}
+			require.NoError(t, yaml.Unmarshal([]byte(testData.cfg), &limitsYAML))
+
+			overrides, err := NewOverrides(limitsYAML, nil)
+			require.NoError(t, err)
+
+			assert.Equal(t, testData.expectedBaseConfig, overrides.activeSeriesBaseCustomTrackersConfig("user").String())
+			assert.Equal(t, testData.expectedAdditionalConfig, overrides.activeSeriesAdditionalCustomTrackersConfig("user").String())
+			assert.Equal(t, testData.expectedMergedConfig, overrides.ActiveSeriesCustomTrackersConfig("user").String())
+		})
+	}
 }
 
 func TestUnmarshalYAML_ShouldValidateConfig(t *testing.T) {

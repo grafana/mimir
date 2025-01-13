@@ -189,3 +189,39 @@ func NewCustomTrackersConfig(m map[string]string) (c CustomTrackersConfig, err e
 	c.string = customTrackersConfigString(c.source)
 	return c, nil
 }
+
+// MergeCustomTrackersConfig returns a new CustomTrackersConfig containing the merge of the two
+// CustomTrackersConfig in input. The two configs in input are not manipulated. If a key exists
+// in both configs, second config wins over first config.
+func MergeCustomTrackersConfig(first, second CustomTrackersConfig) CustomTrackersConfig {
+	if len(first.config) == 0 && len(second.config) == 0 {
+		return CustomTrackersConfig{}
+	}
+
+	merged := CustomTrackersConfig{
+		source: make(map[string]string, len(first.source)+len(second.source)),
+		config: make(map[string]labelsMatchers, len(first.config)+len(second.config)),
+		string: "",
+	}
+
+	// Merge source.
+	for key, value := range first.source {
+		merged.source[key] = value
+	}
+	for key, value := range second.source {
+		merged.source[key] = value
+	}
+
+	// Merge config.
+	for key, value := range first.config {
+		merged.config[key] = value
+	}
+	for key, value := range second.config {
+		merged.config[key] = value
+	}
+
+	// Rebuild the string representation.
+	merged.string = customTrackersConfigString(merged.source)
+
+	return merged
+}

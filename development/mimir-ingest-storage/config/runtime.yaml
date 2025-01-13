@@ -1,1 +1,8 @@
 # This file can be used to set overrides or other runtime config.
+overrides:
+  anonymous:
+    active_series_custom_trackers:
+      base_mimir_write: '{job="mimir-read-write-mode/mimir-write"}'
+      base_mimir_read:  '{job="mimir-read-write-mode/mimir-read"}'
+    active_series_additional_custom_trackers:
+      additional_mimir_backend: '{job="mimir-read-write-mode/mimir-backend"}'
