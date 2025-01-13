@@ -2,6 +2,8 @@
 
 ## main / unreleased
 
+* [FEATURE] Distributor: Add experimental Influx handler. #10153
+
 ### Grafana Mimir
 
 * [CHANGE] Distributor: OTLP and push handler replace all non-UTF8 characters with the unicode replacement character `\uFFFD` in error messages before propagating them. #10236
