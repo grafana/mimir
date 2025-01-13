@@ -20,11 +20,11 @@ import (
 
 // timeSeriesSeriesSet is a wrapper around a mimirpb.TimeSeries slice to implement to SeriesSet interface
 type timeSeriesSeriesSet struct {
-	ts []mimirpb.TimeSeries
+	ts []mimirpb.CustomTimeSeries
 	i  int
 }
 
-func newTimeSeriesSeriesSet(series []mimirpb.TimeSeries) *timeSeriesSeriesSet {
+func newTimeSeriesSeriesSet(series []mimirpb.CustomTimeSeries) *timeSeriesSeriesSet {
 	sort.Sort(byTimeSeriesLabels(series))
 	return &timeSeriesSeriesSet{
 		ts: series,
@@ -51,7 +51,7 @@ func (t *timeSeriesSeriesSet) Warnings() annotations.Annotations { return nil }
 
 // timeseries is a type wrapper that implements the storage.Series interface
 type timeseries struct {
-	series mimirpb.TimeSeries
+	series mimirpb.CustomTimeSeries
 }
 
 // timeSeriesSeriesIterator is a wrapper around a mimirpb.TimeSeries to implement the chunkenc.Iterator.
@@ -62,7 +62,7 @@ type timeSeriesSeriesIterator struct {
 	atH bool
 }
 
-type byTimeSeriesLabels []mimirpb.TimeSeries
+type byTimeSeriesLabels []mimirpb.CustomTimeSeries
 
 func (b byTimeSeriesLabels) Len() int      { return len(b) }
 func (b byTimeSeriesLabels) Swap(i, j int) { b[i], b[j] = b[j], b[i] }

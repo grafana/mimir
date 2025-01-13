@@ -269,43 +269,49 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 	distributor := &mockDistributor{}
 	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
+			Chunkseries: []client.CustomTimeSeriesChunk{
 				// Series with data points only before queryStart.
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []interface{}{
-						mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 1},
-					}, false),
+					TimeSeriesChunk: &client.TimeSeriesChunk{
+						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+						Chunks: convertToChunks(t, []interface{}{
+							mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+							mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
+							mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 1},
+						}, false),
+					},
 				},
 				// Series with data points before and after queryStart, but before queryEnd.
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []interface{}{
-						mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 3},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 5},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-6*time.Minute).Unix() * 1000, Value: 7},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-5*time.Minute).Unix() * 1000, Value: 11},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-4*time.Minute).Unix() * 1000, Value: 13},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-3*time.Minute).Unix() * 1000, Value: 17},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-2*time.Minute).Unix() * 1000, Value: 19},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-1*time.Minute).Unix() * 1000, Value: 23},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+0*time.Minute).Unix() * 1000, Value: 29},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+1*time.Minute).Unix() * 1000, Value: 31},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+2*time.Minute).Unix() * 1000, Value: 37},
-					}, false),
+					TimeSeriesChunk: &client.TimeSeriesChunk{
+						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+						Chunks: convertToChunks(t, []interface{}{
+							mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+							mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 3},
+							mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 5},
+							mimirpb.Sample{TimestampMs: queryStart.Add(-6*time.Minute).Unix() * 1000, Value: 7},
+							mimirpb.Sample{TimestampMs: queryStart.Add(-5*time.Minute).Unix() * 1000, Value: 11},
+							mimirpb.Sample{TimestampMs: queryStart.Add(-4*time.Minute).Unix() * 1000, Value: 13},
+							mimirpb.Sample{TimestampMs: queryStart.Add(-3*time.Minute).Unix() * 1000, Value: 17},
+							mimirpb.Sample{TimestampMs: queryStart.Add(-2*time.Minute).Unix() * 1000, Value: 19},
+							mimirpb.Sample{TimestampMs: queryStart.Add(-1*time.Minute).Unix() * 1000, Value: 23},
+							mimirpb.Sample{TimestampMs: queryStart.Add(+0*time.Minute).Unix() * 1000, Value: 29},
+							mimirpb.Sample{TimestampMs: queryStart.Add(+1*time.Minute).Unix() * 1000, Value: 31},
+							mimirpb.Sample{TimestampMs: queryStart.Add(+2*time.Minute).Unix() * 1000, Value: 37},
+						}, false),
+					},
 				},
 				// Series with data points after queryEnd.
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []interface{}{
-						mimirpb.Sample{TimestampMs: queryStart.Add(+4*time.Minute).Unix() * 1000, Value: 41},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+6*time.Minute).Unix() * 1000, Value: 47},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+7*time.Minute).Unix() * 1000, Value: 53},
-					}, false),
+					TimeSeriesChunk: &client.TimeSeriesChunk{
+						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+						Chunks: convertToChunks(t, []interface{}{
+							mimirpb.Sample{TimestampMs: queryStart.Add(+4*time.Minute).Unix() * 1000, Value: 41},
+							mimirpb.Sample{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
+							mimirpb.Sample{TimestampMs: queryStart.Add(+6*time.Minute).Unix() * 1000, Value: 47},
+							mimirpb.Sample{TimestampMs: queryStart.Add(+7*time.Minute).Unix() * 1000, Value: 53},
+						}, false),
+					},
 				},
 			},
 		},
@@ -388,16 +394,20 @@ func TestBatchMergeChunks(t *testing.T) {
 	distributor := &mockDistributor{}
 	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
+			Chunkseries: []client.CustomTimeSeriesChunk{
 				// Series with chunks in the 1,2 order, that need merge
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
-					Chunks: chunks12,
+					TimeSeriesChunk: &client.TimeSeriesChunk{
+						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
+						Chunks: chunks12,
+					},
 				},
 				// Series with chunks in the 2,1 order, that need merge
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "bar"}},
-					Chunks: chunks21,
+					TimeSeriesChunk: &client.TimeSeriesChunk{
+						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "bar"}},
+						Chunks: chunks21,
+					},
 				},
 			},
 		},
@@ -466,10 +476,12 @@ func BenchmarkQueryExecute(b *testing.B) {
 			distributor := &mockDistributor{}
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 				client.CombinedQueryStreamResponse{
-					Chunkseries: []client.TimeSeriesChunk{
+					Chunkseries: []client.CustomTimeSeriesChunk{
 						{
-							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
-							Chunks: chunks,
+							TimeSeriesChunk: &client.TimeSeriesChunk{
+								Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: labels.InstanceName, Value: "foo"}},
+								Chunks: chunks,
+							},
 						},
 					},
 				},

@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
+	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
@@ -59,24 +60,24 @@ type iterator interface {
 }
 
 // NewChunkMergeIterator returns a chunkenc.Iterator that merges Mimir chunks together.
-func NewChunkMergeIterator(it chunkenc.Iterator, lbls labels.Labels, chunks []chunk.Chunk) chunkenc.Iterator {
+func NewChunkMergeIterator(it chunkenc.Iterator, lbls labels.Labels, chunks []chunk.Chunk, sourceChunks []client.Chunk) chunkenc.Iterator {
 	converted := make([]GenericChunk, len(chunks))
 	for i, c := range chunks {
 		converted[i] = NewGenericChunk(int64(c.From), int64(c.Through), c.Data.NewIterator)
 	}
 
-	return NewGenericChunkMergeIterator(it, lbls, converted)
+	return NewGenericChunkMergeIterator(it, lbls, converted, sourceChunks)
 }
 
 // NewGenericChunkMergeIterator returns a chunkenc.Iterator that merges generic chunks together.
-func NewGenericChunkMergeIterator(it chunkenc.Iterator, lbls labels.Labels, chunks []GenericChunk) chunkenc.Iterator {
+func NewGenericChunkMergeIterator(it chunkenc.Iterator, lbls labels.Labels, chunks []GenericChunk, sourceChunks []client.Chunk) chunkenc.Iterator {
 	var iter *mergeIterator
 
 	adapter, ok := it.(*iteratorAdapter)
 	if ok {
-		iter = newMergeIterator(adapter.underlying, chunks)
+		iter = newMergeIterator(adapter.underlying, chunks, sourceChunks)
 	} else {
-		iter = newMergeIterator(nil, chunks)
+		iter = newMergeIterator(nil, chunks, sourceChunks)
 	}
 
 	return newIteratorAdapter(adapter, iter, lbls)

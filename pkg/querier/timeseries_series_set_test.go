@@ -25,21 +25,27 @@ var (
 
 func TestTimeSeriesSeriesSet(t *testing.T) {
 
-	timeseries := []mimirpb.TimeSeries{
+	timeseries := []mimirpb.CustomTimeSeries{
 		{
-			Labels:  []mimirpb.LabelAdapter{{Name: "label1", Value: "value3"}},
-			Samples: []mimirpb.Sample{{Value: 3.14, TimestampMs: 1234}},
-		},
-		{
-			Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value2"}},
-			Samples: []mimirpb.Sample{
-				{Value: 3.14, TimestampMs: 1234},
-				{Value: 1.618, TimestampMs: 2345},
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels:  []mimirpb.LabelAdapter{{Name: "label1", Value: "value3"}},
+				Samples: []mimirpb.Sample{{Value: 3.14, TimestampMs: 1234}},
 			},
 		},
 		{
-			Labels:  []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}},
-			Samples: []mimirpb.Sample{{Value: 3.14, TimestampMs: 1234}},
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{{Name: "label1", Value: "value2"}},
+				Samples: []mimirpb.Sample{
+					{Value: 3.14, TimestampMs: 1234},
+					{Value: 1.618, TimestampMs: 2345},
+				},
+			},
+		},
+		{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels:  []mimirpb.LabelAdapter{{Name: "label1", Value: "value1"}},
+				Samples: []mimirpb.Sample{{Value: 3.14, TimestampMs: 1234}},
+			},
 		},
 	}
 
@@ -77,16 +83,18 @@ func BenchmarkTimeSeriesSeriesSet(b *testing.B) {
 	)
 
 	// Generate series.
-	timeseries := []mimirpb.TimeSeries{}
+	timeseries := []mimirpb.CustomTimeSeries{}
 	for seriesID := 0; seriesID < numSeries; seriesID++ {
 		lbls := mkZLabels("__name__", "test", "series_id", strconv.Itoa(seriesID))
 		var samples []mimirpb.Sample
 		for t := int64(0); t <= numSamplesPerSeries; t++ {
 			samples = append(samples, mimirpb.Sample{TimestampMs: t, Value: math.Sin(float64(t))})
 		}
-		timeseries = append(timeseries, mimirpb.TimeSeries{
-			Labels:  lbls,
-			Samples: samples,
+		timeseries = append(timeseries, mimirpb.CustomTimeSeries{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels:  lbls,
+				Samples: samples,
+			},
 		})
 	}
 
@@ -99,34 +107,36 @@ func BenchmarkTimeSeriesSeriesSet(b *testing.B) {
 
 func TestTimeSeriesIterator(t *testing.T) {
 	ts := timeseries{
-		series: mimirpb.TimeSeries{
-			Labels: []mimirpb.LabelAdapter{
-				{
-					Name:  "label1",
-					Value: "value1",
+		series: mimirpb.CustomTimeSeries{
+			TimeSeries: &mimirpb.TimeSeries{
+				Labels: []mimirpb.LabelAdapter{
+					{
+						Name:  "label1",
+						Value: "value1",
+					},
 				},
-			},
-			Samples: []mimirpb.Sample{
-				{
-					Value:       3.14,
-					TimestampMs: 1234,
+				Samples: []mimirpb.Sample{
+					{
+						Value:       3.14,
+						TimestampMs: 1234,
+					},
+					{
+						Value:       3.15,
+						TimestampMs: 1235,
+					},
+					{
+						Value:       3.16,
+						TimestampMs: 1236,
+					},
+					{
+						Value:       3.17,
+						TimestampMs: 1237,
+					},
 				},
-				{
-					Value:       3.15,
-					TimestampMs: 1235,
+				Histograms: []mimirpb.Histogram{
+					mimirpb.FromHistogramToHistogramProto(1232, generateTestHistogram(7)),
+					mimirpb.FromFloatHistogramToHistogramProto(1233, generateTestFloatHistogram(8)),
 				},
-				{
-					Value:       3.16,
-					TimestampMs: 1236,
-				},
-				{
-					Value:       3.17,
-					TimestampMs: 1237,
-				},
-			},
-			Histograms: []mimirpb.Histogram{
-				mimirpb.FromHistogramToHistogramProto(1232, generateTestHistogram(7)),
-				mimirpb.FromFloatHistogramToHistogramProto(1233, generateTestFloatHistogram(8)),
 			},
 		},
 	}

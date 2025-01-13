@@ -47,6 +47,7 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 
 	s.alreadyCreated = true
 
+	// TODO: Get from pool.
 	var uniqueChunks []client.Chunk
 	totalChunks := 0
 
@@ -55,7 +56,6 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 	}
 	for _, source := range s.sources {
 		c, err := source.StreamReader.GetChunks(source.SeriesIndex)
-
 		if err != nil {
 			return series.NewErrIterator(err)
 		}
@@ -90,5 +90,5 @@ func (s *streamingChunkSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator 
 		return series.NewErrIterator(err)
 	}
 
-	return batch.NewChunkMergeIterator(it, s.labels, chunks)
+	return batch.NewChunkMergeIterator(it, s.labels, chunks, uniqueChunks)
 }

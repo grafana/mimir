@@ -143,18 +143,22 @@ func TestDistributorQuerier_Select(t *testing.T) {
 	}{
 		"chunk series": {
 			response: client.CombinedQueryStreamResponse{
-				Chunkseries: []client.TimeSeriesChunk{
+				Chunkseries: []client.CustomTimeSeriesChunk{
 					{
-						Labels: []mimirpb.LabelAdapter{
-							{Name: "bar", Value: "baz"},
+						TimeSeriesChunk: &client.TimeSeriesChunk{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "bar", Value: "baz"},
+							},
+							Chunks: clientChunks,
 						},
-						Chunks: clientChunks,
 					},
 					{
-						Labels: []mimirpb.LabelAdapter{
-							{Name: "foo", Value: "bar"},
+						TimeSeriesChunk: &client.TimeSeriesChunk{
+							Labels: []mimirpb.LabelAdapter{
+								{Name: "foo", Value: "bar"},
+							},
+							Chunks: clientChunks,
 						},
-						Chunks: clientChunks,
 					},
 				},
 			},
@@ -240,33 +244,49 @@ func TestDistributorQuerier_Select_MixedChunkseriesTimeseriesAndStreamingResults
 		mimirpb.Sample{TimestampMs: 7000, Value: 7},
 	}
 
-	streamReader := createTestStreamReader([]client.QueryStreamSeriesChunks{
-		{SeriesIndex: 0, Chunks: convertToChunks(t, samplesToInterface(s4), false)},
-		{SeriesIndex: 1, Chunks: convertToChunks(t, samplesToInterface(s3), false)},
+	streamReader := createTestStreamReader([]client.CustomQueryStreamSeriesChunks{
+		{
+			QueryStreamSeriesChunks: &client.QueryStreamSeriesChunks{
+				SeriesIndex: 0, Chunks: convertToChunks(t, samplesToInterface(s4), false),
+			},
+		},
+		{
+			QueryStreamSeriesChunks: &client.QueryStreamSeriesChunks{
+				SeriesIndex: 1, Chunks: convertToChunks(t, samplesToInterface(s3), false),
+			},
+		},
 	})
 
 	d := &mockDistributor{}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
+			Chunkseries: []client.CustomTimeSeriesChunk{
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, samplesToInterface(s1), false),
+					TimeSeriesChunk: &client.TimeSeriesChunk{
+						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+						Chunks: convertToChunks(t, samplesToInterface(s1), false),
+					},
 				},
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Chunks: convertToChunks(t, samplesToInterface(s1), false),
+					TimeSeriesChunk: &client.TimeSeriesChunk{
+						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+						Chunks: convertToChunks(t, samplesToInterface(s1), false),
+					},
 				},
 			},
 
-			Timeseries: []mimirpb.TimeSeries{
+			Timeseries: []mimirpb.CustomTimeSeries{
 				{
-					Labels:  []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Samples: s2,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels:  []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+						Samples: s2,
+					},
 				},
 				{
-					Labels:  []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
-					Samples: s1,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels:  []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
+						Samples: s1,
+					},
 				},
 			},
 
@@ -374,25 +394,33 @@ func TestDistributorQuerier_Select_MixedFloatAndIntegerHistograms(t *testing.T) 
 	d := &mockDistributor{}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
+			Chunkseries: []client.CustomTimeSeriesChunk{
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, histogramsToInterface(s1), false),
+					TimeSeriesChunk: &client.TimeSeriesChunk{
+						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+						Chunks: convertToChunks(t, histogramsToInterface(s1), false),
+					},
 				},
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Chunks: convertToChunks(t, histogramsToInterface(s1), false),
+					TimeSeriesChunk: &client.TimeSeriesChunk{
+						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+						Chunks: convertToChunks(t, histogramsToInterface(s1), false),
+					},
 				},
 			},
 
-			Timeseries: []mimirpb.TimeSeries{
+			Timeseries: []mimirpb.CustomTimeSeries{
 				{
-					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Histograms: s2,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+						Histograms: s2,
+					},
 				},
 				{
-					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
-					Histograms: s1,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
+						Histograms: s1,
+					},
 				},
 			},
 		},
@@ -473,27 +501,35 @@ func TestDistributorQuerier_Select_MixedHistogramsAndFloatSamples(t *testing.T) 
 	d := &mockDistributor{}
 	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
+			Chunkseries: []client.CustomTimeSeriesChunk{
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
+					TimeSeriesChunk: &client.TimeSeriesChunk{
+						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+						Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
+					},
 				},
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
+					TimeSeriesChunk: &client.TimeSeriesChunk{
+						Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+						Chunks: convertToChunks(t, append(samplesToInterface(s1), histogramsToInterface(h1)...), false),
+					},
 				},
 			},
 
-			Timeseries: []mimirpb.TimeSeries{
+			Timeseries: []mimirpb.CustomTimeSeries{
 				{
-					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
-					Samples:    s2,
-					Histograms: h2,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+						Samples:    s2,
+						Histograms: h2,
+					},
 				},
 				{
-					Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
-					Samples:    s1,
-					Histograms: h1,
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels:     []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
+						Samples:    s1,
+						Histograms: h1,
+					},
 				},
 			},
 		},
@@ -591,10 +627,12 @@ func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
 			}{
 				"chunkseries": {
 					combinedResponse: client.CombinedQueryStreamResponse{
-						Chunkseries: []client.TimeSeriesChunk{
+						Chunkseries: []client.CustomTimeSeriesChunk{
 							{
-								Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-								Chunks: tc.chunks,
+								TimeSeriesChunk: &client.TimeSeriesChunk{
+									Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+									Chunks: tc.chunks,
+								},
 							},
 						},
 					},
@@ -605,8 +643,12 @@ func TestDistributorQuerier_Select_CounterResets(t *testing.T) {
 							{
 								Labels: labels.FromStrings(labels.MetricName, "one"),
 								Sources: []client.StreamingSeriesSource{
-									{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
-										{SeriesIndex: 0, Chunks: tc.chunks},
+									{SeriesIndex: 0, StreamReader: createTestStreamReader([]client.CustomQueryStreamSeriesChunks{
+										{
+											QueryStreamSeriesChunks: &client.QueryStreamSeriesChunks{
+												SeriesIndex: 0, Chunks: tc.chunks,
+											},
+										},
 									})},
 								},
 							},
@@ -689,14 +731,16 @@ func BenchmarkDistributorQuerier_Select(b *testing.B) {
 	commonLabelsBuilder.Sort()
 	commonLabels := commonLabelsBuilder.Labels()
 
-	response := client.CombinedQueryStreamResponse{Chunkseries: make([]client.TimeSeriesChunk, 0, numSeries)}
+	response := client.CombinedQueryStreamResponse{Chunkseries: make([]client.CustomTimeSeriesChunk, 0, numSeries)}
 	for i := 0; i < numSeries; i++ {
 		lbls := labels.NewBuilder(commonLabels)
 		lbls.Set("series_id", strconv.Itoa(i))
 
-		response.Chunkseries = append(response.Chunkseries, client.TimeSeriesChunk{
-			Labels: mimirpb.FromLabelsToLabelAdapters(lbls.Labels()),
-			Chunks: clientChunks,
+		response.Chunkseries = append(response.Chunkseries, client.CustomTimeSeriesChunk{
+			TimeSeriesChunk: &client.TimeSeriesChunk{
+				Labels: mimirpb.FromLabelsToLabelAdapters(lbls.Labels()),
+				Chunks: clientChunks,
+			},
 		})
 	}
 

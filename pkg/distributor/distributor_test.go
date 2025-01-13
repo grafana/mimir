@@ -6283,28 +6283,34 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 
 		if i.disableStreamingResponse || req.StreamingChunksBatchSize == 0 {
 			nonStreamingResponses = append(nonStreamingResponses, &client.QueryStreamResponse{
-				Chunkseries: []client.TimeSeriesChunk{
+				Chunkseries: []client.CustomTimeSeriesChunk{
 					{
-						Labels: ts.Labels,
-						Chunks: wireChunks,
+						TimeSeriesChunk: &client.TimeSeriesChunk{
+							Labels: ts.Labels,
+							Chunks: wireChunks,
+						},
 					},
 				},
 			})
 		} else {
 			streamingLabelResponses = append(streamingLabelResponses, &client.QueryStreamResponse{
-				StreamingSeries: []client.QueryStreamSeries{
+				StreamingSeries: []client.CustomQueryStreamSeries{
 					{
-						Labels:     ts.Labels,
-						ChunkCount: int64(len(wireChunks)),
+						QueryStreamSeries: &client.QueryStreamSeries{
+							Labels:     ts.Labels,
+							ChunkCount: int64(len(wireChunks)),
+						},
 					},
 				},
 			})
 
 			streamingChunkResponses = append(streamingChunkResponses, &client.QueryStreamResponse{
-				StreamingSeriesChunks: []client.QueryStreamSeriesChunks{
+				StreamingSeriesChunks: []client.CustomQueryStreamSeriesChunks{
 					{
-						SeriesIndex: uint64(seriesIndex),
-						Chunks:      wireChunks,
+						QueryStreamSeriesChunks: &client.QueryStreamSeriesChunks{
+							SeriesIndex: uint64(seriesIndex),
+							Chunks:      wireChunks,
+						},
 					},
 				},
 			})
@@ -6384,15 +6390,17 @@ func (i *mockIngester) QueryExemplars(ctx context.Context, req *client.ExemplarQ
 		}
 
 		if len(exemplars) > 0 {
-			res.Timeseries = append(res.Timeseries, mimirpb.TimeSeries{
-				Labels:    series.Labels,
-				Exemplars: exemplars,
+			res.Timeseries = append(res.Timeseries, mimirpb.CustomTimeSeries{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels:    series.Labels,
+					Exemplars: exemplars,
+				},
 			})
 		}
 	}
 
 	// Sort series by labels because the real ingester returns sorted ones.
-	slices.SortFunc(res.Timeseries, func(a, b mimirpb.TimeSeries) int {
+	slices.SortFunc(res.Timeseries, func(a, b mimirpb.CustomTimeSeries) int {
 		aKey := mimirpb.FromLabelAdaptersToKeyString(a.Labels)
 		bKey := mimirpb.FromLabelAdaptersToKeyString(b.Labels)
 		return strings.Compare(aKey, bKey)
@@ -6424,7 +6432,11 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 	for _, matchers := range multiMatchers {
 		for _, ts := range i.timeseries {
 			if match(ts.Labels, matchers) {
-				response.Metric = append(response.Metric, &mimirpb.Metric{Labels: ts.Labels})
+				response.Metric = append(response.Metric, mimirpb.CustomMetric{
+					Metric: &mimirpb.Metric{
+						Labels: ts.Labels,
+					},
+				})
 			}
 		}
 	}
