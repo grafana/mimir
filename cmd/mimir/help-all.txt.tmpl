@@ -2097,12 +2097,14 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
+  -querier.mimir-query-engine.disabled-aggregations comma-separated-list-of-strings
+    	[experimental] Comma-separated list of aggregations to disable support for. Only applies if MQE is in use.
+  -querier.mimir-query-engine.disabled-functions comma-separated-list-of-strings
+    	[experimental] Comma-separated list of function names to disable support for. Only applies if MQE is in use.
   -querier.mimir-query-engine.enable-aggregation-operations
     	[experimental] Enable support for aggregation operations in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-binary-logical-operations
     	[experimental] Enable support for binary logical operations in the Mimir query engine. Only applies if the MQE is in use. (default true)
-  -querier.mimir-query-engine.enable-histogram-quantile-function
-    	[experimental] Enable support for the histogram_quantile function in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations
     	[experimental] Enable support for one-to-many and many-to-one binary operations (group_left/group_right) in the Mimir query engine. Only applies if the MQE is in use. (default true)
   -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations

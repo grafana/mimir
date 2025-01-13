@@ -21,7 +21,7 @@ func NewTestEngineOpts() EngineOpts {
 			NoStepSubqueryIntervalFn: func(int64) int64 { return time.Minute.Milliseconds() },
 		},
 
-		FeatureToggles: EnableAllFeatures,
-		Pedantic:       true,
+		Features: EnableAllFeatures,
+		Pedantic: true,
 	}
 }
