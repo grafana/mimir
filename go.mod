@@ -26,7 +26,7 @@ require (
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/json-iterator/go v1.1.12
-	github.com/minio/minio-go/v7 v7.0.82
+	github.com/minio/minio-go/v7 v7.0.83
 	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/oklog/ulid v1.3.1
 	github.com/opentracing-contrib/go-grpc v0.1.0
@@ -75,7 +75,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.22
 	github.com/prometheus/procfs v0.15.1
 	github.com/shirou/gopsutil/v4 v4.24.12
-	github.com/thanos-io/objstore v0.0.0-20241226233006-a14268e0e939
+	github.com/thanos-io/objstore v0.0.0-20250114133649-ed170e907b25
 	github.com/tjhop/slog-gokit v0.1.2
 	github.com/twmb/franz-go v1.18.0
 	github.com/twmb/franz-go/pkg/kadm v1.14.0
@@ -113,7 +113,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.0.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-test/deep v1.1.0 // indirect
-	github.com/goccy/go-json v0.10.3 // indirect
+	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
 	github.com/golang/glog v1.2.2 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
@@ -232,7 +232,7 @@ require (
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/klauspost/compress v1.17.11
-	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
