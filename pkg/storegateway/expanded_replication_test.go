@@ -27,54 +27,32 @@ func TestMaxTimeExpandedReplication(t *testing.T) {
 	testCases := map[string]testCase{
 		"max time eligible": {
 			block: bucketindex.Block{
-				MinTime:    now.Add(-24 * time.Hour).UnixMilli(),
-				MaxTime:    now.Add(-12 * time.Hour).UnixMilli(),
-				UploadedAt: now.Add(-6 * time.Hour).Unix(),
+				MinTime: now.Add(-24 * time.Hour).UnixMilli(),
+				MaxTime: now.Add(-12 * time.Hour).UnixMilli(),
 			},
 			expectedSync:  true,
 			expectedQuery: true,
 		},
-		"max time eligible recent upload": {
-			block: bucketindex.Block{
-				MinTime:    now.Add(-24 * time.Hour).UnixMilli(),
-				MaxTime:    now.Add(-12 * time.Hour).UnixMilli(),
-				UploadedAt: now.Add(-15 * time.Minute).Unix(),
-			},
-			expectedSync:  true,
-			expectedQuery: false,
-		},
 		"max time on boundary": {
 			block: bucketindex.Block{
-				MinTime:    now.Add(-49 * time.Hour).UnixMilli(),
-				MaxTime:    now.Add(-25 * time.Hour).UnixMilli(),
-				UploadedAt: now.Add(-6 * time.Hour).Unix(),
+				MinTime: now.Add(-49 * time.Hour).UnixMilli(),
+				MaxTime: now.Add(-25 * time.Hour).UnixMilli(),
 			},
 			expectedSync:  true,
 			expectedQuery: false,
 		},
 		"max time on boundary including grace period": {
 			block: bucketindex.Block{
-				MinTime:    now.Add(-49 * time.Hour).UnixMilli(),
-				MaxTime:    now.Add(-(24*time.Hour + 15*time.Minute)).UnixMilli(),
-				UploadedAt: now.Add(-6 * time.Hour).Unix(),
+				MinTime: now.Add(-49 * time.Hour).UnixMilli(),
+				MaxTime: now.Add(-(24*time.Hour + 15*time.Minute)).UnixMilli(),
 			},
 			expectedSync:  true,
 			expectedQuery: true,
 		},
-		"max time on boundary including grace period recent upload": {
-			block: bucketindex.Block{
-				MinTime:    now.Add(-49 * time.Hour).UnixMilli(),
-				MaxTime:    now.Add(-(24*time.Hour + 15*time.Minute)).UnixMilli(),
-				UploadedAt: now.Add(-30 * time.Minute).Unix(),
-			},
-			expectedSync:  true,
-			expectedQuery: false,
-		},
 		"max time too old": {
 			block: bucketindex.Block{
-				MinTime:    now.Add(-72 * time.Hour).UnixMilli(),
-				MaxTime:    now.Add(-48 * time.Hour).UnixMilli(),
-				UploadedAt: now.Add(-24 * time.Hour).Unix(),
+				MinTime: now.Add(-72 * time.Hour).UnixMilli(),
+				MaxTime: now.Add(-48 * time.Hour).UnixMilli(),
 			},
 			expectedSync:  false,
 			expectedQuery: false,
