@@ -977,27 +977,27 @@ func TestRulerMaxConcurrentRuleEvaluationsPerTenantOverrides(t *testing.T) {
 	}{
 		"no user specific concurrency": {
 			inputYAML: `
-ruler_max_independent_rule_evaluation_concurrency_per_tenant: 5
+ruler_max_rule_evaluation_concurrency_per_tenant: 5
 `,
 			expectedPerTenantConcurrency: 5,
 		},
 		"default limit for not specific user": {
 			inputYAML: `
-ruler_max_independent_rule_evaluation_concurrency_per_tenant: 5
+ruler_max_rule_evaluation_concurrency_per_tenant: 5
 `,
 			overrides: `
 randomuser:
-  ruler_max_independent_rule_evaluation_concurrency_per_tenant: 10
+  ruler_max_rule_evaluation_concurrency_per_tenant: 10
 `,
 			expectedPerTenantConcurrency: 5,
 		},
 		"overridden limit for specific user": {
 			inputYAML: `
-ruler_max_independent_rule_evaluation_concurrency_per_tenant: 5
+ruler_max_rule_evaluation_concurrency_per_tenant: 5
 `,
 			overrides: `
 user1:
-  ruler_max_independent_rule_evaluation_concurrency_per_tenant: 15
+  ruler_max_rule_evaluation_concurrency_per_tenant: 15
 `,
 			expectedPerTenantConcurrency: 15,
 		},
@@ -1019,7 +1019,7 @@ user1:
 			ov, err := NewOverrides(LimitsYAML, tl)
 			require.NoError(t, err)
 
-			require.Equal(t, tt.expectedPerTenantConcurrency, ov.RulerMaxIndependentRuleEvaluationConcurrencyPerTenant("user1"))
+			require.Equal(t, tt.expectedPerTenantConcurrency, ov.RulerMaxRuleEvaluationConcurrencyPerTenant("user1"))
 		})
 	}
 }

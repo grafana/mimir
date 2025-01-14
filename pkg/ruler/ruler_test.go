@@ -2081,7 +2081,7 @@ func TestConfig_Validate(t *testing.T) {
 
 	t.Run("invalid concurrency evaluation percentage", func(t *testing.T) {
 		cfg := defaultRulerConfig(t)
-		cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage = -1.0
+		cfg.RuleEvaluationConcurrencyMinDurationPercentage = -1.0
 		limits := validation.MockDefaultLimits()
 
 		err := cfg.Validate(*limits)

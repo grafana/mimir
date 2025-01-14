@@ -93,9 +93,9 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	limits := validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 		tenantLimits["user1"] = validation.MockDefaultLimits()
-		tenantLimits["user1"].RulerMaxIndependentRuleEvaluationConcurrencyPerTenant = 2
+		tenantLimits["user1"].RulerMaxRuleEvaluationConcurrencyPerTenant = 2
 		tenantLimits["user2"] = validation.MockDefaultLimits()
-		tenantLimits["user2"].RulerMaxIndependentRuleEvaluationConcurrencyPerTenant = 2
+		tenantLimits["user2"].RulerMaxRuleEvaluationConcurrencyPerTenant = 2
 	})
 
 	rg := rules.NewGroup(rules.GroupOptions{
@@ -125,22 +125,22 @@ func TestMultiTenantConcurrencyController(t *testing.T) {
 
 	// Let's check the metrics up until this point.
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total Total number of concurrency slots we're done using across all tenants
-# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total counter
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{user="user1"} 0
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{user="user2"} 0
-# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total Total number of incomplete attempts to acquire concurrency slots across all tenants
-# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total counter
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total{user="user1"} 1
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total{user="user2"} 1
-# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total Total number of started attempts to acquire concurrency slots across all tenants
-# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total counter
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total{user="user1"} 3
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total{user="user2"} 2
-# HELP cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use Current number of concurrency slots currently in use across all tenants
-# TYPE cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use gauge
-cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use{user="user1"} 2
-cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use{user="user2"} 1
+# HELP cortex_ruler_rule_evaluation_concurrency_attempts_completed_total Total number of concurrency slots we're done using across all tenants
+# TYPE cortex_ruler_rule_evaluation_concurrency_attempts_completed_total counter
+cortex_ruler_rule_evaluation_concurrency_attempts_completed_total{user="user1"} 0
+cortex_ruler_rule_evaluation_concurrency_attempts_completed_total{user="user2"} 0
+# HELP cortex_ruler_rule_evaluation_concurrency_attempts_incomplete_total Total number of incomplete attempts to acquire concurrency slots across all tenants
+# TYPE cortex_ruler_rule_evaluation_concurrency_attempts_incomplete_total counter
+cortex_ruler_rule_evaluation_concurrency_attempts_incomplete_total{user="user1"} 1
+cortex_ruler_rule_evaluation_concurrency_attempts_incomplete_total{user="user2"} 1
+# HELP cortex_ruler_rule_evaluation_concurrency_attempts_started_total Total number of started attempts to acquire concurrency slots across all tenants
+# TYPE cortex_ruler_rule_evaluation_concurrency_attempts_started_total counter
+cortex_ruler_rule_evaluation_concurrency_attempts_started_total{user="user1"} 3
+cortex_ruler_rule_evaluation_concurrency_attempts_started_total{user="user2"} 2
+# HELP cortex_ruler_rule_evaluation_concurrency_slots_in_use Current number of concurrency slots currently in use across all tenants
+# TYPE cortex_ruler_rule_evaluation_concurrency_slots_in_use gauge
+cortex_ruler_rule_evaluation_concurrency_slots_in_use{user="user1"} 2
+cortex_ruler_rule_evaluation_concurrency_slots_in_use{user="user2"} 1
 `)))
 
 	// Now let's release some slots and acquire one for tenant 2 which previously failed.
@@ -150,22 +150,22 @@ cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use{user="user2"} 
 
 	// Let's look at the metrics again.
 	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total Total number of incomplete attempts to acquire concurrency slots across all tenants
-# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total counter
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total{user="user1"} 2
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total{user="user2"} 1
-# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total Total number of started attempts to acquire concurrency slots across all tenants
-# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total counter
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total{user="user1"} 4
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total{user="user2"} 3
-# HELP cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use Current number of concurrency slots currently in use across all tenants
-# TYPE cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use gauge
-cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use{user="user1"} 1
-cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use{user="user2"} 2
-# HELP cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total Total number of concurrency slots we're done using across all tenants
-# TYPE cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total counter
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{user="user1"} 1
-cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total{user="user2"} 0
+# HELP cortex_ruler_rule_evaluation_concurrency_attempts_incomplete_total Total number of incomplete attempts to acquire concurrency slots across all tenants
+# TYPE cortex_ruler_rule_evaluation_concurrency_attempts_incomplete_total counter
+cortex_ruler_rule_evaluation_concurrency_attempts_incomplete_total{user="user1"} 2
+cortex_ruler_rule_evaluation_concurrency_attempts_incomplete_total{user="user2"} 1
+# HELP cortex_ruler_rule_evaluation_concurrency_attempts_started_total Total number of started attempts to acquire concurrency slots across all tenants
+# TYPE cortex_ruler_rule_evaluation_concurrency_attempts_started_total counter
+cortex_ruler_rule_evaluation_concurrency_attempts_started_total{user="user1"} 4
+cortex_ruler_rule_evaluation_concurrency_attempts_started_total{user="user2"} 3
+# HELP cortex_ruler_rule_evaluation_concurrency_slots_in_use Current number of concurrency slots currently in use across all tenants
+# TYPE cortex_ruler_rule_evaluation_concurrency_slots_in_use gauge
+cortex_ruler_rule_evaluation_concurrency_slots_in_use{user="user1"} 1
+cortex_ruler_rule_evaluation_concurrency_slots_in_use{user="user2"} 2
+# HELP cortex_ruler_rule_evaluation_concurrency_attempts_completed_total Total number of concurrency slots we're done using across all tenants
+# TYPE cortex_ruler_rule_evaluation_concurrency_attempts_completed_total counter
+cortex_ruler_rule_evaluation_concurrency_attempts_completed_total{user="user1"} 1
+cortex_ruler_rule_evaluation_concurrency_attempts_completed_total{user="user2"} 0
 `)))
 
 	// Release all slots, to make sure there is room for the next set of edge cases.
@@ -233,7 +233,7 @@ var splitToBatchesTestCases = map[string]struct {
 func TestSplitGroupIntoBatches(t *testing.T) {
 	limits := validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 		tenantLimits["user1"] = validation.MockDefaultLimits()
-		tenantLimits["user1"].RulerMaxIndependentRuleEvaluationConcurrencyPerTenant = 2
+		tenantLimits["user1"].RulerMaxRuleEvaluationConcurrencyPerTenant = 2
 	})
 
 	mtController := NewMultiTenantConcurrencyController(log.NewNopLogger(), 3, 50.0, prometheus.NewPedanticRegistry(), limits)
@@ -268,7 +268,7 @@ func TestSplitGroupIntoBatches(t *testing.T) {
 func BenchmarkSplitGroupIntoBatches(b *testing.B) {
 	limits := validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
 		tenantLimits["user1"] = validation.MockDefaultLimits()
-		tenantLimits["user1"].RulerMaxIndependentRuleEvaluationConcurrencyPerTenant = 2
+		tenantLimits["user1"].RulerMaxRuleEvaluationConcurrencyPerTenant = 2
 	})
 
 	mtController := NewMultiTenantConcurrencyController(log.NewNopLogger(), 3, 50.0, prometheus.NewPedanticRegistry(), limits)
