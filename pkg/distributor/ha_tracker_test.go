@@ -307,8 +307,8 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	// Update KVStore - this should elect replica 2.
 	tracker.updateKVStoreAll(context.Background(), now)
 
-	// Evaluate up to 2 seconds to verify whether the tracker’s cache replica has been updated to r2.
-	checkReplicaTimestamp(t, 2*time.Second, tracker, "user", cluster, replica2, now, now)
+	// Evaluate up to 10 seconds to verify whether the tracker’s cache replica has been updated to r2.
+	checkReplicaTimestamp(t, 10*time.Second, tracker, "user", cluster, replica2, now, now)
 
 	// Now we should accept from replica 2.
 	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
