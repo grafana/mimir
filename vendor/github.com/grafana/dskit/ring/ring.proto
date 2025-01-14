@@ -2,14 +2,11 @@ syntax = "proto3";
 
 package ring;
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option go_package = "github.com/grafana/cortex/pkg/ring;ring";
 
 // Desc is the top-level type used to model a ring, containing information for individual instances.
 message Desc {
-	map<string,InstanceDesc> ingesters = 1 [(gogoproto.nullable) = false];
+	map<string,InstanceDesc> ingesters = 1;
 	reserved 2;
 }
 

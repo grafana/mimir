@@ -41,7 +41,7 @@ func GetCodec() codec.Codec {
 // NewDesc returns an empty ring.Desc
 func NewDesc() *Desc {
 	return &Desc{
-		Ingesters: map[string]InstanceDesc{},
+		Ingesters: map[string]*InstanceDesc{},
 	}
 }
 
@@ -52,14 +52,55 @@ func timeToUnixSecons(t time.Time) int64 {
 	return t.Unix()
 }
 
+func (x *Desc) GetIngester(id string) *InstanceDesc {
+	if x != nil {
+		if x.Ingesters != nil {
+			return x.Ingesters[id]
+		}
+	}
+	return nil
+}
+
+func (x *Desc) GetIngesterVal(id string) (InstanceDesc, bool) {
+	if x != nil {
+		if x.Ingesters != nil {
+			if ptr, ok := x.Ingesters[id]; ok {
+				return *ptr, true
+			}
+		}
+	}
+	return InstanceDesc{}, false
+}
+
+func (x *Desc) GetIngesterVals() map[string]InstanceDesc {
+	if x != nil {
+		valMap := make(map[string]InstanceDesc, len(x.Ingesters))
+		for k, v := range x.Ingesters {
+			if v != nil {
+				valMap[k] = *v
+			}
+		}
+		return valMap
+	}
+	return nil
+}
+
+func (d *Desc) SetIngesterVal(id string, ingester InstanceDesc) InstanceDesc {
+	if d.Ingesters == nil {
+		d.Ingesters = map[string]*InstanceDesc{}
+	}
+	d.Ingesters[id] = &ingester
+	return ingester
+}
+
 // AddIngester adds the given ingester to the ring. Ingester will only use supplied tokens,
 // any other tokens are removed.
 func (d *Desc) AddIngester(id, addr, zone string, tokens []uint32, state InstanceState, registeredAt time.Time, readOnly bool, readOnlyUpdated time.Time) InstanceDesc {
 	if d.Ingesters == nil {
-		d.Ingesters = map[string]InstanceDesc{}
+		d.Ingesters = map[string]*InstanceDesc{}
 	}
 
-	ingester := InstanceDesc{
+	return d.SetIngesterVal(id, InstanceDesc{
 		Id:                       id,
 		Addr:                     addr,
 		Timestamp:                time.Now().Unix(),
@@ -69,10 +110,7 @@ func (d *Desc) AddIngester(id, addr, zone string, tokens []uint32, state Instanc
 		RegisteredTimestamp:      timeToUnixSecons(registeredAt),
 		ReadOnly:                 readOnly,
 		ReadOnlyUpdatedTimestamp: timeToUnixSecons(readOnlyUpdated),
-	}
-
-	d.Ingesters[id] = ingester
-	return ingester
+	})
 }
 
 // RemoveIngester removes the given ingester and all its tokens.
@@ -103,7 +141,7 @@ func (d *Desc) ClaimTokens(from, to string) Tokens {
 // FindIngestersByState returns the list of ingesters in the given state
 func (d *Desc) FindIngestersByState(state InstanceState) []InstanceDesc {
 	var result []InstanceDesc
-	for _, ing := range d.Ingesters {
+	for _, ing := range d.GetIngesterVals() {
 		if ing.State == state {
 			result = append(result, ing)
 		}
@@ -111,7 +149,7 @@ func (d *Desc) FindIngestersByState(state InstanceState) []InstanceDesc {
 	return result
 }
 
-// IsReady returns no error when all instance are ACTIVE and healthy,
+// IsReady returns no error when all instance are InstanceState_ACTIVE and healthy,
 // and the ring has some tokens.
 func (d *Desc) IsReady(now time.Time, heartbeatTimeout time.Duration) error {
 	numTokens := 0
@@ -132,7 +170,9 @@ func (d *Desc) IsReady(now time.Time, heartbeatTimeout time.Duration) error {
 // Returned tokens are guaranteed to be sorted.
 func (d *Desc) TokensFor(id string) (myTokens, allTokens Tokens) {
 	allTokens = d.GetTokens()
-	myTokens = d.Ingesters[id].Tokens
+	if ing := d.GetIngester(id); ing != nil {
+		myTokens = ing.Tokens
+	}
 	return
 }
 
@@ -185,12 +225,12 @@ func (i *InstanceDesc) IsHeartbeatHealthy(heartbeatTimeout time.Duration, now ti
 	return now.Sub(time.Unix(i.Timestamp, 0)) <= heartbeatTimeout
 }
 
-// IsReady returns no error if the instance is ACTIVE and healthy.
+// IsReady returns no error if the instance is InstanceState_ACTIVE and healthy.
 func (i *InstanceDesc) IsReady(now time.Time, heartbeatTimeout time.Duration) error {
 	if !i.IsHeartbeatHealthy(heartbeatTimeout, now) {
 		return fmt.Errorf("instance %s past heartbeat timeout", i.Addr)
 	}
-	if i.State != ACTIVE {
+	if i.State != InstanceState_ACTIVE {
 		return fmt.Errorf("instance %s in state %v", i.Addr, i.State)
 	}
 	return nil
@@ -201,11 +241,11 @@ func (i *InstanceDesc) IsReady(now time.Time, heartbeatTimeout time.Duration) er
 //
 // This merge function depends on the timestamp of the ingester. For each ingester,
 // it will choose more recent state from the two rings, and put that into this ring.
-// There is one exception: we accept LEFT state even if Timestamp hasn't changed.
+// There is one exception: we accept InstanceState_LEFT state even if Timestamp hasn't changed.
 //
 // localCAS flag tells the merge that it can use incoming ring as a full state, and detect
 // missing ingesters based on it. Ingesters from incoming ring will cause ingester
-// to be marked as LEFT and gossiped about.
+// to be marked as InstanceState_LEFT and gossiped about.
 //
 // If multiple ingesters end up owning the same tokens, Merge will do token conflict resolution
 // (see resolveConflicts).
@@ -247,6 +287,10 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 
 	for name, oing := range otherIngesterMap {
 		ting := thisIngesterMap[name]
+		if ting == nil {
+			ting = &InstanceDesc{}
+		}
+
 		// ting.Timestamp will be 0, if there was no such ingester in our version
 		if oing.Timestamp > ting.Timestamp {
 			if !tokensEqual(ting.Tokens, oing.Tokens) {
@@ -255,8 +299,8 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 			oing.Tokens = append([]uint32(nil), oing.Tokens...) // make a copy of tokens
 			thisIngesterMap[name] = oing
 			updated = append(updated, name)
-		} else if oing.Timestamp == ting.Timestamp && ting.State != LEFT && oing.State == LEFT {
-			// we accept LEFT even if timestamp hasn't changed
+		} else if oing.Timestamp == ting.Timestamp && ting.State != InstanceState_LEFT && oing.State == InstanceState_LEFT {
+			// we accept InstanceState_LEFT even if timestamp hasn't changed
 			thisIngesterMap[name] = oing // has no tokens already
 			updated = append(updated, name)
 		}
@@ -265,9 +309,9 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 	if localCAS {
 		// This breaks commutativity! But we only do it locally, not when gossiping with others.
 		for name, ting := range thisIngesterMap {
-			if _, ok := otherIngesterMap[name]; !ok && ting.State != LEFT {
-				// missing, let's mark our ingester as LEFT
-				ting.State = LEFT
+			if _, ok := otherIngesterMap[name]; !ok && ting.State != InstanceState_LEFT {
+				// missing, let's mark our ingester as InstanceState_LEFT
+				ting.State = InstanceState_LEFT
 				ting.Tokens = nil
 				// We are deleting entry "now", and should not keep old timestamp, because there may already be pending
 				// message in the gossip network with newer timestamp (but still older than "now").
@@ -316,9 +360,9 @@ func (d *Desc) MergeContent() []string {
 // - sorts tokens and removes duplicates (only within single ingester)
 // - modifies the input ring
 func normalizeIngestersMap(inputRing *Desc) {
-	// Make sure LEFT ingesters have no tokens
+	// Make sure InstanceState_LEFT ingesters have no tokens
 	for n, ing := range inputRing.Ingesters {
-		if ing.State == LEFT {
+		if ing.State == InstanceState_LEFT {
 			ing.Tokens = nil
 			inputRing.Ingesters[n] = ing
 		}
@@ -363,7 +407,7 @@ func tokensEqual(lhs, rhs []uint32) bool {
 
 var tokenMapPool = sync.Pool{New: func() interface{} { return make(map[uint32]struct{}) }}
 
-func conflictingTokensExist(normalizedIngesters map[string]InstanceDesc) bool {
+func conflictingTokensExist(normalizedIngesters map[string]*InstanceDesc) bool {
 	tokensMap := tokenMapPool.Get().(map[uint32]struct{})
 	defer func() {
 		for k := range tokensMap {
@@ -385,11 +429,11 @@ func conflictingTokensExist(normalizedIngesters map[string]InstanceDesc) bool {
 // This function resolves token conflicts, if there are any.
 //
 // We deal with two possibilities:
-// 1) if one node is LEAVING or LEFT and the other node is not, LEVING/LEFT one loses the token
+// 1) if one node is InstanceState_LEAVING or InstanceState_LEFT and the other node is not, LEVING/InstanceState_LEFT one loses the token
 // 2) otherwise node names are compared, and node with "lower" name wins the token
 //
 // Modifies ingesters map with updated tokens.
-func resolveConflicts(normalizedIngesters map[string]InstanceDesc) {
+func resolveConflicts(normalizedIngesters map[string]*InstanceDesc) {
 	size := 0
 	for _, ing := range normalizedIngesters {
 		size += len(ing.Tokens)
@@ -398,8 +442,8 @@ func resolveConflicts(normalizedIngesters map[string]InstanceDesc) {
 	tokenToIngester := make(map[uint32]string, size)
 
 	for ingKey, ing := range normalizedIngesters {
-		if ing.State == LEFT {
-			// LEFT ingesters don't use tokens anymore
+		if ing.State == InstanceState_LEFT {
+			// InstanceState_LEFT ingesters don't use tokens anymore
 			continue
 		}
 
@@ -414,9 +458,9 @@ func resolveConflicts(normalizedIngesters map[string]InstanceDesc) {
 
 				winnerKey := ingKey
 				switch {
-				case ing.State == LEAVING && prevIng.State != LEAVING:
+				case ing.State == InstanceState_LEAVING && prevIng.State != InstanceState_LEAVING:
 					winnerKey = prevKey
-				case prevIng.State == LEAVING && ing.State != LEAVING:
+				case prevIng.State == InstanceState_LEAVING && ing.State != InstanceState_LEAVING:
 					winnerKey = ingKey
 				case ingKey < prevKey:
 					winnerKey = ingKey
@@ -453,10 +497,10 @@ func resolveConflicts(normalizedIngesters map[string]InstanceDesc) {
 	}
 }
 
-// RemoveTombstones removes LEFT ingesters older than given time limit. If time limit is zero, remove all LEFT ingesters.
+// RemoveTombstones removes InstanceState_LEFT ingesters older than given time limit. If time limit is zero, remove all InstanceState_LEFT ingesters.
 func (d *Desc) RemoveTombstones(limit time.Time) (total, removed int) {
 	for n, ing := range d.Ingesters {
-		if ing.State == LEFT {
+		if ing.State == InstanceState_LEFT {
 			if limit.IsZero() || time.Unix(ing.Timestamp, 0).Before(limit) {
 				// remove it
 				delete(d.Ingesters, n)

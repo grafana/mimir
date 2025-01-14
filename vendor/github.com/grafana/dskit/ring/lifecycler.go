@@ -101,7 +101,7 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 	f.StringVar(&cfg.ID, prefix+"lifecycler.ID", hostname, "ID to register in the ring.")
 	f.StringVar(&cfg.Zone, prefix+"availability-zone", "", "The availability zone where this instance is running.")
 	f.BoolVar(&cfg.UnregisterOnShutdown, prefix+"unregister-on-shutdown", true, "Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming in conjunction with -distributor.extend-writes=false.")
-	f.BoolVar(&cfg.ReadinessCheckRingHealth, prefix+"readiness-check-ring-health", true, "When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.")
+	f.BoolVar(&cfg.ReadinessCheckRingHealth, prefix+"readiness-check-ring-health", true, "When enabled the readiness probe succeeds only after all instances are InstanceState_ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.")
 	f.BoolVar(&cfg.EnableInet6, prefix+"enable-inet6", false, "Enable IPv6 support. Required to make use of IP addresses from IPv6 interfaces.")
 }
 
@@ -121,9 +121,9 @@ func (cfg *LifecyclerConfig) Validate() error {
 /*
 Lifecycler is a Service that is responsible for publishing changes to a ring for a single instance.
 
-  - When a Lifecycler first starts, it will be in a [PENDING] state.
-  - After the configured [ring.LifecyclerConfig.JoinAfter] period, it selects some random tokens and enters the [JOINING] state, creating or updating the ring as needed.
-  - The lifecycler will then periodically, based on the [ring.LifecyclerConfig.ObservePeriod], attempt to verify that its tokens have been added to the ring, after which it will transition to the [ACTIVE] state.
+  - When a Lifecycler first starts, it will be in a [InstanceState_PENDING] state.
+  - After the configured [ring.LifecyclerConfig.JoinAfter] period, it selects some random tokens and enters the [InstanceState_JOINING] state, creating or updating the ring as needed.
+  - The lifecycler will then periodically, based on the [ring.LifecyclerConfig.ObservePeriod], attempt to verify that its tokens have been added to the ring, after which it will transition to the [InstanceState_ACTIVE] state.
   - The lifecycler will update the key/value store with heartbeats, state changes, and token changes, based on the [ring.LifecyclerConfig.HeartbeatPeriod].
 */
 type Lifecycler struct {
@@ -228,7 +228,7 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		clearTokensOnShutdown: atomic.NewBool(false),
 		Zone:                  cfg.Zone,
 		actorChan:             make(chan func()),
-		state:                 PENDING,
+		state:                 InstanceState_PENDING,
 		tokenGenerator:        tokenGenerator,
 		canJoinTimeout:        5 * time.Minute,
 		lifecyclerMetrics:     NewLifecyclerMetrics(ringName, reg),
@@ -279,7 +279,7 @@ func (i *Lifecycler) checkRingHealthForReadiness(ctx context.Context) error {
 		return fmt.Errorf("this instance owns no tokens")
 	}
 
-	// If ring health checking is enabled we make sure all instances in the ring are ACTIVE and healthy,
+	// If ring health checking is enabled we make sure all instances in the ring are InstanceState_ACTIVE and healthy,
 	// otherwise we just check this instance.
 	desc, err := i.KVStore.Get(ctx, i.RingKey)
 	if err != nil {
@@ -427,7 +427,7 @@ func (i *Lifecycler) setReadOnlyState(readOnly bool, readOnlyLastUpdated time.Ti
 // ClaimTokensFor takes all the tokens for the supplied ingester and assigns them to this ingester.
 //
 // For this method to work correctly (especially when using gossiping), source ingester (specified by
-// ingesterID) must be in the LEAVING state, otherwise ring's merge function may detect token conflict and
+// ingesterID) must be in the InstanceState_LEAVING state, otherwise ring's merge function may detect token conflict and
 // assign token to the wrong ingester. While we could check for that state here, when this method is called,
 // transfers have already finished -- it's better to check for this *before* transfers start.
 func (i *Lifecycler) ClaimTokensFor(ctx context.Context, ingesterID string) error {
@@ -540,22 +540,22 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 		select {
 		case <-autoJoinAfter:
 			level.Debug(i.logger).Log("msg", "JoinAfter expired", "ring", i.RingName)
-			// Will only fire once, after auto join timeout.  If we haven't entered "JOINING" state,
-			// then pick some tokens and enter ACTIVE state.
-			if i.GetState() == PENDING {
+			// Will only fire once, after auto join timeout.  If we haven't entered "InstanceState_JOINING" state,
+			// then pick some tokens and enter InstanceState_ACTIVE state.
+			if i.GetState() == InstanceState_PENDING {
 				level.Info(i.logger).Log("msg", "auto-joining cluster after timeout", "ring", i.RingName)
 
 				if i.cfg.ObservePeriod > 0 {
-					// let's observe the ring. By using JOINING state, this ingester will be ignored by LEAVING
+					// let's observe the ring. By using InstanceState_JOINING state, this ingester will be ignored by InstanceState_LEAVING
 					// ingesters, but we also signal that it is not fully functional yet.
-					if err := i.autoJoin(context.Background(), JOINING); err != nil {
+					if err := i.autoJoin(context.Background(), InstanceState_JOINING); err != nil {
 						return errors.Wrapf(err, "failed to pick tokens in the KV store, ring: %s", i.RingName)
 					}
 
-					level.Info(i.logger).Log("msg", "observing tokens before going ACTIVE", "ring", i.RingName)
+					level.Info(i.logger).Log("msg", "observing tokens before going InstanceState_ACTIVE", "ring", i.RingName)
 					observeChan = time.After(i.cfg.ObservePeriod)
 				} else {
-					if err := i.autoJoin(context.Background(), ACTIVE); err != nil {
+					if err := i.autoJoin(context.Background(), InstanceState_ACTIVE); err != nil {
 						return errors.Wrapf(err, "failed to pick tokens in the KV store, ring: %s", i.RingName)
 					}
 				}
@@ -566,16 +566,16 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 			// When observing is done, observeChan is set to nil.
 
 			observeChan = nil
-			if s := i.GetState(); s != JOINING {
+			if s := i.GetState(); s != InstanceState_JOINING {
 				level.Error(i.logger).Log("msg", "unexpected state while observing tokens", "state", s, "ring", i.RingName)
 			}
 
 			if i.verifyTokens(context.Background()) {
 				level.Info(i.logger).Log("msg", "token verification successful", "ring", i.RingName)
 
-				err := i.changeState(context.Background(), ACTIVE)
+				err := i.changeState(context.Background(), InstanceState_ACTIVE)
 				if err != nil {
-					level.Error(i.logger).Log("msg", "failed to set state to ACTIVE", "ring", i.RingName, "err", err)
+					level.Error(i.logger).Log("msg", "failed to set state to InstanceState_ACTIVE", "ring", i.RingName, "err", err)
 				}
 			} else {
 				level.Info(i.logger).Log("msg", "token verification failed, observing", "ring", i.RingName)
@@ -614,9 +614,9 @@ func (i *Lifecycler) stopping(runningError error) error {
 	defer heartbeatTickerStop()
 
 	// Mark ourselved as Leaving so no more samples are send to us.
-	err := i.changeState(context.Background(), LEAVING)
+	err := i.changeState(context.Background(), InstanceState_LEAVING)
 	if err != nil {
-		level.Error(i.logger).Log("msg", "failed to set state to LEAVING", "ring", i.RingName, "err", err)
+		level.Error(i.logger).Log("msg", "failed to set state to InstanceState_LEAVING", "ring", i.RingName, "err", err)
 	}
 
 	// Do the transferring / flushing on a background goroutine so we can continue
@@ -692,7 +692,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			if len(tokensFromFile) > 0 {
 				level.Info(i.logger).Log("msg", "adding tokens from file", "num_tokens", len(tokensFromFile))
 				if len(tokensFromFile) >= i.cfg.NumTokens {
-					i.setState(ACTIVE)
+					i.setState(InstanceState_ACTIVE)
 				}
 				ro, rots := i.GetReadOnlyState()
 				ringDesc.AddIngester(i.ID, i.Addr, i.Zone, tokensFromFile, i.GetState(), i.getRegisteredAt(), ro, rots)
@@ -707,6 +707,11 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 			return ringDesc, true, nil
 		}
 
+		// instanceDesc is a pointer to the value in the ringDesc.Ingesters map,
+		// so updates to it will be reflected in ringDesc.Ingesters[i.ID];
+		// hold a copy of the original state so we can determine if we need to update the ring's backing store
+		originalInstanceDesc := *instanceDesc
+
 		// The instance already exists in the ring, so we can't change the registered timestamp (even if it's zero)
 		// but we need to update the local state accordingly.
 		i.setRegisteredAt(instanceDesc.GetRegisteredAt())
@@ -714,14 +719,14 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 		// Set lifecycler read-only state from ring entry. We will not modify ring entry's read-only state.
 		i.setReadOnlyState(instanceDesc.GetReadOnlyState())
 
-		// If the ingester is in the JOINING state this means it crashed due to
+		// If the ingester is in the InstanceState_JOINING state this means it crashed due to
 		// a failed token transfer or some other reason during startup. We want
-		// to set it back to PENDING in order to start the lifecycle from the
+		// to set it back to InstanceState_PENDING in order to start the lifecycle from the
 		// beginning.
-		if instanceDesc.State == JOINING {
-			level.Warn(i.logger).Log("msg", "instance found in ring as JOINING, setting to PENDING",
+		if instanceDesc.State == InstanceState_JOINING {
+			level.Warn(i.logger).Log("msg", "instance found in ring as InstanceState_JOINING, setting to InstanceState_PENDING",
 				"ring", i.RingName)
-			instanceDesc.State = PENDING
+			instanceDesc.State = InstanceState_PENDING
 			return ringDesc, true, nil
 		}
 
@@ -730,8 +735,8 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 		level.Info(i.logger).Log("msg", "existing instance found in ring", "state", instanceDesc.State, "tokens", len(tokens), "ring", i.RingName, "readOnly", ro, "readOnlyStateUpdate", rots)
 
 		// If the ingester fails to clean its ring entry up or unregister_on_shutdown=false, it can leave behind its
-		// ring state as LEAVING. Make sure to switch to the ACTIVE state.
-		if instanceDesc.State == LEAVING {
+		// ring state as InstanceState_LEAVING. Make sure to switch to the InstanceState_ACTIVE state.
+		if instanceDesc.State == InstanceState_LEAVING {
 			delta := i.cfg.NumTokens - len(tokens)
 			if delta > 0 {
 				// We need more tokens
@@ -750,7 +755,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 				sort.Sort(tokens)
 			}
 
-			instanceDesc.State = ACTIVE
+			instanceDesc.State = InstanceState_ACTIVE
 			instanceDesc.Tokens = tokens
 		}
 
@@ -765,7 +770,7 @@ func (i *Lifecycler) initRing(ctx context.Context) error {
 
 		// Update the ring if the instance has been changed. We don't want to rely on heartbeat update, as heartbeat
 		// can be configured to long time, and until then lifecycler would not report this instance as ready in CheckReady.
-		if !instanceDesc.Equal(ringDesc.Ingesters[i.ID]) {
+		if !instanceDesc.Equal(originalInstanceDesc) {
 			// Update timestamp to give gossiping client a chance register ring change.
 			instanceDesc.Timestamp = time.Now().Unix()
 			ringDesc.Ingesters[i.ID] = instanceDesc
@@ -874,7 +879,7 @@ func (i *Lifecycler) waitBeforeJoining(ctx context.Context) error {
 			lastError = fmt.Errorf("no ring returned from the KV store")
 			continue
 		}
-		lastError = i.tokenGenerator.CanJoin(ringDesc.GetIngesters())
+		lastError = i.tokenGenerator.CanJoin(ringDesc.GetIngesterVals())
 		if lastError == nil {
 			level.Info(i.logger).Log("msg", "it is now possible to join the ring", "ring", i.RingName, "id", i.cfg.ID, "retries", retries.NumRetries())
 			return nil
@@ -902,7 +907,7 @@ func (i *Lifecycler) autoJoin(ctx context.Context, targetState InstanceState) er
 	err = i.KVStore.CAS(ctx, i.RingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc = GetOrCreateRingDesc(in)
 
-		// At this point, we should not have any tokens, and we should be in PENDING state.
+		// At this point, we should not have any tokens, and we should be in InstanceState_PENDING state.
 		myTokens, takenTokens := ringDesc.TokensFor(i.ID)
 		if len(myTokens) > 0 {
 			level.Error(i.logger).Log("msg", "tokens already exist for this instance - wasn't expecting any!", "num_tokens", len(myTokens), "ring", i.RingName)
@@ -968,11 +973,11 @@ func (i *Lifecycler) updateConsul(ctx context.Context) error {
 func (i *Lifecycler) changeState(ctx context.Context, state InstanceState) error {
 	currState := i.GetState()
 	// Only the following state transitions can be triggered externally
-	if !((currState == PENDING && state == JOINING) || // triggered by TransferChunks at the beginning
-		(currState == JOINING && state == PENDING) || // triggered by TransferChunks on failure
-		(currState == JOINING && state == ACTIVE) || // triggered by TransferChunks on success
-		(currState == PENDING && state == ACTIVE) || // triggered by autoJoin
-		(currState == ACTIVE && state == LEAVING)) { // triggered by shutdown
+	if !((currState == InstanceState_PENDING && state == InstanceState_JOINING) || // triggered by TransferChunks at the beginning
+		(currState == InstanceState_JOINING && state == InstanceState_PENDING) || // triggered by TransferChunks on failure
+		(currState == InstanceState_JOINING && state == InstanceState_ACTIVE) || // triggered by TransferChunks on success
+		(currState == InstanceState_PENDING && state == InstanceState_ACTIVE) || // triggered by autoJoin
+		(currState == InstanceState_ACTIVE && state == InstanceState_LEAVING)) { // triggered by shutdown
 		return fmt.Errorf("Changing instance state from %v -> %v is disallowed", currState, state)
 	}
 

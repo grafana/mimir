@@ -11,7 +11,7 @@ var ErrTransferDisabled = errors.New("transfers disabled")
 // FlushTransferer controls the shutdown of an instance in the ring.
 // Methods on this interface are called when lifecycler is stopping.
 // At that point, it no longer runs the "actor loop", but it keeps updating heartbeat in the ring.
-// Ring entry is in LEAVING state.
+// Ring entry is in InstanceState_LEAVING state.
 // After calling TransferOut and then Flush, lifecycler stops.
 type FlushTransferer interface {
 	Flush()

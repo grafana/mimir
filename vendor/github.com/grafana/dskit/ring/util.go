@@ -66,7 +66,7 @@ func WaitRingStability(ctx context.Context, r ReadRing, op Operation, minStabili
 
 // WaitRingTokensStability waits for the Ring to be unchanged at
 // least for minStability time period, excluding transitioning between
-// allowed states (e.g. JOINING->ACTIVE if allowed by op).
+// allowed states (e.g. InstanceState_JOINING->InstanceState_ACTIVE if allowed by op).
 // This can be used to avoid wasting resources on moving data around
 // due to multiple changes in the Ring.
 func WaitRingTokensStability(ctx context.Context, r ReadRing, op Operation, minStability, maxWaiting time.Duration) error {
