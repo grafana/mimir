@@ -38,17 +38,17 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	manager := newTestManager()
 
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
-		user1Tracker := manager.SampleTracker("user1")
-		assert.NotNil(t, user1Tracker)
-		assert.True(t, user1Tracker.hasSameLabels([]string{"team"}))
-		assert.Equal(t, 5, user1Tracker.maxCardinality)
+		user1SampleTracker := manager.SampleTracker("user1")
+		assert.NotNil(t, user1SampleTracker)
+		assert.True(t, user1SampleTracker.hasSameLabels([]string{"team"}))
+		assert.Equal(t, 5, user1SampleTracker.maxCardinality)
 
 		assert.Nil(t, manager.SampleTracker("user2"))
 
-		user3Tracker := manager.ActiveSeriesTracker("user3")
-		assert.NotNil(t, user3Tracker)
-		assert.True(t, user3Tracker.hasSameLabels([]string{"department", "service"}))
-		assert.Equal(t, 2, user3Tracker.maxCardinality)
+		user3ActiveTracker := manager.ActiveSeriesTracker("user3")
+		assert.NotNil(t, user3ActiveTracker)
+		assert.True(t, user3ActiveTracker.hasSameLabels([]string{"department", "service"}))
+		assert.Equal(t, 2, user3ActiveTracker.maxCardinality)
 	})
 
 	t.Run("Metrics tracking", func(t *testing.T) {

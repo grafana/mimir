@@ -186,18 +186,21 @@ func (st *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, b
 
 // updateObservations updates or creates a new observation in the 'observed' map.
 func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
-	// if overflowSince is set, we only update the overflow counter
+	// if not overflow, we need to check if the key exists in the observed map,
+	// if yes, we update the observation, otherwise we create a new observation, and set the overflowSince if the max cardinality is exceeded
+	st.observedMtx.RLock()
+
+	// if overflowSince is set, we only update the overflow counter, this is after the read lock since overflowSince can only be set when holding observedMtx write lock
+	// check it after read lock would make sure that we don't miss any updates
 	if st.overflowSince.Load() > 0 {
 		st.overflowCounter.receivedSample.Add(receivedSampleIncrement)
 		if discardedSampleIncrement > 0 && reason != nil {
 			st.overflowCounter.totalDiscarded.Add(discardedSampleIncrement)
 		}
+		st.observedMtx.RUnlock()
 		return
 	}
 
-	// if not overflow, we need to check if the key exists in the observed map,
-	// if yes, we update the observation, otherwise we create a new observation, and set the overflowSince if the max cardinality is exceeded
-	st.observedMtx.RLock()
 	o, known := st.observed[key]
 	if known && st.overflowSince.Load() == 0 {
 		o.lastUpdate.Store(ts.Unix())

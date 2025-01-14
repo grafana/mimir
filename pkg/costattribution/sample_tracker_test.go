@@ -17,14 +17,12 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-func TestTracker_hasSameLabels(t *testing.T) {
+func TestSampleTracker_hasSameLabels(t *testing.T) {
 	st := newTestManager().SampleTracker("user1")
 	assert.True(t, st.hasSameLabels([]string{"team"}), "Expected cost attribution labels mismatch")
-	ast := newTestManager().ActiveSeriesTracker("user1")
-	assert.True(t, ast.hasSameLabels([]string{"team"}), "Expected cost attribution labels mismatch")
 }
 
-func TestTracker_IncrementReceviedSamples(t *testing.T) {
+func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 	tManager := newTestManager()
 	st := tManager.SampleTracker("user4")
 	t.Run("One Single Series in Request", func(t *testing.T) {
@@ -66,6 +64,92 @@ func TestTracker_IncrementReceviedSamples(t *testing.T) {
 	`
 		assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), "cortex_received_attributed_samples_total"))
 	})
+}
+
+func TestSampleTracker_updateCounters(t *testing.T) {
+	st := newTestManager().SampleTracker("user3")
+	lbls1 := []mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "bar"}}
+	lbls2 := []mimirpb.LabelAdapter{{Name: "department", Value: "bar"}, {Name: "service", Value: "baz"}}
+	lbls3 := []mimirpb.LabelAdapter{{Name: "department", Value: "baz"}, {Name: "service", Value: "foo"}}
+
+	st.updateCountersWithLabelAdapter(lbls1, time.Unix(1, 0), 1, 0, nil)
+	assert.Equal(t, int64(0), st.overflowSince.Load(), "First observation, should not overflow")
+
+	st.updateCountersWithLabelAdapter(lbls2, time.Unix(2, 0), 1, 0, nil)
+	assert.Equal(t, int64(0), st.overflowSince.Load(), "Second observation, should not overflow")
+
+	st.updateCountersWithLabelAdapter(lbls3, time.Unix(3, 0), 1, 0, nil)
+	assert.Equal(t, int64(3), st.overflowSince.Load(), "Third observation, should overflow")
+
+	st.updateCountersWithLabelAdapter(lbls3, time.Unix(4, 0), 1, 0, nil)
+	assert.Equal(t, int64(3), st.overflowSince.Load(), "Fourth observation, should stay overflow")
+}
+
+func TestSampleTracker_inactiveObservations(t *testing.T) {
+	// Setup the test environment: create a st for user1 with a "team" label and max cardinality of 5.
+	st := newTestManager().SampleTracker("user1")
+
+	// Create two observations with different last update timestamps.
+	observations := [][]mimirpb.LabelAdapter{
+		{{Name: "team", Value: "foo"}},
+		{{Name: "team", Value: "bar"}},
+		{{Name: "team", Value: "baz"}},
+	}
+
+	// Simulate samples discarded with different timestamps.
+	st.IncrementDiscardedSamples(observations[0], 1, "invalid-metrics-name", time.Unix(1, 0))
+	st.IncrementDiscardedSamples(observations[1], 2, "out-of-window-sample", time.Unix(12, 0))
+	st.IncrementDiscardedSamples(observations[2], 3, "invalid-metrics-name", time.Unix(20, 0))
+
+	// Ensure that two observations were successfully added to the tracker.
+	require.Len(t, st.observed, 3)
+
+	// Purge observations that haven't been updated in the last 10 seconds.
+	purged := st.inactiveObservations(time.Unix(0, 0))
+	require.Len(t, purged, 0)
+
+	purged = st.inactiveObservations(time.Unix(10, 0))
+	assert.ElementsMatch(t, []string{"foo"}, purged)
+
+	purged = st.inactiveObservations(time.Unix(15, 0))
+	assert.ElementsMatch(t, []string{"foo", "bar"}, purged)
+
+	// Check that the purged observation matches the expected details.
+	purged = st.inactiveObservations(time.Unix(25, 0))
+	assert.ElementsMatch(t, []string{"foo", "bar", "baz"}, purged)
+}
+
+func TestSampleTracker_Concurrency(t *testing.T) {
+	m := newTestManager()
+	st := m.SampleTracker("user1")
+
+	var wg sync.WaitGroup
+	var i int64
+	for i = 0; i < 100; i++ {
+		wg.Add(1)
+		go func(i int64) {
+			defer wg.Done()
+			st.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", string(rune('A' + (i % 26)))}, SamplesCount: 1}}), time.Unix(i, 0))
+			st.IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: string(rune('A' + (i % 26)))}}, 1, "sample-out-of-order", time.Unix(i, 0))
+		}(i)
+	}
+	wg.Wait()
+
+	// Verify no data races or inconsistencies, since after 5 all the samples will be counted into the overflow, so the count should be 95
+	assert.True(t, len(st.observed) > 0, "Observed set should not be empty after concurrent updates")
+	assert.LessOrEqual(t, len(st.observed), st.maxCardinality, "Observed count should not exceed max cardinality")
+	assert.NotEqual(t, 0, st.overflowSince.Load(), "Expected state to be Overflow")
+
+	expectedMetrics := `
+	# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
+    # TYPE cortex_discarded_attributed_samples_total counter
+    cortex_discarded_attributed_samples_total{reason="__overflow__",team="__overflow__",tenant="user1",tracker="cost-attribution"} 95
+    # HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
+    # TYPE cortex_received_attributed_samples_total counter
+	cortex_received_attributed_samples_total{team="__overflow__",tenant="user1",tracker="cost-attribution"} 95
+
+`
+	assert.NoError(t, testutil.GatherAndCompare(m.reg, strings.NewReader(expectedMetrics), "cortex_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
 }
 
 func TestTracker_CreateDelete(t *testing.T) {
@@ -114,86 +198,4 @@ func TestTracker_CreateDelete(t *testing.T) {
 	tManager.deleteSampleTracker("user4")
 	tManager.deleteActiveTracker("user4")
 	assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(""), metricNames...))
-}
-
-func TestTracker_updateCounters(t *testing.T) {
-	st := newTestManager().SampleTracker("user3")
-	lbls1 := []mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "bar"}}
-	lbls2 := []mimirpb.LabelAdapter{{Name: "department", Value: "bar"}, {Name: "service", Value: "baz"}}
-	lbls3 := []mimirpb.LabelAdapter{{Name: "department", Value: "baz"}, {Name: "service", Value: "foo"}}
-
-	st.updateCountersWithLabelAdapter(lbls1, time.Unix(1, 0), 1, 0, nil)
-	assert.Equal(t, int64(0), st.overflowSince.Load(), "First observation, should not overflow")
-
-	st.updateCountersWithLabelAdapter(lbls2, time.Unix(2, 0), 1, 0, nil)
-	assert.Equal(t, int64(0), st.overflowSince.Load(), "Second observation, should not overflow")
-
-	st.updateCountersWithLabelAdapter(lbls3, time.Unix(3, 0), 1, 0, nil)
-	assert.Equal(t, int64(3), st.overflowSince.Load(), "Third observation, should overflow")
-
-	st.updateCountersWithLabelAdapter(lbls3, time.Unix(4, 0), 1, 0, nil)
-	assert.Equal(t, int64(3), st.overflowSince.Load(), "Fourth observation, should stay overflow")
-}
-
-func TestTracker_inactiveObservations(t *testing.T) {
-	// Setup the test environment: create a st for user1 with a "team" label and max cardinality of 5.
-	st := newTestManager().SampleTracker("user1")
-
-	// Create two observations with different last update timestamps.
-	observations := [][]mimirpb.LabelAdapter{
-		{{Name: "team", Value: "foo"}},
-		{{Name: "team", Value: "bar"}},
-		{{Name: "team", Value: "baz"}},
-	}
-
-	// Simulate samples discarded with different timestamps.
-	st.IncrementDiscardedSamples(observations[0], 1, "invalid-metrics-name", time.Unix(1, 0))
-	st.IncrementDiscardedSamples(observations[1], 2, "out-of-window-sample", time.Unix(12, 0))
-	st.IncrementDiscardedSamples(observations[2], 3, "invalid-metrics-name", time.Unix(20, 0))
-
-	// Ensure that two observations were successfully added to the tracker.
-	require.Len(t, st.observed, 3)
-
-	// Purge observations that haven't been updated in the last 10 seconds.
-	purged := st.inactiveObservations(time.Unix(0, 0))
-	require.Len(t, purged, 0)
-
-	purged = st.inactiveObservations(time.Unix(10, 0))
-	assert.ElementsMatch(t, []string{"foo"}, purged)
-
-	purged = st.inactiveObservations(time.Unix(15, 0))
-	assert.ElementsMatch(t, []string{"foo", "bar"}, purged)
-
-	// Check that the purged observation matches the expected details.
-	purged = st.inactiveObservations(time.Unix(25, 0))
-	assert.ElementsMatch(t, []string{"foo", "bar", "baz"}, purged)
-}
-
-func TestTracker_Concurrency(t *testing.T) {
-	m := newTestManager()
-	ast := m.ActiveSeriesTracker("user1")
-
-	var wg sync.WaitGroup
-	var i int64
-	for i = 0; i < 100; i++ {
-		wg.Add(1)
-		go func(i int64) {
-			defer wg.Done()
-			lbls := labels.FromStrings("team", string(rune('A'+(i%26))))
-			ast.Increment(lbls, time.Unix(i, 0))
-		}(i)
-	}
-	wg.Wait()
-
-	// Verify no data races or inconsistencies
-	assert.True(t, len(ast.observed) > 0, "Observed set should not be empty after concurrent updates")
-	assert.LessOrEqual(t, len(ast.observed), 2*ast.maxCardinality, "Observed count should not exceed 2 times of max cardinality")
-	assert.NotEqual(t, 0, ast.overflowSince.Load(), "Expected state to be Overflow")
-
-	expectedMetrics := `
-    # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
-    # TYPE cortex_ingester_attributed_active_series gauge
-	cortex_ingester_attributed_active_series{team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
-`
-	assert.NoError(t, testutil.GatherAndCompare(m.reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
 }
