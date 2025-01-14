@@ -73,19 +73,19 @@ type MultiTenantConcurrencyControllerMetrics struct {
 func newMultiTenantConcurrencyControllerMetrics(reg prometheus.Registerer) *MultiTenantConcurrencyControllerMetrics {
 	m := &MultiTenantConcurrencyControllerMetrics{
 		SlotsInUse: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ruler_independent_rule_evaluation_concurrency_slots_in_use",
+			Name: "cortex_ruler_rule_evaluation_concurrency_slots_in_use",
 			Help: "Current number of concurrency slots currently in use across all tenants",
 		}, []string{"user"}),
 		AttemptsStartedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ruler_independent_rule_evaluation_concurrency_attempts_started_total",
+			Name: "cortex_ruler_rule_evaluation_concurrency_attempts_started_total",
 			Help: "Total number of started attempts to acquire concurrency slots across all tenants",
 		}, []string{"user"}),
 		AttemptsIncompleteTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ruler_independent_rule_evaluation_concurrency_attempts_incomplete_total",
+			Name: "cortex_ruler_rule_evaluation_concurrency_attempts_incomplete_total",
 			Help: "Total number of incomplete attempts to acquire concurrency slots across all tenants",
 		}, []string{"user"}),
 		AttemptsCompletedTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ruler_independent_rule_evaluation_concurrency_attempts_completed_total",
+			Name: "cortex_ruler_rule_evaluation_concurrency_attempts_completed_total",
 			Help: "Total number of concurrency slots we're done using across all tenants",
 		}, []string{"user"}),
 	}
@@ -127,7 +127,7 @@ func (c *MultiTenantConcurrencyController) NewTenantConcurrencyControllerFor(ten
 		thresholdRuleConcurrency: c.thresholdRuleConcurrency,
 		globalConcurrency:        c.globalConcurrency,
 		tenantConcurrency: NewDynamicSemaphore(func() int64 {
-			return c.limits.RulerMaxIndependentRuleEvaluationConcurrencyPerTenant(tenantID)
+			return c.limits.RulerMaxRuleEvaluationConcurrencyPerTenant(tenantID)
 		}),
 	}
 }

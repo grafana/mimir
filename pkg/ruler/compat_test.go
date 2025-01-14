@@ -632,7 +632,7 @@ func TestDefaultManagerFactory_ShouldInjectReadConsistencyToContextBasedOnRuleDe
 		},
 		"should not inject read consistency level if the rule is independent, to let run with the per-tenant default": {
 			ruleGroup: rulespb.RuleGroupDesc{
-				Name: "independent-rules",
+				Name: "rules",
 				Rules: []*rulespb.RuleDesc{
 					createRecordingRule("sum:up:1", "sum(up_1)"),
 					createRecordingRule("sum:up:2", "sum(up_2)"),

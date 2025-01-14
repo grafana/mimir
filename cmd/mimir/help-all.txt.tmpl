@@ -2919,12 +2919,12 @@ Usage of ./cmd/mimir/mimir:
     	Max time to tolerate outage for restoring "for" state of alert. (default 1h0m0s)
   -ruler.inbound-sync-queue-poll-interval duration
     	[experimental] Interval between applying queued incoming rule sync requests. (default 10s)
-  -ruler.independent-rule-evaluation-concurrency-min-duration-percentage float
+  -ruler.rule-evaluation-concurrency-min-duration-percentage float
     	[experimental] Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval. (default 50)
-  -ruler.max-independent-rule-evaluation-concurrency int
+  -ruler.max-rule-evaluation-concurrency int
     	[experimental] Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.
-  -ruler.max-independent-rule-evaluation-concurrency-per-tenant int
-    	[experimental] Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable. (default 4)
+  -ruler.max-rule-evaluation-concurrency-per-tenant int
+    	[experimental] Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable. (default 4)
   -ruler.max-rule-groups-per-tenant int
     	Maximum number of rule groups per-tenant. 0 to disable. (default 70)
   -ruler.max-rule-groups-per-tenant-by-namespace value

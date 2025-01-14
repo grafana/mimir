@@ -140,8 +140,8 @@ type Config struct {
 	// Allow to override timers for testing purposes.
 	RingCheckPeriod time.Duration `yaml:"-"`
 
-	MaxIndependentRuleEvaluationConcurrency                   int64   `yaml:"max_independent_rule_evaluation_concurrency" category:"experimental"`
-	IndependentRuleEvaluationConcurrencyMinDurationPercentage float64 `yaml:"independent_rule_evaluation_concurrency_min_duration_percentage" category:"experimental"`
+	MaxRuleEvaluationConcurrency                   int64   `yaml:"max_rule_evaluation_concurrency" category:"experimental"`
+	RuleEvaluationConcurrencyMinDurationPercentage float64 `yaml:"rule_evaluation_concurrency_min_duration_percentage" category:"experimental"`
 
 	RuleEvaluationWriteEnabled bool `yaml:"rule_evaluation_write_enabled" category:"experimental"`
 }
@@ -160,7 +160,7 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 		return errors.Wrap(err, "invalid ruler query-frontend config")
 	}
 
-	if cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage < 0 {
+	if cfg.RuleEvaluationConcurrencyMinDurationPercentage < 0 {
 		return errInnvalidRuleEvaluationConcurrencyMinDurationPercentage
 	}
 
@@ -201,8 +201,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.BoolVar(&cfg.EnableQueryStats, "ruler.query-stats-enabled", false, "Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.")
 
-	f.Int64Var(&cfg.MaxIndependentRuleEvaluationConcurrency, "ruler.max-independent-rule-evaluation-concurrency", 0, "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.")
-	f.Float64Var(&cfg.IndependentRuleEvaluationConcurrencyMinDurationPercentage, "ruler.independent-rule-evaluation-concurrency-min-duration-percentage", 50.0, "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.")
+	f.Int64Var(&cfg.MaxRuleEvaluationConcurrency, "ruler.max-rule-evaluation-concurrency", 0, "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.")
+	f.Float64Var(&cfg.RuleEvaluationConcurrencyMinDurationPercentage, "ruler.rule-evaluation-concurrency-min-duration-percentage", 50.0, "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.")
 
 	f.BoolVar(&cfg.RuleEvaluationWriteEnabled, "ruler.rule-evaluation-write-enabled", true, "Writes the results of rule evaluation to ingesters or ingest storage when enabled. Use this option for testing purposes. To disable, set to false.")
 

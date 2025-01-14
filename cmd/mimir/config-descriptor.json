@@ -4485,12 +4485,12 @@
         },
         {
           "kind": "field",
-          "name": "ruler_max_independent_rule_evaluation_concurrency_per_tenant",
+          "name": "ruler_max_rule_evaluation_concurrency_per_tenant",
           "required": false,
-          "desc": "Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable.",
+          "desc": "Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 4,
-          "fieldFlag": "ruler.max-independent-rule-evaluation-concurrency-per-tenant",
+          "fieldFlag": "ruler.max-rule-evaluation-concurrency-per-tenant",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },
@@ -13297,23 +13297,23 @@
         },
         {
           "kind": "field",
-          "name": "max_independent_rule_evaluation_concurrency",
+          "name": "max_rule_evaluation_concurrency",
           "required": false,
           "desc": "Number of rules rules that don't have dependencies that we allow to be evaluated concurrently across all tenants. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
-          "fieldFlag": "ruler.max-independent-rule-evaluation-concurrency",
+          "fieldFlag": "ruler.max-rule-evaluation-concurrency",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },
         {
           "kind": "field",
-          "name": "independent_rule_evaluation_concurrency_min_duration_percentage",
+          "name": "rule_evaluation_concurrency_min_duration_percentage",
           "required": false,
           "desc": "Minimum threshold of the interval to last rule group runtime duration to allow a rule to be evaluated concurrency. By default, the rule group runtime duration must exceed 50.0% of the evaluation interval.",
           "fieldValue": null,
           "fieldDefaultValue": 50,
-          "fieldFlag": "ruler.independent-rule-evaluation-concurrency-min-duration-percentage",
+          "fieldFlag": "ruler.rule-evaluation-concurrency-min-duration-percentage",
           "fieldType": "float",
           "fieldCategory": "experimental"
         },
