@@ -75,9 +75,8 @@ func NewMaxTimeExpandedReplication(maxTime time.Duration, gracePeriod time.Durat
 
 // MaxTimeExpandedReplication is an ExpandedReplication implementation that determines
 // if a block is eligible for expanded replication based on how recent its MaxTime (most
-// recent sample) is. An upload grace period can optionally be used during queries to ensure
-// that blocks are not expected to be replicated to store-gateways that may not have yet had
-// a chance to sync them.
+// recent sample) is. An upload grace period can optionally be used to ensure that blocks
+// are synced to store-gateways before they are expected to be available by queriers.
 type MaxTimeExpandedReplication struct {
 	maxTime     time.Duration
 	gracePeriod time.Duration
@@ -87,14 +86,13 @@ type MaxTimeExpandedReplication struct {
 func (e *MaxTimeExpandedReplication) EligibleForSync(b ReplicatedBlock) bool {
 	now := e.now()
 	maxTimeDelta := now.Sub(b.GetMaxTime())
-	return maxTimeDelta <= e.maxTime
+	// We start syncing blocks `gracePeriod` before they become eligible for querying to
+	// ensure that they've been loaded before queriers expect them to be available.
+	return maxTimeDelta <= (e.maxTime + e.gracePeriod)
 }
 
 func (e *MaxTimeExpandedReplication) EligibleForQuerying(b ReplicatedBlock) bool {
 	now := e.now()
 	maxTimeDelta := now.Sub(b.GetMaxTime())
-	// To be eligible for querying a block must have a max time within `maxTime-gracePeriod` since
-	// we need to allow store-gateways to sync blocks that have recently become eligible for expanded
-	// replication.
-	return maxTimeDelta <= (e.maxTime - e.gracePeriod)
+	return maxTimeDelta <= e.maxTime
 }
