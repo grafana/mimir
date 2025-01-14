@@ -33,7 +33,7 @@
     }) +
     statefulSet.mixin.metadata.withAnnotationsMixin({
       'grafana.com/prepare-downscale-http-path': 'ingester/prepare-shutdown',
-      'grafana.com/prepare-downscale-http-port': '80',
+      'grafana.com/prepare-downscale-http-port': '%(server_http_port)s' % $._config,
     }),
 
   // Ingester prepare-downscale configuration

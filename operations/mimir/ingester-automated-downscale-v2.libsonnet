@@ -57,7 +57,7 @@
         // Endpoint for telling ingester that it's going to be scaled down. Ingester will flush the
         // data and unregister from the ring on shutdown.
         'grafana.com/prepare-downscale-http-path': 'ingester/prepare-shutdown',
-        'grafana.com/prepare-downscale-http-port': '80',
+        'grafana.com/prepare-downscale-http-port': '%(server_http_port)s' % $._config,
         // Ingester statefulset will follow number of replicas from ReplicaTemplate/ingester-zone-a.
         'grafana.com/rollout-mirror-replicas-from-resource-api-version': 'rollout-operator.grafana.com/v1',
         'grafana.com/rollout-mirror-replicas-from-resource-kind': 'ReplicaTemplate',
