@@ -36,7 +36,6 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/rules"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
@@ -136,7 +135,7 @@ type prepareOptions struct {
 	rulerAddrMap     map[string]*Ruler
 	rulerAddrAutoMap bool
 	start            bool
-	managerQueryFunc rules.QueryFunc
+	managerQueryFunc promRules.QueryFunc
 }
 
 func applyPrepareOptions(t *testing.T, instanceID string, opts ...prepareOption) prepareOptions {
@@ -199,7 +198,7 @@ func withPrometheusRegisterer(reg prometheus.Registerer) prepareOption {
 }
 
 // withManagerQueryFunc is a prepareOption that configures the query function to pass to the ruler manager.
-func withManagerQueryFunc(queryFunc rules.QueryFunc) prepareOption {
+func withManagerQueryFunc(queryFunc promRules.QueryFunc) prepareOption {
 	return func(opts *prepareOptions) {
 		opts.managerQueryFunc = queryFunc
 	}
@@ -236,7 +235,7 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 		return storage.NoopQuerier(), nil
 	})
 
-	var queryFunc rules.QueryFunc
+	var queryFunc promRules.QueryFunc
 	if options.managerQueryFunc != nil {
 		queryFunc = options.managerQueryFunc
 	} else {

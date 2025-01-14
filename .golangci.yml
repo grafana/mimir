@@ -4,14 +4,15 @@ output:
 
 linters:
   enable:
-    - gci
-    - revive
-    - gofmt
-    - misspell
     - errorlint
     - forbidigo
-    - loggercheck
+    - gci
+    - gocritic
+    - gofmt
     - gosec
+    - loggercheck
+    - misspell
+    - revive
 
 linters-settings:
   errcheck:
@@ -70,6 +71,12 @@ linters-settings:
       - G112
       - G114
       - G302
+  
+  gocritic:
+    disable-all: true
+    enabled-checks:
+      # See https://golangci-lint.run/usage/linters/#gocritic for possible checks.
+      - dupImport
 
 run:
   timeout: 10m
