@@ -63,6 +63,9 @@ type PreallocWriteRequest struct {
 
 	// SkipUnmarshalingExemplars is an optimization to not unmarshal exemplars when they are disabled by the config anyway.
 	SkipUnmarshalingExemplars bool
+
+	// UnmarshalRW2 is set to true if the Unmarshal method should unmarshal the data as a remote write 2.0 message.
+	UnmarshalFromRW2 bool
 }
 
 // Unmarshal implements proto.Message.
@@ -71,7 +74,193 @@ type PreallocWriteRequest struct {
 func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.Timeseries = PreallocTimeseriesSliceFromPool()
 	p.WriteRequest.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
+
+	if p.UnmarshalFromRW2 {
+		return p.unmarshalRW2(dAtA)
+	}
+
 	return p.WriteRequest.Unmarshal(dAtA)
+}
+
+// UnmarshalRW2 unmarshals the given remote write 2.0 data and converts it to a WriteRequest.
+func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
+	// p.Timeseries = PreallocTimeseriesSliceFromPool()
+	rw2req := &WriteRequestRW2{}
+	if err := rw2req.Unmarshal(data); err != nil {
+		return err
+	}
+
+	metricFamilies := map[string]*MetricMetadata{}
+
+	// Debugging.
+	metadataReceived := 0
+	metadataBytes := 0
+
+	for _, ts := range rw2req.Timeseries {
+		p.Timeseries = append(p.Timeseries, PreallocTimeseries{})
+		p.Timeseries[len(p.Timeseries)-1].TimeSeries = TimeseriesFromPool()
+		p.Timeseries[len(p.Timeseries)-1].TimeSeries.CreatedTimestamp = ts.CreatedTimestamp
+		var err error
+		p.Timeseries[len(p.Timeseries)-1].TimeSeries.Labels, err = labelRefsToLabelAdapter(ts.LabelsRefs, rw2req.Symbols)
+		if err != nil {
+			return err
+		}
+		p.Timeseries[len(p.Timeseries)-1].TimeSeries.Samples = ts.Samples
+		p.Timeseries[len(p.Timeseries)-1].TimeSeries.Histograms = ts.Histograms
+		if !p.SkipUnmarshalingExemplars {
+			p.Timeseries[len(p.Timeseries)-1].TimeSeries.Exemplars = make([]Exemplar, 0, len(ts.Exemplars))
+			for i := range ts.Exemplars {
+				lbls, err := labelRefsToLabelAdapter(ts.Exemplars[i].LabelsRefs, rw2req.Symbols)
+				if err != nil {
+					return err
+				}
+				p.Timeseries[len(p.Timeseries)-1].TimeSeries.Exemplars = append(p.Timeseries[len(p.Timeseries)-1].TimeSeries.Exemplars, Exemplar{
+					Labels:      lbls,
+					Value:       ts.Exemplars[i].Value,
+					TimestampMs: ts.Exemplars[i].Timestamp,
+				})
+			}
+		}
+
+		// Metadata is per timeseries in RW2, but in RW1 is per request.
+		// p.Timeseries[len(p.Timeseries)-1].TimeSeries.Metadata = ts.Metadata
+
+		// Debugging
+		if ts.Metadata.Type != METRIC_TYPE_UNSPECIFIED {
+			metadataReceived++
+			metadataBytes += 4 // type
+			unit, err := getSymbol(ts.Metadata.UnitRef, rw2req.Symbols)
+			if err == nil {
+				metadataBytes += len(unit)
+			}
+			help, err := getSymbol(ts.Metadata.HelpRef, rw2req.Symbols)
+			if err == nil {
+				metadataBytes += len(help)
+			}
+		}
+
+		// Convert RW2 metadata to RW1 metadata.
+		seriesName := getSeriesName(p.Timeseries[len(p.Timeseries)-1].TimeSeries.Labels)
+		if seriesName == "" {
+			continue
+		}
+		metricFamily, _ := getMetricName(seriesName, ts.Metadata.Type)
+		if metricFamily == "" {
+			continue
+		}
+		help, _ := getSymbol(ts.Metadata.HelpRef, rw2req.Symbols)
+		unit, _ := getSymbol(ts.Metadata.UnitRef, rw2req.Symbols)
+		if ts.Metadata.Type == METRIC_TYPE_UNSPECIFIED && help == "" && unit == "" {
+			// Nothing to do here.
+			continue
+		}
+		metricFamilies[metricFamily] = &MetricMetadata{
+			Type:             MetricMetadata_MetricType(ts.Metadata.Type),
+			MetricFamilyName: metricFamily,
+			Help:             help,
+			Unit:             unit,
+		}
+	}
+
+	// Fill the metadata
+	p.Metadata = make([]*MetricMetadata, 0, len(metricFamilies))
+	for _, metadata := range metricFamilies {
+		// fmt.Printf("KRAJO: adding metadata %v\n", metadata)
+		p.Metadata = append(p.Metadata, metadata)
+	}
+
+	// Debugging
+	familyBytes := 0
+	for metricFamily, metadata := range metricFamilies {
+		familyBytes += len(metricFamily)
+		familyBytes += 4 // type
+		familyBytes += len(metadata.Help)
+		familyBytes += len(metadata.Unit)
+	}
+	fmt.Printf("KRAJO: RW2 timeseries=%v, metadata=%v, series meta=%v bytes, family meta=%v bytes\n", len(p.Timeseries), metadataReceived, metadataBytes, familyBytes)
+
+	return nil
+}
+
+// getSymbol resolves the symbol reference to a string.
+func getSymbol(ref uint32, symbols []string) (string, error) {
+	if ref < uint32(len(symbols)) {
+		return symbols[ref], nil
+	}
+	return "", fmt.Errorf("symbol reference %d is out of bounds", ref)
+}
+
+// labelRefsToLabelAdapter converts a slice of label references to a slice
+// of LabelAdapter.
+func labelRefsToLabelAdapter(refs []uint32, symbols []string) ([]LabelAdapter, error) {
+	if len(refs)%2 != 0 {
+		return nil, fmt.Errorf("invalid number of label references: %d", len(refs))
+	}
+	labels := make([]LabelAdapter, 0, len(refs)/2)
+	for i := 0; i < len(refs); i += 2 {
+		name, err := getSymbol(refs[i], symbols)
+		if err != nil {
+			return nil, err
+		}
+		value, err := getSymbol(refs[i+1], symbols)
+		if err != nil {
+			return nil, err
+		}
+		labels = append(labels, LabelAdapter{Name: name, Value: value})
+	}
+	return labels, nil
+}
+
+// getMetricName cuts the mandatory OpenMetrics suffix from the
+// seriesName and returns the metric name and whether it cut the suffix.
+// Based on https://github.com/prometheus/OpenMetrics/blob/main/specification/OpenMetrics.md#suffixes
+func getMetricName(seriesName string, metricType MetadataRW2_MetricType) (string, bool) {
+	switch metricType {
+	case METRIC_TYPE_COUNTER:
+		return strings.CutSuffix(seriesName, "_total")
+	case METRIC_TYPE_SUMMARY:
+		retval, ok := strings.CutSuffix(seriesName, "_count")
+		if ok {
+			return retval, true
+		}
+		return strings.CutSuffix(seriesName, "_sum")
+	case METRIC_TYPE_HISTOGRAM:
+		retval, ok := strings.CutSuffix(seriesName, "_bucket")
+		if ok {
+			return retval, true
+		}
+		retval, ok = strings.CutSuffix(seriesName, "_count")
+		if ok {
+			return retval, true
+		}
+		return strings.CutSuffix(seriesName, "_sum")
+	case METRIC_TYPE_GAUGEHISTOGRAM:
+		retval, ok := strings.CutSuffix(seriesName, "_bucket")
+		if ok {
+			return retval, true
+		}
+		retval, ok = strings.CutSuffix(seriesName, "_gcount")
+		if ok {
+			return retval, true
+		}
+		return strings.CutSuffix(seriesName, "_gsum")
+	case METRIC_TYPE_INFO:
+		return strings.CutSuffix(seriesName, "_info")
+	default:
+		return seriesName, false
+
+	}
+}
+
+// getSeriesName finds and returns the __name__ label value from the given
+// labels.
+func getSeriesName(lbls []LabelAdapter) string {
+	for i := 0; i < len(lbls); i += 2 {
+		if lbls[i].Name == labels.MetricName {
+			return lbls[i].Value
+		}
+	}
+	return ""
 }
 
 func (p *WriteRequest) ClearTimeseriesUnmarshalData() {

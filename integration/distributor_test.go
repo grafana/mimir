@@ -376,6 +376,7 @@ overrides:
 func TestDistributorRemoteWrite2(t *testing.T) {
 	queryEnd := time.Now().Round(time.Second)
 	queryStart := queryEnd.Add(-1 * time.Hour)
+	queryStep := 10 * time.Minute
 
 	testCases := map[string]struct {
 		inRemoteWrite   []*promRW2.Request
@@ -489,11 +490,23 @@ func TestDistributorRemoteWrite2(t *testing.T) {
 				}
 
 				res, err := client.PushRW2(ser)
-				require.NoError(t, err)
-				require.Equal(t, http.StatusUnsupportedMediaType, res.StatusCode)
+				require.Error(t, err)
+				require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
 			}
 
-			// Placeholder for actual query tests.
+			for q, res := range tc.queries {
+				result, err := client.QueryRange(q, queryStart, queryEnd, queryStep)
+				require.NoError(t, err)
+
+				require.Equal(t, res.String(), result.String())
+			}
+
+			for q, expResult := range tc.exemplarQueries {
+				result, err := client.QueryExemplars(q, queryStart, queryEnd)
+				require.NoError(t, err)
+
+				require.Equal(t, expResult, result)
+			}
 		})
 	}
 }
