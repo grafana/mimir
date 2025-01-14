@@ -104,10 +104,14 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 			continue
 		}
 
-		name := replaceInvalidChars(pt.Name())
+		// Make a copy of pt.Name() otherwise the replaceInvalidChars() modifies the data
+		// by possibly prepending to the slice which upsets subsequent calls to pt.Name()
+		name := append([]byte{}, pt.Name()...)
+		name = replaceInvalidChars(name)
 		if field != "value" {
 			// If the field name is not "value" then we append it to the name, fixing chars as we go
-			name = append([]byte{'_'}, name...)
+			name = append(name, byte('_'))
+			name = append(name, replaceInvalidChars([]byte(field))...)
 		}
 
 		tags := pt.Tags()
