@@ -187,7 +187,7 @@ func (a *app) createTempDir() error {
 	slog.Info("created temporary directory", "dir", a.tempDir)
 
 	a.dataDir = filepath.Join(a.tempDir, "data")
-	if err := os.Mkdir(a.dataDir, 0777); err != nil {
+	if err := os.Mkdir(a.dataDir, 0700); err != nil {
 		return fmt.Errorf("could not create data directory '%v': %w", a.dataDir, err)
 	}
 

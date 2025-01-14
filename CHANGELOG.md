@@ -5,6 +5,10 @@
 ### Grafana Mimir
 
 * [CHANGE] Distributor: OTLP and push handler replace all non-UTF8 characters with the unicode replacement character `\uFFFD` in error messages before propagating them. #10236
+* [CHANGE] Make default directory file permissions more restrictive: #10379
+  * Directories are only read-write-executable by the Mimir user and readable by users in the same group.
+  * Files are read-writable only by the Mimir user.
+  * The following files and directories are affected: Alertmanager data directory, blocks exported by `mimirtool remote-read export`, locally cached meta files in the compactor, and index headers in the store-gateway.
 * [CHANGE] Querier: pass query matchers to queryable `IsApplicable` hook. #10256
 * [CHANGE] Query-frontend: Add `topic` label to `cortex_ingest_storage_strong_consistency_requests_total`, `cortex_ingest_storage_strong_consistency_failures_total`, and `cortex_ingest_storage_strong_consistency_wait_duration_seconds` metrics. #10220
 * [CHANGE] Ruler: cap the rate of retries for remote query evaluation to 170/sec. This is configurable via `-ruler.query-frontend.max-retries-rate`. #10375 #10403
@@ -44,6 +48,7 @@
 
 ### Mimirtool
 
+* [CHANGE] Blocks exported by `mimirtool remote-read export` are now only read-writable by the Mimir user. #10379
 * [BUGFIX] Fix issue where `MIMIR_HTTP_PREFIX` environment variable was ignored and the value from `MIMIR_MIMIR_HTTP_PREFIX` was used instead. #10207
 * [ENHANCEMENT] Unify mimirtool authentication options and add extra-headers support for commands that depend on MimirClient. #10178
 

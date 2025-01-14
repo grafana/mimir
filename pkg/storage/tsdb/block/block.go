@@ -63,7 +63,7 @@ func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id
 	_, err := os.Stat(chunksDir)
 	if os.IsNotExist(err) {
 		// This can happen if block is empty. We cannot easily upload empty directory, so create one here.
-		return os.Mkdir(chunksDir, os.ModePerm)
+		return os.Mkdir(chunksDir, 0750)
 	}
 	if err != nil {
 		return errors.Wrapf(err, "stat %s", chunksDir)
