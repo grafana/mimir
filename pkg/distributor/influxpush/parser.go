@@ -125,7 +125,7 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 				continue
 			}
 			lbls = append(lbls, mimirpb.LabelAdapter{
-				Name:  string(replaceInvalidChars(tag.Key)),
+				Name:  yoloString(replaceInvalidChars(tag.Key)),
 				Value: yoloString(tag.Value),
 			})
 		}
