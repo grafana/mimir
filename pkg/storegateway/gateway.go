@@ -181,7 +181,12 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 
 	var expandedReplication ExpandedReplication = NewNopExpandedReplication()
 	if gatewayCfg.ExpandedReplication.Enabled {
-		expandedReplication = NewMaxTimeExpandedReplication(gatewayCfg.ExpandedReplication.MaxTimeThreshold, 0)
+		expandedReplication = NewMaxTimeExpandedReplication(
+			gatewayCfg.ExpandedReplication.MaxTimeThreshold,
+			// Exclude blocks which have recently become eligible for expanded replication, in order to give
+			// enough time to store-gateways to discover and load them (3 times the sync interval)
+			mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
+		)
 	}
 
 	shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, expandedReplication, limits, logger)

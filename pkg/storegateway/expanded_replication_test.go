@@ -39,15 +39,23 @@ func TestMaxTimeExpandedReplication(t *testing.T) {
 				MaxTime: now.Add(-25 * time.Hour).UnixMilli(),
 			},
 			expectedSync:  true,
-			expectedQuery: false,
+			expectedQuery: true,
 		},
 		"max time on boundary including grace period": {
 			block: bucketindex.Block{
 				MinTime: now.Add(-49 * time.Hour).UnixMilli(),
-				MaxTime: now.Add(-(24*time.Hour + 15*time.Minute)).UnixMilli(),
+				MaxTime: now.Add(-(25*time.Hour + 45*time.Minute)).UnixMilli(),
 			},
 			expectedSync:  true,
-			expectedQuery: true,
+			expectedQuery: false,
+		},
+		"max time inside grace period": {
+			block: bucketindex.Block{
+				MinTime: now.Add(-49 * time.Hour).UnixMilli(),
+				MaxTime: now.Add(-(25*time.Hour + 15*time.Minute)).UnixMilli(),
+			},
+			expectedSync:  true,
+			expectedQuery: false,
 		},
 		"max time too old": {
 			block: bucketindex.Block{
