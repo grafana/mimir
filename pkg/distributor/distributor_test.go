@@ -1472,7 +1472,6 @@ func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
 	testCases := map[string]struct {
 		req             *mimirpb.WriteRequest
 		expectedSamples []mimirpb.PreallocTimeseries
-		expectedErrors  []error
 		expectedMetrics string
 	}{
 		"do not deduplicate if there are no duplicated timestamps": {
@@ -1494,10 +1493,6 @@ func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
 				makeTimeseries(labels, append(makeSamples(10, 1), makeSamples(20, 2)...), nil, nil),
 				makeTimeseries(labels, nil, append(makeHistograms(30, generateTestHistogram(0)), makeHistograms(40, generateTestHistogram(1))...), nil),
 			},
-			expectedErrors: []error{
-				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 2, "series"),
-				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 2, "series"),
-			},
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
@@ -1514,11 +1509,6 @@ func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
 				makeTimeseries(labels, makeSamples(10, 1), makeHistograms(30, generateTestHistogram(0)), nil),
 				makeTimeseries(labels, makeSamples(10, 3), makeHistograms(20, generateTestHistogram(1)), nil),
 				makeTimeseries(labels, makeSamples(10, 4), append(makeHistograms(20, generateTestHistogram(3)), makeHistograms(30, generateTestHistogram(4))...), nil),
-			},
-			expectedErrors: []error{
-				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 1, "series"),
-				fmt.Errorf("samples with duplicated timestamps have been discarded, discarded samples: %d series: '%.200s' (err-mimir-sample-duplicate-timestamp)", 1, "series"),
-				nil,
 			},
 			expectedMetrics: `
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
@@ -1541,19 +1531,10 @@ func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
 			require.Len(t, regs, 1)
 
 			now := mtime.Now()
-			for i, ts := range tc.req.Timeseries {
+			for _, ts := range tc.req.Timeseries {
 				shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
 				require.False(t, shouldRemove)
-				if len(tc.expectedErrors) == 0 {
-					require.NoError(t, err)
-				} else {
-					if tc.expectedErrors[i] == nil {
-						require.NoError(t, err)
-					} else {
-						require.Error(t, err)
-						require.Equal(t, tc.expectedErrors[i], err)
-					}
-				}
+				require.NoError(t, err)
 			}
 
 			assert.Equal(t, tc.expectedSamples, tc.req.Timeseries)
@@ -1574,8 +1555,7 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 	timestamp := now.UnixMilli()
 
 	testCases := map[string]struct {
-		setup          func(int) [][]mimirpb.PreallocTimeseries
-		expectedErrors bool
+		setup func(int) [][]mimirpb.PreallocTimeseries
 	}{
 		"one timeseries with one sample": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
@@ -1588,7 +1568,6 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				}
 				return timeseries
 			},
-			expectedErrors: false,
 		},
 		"one timeseries with one histogram": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
@@ -1601,7 +1580,6 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				}
 				return timeseries
 			},
-			expectedErrors: false,
 		},
 		"one timeseries with one sample and one histogram": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
@@ -1614,7 +1592,6 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				}
 				return timeseries
 			},
-			expectedErrors: false,
 		},
 		"one timeseries with two samples": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
@@ -1627,7 +1604,6 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				}
 				return timeseries
 			},
-			expectedErrors: false,
 		},
 		"one timeseries with two histograms": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
@@ -1640,7 +1616,6 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				}
 				return timeseries
 			},
-			expectedErrors: false,
 		},
 		"one timeseries with two samples and two histograms": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
@@ -1653,7 +1628,6 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				}
 				return timeseries
 			},
-			expectedErrors: false,
 		},
 		"one timeseries with 80_000 samples with duplicated timestamps": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
@@ -1674,7 +1648,6 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				}
 				return timeseries
 			},
-			expectedErrors: true,
 		},
 		"one timeseries with 80_000 histograms with duplicated timestamps": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
@@ -1694,7 +1667,6 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				}
 				return timeseries
 			},
-			expectedErrors: true,
 		},
 		"one timeseries with 80_000 samples and 80_000 histograms with duplicated timestamps": {
 			setup: func(n int) [][]mimirpb.PreallocTimeseries {
@@ -1717,7 +1689,6 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 				}
 				return timeseries
 			},
-			expectedErrors: true,
 		},
 	}
 
@@ -1739,10 +1710,8 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 			for n := 0; n < b.N; n++ {
 				for _, ts := range timeseries[n] {
 					_, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
-					if !tc.expectedErrors && err != nil {
+					if err != nil {
 						b.Fatal(err)
-					} else if tc.expectedErrors && err == nil {
-						b.Fatal("an error was expected")
 					}
 				}
 			}
