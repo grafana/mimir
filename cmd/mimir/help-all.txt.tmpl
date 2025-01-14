@@ -3328,7 +3328,7 @@ Usage of ./cmd/mimir/mimir:
   -validation.cost-attribution-cooldown duration
     	[experimental] Cooldown period for cost attribution labels. Specifies the duration the cost attribution remains in overflow before attempting a reset. If the cardinality remains above the limit after this period, the system stays in overflow mode and extends the cooldown. Setting this value to 0 disables the cooldown, causing the system to continuously check whether the cardinality has dropped below the limit. A reset occurs when the cardinality falls below the limit.
   -validation.cost-attribution-labels comma-separated-list-of-strings
-    	[experimental] Defines labels for cost attribution. Applies to metrics like cortex_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_received_attributed_samples_total{team='frontend', service='api'}.
+    	[experimental] Defines labels for cost attribution. Applies to metrics like cortex_distributor_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_distributor_received_attributed_samples_total{team='frontend', service='api'}.
   -validation.create-grace-period duration
     	Controls how far into the future incoming samples and exemplars are accepted compared to the wall clock. Any sample or exemplar will be rejected if its timestamp is greater than '(now + creation_grace_period)'. This configuration is enforced in the distributor and ingester. (default 10m)
   -validation.enforce-metadata-metric-name

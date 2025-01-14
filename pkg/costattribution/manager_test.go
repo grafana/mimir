@@ -61,11 +61,11 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		# TYPE cortex_discarded_attributed_samples_total counter
 		cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="bar",tenant="user1",tracker="cost-attribution"} 1
 		cortex_discarded_attributed_samples_total{reason="invalid-metrics-name",team="foo",tenant="user1",tracker="cost-attribution"} 1
-		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
-		# TYPE cortex_received_attributed_samples_total counter
-		cortex_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
+		# TYPE cortex_distributor_received_attributed_samples_total counter
+		cortex_distributor_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="cost-attribution"} 1
 		`
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total", "cortex_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total", "cortex_distributor_received_attributed_samples_total"))
 	})
 
 	t.Run("Purge inactive attributions", func(t *testing.T) {
@@ -87,11 +87,11 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		assert.Equal(t, 1, len(manager.sampleTrackersByUserID))
 
 		expectedMetrics := `
-		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
-		# TYPE cortex_received_attributed_samples_total counter
-		cortex_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="cost-attribution"} 1
+		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
+		# TYPE cortex_distributor_received_attributed_samples_total counter
+		cortex_distributor_received_attributed_samples_total{department="foo",service="dodo",tenant="user3",tracker="cost-attribution"} 1
 		`
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total", "cortex_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_discarded_attributed_samples_total", "cortex_distributor_received_attributed_samples_total"))
 	})
 
 	t.Run("Updating user cardinality and labels", func(t *testing.T) {
@@ -116,11 +116,11 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "baz", "feature", "baz"}, SamplesCount: 1}}), time.Unix(16, 0))
 		manager.SampleTracker("user3").IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"team", "foo", "feature", "foo"}, SamplesCount: 1}}), time.Unix(17, 0))
 		expectedMetrics := `
-		# HELP cortex_received_attributed_samples_total The total number of samples that were received per attribution.
-		# TYPE cortex_received_attributed_samples_total counter
-		cortex_received_attributed_samples_total{feature="__overflow__",team="__overflow__",tenant="user3",tracker="cost-attribution"} 2
+		# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
+		# TYPE cortex_distributor_received_attributed_samples_total counter
+		cortex_distributor_received_attributed_samples_total{feature="__overflow__",team="__overflow__",tenant="user3",tracker="cost-attribution"} 2
 		`
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
 }
 
@@ -170,6 +170,6 @@ func TestManager_PurgeInactiveAttributionsUntil(t *testing.T) {
 		assert.Equal(t, 1, len(manager.sampleTrackersByUserID), "Expected one active tracker after full purge")
 
 		// No metrics should remain after all purged
-		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(""), "cortex_discarded_attributed_samples_total", "cortex_received_attributed_samples_total"))
+		assert.NoError(t, testutil.GatherAndCompare(manager.reg, strings.NewReader(""), "cortex_discarded_attributed_samples_total", "cortex_distributor_received_attributed_samples_total"))
 	})
 }

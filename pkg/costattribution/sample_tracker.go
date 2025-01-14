@@ -72,7 +72,7 @@ func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown
 		variableLabels,
 		prometheus.Labels{trackerLabel: defaultTrackerName})
 
-	tracker.receivedSamplesAttribution = prometheus.NewDesc("cortex_received_attributed_samples_total",
+	tracker.receivedSamplesAttribution = prometheus.NewDesc("cortex_distributor_received_attributed_samples_total",
 		"The total number of samples that were received per attribution.",
 		variableLabels[:len(variableLabels)-1],
 		prometheus.Labels{trackerLabel: defaultTrackerName})
