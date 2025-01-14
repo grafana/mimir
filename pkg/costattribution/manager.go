@@ -25,25 +25,25 @@ const (
 
 type Manager struct {
 	services.Service
-	logger log.Logger
-	limits *validation.Overrides
-	reg    *prometheus.Registry
+	logger          log.Logger
+	limits          *validation.Overrides
+	reg             *prometheus.Registry
+	inactiveTimeout time.Duration
+	cleanupInterval time.Duration
 
-	mstx                   sync.RWMutex
+	stmtx                  sync.RWMutex
 	sampleTrackersByUserID map[string]*SampleTracker
-	inactiveTimeout        time.Duration
-	cleanupInterval        time.Duration
 
-	matx                   sync.RWMutex
+	atmtx                  sync.RWMutex
 	activeTrackersByUserID map[string]*ActiveSeriesTracker
 }
 
 func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logger, limits *validation.Overrides, reg *prometheus.Registry) (*Manager, error) {
 	m := &Manager{
-		mstx:                   sync.RWMutex{},
+		stmtx:                  sync.RWMutex{},
 		sampleTrackersByUserID: make(map[string]*SampleTracker),
 
-		matx:                   sync.RWMutex{},
+		atmtx:                  sync.RWMutex{},
 		activeTrackersByUserID: make(map[string]*ActiveSeriesTracker),
 
 		limits:          limits,
@@ -77,9 +77,9 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 	}
 
 	// Check if the tracker already exists, if exists return it. Otherwise lock and create a new tracker.
-	m.mstx.RLock()
+	m.stmtx.RLock()
 	tracker, exists := m.sampleTrackersByUserID[userID]
-	m.mstx.RUnlock()
+	m.stmtx.RUnlock()
 	if exists {
 		return tracker
 	}
@@ -89,8 +89,8 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
-	m.mstx.Lock()
-	defer m.mstx.Unlock()
+	m.stmtx.Lock()
+	defer m.stmtx.Unlock()
 	if tracker, exists = m.sampleTrackersByUserID[userID]; exists {
 		return tracker
 	}
@@ -105,9 +105,9 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	}
 
 	// Check if the tracker already exists, if exists return it. Otherwise lock and create a new tracker.
-	m.matx.RLock()
+	m.atmtx.RLock()
 	tracker, exists := m.activeTrackersByUserID[userID]
-	m.matx.RUnlock()
+	m.atmtx.RUnlock()
 	if exists {
 		return tracker
 	}
@@ -117,8 +117,8 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	maxCardinality := m.limits.MaxCostAttributionCardinalityPerUser(userID)
 	cooldownDuration := m.limits.CostAttributionCooldown(userID)
 
-	m.matx.Lock()
-	defer m.matx.Unlock()
+	m.atmtx.Lock()
+	defer m.atmtx.Unlock()
 	if tracker, exists = m.activeTrackersByUserID[userID]; exists {
 		return tracker
 	}
@@ -129,17 +129,17 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 }
 
 func (m *Manager) Collect(out chan<- prometheus.Metric) {
-	m.mstx.RLock()
+	m.stmtx.RLock()
 	for _, tracker := range m.sampleTrackersByUserID {
 		tracker.Collect(out)
 	}
-	m.mstx.RUnlock()
+	m.stmtx.RUnlock()
 
-	m.matx.RLock()
+	m.atmtx.RLock()
 	for _, tracker := range m.activeTrackersByUserID {
 		tracker.Collect(out)
 	}
-	m.matx.RUnlock()
+	m.atmtx.RUnlock()
 }
 
 func (m *Manager) Describe(chan<- *prometheus.Desc) {
@@ -148,15 +148,15 @@ func (m *Manager) Describe(chan<- *prometheus.Desc) {
 }
 
 func (m *Manager) deleteSampleTracker(userID string) {
-	m.mstx.Lock()
+	m.stmtx.Lock()
 	delete(m.sampleTrackersByUserID, userID)
-	m.mstx.Unlock()
+	m.stmtx.Unlock()
 }
 
 func (m *Manager) deleteActiveTracker(userID string) {
-	m.matx.Lock()
+	m.atmtx.Lock()
 	delete(m.activeTrackersByUserID, userID)
-	m.matx.Unlock()
+	m.atmtx.Unlock()
 }
 
 func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTracker) {
@@ -178,29 +178,29 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 	newCooldownDuration := m.limits.CostAttributionCooldown(userID)
 
 	if !st.hasSameLabels(lbls) || st.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
-		m.mstx.Lock()
+		m.stmtx.Lock()
 		st = newSampleTracker(userID, lbls, newMaxCardinality, newCooldownDuration, m.logger)
 		m.sampleTrackersByUserID[userID] = st
-		m.mstx.Unlock()
+		m.stmtx.Unlock()
 	}
 
 	if !at.hasSameLabels(lbls) || at.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
-		m.matx.Lock()
+		m.atmtx.Lock()
 		at = newActiveSeriesTracker(userID, lbls, newMaxCardinality, newCooldownDuration, m.logger)
 		m.activeTrackersByUserID[userID] = at
-		m.matx.Unlock()
+		m.atmtx.Unlock()
 	}
 
 	return st, at
 }
 
 func (m *Manager) purgeInactiveAttributionsUntil(deadline time.Time) error {
-	m.mstx.RLock()
+	m.stmtx.RLock()
 	userIDs := make([]string, 0, len(m.sampleTrackersByUserID))
 	for userID := range m.sampleTrackersByUserID {
 		userIDs = append(userIDs, userID)
 	}
-	m.mstx.RUnlock()
+	m.stmtx.RUnlock()
 
 	for _, userID := range userIDs {
 		st, at := m.updateTracker(userID)

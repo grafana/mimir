@@ -1082,6 +1082,12 @@ cost_attribution_labels: label1, label2, label3,
 max_cost_attribution_labels_per_user: 2`,
 			expectedErr: errCostAttributionLabelsLimitExceeded.Error(),
 		},
+		"should fail when max_cost_attribution_labels_per_user is more than 4": {
+			cfg: `
+cost_attribution_labels: label1, label2,
+max_cost_attribution_labels_per_user: 5`,
+			expectedErr: errInvalidMaxCostAttributionLabelsPerUser.Error(),
+		},
 	}
 
 	for testName, testData := range tests {

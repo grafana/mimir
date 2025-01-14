@@ -3599,7 +3599,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.cost-attribution-labels
 [cost_attribution_labels: <string> | default = ""]
 
-# (experimental) Maximum number of cost attribution labels allowed per user.
+# (experimental) Maximum number of cost attribution labels allowed per user, the
+# value is capped at 4.
 # CLI flag: -validation.max-cost-attribution-labels-per-user
 [max_cost_attribution_labels_per_user: <int> | default = 2]
 

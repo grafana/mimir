@@ -73,6 +73,7 @@ var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
 	errCostAttributionLabelsLimitExceeded          = errors.New("invalid value for -" + costAttributionLabelsFlag + ": exceeds the limit defined by -" + maxCostAttributionLabelsPerUserFlag)
+	errInvalidMaxCostAttributionLabelsPerUser      = errors.New("invalid value for -" + maxCostAttributionLabelsPerUserFlag + ": must be less than or equal to 4")
 )
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
@@ -310,7 +311,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
 	f.Var(&l.CostAttributionLabels, costAttributionLabelsFlag, "Defines labels for cost attribution. Applies to metrics like cortex_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_received_attributed_samples_total{team='frontend', service='api'}.")
-	f.IntVar(&l.MaxCostAttributionLabelsPerUser, maxCostAttributionLabelsPerUserFlag, 2, "Maximum number of cost attribution labels allowed per user.")
+	f.IntVar(&l.MaxCostAttributionLabelsPerUser, maxCostAttributionLabelsPerUserFlag, 2, "Maximum number of cost attribution labels allowed per user, the value is capped at 4.")
 	f.IntVar(&l.MaxCostAttributionCardinalityPerUser, "validation.max-cost-attribution-cardinality-per-user", 10000, "Maximum cardinality of cost attribution labels allowed per user.")
 	f.Var(&l.CostAttributionCooldown, "validation.cost-attribution-cooldown", "Cooldown period for cost attribution labels. Specifies the duration the cost attribution remains in overflow before attempting a reset. If the cardinality remains above the limit after this period, the system stays in overflow mode and extends the cooldown. Setting this value to 0 disables the cooldown, causing the system to continuously check whether the cardinality has dropped below the limit. A reset occurs when the cardinality falls below the limit.")
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
@@ -491,6 +492,10 @@ func (l *Limits) validate() error {
 
 	if len(l.CostAttributionLabels) > l.MaxCostAttributionLabelsPerUser {
 		return errCostAttributionLabelsLimitExceeded
+	}
+
+	if l.MaxCostAttributionLabelsPerUser > 4 {
+		return errInvalidMaxCostAttributionLabelsPerUser
 	}
 
 	return nil
