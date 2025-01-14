@@ -1,0 +1,64 @@
+project_name: csproto
+before:
+  hooks:
+    - go mod tidy
+builds:
+  - id: protoc-gen-fastmarshal
+    main: ./cmd/protoc-gen-fastmarshal
+    binary: protoc-gen-fastmarshal
+    flags:
+      - -trimpath
+    ldflags:
+      - '-X main.version={{.Version}} -X main.commit={{.FullCommit}} -X main.date={{.CommitDate}} -X main.builtBy=goreleaser'
+    env:
+      - CGO_ENABLED=0
+    goarch:
+      - '386'
+      - amd64
+      - arm
+      - arm64
+    goarm:
+      - '6'
+      - '7'
+    goos:
+      - linux
+      - darwin
+      - windows
+  - id: protodump
+    main: ./cmd/protodump
+    binary: protodump
+    flags:
+      - -trimpath
+    ldflags:
+      - '-X main.version={{.Version}} -X main.commit={{.FullCommit}} -X main.date={{.CommitDate}} -X main.builtBy=goreleaser'
+    env:
+      - CGO_ENABLED=0
+    goarch:
+      - '386'
+      - amd64
+      - arm
+      - arm64
+    goarm:
+      - '6'
+      - '7'
+    goos:
+      - linux
+      - darwin
+      - windows
+archives:
+  - name_template: '{{.ProjectName}}_{{.Version}}_{{title .Os}}_{{if eq .Arch "amd64"}}x86_64{{else if eq .Arch "386"}}i386{{else}}{{.Arch}}{{end}}{{if .Arm}}v{{.Arm}}{{end}}'
+    format_overrides:
+      - goos: windows
+        format: zip
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ incminor .Version }}-pre.{{.Timestamp}}.{{.ShortCommit}}"
+changelog:
+  use: github-native
+  filters:
+    exclude:
+      - '^(docs|test)(\\(.+\\))?:'
+release:
+  prerelease: auto
+  mode: append

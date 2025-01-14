@@ -30,8 +30,8 @@ func (d *LeaveOnStoppingDelegate) OnRingInstanceTokens(lifecycler *BasicLifecycl
 }
 
 func (d *LeaveOnStoppingDelegate) OnRingInstanceStopping(lifecycler *BasicLifecycler) {
-	if err := lifecycler.changeState(context.Background(), LEAVING); err != nil {
-		level.Error(d.logger).Log("msg", "failed to change instance state to LEAVING in the ring", "err", err)
+	if err := lifecycler.changeState(context.Background(), InstanceState_LEAVING); err != nil {
+		level.Error(d.logger).Log("msg", "failed to change instance state to InstanceState_LEAVING in the ring", "err", err)
 	}
 
 	d.next.OnRingInstanceStopping(lifecycler)

@@ -580,7 +580,7 @@ func HasReplicationSetChanged(before, after ReplicationSet) bool {
 func HasReplicationSetChangedWithoutState(before, after ReplicationSet) bool {
 	return hasReplicationSetChangedExcluding(before, after, func(i *InstanceDesc) {
 		i.Timestamp = 0
-		i.State = PENDING
+		i.State = InstanceState_PENDING
 	})
 }
 
@@ -590,7 +590,7 @@ func HasReplicationSetChangedWithoutState(before, after ReplicationSet) bool {
 func HasReplicationSetChangedWithoutStateOrAddr(before, after ReplicationSet) bool {
 	return hasReplicationSetChangedExcluding(before, after, func(i *InstanceDesc) {
 		i.Timestamp = 0
-		i.State = PENDING
+		i.State = InstanceState_PENDING
 		i.Addr = ""
 	})
 }

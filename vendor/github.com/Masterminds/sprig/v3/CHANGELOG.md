@@ -1,8 +1,39 @@
 # Changelog
 
+## Release 3.3.0 (2024-08-29)
+
+### Added
+
+- #400: added sha512sum function (thanks @itzik-elayev)
+
+### Changed
+
+- #407: Removed duplicate documentation (functions were documentated in 2 places)
+- #290: Corrected copy/paster oops in math documentation (thanks @zzhu41)
+- #369: Corrected template reference in docs (thanks @chey)
+- #375: Added link to URL documenation (thanks @carlpett)
+- #406: Updated the mergo dependency which had a breaking change (which was accounted for)
+- #376: Fixed documentation error (thanks @jheyduk)
+- #404: Updated dependency tree
+- #391: Fixed misspelling (thanks @chrishalbert)
+- #405: Updated Go versions used in testing
+
+## Release 3.2.3 (2022-11-29)
+
+### Changed
+
+- Updated docs (thanks @book987 @aJetHorn @neelayu @pellizzetti @apricote @SaigyoujiYuyuko233 @AlekSi)
+- #348: Updated huandu/xstrings which fixed a snake case bug (thanks @yxxhero)
+- #353: Updated masterminds/semver which included bug fixes
+- #354: Updated golang.org/x/crypto which included bug fixes
+
+## Release 3.2.2 (2021-02-04)
+
+This is a re-release of 3.2.1 to satisfy something with the Go module system.
+
 ## Release 3.2.1 (2021-02-04)
 
-### Changed 
+### Changed
 
 - Upgraded `Masterminds/goutils` to `v1.1.1`. see the [Security Advisory](https://github.com/Masterminds/goutils/security/advisories/GHSA-xg2h-wx96-xgxr)
 
@@ -294,7 +325,7 @@ This release adds new functions, including:
 - Added `semver` and `semverCompare` for Semantic Versions
 - `list` replaces `tuple`
 - Fixed issue with `join`
-- Added `first`, `last`, `intial`, `rest`, `prepend`, `append`, `toString`, `toStrings`, `sortAlpha`, `reverse`, `coalesce`, `pluck`, `pick`, `compact`, `keys`, `omit`, `uniq`, `has`, `without`
+- Added `first`, `last`, `initial`, `rest`, `prepend`, `append`, `toString`, `toStrings`, `sortAlpha`, `reverse`, `coalesce`, `pluck`, `pick`, `compact`, `keys`, `omit`, `uniq`, `has`, `without`
 
 ## Release 2.9.0 (2017-02-23)
 
@@ -348,7 +379,7 @@ Because we switched from `int` to `int64` as the return value for all integer ma
 - `min` complements `max` (formerly `biggest`)
 - `empty` indicates that a value is the empty value for its type
 - `tuple` creates a tuple inside of a template: `{{$t := tuple "a", "b" "c"}}`
-- `dict` creates a dictionary inside of a template `{{$d := dict "key1" "val1" "key2" "val2"}}` 
+- `dict` creates a dictionary inside of a template `{{$d := dict "key1" "val1" "key2" "val2"}}`
 - Date formatters have been added for HTML dates (as used in `date` input fields)
 - Integer math functions can convert from a number of types, including `string` (via `strconv.ParseInt`).
 

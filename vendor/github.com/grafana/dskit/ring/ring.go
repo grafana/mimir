@@ -30,7 +30,7 @@ const (
 	unhealthy = "Unhealthy"
 
 	// GetBufferSize is the suggested size of buffers passed to Ring.Get(). It's based on
-	// a typical replication factor 3, plus extra room for a JOINING + LEAVING instance.
+	// a typical replication factor 3, plus extra room for a InstanceState_JOINING + InstanceState_LEAVING instance.
 	GetBufferSize = 5
 )
 
@@ -99,23 +99,23 @@ type ReadRing interface {
 }
 
 var (
-	// Write operation that also extends replica set, if instance state is not ACTIVE.
-	Write = NewOp([]InstanceState{ACTIVE}, func(s InstanceState) bool {
-		// We do not want to Write to instances that are not ACTIVE, but we do want
+	// Write operation that also extends replica set, if instance state is not InstanceState_ACTIVE.
+	Write = NewOp([]InstanceState{InstanceState_ACTIVE}, func(s InstanceState) bool {
+		// We do not want to Write to instances that are not InstanceState_ACTIVE, but we do want
 		// to write the extra replica somewhere.  So we increase the size of the set
 		// of replicas for the key.
 		// NB unhealthy instances will be filtered later by defaultReplicationStrategy.Filter().
-		return s != ACTIVE
+		return s != InstanceState_ACTIVE
 	})
 
 	// WriteNoExtend is like Write, but with no replicaset extension.
-	WriteNoExtend = NewOp([]InstanceState{ACTIVE}, nil)
+	WriteNoExtend = NewOp([]InstanceState{InstanceState_ACTIVE}, nil)
 
-	// Read operation that extends the replica set if an instance is not ACTIVE or LEAVING
-	Read = NewOp([]InstanceState{ACTIVE, PENDING, LEAVING}, func(s InstanceState) bool {
+	// Read operation that extends the replica set if an instance is not InstanceState_ACTIVE or InstanceState_LEAVING
+	Read = NewOp([]InstanceState{InstanceState_ACTIVE, InstanceState_PENDING, InstanceState_LEAVING}, func(s InstanceState) bool {
 		// To match Write with extended replica set we have to also increase the
-		// size of the replica set for Read, but we can read from LEAVING ingesters.
-		return s != ACTIVE && s != LEAVING
+		// size of the replica set for Read, but we can read from InstanceState_LEAVING ingesters.
+		return s != InstanceState_ACTIVE && s != InstanceState_LEAVING
 	})
 
 	// Reporting is a special value for inquiring about health.
@@ -489,7 +489,7 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 		}
 
 		distinctHosts = append(distinctHosts, info.InstanceID)
-		instance := r.ringDesc.Ingesters[info.InstanceID]
+		instance, _ := r.ringDesc.GetIngesterVal(info.InstanceID)
 
 		// Check whether the replica set should be extended given we're including
 		// this instance.
@@ -526,7 +526,7 @@ func (r *Ring) GetAllHealthy(op Operation) (ReplicationSet, error) {
 
 	now := time.Now()
 	instances := make([]InstanceDesc, 0, len(r.ringDesc.Ingesters))
-	for _, instance := range r.ringDesc.Ingesters {
+	for _, instance := range r.ringDesc.GetIngesterVals() {
 		if r.IsHealthy(&instance, op, now) {
 			instances = append(instances, instance)
 		}
@@ -552,7 +552,7 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 	zoneFailures := make(map[string]struct{})
 	now := time.Now()
 
-	for _, instance := range r.ringDesc.Ingesters {
+	for _, instance := range r.ringDesc.GetIngesterVals() {
 		if r.IsHealthy(&instance, op, now) {
 			healthyInstances = append(healthyInstances, instance)
 		} else {
@@ -665,12 +665,12 @@ func (r *Ring) updateRingMetrics() {
 	oldestTimestampByState := map[string]int64{}
 
 	// Initialized to zero so we emit zero-metrics (instead of not emitting anything)
-	for _, s := range []string{unhealthy, ACTIVE.String(), LEAVING.String(), PENDING.String(), JOINING.String()} {
+	for _, s := range []string{unhealthy, InstanceState_ACTIVE.String(), InstanceState_LEAVING.String(), InstanceState_PENDING.String(), InstanceState_JOINING.String()} {
 		numByState[s] = 0
 		oldestTimestampByState[s] = 0
 	}
 
-	for _, instance := range r.ringDesc.Ingesters {
+	for _, instance := range r.ringDesc.GetIngesterVals() {
 		s := instance.State.String()
 		if !r.IsHealthy(&instance, Reporting, time.Now()) {
 			s = unhealthy
@@ -791,7 +791,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		actualZones = []string{""}
 	}
 
-	shard := make(map[string]InstanceDesc, min(len(r.ringDesc.Ingesters), size))
+	shard := make(map[string]*InstanceDesc, min(len(r.ringDesc.Ingesters), size))
 
 	// We need to iterate zones always in the same order to guarantee stability.
 	for _, zone := range actualZones {
@@ -890,7 +890,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 }
 
 // shouldIncludeReadonlyInstanceInTheShard returns true if instance is not read-only, or when it is read-only and should be included in the shuffle shard.
-func shouldIncludeReadonlyInstanceInTheShard(instance InstanceDesc, lookbackPeriod time.Duration, lookbackUntil int64) bool {
+func shouldIncludeReadonlyInstanceInTheShard(instance *InstanceDesc, lookbackPeriod time.Duration, lookbackUntil int64) bool {
 	if !instance.ReadOnly {
 		return true
 	}
@@ -923,7 +923,7 @@ func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time
 		return r
 	}
 
-	shard := make(map[string]InstanceDesc, len(r.ringDesc.Ingesters))
+	shard := make(map[string]*InstanceDesc, len(r.ringDesc.Ingesters))
 
 	for id, inst := range r.ringDesc.Ingesters {
 		if shouldIncludeReadonlyInstanceInTheShard(inst, lookbackPeriod, lookbackUntil) {
@@ -935,7 +935,7 @@ func (r *Ring) filterOutReadOnlyInstances(lookbackPeriod time.Duration, now time
 }
 
 // buildRingForTheShard builds read-only ring for the shard (this ring won't be updated in the future).
-func (r *Ring) buildRingForTheShard(shard map[string]InstanceDesc) *Ring {
+func (r *Ring) buildRingForTheShard(shard map[string]*InstanceDesc) *Ring {
 	shardDesc := &Desc{Ingesters: shard}
 	shardTokensByZone := shardDesc.getTokensByZone()
 	shardTokens := mergeTokenGroups(shardTokensByZone)
@@ -1022,17 +1022,12 @@ func (r *Ring) GetInstance(instanceID string) (doNotModify InstanceDesc, _ error
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
-	instances := r.ringDesc.GetIngesters()
-	if instances == nil {
-		return InstanceDesc{}, ErrInstanceNotFound
-	}
-
-	instance, ok := instances[instanceID]
+	var err error
+	instance, ok := r.ringDesc.GetIngesterVal(instanceID)
 	if !ok {
-		return InstanceDesc{}, ErrInstanceNotFound
+		err = ErrInstanceNotFound
 	}
-
-	return instance, nil
+	return instance, err
 }
 
 // GetInstanceState returns the current state of an instance or an error if the
@@ -1040,7 +1035,7 @@ func (r *Ring) GetInstance(instanceID string) (doNotModify InstanceDesc, _ error
 func (r *Ring) GetInstanceState(instanceID string) (InstanceState, error) {
 	instance, err := r.GetInstance(instanceID)
 	if err != nil {
-		return PENDING, err
+		return InstanceState_PENDING, err
 	}
 
 	return instance.GetState(), nil
@@ -1080,11 +1075,11 @@ func (r *Ring) getCachedShuffledSubring(identifier string, size int) *Ring {
 
 	// Update instance states and timestamps. We know that the topology is the same,
 	// so zones and tokens are equal.
-	for name, cachedIng := range cached.ringDesc.Ingesters {
-		ing := r.ringDesc.Ingesters[name]
+	for name, cachedIng := range cached.ringDesc.GetIngesterVals() {
+		ing, _ := r.ringDesc.GetIngesterVal(name)
 		cachedIng.State = ing.State
 		cachedIng.Timestamp = ing.Timestamp
-		cached.ringDesc.Ingesters[name] = cachedIng
+		cached.ringDesc.SetIngesterVal(name, cachedIng)
 	}
 	return cached
 }
@@ -1136,11 +1131,11 @@ func (r *Ring) getCachedShuffledSubringWithLookback(identifier string, size int,
 
 	// Update instance states and timestamps. We know that the topology is the same,
 	// so zones and tokens are equal.
-	for name, cachedIng := range cachedSubring.ringDesc.Ingesters {
-		ing := r.ringDesc.Ingesters[name]
+	for name, cachedIng := range cachedSubring.ringDesc.GetIngesterVals() {
+		ing, _ := r.ringDesc.GetIngesterVal(name)
 		cachedIng.State = ing.State
 		cachedIng.Timestamp = ing.Timestamp
-		cachedSubring.ringDesc.Ingesters[name] = cachedIng
+		cachedSubring.ringDesc.SetIngesterVal(name, cachedIng)
 	}
 
 	return cachedSubring
@@ -1288,7 +1283,7 @@ func (r *Ring) ZonesCount() int {
 func (r *Ring) readOnlyInstanceCount() int {
 	r.mtx.RLock()
 	c := 0
-	for _, i := range r.ringDesc.Ingesters {
+	for _, i := range r.ringDesc.GetIngesterVals() {
 		if i.ReadOnly {
 			c++
 		}
@@ -1311,7 +1306,7 @@ func NewOp(healthyStates []InstanceState, shouldExtendReplicaSet func(s Instance
 	}
 
 	if shouldExtendReplicaSet != nil {
-		for _, s := range []InstanceState{ACTIVE, LEAVING, PENDING, JOINING, LEFT} {
+		for _, s := range []InstanceState{InstanceState_ACTIVE, InstanceState_LEAVING, InstanceState_PENDING, InstanceState_JOINING, InstanceState_LEFT} {
 			if shouldExtendReplicaSet(s) {
 				op |= (0x10000 << s)
 			}
