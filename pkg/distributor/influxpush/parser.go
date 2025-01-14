@@ -104,17 +104,17 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 			continue
 		}
 
-		name := string(replaceInvalidChars(pt.Name()))
+		name := replaceInvalidChars(pt.Name())
 		if field != "value" {
 			// If the field name is not "value" then we append it to the name, fixing chars as we go
-			name += "_" + string(replaceInvalidChars([]byte(field)))
+			name = append([]byte{'_'}, name...)
 		}
 
 		tags := pt.Tags()
 		lbls := make([]mimirpb.LabelAdapter, 0, len(tags)+2) // An additional one for __name__, and one for internal label
 		lbls = append(lbls, mimirpb.LabelAdapter{
 			Name:  labels.MetricName,
-			Value: name,
+			Value: yoloString(name),
 		})
 		lbls = append(lbls, mimirpb.LabelAdapter{
 			Name:  internalLabel, // An internal label for tracking active series
