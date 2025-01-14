@@ -3336,7 +3336,7 @@ Usage of ./cmd/mimir/mimir:
   -validation.max-cost-attribution-cardinality-per-user int
     	[experimental] Maximum cardinality of cost attribution labels allowed per user. (default 10000)
   -validation.max-cost-attribution-labels-per-user int
-    	[experimental] Maximum number of cost attribution labels allowed per user. (default 2)
+    	[experimental] Maximum number of cost attribution labels allowed per user, the value is capped at 4. (default 2)
   -validation.max-label-names-per-info-series int
     	Maximum number of label names per info series. Has no effect if less than the value of the maximum number of label names per series option (-validation.max-label-names-per-series) (default 80)
   -validation.max-label-names-per-series int
