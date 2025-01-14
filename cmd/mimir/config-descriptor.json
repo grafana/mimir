@@ -4487,7 +4487,7 @@
           "kind": "field",
           "name": "ruler_max_rule_evaluation_concurrency_per_tenant",
           "required": false,
-          "desc": "Maximum number of independent rules that can run concurrently for each tenant. Depends on ruler.max-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable.",
+          "desc": "Maximum number of rules that can run concurrently for each tenant. Depends on ruler.max-rule-evaluation-concurrency being greater than 0. Ideally this flag should be a lower value. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 4,
           "fieldFlag": "ruler.max-rule-evaluation-concurrency-per-tenant",

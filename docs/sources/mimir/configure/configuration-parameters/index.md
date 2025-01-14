@@ -3644,9 +3644,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.protected-namespaces
 [ruler_protected_namespaces: <string> | default = ""]
 
-# (experimental) Maximum number of independent rules that can run concurrently
-# for each tenant. Depends on ruler.max-rule-evaluation-concurrency
-# being greater than 0. Ideally this flag should be a lower value. 0 to disable.
+# (experimental) Maximum number of rules that can run concurrently for each
+# tenant. Depends on ruler.max-rule-evaluation-concurrency being greater than 0.
+# Ideally this flag should be a lower value. 0 to disable.
 # CLI flag: -ruler.max-rule-evaluation-concurrency-per-tenant
 [ruler_max_rule_evaluation_concurrency_per_tenant: <int> | default = 4]
 
