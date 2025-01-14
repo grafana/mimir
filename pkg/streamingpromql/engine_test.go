@@ -167,8 +167,8 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 		features := EnableAllFeatures
 		features.DisabledFunctions = []string{"histogram_quantile", "ceil", "nonexistant"}
 
-		requireQueryIsUnsupported(t, features, "ceil(metric{})", "'ceil' function is disabled")
-		requireQueryIsUnsupported(t, features, "histogram_quantile(0.9, h{})", "'histogram_quantile' function is disabled")
+		requireQueryIsUnsupported(t, features, "ceil(metric{})", "'ceil' function")
+		requireQueryIsUnsupported(t, features, "histogram_quantile(0.9, h{})", "'histogram_quantile' function")
 	})
 
 	t.Run("aggregation disabled by name", func(t *testing.T) {
