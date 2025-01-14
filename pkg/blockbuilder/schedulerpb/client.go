@@ -52,6 +52,9 @@ type job struct {
 func NewSchedulerClient(workerID string, scheduler BlockBuilderSchedulerClient, logger log.Logger,
 	updateInterval time.Duration, maxUpdateAge time.Duration) (SchedulerClient, error) {
 
+	if workerID == "" {
+		return nil, fmt.Errorf("workerID cannot be empty")
+	}
 	if updateInterval <= 0 {
 		return nil, fmt.Errorf("updateInterval must be positive")
 	}
