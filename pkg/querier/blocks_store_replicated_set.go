@@ -36,11 +36,11 @@ const (
 type blocksStoreReplicationSet struct {
 	services.Service
 
-	storesRing          *ring.Ring
-	clientsPool         *client.Pool
-	balancingStrategy   loadBalancingStrategy
-	expandedReplication storegateway.ExpandedReplication
-	limits              BlocksStoreLimits
+	storesRing         *ring.Ring
+	clientsPool        *client.Pool
+	balancingStrategy  loadBalancingStrategy
+	dynamicReplication storegateway.DynamicReplication
+	limits             BlocksStoreLimits
 
 	// Subservices manager.
 	subservices        *services.Manager
@@ -50,19 +50,19 @@ type blocksStoreReplicationSet struct {
 func newBlocksStoreReplicationSet(
 	storesRing *ring.Ring,
 	balancingStrategy loadBalancingStrategy,
-	expandedReplication storegateway.ExpandedReplication,
+	dynamicReplication storegateway.DynamicReplication,
 	limits BlocksStoreLimits,
 	clientConfig ClientConfig,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*blocksStoreReplicationSet, error) {
 	s := &blocksStoreReplicationSet{
-		storesRing:          storesRing,
-		clientsPool:         newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
-		expandedReplication: expandedReplication,
-		balancingStrategy:   balancingStrategy,
-		limits:              limits,
-		subservicesWatcher:  services.NewFailureWatcher(),
+		storesRing:         storesRing,
+		clientsPool:        newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
+		dynamicReplication: dynamicReplication,
+		balancingStrategy:  balancingStrategy,
+		limits:             limits,
+		subservicesWatcher: services.NewFailureWatcher(),
 	}
 
 	var err error
@@ -106,13 +106,13 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 	instances := make(map[string]ring.InstanceDesc)
 
 	userRing := storegateway.GetShuffleShardingSubring(s.storesRing, userID, s.limits)
-	expandedReplicationOption := ring.WithReplicationFactor(userRing.InstancesCount())
+	replicationOption := ring.WithReplicationFactor(userRing.InstancesCount())
 
 	// Find the replication set of each block we need to query.
 	for _, block := range blocks {
 		var ringOpts []ring.Option
-		if s.expandedReplication.EligibleForQuerying(block) {
-			ringOpts = append(ringOpts, expandedReplicationOption)
+		if s.dynamicReplication.EligibleForQuerying(block) {
+			ringOpts = append(ringOpts, replicationOption)
 		}
 
 		// Note that we don't pass buffers since we retain instances from the returned replication set.

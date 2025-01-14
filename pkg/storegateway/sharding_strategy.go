@@ -46,23 +46,23 @@ type ShardingLimits interface {
 // ShuffleShardingStrategy is a shuffle sharding strategy, based on the hash ring formed by store-gateways,
 // where each tenant blocks are sharded across a subset of store-gateway instances.
 type ShuffleShardingStrategy struct {
-	r                   *ring.Ring
-	instanceID          string
-	instanceAddr        string
-	expandedReplication ExpandedReplication
-	limits              ShardingLimits
-	logger              log.Logger
+	r                  *ring.Ring
+	instanceID         string
+	instanceAddr       string
+	dynamicReplication DynamicReplication
+	limits             ShardingLimits
+	logger             log.Logger
 }
 
 // NewShuffleShardingStrategy makes a new ShuffleShardingStrategy.
-func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, expandedReplication ExpandedReplication, limits ShardingLimits, logger log.Logger) *ShuffleShardingStrategy {
+func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, dynamicReplication DynamicReplication, limits ShardingLimits, logger log.Logger) *ShuffleShardingStrategy {
 	return &ShuffleShardingStrategy{
-		r:                   r,
-		instanceID:          instanceID,
-		instanceAddr:        instanceAddr,
-		expandedReplication: expandedReplication,
-		limits:              limits,
-		logger:              logger,
+		r:                  r,
+		instanceID:         instanceID,
+		instanceAddr:       instanceAddr,
+		dynamicReplication: dynamicReplication,
+		limits:             limits,
+		logger:             logger,
 	}
 }
 
@@ -113,14 +113,14 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 	}
 
 	r := GetShuffleShardingSubring(s.r, userID, s.limits)
-	expandedReplicationOption := ring.WithReplicationFactor(r.InstancesCount())
+	replicationOption := ring.WithReplicationFactor(r.InstancesCount())
 	bufDescs, bufHosts, bufZones := ring.MakeBuffersForGet()
 	bufOption := ring.WithBuffers(bufDescs, bufHosts, bufZones)
 
 	for blockID := range metas {
 		ringOpts := []ring.Option{bufOption}
-		if s.expandedReplication.EligibleForSync(metas[blockID]) {
-			ringOpts = append(ringOpts, expandedReplicationOption)
+		if s.dynamicReplication.EligibleForSync(metas[blockID]) {
+			ringOpts = append(ringOpts, replicationOption)
 		}
 
 		// Check if the block is owned by the store-gateway

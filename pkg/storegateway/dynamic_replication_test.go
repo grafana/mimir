@@ -15,7 +15,7 @@ func TestMaxTimeExpandedReplication(t *testing.T) {
 	// Round "now" to the nearest millisecond since we are using millisecond precision
 	// for min/max times for the blocks.
 	now := time.Now().Round(time.Millisecond)
-	replication := NewMaxTimeExpandedReplication(25*time.Hour, 45*time.Minute)
+	replication := NewMaxTimeDynamicReplication(25*time.Hour, 45*time.Minute)
 	replication.now = func() time.Time { return now }
 
 	type testCase struct {

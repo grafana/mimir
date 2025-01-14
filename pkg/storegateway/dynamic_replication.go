@@ -12,17 +12,17 @@ var (
 	errInvalidExpandedReplicationMaxTimeThreshold = errors.New("invalid expanded replication max time threshold, the value must be at least one hour")
 )
 
-type ExpandedReplicationConfig struct {
+type DynamicReplicationConfig struct {
 	Enabled          bool          `yaml:"enabled" category:"experimental"`
 	MaxTimeThreshold time.Duration `yaml:"max_time_threshold" category:"experimental"`
 }
 
-func (cfg *ExpandedReplicationConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.BoolVar(&cfg.Enabled, prefix+"expanded-replication.enabled", false, "Use a higher number of replicas for recent blocks. Useful to spread query load more evenly at the cost of slightly higher disk usage.")
-	f.DurationVar(&cfg.MaxTimeThreshold, prefix+"expanded-replication.max-time-threshold", 25*time.Hour, "Threshold of the most recent sample in a block used to determine it is eligible for higher than default replication. If a block has samples within this amount of time, it is considered recent and will be owned by more replicas.")
+func (cfg *DynamicReplicationConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+	f.BoolVar(&cfg.Enabled, prefix+"dynamic-replication.enabled", false, "Use a higher number of replicas for recent blocks. Useful to spread query load more evenly at the cost of slightly higher disk usage.")
+	f.DurationVar(&cfg.MaxTimeThreshold, prefix+"dynamic-replication.max-time-threshold", 25*time.Hour, "Threshold of the most recent sample in a block used to determine it is eligible for higher than default replication. If a block has samples within this amount of time, it is considered recent and will be owned by more replicas.")
 }
 
-func (cfg *ExpandedReplicationConfig) Validate() error {
+func (cfg *DynamicReplicationConfig) Validate() error {
 	if cfg.Enabled && cfg.MaxTimeThreshold < time.Hour {
 		return errInvalidExpandedReplicationMaxTimeThreshold
 	}
@@ -38,9 +38,9 @@ type ReplicatedBlock interface {
 	GetMaxTime() time.Time
 }
 
-// ExpandedReplication determines if a TSDB block is eligible to be sync to and queried from more
+// DynamicReplication determines if a TSDB block is eligible to be sync to and queried from more
 // store-gateways than the configured replication factor based on metadata about the block.
-type ExpandedReplication interface {
+type DynamicReplication interface {
 	// EligibleForSync returns true if the block can be synced to more than the configured (via
 	// replication factor) number of store-gateways, false otherwise.
 	EligibleForSync(b ReplicatedBlock) bool
@@ -50,40 +50,40 @@ type ExpandedReplication interface {
 	EligibleForQuerying(b ReplicatedBlock) bool
 }
 
-func NewNopExpandedReplication() *NopExpandedReplication {
-	return &NopExpandedReplication{}
+func NewNopDynamicReplication() *NopDynamicReplication {
+	return &NopDynamicReplication{}
 }
 
-// NopExpandedReplication is an ExpandedReplication implementation that always returns false.
-type NopExpandedReplication struct{}
+// NopDynamicReplication is an DynamicReplication implementation that always returns false.
+type NopDynamicReplication struct{}
 
-func (n NopExpandedReplication) EligibleForSync(ReplicatedBlock) bool {
+func (n NopDynamicReplication) EligibleForSync(ReplicatedBlock) bool {
 	return false
 }
 
-func (n NopExpandedReplication) EligibleForQuerying(ReplicatedBlock) bool {
+func (n NopDynamicReplication) EligibleForQuerying(ReplicatedBlock) bool {
 	return false
 }
 
-func NewMaxTimeExpandedReplication(maxTime time.Duration, gracePeriod time.Duration) *MaxTimeExpandedReplication {
-	return &MaxTimeExpandedReplication{
+func NewMaxTimeDynamicReplication(maxTime time.Duration, gracePeriod time.Duration) *MaxTimeDynamicReplication {
+	return &MaxTimeDynamicReplication{
 		maxTime:     maxTime,
 		gracePeriod: gracePeriod,
 		now:         time.Now,
 	}
 }
 
-// MaxTimeExpandedReplication is an ExpandedReplication implementation that determines
+// MaxTimeDynamicReplication is an DynamicReplication implementation that determines
 // if a block is eligible for expanded replication based on how recent its MaxTime (most
 // recent sample) is. An upload grace period can optionally be used to ensure that blocks
 // are synced to store-gateways before they are expected to be available by queriers.
-type MaxTimeExpandedReplication struct {
+type MaxTimeDynamicReplication struct {
 	maxTime     time.Duration
 	gracePeriod time.Duration
 	now         func() time.Time
 }
 
-func (e *MaxTimeExpandedReplication) EligibleForSync(b ReplicatedBlock) bool {
+func (e *MaxTimeDynamicReplication) EligibleForSync(b ReplicatedBlock) bool {
 	now := e.now()
 	maxTimeDelta := now.Sub(b.GetMaxTime())
 	// We start syncing blocks `gracePeriod` before they become eligible for querying to
@@ -91,7 +91,7 @@ func (e *MaxTimeExpandedReplication) EligibleForSync(b ReplicatedBlock) bool {
 	return maxTimeDelta <= (e.maxTime + e.gracePeriod)
 }
 
-func (e *MaxTimeExpandedReplication) EligibleForQuerying(b ReplicatedBlock) bool {
+func (e *MaxTimeDynamicReplication) EligibleForQuerying(b ReplicatedBlock) bool {
 	now := e.now()
 	maxTimeDelta := now.Sub(b.GetMaxTime())
 	return maxTimeDelta <= e.maxTime

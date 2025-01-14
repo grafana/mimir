@@ -11657,7 +11657,7 @@
         },
         {
           "kind": "block",
-          "name": "expanded_replication",
+          "name": "dynamic_replication",
           "required": false,
           "desc": "",
           "blockEntries": [
@@ -11668,7 +11668,7 @@
               "desc": "Use a higher number of replicas for recent blocks. Useful to spread query load more evenly at the cost of slightly higher disk usage.",
               "fieldValue": null,
               "fieldDefaultValue": false,
-              "fieldFlag": "store-gateway.expanded-replication.enabled",
+              "fieldFlag": "store-gateway.dynamic-replication.enabled",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
@@ -11679,7 +11679,7 @@
               "desc": "Threshold of the most recent sample in a block used to determine it is eligible for higher than default replication. If a block has samples within this amount of time, it is considered recent and will be owned by more replicas.",
               "fieldValue": null,
               "fieldDefaultValue": 90000000000000,
-              "fieldFlag": "store-gateway.expanded-replication.max-time-threshold",
+              "fieldFlag": "store-gateway.dynamic-replication.max-time-threshold",
               "fieldType": "duration",
               "fieldCategory": "experimental"
             }
