@@ -121,6 +121,11 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 			// we do them here rather than creating a ton of update tickers.
 			s.jobs.clearExpiredLeases()
 
+			if err := s.flushOffsetsToKafka(context.WithoutCancel(ctx)); err != nil {
+				level.Error(s.logger).Log("msg", "failed to flush offsets to Kafka", "err", err)
+				s.metrics.flushFailed.Inc()
+			}
+
 			s.updateSchedule(ctx)
 		case <-ctx.Done():
 			return nil
@@ -128,6 +133,7 @@ func (s *BlockBuilderScheduler) running(ctx context.Context) error {
 	}
 }
 
+// completeObservationMode transitions the scheduler from observation mode to normal operation.
 func (s *BlockBuilderScheduler) completeObservationMode() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -230,6 +236,43 @@ func commitOffsetsFromLag(lag kadm.GroupLag) kadm.Offsets {
 	return offsets
 }
 
+func (s *BlockBuilderScheduler) snapCommitted() kadm.Offsets {
+	cp := make(kadm.Offsets)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.committed.Each(func(o kadm.Offset) {
+		cp.Add(o)
+	})
+	return cp
+}
+
+func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
+	offsets := s.snapCommitted()
+	return s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, offsets)
+}
+
+// advanceCommittedOffset advances the committed offset for the given topic/partition.
+// It is a no-op if the new offset is not greater than the current committed offset.
+// Assumes the lock is held.
+func (s *BlockBuilderScheduler) advanceCommittedOffset(topic string, partition int32, newOffset int64, metadata string) {
+	if o, ok := s.committed.Lookup(topic, partition); ok {
+		if newOffset > o.At {
+			o.At = newOffset
+			o.Metadata = metadata
+			s.committed[topic][partition] = o
+		}
+	} else {
+		s.committed.Add(kadm.Offset{
+			Topic:     topic,
+			Partition: partition,
+			At:        newOffset,
+			Metadata:  metadata,
+		})
+	}
+}
+
 // AssignJob returns an assigned job for the given workerID.
 func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *schedulerpb.AssignJobRequest) (*schedulerpb.AssignJobResponse, error) {
 	key, spec, err := s.assignJob(req.WorkerId)
@@ -289,7 +332,7 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 	}
 
 	if c, ok := s.committed.Lookup(s.cfg.Kafka.Topic, j.Partition); ok {
-		if j.StartOffset <= c.At {
+		if j.EndOffset <= c.At {
 			// Update of a completed/committed job. Ignore.
 			level.Debug(logger).Log("msg", "ignored historical job")
 			return nil
@@ -304,8 +347,10 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 			}
 		}
 
-		// TODO: Push forward the local notion of the committed offset.
-
+		// TODO: More information to pass from block-builder here:
+		// - the true commit offset
+		// - metadata blob
+		s.advanceCommittedOffset(j.Topic, j.Partition, j.EndOffset, "{}")
 		logger.Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
@@ -348,24 +393,10 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 	for _, rj := range s.observations {
 		if rj.complete {
 			// Completed.
-			if o, ok := s.committed.Lookup(rj.spec.Topic, rj.spec.Partition); ok {
-				if rj.spec.EndOffset > o.At {
-					// Completed jobs can push forward the offsets we've learned from Kafka.
-					o.At = rj.spec.EndOffset
-					o.Metadata = "{}" // TODO: take the new meta from the completion message.
-					s.committed[rj.spec.Topic][rj.spec.Partition] = o
-				}
-			} else {
-				s.committed.Add(kadm.Offset{
-					Topic:     rj.spec.Topic,
-					Partition: rj.spec.Partition,
-					At:        rj.spec.EndOffset,
-					Metadata:  "{}", // TODO: take the new meta from the completion message.
-				})
-			}
+			s.advanceCommittedOffset(rj.spec.Topic, rj.spec.Partition, rj.spec.EndOffset, "{}")
 		} else {
 			// An in-progress job.
-			// These don't affect offsets (yet), they just get added to the job queue.
+			// These don't affect offsets, they just get added to the job queue.
 			if err := s.jobs.importJob(rj.key, rj.workerID, rj.spec); err != nil {
 				level.Warn(s.logger).Log("msg", "failed to import job", "job_id", rj.key.id, "epoch", rj.key.epoch, "worker", rj.workerID, "err", err)
 			}
