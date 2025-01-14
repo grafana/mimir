@@ -227,6 +227,17 @@ Params:
 {{- end -}}
 
 {{/*
+Common Labels
+Params:
+  ctx = . context
+*/}}
+{{- define "mimir.commonLabels" -}}
+{{- with .ctx.Values.global.commonLabels }}
+{{- toYaml .  }}
+{{- end }}
+{{- end -}}
+
+{{/*
 Resource labels
 Params:
   ctx = . context
@@ -267,6 +278,9 @@ app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
 name: "{{ .component }}-{{ .rolloutZoneName }}" {{- /* Currently required for rollout-operator. https://github.com/grafana/rollout-operator/issues/15 */}}
 rollout-group: {{ .component }}
 zone: {{ .rolloutZoneName }}
+{{- end }}
+{{- if .ctx.Values.global.commonLabels }}
+{{ include "mimir.commonLabels" . }}
 {{- end }}
 {{- end -}}
 
