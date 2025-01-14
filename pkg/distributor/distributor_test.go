@@ -5444,12 +5444,12 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 }
 
 func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc {
-	ingesterDescs := map[string]ring.InstanceDesc{}
+	ingesterDescs := map[string]*ring.InstanceDesc{}
 
 	for i := range ingesters {
 		addr := ingesters[i].address()
 		tokens := []uint32{uint32((math.MaxUint32 / len(ingesters)) * i)}
-		ingesterDescs[addr] = ring.InstanceDesc{
+		ingesterDescs[addr] = &ring.InstanceDesc{
 			Addr:                addr,
 			Zone:                ingesters[i].zone,
 			State:               cfg.ingesterRingState(ingesters[i].zone, ingesters[i].id),

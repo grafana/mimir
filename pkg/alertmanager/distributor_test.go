@@ -288,10 +288,10 @@ func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBod
 	}
 
 	// Use a real ring with a mock KV store to test ring RF logic.
-	amDescs := map[string]ring.InstanceDesc{}
+	amDescs := map[string]*ring.InstanceDesc{}
 	amByAddr := map[string]*mockAlertmanager{}
 	for i, a := range ams {
-		amDescs[a.myAddr] = ring.InstanceDesc{
+		amDescs[a.myAddr] = &ring.InstanceDesc{
 			Addr:                a.myAddr,
 			Zone:                "",
 			State:               ring.ACTIVE,

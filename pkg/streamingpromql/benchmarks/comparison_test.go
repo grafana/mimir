@@ -194,8 +194,8 @@ func createIngesterQueryable(t testing.TB, address string) storage.Queryable {
 	t.Cleanup(func() { require.NoError(t, closer.Close()) })
 
 	err := kvStore.CAS(context.Background(), ingester.IngesterRingKey, func(_ interface{}) (interface{}, bool, error) {
-		ingesters := map[string]ring.InstanceDesc{}
-		ingesters[address] = ring.InstanceDesc{
+		ingesters := map[string]*ring.InstanceDesc{}
+		ingesters[address] = &ring.InstanceDesc{
 			Addr:                address,
 			Zone:                "benchmark-zone-a",
 			State:               ring.ACTIVE,

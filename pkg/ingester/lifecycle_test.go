@@ -142,5 +142,8 @@ func numTokens(c kv.Client, name, ringKey string) int {
 		return 0
 	}
 	rd := ringDesc.(*ring.Desc)
-	return len(rd.Ingesters[name].Tokens)
+	if ing := rd.GetIngester(name); ing != nil {
+		return len(ing.Tokens)
+	}
+	return 0
 }

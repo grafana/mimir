@@ -31,7 +31,7 @@ func TestHealthyInstanceDelegate_OnRingInstanceHeartbeat(t *testing.T) {
 	addInstance := func(desc *ring.Desc, id string, state ring.InstanceState, timestamp int64) {
 		instance := desc.AddIngester(id, "127.0.0.1", "", []uint32{1}, state, time.Now(), false, time.Time{})
 		instance.Timestamp = timestamp
-		desc.Ingesters[id] = instance
+		desc.Ingesters[id] = &instance
 	}
 
 	tests := map[string]struct {
@@ -93,7 +93,7 @@ func TestHealthyInstanceDelegate_OnRingInstanceHeartbeat(t *testing.T) {
 			instance := ringDesc.Ingesters["distributor-1"]
 
 			delegate := newHealthyInstanceDelegate(count, testData.heartbeatTimeout, &nopDelegate{})
-			delegate.OnRingInstanceHeartbeat(&ring.BasicLifecycler{}, ringDesc, &instance)
+			delegate.OnRingInstanceHeartbeat(&ring.BasicLifecycler{}, ringDesc, instance)
 
 			assert.Equal(t, testData.expectedCount, count.Load())
 		})
