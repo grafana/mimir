@@ -749,7 +749,6 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
-
 func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
 	if len(ts.Samples) == 0 {
 		return nil
