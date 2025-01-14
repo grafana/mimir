@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	errInvalidExpandedReplicationMaxTimeThreshold = errors.New("invalid expanded replication max time threshold, the value must be at least one hour")
+	errInvalidDynamicReplicationMaxTimeThreshold = errors.New("invalid dynamic replication max time threshold, the value must be at least one hour")
 )
 
 type DynamicReplicationConfig struct {
@@ -24,7 +24,7 @@ func (cfg *DynamicReplicationConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, pr
 
 func (cfg *DynamicReplicationConfig) Validate() error {
 	if cfg.Enabled && cfg.MaxTimeThreshold < time.Hour {
-		return errInvalidExpandedReplicationMaxTimeThreshold
+		return errInvalidDynamicReplicationMaxTimeThreshold
 	}
 
 	return nil
@@ -75,8 +75,8 @@ func NewMaxTimeDynamicReplication(maxTime time.Duration, gracePeriod time.Durati
 
 // MaxTimeDynamicReplication is an DynamicReplication implementation that determines
 // if a block is eligible for expanded replication based on how recent its MaxTime (most
-// recent sample) is. An upload grace period can optionally be used to ensure that blocks
-// are synced to store-gateways before they are expected to be available by queriers.
+// recent sample) is. A grace period can optionally be used to ensure that blocks are
+// synced to store-gateways until they are no longer being queried.
 type MaxTimeDynamicReplication struct {
 	maxTime     time.Duration
 	gracePeriod time.Duration
@@ -86,8 +86,9 @@ type MaxTimeDynamicReplication struct {
 func (e *MaxTimeDynamicReplication) EligibleForSync(b ReplicatedBlock) bool {
 	now := e.now()
 	maxTimeDelta := now.Sub(b.GetMaxTime())
-	// We start syncing blocks `gracePeriod` before they become eligible for querying to
-	// ensure that they've been loaded before queriers expect them to be available.
+	// We keep syncing blocks for `gracePeriod` after they are no longer eligible for
+	// querying to ensure that they are not unloaded by store-gateways while still being
+	// queried.
 	return maxTimeDelta <= (e.maxTime + e.gracePeriod)
 }
 
