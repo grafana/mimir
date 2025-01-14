@@ -53,7 +53,8 @@ var (
 
 // Config holds the store gateway config.
 type Config struct {
-	ShardingRing RingConfig `yaml:"sharding_ring" doc:"description=The hash ring configuration."`
+	ShardingRing       RingConfig               `yaml:"sharding_ring" doc:"description=The hash ring configuration."`
+	DynamicReplication DynamicReplicationConfig `yaml:"dynamic_replication" doc:"description=Experimental dynamic replication configuration." category:"experimental"`
 
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants" category:"advanced"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants" category:"advanced"`
@@ -62,6 +63,7 @@ type Config struct {
 // RegisterFlags registers the Config flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ShardingRing.RegisterFlags(f, logger)
+	cfg.DynamicReplication.RegisterFlagsWithPrefix(f, "store-gateway.")
 
 	f.Var(&cfg.EnabledTenants, "store-gateway.enabled-tenants", "Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "store-gateway.disabled-tenants", "Comma separated list of tenants that cannot be loaded by the store-gateway. If specified, and the store-gateway would normally load a given tenant for (via -store-gateway.enabled-tenants or sharding), it will be ignored instead.")
@@ -71,6 +73,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 func (cfg *Config) Validate(limits validation.Limits) error {
 	if limits.StoreGatewayTenantShardSize < 0 {
 		return errInvalidTenantShardSize
+	}
+
+	if err := cfg.DynamicReplication.Validate(); err != nil {
+		return err
 	}
 
 	return nil
@@ -173,7 +179,17 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 		return nil, errors.Wrap(err, "create ring client")
 	}
 
-	shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, limits, logger)
+	var dynamicReplication DynamicReplication = NewNopDynamicReplication()
+	if gatewayCfg.DynamicReplication.Enabled {
+		dynamicReplication = NewMaxTimeDynamicReplication(
+			gatewayCfg.DynamicReplication.MaxTimeThreshold,
+			// Keep syncing blocks to store-gateways for a grace period (3 times the sync interval) to
+			// ensure they are not unloaded while they are still being queried.
+			mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
+		)
+	}
+
+	shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, dynamicReplication, limits, logger)
 
 	allowedTenants := util.NewAllowedTenants(gatewayCfg.EnabledTenants, gatewayCfg.DisabledTenants)
 	if len(gatewayCfg.EnabledTenants) > 0 {

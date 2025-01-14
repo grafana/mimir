@@ -95,13 +95,16 @@ func TestBlocksConsistencyTracker_Check(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			c := NewBlocksConsistency(uploadGracePeriod, reg)
 			tracker := c.NewTracker(testData.knownBlocks, log.NewNopLogger())
-			var missingBlocks []ulid.ULID
+			var missingBlocks bucketindex.Blocks
 			for _, queriedBlocksAttempt := range testData.queriedBlocks {
 				missingBlocks = tracker.Check(queriedBlocksAttempt)
 			}
 			tracker.Complete()
 
-			assert.Equal(t, testData.expectedMissingBlocks, missingBlocks)
+			// Note that we're comparing elements not the slices themselves because the
+			// zero value for a slice is nil but `GetULIDs()` returns a non-nil but possibly
+			// empty slice.
+			assert.ElementsMatch(t, testData.expectedMissingBlocks, missingBlocks.GetULIDs())
 			assert.Equal(t, float64(1), testutil.ToFloat64(c.checksTotal))
 
 			if len(testData.expectedMissingBlocks) > 0 {
