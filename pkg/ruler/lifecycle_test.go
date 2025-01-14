@@ -67,7 +67,7 @@ func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
 
 		instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(cfg.Ring.NumTokens), ring.ACTIVE, time.Now(), false, time.Time{})
 		instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
-		ringDesc.Ingesters[unhealthyInstanceID] = instance
+		ringDesc.Ingesters[unhealthyInstanceID] = &instance
 
 		return ringDesc, true, nil
 	}))
@@ -106,5 +106,8 @@ func numTokens(c kv.Client, name, ringKey string) int {
 		return 0
 	}
 	rd := ringDesc.(*ring.Desc)
-	return len(rd.Ingesters[name].Tokens)
+	if ing := rd.GetIngester(name); ing != nil {
+		return len(ing.Tokens)
+	}
+	return 0
 }

@@ -11719,7 +11719,7 @@ func (i *failingIngester) getInstance(ctx context.Context) *ring.InstanceDesc {
 	if !ok {
 		return nil
 	}
-	return &instanceDesc
+	return instanceDesc
 }
 
 func (i *failingIngester) checkRingState(ctx context.Context, t *testing.T, expectedState ring.InstanceState) {
