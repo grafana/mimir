@@ -133,9 +133,8 @@ func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
 		help, _ := getSymbol(ts.Metadata.HelpRef, rw2req.Symbols)
 		unit, _ := getSymbol(ts.Metadata.UnitRef, rw2req.Symbols)
 
-		// Debugging
 		{
-			metadataReceived++
+			// Debugging.
 			buffer := make([]byte, 64*1024)
 			s, _ := ts.Metadata.MarshalToSizedBuffer(buffer)
 			metadataBytes += s
@@ -147,6 +146,11 @@ func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
 		if ts.Metadata.Type == METRIC_TYPE_UNSPECIFIED && help == "" && unit == "" {
 			// Nothing to do here.
 			continue
+		}
+
+		{
+			// Debugging.
+			metadataReceived++
 		}
 
 		metricFamilies[metricFamily] = &MetricMetadata{
