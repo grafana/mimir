@@ -3559,6 +3559,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.enabled-promql-experimental-functions
 [enabled_promql_experimental_functions: <string> | default = ""]
 
+# (experimental) Rewrite queries using the same range selector and resolution
+# [X:X] which do not work in Prometheus 3 to a nearly identical form that does
+# work with Prometheus 3 semantics
+# CLI flag: -query-frontend.subquery-range-compat
+[prom2_range_compat: <boolean> | default = false]
+
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
 [cardinality_analysis_enabled: <boolean> | default = false]
