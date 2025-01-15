@@ -84,17 +84,16 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 
 // UnmarshalRW2 unmarshals the given remote write 2.0 data and converts it to a WriteRequest.
 func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
-	// p.Timeseries = PreallocTimeseriesSliceFromPool()
 	rw2req := &WriteRequestRW2{}
 	if err := rw2req.Unmarshal(data); err != nil {
 		return err
 	}
 
-	metricFamilies := map[string]*MetricMetadata{}
-
 	// Debugging.
 	metadataReceived := 0
 	metadataBytes := 0
+	metricFamilies := map[string]*MetricMetadata{}
+	symbolsInMeta := map[uint32]struct{}{}
 
 	for _, ts := range rw2req.Timeseries {
 		p.Timeseries = append(p.Timeseries, PreallocTimeseries{})
@@ -122,23 +121,6 @@ func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
 			}
 		}
 
-		// Metadata is per timeseries in RW2, but in RW1 is per request.
-		// p.Timeseries[len(p.Timeseries)-1].TimeSeries.Metadata = ts.Metadata
-
-		// Debugging
-		if ts.Metadata.Type != METRIC_TYPE_UNSPECIFIED {
-			metadataReceived++
-			metadataBytes += 4 // type
-			unit, err := getSymbol(ts.Metadata.UnitRef, rw2req.Symbols)
-			if err == nil {
-				metadataBytes += len(unit)
-			}
-			help, err := getSymbol(ts.Metadata.HelpRef, rw2req.Symbols)
-			if err == nil {
-				metadataBytes += len(help)
-			}
-		}
-
 		// Convert RW2 metadata to RW1 metadata.
 		seriesName := getSeriesName(p.Timeseries[len(p.Timeseries)-1].TimeSeries.Labels)
 		if seriesName == "" {
@@ -150,16 +132,33 @@ func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
 		}
 		help, _ := getSymbol(ts.Metadata.HelpRef, rw2req.Symbols)
 		unit, _ := getSymbol(ts.Metadata.UnitRef, rw2req.Symbols)
+
+		// Debugging
+		{
+			metadataReceived++
+			buffer := make([]byte, 64*1024)
+			s, _ := ts.Metadata.MarshalToSizedBuffer(buffer)
+			metadataBytes += s
+
+			symbolsInMeta[ts.Metadata.HelpRef] = struct{}{}
+			symbolsInMeta[ts.Metadata.UnitRef] = struct{}{}
+		}
+
 		if ts.Metadata.Type == METRIC_TYPE_UNSPECIFIED && help == "" && unit == "" {
 			// Nothing to do here.
 			continue
 		}
+
 		metricFamilies[metricFamily] = &MetricMetadata{
 			Type:             MetricMetadata_MetricType(ts.Metadata.Type),
 			MetricFamilyName: metricFamily,
 			Help:             help,
 			Unit:             unit,
 		}
+
+		// if strings.HasPrefix(seriesName, "cortex_request_duration_seconds") {
+		// 	fmt.Printf("KRAJO: seriesName=%v, metricFamily=%v, type=%v, help=%v, unit=%v\n", seriesName, metricFamily, metricFamilies[metricFamily].Type, help, unit)
+		// }
 	}
 
 	// Fill the metadata
@@ -177,6 +176,11 @@ func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
 		familyBytes += len(metadata.Help)
 		familyBytes += len(metadata.Unit)
 	}
+
+	for symbol := range symbolsInMeta {
+		metadataBytes += len(rw2req.Symbols[symbol])
+	}
+
 	fmt.Printf("KRAJO: RW2 timeseries=%v, metadata=%v, series meta=%v bytes, family meta=%v bytes\n", len(p.Timeseries), metadataReceived, metadataBytes, familyBytes)
 
 	return nil
