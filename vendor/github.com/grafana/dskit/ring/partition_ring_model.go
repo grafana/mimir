@@ -7,11 +7,127 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/kv/memberlist"
 )
+
+const PartitionUnknown = PartitionState_PartitionUnknown
+const PartitionPending = PartitionState_PartitionPending
+const PartitionActive = PartitionState_PartitionActive
+const PartitionInactive = PartitionState_PartitionInactive
+const PartitionDeleted = PartitionState_PartitionDeleted
+
+func (this *PartitionRingDesc) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PartitionRingDesc)
+	if !ok {
+		that2, ok := that.(PartitionRingDesc)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Partitions) != len(that1.Partitions) {
+		return false
+	}
+	for i := range this.Partitions {
+		a := this.Partitions[i]
+		b := that1.Partitions[i]
+		if !(a).Equal(b) {
+			return false
+		}
+	}
+	if len(this.Owners) != len(that1.Owners) {
+		return false
+	}
+	for i := range this.Owners {
+		a := this.Owners[i]
+		b := that1.Owners[i]
+		if !(a).Equal(b) {
+			return false
+		}
+	}
+	return true
+}
+func (this *PartitionDesc) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*PartitionDesc)
+	if !ok {
+		that2, ok := that.(PartitionDesc)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Id != that1.Id {
+		return false
+	}
+	if len(this.Tokens) != len(that1.Tokens) {
+		return false
+	}
+	for i := range this.Tokens {
+		if this.Tokens[i] != that1.Tokens[i] {
+			return false
+		}
+	}
+	if this.State != that1.State {
+		return false
+	}
+	if this.StateTimestamp != that1.StateTimestamp {
+		return false
+	}
+	return true
+}
+func (this *OwnerDesc) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*OwnerDesc)
+	if !ok {
+		that2, ok := that.(OwnerDesc)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.OwnedPartition != that1.OwnedPartition {
+		return false
+	}
+	if this.State != that1.State {
+		return false
+	}
+	if this.UpdatedTimestamp != that1.UpdatedTimestamp {
+		return false
+	}
+	return true
+}
 
 type partitionRingCodec struct {
 	codec.Codec
@@ -27,10 +143,10 @@ func (c *partitionRingCodec) Decode(in []byte) (interface{}, error) {
 	// Ensure maps are initialised. This makes working with PartitionRingDesc more convenient.
 	if actual, ok := out.(*PartitionRingDesc); ok {
 		if actual.Partitions == nil {
-			actual.Partitions = map[int32]PartitionDesc{}
+			actual.Partitions = map[int32]*PartitionDesc{}
 		}
 		if actual.Owners == nil {
-			actual.Owners = map[string]OwnerDesc{}
+			actual.Owners = map[string]*OwnerDesc{}
 		}
 	}
 
@@ -63,8 +179,8 @@ func GetOrCreatePartitionRingDesc(in any) *PartitionRingDesc {
 
 func NewPartitionRingDesc() *PartitionRingDesc {
 	return &PartitionRingDesc{
-		Partitions: map[int32]PartitionDesc{},
-		Owners:     map[string]OwnerDesc{},
+		Partitions: map[int32]*PartitionDesc{},
+		Owners:     map[string]*OwnerDesc{},
 	}
 }
 
@@ -168,8 +284,8 @@ func (m *PartitionRingDesc) activePartitionsCount() int {
 
 // WithPartitions returns a new PartitionRingDesc with only the specified partitions and their owners included.
 func (m *PartitionRingDesc) WithPartitions(partitions map[int32]struct{}) PartitionRingDesc {
-	newPartitions := make(map[int32]PartitionDesc, len(partitions))
-	newOwners := make(map[string]OwnerDesc, len(partitions)*2) // assuming two owners per partition.
+	newPartitions := make(map[int32]*PartitionDesc, len(partitions))
+	newOwners := make(map[string]*OwnerDesc, len(partitions)*2) // assuming two owners per partition.
 
 	for pid, p := range m.Partitions {
 		if _, ok := partitions[pid]; ok {
@@ -196,7 +312,7 @@ func (m *PartitionRingDesc) AddPartition(id int32, state PartitionState, now tim
 	// Partitions don't use zones.
 	spreadMinimizing := NewSpreadMinimizingTokenGeneratorForInstanceAndZoneID("", int(id), 0, false)
 
-	m.Partitions[id] = PartitionDesc{
+	m.Partitions[id] = &PartitionDesc{
 		Id:             id,
 		Tokens:         spreadMinimizing.GenerateTokens(optimalTokensPerInstance, nil),
 		State:          state,
@@ -237,7 +353,10 @@ func (m *PartitionRingDesc) HasPartition(id int32) bool {
 // owner was added or updated, false if it was left unchanged.
 func (m *PartitionRingDesc) AddOrUpdateOwner(id string, state OwnerState, ownedPartition int32, now time.Time) bool {
 	prev, ok := m.Owners[id]
-	updated := OwnerDesc{
+	if !ok {
+		prev = &OwnerDesc{}
+	}
+	updated := &OwnerDesc{
 		State:          state,
 		OwnedPartition: ownedPartition,
 
@@ -368,12 +487,15 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 
 	// Now let's handle owners.
 	for id, otherOwner := range other.Owners {
-		thisOwner := m.Owners[id]
+		thisOwner, ok := m.Owners[id]
+		if !ok {
+			thisOwner = &OwnerDesc{}
+		}
 
 		// In case the timestamp is equal we give priority to the deleted state.
 		// Reason is that timestamp has second precision, so we cover the case an
 		// update and subsequent deletion occur within the same second.
-		if otherOwner.UpdatedTimestamp > thisOwner.UpdatedTimestamp || (otherOwner.UpdatedTimestamp == thisOwner.UpdatedTimestamp && otherOwner.State == OwnerDeleted && thisOwner.State != OwnerDeleted) {
+		if otherOwner.UpdatedTimestamp > thisOwner.UpdatedTimestamp || (otherOwner.UpdatedTimestamp == thisOwner.UpdatedTimestamp && otherOwner.State == OwnerState_OwnerDeleted && thisOwner.State != OwnerState_OwnerDeleted) {
 			m.Owners[id] = otherOwner
 			change.Owners[id] = otherOwner
 		}
@@ -383,9 +505,9 @@ func (m *PartitionRingDesc) mergeWithTime(mergeable memberlist.Mergeable, localC
 		// Mark all missing owners as deleted.
 		// This breaks commutativity! But we only do it locally, not when gossiping with others.
 		for id, thisOwner := range m.Owners {
-			if _, exists := other.Owners[id]; !exists && thisOwner.State != OwnerDeleted {
+			if _, exists := other.Owners[id]; !exists && thisOwner.State != OwnerState_OwnerDeleted {
 				// Owner was removed from the ring. We need to preserve it locally, but we set state to OwnerDeleted.
-				thisOwner.State = OwnerDeleted
+				thisOwner.State = OwnerState_OwnerDeleted
 				thisOwner.UpdatedTimestamp = now.Unix()
 				m.Owners[id] = thisOwner
 				change.Owners[id] = thisOwner
@@ -430,7 +552,7 @@ func (m *PartitionRingDesc) RemoveTombstones(limit time.Time) (total, removed in
 	}
 
 	for n, owner := range m.Owners {
-		if owner.State == OwnerDeleted {
+		if owner.State == OwnerState_OwnerDeleted {
 			if limit.IsZero() || time.Unix(owner.UpdatedTimestamp, 0).Before(limit) {
 				delete(m.Owners, n)
 				removed++
@@ -449,10 +571,10 @@ func (m *PartitionRingDesc) Clone() memberlist.Mergeable {
 
 	// Ensure empty maps are preserved (easier to compare with a deep equal in tests).
 	if m.Partitions != nil && clone.Partitions == nil {
-		clone.Partitions = map[int32]PartitionDesc{}
+		clone.Partitions = map[int32]*PartitionDesc{}
 	}
 	if m.Owners != nil && clone.Owners == nil {
-		clone.Owners = map[string]OwnerDesc{}
+		clone.Owners = map[string]*OwnerDesc{}
 	}
 
 	return clone

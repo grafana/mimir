@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	gogoproto "github.com/gogo/protobuf/proto"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/grafana/dskit/kv/codec"
@@ -30,7 +29,7 @@ func (ts ByID) Swap(i, j int)      { ts[i], ts[j] = ts[j], ts[i] }
 func (ts ByID) Less(i, j int) bool { return ts[i].Id < ts[j].Id }
 
 // ProtoDescFactory makes new Descs
-func ProtoDescFactory() gogoproto.Message {
+func ProtoDescFactory() proto.Message {
 	return NewDesc()
 }
 

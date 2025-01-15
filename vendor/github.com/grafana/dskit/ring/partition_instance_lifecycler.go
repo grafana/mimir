@@ -281,7 +281,7 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 		}
 
 		// Ensure the instance is added as partition owner.
-		if ring.AddOrUpdateOwner(l.cfg.InstanceID, OwnerActive, l.cfg.PartitionID, now) {
+		if ring.AddOrUpdateOwner(l.cfg.InstanceID, OwnerState_OwnerActive, l.cfg.PartitionID, now) {
 			changed = true
 		}
 
@@ -329,7 +329,7 @@ func (l *PartitionInstanceLifecycler) waitPartitionAndRegisterOwner(ctx context.
 
 	// Ensure the instance is added as partition owner.
 	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
-		return ring.AddOrUpdateOwner(l.cfg.InstanceID, OwnerActive, l.cfg.PartitionID, time.Now()), nil
+		return ring.AddOrUpdateOwner(l.cfg.InstanceID, OwnerState_OwnerActive, l.cfg.PartitionID, time.Now()), nil
 	})
 }
 

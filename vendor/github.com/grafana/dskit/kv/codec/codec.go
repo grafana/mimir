@@ -1,8 +1,8 @@
 package codec
 
 import (
-	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"google.golang.org/protobuf/proto"
 )
 
 // Codec allows KV clients to serialise and deserialise values.
@@ -44,6 +44,9 @@ func (p Proto) Decode(bytes []byte) (interface{}, error) {
 
 // Encode implements Codec
 func (p Proto) Encode(msg interface{}) ([]byte, error) {
+	if msg == nil {
+		return nil, nil
+	}
 	bytes, err := proto.Marshal(msg.(proto.Message))
 	if err != nil {
 		return nil, err
