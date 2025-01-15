@@ -32,17 +32,18 @@ spec:
     {{- end }}
   serviceName: {{ template "mimir.fullname" . }}-store-gateway{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
   {{- if .Values.store_gateway.persistentVolume.enabled }}
+  {{- with .Values.store_gateway.persistentVolume }}
   volumeClaimTemplates:
     - apiVersion: v1
       kind: PersistentVolumeClaim
       metadata:
-        name: storage
-        {{- if .Values.store_gateway.persistentVolume.annotations }}
+        name: {{ .name }}
+        {{- if .annotations }}
         annotations:
-          {{- toYaml .Values.store_gateway.persistentVolume.annotations | nindent 10 }}
+          {{- toYaml .annotations | nindent 10 }}
         {{- end }}
       spec:
-        {{- $storageClass := default .Values.store_gateway.persistentVolume.storageClass $rolloutZone.storageClass }}
+        {{- $storageClass := default .storageClass $rolloutZone.storageClass }}
         {{- if $storageClass }}
         {{- if (eq "-" $storageClass) }}
         storageClassName: ""
@@ -51,10 +52,11 @@ spec:
         {{- end }}
         {{- end }}
         accessModes:
-          {{- toYaml .Values.store_gateway.persistentVolume.accessModes | nindent 10 }}
+          {{- toYaml .accessModes | nindent 10 }}
         resources:
           requests:
-            storage: "{{ .Values.store_gateway.persistentVolume.size }}"
+            storage: "{{ .size }}"
+  {{- end }}
   {{- end }}
   template:
     metadata:

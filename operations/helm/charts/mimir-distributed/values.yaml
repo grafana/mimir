@@ -636,6 +636,10 @@ alertmanager:
     # If false, use emptyDir
     enabled: true
 
+    # Alertmanager data Persistent Volume Claim template name
+    #
+    name: storage
+
     # Alertmanager data Persistent Volume Claim annotations
     #
     annotations: {}
@@ -1014,6 +1018,10 @@ ingester:
     # It is advisable to enable volume persistence in ingester to avoid losing metrics.
     #
     enabled: true
+
+    # Ingester data Persistent Volume Claim template name
+    #
+    name: storage
 
     # Ingester data Persistent Volume Claim annotations
     #
@@ -2154,6 +2162,10 @@ store_gateway:
     #
     enabled: true
 
+    # Store-gateway data Persistent Volume Claim template name
+    #
+    name: storage
+
     # Store-gateway data Persistent Volume Claim annotations
     #
     annotations: {}
@@ -2365,6 +2377,10 @@ compactor:
     # If false, use emptyDir
     #
     enabled: true
+
+    # compactor data Persistent Volume Claim template name
+    #
+    name: storage
 
     # compactor data Persistent Volume Claim annotations
     #
