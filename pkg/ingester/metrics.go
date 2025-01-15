@@ -44,6 +44,8 @@ type ingesterMetrics struct {
 	activeNativeHistogramBucketsPerUser               *prometheus.GaugeVec
 	activeNativeHistogramBucketsCustomTrackersPerUser *prometheus.GaugeVec
 
+	attributedActiveSeriesFailuresPerUser *prometheus.CounterVec
+
 	// Owned series
 	ownedSeriesPerUser *prometheus.GaugeVec
 
@@ -193,7 +195,10 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_owned_series",
 			Help: "Number of currently owned series per user.",
 		}, []string{"user"}),
-
+		attributedActiveSeriesFailuresPerUser: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_attributed_active_series_failure",
+			Help: "The total number of failed active series decrement per user",
+		}, []string{"user"}),
 		maxUsersGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name:        instanceLimits,
 			Help:        instanceLimitsHelp,
@@ -401,6 +406,7 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 
 	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
 	m.ownedSeriesPerUser.DeleteLabelValues(userID)
+	m.attributedActiveSeriesFailuresPerUser.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
