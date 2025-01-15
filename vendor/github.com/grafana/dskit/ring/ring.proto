@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package ring;
 
-option go_package = "github.com/grafana/cortex/pkg/ring;ring";
+option go_package = "github.com/grafana/dskit/ring;ring";
 
 // Desc is the top-level type used to model a ring, containing information for individual instances.
 message Desc {

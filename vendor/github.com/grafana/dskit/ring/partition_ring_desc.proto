@@ -2,18 +2,15 @@ syntax = "proto3";
 
 package ring;
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option go_package = "github.com/grafana/dskit/ring;ring";
 
 // PartitionRingDesc holds the state of the partitions ring.
 message PartitionRingDesc {
   // Mapping between partition ID and partition info.
-  map<int32, PartitionDesc> partitions = 1 [(gogoproto.nullable) = false];
+  map<int32, PartitionDesc> partitions = 1;
 
   // Mapping between instance ID and partition ownership info.
-  map<string, OwnerDesc> owners = 2 [(gogoproto.nullable) = false];
+  map<string, OwnerDesc> owners = 2;
 }
 
 // PartitionDesc holds the state of a single partition.
