@@ -18,8 +18,8 @@ type Rule struct {
 	EvaluationTimeSeconds float64 `json:"evaluationTime"`
 	RuleQuery             string  `json:"query"`
 
-	noDependentRules  bool
-	noDependencyRules bool
+	dependentRules  []rules.Rule
+	dependencyRules []rules.Rule
 }
 
 func (r *Rule) Name() string {
@@ -79,18 +79,36 @@ func (r *Rule) GetEvaluationTimestamp() time.Time {
 	panic("Rule.GetEvaluationTimestamp() is not supported")
 }
 
-func (r *Rule) SetNoDependentRules(v bool) {
-	r.noDependentRules = v
+func (r *Rule) SetDependentRules(dependents []rules.Rule) {
+	r.dependentRules = make([]rules.Rule, len(dependents))
+	copy(r.dependentRules, dependents)
 }
 
 func (r *Rule) NoDependentRules() bool {
-	return r.noDependentRules
+	if r.dependentRules == nil {
+		return false // We don't know if there are dependent rules.
+	}
+
+	return len(r.dependentRules) == 0
 }
 
-func (r *Rule) SetNoDependencyRules(v bool) {
-	r.noDependencyRules = v
+func (r *Rule) DependentRules() []rules.Rule {
+	return r.dependentRules
+}
+
+func (r *Rule) SetDependencyRules(dependencies []rules.Rule) {
+	r.dependencyRules = make([]rules.Rule, len(dependencies))
+	copy(r.dependencyRules, dependencies)
 }
 
 func (r *Rule) NoDependencyRules() bool {
-	return r.noDependencyRules
+	if r.dependencyRules == nil {
+		return false // We don't know if there are dependency rules.
+	}
+
+	return len(r.dependencyRules) == 0
+}
+
+func (r *Rule) DependencyRules() []rules.Rule {
+	return r.dependencyRules
 }

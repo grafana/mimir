@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"os/exec"
@@ -13,6 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/grafana/mimir/pkg/ruler"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/rules"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
@@ -41,6 +46,9 @@ type Group struct {
 	// Estimated total duration to evaluate rules in this group, factoring the strong consistency overhead.
 	rulesEstimatedTotalEvaluationWithStrongConsistencyDuration time.Duration
 
+	// Estimated total duration to evaluate rules in this group, with strong consistency and concurrent evaluations.
+	rulesEstimatedConcurrentEvaluationDuration time.Duration
+
 	// Number of rules, in this group, that will be executed with strong read consistency.
 	rulesStrongConsistencyCount int
 }
@@ -53,6 +61,10 @@ func (g *Group) EvaluationInterval() time.Duration {
 // as a percentage of the evaluation interval. The higher the percentage, the higher the risk of missing evaluations.
 func (g *Group) estimatedDurationPercentage() float64 {
 	return float64(g.rulesEstimatedTotalEvaluationWithStrongConsistencyDuration) / float64(g.EvaluationInterval()) * 100
+}
+
+func (g *Group) estimatedConcurrentEvaluationPercentage() float64 {
+	return float64(g.rulesEstimatedConcurrentEvaluationDuration) / float64(g.EvaluationInterval()) * 100
 }
 
 func main() {
@@ -125,6 +137,24 @@ func analyseRuleGroup(group *Group) {
 	// Compute the estimated evaluation duration after strong read consistency is enforced.
 	group.rulesEstimatedTotalEvaluationWithStrongConsistencyDuration = group.rulesTotalEvaluationDuration +
 		(estimatedStrongConsistencyLatencyOverhead * time.Duration(group.rulesStrongConsistencyCount))
+
+	// Estimate how long it would take to evaluate, if the rule group allowed concurrent evaluations.
+	mtController := ruler.NewMultiTenantConcurrencyController(log.NewNopLogger(), 10, 0, prometheus.NewRegistry(), nil)
+	concurrencyController := mtController.NewTenantConcurrencyControllerFor(group.Tenant)
+	batches := concurrencyController.SplitGroupIntoBatches(context.Background(), rules.NewGroup(rules.GroupOptions{Rules: promRules}))
+	group.rulesEstimatedConcurrentEvaluationDuration = 0
+	for _, batch := range batches {
+		var maxOfBatchSeconds float64 = 0
+		for _, idx := range batch {
+			maxOfBatchSeconds = math.Max(float64(maxOfBatchSeconds), group.Rules[idx].GetEvaluationDuration().Seconds()+estimatedStrongConsistencyLatencyOverhead.Seconds())
+		}
+		group.rulesEstimatedConcurrentEvaluationDuration += time.Duration(maxOfBatchSeconds) * time.Second
+	}
+	// If batches couldn't be calculated, fallback to the total evaluation duration.
+	if group.rulesEstimatedConcurrentEvaluationDuration == 0 {
+		group.rulesEstimatedConcurrentEvaluationDuration = group.rulesEstimatedTotalEvaluationWithStrongConsistencyDuration
+	}
+
 }
 
 func printAnalysisResultsCSV(groups []*Group) {
@@ -133,7 +163,17 @@ func printAnalysisResultsCSV(groups []*Group) {
 		return int(b.estimatedDurationPercentage() - a.estimatedDurationPercentage())
 	})
 
-	fmt.Println(`"Rule group","Evaluation interval (sec)","Num rules","Num strong consistency rules","Current duration (sec)","Estimated duration with strong read consistency (sec)", "Estimated duration with strong read consistency (%)"`)
+	fmt.Println(strings.Join([]string{
+		`"Rule group"`,
+		`"Evaluation interval (sec)"`,
+		`"Num rules"`,
+		`"Num strong consistency rules"`,
+		`"Current duration (sec)"`,
+		`"Estimated duration with strong read consistency (sec)"`,
+		`"Estimated duration with strong read consistency (%)"`,
+		`"Estimated concurrent evaluation duration (sec)"`,
+		`"Estimated concurrent evaluation duration (%)"`,
+	}, ","))
 	for _, group := range groups {
 		// Skip rule groups with no strong consistency rules, since they're not affected.
 		if group.rulesStrongConsistencyCount == 0 {
@@ -148,6 +188,8 @@ func printAnalysisResultsCSV(groups []*Group) {
 			fmt.Sprintf("%.2f", group.rulesTotalEvaluationDuration.Seconds()),
 			fmt.Sprintf("%.2f", group.rulesEstimatedTotalEvaluationWithStrongConsistencyDuration.Seconds()),
 			fmt.Sprintf("%.0f%%", group.estimatedDurationPercentage()),
+			fmt.Sprintf("%.2f", group.rulesEstimatedConcurrentEvaluationDuration.Seconds()),
+			fmt.Sprintf("%.0f%%", group.estimatedConcurrentEvaluationPercentage()),
 		}, ","))
 	}
 
@@ -174,7 +216,9 @@ func noErr(err error) {
 
 func downloadRules(destination string) {
 	// The mapping should be <namespace>: <cluster>.
-	namespaces := map[string]string{}
+	namespaces := map[string]string{
+		"cortex-prod-09": "prod-au-southeast-0",
+	}
 
 	for namespace, cluster := range namespaces {
 		defer fmt.Println("done", namespace)
