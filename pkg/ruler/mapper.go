@@ -6,7 +6,7 @@
 package ruler
 
 import (
-	"crypto/md5"
+	"bytes"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -156,11 +156,9 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 		if err != nil {
 			return false, err
 		}
-		newHash := md5.New()
-		currentHash := md5.New()
 
 		// bailout if there is no update
-		if string(currentHash.Sum(current)) == string(newHash.Sum(d)) {
+		if bytes.Equal(current, d) {
 			return false, nil
 		}
 	}
