@@ -456,9 +456,10 @@ overrides_exporter:
 # CLI flag: -timeseries-unmarshal-caching-optimization-enabled
 [timeseries_unmarshal_caching_optimization_enabled: <boolean> | default = true]
 
-# (experimental) Time interval at which inactive cost attributions are evicted
-# from the counter, ensuring they are not included in the cost attribution
-# cardinality per user limit.
+# (experimental) Specifies how often inactive cost attributions for received and
+# discarded sample trackers are evicted from the counter, ensuring they do not
+# contribute to the cost attribution cardinality per user limit. This setting
+# does not apply to active series, which are managed separately.
 # CLI flag: -cost-attribution.eviction-interval
 [cost_attribution_eviction_interval: <duration> | default = 20m]
 
@@ -3610,13 +3611,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-cost-attribution-cardinality-per-user
 [max_cost_attribution_cardinality_per_user: <int> | default = 10000]
 
-# (experimental) Cooldown period for cost attribution labels. Specifies the
-# duration the cost attribution remains in overflow before attempting a reset.
-# If the cardinality remains above the limit after this period, the system stays
-# in overflow mode and extends the cooldown. Setting this value to 0 disables
-# the cooldown, causing the system to continuously check whether the cardinality
-# has dropped below the limit. A reset occurs when the cardinality falls below
-# the limit.
+# (experimental) Defines how long cost attribution stays in overflow before
+# attempting a reset, with received/discarded samples extending the cooldown if
+# overflow persists, while active series reset and restart tracking after the
+# cooldown.
 # CLI flag: -validation.cost-attribution-cooldown
 [cost_attribution_cooldown: <duration> | default = 0s]
 

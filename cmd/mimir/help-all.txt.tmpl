@@ -1286,7 +1286,7 @@ Usage of ./cmd/mimir/mimir:
   -cost-attribution.cleanup-interval duration
     	[experimental] Time interval at which the cost attribution cleanup process runs, ensuring inactive cost attribution entries are purged. (default 3m0s)
   -cost-attribution.eviction-interval duration
-    	[experimental] Time interval at which inactive cost attributions are evicted from the counter, ensuring they are not included in the cost attribution cardinality per user limit. (default 20m0s)
+    	[experimental] Specifies how often inactive cost attributions for received and discarded sample trackers are evicted from the counter, ensuring they do not contribute to the cost attribution cardinality per user limit. This setting does not apply to active series, which are managed separately. (default 20m0s)
   -cost-attribution.registry-path string
     	[experimental] Defines a custom path for the registry. When specified, Mimir exposes cost attribution metrics through this custom path. If not specified, cost attribution metrics aren't exposed.
   -debug.block-profile-rate int
@@ -3326,7 +3326,7 @@ Usage of ./cmd/mimir/mimir:
   -usage-stats.installation-mode string
     	Installation mode. Supported values: custom, helm, jsonnet. (default "custom")
   -validation.cost-attribution-cooldown duration
-    	[experimental] Cooldown period for cost attribution labels. Specifies the duration the cost attribution remains in overflow before attempting a reset. If the cardinality remains above the limit after this period, the system stays in overflow mode and extends the cooldown. Setting this value to 0 disables the cooldown, causing the system to continuously check whether the cardinality has dropped below the limit. A reset occurs when the cardinality falls below the limit.
+    	[experimental] Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.
   -validation.cost-attribution-labels comma-separated-list-of-strings
     	[experimental] Defines labels for cost attribution. Applies to metrics like cortex_distributor_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_distributor_received_attributed_samples_total{team='frontend', service='api'}.
   -validation.create-grace-period duration
