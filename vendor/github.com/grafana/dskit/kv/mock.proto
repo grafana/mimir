@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package kv;
+
+option go_package = "github.com/grafana/dskit/kv;kv";
+
+// MockMessage is for testing purposes.
+message MockMessage {
+  string id = 1;
+}

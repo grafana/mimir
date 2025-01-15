@@ -13,7 +13,7 @@ import (
 
 var (
 	// Ring operation used to get healthy active instances in the ring.
-	activeRingOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+	activeRingOp = ring.NewOp([]ring.InstanceState{ring.InstanceState_ACTIVE}, nil)
 )
 
 type ringServiceDiscovery struct {

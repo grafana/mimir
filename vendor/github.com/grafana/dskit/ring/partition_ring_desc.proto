@@ -2,18 +2,15 @@ syntax = "proto3";
 
 package ring;
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option go_package = "github.com/grafana/dskit/ring;ring";
 
 // PartitionRingDesc holds the state of the partitions ring.
 message PartitionRingDesc {
   // Mapping between partition ID and partition info.
-  map<int32, PartitionDesc> partitions = 1 [(gogoproto.nullable) = false];
+  map<int32, PartitionDesc> partitions = 1;
 
   // Mapping between instance ID and partition ownership info.
-  map<string, OwnerDesc> owners = 2 [(gogoproto.nullable) = false];
+  map<string, OwnerDesc> owners = 2;
 }
 
 // PartitionDesc holds the state of a single partition.
@@ -35,7 +32,7 @@ message PartitionDesc {
 enum PartitionState {
   PartitionUnknown = 0;
 
-  // Pending partition is a partition that is about to be switched to ACTIVE. This state is used
+  // Pending partition is a partition that is about to be switched to InstanceState_ACTIVE. This state is used
   // to let owners to attach to the partition and get ready to handle the partition.
   //
   // When a partition is in this state, it must not be used for writing or reading.
