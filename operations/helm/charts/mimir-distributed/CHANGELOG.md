@@ -29,7 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
-## 5.6.0-rc.0
+## 5.6.0
 
 * [ENHANCEMENT] Upgrade Mimir and GEM to [2.15.0-rc.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#2150). #10369
 * [CHANGE] Update rollout-operator version to 0.20.0. #9995
