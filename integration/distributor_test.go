@@ -376,7 +376,6 @@ overrides:
 func TestDistributorRemoteWrite2(t *testing.T) {
 	queryEnd := time.Now().Round(time.Second)
 	queryStart := queryEnd.Add(-1 * time.Hour)
-	// queryStep := 10 * time.Minute
 
 	testCases := map[string]struct {
 		inRemoteWrite   []*promRW2.Request
@@ -425,7 +424,7 @@ func TestDistributorRemoteWrite2(t *testing.T) {
 		"-distributor.ha-tracker.store":                      "consul",
 		"-distributor.ha-tracker.consul.hostname":            consul.NetworkHTTPEndpoint(),
 		"-distributor.ha-tracker.prefix":                     "prom_ha/",
-		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(false), //cachingUnmarshalDataEnabled),
+		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(false),
 	}
 
 	flags := mergeFlags(
