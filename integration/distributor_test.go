@@ -18,9 +18,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	promRW2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/pkg/distributor/rw2"
 )
 
 func TestDistributor(t *testing.T) {
@@ -367,6 +369,132 @@ overrides:
 
 				require.Equal(t, expResult, result)
 			}
+		})
+	}
+}
+
+func TestDistributorRemoteWrite2(t *testing.T) {
+	queryEnd := time.Now().Round(time.Second)
+	queryStart := queryEnd.Add(-1 * time.Hour)
+	// queryStep := 10 * time.Minute
+
+	testCases := map[string]struct {
+		inRemoteWrite   []*promRW2.Request
+		runtimeConfig   string
+		queries         map[string]model.Matrix
+		exemplarQueries map[string][]promv1.ExemplarQueryResult
+	}{
+		"no special features": {
+			inRemoteWrite: []*promRW2.Request{
+				rw2.AddFloatSeries(
+					nil,
+					labels.FromStrings("__name__", "foobar"),
+					[]promRW2.Sample{{Timestamp: queryStart.UnixMilli(), Value: 100}},
+					promRW2.Metadata_METRIC_TYPE_COUNTER,
+					"some help",
+					"someunit",
+					0,
+					nil),
+			},
+			queries: map[string]model.Matrix{
+				"foobar": {{
+					Metric: model.Metric{"__name__": "foobar"},
+					Values: []model.SamplePair{{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(100)}},
+				}},
+			},
+		},
+	}
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	previousRuntimeConfig := ""
+	require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte(previousRuntimeConfig)))
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, blocksBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	baseFlags := map[string]string{
+		"-distributor.ingestion-tenant-shard-size":           "0",
+		"-ingester.ring.heartbeat-period":                    "1s",
+		"-distributor.ha-tracker.enable":                     "true",
+		"-distributor.ha-tracker.enable-for-all-users":       "true",
+		"-distributor.ha-tracker.store":                      "consul",
+		"-distributor.ha-tracker.consul.hostname":            consul.NetworkHTTPEndpoint(),
+		"-distributor.ha-tracker.prefix":                     "prom_ha/",
+		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(false), //cachingUnmarshalDataEnabled),
+	}
+
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		baseFlags,
+	)
+
+	// We want only distributor to be reloading runtime config.
+	distributorFlags := mergeFlags(flags, map[string]string{
+		"-runtime-config.file":          filepath.Join(e2e.ContainerSharedDir, "runtime.yaml"),
+		"-runtime-config.reload-period": "100ms",
+		// Set non-zero default for number of exemplars. That way our values used in the test (0 and 100) will show up in runtime config diff.
+		"-ingester.max-global-exemplars-per-user": "3",
+	})
+
+	// Ingester will not reload runtime config.
+	ingesterFlags := mergeFlags(flags, map[string]string{
+		// Ingester will always see exemplars enabled. We do this to avoid waiting for ingester to apply new setting to TSDB.
+		"-ingester.max-global-exemplars-per-user": "100",
+	})
+
+	// Start Mimir components.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), distributorFlags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), ingesterFlags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+
+	// Wait until distributor has updated the ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// Wait until querier has updated the ring.
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
+	require.NoError(t, err)
+
+	runtimeConfigURL := fmt.Sprintf("http://%s/runtime_config?mode=diff", distributor.HTTPEndpoint())
+
+	for testName, tc := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			for _, ser := range tc.inRemoteWrite {
+				if tc.runtimeConfig != previousRuntimeConfig {
+					currentRuntimeConfig, err := getURL(runtimeConfigURL)
+					require.NoError(t, err)
+
+					// Write new runtime config
+					require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte(tc.runtimeConfig)))
+
+					// Wait until distributor has reloaded runtime config.
+					test.Poll(t, 1*time.Second, true, func() interface{} {
+						newRuntimeConfig, err := getURL(runtimeConfigURL)
+						require.NoError(t, err)
+						return currentRuntimeConfig != newRuntimeConfig
+					})
+
+					previousRuntimeConfig = tc.runtimeConfig
+				}
+
+				res, err := client.PushRW2(ser)
+				require.NoError(t, err)
+				require.Equal(t, http.StatusUnsupportedMediaType, res.StatusCode)
+			}
+
+			// Placeholder for actual query tests.
 		})
 	}
 }
