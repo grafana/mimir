@@ -636,6 +636,10 @@ func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, r
 		} else {
 			if desc == nil && electedAtTime == 0 {
 				electedAtTime = timestamp.FromTime(now)
+			} else if desc != nil && desc.DeletedAt > 0 {
+				// if we receive a ReplicaDesc that have been marked as deleted but not deleted from the kvStore yet,
+				// we need to set the value to electedAtTime, otherwise it's going be zero 0
+				electedAtTime = timestamp.FromTime(now)
 			}
 		}
 		// Attempt to update KVStore to our timestamp and replica.
