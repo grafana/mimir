@@ -3562,7 +3562,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) Rewrite queries using the same range selector and resolution
 # [X:X] which do not work in Prometheus 3 to a nearly identical form that does
 # work with Prometheus 3 semantics
-# CLI flag: -query-frontend.subquery-range-compat
+# CLI flag: -query-frontend.prom2-range-compat
 [prom2_range_compat: <boolean> | default = false]
 
 # Enables endpoints used for cardinality analysis.
