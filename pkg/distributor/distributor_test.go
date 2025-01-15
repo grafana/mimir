@@ -5477,7 +5477,7 @@ func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester) *ring.Part
 
 	// Add all ingesters are partition owners.
 	for _, ingester := range ingesters {
-		desc.AddOrUpdateOwner(ingester.instanceID(), ring.OwnerActive, ingester.partitionID(), timeBeforeShuffleShardingLookbackPeriod)
+		desc.AddOrUpdateOwner(ingester.instanceID(), ring.OwnerState_OwnerActive, ingester.partitionID(), timeBeforeShuffleShardingLookbackPeriod)
 	}
 
 	return desc

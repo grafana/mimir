@@ -210,7 +210,7 @@ images: ## Print all image names.
 	@echo > /dev/null
 
 # Generating proto code is automated.
-PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
+PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print | grep -v 'pkg/distributor/ha_tracker.proto')
 PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 
 # Generating OTLP translation code is automated.
@@ -291,6 +291,22 @@ protos: $(PROTO_GOS)
 	@./tools/apply-expected-diffs.sh $(PROTO_GOS)
 
 GENERATE_FILES ?= true
+
+PROTO_DEFS_CSPROTO := ./pkg/distributor/ha_tracker.proto
+PROTO_GOS_CSPROTO := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS_CSPROTO))
+
+# this doesn't work I don't know why yet
+#.PHONY: protos-csproto
+#protos-csproto: $(PROTO_GOS_CSPROTO)
+#	@for name in $(PROTO_DEFS_CSPROTO); do \
+#        protoc \
+#        -I . \
+#        -I ./pkg/distributor/ \
+#        --go_out=paths=source_relative:. \
+#        --fastmarshal_out=apiversion=v2,paths=source_relative:. \
+#        --go-grpc_out=require_unimplemented_servers=false,paths=source_relative:. \
+#       $${name}; \
+#    done
 
 %.pb.go: %.proto
 ifeq ($(GENERATE_FILES),true)
