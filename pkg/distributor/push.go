@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -24,6 +25,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
+	promRemote "github.com/prometheus/prometheus/storage/remote"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -34,6 +36,13 @@ import (
 
 // PushFunc defines the type of the push. It is similar to http.HandlerFunc.
 type PushFunc func(ctx context.Context, req *Request) error
+
+// The PushFunc might store promRemote.WriteResponseStats in the context.
+type pushResponseStatsContextMarker struct{}
+
+var (
+	PushResponseStatsContextKey = &pushResponseStatsContextMarker{}
+)
 
 // parserFunc defines how to read the body the request from an HTTP request. It takes an optional RequestBuffers.
 type parserFunc func(ctx context.Context, r *http.Request, maxSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) error
@@ -149,9 +158,16 @@ func handler(
 				logger = utillog.WithSourceIPs(source, logger)
 			}
 		}
+
+		isRW2, err := isRemoteWrite2(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		}
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
+
+			req.UnmarshalFromRW2 = isRW2
 
 			userID, err := tenant.TenantID(ctx)
 			if err != nil && !errors.Is(err, user.ErrNoOrgID) { // ignore user.ErrNoOrgID
@@ -194,7 +210,17 @@ func handler(
 			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
-		if err := push(ctx, req); err != nil {
+		ctx = contextWithWriteResponseStats(ctx)
+		err = push(ctx, req)
+		rsValue := ctx.Value(PushResponseStatsContextKey)
+		if rsValue != nil {
+			rs := rsValue.(*promRemote.WriteResponseStats)
+			addWriteResponseStats(w, rs)
+		} else {
+			// This should not happen, but if it does, we should not panic.
+			addWriteResponseStats(w, &promRemote.WriteResponseStats{})
+		}
+		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				http.Error(w, err.Error(), statusClientClosedRequest)
 				level.Warn(logger).Log("msg", "push request canceled", "err", err)
@@ -224,6 +250,69 @@ func handler(
 			http.Error(w, validUTF8Message(msg), code)
 		}
 	})
+}
+
+func isRemoteWrite2(r *http.Request) (bool, error) {
+	const appProtoContentType = "application/x-protobuf"
+
+	contentType := r.Header.Get("Content-Type")
+	if contentType == "" {
+		// If the content type is not set, we assume it is remote write v1.
+		return false, nil
+	}
+	parts := strings.Split(contentType, ";")
+	if parts[0] != appProtoContentType {
+		return false, fmt.Errorf("expected %v as the first (media) part, got %v content-type", appProtoContentType, contentType)
+	}
+
+	// Parse potential https://www.rfc-editor.org/rfc/rfc9110#parameter
+	for _, p := range parts[1:] {
+		pair := strings.Split(p, "=")
+		if len(pair) != 2 {
+			return false, fmt.Errorf("as per https://www.rfc-editor.org/rfc/rfc9110#parameter expected parameters to be key-values, got %v in %v content-type", p, contentType)
+		}
+		if pair[0] == "proto" {
+			switch pair[1] {
+			case "prometheus.WriteRequest":
+				return false, nil
+			case "io.prometheus.write.v2.Request":
+				return true, nil
+			default:
+				return false, fmt.Errorf("got %v content type; expected prometheus.WriteRequest or io.prometheus.write.v2.Request", contentType)
+			}
+		}
+	}
+	// No "proto=" parameter, assuming v1.
+	return false, nil
+}
+
+// Consts from https://github.com/prometheus/prometheus/blob/main/storage/remote/stats.go
+const (
+	rw20WrittenSamplesHeader    = "X-Prometheus-Remote-Write-Samples-Written"
+	rw20WrittenHistogramsHeader = "X-Prometheus-Remote-Write-Histograms-Written"
+	rw20WrittenExemplarsHeader  = "X-Prometheus-Remote-Write-Exemplars-Written"
+)
+
+func contextWithWriteResponseStats(ctx context.Context) context.Context {
+	return context.WithValue(ctx, PushResponseStatsContextKey, &promRemote.WriteResponseStats{})
+}
+
+func addWriteResponseStats(w http.ResponseWriter, rs *promRemote.WriteResponseStats) {
+	headers := w.Header()
+	headers.Add(rw20WrittenSamplesHeader, strconv.Itoa(rs.Samples))
+	headers.Add(rw20WrittenHistogramsHeader, strconv.Itoa(rs.Histograms))
+	headers.Add(rw20WrittenExemplarsHeader, strconv.Itoa(rs.Exemplars))
+}
+
+func updateWriteResponseStatsCtx(ctx context.Context, samples, histograms, exemplars int) {
+	prs := ctx.Value(PushResponseStatsContextKey)
+	if prs == nil {
+		// Should not happen, but we should not panic anyway.
+		return
+	}
+	prs.(*promRemote.WriteResponseStats).Samples += samples
+	prs.(*promRemote.WriteResponseStats).Histograms += histograms
+	prs.(*promRemote.WriteResponseStats).Exemplars += exemplars
 }
 
 func calculateRetryAfter(retryAttemptHeader string, minBackoff, maxBackoff time.Duration) string {
