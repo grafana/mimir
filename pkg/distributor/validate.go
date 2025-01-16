@@ -239,17 +239,17 @@ func newExemplarValidationMetrics(r prometheus.Registerer) *exemplarValidationMe
 // validateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample, cast *costattribution.SampleTracker) error {
+func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s mimirpb.Sample, cat *costattribution.SampleTracker) error {
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
-		cast.IncrementDiscardedSamples(ls, 1, reasonTooFarInFuture, now.Time())
+		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInFuture, now.Time())
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 		return fmt.Errorf(sampleTimestampTooNewMsgFormat, s.TimestampMs, unsafeMetricName)
 	}
 
 	if cfg.PastGracePeriod(userID) > 0 && model.Time(s.TimestampMs) < now.Add(-cfg.PastGracePeriod(userID)).Add(-cfg.OutOfOrderTimeWindow(userID)) {
 		m.tooFarInPast.WithLabelValues(userID, group).Inc()
-		cast.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
+		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 		return fmt.Errorf(sampleTimestampTooOldMsgFormat, s.TimestampMs, unsafeMetricName)
 	}
@@ -260,23 +260,23 @@ func validateSample(m *sampleValidationMetrics, now model.Time, cfg sampleValida
 // validateSampleHistogram returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
 // It uses the passed 'now' time to measure the relative time of the sample.
-func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram, cast *costattribution.SampleTracker) (bool, error) {
+func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sampleValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, s *mimirpb.Histogram, cat *costattribution.SampleTracker) (bool, error) {
 	if model.Time(s.Timestamp) > now.Add(cfg.CreationGracePeriod(userID)) {
-		cast.IncrementDiscardedSamples(ls, 1, reasonTooFarInFuture, now.Time())
+		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInFuture, now.Time())
 		m.tooFarInFuture.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 		return false, fmt.Errorf(sampleTimestampTooNewMsgFormat, s.Timestamp, unsafeMetricName)
 	}
 
 	if cfg.PastGracePeriod(userID) > 0 && model.Time(s.Timestamp) < now.Add(-cfg.PastGracePeriod(userID)).Add(-cfg.OutOfOrderTimeWindow(userID)) {
-		cast.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
+		cat.IncrementDiscardedSamples(ls, 1, reasonTooFarInPast, now.Time())
 		m.tooFarInPast.WithLabelValues(userID, group).Inc()
 		unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 		return false, fmt.Errorf(sampleTimestampTooOldMsgFormat, s.Timestamp, unsafeMetricName)
 	}
 
 	if s.Schema < mimirpb.MinimumHistogramSchema || s.Schema > mimirpb.MaximumHistogramSchema {
-		cast.IncrementDiscardedSamples(ls, 1, reasonInvalidNativeHistogramSchema, now.Time())
+		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidNativeHistogramSchema, now.Time())
 		m.invalidNativeHistogramSchema.WithLabelValues(userID, group).Inc()
 		return false, fmt.Errorf(invalidSchemaNativeHistogramMsgFormat, s.Schema)
 	}
@@ -290,7 +290,7 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 		}
 		if bucketCount > bucketLimit {
 			if !cfg.ReduceNativeHistogramOverMaxBuckets(userID) {
-				cast.IncrementDiscardedSamples(ls, 1, reasonMaxNativeHistogramBuckets, now.Time())
+				cat.IncrementDiscardedSamples(ls, 1, reasonMaxNativeHistogramBuckets, now.Time())
 				m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
 				return false, fmt.Errorf(maxNativeHistogramBucketsMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 			}
@@ -298,7 +298,7 @@ func validateSampleHistogram(m *sampleValidationMetrics, now model.Time, cfg sam
 			for {
 				bc, err := s.ReduceResolution()
 				if err != nil {
-					cast.IncrementDiscardedSamples(ls, 1, reasonMaxNativeHistogramBuckets, now.Time())
+					cat.IncrementDiscardedSamples(ls, 1, reasonMaxNativeHistogramBuckets, now.Time())
 					m.maxNativeHistogramBuckets.WithLabelValues(userID, group).Inc()
 					return false, fmt.Errorf(notReducibleNativeHistogramMsgFormat, s.Timestamp, mimirpb.FromLabelAdaptersToString(ls), bucketCount, bucketLimit)
 				}
@@ -400,16 +400,16 @@ func removeNonASCIIChars(in string) (out string) {
 
 // validateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
-func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelValidation, skipLabelCountValidation bool, cast *costattribution.SampleTracker, ts time.Time) error {
+func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.LabelAdapter, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
-		cast.IncrementDiscardedSamples(ls, 1, reasonMissingMetricName, ts)
+		cat.IncrementDiscardedSamples(ls, 1, reasonMissingMetricName, ts)
 		m.missingMetricName.WithLabelValues(userID, group).Inc()
 		return errors.New(noMetricNameMsgFormat)
 	}
 
 	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
-		cast.IncrementDiscardedSamples(ls, 1, reasonInvalidMetricName, ts)
+		cat.IncrementDiscardedSamples(ls, 1, reasonInvalidMetricName, ts)
 		m.invalidMetricName.WithLabelValues(userID, group).Inc()
 		return fmt.Errorf(invalidMetricNameMsgFormat, removeNonASCIIChars(unsafeMetricName))
 	}
@@ -418,13 +418,13 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 		if strings.HasSuffix(unsafeMetricName, "_info") {
 			if len(ls) > cfg.MaxLabelNamesPerInfoSeries(userID) {
 				m.maxLabelNamesPerInfoSeries.WithLabelValues(userID, group).Inc()
-				cast.IncrementDiscardedSamples(ls, 1, reasonMaxLabelNamesPerInfoSeries, ts)
+				cat.IncrementDiscardedSamples(ls, 1, reasonMaxLabelNamesPerInfoSeries, ts)
 				metric, ellipsis := getMetricAndEllipsis(ls)
 				return fmt.Errorf(tooManyInfoLabelsMsgFormat, len(ls), cfg.MaxLabelNamesPerInfoSeries(userID), metric, ellipsis)
 			}
 		} else {
 			m.maxLabelNamesPerSeries.WithLabelValues(userID, group).Inc()
-			cast.IncrementDiscardedSamples(ls, 1, reasonMaxLabelNamesPerSeries, ts)
+			cat.IncrementDiscardedSamples(ls, 1, reasonMaxLabelNamesPerSeries, ts)
 			metric, ellipsis := getMetricAndEllipsis(ls)
 			return fmt.Errorf(tooManyLabelsMsgFormat, len(ls), cfg.MaxLabelNamesPerSeries(userID), metric, ellipsis)
 		}
@@ -436,22 +436,22 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 	for _, l := range ls {
 		if !skipLabelValidation && !model.LabelName(l.Name).IsValid() {
 			m.invalidLabel.WithLabelValues(userID, group).Inc()
-			cast.IncrementDiscardedSamples(ls, 1, reasonInvalidLabel, ts)
+			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabel, ts)
 			return fmt.Errorf(invalidLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if len(l.Name) > maxLabelNameLength {
-			cast.IncrementDiscardedSamples(ls, 1, reasonLabelNameTooLong, ts)
+			cat.IncrementDiscardedSamples(ls, 1, reasonLabelNameTooLong, ts)
 			m.labelNameTooLong.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(labelNameTooLongMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		} else if !skipLabelValidation && !model.LabelValue(l.Value).IsValid() {
-			cast.IncrementDiscardedSamples(ls, 1, reasonInvalidLabelValue, ts)
+			cat.IncrementDiscardedSamples(ls, 1, reasonInvalidLabelValue, ts)
 			m.invalidLabelValue.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(invalidLabelValueMsgFormat, l.Name, validUTF8Message(l.Value), unsafeMetricName)
 		} else if len(l.Value) > maxLabelValueLength {
-			cast.IncrementDiscardedSamples(ls, 1, reasonLabelValueTooLong, ts)
+			cat.IncrementDiscardedSamples(ls, 1, reasonLabelValueTooLong, ts)
 			m.labelValueTooLong.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(labelValueTooLongMsgFormat, l.Name, l.Value, mimirpb.FromLabelAdaptersToString(ls))
 		} else if lastLabelName == l.Name {
-			cast.IncrementDiscardedSamples(ls, 1, reasonDuplicateLabelNames, ts)
+			cat.IncrementDiscardedSamples(ls, 1, reasonDuplicateLabelNames, ts)
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(duplicateLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		}

@@ -18,16 +18,20 @@ import (
 
 type ActiveSeriesTracker struct {
 	userID                         string
-	labels                         []string
-	maxCardinality                 int
 	activeSeriesPerUserAttribution *prometheus.Desc
-	overflowLabels                 []string
 	logger                         log.Logger
-	observedMtx                    sync.RWMutex
-	observed                       map[string]*atomic.Int64
-	overflowSince                  time.Time
-	overflowCounter                atomic.Int64
-	cooldownDuration               time.Duration
+
+	labels         []string
+	overflowLabels []string
+
+	maxCardinality   int
+	cooldownDuration time.Duration
+
+	observedMtx   sync.RWMutex
+	observed      map[string]*atomic.Int64
+	overflowSince time.Time
+
+	overflowCounter atomic.Int64
 }
 
 func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
@@ -82,6 +86,7 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
 	}
 
 	if !at.overflowSince.IsZero() {
+		at.observedMtx.RUnlock()
 		at.overflowCounter.Inc()
 		return
 	}
@@ -139,11 +144,12 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels) {
 	at.observedMtx.RUnlock()
 
 	at.observedMtx.RLock()
+	defer at.observedMtx.RUnlock()
+
 	if !at.overflowSince.IsZero() {
 		at.overflowCounter.Dec()
 		return
 	}
-	defer at.observedMtx.RUnlock()
 	panic(fmt.Errorf("decrementing non-existent active series: labels=%v, cost attribution keys: %v, the current observation map length: %d, the current cost attribution key: %s", lbls, at.labels, len(at.observed), buf.String()))
 }
 

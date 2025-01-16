@@ -25,16 +25,16 @@ func TestActiveTracker_IncrementDecrement(t *testing.T) {
 	lbls3 := labels.FromStrings("department", "baz", "service", "foo")
 
 	ast.Increment(lbls1, time.Unix(1, 0))
-	assert.Equal(t, time.Unix(0, 0), ast.overflowSince, "First observation, should not overflow")
+	assert.True(t, ast.overflowSince.IsZero(), "First observation, should not overflow")
 	assert.Equal(t, 1, len(ast.observed))
 
 	ast.Decrement(lbls1)
-	assert.Equal(t, time.Unix(0, 0), ast.overflowSince, "First observation decremented, should not overflow")
+	assert.True(t, ast.overflowSince.IsZero(), "First observation decremented, should not overflow")
 	assert.Equal(t, 0, len(ast.observed), "First observation decremented, should be removed since it reached 0")
 
 	ast.Increment(lbls1, time.Unix(2, 0))
 	ast.Increment(lbls2, time.Unix(2, 0))
-	assert.Equal(t, time.Unix(0, 0), ast.overflowSince, "Second observation, should not overflow")
+	assert.True(t, ast.overflowSince.IsZero(), "Second observation, should not overflow")
 	assert.Equal(t, 2, len(ast.observed))
 
 	ast.Increment(lbls3, time.Unix(3, 0))

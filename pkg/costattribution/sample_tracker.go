@@ -28,18 +28,21 @@ type observation struct {
 
 type SampleTracker struct {
 	userID                     string
-	labels                     []string
-	maxCardinality             int
 	receivedSamplesAttribution *prometheus.Desc
 	discardedSampleAttribution *prometheus.Desc
-	overflowLabels             []string
 	logger                     log.Logger
-	observedMtx                sync.RWMutex
-	observed                   map[string]*observation
-	// overflowSince is also protected by observedMtx, it is set when the max cardinality is exceeded
-	overflowSince    time.Time
-	overflowCounter  observation
+
+	labels         []string
+	overflowLabels []string
+
+	maxCardinality   int
 	cooldownDuration time.Duration
+
+	observedMtx   sync.RWMutex
+	observed      map[string]*observation
+	overflowSince time.Time
+
+	overflowCounter observation
 }
 
 func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
