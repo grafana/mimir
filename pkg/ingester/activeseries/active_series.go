@@ -67,7 +67,8 @@ type seriesStripe struct {
 	// Unix nanoseconds. Only used by purge. Zero = unknown.
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
 	// without holding the lock -- hence the atomic).
-	oldestEntryTs                         atomic.Int64
+	oldestEntryTs atomic.Int64
+
 	mu                                    sync.RWMutex
 	refs                                  map[storage.SeriesRef]seriesEntry
 	activeSeriesAttributionFailureCounter atomic.Float64
