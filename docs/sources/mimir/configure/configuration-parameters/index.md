@@ -3360,12 +3360,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 [ooo_native_histograms_ingestion_enabled: <boolean> | default = false]
 
 # (advanced) Custom trackers for active metrics. If there are active series
-# matching a provided matcher (map value), the count will be exposed in the
-# custom trackers metric labeled using the tracker name (map key). Zero valued
-# counts are not exposed (and removed when they go back to zero).
+# matching a provided matcher (map value), the count is exposed in the custom
+# trackers metric labeled using the tracker name (map key). Zero-valued counts
+# are not exposed and are removed when they go back to zero.
 # Example:
-#   The following configuration will count the active series coming from dev and
-#   prod namespaces for each tenant and label them as {name="dev"} and
+#   The following configuration counts the active series coming from dev and
+#   prod namespaces for each tenant and labels them as {name="dev"} and
 #   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
 #   active_series_custom_trackers:
 #       dev: '{namespace=~"dev-.*"}'
@@ -3374,12 +3374,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
 # (advanced) Additional custom trackers for active metrics merged on top of the
-# custom trackers. This configuration option can be useful to define the base
-# custom trackers globally for all tenants, and use the additional trackers to
-# add extra trackers on a per-tenant basis.
+# base custom trackers. You can use this configuration option to define the base
+# custom trackers globally for all tenants, and then use the additional trackers
+# to add extra trackers on a per-tenant basis.
 # Example:
-#   The following configuration will count the active series coming from dev and
-#   prod namespaces for each tenant and label them as {name="dev"} and
+#   The following configuration counts the active series coming from dev and
+#   prod namespaces for each tenant and labels them as {name="dev"} and
 #   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
 #   active_series_additional_custom_trackers:
 #       dev: '{namespace=~"dev-.*"}'
