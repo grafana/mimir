@@ -25,24 +25,24 @@ func TestActiveTracker_IncrementDecrement(t *testing.T) {
 	lbls3 := labels.FromStrings("department", "baz", "service", "foo")
 
 	ast.Increment(lbls1, time.Unix(1, 0))
-	assert.Equal(t, int64(0), ast.overflowSince.Load(), "First observation, should not overflow")
+	assert.Equal(t, time.Unix(0, 0), ast.overflowSince, "First observation, should not overflow")
 	assert.Equal(t, 1, len(ast.observed))
 
 	ast.Decrement(lbls1)
-	assert.Equal(t, int64(0), ast.overflowSince.Load(), "First observation decremented, should not overflow")
+	assert.Equal(t, time.Unix(0, 0), ast.overflowSince, "First observation decremented, should not overflow")
 	assert.Equal(t, 0, len(ast.observed), "First observation decremented, should be removed since it reached 0")
 
 	ast.Increment(lbls1, time.Unix(2, 0))
 	ast.Increment(lbls2, time.Unix(2, 0))
-	assert.Equal(t, int64(0), ast.overflowSince.Load(), "Second observation, should not overflow")
+	assert.Equal(t, time.Unix(0, 0), ast.overflowSince, "Second observation, should not overflow")
 	assert.Equal(t, 2, len(ast.observed))
 
 	ast.Increment(lbls3, time.Unix(3, 0))
-	assert.Equal(t, int64(3), ast.overflowSince.Load(), "Third observation, should overflow")
+	assert.Equal(t, time.Unix(3, 0), ast.overflowSince, "Third observation, should overflow")
 	assert.Equal(t, 2, len(ast.observed))
 
 	ast.Increment(lbls3, time.Unix(4, 0))
-	assert.Equal(t, int64(3), ast.overflowSince.Load(), "Fourth observation, should stay overflow")
+	assert.Equal(t, time.Unix(3, 0), ast.overflowSince, "Fourth observation, should stay overflow")
 	assert.Equal(t, 2, len(ast.observed))
 }
 
@@ -65,7 +65,7 @@ func TestActiveTracker_Concurrency(t *testing.T) {
 	// Verify no data races or inconsistencies
 	assert.True(t, len(ast.observed) > 0, "Observed set should not be empty after concurrent updates")
 	assert.LessOrEqual(t, len(ast.observed), ast.maxCardinality, "Observed count should not exceed max cardinality")
-	assert.NotEqual(t, 0, ast.overflowSince.Load(), "Expected state to be Overflow")
+	assert.False(t, ast.overflowSince.IsZero(), "Expected state to be Overflow")
 
 	expectedMetrics := `
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
@@ -85,5 +85,5 @@ func TestActiveTracker_Concurrency(t *testing.T) {
 	wg.Wait()
 
 	assert.Equal(t, 0, len(ast.observed), "Observed set should be empty after all decrements")
-	assert.NotEqual(t, 0, ast.overflowSince.Load(), "Expected state still to be Overflow")
+	assert.False(t, ast.overflowSince.IsZero(), "Expected state still to be Overflow")
 }

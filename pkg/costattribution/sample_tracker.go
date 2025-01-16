@@ -33,13 +33,13 @@ type SampleTracker struct {
 	receivedSamplesAttribution *prometheus.Desc
 	discardedSampleAttribution *prometheus.Desc
 	overflowLabels             []string
-	observed                   map[string]*observation
+	logger                     log.Logger
 	observedMtx                sync.RWMutex
+	observed                   map[string]*observation
 	// overflowSince is also protected by observedMtx, it is set when the max cardinality is exceeded
 	overflowSince    time.Time
 	overflowCounter  observation
 	cooldownDuration time.Duration
-	logger           log.Logger
 }
 
 func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
@@ -93,6 +93,7 @@ func (st *SampleTracker) Collect(out chan<- prometheus.Metric) {
 	st.observedMtx.RLock()
 
 	if !st.overflowSince.IsZero() {
+		st.observedMtx.RUnlock()
 		out <- prometheus.MustNewConstMetric(st.receivedSamplesAttribution, prometheus.CounterValue, st.overflowCounter.receivedSample.Load(), st.overflowLabels[:len(st.overflowLabels)-1]...)
 		out <- prometheus.MustNewConstMetric(st.discardedSampleAttribution, prometheus.CounterValue, st.overflowCounter.totalDiscarded.Load(), st.overflowLabels...)
 		return

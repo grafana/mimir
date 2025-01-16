@@ -22,12 +22,12 @@ type ActiveSeriesTracker struct {
 	maxCardinality                 int
 	activeSeriesPerUserAttribution *prometheus.Desc
 	overflowLabels                 []string
-	observed                       map[string]*atomic.Int64
+	logger                         log.Logger
 	observedMtx                    sync.RWMutex
-	overflowSince                  atomic.Int64
+	observed                       map[string]*atomic.Int64
+	overflowSince                  time.Time
 	overflowCounter                atomic.Int64
 	cooldownDuration               time.Duration
-	logger                         log.Logger
 }
 
 func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
@@ -80,12 +80,12 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
 		at.observedMtx.RUnlock()
 		return
 	}
-	at.observedMtx.RUnlock()
 
-	if at.overflowSince.Load() > 0 {
+	if !at.overflowSince.IsZero() {
 		at.overflowCounter.Inc()
 		return
 	}
+	at.observedMtx.RUnlock()
 
 	at.observedMtx.Lock()
 	defer at.observedMtx.Unlock()
@@ -95,13 +95,13 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
 		return
 	}
 
-	if at.overflowSince.Load() > 0 {
+	if !at.overflowSince.IsZero() {
 		at.overflowCounter.Inc()
 		return
 	}
 
 	if len(at.observed) >= at.maxCardinality {
-		at.overflowSince.Store(now.Unix())
+		at.overflowSince = now
 		at.overflowCounter.Inc()
 		return
 	}
@@ -138,20 +138,19 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels) {
 	}
 	at.observedMtx.RUnlock()
 
-	if at.overflowSince.Load() > 0 {
+	at.observedMtx.RLock()
+	if !at.overflowSince.IsZero() {
 		at.overflowCounter.Dec()
 		return
 	}
-
-	at.observedMtx.RLock()
 	defer at.observedMtx.RUnlock()
 	panic(fmt.Errorf("decrementing non-existent active series: labels=%v, cost attribution keys: %v, the current observation map length: %d, the current cost attribution key: %s", lbls, at.labels, len(at.observed), buf.String()))
 }
 
 func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
-	if at.overflowSince.Load() > 0 {
+	at.observedMtx.RLock()
+	if !at.overflowSince.IsZero() {
 		var activeSeries int64
-		at.observedMtx.RLock()
 		for _, as := range at.observed {
 			activeSeries += as.Load()
 		}
@@ -161,7 +160,6 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 	}
 	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
 	var prometheusMetrics []prometheus.Metric
-	at.observedMtx.RLock()
 	for key, as := range at.observed {
 		keys := strings.Split(key, string(sep))
 		keys = append(keys, at.userID)

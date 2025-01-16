@@ -224,9 +224,13 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline time.Time) error {
 			m.deleteSampleTracker(userID)
 		}
 
+		at.observedMtx.RLock()
 		// if the activeseries tracker has been in overflow for more than the cooldown duration, delete it
-		if at.overflowSince.Load() > 0 && time.Unix(at.overflowSince.Load(), 0).Add(at.cooldownDuration).Before(deadline) {
+		if !at.overflowSince.IsZero() && at.overflowSince.Add(at.cooldownDuration).Before(deadline) {
+			at.observedMtx.RUnlock()
 			m.deleteActiveTracker(userID)
+		} else {
+			at.observedMtx.RUnlock()
 		}
 	}
 	return nil
