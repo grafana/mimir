@@ -213,7 +213,7 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline time.Time) error {
 
 	for _, userID := range userIDs {
 		st, at := m.updateTracker(userID)
-		if st == nil && at == nil {
+		if st == nil || at == nil {
 			continue
 		}
 
