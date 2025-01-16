@@ -72,19 +72,19 @@ func TestSampleTracker_IncrementDiscardedSamples(t *testing.T) {
 	lbls3 := []mimirpb.LabelAdapter{{Name: "department", Value: "baz"}, {Name: "service", Value: "foo"}}
 
 	st.IncrementDiscardedSamples(lbls1, 1, "", time.Unix(1, 0))
-	assert.Equal(t, int64(0), st.overflowSince.Load(), "First observation, should not overflow")
+	assert.True(t, st.overflowSince.IsZero(), "First observation, should not overflow")
 	assert.Equal(t, 1, len(st.observed))
 
 	st.IncrementDiscardedSamples(lbls2, 1, "", time.Unix(2, 0))
-	assert.Equal(t, int64(0), st.overflowSince.Load(), "Second observation, should not overflow")
+	assert.True(t, st.overflowSince.IsZero(), "Second observation, should not overflow")
 	assert.Equal(t, 2, len(st.observed))
 
 	st.IncrementDiscardedSamples(lbls3, 1, "", time.Unix(3, 0))
-	assert.Equal(t, int64(3), st.overflowSince.Load(), "Third observation, should overflow")
+	assert.Equal(t, time.Unix(3, 0), st.overflowSince, "Third observation, should overflow")
 	assert.Equal(t, 2, len(st.observed))
 
 	st.IncrementDiscardedSamples(lbls3, 1, "", time.Unix(4, 0))
-	assert.Equal(t, int64(3), st.overflowSince.Load(), "Fourth observation, should stay overflow")
+	assert.Equal(t, time.Unix(3, 0), st.overflowSince, "Fourth observation, should stay overflow")
 	assert.Equal(t, 2, len(st.observed))
 }
 
@@ -141,7 +141,7 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 	// Verify no data races or inconsistencies, since after 5 all the samples will be counted into the overflow, so the count should be 95
 	assert.True(t, len(st.observed) > 0, "Observed set should not be empty after concurrent updates")
 	assert.LessOrEqual(t, len(st.observed), st.maxCardinality, "Observed count should not exceed max cardinality")
-	assert.NotEqual(t, 0, st.overflowSince.Load(), "Expected state to be Overflow")
+	assert.NotEqual(t, st.overflowSince.IsZero(), "Expected state to be Overflow")
 
 	expectedMetrics := `
 	# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.

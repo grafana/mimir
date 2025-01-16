@@ -35,10 +35,11 @@ type SampleTracker struct {
 	overflowLabels             []string
 	observed                   map[string]*observation
 	observedMtx                sync.RWMutex
-	overflowSince              atomic.Int64
-	overflowCounter            observation
-	cooldownDuration           time.Duration
-	logger                     log.Logger
+	// overflowSince is also protected by observedMtx, it is set when the max cardinality is exceeded
+	overflowSince    time.Time
+	overflowCounter  observation
+	cooldownDuration time.Duration
+	logger           log.Logger
 }
 
 func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
@@ -93,14 +94,16 @@ func (st *SampleTracker) cleanupTrackerAttribution(key string) {
 }
 
 func (st *SampleTracker) Collect(out chan<- prometheus.Metric) {
-	if st.overflowSince.Load() > 0 {
+	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
+	var prometheusMetrics []prometheus.Metric
+	st.observedMtx.RLock()
+
+	if !st.overflowSince.IsZero() {
 		out <- prometheus.MustNewConstMetric(st.receivedSamplesAttribution, prometheus.CounterValue, st.overflowCounter.receivedSample.Load(), st.overflowLabels[:len(st.overflowLabels)-1]...)
 		out <- prometheus.MustNewConstMetric(st.discardedSampleAttribution, prometheus.CounterValue, st.overflowCounter.totalDiscarded.Load(), st.overflowLabels...)
 		return
 	}
-	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
-	var prometheusMetrics []prometheus.Metric
-	st.observedMtx.RLock()
+
 	for key, o := range st.observed {
 		keys := strings.Split(key, string(sep))
 		keys = append(keys, st.userID)
@@ -186,7 +189,7 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 
 	// if overflowSince is set, we only update the overflow counter, this is after the read lock since overflowSince can only be set when holding observedMtx write lock
 	// check it after read lock would make sure that we don't miss any updates
-	if st.overflowSince.Load() > 0 {
+	if !st.overflowSince.IsZero() {
 		st.overflowCounter.receivedSample.Add(receivedSampleIncrement)
 		if discardedSampleIncrement > 0 && reason != nil {
 			st.overflowCounter.totalDiscarded.Add(discardedSampleIncrement)
@@ -196,7 +199,7 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 	}
 
 	o, known := st.observed[key]
-	if known && st.overflowSince.Load() == 0 {
+	if known {
 		o.lastUpdate.Store(ts.Unix())
 		o.receivedSample.Add(receivedSampleIncrement)
 		if discardedSampleIncrement > 0 && reason != nil {
@@ -218,7 +221,7 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 	defer st.observedMtx.Unlock()
 	// If not in overflow, we update the observation if it exists, otherwise we check if create a new observation would exceed the max cardinality
 	// if it does, we set the overflowSince
-	if st.overflowSince.Load() == 0 {
+	if st.overflowSince.IsZero() {
 		o, known = st.observed[key]
 		if known {
 			o.lastUpdate.Store(ts.Unix())
@@ -236,12 +239,12 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 		}
 		// if it is not known, we need to check if the max cardinality is exceeded
 		if len(st.observed) >= st.maxCardinality {
-			st.overflowSince.Store(ts.Unix())
+			st.overflowSince = ts
 		}
 	}
 
 	// if overflowSince is set, we only update the overflow counter
-	if st.overflowSince.Load() > 0 {
+	if !st.overflowSince.IsZero() {
 		st.overflowCounter.receivedSample.Add(receivedSampleIncrement)
 		if discardedSampleIncrement > 0 && reason != nil {
 			st.overflowCounter.totalDiscarded.Add(discardedSampleIncrement)
@@ -266,7 +269,7 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 
 func (st *SampleTracker) recoveredFromOverflow(deadline time.Time) bool {
 	st.observedMtx.RLock()
-	if st.overflowSince.Load() > 0 && time.Unix(st.overflowSince.Load(), 0).Add(st.cooldownDuration).Before(deadline) {
+	if !st.overflowSince.IsZero() && st.overflowSince.Add(st.cooldownDuration).Before(deadline) {
 		if len(st.observed) <= st.maxCardinality {
 			st.observedMtx.RUnlock()
 			return true
@@ -279,7 +282,7 @@ func (st *SampleTracker) recoveredFromOverflow(deadline time.Time) bool {
 			st.observedMtx.Unlock()
 			return true
 		}
-		st.overflowSince.Store(deadline.Unix())
+		st.overflowSince = deadline
 		st.observedMtx.Unlock()
 	} else {
 		st.observedMtx.RUnlock()
