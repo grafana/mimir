@@ -64,9 +64,9 @@ The following features are currently experimental:
   - Allow protecting rule groups from modification by namespace. Rule groups can always be read, and you can use the `X-Mimir-Ruler-Override-Namespace-Protection` header with namespace names as values to override protection from modification.
   - `-ruler.protected-namespaces`
   - Allow control over independent rules to be evaluated concurrently as long as they exceed a certain threshold on their rule group last duration runtime against their interval. We have both a limit on the number of rules that can be executed per ruler and per tenant:
-  - `-ruler.max-independent-rule-evaluation-concurrency`
-  - `-ruler.max-independent-rule-evaluation-concurrency-per-tenant`
-  - `-ruler.independent-rule-evaluation-concurrency-min-duration-percentage`
+  - `-ruler.max-rule-evaluation-concurrency`
+  - `-ruler.max-rule-evaluation-concurrency-per-tenant`
+  - `-ruler.rule-evaluation-concurrency-min-duration-percentage`
   - `-ruler.rule-evaluation-write-enabled`
   - Allow control over rule sync intervals.
     - `ruler.outbound-sync-queue-poll-interval`
