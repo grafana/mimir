@@ -6,16 +6,22 @@
 package mimir
 
 import (
+	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/services"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -171,6 +177,77 @@ overrides:
 			}
 		})
 	}
+}
+
+func TestRuntimeConfigLoader_ActiveSeriesCustomTrackersMergingShouldNotInterfereBetweenTenants(t *testing.T) {
+	// Write the runtime config to a temporary file.
+	runtimeConfigFile := filepath.Join(t.TempDir(), "runtime-config")
+	require.NoError(t, os.WriteFile(runtimeConfigFile, []byte(`
+overrides:
+  'user-1': &user1
+    active_series_custom_trackers:
+      base:   '{foo="user_1_base"}'
+      common: '{foo="user_1_base"}'
+
+    active_series_additional_custom_trackers:
+      additional: '{foo="user_1_additional"}'
+      common:     '{foo="user_1_additional"}'
+
+  # An user inheriting from another one.
+  'user-2': *user1
+
+  # An user with only base trackers configured.
+  'user-3':
+    active_series_custom_trackers:
+      base:   '{foo="user_1_base"}'
+      common: '{foo="user_1_base"}'
+
+  # An user with only additional trackers configured.
+  'user-4':
+    active_series_additional_custom_trackers:
+      additional: '{foo="user_1_additional"}'
+      common:     '{foo="user_1_additional"}'
+
+  # An user disabling default base trackers.
+  'user-5':
+    active_series_custom_trackers: {}
+
+  # An user disabling default base trackers and adding additional trackers.
+  'user-6':
+    active_series_custom_trackers: {}
+
+    active_series_additional_custom_trackers:
+      additional: '{foo="user_1_additional"}'
+      common:     '{foo="user_1_additional"}'
+`), os.ModePerm))
+
+	// Start the runtime config manager.
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+	defaultTrackers, err := asmodel.NewCustomTrackersConfig(map[string]string{"default": `{foo="default"}`})
+	require.NoError(t, err)
+	cfg.LimitsConfig.ActiveSeriesBaseCustomTrackersConfig = defaultTrackers
+
+	require.NoError(t, cfg.RuntimeConfig.LoadPath.Set(runtimeConfigFile))
+	validation.SetDefaultLimitsForYAMLUnmarshalling(cfg.LimitsConfig)
+
+	manager, err := NewRuntimeManager(&cfg, "test", nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), manager))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), manager))
+	})
+
+	overrides, err := validation.NewOverrides(cfg.LimitsConfig, newTenantLimits(manager))
+	require.NoError(t, err)
+
+	require.Equal(t, `additional:{foo="user_1_additional"};base:{foo="user_1_base"};common:{foo="user_1_additional"}`, overrides.ActiveSeriesCustomTrackersConfig("user-1").String())
+	require.Equal(t, `additional:{foo="user_1_additional"};base:{foo="user_1_base"};common:{foo="user_1_additional"}`, overrides.ActiveSeriesCustomTrackersConfig("user-2").String())
+	require.Equal(t, `base:{foo="user_1_base"};common:{foo="user_1_base"}`, overrides.ActiveSeriesCustomTrackersConfig("user-3").String())
+	require.Equal(t, `additional:{foo="user_1_additional"};common:{foo="user_1_additional"};default:{foo="default"}`, overrides.ActiveSeriesCustomTrackersConfig("user-4").String())
+	require.Equal(t, ``, overrides.ActiveSeriesCustomTrackersConfig("user-5").String())
+	require.Equal(t, `additional:{foo="user_1_additional"};common:{foo="user_1_additional"}`, overrides.ActiveSeriesCustomTrackersConfig("user-6").String())
+	require.Equal(t, `default:{foo="default"}`, overrides.ActiveSeriesCustomTrackersConfig("user-without-overrides").String())
 }
 
 func getDefaultLimits() validation.Limits {
