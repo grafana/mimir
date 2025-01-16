@@ -2290,7 +2290,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.parallelize-shardable-queries
     	True to enable query sharding.
   -query-frontend.prom2-range-compat
-    	[experimental] Rewrite queries using the same range selector and resolution [X:X] which do not work in Prometheus 3 to a nearly identical form that does work with Prometheus 3 semantics
+    	[experimental] Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics
   -query-frontend.prune-queries
     	[experimental] True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.
   -query-frontend.querier-forget-delay duration
