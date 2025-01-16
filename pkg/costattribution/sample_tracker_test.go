@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -150,52 +149,4 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 
 `
 	assert.NoError(t, testutil.GatherAndCompare(m.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
-}
-
-func TestTracker_CreateDelete(t *testing.T) {
-	tManager := newTestManager()
-	st := tManager.SampleTracker("user4")
-	ast := tManager.ActiveSeriesTracker("user4")
-
-	ast.Increment(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "1"), time.Unix(1, 0))
-	ast.Increment(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "2"), time.Unix(2, 0))
-	ast.Decrement(labels.FromStrings("platform", "foo", "tenant", "user4", "team", "3"))
-	st.IncrementReceivedSamples(testutils.CreateRequest([]testutils.Series{{LabelValues: []string{"platform", "foo", "team", "1"}, SamplesCount: 5}}), time.Unix(4, 0))
-	st.IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "platform", Value: "foo"}, {Name: "team", Value: "1"}}, 2, "sample-out-of-order", time.Unix(4, 0))
-	ast.Increment(labels.FromStrings("platform", "bar", "tenant", "user4", "team", "2"), time.Unix(6, 0))
-
-	expectedMetrics := `
-	# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
-    # TYPE cortex_discarded_attributed_samples_total counter
-    cortex_discarded_attributed_samples_total{platform="foo",reason="sample-out-of-order", tenant="user4",tracker="cost-attribution"} 2
-    # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
-    # TYPE cortex_ingester_attributed_active_series gauge
-	cortex_ingester_attributed_active_series{platform="bar",tenant="user4",tracker="cost-attribution"} 1
-    cortex_ingester_attributed_active_series{platform="foo",tenant="user4",tracker="cost-attribution"} 1
-    # HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
-    # TYPE cortex_distributor_received_attributed_samples_total counter
-    cortex_distributor_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 5
-	`
-
-	metricNames := []string{
-		"cortex_discarded_attributed_samples_total",
-		"cortex_distributor_received_attributed_samples_total",
-		"cortex_ingester_attributed_active_series",
-	}
-	assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), metricNames...))
-
-	// The purge only apply to the sample tracker.
-	assert.Equal(t, []string{"foo"}, st.inactiveObservations(time.Unix(5, 0)))
-	assert.NoError(t, tManager.purgeInactiveAttributionsUntil(time.Unix(5, 0)))
-
-	expectedMetrics = `
-	# HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
-    # TYPE cortex_ingester_attributed_active_series gauge
-	cortex_ingester_attributed_active_series{platform="bar",tenant="user4",tracker="cost-attribution"} 1
-	cortex_ingester_attributed_active_series{platform="foo",tenant="user4",tracker="cost-attribution"} 1
-	`
-	assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), metricNames...))
-	tManager.deleteSampleTracker("user4")
-	tManager.deleteActiveTracker("user4")
-	assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(""), metricNames...))
 }

@@ -18,7 +18,7 @@ func TestActiveTracker_hasSameLabels(t *testing.T) {
 	assert.True(t, ast.hasSameLabels([]string{"team"}), "Expected cost attribution labels mismatch")
 }
 
-func TestActiveTracker_updateCounters(t *testing.T) {
+func TestActiveTracker_IncrementDecrement(t *testing.T) {
 	ast := newTestManager().ActiveSeriesTracker("user3")
 	lbls1 := labels.FromStrings("department", "foo", "service", "bar")
 	lbls2 := labels.FromStrings("department", "bar", "service", "baz")
@@ -26,6 +26,7 @@ func TestActiveTracker_updateCounters(t *testing.T) {
 
 	ast.Increment(lbls1, time.Unix(1, 0))
 	assert.Equal(t, int64(0), ast.overflowSince.Load(), "First observation, should not overflow")
+	assert.Equal(t, 1, len(ast.observed))
 
 	ast.Decrement(lbls1)
 	assert.Equal(t, int64(0), ast.overflowSince.Load(), "First observation decremented, should not overflow")
@@ -34,12 +35,15 @@ func TestActiveTracker_updateCounters(t *testing.T) {
 	ast.Increment(lbls1, time.Unix(2, 0))
 	ast.Increment(lbls2, time.Unix(2, 0))
 	assert.Equal(t, int64(0), ast.overflowSince.Load(), "Second observation, should not overflow")
+	assert.Equal(t, 2, len(ast.observed))
 
 	ast.Increment(lbls3, time.Unix(3, 0))
 	assert.Equal(t, int64(3), ast.overflowSince.Load(), "Third observation, should overflow")
+	assert.Equal(t, 2, len(ast.observed))
 
 	ast.Increment(lbls3, time.Unix(4, 0))
 	assert.Equal(t, int64(3), ast.overflowSince.Load(), "Fourth observation, should stay overflow")
+	assert.Equal(t, 2, len(ast.observed))
 }
 
 func TestActiveTracker_Concurrency(t *testing.T) {
