@@ -21,7 +21,7 @@ const sep = rune(0x80)
 type observation struct {
 	lastUpdate         atomic.Int64
 	receivedSample     atomic.Float64
-	discardedSampleMtx sync.Mutex
+	discardedSampleMtx sync.RWMutex
 	discardedSample    map[string]*atomic.Float64
 	totalDiscarded     atomic.Float64
 }
@@ -110,11 +110,11 @@ func (st *SampleTracker) Collect(out chan<- prometheus.Metric) {
 		if o.receivedSample.Load() > 0 {
 			prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(st.receivedSamplesAttribution, prometheus.CounterValue, o.receivedSample.Load(), keys...))
 		}
-		o.discardedSampleMtx.Lock()
+		o.discardedSampleMtx.RLock()
 		for reason, discarded := range o.discardedSample {
 			prometheusMetrics = append(prometheusMetrics, prometheus.MustNewConstMetric(st.discardedSampleAttribution, prometheus.CounterValue, discarded.Load(), append(keys, reason)...))
 		}
-		o.discardedSampleMtx.Unlock()
+		o.discardedSampleMtx.RUnlock()
 	}
 	st.observedMtx.RUnlock()
 
@@ -203,13 +203,20 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 		o.lastUpdate.Store(ts.Unix())
 		o.receivedSample.Add(receivedSampleIncrement)
 		if discardedSampleIncrement > 0 && reason != nil {
-			o.discardedSampleMtx.Lock()
-			if _, ok := o.discardedSample[*reason]; ok {
-				o.discardedSample[*reason].Add(discardedSampleIncrement)
+			o.discardedSampleMtx.RLock()
+			if r, ok := o.discardedSample[*reason]; ok {
+				r.Add(discardedSampleIncrement)
+				o.discardedSampleMtx.RUnlock()
 			} else {
-				o.discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
+				o.discardedSampleMtx.RUnlock()
+				o.discardedSampleMtx.Lock()
+				if r, ok := o.discardedSample[*reason]; ok {
+					r.Add(discardedSampleIncrement)
+				} else {
+					o.discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
+				}
+				o.discardedSampleMtx.Unlock()
 			}
-			o.discardedSampleMtx.Unlock()
 		}
 		st.observedMtx.RUnlock()
 		return
@@ -227,13 +234,20 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 			o.lastUpdate.Store(ts.Unix())
 			o.receivedSample.Add(receivedSampleIncrement)
 			if discardedSampleIncrement > 0 && reason != nil {
-				o.discardedSampleMtx.Lock()
-				if _, ok := o.discardedSample[*reason]; ok {
-					o.discardedSample[*reason].Add(discardedSampleIncrement)
+				o.discardedSampleMtx.RLock()
+				if r, ok := o.discardedSample[*reason]; ok {
+					r.Add(discardedSampleIncrement)
+					o.discardedSampleMtx.RUnlock()
 				} else {
-					o.discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
+					o.discardedSampleMtx.RUnlock()
+					o.discardedSampleMtx.Lock()
+					if r, ok := o.discardedSample[*reason]; ok {
+						r.Add(discardedSampleIncrement)
+					} else {
+						o.discardedSample[*reason] = atomic.NewFloat64(discardedSampleIncrement)
+					}
+					o.discardedSampleMtx.Unlock()
 				}
-				o.discardedSampleMtx.Unlock()
 			}
 			return
 		}
@@ -257,7 +271,7 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 		lastUpdate:         *atomic.NewInt64(ts.Unix()),
 		discardedSample:    make(map[string]*atomic.Float64),
 		receivedSample:     *atomic.NewFloat64(receivedSampleIncrement),
-		discardedSampleMtx: sync.Mutex{},
+		discardedSampleMtx: sync.RWMutex{},
 	}
 
 	if discardedSampleIncrement > 0 && reason != nil {
