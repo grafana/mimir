@@ -284,7 +284,7 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 func (st *SampleTracker) recoveredFromOverflow(deadline time.Time) bool {
 	st.observedMtx.RLock()
 	if !st.overflowSince.IsZero() && st.overflowSince.Add(st.cooldownDuration).Before(deadline) {
-		if len(st.observed) <= st.maxCardinality {
+		if len(st.observed) < st.maxCardinality {
 			st.observedMtx.RUnlock()
 			return true
 		}
@@ -292,7 +292,7 @@ func (st *SampleTracker) recoveredFromOverflow(deadline time.Time) bool {
 
 		// Increase the cooldown duration if the number of observations is still above the max cardinality
 		st.observedMtx.Lock()
-		if len(st.observed) <= st.maxCardinality {
+		if len(st.observed) < st.maxCardinality {
 			st.observedMtx.Unlock()
 			return true
 		}
