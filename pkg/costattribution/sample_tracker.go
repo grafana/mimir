@@ -266,9 +266,9 @@ func (st *SampleTracker) updateObservations(key string, ts time.Time, receivedSa
 
 	// create a new observation
 	st.observed[key] = &observation{
-		lastUpdate:         *atomic.NewInt64(ts.Unix()),
-		discardedSample:    make(map[string]*atomic.Float64),
-		receivedSample:     *atomic.NewFloat64(receivedSampleIncrement),
+		lastUpdate:      *atomic.NewInt64(ts.Unix()),
+		discardedSample: make(map[string]*atomic.Float64),
+		receivedSample:  *atomic.NewFloat64(receivedSampleIncrement),
 	}
 
 	if discardedSampleIncrement > 0 && reason != nil {
