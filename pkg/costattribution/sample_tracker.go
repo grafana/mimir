@@ -120,11 +120,15 @@ func (st *SampleTracker) Collect(out chan<- prometheus.Metric) {
 	}
 }
 
-func (st *SampleTracker) IncrementDiscardedSamples(lbs []mimirpb.LabelAdapter, value float64, reason string, now time.Time) {
+func (st *SampleTracker) IncrementDiscardedSamples(lbls []mimirpb.LabelAdapter, value float64, reason string, now time.Time) {
 	if st == nil {
 		return
 	}
-	st.updateCountersWithLabelAdapter(lbs, now, 0, value, &reason)
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufferPool.Put(buf)
+	st.fillKeyFromLabelAdapters(lbls, buf)
+	st.updateObservations(buf.String(), now, 0, value, &reason)
 }
 
 func (st *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now time.Time) {
@@ -151,14 +155,6 @@ func (st *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now
 		st.updateObservations(k, now, count, 0, nil)
 		total += count
 	}
-}
-
-func (st *SampleTracker) updateCountersWithLabelAdapter(lbls []mimirpb.LabelAdapter, ts time.Time, receivedSampleIncrement, discardedSampleIncrement float64, reason *string) {
-	buf := bufferPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	defer bufferPool.Put(buf)
-	st.fillKeyFromLabelAdapters(lbls, buf)
-	st.updateObservations(buf.String(), ts, receivedSampleIncrement, discardedSampleIncrement, reason)
 }
 
 func (st *SampleTracker) fillKeyFromLabelAdapters(lbls []mimirpb.LabelAdapter, buf *bytes.Buffer) {

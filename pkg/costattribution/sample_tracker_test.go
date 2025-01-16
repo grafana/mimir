@@ -65,23 +65,27 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 	})
 }
 
-func TestSampleTracker_updateCounters(t *testing.T) {
+func TestSampleTracker_IncrementDiscardedSamples(t *testing.T) {
 	st := newTestManager().SampleTracker("user3")
 	lbls1 := []mimirpb.LabelAdapter{{Name: "department", Value: "foo"}, {Name: "service", Value: "bar"}}
 	lbls2 := []mimirpb.LabelAdapter{{Name: "department", Value: "bar"}, {Name: "service", Value: "baz"}}
 	lbls3 := []mimirpb.LabelAdapter{{Name: "department", Value: "baz"}, {Name: "service", Value: "foo"}}
 
-	st.updateCountersWithLabelAdapter(lbls1, time.Unix(1, 0), 1, 0, nil)
+	st.IncrementDiscardedSamples(lbls1, 1, "", time.Unix(1, 0))
 	assert.Equal(t, int64(0), st.overflowSince.Load(), "First observation, should not overflow")
+	assert.Equal(t, 1, len(st.observed))
 
-	st.updateCountersWithLabelAdapter(lbls2, time.Unix(2, 0), 1, 0, nil)
+	st.IncrementDiscardedSamples(lbls2, 1, "", time.Unix(2, 0))
 	assert.Equal(t, int64(0), st.overflowSince.Load(), "Second observation, should not overflow")
+	assert.Equal(t, 2, len(st.observed))
 
-	st.updateCountersWithLabelAdapter(lbls3, time.Unix(3, 0), 1, 0, nil)
+	st.IncrementDiscardedSamples(lbls3, 1, "", time.Unix(3, 0))
 	assert.Equal(t, int64(3), st.overflowSince.Load(), "Third observation, should overflow")
+	assert.Equal(t, 2, len(st.observed))
 
-	st.updateCountersWithLabelAdapter(lbls3, time.Unix(4, 0), 1, 0, nil)
+	st.IncrementDiscardedSamples(lbls3, 1, "", time.Unix(4, 0))
 	assert.Equal(t, int64(3), st.overflowSince.Load(), "Fourth observation, should stay overflow")
+	assert.Equal(t, 2, len(st.observed))
 }
 
 func TestSampleTracker_inactiveObservations(t *testing.T) {
