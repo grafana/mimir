@@ -443,7 +443,6 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 		l.RulerMaxRuleGroupsPerTenantByNamespace = defaultLimits.RulerMaxRuleGroupsPerTenantByNamespace.Clone()
 
 		// Reset the merged custom active series trackers config, to not interfere with the default limits.
-		// TODO unit test
 		l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
 	}
 
