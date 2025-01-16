@@ -815,7 +815,7 @@ func TestBlockBuilder_WithNonMonotonicRecordTimestamps(t *testing.T) {
 	// We don't want to run the service here. Instead, the test cases below trigger and assert the consumption cycles explicitly.
 	require.NoError(t, bb.starting(ctx))
 	t.Cleanup(func() {
-		require.NoError(t, bb.stopping(nil))
+		require.NoError(t, bb.stoppingStandaloneMode(nil))
 	})
 
 	runTest := func(name string, end time.Time, expSamples []mimirpb.Sample) {
@@ -1219,6 +1219,8 @@ func (m *mockSchedulerClient) Run(_ context.Context) {
 	defer m.mu.Unlock()
 	m.runCalls++
 }
+
+func (m *mockSchedulerClient) Flush(_ context.Context) {}
 
 func (m *mockSchedulerClient) GetJob(ctx context.Context) (schedulerpb.JobKey, schedulerpb.JobSpec, error) {
 	m.mu.Lock()

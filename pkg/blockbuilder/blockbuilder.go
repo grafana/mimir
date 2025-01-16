@@ -36,14 +36,15 @@ import (
 type BlockBuilder struct {
 	services.Service
 
-	cfg         Config
-	logger      log.Logger
-	register    prometheus.Registerer
-	limits      *validation.Overrides
-	kafkaClient *kgo.Client
-	bucket      objstore.Bucket
-	scheduler   schedulerpb.SchedulerClient
-	committer   stateCommitter
+	cfg           Config
+	logger        log.Logger
+	register      prometheus.Registerer
+	limits        *validation.Overrides
+	kafkaClient   *kgo.Client
+	bucket        objstore.Bucket
+	scheduler     schedulerpb.SchedulerClient
+	schedulerConn *grpc.ClientConn
+	committer     stateCommitter
 
 	// the current job iteration number. For tests.
 	jobIteration atomic.Int64
@@ -65,8 +66,7 @@ func New(
 	return newWithSchedulerClient(cfg, logger, reg, limits, nil)
 }
 
-// newWithSchedulerClient creates a new BlockBuilder with a scheduler client.
-// This is exposed for testing purposes. You should probably be using New().
+// newWithSchedulerClient creates a new BlockBuilder with the given scheduler client.
 func newWithSchedulerClient(
 	cfg Config,
 	logger log.Logger,
@@ -90,6 +90,7 @@ func newWithSchedulerClient(
 	b.bucket = bucketClient
 
 	var runningFunc services.RunningFn
+	var stoppingFunc services.StoppingFn
 
 	if cfg.SchedulerConfig.Address != "" {
 		// Pull mode: we learn about jobs from a block-builder-scheduler.
@@ -98,12 +99,13 @@ func newWithSchedulerClient(
 			b.scheduler = schedulerClient
 		} else {
 			var err error
-			if b.scheduler, err = b.makeSchedulerClient(); err != nil {
+			if b.scheduler, b.schedulerConn, err = b.makeSchedulerClient(); err != nil {
 				return nil, fmt.Errorf("make scheduler client: %w", err)
 			}
 		}
 
 		runningFunc = b.runningPullMode
+		stoppingFunc = b.stoppingPullMode
 		b.committer = &noOpCommitter{}
 	} else {
 		// Standalone mode: we consume from statically assigned partitions.
@@ -114,34 +116,40 @@ func newWithSchedulerClient(
 		}
 
 		runningFunc = b.runningStandaloneMode
+		stoppingFunc = b.stoppingStandaloneMode
 		b.committer = &kafkaCommitter{}
 	}
 
-	b.Service = services.NewBasicService(b.starting, runningFunc, b.stopping)
+	b.Service = services.NewBasicService(b.starting, runningFunc, stoppingFunc)
 	return b, nil
 }
 
-func (b *BlockBuilder) makeSchedulerClient() (schedulerpb.SchedulerClient, error) {
+func (b *BlockBuilder) makeSchedulerClient() (schedulerpb.SchedulerClient, *grpc.ClientConn, error) {
 	dialOpts, err := b.cfg.SchedulerConfig.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())},
 		nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(b.cfg.SchedulerConfig.Address, dialOpts...)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return schedulerpb.NewSchedulerClient(
+	client, err := schedulerpb.NewSchedulerClient(
 		b.cfg.InstanceID,
 		schedulerpb.NewBlockBuilderSchedulerClient(conn),
 		b.logger,
 		b.cfg.SchedulerConfig.UpdateInterval,
 		b.cfg.SchedulerConfig.MaxUpdateAge,
 	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return client, conn, nil
 }
 
 func (b *BlockBuilder) starting(context.Context) (err error) {
@@ -168,8 +176,17 @@ func (b *BlockBuilder) starting(context.Context) (err error) {
 	return nil
 }
 
-func (b *BlockBuilder) stopping(_ error) error {
+func (b *BlockBuilder) stoppingPullMode(_ error) error {
 	b.kafkaClient.Close()
+
+	flushCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+	b.scheduler.Flush(flushCtx)
+
+	if b.schedulerConn != nil {
+		return b.schedulerConn.Close()
+	}
+
 	return nil
 }
 
@@ -224,6 +241,11 @@ func (b *BlockBuilder) consumeJob(ctx context.Context, key schedulerpb.JobKey, s
 
 	logger := log.With(b.logger, "job_id", key.Id, "job_epoch", key.Epoch)
 	return b.consumePartition(ctx, spec.Partition, state, spec.CycleEndTs, spec.CycleEndOffset, logger)
+}
+
+func (b *BlockBuilder) stoppingStandaloneMode(_ error) error {
+	b.kafkaClient.Close()
+	return nil
 }
 
 // runningStandaloneMode is a service `running` function for standalone mode,

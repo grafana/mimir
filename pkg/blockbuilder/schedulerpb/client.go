@@ -22,6 +22,7 @@ import (
 // some time after completion.
 type SchedulerClient interface {
 	Run(context.Context)
+	Flush(context.Context)
 	GetJob(context.Context) (JobKey, JobSpec, error)
 	CompleteJob(JobKey) error
 }
@@ -91,6 +92,10 @@ func (s *schedulerClient) Run(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (s *schedulerClient) Flush(ctx context.Context) {
+	s.sendUpdates(ctx)
 }
 
 func (s *schedulerClient) sendUpdates(ctx context.Context) {
