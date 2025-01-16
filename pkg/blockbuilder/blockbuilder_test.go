@@ -31,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestBlockBuilder_WipeOutDataDirOnStart(t *testing.T) {
@@ -1194,6 +1195,16 @@ func TestPullMode(t *testing.T) {
 		nil,
 		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 	)
+}
+
+func blockBuilderPullModeConfig(t *testing.T, addr string) (Config, *validation.Overrides) {
+	cfg, overrides := blockBuilderConfig(t, addr)
+	cfg.SchedulerConfig = SchedulerConfig{
+		Address:        "localhost:099", // Trigger pull mode initialization.
+		UpdateInterval: 20 * time.Millisecond,
+		MaxUpdateAge:   1 * time.Second,
+	}
+	return cfg, overrides
 }
 
 func mustTimeParse(t *testing.T, layout, v string) time.Time {
