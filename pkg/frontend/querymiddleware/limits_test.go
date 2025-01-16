@@ -573,6 +573,10 @@ func (m multiTenantMockLimits) EnabledPromQLExperimentalFunctions(userID string)
 	return m.byTenant[userID].enabledPromQLExperimentalFunctions
 }
 
+func (m multiTenantMockLimits) Prom2RangeCompat(userID string) bool {
+	return m.byTenant[userID].prom2RangeCompat
+}
+
 func (m multiTenantMockLimits) BlockedQueries(userID string) []*validation.BlockedQuery {
 	return m.byTenant[userID].blockedQueries
 }
@@ -620,6 +624,7 @@ type mockLimits struct {
 	resultsCacheTTLForErrors             time.Duration
 	resultsCacheForUnalignedQueryEnabled bool
 	enabledPromQLExperimentalFunctions   []string
+	prom2RangeCompat                     bool
 	blockedQueries                       []*validation.BlockedQuery
 	alignQueriesWithStep                 bool
 	queryIngestersWithin                 time.Duration
@@ -710,6 +715,10 @@ func (m mockLimits) ResultsCacheForUnalignedQueryEnabled(string) bool {
 
 func (m mockLimits) EnabledPromQLExperimentalFunctions(string) []string {
 	return m.enabledPromQLExperimentalFunctions
+}
+
+func (m mockLimits) Prom2RangeCompat(string) bool {
+	return m.prom2RangeCompat
 }
 
 func (m mockLimits) CreationGracePeriod(string) time.Duration {
