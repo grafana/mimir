@@ -132,7 +132,8 @@ func (st *SampleTracker) IncrementReceivedSamples(req *mimirpb.WriteRequest, now
 		return
 	}
 
-	// We precompute the cost attribution per request before update Observations and State to avoid frequently update the atomic counters
+	// We precompute the cost attribution per request before update Observations and State to avoid frequently update the atomic counters.
+	// This is based on the assumption that usually a single WriteRequest will have samples that belong to the same or few cost attribution groups.
 	dict := make(map[string]int)
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
