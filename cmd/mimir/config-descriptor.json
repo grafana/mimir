@@ -4329,6 +4329,17 @@
         },
         {
           "kind": "field",
+          "name": "prom2_range_compat",
+          "required": false,
+          "desc": "Rewrite queries using the same range selector and resolution [X:X] which do not work in Prometheus 3 to a nearly identical form that does work with Prometheus 3 semantics",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.prom2-range-compat",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cardinality_analysis_enabled",
           "required": false,
           "desc": "Enables endpoints used for cardinality analysis.",
