@@ -90,10 +90,8 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
 		at.overflowCounter.Inc()
 		return
 	}
-	at.observedMtx.RUnlock()
 
-	at.observedMtx.Lock()
-	defer at.observedMtx.Unlock()
+	defer at.observedMtx.RUnlock()
 	as, ok = at.observed[string(buf.Bytes())]
 	if ok {
 		as.Inc()
