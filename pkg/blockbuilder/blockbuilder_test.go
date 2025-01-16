@@ -249,7 +249,7 @@ func TestBlockBuilder_StartWithExistingCommit_PullMode(t *testing.T) {
 
 	// Wait for end of the cycles. We expect at least several cycles because of how the pushed records were structured.
 	require.Eventually(t, func() bool {
-		_, _, completeJobCalls := scheduler.counts()
+		_, _, completeJobCalls, _ := scheduler.callCounts()
 		return completeJobCalls > 0
 	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
 
@@ -580,6 +580,12 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection_PullMode(t *testi
 		return bb.jobIteration.Load() >= 2
 	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
 
+	runCalls, getJobCalls, completeCalls, flushCalls := scheduler.callCounts()
+	assert.Equal(t, runCalls, 1)
+	assert.Equal(t, getJobCalls, 3, "expect 2 completed getJob calls and one in-flight")
+	assert.Equal(t, completeCalls, 2)
+	assert.Equal(t, flushCalls, 0)
+
 	require.EqualValues(t,
 		[]schedulerpb.JobKey{{Id: "test-job-p0-4898", Epoch: 90002}, {Id: "test-job-p1-4899", Epoch: 90070}},
 		scheduler.completeJobCalls,
@@ -718,7 +724,7 @@ func TestBlockBuilder_WithMultipleTenants_PullMode(t *testing.T) {
 
 	// Wait for end of the cycles. We expect at least several cycles because of how the pushed records were structured.
 	require.Eventually(t, func() bool {
-		_, _, completeJobCalls := scheduler.counts()
+		_, _, completeJobCalls, _ := scheduler.callCounts()
 		return completeJobCalls > 0
 	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
 
@@ -1176,7 +1182,7 @@ func TestPullMode(t *testing.T) {
 	})
 
 	require.Eventually(t, func() bool {
-		_, _, completeJobCalls := scheduler.counts()
+		_, _, completeJobCalls, _ := scheduler.callCounts()
 		return completeJobCalls == 2
 	}, 5*time.Second, 100*time.Millisecond, "expected to complete two jobs")
 
@@ -1223,6 +1229,7 @@ type mockSchedulerClient struct {
 	runCalls         int
 	getJobCalls      int
 	completeJobCalls []schedulerpb.JobKey
+	flushCalls       int
 }
 
 func (m *mockSchedulerClient) Run(_ context.Context) {
@@ -1231,7 +1238,11 @@ func (m *mockSchedulerClient) Run(_ context.Context) {
 	m.runCalls++
 }
 
-func (m *mockSchedulerClient) Flush(_ context.Context) {}
+func (m *mockSchedulerClient) Flush(_ context.Context) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.flushCalls++
+}
 
 func (m *mockSchedulerClient) GetJob(ctx context.Context) (schedulerpb.JobKey, schedulerpb.JobSpec, error) {
 	m.mu.Lock()
@@ -1261,6 +1272,7 @@ func (m *mockSchedulerClient) CompleteJob(key schedulerpb.JobKey) error {
 	return nil
 }
 
+// addJob adds a job to the fake back-end for this mock scheduler client.
 func (m *mockSchedulerClient) addJob(key schedulerpb.JobKey, spec schedulerpb.JobSpec) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1270,8 +1282,8 @@ func (m *mockSchedulerClient) addJob(key schedulerpb.JobKey, spec schedulerpb.Jo
 	}{key: key, spec: spec})
 }
 
-func (m *mockSchedulerClient) counts() (int, int, int) {
+func (m *mockSchedulerClient) callCounts() (int, int, int, int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.runCalls, m.getJobCalls, len(m.completeJobCalls)
+	return m.runCalls, m.getJobCalls, len(m.completeJobCalls), m.flushCalls
 }
