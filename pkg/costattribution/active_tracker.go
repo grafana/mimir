@@ -31,21 +31,18 @@ type ActiveSeriesTracker struct {
 }
 
 func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
-	orderedLables := slices.Clone(trackedLabels)
-	slices.Sort(orderedLables)
-
 	// Create a map for overflow labels to export when overflow happens
-	overflowLabels := make([]string, len(orderedLables)+2)
-	for i := range orderedLables {
+	overflowLabels := make([]string, len(trackedLabels)+2)
+	for i := range trackedLabels {
 		overflowLabels[i] = overflowValue
 	}
 
-	overflowLabels[len(orderedLables)] = userID
-	overflowLabels[len(orderedLables)+1] = overflowValue
+	overflowLabels[len(trackedLabels)] = userID
+	overflowLabels[len(trackedLabels)+1] = overflowValue
 
 	ast := &ActiveSeriesTracker{
 		userID:           userID,
-		labels:           orderedLables,
+		labels:           trackedLabels,
 		maxCardinality:   limit,
 		observed:         make(map[string]*atomic.Int64),
 		logger:           logger,
@@ -53,7 +50,7 @@ func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, co
 		cooldownDuration: cooldownDuration,
 	}
 
-	variableLabels := slices.Clone(orderedLables)
+	variableLabels := slices.Clone(trackedLabels)
 	variableLabels = append(variableLabels, tenantLabel, "reason")
 
 	ast.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",

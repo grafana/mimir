@@ -94,7 +94,9 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 	if tracker, exists = m.sampleTrackersByUserID[userID]; exists {
 		return tracker
 	}
-	tracker = newSampleTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
+	orderedLables := slices.Clone(labels)
+	slices.Sort(orderedLables)
+	tracker = newSampleTracker(userID, orderedLables, maxCardinality, cooldownDuration, m.logger)
 	m.sampleTrackersByUserID[userID] = tracker
 	return tracker
 }
@@ -123,7 +125,9 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 		return tracker
 	}
 
-	tracker = newActiveSeriesTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
+	orderedLables := slices.Clone(labels)
+	slices.Sort(orderedLables)
+	tracker = newActiveSeriesTracker(userID, orderedLables, maxCardinality, cooldownDuration, m.logger)
 	m.activeTrackersByUserID[userID] = tracker
 	return tracker
 }

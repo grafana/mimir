@@ -42,21 +42,18 @@ type SampleTracker struct {
 }
 
 func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
-	orderedLables := slices.Clone(trackedLabels)
-	slices.Sort(orderedLables)
-
 	// Create a map for overflow labels to export when overflow happens
-	overflowLabels := make([]string, len(orderedLables)+2)
-	for i := range orderedLables {
+	overflowLabels := make([]string, len(trackedLabels)+2)
+	for i := range trackedLabels {
 		overflowLabels[i] = overflowValue
 	}
 
-	overflowLabels[len(orderedLables)] = userID
-	overflowLabels[len(orderedLables)+1] = overflowValue
+	overflowLabels[len(trackedLabels)] = userID
+	overflowLabels[len(trackedLabels)+1] = overflowValue
 
 	tracker := &SampleTracker{
 		userID:           userID,
-		labels:           orderedLables,
+		labels:           trackedLabels,
 		maxCardinality:   limit,
 		observed:         make(map[string]*observation),
 		cooldownDuration: cooldown,
@@ -65,7 +62,7 @@ func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown
 		overflowCounter:  observation{},
 	}
 
-	variableLabels := slices.Clone(orderedLables)
+	variableLabels := slices.Clone(trackedLabels)
 	variableLabels = append(variableLabels, tenantLabel, "reason")
 	tracker.discardedSampleAttribution = prometheus.NewDesc("cortex_discarded_attributed_samples_total",
 		"The total number of samples that were discarded per attribution.",
