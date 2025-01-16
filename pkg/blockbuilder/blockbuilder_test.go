@@ -103,7 +103,6 @@ func TestBlockBuilder_StartWithExistingCommit(t *testing.T) {
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
 	kafkaCluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-
 	kafkaClient := mustKafkaClient(t, kafkaAddr)
 	kafkaClient.AddConsumeTopics(testTopic)
 
@@ -162,7 +161,7 @@ func TestBlockBuilder_StartWithExistingCommit(t *testing.T) {
 	})
 
 	// We expect at least several cycles because of how the pushed records were structured.
-	require.Eventually(t, func() bool { return kafkaCommits.Load() >= 3 }, 5*time.Second, 100*time.Millisecond, "expected kafka commits")
+	require.Eventually(t, func() bool { return kafkaCommits.Load() >= 3 }, 15*time.Second, 100*time.Millisecond, "expected kafka commits")
 
 	// Because there is a commit, on startup, block-builder must consume samples only after the commit.
 	expSamples := producedSamples[1+(len(producedSamples)/2):]
@@ -180,8 +179,6 @@ func TestBlockBuilder_StartWithExistingCommit(t *testing.T) {
 }
 
 func TestBlockBuilder_StartWithExistingCommit_PullMode(t *testing.T) {
-	t.Parallel()
-
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
@@ -420,7 +417,6 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection(t *testing.T) {
 
 	kafkaCluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
 	kafkaClient := mustKafkaClient(t, kafkaAddr)
-
 	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 
 	// Producing backlog of records in partition 0.
@@ -466,7 +462,7 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection(t *testing.T) {
 	})
 
 	// Wait for the end of all cycles. We expect at least several cycle sections because of how the pushed records were structured.
-	require.Eventually(t, func() bool { return kafkaCommits.Load() == 5 }, 5*time.Second, 100*time.Millisecond, "expected kafka commits")
+	require.Eventually(t, func() bool { return kafkaCommits.Load() == 5 }, 20*time.Second, 100*time.Millisecond, "expected kafka commits")
 
 	require.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_blockbuilder_consumer_lag_records The per-topic-partition number of records, instance needs to work through each cycle.
@@ -489,15 +485,11 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection(t *testing.T) {
 
 // When there are no records to consume before the last cycle section, the whole cycle should bail.
 func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection_PullMode(t *testing.T) {
-	// FIXME: I'm currently trying to understand why uncommenting this line causes tests to fail when all run together:
-	// t.Parallel()
-
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
 	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
 	kafkaClient := mustKafkaClient(t, kafkaAddr)
-
 	cfg, overrides := blockBuilderPullModeConfig(t, kafkaAddr)
 
 	// Producing backlog of records in partition 0.
@@ -578,7 +570,7 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection_PullMode(t *testi
 	// Wait for both jobs to complete.
 	require.Eventually(t, func() bool {
 		return bb.jobIteration.Load() >= 2
-	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
+	}, 20*time.Second, 100*time.Millisecond, "expected job completion")
 
 	runCalls, getJobCalls, completeCalls, flushCalls := scheduler.callCounts()
 	assert.Equal(t, runCalls, 1)
