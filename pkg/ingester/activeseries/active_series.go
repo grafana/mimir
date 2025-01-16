@@ -69,17 +69,17 @@ type seriesStripe struct {
 	// without holding the lock -- hence the atomic).
 	oldestEntryTs atomic.Int64
 
-	mu                                    sync.RWMutex
-	refs                                  map[storage.SeriesRef]seriesEntry
-	activeSeriesAttributionFailureCounter atomic.Float64
-	active                                uint32   // Number of active entries in this stripe. Only decreased during purge or clear.
-	activeMatching                        []uint32 // Number of active entries in this stripe matching each matcher of the configured Matchers.
-	activeNativeHistograms                uint32   // Number of active entries (only native histograms) in this stripe. Only decreased during purge or clear.
-	activeMatchingNativeHistograms        []uint32 // Number of active entries (only native histograms) in this stripe matching each matcher of the configured Matchers.
-	activeNativeHistogramBuckets          uint32   // Number of buckets in active native histogram entries in this stripe. Only decreased during purge or clear.
-	activeMatchingNativeHistogramBuckets  []uint32 // Number of buckets in active native histogram entries in this stripe matching each matcher of the configured Matchers.
+	mu                                   sync.RWMutex
+	refs                                 map[storage.SeriesRef]seriesEntry
+	active                               uint32   // Number of active entries in this stripe. Only decreased during purge or clear.
+	activeMatching                       []uint32 // Number of active entries in this stripe matching each matcher of the configured Matchers.
+	activeNativeHistograms               uint32   // Number of active entries (only native histograms) in this stripe. Only decreased during purge or clear.
+	activeMatchingNativeHistograms       []uint32 // Number of active entries (only native histograms) in this stripe matching each matcher of the configured Matchers.
+	activeNativeHistogramBuckets         uint32   // Number of buckets in active native histogram entries in this stripe. Only decreased during purge or clear.
+	activeMatchingNativeHistogramBuckets []uint32 // Number of buckets in active native histogram entries in this stripe matching each matcher of the configured Matchers.
 
-	caat *costattribution.ActiveSeriesTracker
+	caat                                  *costattribution.ActiveSeriesTracker
+	activeSeriesAttributionFailureCounter atomic.Float64
 }
 
 // seriesEntry holds a timestamp for single series.
