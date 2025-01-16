@@ -78,20 +78,18 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
 	at.fillKeyFromLabels(lbls, buf)
 
 	at.observedMtx.RLock()
+	defer at.observedMtx.RUnlock()
 	as, ok := at.observed[string(buf.Bytes())]
 	if ok {
 		as.Inc()
-		at.observedMtx.RUnlock()
 		return
 	}
 
 	if !at.overflowSince.IsZero() {
-		at.observedMtx.RUnlock()
 		at.overflowCounter.Inc()
 		return
 	}
 
-	defer at.observedMtx.RUnlock()
 	as, ok = at.observed[string(buf.Bytes())]
 	if ok {
 		as.Inc()
@@ -110,7 +108,6 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
 	}
 
 	at.observed[string(buf.Bytes())] = atomic.NewInt64(1)
-
 }
 
 func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels) {
