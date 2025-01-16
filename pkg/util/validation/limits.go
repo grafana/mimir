@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
+	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
@@ -143,9 +144,9 @@ type Limits struct {
 	OOONativeHistogramsIngestionEnabled bool `yaml:"ooo_native_histograms_ingestion_enabled" json:"ooo_native_histograms_ingestion_enabled" category:"experimental"`
 
 	// Active series custom trackers
-	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
-	ActiveSeriesAdditionalCustomTrackersConfig asmodel.CustomTrackersConfig  `yaml:"active_series_additional_custom_trackers" json:"active_series_additional_custom_trackers" doc:"description=Additional custom trackers for active metrics merged on top of the base custom trackers. You can use this configuration option to define the base custom trackers globally for all tenants, and then use the additional trackers to add extra trackers on a per-tenant basis." category:"advanced"`
-	activeSeriesMergedCustomTrackersConfig     *asmodel.CustomTrackersConfig `yaml:"-" json:"-"`
+	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                 `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
+	ActiveSeriesAdditionalCustomTrackersConfig asmodel.CustomTrackersConfig                 `yaml:"active_series_additional_custom_trackers" json:"active_series_additional_custom_trackers" doc:"description=Additional custom trackers for active metrics merged on top of the base custom trackers. You can use this configuration option to define the base custom trackers globally for all tenants, and then use the additional trackers to add extra trackers on a per-tenant basis." category:"advanced"`
+	activeSeriesMergedCustomTrackersConfig     atomic.Pointer[asmodel.CustomTrackersConfig] `yaml:"-" json:"-"` // Limits struct is referenced by pointer, so having atomic.Pointer by value is fine here.
 
 	// Max allowed time window for out-of-order samples.
 	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window" category:"experimental"`
@@ -785,29 +786,22 @@ func (o *Overrides) IgnoreOOOExemplars(userID string) bool {
 // ActiveSeriesCustomTrackersConfig returns all active series custom trackers that should be used for
 // the input tenant. The trackers are the merge of the configure base and additional custom trackers.
 func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) asmodel.CustomTrackersConfig {
-	// Check if we already have a cached version of the merged ones.
-	if merged := o.getOverridesForUser(userID).activeSeriesMergedCustomTrackersConfig; merged != nil {
+	limits := o.getOverridesForUser(userID)
+
+	if merged := limits.activeSeriesMergedCustomTrackersConfig.Load(); merged != nil {
 		return *merged
 	}
 
 	// Merge the base trackers with the additional ones.
 	merged := asmodel.MergeCustomTrackersConfig(
-		o.activeSeriesBaseCustomTrackersConfig(userID),
-		o.activeSeriesAdditionalCustomTrackersConfig(userID),
+		limits.ActiveSeriesBaseCustomTrackersConfig,
+		limits.ActiveSeriesAdditionalCustomTrackersConfig,
 	)
 
 	// Cache it.
-	o.getOverridesForUser(userID).activeSeriesMergedCustomTrackersConfig = &merged
+	limits.activeSeriesMergedCustomTrackersConfig.Store(&merged)
 
 	return merged
-}
-
-func (o *Overrides) activeSeriesBaseCustomTrackersConfig(userID string) asmodel.CustomTrackersConfig {
-	return o.getOverridesForUser(userID).ActiveSeriesBaseCustomTrackersConfig
-}
-
-func (o *Overrides) activeSeriesAdditionalCustomTrackersConfig(userID string) asmodel.CustomTrackersConfig {
-	return o.getOverridesForUser(userID).ActiveSeriesAdditionalCustomTrackersConfig
 }
 
 // OutOfOrderTimeWindow returns the out-of-order time window for the user.

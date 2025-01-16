@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -126,7 +128,9 @@ max_partial_query_length: 1s
 	err = json.Unmarshal([]byte(inputJSON), &limitsJSON)
 	require.NoError(t, err, "expected to be able to unmarshal from JSON")
 
-	assert.True(t, cmp.Equal(limitsYAML, limitsJSON, cmp.AllowUnexported(Limits{})), "expected YAML and JSON to match")
+	// Excluding activeSeriesMergedCustomTrackersConfig because it's not comparable, but we
+	// don't care about it in this test (it's not exported to JSON or YAML).
+	assert.True(t, cmp.Equal(limitsYAML, limitsJSON, cmp.AllowUnexported(Limits{}), cmpopts.IgnoreFields(Limits{}, "activeSeriesMergedCustomTrackersConfig")), "expected YAML and JSON to match")
 }
 
 func TestLimitsAlwaysUsesPromDuration(t *testing.T) {
@@ -1074,10 +1078,51 @@ active_series_additional_custom_trackers:
 			overrides, err := NewOverrides(limitsYAML, nil)
 			require.NoError(t, err)
 
-			assert.Equal(t, testData.expectedBaseConfig, overrides.activeSeriesBaseCustomTrackersConfig("user").String())
-			assert.Equal(t, testData.expectedAdditionalConfig, overrides.activeSeriesAdditionalCustomTrackersConfig("user").String())
+			assert.Equal(t, testData.expectedBaseConfig, overrides.getOverridesForUser("test").ActiveSeriesBaseCustomTrackersConfig.String())
+			assert.Equal(t, testData.expectedAdditionalConfig, overrides.getOverridesForUser("user").ActiveSeriesAdditionalCustomTrackersConfig.String())
 			assert.Equal(t, testData.expectedMergedConfig, overrides.ActiveSeriesCustomTrackersConfig("user").String())
 		})
+	}
+}
+
+func TestActiveSeriesCustomTrackersConfig_Concurrency(t *testing.T) {
+	const (
+		numRuns             = 100
+		numGoroutinesPerRun = 10
+	)
+
+	cfg := `
+active_series_custom_trackers:
+  base_1: '{foo="base_1"}'
+  common_1: '{foo="base"}'
+
+active_series_additional_custom_trackers:
+  additional_1: '{foo="additional_1"}'
+  common_1: '{foo="additional"}'`
+
+	for r := 0; r < numRuns; r++ {
+		limitsYAML := Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &limitsYAML))
+
+		overrides, err := NewOverrides(limitsYAML, nil)
+		require.NoError(t, err)
+
+		start := make(chan struct{})
+		wg := sync.WaitGroup{}
+		wg.Add(numGoroutinesPerRun)
+
+		// Kick off goroutines.
+		for g := 0; g < numGoroutinesPerRun; g++ {
+			go func() {
+				defer wg.Done()
+				<-start
+				overrides.ActiveSeriesCustomTrackersConfig("user")
+			}()
+		}
+
+		// Unblock calls and wait until done.
+		close(start)
+		wg.Wait()
 	}
 }
 
