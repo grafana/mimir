@@ -13,7 +13,9 @@ import (
 )
 
 const (
-	MaxExpectedPointsPerSeries = 131_072 // There's not too much science behind this number: 100,000 points allows for a point per minute for just under 70 days. Then we use the next power of two.
+	// There's not too much science behind this number: 100,000 points allows for a point per minute for just under 70 days.
+	// Then we use the next power of two, given the pools always return slices with capacity equal to a power of two.
+	MaxExpectedPointsPerSeries = 131_072
 
 	// Treat a native histogram sample as equivalent to this many float samples when considering max in-memory bytes limit.
 	// Keep in mind that float sample = timestamp + float value, so 5x this is equivalent to five timestamps and five floats.

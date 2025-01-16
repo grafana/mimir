@@ -32,6 +32,7 @@ import (
 	promConfig "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
+	promRW2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage/remote"
 	yaml "gopkg.in/yaml.v3"
 
@@ -210,6 +211,38 @@ func (c *Client) PushInflux(timeseries []prompb.TimeSeries) (*http.Response, err
 		return nil, err
 	}
 	req.Header.Set("Content-Encoding", "gzip")
+	req.Header.Set("X-Scope-OrgID", c.orgID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	// Execute HTTP request
+	res, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	defer res.Body.Close()
+	return res, nil
+}
+
+func (c *Client) PushRW2(writeRequest *promRW2.Request) (*http.Response, error) {
+	// Create write request
+	data, err := proto.Marshal(writeRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create HTTP request
+	compressed := snappy.Encode(nil, data)
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/push", c.distributorAddress), bytes.NewReader(compressed))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Encoding", "snappy")
+	req.Header.Set("Content-Type", "application/x-protobuf;proto=io.prometheus.write.v2.Request")
+	req.Header.Set("X-Prometheus-Remote-Write-Version", "2.0.0")
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)

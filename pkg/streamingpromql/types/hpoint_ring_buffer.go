@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 // FPointRingBuffer and HPointRingBuffer are nearly identical, but exist for each
@@ -121,7 +122,7 @@ func (b *HPointRingBuffer) NextPoint() (*promql.HPoint, error) {
 			return nil, err
 		}
 
-		if !isPowerOfTwo(cap(newSlice)) {
+		if !pool.IsPowerOfTwo(cap(newSlice)) {
 			// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
 			// If we can guarantee that newSlice has a capacity that is a power of two in the future, then we can drop this check.
 			return nil, fmt.Errorf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize)
@@ -185,7 +186,7 @@ func (b *HPointRingBuffer) Release() {
 // should not return s to the pool themselves.
 // s must have a capacity that is a power of two.
 func (b *HPointRingBuffer) Use(s []promql.HPoint) error {
-	if !isPowerOfTwo(cap(s)) {
+	if !pool.IsPowerOfTwo(cap(s)) {
 		// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
 		return fmt.Errorf("slice capacity must be a power of two, but is %v", cap(s))
 	}

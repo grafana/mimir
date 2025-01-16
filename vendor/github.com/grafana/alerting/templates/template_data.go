@@ -3,10 +3,14 @@ package templates
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	tmplhtml "html/template"
 	"net/url"
 	"path"
+	"slices"
 	"sort"
 	"strings"
+	tmpltext "text/template"
 	"time"
 
 	"github.com/go-kit/log"
@@ -63,6 +67,52 @@ type ExtendedData struct {
 	CommonAnnotations KV `json:"commonAnnotations"`
 
 	ExternalURL string `json:"externalURL"`
+}
+
+var DefaultTemplateName = "__default__"
+
+// DefaultTemplate returns a new Template with all default templates parsed.
+func DefaultTemplate(options ...template.Option) (TemplateDefinition, error) {
+	// We cannot simply append the text of each default file together as there can be (and are) duplicate template
+	// names. Duplicate templates should override when parsed from separate files but will fail to parse if both are in
+	// the same file.
+	// So, instead we allow tmpltext to combine the templates and then convert it to a string afterwards.
+	// The underlying template is not accessible, so we capture it via template.Option.
+	var newTextTmpl *tmpltext.Template
+	var captureTemplate template.Option = func(text *tmpltext.Template, _ *tmplhtml.Template) {
+		newTextTmpl = text
+	}
+
+	// Call FromContent without any user-provided templates to get the combined default template.
+	_, err := FromContent(nil, append(options, captureTemplate)...)
+	if err != nil {
+		return TemplateDefinition{}, err
+	}
+
+	var combinedTemplate strings.Builder
+	tmpls := newTextTmpl.Templates()
+	// Sort for a consistent order.
+	slices.SortFunc(tmpls, func(a, b *tmpltext.Template) int {
+		return strings.Compare(a.Name(), b.Name())
+	})
+
+	// Recreate the "define" blocks for all templates. Would be nice to have a more direct way to do this.
+	for _, tmpl := range tmpls {
+		if tmpl.Name() != "" {
+			def := tmpl.Tree.Root.String()
+			if tmpl.Name() == "__text_values_list" {
+				// Temporary fix for https://github.com/golang/go/commit/6fea4094242fe4e7be8bd7ec0b55df9f6df3f025.
+				// TODO: Can remove with GO v1.24.
+				def = strings.Replace(def, "$first := false", "$first = false", 1)
+			}
+
+			combinedTemplate.WriteString(fmt.Sprintf("{{ define \"%s\" }}%s{{ end }}\n\n", tmpl.Name(), def))
+		}
+	}
+	return TemplateDefinition{
+		Name:     DefaultTemplateName,
+		Template: combinedTemplate.String(),
+	}, nil
 }
 
 // FromContent calls Parse on all provided template content and returns the resulting Template. Content equivalent to templates.FromGlobs.

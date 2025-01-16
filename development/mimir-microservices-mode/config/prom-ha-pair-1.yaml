@@ -27,7 +27,7 @@ scrape_configs:
         target_label: 'container'
         regex: '(.+?)(-\d+)?'
         replacement: '${1}'
-    scrape_classic_histograms: true
+    always_scrape_classic_histograms: true
 
 remote_write:
   - url: http://distributor-2:8001/api/v1/push

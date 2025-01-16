@@ -28,6 +28,8 @@ type BucketedPool[T ~[]E, E any] struct {
 func NewBucketedPool[T ~[]E, E any](maxSize uint, makeFunc func(int) T) *BucketedPool[T, E] {
 	if maxSize <= 1 {
 		panic("invalid maximum pool size")
+	} else if !IsPowerOfTwo(int(maxSize)) {
+		panic("bucket maxSize is not a power of two")
 	}
 
 	bucketCount := bits.Len(maxSize)
@@ -42,9 +44,8 @@ func NewBucketedPool[T ~[]E, E any](maxSize uint, makeFunc func(int) T) *Buckete
 }
 
 // Get returns a new slice with capacity greater than or equal to size.
-// If no bucket large enough exists, a slice larger than the requested size
-// of the next power of two is returned.
-// Get guarantees the resulting slice always has a capacity in power of twos.
+// The resulting slice always has a capacity that is a power of two.
+// If size is greater than maxSize, then a slice is still returned, however it may not be drawn from a pool.
 func (p *BucketedPool[T, E]) Get(size int) T {
 	if size < 0 {
 		panic(fmt.Sprintf("BucketedPool.Get with negative size %v", size))
@@ -56,7 +57,7 @@ func (p *BucketedPool[T, E]) Get(size int) T {
 
 	bucketIndex := bits.Len(uint(size - 1))
 
-	// If bucketIndex exceeds the number of available buckets, return a slice of the next power of two.
+	// If the requested size is larger than the size of the largest bucket, return a slice of the next power of two greater than or equal to size.
 	if bucketIndex >= len(p.buckets) {
 		nextPowerOfTwo := 1 << bucketIndex
 		return p.make(nextPowerOfTwo)
@@ -83,14 +84,19 @@ func (p *BucketedPool[T, E]) Put(s T) {
 
 	bucketIndex := bits.Len(size - 1)
 	if bucketIndex >= len(p.buckets) {
+		// This should never happen as maxSize is checked above, and enforced to be a power of 2
 		return // Ignore slices larger than the largest bucket
 	}
 
-	// Ignore slices that do not align to the current power of 2
+	// Ignore slices with capacity that is not a power of 2
 	// (this will only happen where a slice did not originally come from the pool).
 	if size != (1 << bucketIndex) {
 		return
 	}
 
 	p.buckets[bucketIndex].Put(s[0:0])
+}
+
+func IsPowerOfTwo(n int) bool {
+	return (n & (n - 1)) == 0
 }

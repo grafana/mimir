@@ -9,7 +9,9 @@ import (
 )
 
 const (
-	maxExpectedSeriesPerResult = 10_000_000 // There's not too much science behind this number: this is the based on examining the largest queries seen at Grafana Labs.
+	// There's not too much science behind this number: this is the based on examining the largest queries seen at Grafana Labs.
+	// The number must also align with a power of two for our pools.
+	maxExpectedSeriesPerResult = 8_388_608
 )
 
 var (

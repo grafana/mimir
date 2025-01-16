@@ -209,22 +209,34 @@ func (c *TenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, g
 	// This batch holds the rules that have no dependencies and will be run first.
 	firstBatch := rules.ConcurrentRules{}
 	for i, r := range g.Rules() {
-		if r.NoDependencyRules() {
-			firstBatch = append(firstBatch, i)
-			continue
+		dependencies := r.DependencyRules()
+		if dependencies == nil {
+			// This means that dependencies were not calculated.
+			level.Warn(logger).Log("msg", "Dependencies were not calculated for at least one rule, falling back to sequential rule evaluation.")
+			return nil
 		}
+
 		// Initialize the rule info with the rule's dependencies.
 		// Use a copy of the dependencies to avoid mutating the rule.
 		info := ruleInfo{ruleIdx: i, unevaluatedDependencies: map[rules.Rule]struct{}{}}
-		for _, dep := range r.DependencyRules() {
+		for _, dep := range dependencies {
+			if dep == r {
+				// Ignore self-references.
+				continue
+			}
 			info.unevaluatedDependencies[dep] = struct{}{}
 		}
+
+		if len(info.unevaluatedDependencies) == 0 {
+			firstBatch = append(firstBatch, i)
+			continue
+		}
+
 		remainingRules[r] = info
 	}
 	if len(firstBatch) == 0 {
 		// There are no rules without dependencies.
-		// Fall back to sequential evaluation.
-		level.Info(logger).Log("msg", "No rules without dependencies found, falling back to sequential rule evaluation.")
+		level.Warn(logger).Log("msg", "No rules without dependencies found, falling back to sequential rule evaluation.")
 		return nil
 	}
 	result := []rules.ConcurrentRules{firstBatch}
@@ -253,7 +265,6 @@ func (c *TenantConcurrencyController) SplitGroupIntoBatches(_ context.Context, g
 		if len(batch) == 0 {
 			// There is a cycle in the rules' dependencies.
 			// We can't evaluate them concurrently.
-			// Fall back to sequential evaluation.
 			level.Warn(logger).Log("msg", "Cyclic rule dependencies detected, falling back to sequential rule evaluation")
 			return nil
 		}

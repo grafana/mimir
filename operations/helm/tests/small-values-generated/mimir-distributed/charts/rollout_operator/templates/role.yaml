@@ -5,10 +5,10 @@ kind: Role
 metadata:
   name: small-values-rollout-operator
   labels:
-    helm.sh/chart: rollout-operator-0.22.0
+    helm.sh/chart: rollout-operator-0.23.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: small-values
-    app.kubernetes.io/version: "v0.22.0"
+    app.kubernetes.io/version: "v0.23.0"
     app.kubernetes.io/managed-by: Helm
 rules:
 - apiGroups:
