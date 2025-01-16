@@ -217,10 +217,7 @@ func (m *Manager) purgeInactiveAttributionsUntil(deadline time.Time) error {
 			continue
 		}
 
-		invalidKeys := st.inactiveObservations(deadline)
-		for _, key := range invalidKeys {
-			st.cleanupTrackerAttribution(key)
-		}
+		st.cleanupInactiveObservations(deadline)
 
 		// only sample tracker can recovered from overflow, the activeseries tracker after the cooldown would just be deleted and recreated
 		if st.recoveredFromOverflow(deadline) {

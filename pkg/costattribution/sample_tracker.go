@@ -87,12 +87,6 @@ var bufferPool = sync.Pool{
 	},
 }
 
-func (st *SampleTracker) cleanupTrackerAttribution(key string) {
-	st.observedMtx.Lock()
-	defer st.observedMtx.Unlock()
-	delete(st.observed, key)
-}
-
 func (st *SampleTracker) Collect(out chan<- prometheus.Metric) {
 	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
 	var prometheusMetrics []prometheus.Metric
@@ -304,16 +298,20 @@ func (st *SampleTracker) recoveredFromOverflow(deadline time.Time) bool {
 	return false
 }
 
-func (st *SampleTracker) inactiveObservations(deadline time.Time) []string {
+func (st *SampleTracker) cleanupInactiveObservations(deadline time.Time) {
 	// otherwise, we need to check all observations and clean up the ones that are inactive
 	var invalidKeys []string
 	st.observedMtx.RLock()
-	defer st.observedMtx.RUnlock()
 	for labkey, ob := range st.observed {
 		if ob != nil && ob.lastUpdate.Load() <= deadline.Unix() {
 			invalidKeys = append(invalidKeys, labkey)
 		}
 	}
+	st.observedMtx.RUnlock()
 
-	return invalidKeys
+	st.observedMtx.Lock()
+	for _, key := range invalidKeys {
+		delete(st.observed, key)
+	}
+	st.observedMtx.Unlock()
 }

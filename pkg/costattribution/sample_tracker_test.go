@@ -108,18 +108,17 @@ func TestSampleTracker_inactiveObservations(t *testing.T) {
 	require.Len(t, st.observed, 3)
 
 	// Purge observations that haven't been updated in the last 10 seconds.
-	purged := st.inactiveObservations(time.Unix(0, 0))
-	require.Len(t, purged, 0)
+	st.cleanupInactiveObservations(time.Unix(0, 0))
+	require.Len(t, st.observed, 3)
 
-	purged = st.inactiveObservations(time.Unix(10, 0))
-	assert.ElementsMatch(t, []string{"foo"}, purged)
+	st.cleanupInactiveObservations(time.Unix(10, 0))
+	assert.Len(t, st.observed, 2)
 
-	purged = st.inactiveObservations(time.Unix(15, 0))
-	assert.ElementsMatch(t, []string{"foo", "bar"}, purged)
+	st.cleanupInactiveObservations(time.Unix(15, 0))
+	assert.Len(t, st.observed, 1)
 
-	// Check that the purged observation matches the expected details.
-	purged = st.inactiveObservations(time.Unix(25, 0))
-	assert.ElementsMatch(t, []string{"foo", "bar", "baz"}, purged)
+	st.cleanupInactiveObservations(time.Unix(25, 0))
+	assert.Len(t, st.observed, 0)
 }
 
 func TestSampleTracker_Concurrency(t *testing.T) {
