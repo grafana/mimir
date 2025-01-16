@@ -197,6 +197,12 @@ func MergeCustomTrackersConfig(first, second CustomTrackersConfig) CustomTracker
 	if len(first.config) == 0 && len(second.config) == 0 {
 		return CustomTrackersConfig{}
 	}
+	if len(second.config) == 0 {
+		return first
+	}
+	if len(first.config) == 0 {
+		return second
+	}
 
 	merged := CustomTrackersConfig{
 		source: make(map[string]string, len(first.source)+len(second.source)),
