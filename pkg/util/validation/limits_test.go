@@ -1034,7 +1034,10 @@ func TestActiveSeriesCustomTrackersConfig(t *testing.T) {
 		expectedMergedConfig     string
 	}{
 		"no base and no additional config": {
-			cfg:                      "",
+			cfg: `
+# Set another unrelated field to trigger the limits unmarshalling.
+max_global_series_per_user: 10
+`,
 			expectedBaseConfig:       "",
 			expectedAdditionalConfig: "",
 			expectedMergedConfig:     "",
@@ -1072,15 +1075,26 @@ active_series_additional_custom_trackers:
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			limitsYAML := Limits{}
-			require.NoError(t, yaml.Unmarshal([]byte(testData.cfg), &limitsYAML))
+			for _, withDefaultValues := range []bool{true, false} {
+				t.Run(fmt.Sprintf("with default values: %t", withDefaultValues), func(t *testing.T) {
+					limitsYAML := Limits{}
+					if withDefaultValues {
+						flagext.DefaultValues(&limitsYAML)
+					}
+					require.NoError(t, yaml.Unmarshal([]byte(testData.cfg), &limitsYAML))
 
-			overrides, err := NewOverrides(limitsYAML, nil)
-			require.NoError(t, err)
+					overrides, err := NewOverrides(limitsYAML, nil)
+					require.NoError(t, err)
 
-			assert.Equal(t, testData.expectedBaseConfig, overrides.getOverridesForUser("test").ActiveSeriesBaseCustomTrackersConfig.String())
-			assert.Equal(t, testData.expectedAdditionalConfig, overrides.getOverridesForUser("user").ActiveSeriesAdditionalCustomTrackersConfig.String())
-			assert.Equal(t, testData.expectedMergedConfig, overrides.ActiveSeriesCustomTrackersConfig("user").String())
+					// We expect the pointer holder to be always initialised, either when initializing default values
+					// or by the unmarshalling.
+					require.NotNil(t, overrides.getOverridesForUser("user").activeSeriesMergedCustomTrackersConfig)
+
+					assert.Equal(t, testData.expectedBaseConfig, overrides.getOverridesForUser("test").ActiveSeriesBaseCustomTrackersConfig.String())
+					assert.Equal(t, testData.expectedAdditionalConfig, overrides.getOverridesForUser("user").ActiveSeriesAdditionalCustomTrackersConfig.String())
+					assert.Equal(t, testData.expectedMergedConfig, overrides.ActiveSeriesCustomTrackersConfig("user").String())
+				})
+			}
 		})
 	}
 }

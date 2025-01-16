@@ -144,9 +144,9 @@ type Limits struct {
 	OOONativeHistogramsIngestionEnabled bool `yaml:"ooo_native_histograms_ingestion_enabled" json:"ooo_native_histograms_ingestion_enabled" category:"experimental"`
 
 	// Active series custom trackers
-	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                 `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
-	ActiveSeriesAdditionalCustomTrackersConfig asmodel.CustomTrackersConfig                 `yaml:"active_series_additional_custom_trackers" json:"active_series_additional_custom_trackers" doc:"description=Additional custom trackers for active metrics merged on top of the base custom trackers. You can use this configuration option to define the base custom trackers globally for all tenants, and then use the additional trackers to add extra trackers on a per-tenant basis." category:"advanced"`
-	activeSeriesMergedCustomTrackersConfig     atomic.Pointer[asmodel.CustomTrackersConfig] `yaml:"-" json:"-"` // Limits struct is referenced by pointer, so having atomic.Pointer by value is fine here.
+	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
+	ActiveSeriesAdditionalCustomTrackersConfig asmodel.CustomTrackersConfig                  `yaml:"active_series_additional_custom_trackers" json:"active_series_additional_custom_trackers" doc:"description=Additional custom trackers for active metrics merged on top of the base custom trackers. You can use this configuration option to define the base custom trackers globally for all tenants, and then use the additional trackers to add extra trackers on a per-tenant basis." category:"advanced"`
+	activeSeriesMergedCustomTrackersConfig     *atomic.Pointer[asmodel.CustomTrackersConfig] `yaml:"-" json:"-"`
 
 	// Max allowed time window for out-of-order samples.
 	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window" category:"experimental"`
@@ -407,6 +407,11 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	// Ingest storage.
 	f.StringVar(&l.IngestStorageReadConsistency, "ingest-storage.read-consistency", api.ReadConsistencyEventual, fmt.Sprintf("The default consistency level to enforce for queries when using the ingest storage. Supports values: %s.", strings.Join(api.ReadConsistencies, ", ")))
 	f.IntVar(&l.IngestionPartitionsTenantShardSize, "ingest-storage.ingestion-partition-tenant-shard-size", 0, "The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.")
+
+	// Ensure the pointer holder is initialized.
+	if l.activeSeriesMergedCustomTrackersConfig == nil {
+		l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
+	}
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -436,6 +441,10 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 		l.NotificationRateLimitPerIntegration = defaultLimits.NotificationRateLimitPerIntegration.Clone()
 		l.RulerMaxRulesPerRuleGroupByNamespace = defaultLimits.RulerMaxRulesPerRuleGroupByNamespace.Clone()
 		l.RulerMaxRuleGroupsPerTenantByNamespace = defaultLimits.RulerMaxRuleGroupsPerTenantByNamespace.Clone()
+
+		// Reset the merged custom active series trackers config, to not interfere with the default limits.
+		// TODO unit test
+		l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
 	}
 
 	// Decode into a reflection-crafted struct that has fields for the extensions.
@@ -787,6 +796,15 @@ func (o *Overrides) IgnoreOOOExemplars(userID string) bool {
 // the input tenant. The trackers are the merge of the configure base and additional custom trackers.
 func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) asmodel.CustomTrackersConfig {
 	limits := o.getOverridesForUser(userID)
+
+	// We expect the pointer holder to be initialized. However, in some tests it doesn't get initialized
+	// for simplicity. In such case, we just recompute the merge each time.
+	if limits.activeSeriesMergedCustomTrackersConfig == nil {
+		return asmodel.MergeCustomTrackersConfig(
+			limits.ActiveSeriesBaseCustomTrackersConfig,
+			limits.ActiveSeriesAdditionalCustomTrackersConfig,
+		)
+	}
 
 	if merged := limits.activeSeriesMergedCustomTrackersConfig.Load(); merged != nil {
 		return *merged
