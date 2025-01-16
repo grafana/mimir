@@ -41,7 +41,7 @@ spec:
       {{- end }}
       containers:
         - name: continuous-test
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "continuous-test") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=continuous-test"

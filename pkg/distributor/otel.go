@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/middleware"
+	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
@@ -62,6 +63,7 @@ func OTLPHandler(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	retryCfg RetryConfig,
+	enableStartTimeQuietZero bool,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
@@ -84,10 +86,10 @@ func OTLPHandler(
 			return httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\", \"lz4\", or no compression supported", contentEncoding)
 		}
 
-		var decoderFunc func(io.ReadCloser) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error)
+		var decoderFunc func(io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error)
 		switch contentType {
 		case pbContentType:
-			decoderFunc = func(reader io.ReadCloser) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
+			decoderFunc = func(reader io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
 				exportReq := pmetricotlp.NewExportRequest()
 				unmarshaler := otlpProtoUnmarshaler{
 					request: &exportReq,
@@ -104,7 +106,7 @@ func OTLPHandler(
 			}
 
 		case jsonContentType:
-			decoderFunc = func(reader io.ReadCloser) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
+			decoderFunc = func(reader io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
 				exportReq := pmetricotlp.NewExportRequest()
 				sz := int(r.ContentLength)
 				if sz > 0 {
@@ -114,16 +116,17 @@ func OTLPHandler(
 				buf := buffers.Get(sz)
 				switch compression {
 				case util.Gzip:
-					var err error
-					reader, err = gzip.NewReader(reader)
+					gzReader, err := gzip.NewReader(reader)
 					if err != nil {
 						return exportReq, 0, errors.Wrap(err, "create gzip reader")
 					}
+					defer runutil.CloseWithLogOnErr(logger, gzReader, "close gzip reader")
+					reader = gzReader
 				case util.Lz4:
 					reader = io.NopCloser(lz4.NewReader(reader))
 				}
 
-				reader = http.MaxBytesReader(nil, reader, int64(maxRecvMsgSize))
+				reader = http.MaxBytesReader(nil, io.NopCloser(reader), int64(maxRecvMsgSize))
 				if _, err := buf.ReadFrom(reader); err != nil {
 					if util.IsRequestBodyTooLarge(err) {
 						return exportReq, 0, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
@@ -181,7 +184,7 @@ func OTLPHandler(
 		pushMetrics.ObserveUncompressedBodySize(tenantID, float64(uncompressedBodySize))
 
 		var metrics []mimirpb.PreallocTimeseries
-		metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, enableCTZeroIngestion, promoteResourceAttributes, keepIdentifyingResourceAttributes, discardedDueToOtelParseError, spanLogger, otlpReq.Metrics())
+		metrics, err = otelMetricsToTimeseries(ctx, tenantID, addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero, promoteResourceAttributes, keepIdentifyingResourceAttributes, discardedDueToOtelParseError, spanLogger, otlpReq.Metrics())
 		if err != nil {
 			return err
 		}
@@ -398,8 +401,8 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 				metric := scopeMetrics.Metrics().At(k)
 				entry := mimirpb.MetricMetadata{
 					Type: otelMetricTypeToMimirMetricType(metric),
-					// TODO(krajorama): when UTF-8 is configurable from user limits, replace "false" appropriately.
-					MetricFamilyName: prometheustranslator.BuildCompliantName(metric, "", addSuffixes, false),
+					// TODO(krajorama): when UTF-8 is configurable from user limits, use BuildMetricName. See https://github.com/prometheus/prometheus/pull/15664
+					MetricFamilyName: prometheustranslator.BuildCompliantMetricName(metric, "", addSuffixes),
 					Help:             metric.Description(),
 					Unit:             metric.Unit(),
 				}
@@ -411,11 +414,12 @@ func otelMetricsToMetadata(addSuffixes bool, md pmetric.Metrics) []*mimirpb.Metr
 	return metadata
 }
 
-func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion bool, promoteResourceAttributes []string, keepIdentifyingResourceAttributes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
+func otelMetricsToTimeseries(ctx context.Context, tenantID string, addSuffixes, enableCTZeroIngestion, enableStartTimeQuietZero bool, promoteResourceAttributes []string, keepIdentifyingResourceAttributes bool, discardedDueToOtelParseError *prometheus.CounterVec, logger log.Logger, md pmetric.Metrics) ([]mimirpb.PreallocTimeseries, error) {
 	converter := otlp.NewMimirConverter()
 	_, errs := converter.FromMetrics(ctx, md, otlp.Settings{
 		AddMetricSuffixes:                   addSuffixes,
 		EnableCreatedTimestampZeroIngestion: enableCTZeroIngestion,
+		EnableStartTimeQuietZero:            enableStartTimeQuietZero,
 		PromoteResourceAttributes:           promoteResourceAttributes,
 		KeepIdentifyingResourceAttributes:   keepIdentifyingResourceAttributes,
 	}, utillog.SlogFromGoKit(logger))

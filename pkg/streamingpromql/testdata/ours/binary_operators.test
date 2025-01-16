@@ -977,3 +977,603 @@ load 6m
 # Test the case where both sides of 'or' contain series with the same labels.
 eval range from 0 to 48m step 6m min(series_1) or min(series_2)
   {} 9 1 2 9 4 5 9 7 9
+
+clear
+
+# Many-to-one / one-to-many matching.
+load 6m
+  method_code:http_errors:rate5m{method="get", code="500"}  24  240  240  _
+  method_code:http_errors:rate5m{method="get", code="404"}  30  300  _    _
+  method_code:http_errors:rate5m{method="put", code="501"}  3   30   _    _
+  method_code:http_errors:rate5m{method="post", code="500"} 6   60   _    60
+  method_code:http_errors:rate5m{method="post", code="404"} 21  210  _    210
+  method:http_requests:rate5m{method="get", foo="bar"}      600 _    2400 2400
+  method:http_requests:rate5m{method="get", foo="bar2"}     _   1200 1200 1200
+  method:http_requests:rate5m{method="del", foo="baz"}      34  80   _    _
+  method:http_requests:rate5m{method="post", foo="blah"}    120 100  _    100
+
+eval instant at 0 method_code:http_errors:rate5m / ignoring(code, foo) group_left() method:http_requests:rate5m
+  {method="get", code="500"} 0.04
+  {method="get", code="404"} 0.05
+  {method="post", code="500"} 0.05
+  {method="post", code="404"} 0.175
+
+eval instant at 0 method_code:http_errors:rate5m / on(method) group_left() method:http_requests:rate5m
+  {method="get", code="500"} 0.04
+  {method="get", code="404"} 0.05
+  {method="post", code="500"} 0.05
+  {method="post", code="404"} 0.175
+
+eval instant at 0 method_code:http_errors:rate5m / ignoring(code, foo) group_left(foo) method:http_requests:rate5m
+  {method="get", code="500", foo="bar"} 0.04
+  {method="get", code="404", foo="bar"} 0.05
+  {method="post", code="500", foo="blah"} 0.05
+  {method="post", code="404", foo="blah"} 0.175
+
+eval instant at 0 method_code:http_errors:rate5m / on(method) group_left(foo) method:http_requests:rate5m
+  {method="get", code="500", foo="bar"} 0.04
+  {method="get", code="404", foo="bar"} 0.05
+  {method="post", code="500", foo="blah"} 0.05
+  {method="post", code="404", foo="blah"} 0.175
+
+eval instant at 6m method_code:http_errors:rate5m / ignoring(code, foo) group_left() method:http_requests:rate5m
+  {method="get", code="500"} 0.2
+  {method="get", code="404"} 0.25
+  {method="post", code="500"} 0.6
+  {method="post", code="404"} 2.1
+
+eval instant at 6m method_code:http_errors:rate5m / on(method) group_left() method:http_requests:rate5m
+  {method="get", code="500"} 0.2
+  {method="get", code="404"} 0.25
+  {method="post", code="500"} 0.6
+  {method="post", code="404"} 2.1
+
+eval instant at 6m method_code:http_errors:rate5m / ignoring(code, foo) group_left(foo) method:http_requests:rate5m
+  {method="get", code="500", foo="bar2"} 0.2
+  {method="get", code="404", foo="bar2"} 0.25
+  {method="post", code="500", foo="blah"} 0.6
+  {method="post", code="404", foo="blah"} 2.1
+
+eval instant at 6m method_code:http_errors:rate5m / on(method) group_left(foo) method:http_requests:rate5m
+  {method="get", code="500", foo="bar2"} 0.2
+  {method="get", code="404", foo="bar2"} 0.25
+  {method="post", code="500", foo="blah"} 0.6
+  {method="post", code="404", foo="blah"} 2.1
+
+eval range from 0 to 6m step 6m method_code:http_errors:rate5m / ignoring(code, foo) group_left() method:http_requests:rate5m
+  {method="get", code="500"}  0.04  0.2
+  {method="get", code="404"}  0.05  0.25
+  {method="post", code="500"} 0.05  0.6
+  {method="post", code="404"} 0.175 2.1
+
+eval range from 0 to 6m step 6m method_code:http_errors:rate5m / on(method) group_left() method:http_requests:rate5m
+  {method="get", code="500"}  0.04  0.2
+  {method="get", code="404"}  0.05  0.25
+  {method="post", code="500"} 0.05  0.6
+  {method="post", code="404"} 0.175 2.1
+
+eval range from 0 to 6m step 6m method_code:http_errors:rate5m / ignoring(code, foo) group_left(foo) method:http_requests:rate5m
+  {method="get", code="500", foo="bar"}   0.04  _
+  {method="get", code="404", foo="bar"}   0.05  _
+  {method="get", code="500", foo="bar2"}  _     0.2
+  {method="get", code="404", foo="bar2"}  _     0.25
+  {method="post", code="500", foo="blah"} 0.05  0.6
+  {method="post", code="404", foo="blah"} 0.175 2.1
+
+eval range from 0 to 6m step 6m method_code:http_errors:rate5m / on(method) group_left(foo) method:http_requests:rate5m
+  {method="get", code="500", foo="bar"}   0.04  _
+  {method="get", code="404", foo="bar"}   0.05  _
+  {method="get", code="500", foo="bar2"}  _     0.2
+  {method="get", code="404", foo="bar2"}  _     0.25
+  {method="post", code="500", foo="blah"} 0.05  0.6
+  {method="post", code="404", foo="blah"} 0.175 2.1
+
+# Fail if multiple series on "one" side, even if they differ on the additional labels.
+# We run these tests as range queries with a single step to avoid promqltest's instant query time shifting, which makes using an explicit error message pattern more difficult.
+eval_fail range from 12m to 12m step 1m method_code:http_errors:rate5m / ignoring(code, foo) group_left() method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
+
+eval_fail range from 12m to 12m step 1m method_code:http_errors:rate5m / on(method) group_left() method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
+
+eval_fail range from 12m to 12m step 1m method_code:http_errors:rate5m / ignoring(code, foo) group_left(foo) method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
+
+eval_fail range from 12m to 12m step 1m method_code:http_errors:rate5m / on(method) group_left(foo) method:http_requests:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the right (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
+
+# Same cases as above, but with group_right and expressions swapped.
+eval instant at 0 method:http_requests:rate5m / ignoring(code, foo) group_right() method_code:http_errors:rate5m
+  {method="get", code="500"} 25
+  {method="get", code="404"} 20
+  {method="post", code="500"} 20
+  {method="post", code="404"} 5.7142857143
+
+eval instant at 0 method:http_requests:rate5m / on(method) group_right() method_code:http_errors:rate5m
+  {method="get", code="500"} 25
+  {method="get", code="404"} 20
+  {method="post", code="500"} 20
+  {method="post", code="404"} 5.7142857143
+
+eval instant at 0 method:http_requests:rate5m / ignoring(code, foo) group_right(foo) method_code:http_errors:rate5m
+  {method="get", code="500", foo="bar"} 25
+  {method="get", code="404", foo="bar"} 20
+  {method="post", code="500", foo="blah"} 20
+  {method="post", code="404", foo="blah"} 5.7142857143
+
+eval instant at 0 method:http_requests:rate5m / on(method) group_right(foo) method_code:http_errors:rate5m
+  {method="get", code="500", foo="bar"} 25
+  {method="get", code="404", foo="bar"} 20
+  {method="post", code="500", foo="blah"} 20
+  {method="post", code="404", foo="blah"} 5.7142857143
+
+eval instant at 6m method:http_requests:rate5m / ignoring(code, foo) group_right() method_code:http_errors:rate5m
+  {method="get", code="500"} 5
+  {method="get", code="404"} 4
+  {method="post", code="500"} 1.6666666667
+  {method="post", code="404"} 0.4761904762
+
+eval instant at 6m method:http_requests:rate5m / on(method) group_right() method_code:http_errors:rate5m
+  {method="get", code="500"} 5
+  {method="get", code="404"} 4
+  {method="post", code="500"} 1.6666666667
+  {method="post", code="404"} 0.4761904762
+
+eval instant at 6m method:http_requests:rate5m / ignoring(code, foo) group_right(foo) method_code:http_errors:rate5m
+  {method="get", code="500", foo="bar2"} 5
+  {method="get", code="404", foo="bar2"} 4
+  {method="post", code="500", foo="blah"} 1.6666666667
+  {method="post", code="404", foo="blah"} 0.4761904762
+
+eval instant at 6m method:http_requests:rate5m / on(method) group_right(foo) method_code:http_errors:rate5m
+  {method="get", code="500", foo="bar2"} 5
+  {method="get", code="404", foo="bar2"} 4
+  {method="post", code="500", foo="blah"} 1.6666666667
+  {method="post", code="404", foo="blah"} 0.4761904762
+
+eval range from 0 to 6m step 6m method:http_requests:rate5m / ignoring(code, foo) group_right() method_code:http_errors:rate5m
+  {method="get", code="500"}  25           5
+  {method="get", code="404"}  20           4
+  {method="post", code="500"} 20           1.6666666667
+  {method="post", code="404"} 5.7142857143 0.4761904762
+
+eval range from 0 to 6m step 6m method:http_requests:rate5m / on(method) group_right() method_code:http_errors:rate5m
+  {method="get", code="500"}  25           5
+  {method="get", code="404"}  20           4
+  {method="post", code="500"} 20           1.6666666667
+  {method="post", code="404"} 5.7142857143 0.4761904762
+
+eval range from 0 to 6m step 6m method:http_requests:rate5m / ignoring(code, foo) group_right(foo) method_code:http_errors:rate5m
+  {method="get", code="500", foo="bar"}   25           _
+  {method="get", code="404", foo="bar"}   20           _
+  {method="get", code="500", foo="bar2"}  _            5
+  {method="get", code="404", foo="bar2"}  _            4
+  {method="post", code="500", foo="blah"} 20           1.6666666667
+  {method="post", code="404", foo="blah"} 5.7142857143 0.4761904762
+
+eval range from 0 to 6m step 6m method:http_requests:rate5m / on(method) group_right(foo) method_code:http_errors:rate5m
+  {method="get", code="500", foo="bar"}   25           _
+  {method="get", code="404", foo="bar"}   20           _
+  {method="get", code="500", foo="bar2"}  _            5
+  {method="get", code="404", foo="bar2"}  _            4
+  {method="post", code="500", foo="blah"} 20           1.6666666667
+  {method="post", code="404", foo="blah"} 5.7142857143 0.4761904762
+
+# Fail if multiple series on "one" side, even if they differ on the additional labels
+# We run these tests as range queries with a single step to avoid promqltest's instant query time shifting, which makes using an explicit error message pattern more difficult.
+eval_fail range from 12m to 12m step 1m method:http_requests:rate5m / ignoring(code, foo) group_right() method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
+
+eval_fail range from 12m to 12m step 1m method:http_requests:rate5m / on(method) group_right() method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
+
+eval_fail range from 12m to 12m step 1m method:http_requests:rate5m / ignoring(code, foo) group_right(foo) method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
+
+eval_fail range from 12m to 12m step 1m method:http_requests:rate5m / on(method) group_right(foo) method_code:http_errors:rate5m
+  expected_fail_regexp found duplicate series for the match group \{method="get"\} on the left (hand-)?side of the operation( at timestamp 1970-01-01T00:12:00Z)?: \[?\{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(,| and) \{__name__="method:http_requests:rate5m", foo="(bar|bar2)", method="get"\}(\];many-to-many matching not allowed: matching labels must be unique on one side)?
+
+clear
+
+# Test group_left / group_right where the additional labels from "one" side replace labels with the same name from the the "many" side
+load 6m
+  left{method="get", code="500", foo="left-1"} 1
+  left{method="get", code="404", foo="left-2"} 2
+  right{method="get", foo="right-1"} 4
+
+eval instant at 0 left / on(method) group_left(foo) right
+  {method="get", code="500", foo="right-1"} 0.25
+  {method="get", code="404", foo="right-1"} 0.5
+
+eval instant at 0 right / on(method) group_right(foo) left
+  {method="get", code="500", foo="right-1"} 4
+  {method="get", code="404", foo="right-1"} 2
+
+clear
+
+# Test group_left / group_right where both sides contain the additional labels.
+load 6m
+  series_a{method="get", code="500", foo="left-1"}   1 _ 10
+  series_a{method="get", code="404", foo="left-2"}   _ 4 20
+  series_b{method="get", code="999", foo="right-1"}  4 8 40
+
+eval range from 0 to 6m step 6m series_a / on(method) group_left(foo, code) series_b
+  {method="get", code="999", foo="right-1"} 0.25 0.5
+
+eval range from 0 to 6m step 6m series_b / on(method) group_right(foo, code) series_a
+  {method="get", code="999", foo="right-1"} 4 2
+
+# Cannot have multiple matches from the "many" side.
+eval_fail instant at 12m series_a / on(method) group_left(foo, code) series_b
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+eval_fail instant at 12m series_b / on(method) group_right(foo, code) series_a
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+# Same thing, but with 'ignoring'.
+eval range from 0 to 6m step 6m series_a / ignoring(code, foo) group_left(foo, code) series_b
+  {method="get", code="999", foo="right-1"} 0.25 0.5
+
+eval range from 0 to 6m step 6m series_b / ignoring(code, foo) group_right(foo, code) series_a
+  {method="get", code="999", foo="right-1"} 4 2
+
+# Cannot have multiple matches from the "many" side.
+eval_fail instant at 12m series_a / ignoring(code, foo) group_left(foo, code) series_b
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+eval_fail instant at 12m series_b / ignoring(code, foo) group_right(foo, code) series_a
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+clear
+
+# Same as above, but this time where the additional labels are present on the "many" side but not the "one" side.
+# (They should be taken from the "one" side.)
+
+load 6m
+  series_a{method="get", code="500", foo="left-1"} 1 _ 10
+  series_a{method="get", code="404", foo="left-2"} _ 4 20
+  series_b{method="get", code="999"}               4 8 40
+
+eval range from 0 to 6m step 6m series_a / on(method) group_left(foo, code) series_b
+  {method="get", code="999"} 0.25 0.5
+
+eval range from 0 to 6m step 6m series_b / on(method) group_right(foo, code) series_a
+  {method="get", code="999"} 4 2
+
+# Cannot have multiple matches from the "many" side.
+eval_fail instant at 12m series_a / on(method) group_left(foo, code) series_b
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+eval_fail instant at 12m series_b / on(method) group_right(foo, code) series_a
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+# Same thing, but with 'ignoring'.
+eval range from 0 to 6m step 6m series_a / ignoring(code, foo) group_left(foo, code) series_b
+  {method="get", code="999"} 0.25 0.5
+
+eval range from 0 to 6m step 6m series_b / ignoring(code, foo) group_right(foo, code) series_a
+  {method="get", code="999"} 4 2
+
+# Cannot have multiple matches from the "many" side.
+eval_fail instant at 12m series_a / ignoring(code, foo) group_left(foo, code) series_b
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+eval_fail instant at 12m series_b / ignoring(code, foo) group_right(foo, code) series_a
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+clear
+
+# Same as above, but this time the additional labels are not present on either side.
+load 6m
+  series_a{method="get", code="500"} 1 _ 10
+  series_a{method="get", code="404"} _ 4 20
+  series_b{method="get", code="999"}               4 8 40
+
+eval range from 0 to 6m step 6m series_a / on(method) group_left(foo, code) series_b
+  {method="get", code="999"} 0.25 0.5
+
+eval range from 0 to 6m step 6m series_b / on(method) group_right(foo, code) series_a
+  {method="get", code="999"} 4 2
+
+# Cannot have multiple matches from the "many" side.
+eval_fail instant at 12m series_a / on(method) group_left(foo, code) series_b
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+eval_fail instant at 12m series_b / on(method) group_right(foo, code) series_a
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+# Same thing, but with 'ignoring'.
+eval range from 0 to 6m step 6m series_a / ignoring(code, foo) group_left(foo, code) series_b
+  {method="get", code="999"} 0.25 0.5
+
+eval range from 0 to 6m step 6m series_b / ignoring(code, foo) group_right(foo, code) series_a
+  {method="get", code="999"} 4 2
+
+# Cannot have multiple matches from the "many" side.
+eval_fail instant at 12m series_a / ignoring(code, foo) group_left(foo, code) series_b
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+eval_fail instant at 12m series_b / ignoring(code, foo) group_right(foo, code) series_a
+  expected_fail_message multiple matches for labels: grouping labels must ensure unique matches
+
+clear
+
+# Test group_left and group_right with label names in different orders in 'on' and 'ignoring'.
+load 6m
+  left_side{env="test", pod="a", group="foo"} 1 2 3
+  left_side{env="test", pod="b", group="bar"} 4 5 6
+  left_side{env="prod", pod="a", group="baz"} 7 8 9
+  right_side{env="test", pod="a", group="bar"} 10 20 30
+  right_side{env="test", pod="b", group="baz"} 40 50 60
+  right_side{env="prod", pod="a", group="foo"} 70 80 90
+
+eval range from 0 to 18m step 6m left_side - on(env, pod) group_left() right_side
+  {env="prod", pod="a", group="baz"} -63 -72 -81
+  {env="test", pod="a", group="foo"} -9 -18 -27
+  {env="test", pod="b", group="bar"} -36 -45 -54
+
+# Test the same thing again with the grouping labels in a different order.
+# (The implementation of binary operations relies on grouping labels being sorted in some places,
+# so this test exists to ensure this is done correctly.)
+eval range from 0 to 18m step 6m left_side - on(pod, env) group_left() right_side
+  {env="prod", pod="a", group="baz"} -63 -72 -81
+  {env="test", pod="a", group="foo"} -9 -18 -27
+  {env="test", pod="b", group="bar"} -36 -45 -54
+
+eval range from 0 to 18m step 6m left_side - ignoring(env, pod) group_left() right_side
+  {env="prod", pod="a", group="baz"} -33 -42 -51
+  {env="test", pod="b", group="bar"} -6 -15 -24
+  {env="test", pod="a", group="foo"} -69 -78 -87
+
+# Test the same thing again with the grouping labels in a different order.
+# (The implementation of binary operations relies on grouping labels being sorted in some places,
+# so this test exists to ensure this is done correctly.)
+eval range from 0 to 18m step 6m left_side - ignoring(pod, env) group_left() right_side
+  {env="prod", pod="a", group="baz"} -33 -42 -51
+  {env="test", pod="b", group="bar"} -6 -15 -24
+  {env="test", pod="a", group="foo"} -69 -78 -87
+
+# Same thing, but with the additional labels given in group_left / group_right in different orders.
+load 6m
+  many_side{group="a", idx="x"}            1 2 3
+  many_side{group="b", idx="y"}            4 5 6
+  one_side{group="a", env="test", pod="1"} 10 20 30
+  one_side{group="b", env="prod", pod="2"} 100 110 120
+
+eval range from 0 to 18m step 6m many_side - on(group) group_left(env, pod) one_side
+  {group="a", env="test", pod="1", idx="x"} -9 -18 -27
+  {group="b", env="prod", pod="2", idx="y"} -96 -105 -114
+
+eval range from 0 to 18m step 6m many_side - on(group) group_left(pod, env) one_side
+  {group="a", env="test", pod="1", idx="x"} -9 -18 -27
+  {group="b", env="prod", pod="2", idx="y"} -96 -105 -114
+
+eval range from 0 to 18m step 6m one_side - on(group) group_right(env, pod) many_side
+  {group="a", env="test", pod="1", idx="x"} 9 18 27
+  {group="b", env="prod", pod="2", idx="y"} 96 105 114
+
+eval range from 0 to 18m step 6m one_side - on(group) group_right(pod, env) many_side
+  {group="a", env="test", pod="1", idx="x"} 9 18 27
+  {group="b", env="prod", pod="2", idx="y"} 96 105 114
+
+clear
+
+# Binary operations on native histograms with group_left.
+# We don't bother testing all the combinations of label matching, group_right etc. given that's covered by floats above.
+load 5m
+  first_histogram{job="test"}    {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+  second_histogram{job="test"}   {{schema:0 sum:10 count:6 buckets:[1 2 1]}}
+  metric{job="test"}             2
+
+eval instant at 0 first_histogram + on(job) group_left second_histogram
+  {job="test"} {{schema:0 sum:15 count:10 buckets:[2 4 2]}}
+
+eval instant at 0 second_histogram - on(job) group_left first_histogram
+  {job="test"} {{schema:0 sum:5 count:2 buckets:[0 0 0]}}
+
+# Cannot multiply two histograms
+eval_info instant at 0 first_histogram * on(job) group_left second_histogram
+
+# Cannot divide a histogram by a histogram
+eval_info instant at 0 first_histogram / on(job) group_left second_histogram
+
+# Histogram multiplied by float
+eval instant at 0 first_histogram * on(job) group_left metric
+  {job="test"} {{schema:0 count:8 sum:10 buckets:[2 4 2]}}
+
+# Works in either order
+eval instant at 0 metric * on(job) group_left first_histogram
+  {job="test"} {{schema:0 count:8 sum:10 buckets:[2 4 2]}}
+
+# Histogram divide by float
+eval instant at 0 first_histogram / on(job) group_left metric
+  {job="test"} {{schema:0 count:2 sum:2.5 buckets:[0.5 1 0.5]}}
+
+clear
+
+# Test comparison operator edge cases.
+load 6m
+  left_side_a{env="test", pod="a"} 1 2 3 4
+  left_side_b{env="test", pod="a"} 5 6 7 8
+  right_side{env="test", pod="a"}  2 2 7 7
+
+eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == ignoring(env) right_side
+  left_side_a{pod="a"} _ 2 _ _
+  left_side_b{pod="a"} _ _ 7 _
+
+eval_fail range from 0 to 18m step 6m {__name__=~"left_side.*"} == bool ignoring(env) right_side
+  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left side of the operation)
+
+eval_fail range from 0 to 18m step 6m right_side == ignoring(env) {__name__=~"left_side.*"}
+  expected_fail_regexp found duplicate series for the match group .* on the right (hand-)?side of the operation
+
+eval_fail range from 0 to 18m step 6m right_side == bool ignoring(env) {__name__=~"left_side.*"}
+  expected_fail_regexp found duplicate series for the match group .* on the right (hand-)?side of the operation
+
+# This should return:
+#  left_side_a{pod="a"} _ 2 _ _
+#  left_side_b{pod="a"} _ _ 7 _
+# but instead both engines drop the metric names in the output.
+# This is accepted behaviour: https://github.com/prometheus/prometheus/issues/5326
+eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == on(pod) right_side
+  {pod="a"} _ 2 7 _
+
+eval_fail range from 0 to 18m step 6m {__name__=~"left_side.*"} == bool on(pod) right_side
+  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left side of the operation)
+
+eval_fail range from 0 to 18m step 6m right_side == on(pod) {__name__=~"left_side.*"}
+  expected_fail_regexp found duplicate series for the match group .* on the right (hand-)?side of the operation
+
+eval_fail range from 0 to 18m step 6m right_side == bool on(pod) {__name__=~"left_side.*"}
+  expected_fail_regexp found duplicate series for the match group .* on the right (hand-)?side of the operation
+
+clear
+
+# If we change the data slightly... (note the second point for left_side_b is now 2)
+
+load 6m
+  left_side_a{env="test", pod="a"} 1 2 3 4
+  left_side_b{env="test", pod="a"} 5 2 7 8
+  right_side{env="test", pod="a"}  2 2 7 7
+
+eval_fail range from 0 to 18m step 6m {__name__=~"left_side.*"} == ignoring(env) right_side
+  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left side of the operation)
+
+eval_fail range from 0 to 18m step 6m {__name__=~"left_side.*"} == bool ignoring(env) right_side
+  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left side of the operation)
+
+eval_fail range from 0 to 18m step 6m {__name__=~"left_side.*"} == on(pod) right_side
+  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left side of the operation)
+
+eval_fail range from 0 to 18m step 6m {__name__=~"left_side.*"} == bool on(pod) right_side
+  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left side of the operation)
+
+clear
+
+# Same thing as above, but with the same metric name for all series on left side.
+load 6m
+  left{pod="a"} 1 2 3 4
+  left{pod="b"} 5 6 7 8
+  right         2 2 7 7
+
+eval range from 0 to 18m step 6m left == ignoring(pod) right
+  left _ 2 7 _
+
+eval_fail range from 0 to 18m step 6m left == ignoring(pod) group_right right
+  expected_fail_regexp found duplicate series for the match group .* on the left (hand-)?side of the operation
+
+clear
+
+# Same thing as above, but with no overlapping samples on left side.
+load 6m
+  left_side_a{env="test", pod="a"} 1 2 _ _
+  left_side_b{env="test", pod="a"} _ _ 7 8
+  right_side{env="test", pod="a"}  2 2 7 7
+
+eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == ignoring(env) right_side
+  left_side_a{pod="a"} _ 2 _ _
+  left_side_b{pod="a"} _ _ 7 _
+
+eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == bool ignoring(env) right_side
+  {pod="a"} 0 1 1 0
+
+# This should return:
+#  left_side_a{pod="a"} _ 2 _ _
+#  left_side_b{pod="a"} _ _ 7 _
+# but instead both engines drop the metric names in the output.
+# This is accepted behaviour: https://github.com/prometheus/prometheus/issues/5326
+eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == on(pod) right_side
+  {pod="a"} _ 2 7 _
+
+eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == bool on(pod) right_side
+  {pod="a"} 0 1 1 0
+
+clear
+
+# Comparison operations with group_left / group_right.
+
+load 6m
+  side_a{env="test", pod="a", region="au"} 1 2 3 9 10
+  side_a{env="test", pod="a", region="us"} 6 7 8 4 5
+  side_b{env="test", dc="1", ignored="1"}  2 _ _ 5 _
+  side_b{env="test", dc="2", ignored="1"}  _ 3 _ _ 6
+
+eval range from 0 to 24m step 6m side_a < on(env) group_left(dc) side_b
+  side_a{env="test", pod="a", region="au", dc="1"} 1 _ _ _ _
+  side_a{env="test", pod="a", region="au", dc="2"} _ 2 _ _ _
+  side_a{env="test", pod="a", region="us", dc="1"} _ _ _ 4 _
+  side_a{env="test", pod="a", region="us", dc="2"} _ _ _ _ 5
+
+eval range from 0 to 24m step 6m sum without () (side_a) < on(env) group_left(dc) side_b
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ _ _
+  {env="test", pod="a", region="au", dc="2"} _ 2 _ _ _
+  {env="test", pod="a", region="us", dc="1"} _ _ _ 4 _
+  {env="test", pod="a", region="us", dc="2"} _ _ _ _ 5
+
+eval range from 0 to 24m step 6m side_a < bool on(env) group_left(dc) side_b
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ 0 _
+  {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
+  {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
+  {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1
+
+eval range from 0 to 24m step 6m side_a < ignoring(pod, region, dc, ignored) group_left(dc) side_b
+  side_a{env="test", pod="a", region="au", dc="1"} 1 _ _ _ _
+  side_a{env="test", pod="a", region="au", dc="2"} _ 2 _ _ _
+  side_a{env="test", pod="a", region="us", dc="1"} _ _ _ 4 _
+  side_a{env="test", pod="a", region="us", dc="2"} _ _ _ _ 5
+
+eval range from 0 to 24m step 6m sum without () (side_a) < ignoring(pod, region, dc, ignored) group_left(dc) side_b
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ _ _
+  {env="test", pod="a", region="au", dc="2"} _ 2 _ _ _
+  {env="test", pod="a", region="us", dc="1"} _ _ _ 4 _
+  {env="test", pod="a", region="us", dc="2"} _ _ _ _ 5
+
+eval range from 0 to 24m step 6m side_a < bool ignoring(pod, region, dc, ignored) group_left(dc) side_b
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ 0 _
+  {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
+  {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
+  {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1
+
+# The docs say this should return series with name "side_b" from the left, but it is accepted that this will return
+# "side_a" from the right: see https://github.com/prometheus/prometheus/issues/15471.
+eval range from 0 to 24m step 6m side_b > on(env) group_right(dc) side_a
+  side_a{env="test", pod="a", region="au", dc="1"} 2 _ _ _ _
+  side_a{env="test", pod="a", region="au", dc="2"} _ 3 _ _ _
+  side_a{env="test", pod="a", region="us", dc="1"} _ _ _ 5 _
+  side_a{env="test", pod="a", region="us", dc="2"} _ _ _ _ 6
+
+# The docs say this should return series with no name, but it is accepted that this will return
+# "side_a" from the right: see https://github.com/prometheus/prometheus/issues/15471.
+eval range from 0 to 24m step 6m sum without () (side_b) > on(env) group_right(dc) side_a
+  side_a{env="test", pod="a", region="au", dc="1"} 2 _ _ _ _
+  side_a{env="test", pod="a", region="au", dc="2"} _ 3 _ _ _
+  side_a{env="test", pod="a", region="us", dc="1"} _ _ _ 5 _
+  side_a{env="test", pod="a", region="us", dc="2"} _ _ _ _ 6
+
+eval range from 0 to 24m step 6m side_b > bool on(env) group_right(dc) side_a
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ 0 _
+  {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
+  {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
+  {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1
+
+# The docs say this should return series with name "side_b" from the left, but it is accepted that this will return
+# "side_a" from the right: see https://github.com/prometheus/prometheus/issues/15471.
+eval range from 0 to 24m step 6m side_b > ignoring(pod, region, dc, ignored) group_right(dc) side_a
+  side_a{env="test", pod="a", region="au", dc="1"} 2 _ _ _ _
+  side_a{env="test", pod="a", region="au", dc="2"} _ 3 _ _ _
+  side_a{env="test", pod="a", region="us", dc="1"} _ _ _ 5 _
+  side_a{env="test", pod="a", region="us", dc="2"} _ _ _ _ 6
+
+# The docs say this should return series with no name (ie. the metric name from the left), but it is accepted that this will return
+# "side_a" from the right: see https://github.com/prometheus/prometheus/issues/15471.
+eval range from 0 to 24m step 6m sum without () (side_b) > ignoring(pod, region, dc, ignored) group_right(dc) side_a
+  side_a{env="test", pod="a", region="au", dc="1"} 2 _ _ _ _
+  side_a{env="test", pod="a", region="au", dc="2"} _ 3 _ _ _
+  side_a{env="test", pod="a", region="us", dc="1"} _ _ _ 5 _
+  side_a{env="test", pod="a", region="us", dc="2"} _ _ _ _ 6
+
+eval range from 0 to 24m step 6m side_b > bool ignoring(pod, region, dc, ignored) group_right(dc) side_a
+  {env="test", pod="a", region="au", dc="1"} 1 _ _ 0 _
+  {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
+  {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
+  {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1

@@ -47,6 +47,7 @@ type Settings struct {
 
 	// Mimir specifics.
 	EnableCreatedTimestampZeroIngestion        bool
+	EnableStartTimeQuietZero                   bool
 	ValidIntervalCreatedTimestampZeroIngestion time.Duration
 }
 
@@ -110,7 +111,12 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					continue
 				}
 
-				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes, settings.AllowUTF8)
+				var promName string
+				if settings.AllowUTF8 {
+					promName = prometheustranslator.BuildMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				} else {
+					promName = prometheustranslator.BuildCompliantMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				}
 				c.metadata = append(c.metadata, prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
 					MetricFamilyName: promName,

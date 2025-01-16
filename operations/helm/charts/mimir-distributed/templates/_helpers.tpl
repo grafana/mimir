@@ -50,10 +50,20 @@ Create chart name and version as used by the chart label.
 {{- end -}}
 
 {{/*
-Calculate image name based on whether enterprise features are requested
+Build mimir image reference based on whether enterprise features are requested. The component local values always take precedence.
+Params:
+  ctx = . context
+  component = component name
 */}}
 {{- define "mimir.imageReference" -}}
-{{- if .Values.enterprise.enabled -}}{{ .Values.enterprise.image.repository }}:{{ .Values.enterprise.image.tag }}{{- else -}}{{ .Values.image.repository }}:{{ .Values.image.tag }}{{- end -}}
+{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
+{{- $image := $componentSection.image | default dict -}}
+{{- if .ctx.Values.enterprise.enabled -}}
+  {{- $image = mustMerge $image .ctx.Values.enterprise.image -}}
+{{- else -}}
+  {{- $image = mustMerge $image .ctx.Values.image -}}
+{{- end -}}
+{{ $image.repository }}:{{ $image.tag }}
 {{- end -}}
 
 {{/*

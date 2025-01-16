@@ -83,7 +83,7 @@ function generate_manifests() {
   helm template "${ARGS[@]}" 1>/dev/null
   cp -r "${INTERMEDIATE_OUTPUT_DIR}" "${OUTPUT_DIR}"
   rm "${OUTPUT_DIR}/${CHART_NAME}/templates/values-for-rego-tests.yaml"
-  find "${OUTPUT_DIR}/${CHART_NAME}/templates" -type f -print0 | xargs -0 "${SED}" -E -i -- "/^\s+(checksum\/(alertmanager-fallback-)?config|(helm.sh\/)?chart|app.kubernetes.io\/version|image: \"grafana\/(mimir|mimir-continuous-test|enterprise-metrics)):/d"
+  find "${OUTPUT_DIR}/${CHART_NAME}/templates" -type f -print0 | xargs -0 "${SED}" -E -i -- "/^\s+(checksum\/(alertmanager-fallback-)?config|(helm.sh\/)?chart|app.kubernetes.io\/version|image: \"?grafana\/(mimir|mimir-continuous-test|enterprise-metrics)):/d"
 }
 
 for FILEPATH in $TESTS; do

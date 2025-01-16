@@ -21,8 +21,18 @@ services:
   prometheus:
     profiles:
       - prometheus
-    image: prom/prometheus:v2.55.1
+    image: prom/prometheus:v3.1.0
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
+    volumes:
+      - ./config:/etc/prometheus
+    ports:
+      - 9190:9090
+
+  prometheusRW2:
+    profiles:
+      - prometheusRW2
+    image: prom/prometheus:v3.1.0
+    command: ["--config.file=/etc/prometheus/prometheusRW2.yaml", "--enable-feature=metadata-wal-records,native-histograms"]
     volumes:
       - ./config:/etc/prometheus
     ports:
@@ -111,7 +121,7 @@ services:
       - .data-mimir-2:/data:delegated
 
   otel-remote-write:
-    image: otel/opentelemetry-collector-contrib:0.115.1
+    image: otel/opentelemetry-collector-contrib:0.116.1
     profiles:
       - otel-collector-remote-write
     volumes:
@@ -126,7 +136,7 @@ services:
       - 55679:55679 # zpages extension
 
   otel-otlp:
-    image: otel/opentelemetry-collector-contrib:0.115.1
+    image: otel/opentelemetry-collector-contrib:0.116.1
     profiles:
       - otel-collector-otlp-push
     volumes:

@@ -329,7 +329,7 @@
       - "--config.file=/etc/prometheus/prometheus.yaml"
       - "--enable-feature=exemplar-storage"
       - "--enable-feature=native-histograms"
-    "image": "prom/prometheus:v2.51.1"
+    "image": "prom/prometheus:v3.1.0"
     "ports":
       - "9090:9090"
     "volumes":
@@ -342,7 +342,7 @@
       - "--enable-feature=exemplar-storage"
       - "--enable-feature=native-histograms"
     "hostname": "prom-ha-pair-1"
-    "image": "prom/prometheus:v2.51.1"
+    "image": "prom/prometheus:v3.1.0"
     "ports":
       - "9092:9090"
     "volumes":
@@ -353,7 +353,7 @@
       - "--enable-feature=exemplar-storage"
       - "--enable-feature=native-histograms"
     "hostname": "prom-ha-pair-2"
-    "image": "prom/prometheus:v2.51.1"
+    "image": "prom/prometheus:v3.1.0"
     "ports":
       - "9093:9090"
     "volumes":

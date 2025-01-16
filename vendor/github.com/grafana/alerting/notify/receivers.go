@@ -213,6 +213,38 @@ type NotifierConfig[T interface{}] struct {
 	Settings T
 }
 
+// DecodeSecretsFn is a function used to decode a map of secrets before creating a receiver.
+type DecodeSecretsFn func(secrets map[string]string) (map[string][]byte, error)
+
+// DecodeSecretsFromBase64 is a DecodeSecretsFn that base64-decodes a map of secrets.
+func DecodeSecretsFromBase64(secrets map[string]string) (map[string][]byte, error) {
+	secureSettings := make(map[string][]byte, len(secrets))
+	if secrets == nil {
+		return secureSettings, nil
+	}
+	for k, v := range secrets {
+		d, err := base64.StdEncoding.DecodeString(v)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode secure settings key %s: %w", k, err)
+		}
+		secureSettings[k] = d
+	}
+	return secureSettings, nil
+}
+
+// NoopDecode is a DecodeSecretsFn that converts a map[string]string into a map[string][]byte without decoding it.
+func NoopDecode(secrets map[string]string) (map[string][]byte, error) {
+	secureSettings := make(map[string][]byte, len(secrets))
+	if secrets == nil {
+		return secureSettings, nil
+	}
+
+	for k, v := range secrets {
+		secureSettings[k] = []byte(v)
+	}
+	return secureSettings, nil
+}
+
 // GetDecryptedValueFn is a function that returns the decrypted value of
 // the given key. If the key is not present, then it returns the fallback value.
 type GetDecryptedValueFn func(ctx context.Context, sjd map[string][]byte, key string, fallback string) string
@@ -226,12 +258,12 @@ func NoopDecrypt(_ context.Context, sjd map[string][]byte, key string, fallback 
 }
 
 // BuildReceiverConfiguration parses, decrypts and validates the APIReceiver.
-func BuildReceiverConfiguration(ctx context.Context, api *APIReceiver, decrypt GetDecryptedValueFn) (GrafanaReceiverConfig, error) {
+func BuildReceiverConfiguration(ctx context.Context, api *APIReceiver, decode DecodeSecretsFn, decrypt GetDecryptedValueFn) (GrafanaReceiverConfig, error) {
 	result := GrafanaReceiverConfig{
 		Name: api.Name,
 	}
 	for _, receiver := range api.Integrations {
-		err := parseNotifier(ctx, &result, receiver, decrypt)
+		err := parseNotifier(ctx, &result, receiver, decode, decrypt)
 		if err != nil {
 			return GrafanaReceiverConfig{}, IntegrationValidationError{
 				Integration: receiver,
@@ -243,14 +275,10 @@ func BuildReceiverConfiguration(ctx context.Context, api *APIReceiver, decrypt G
 }
 
 // parseNotifier parses receivers and populates the corresponding field in GrafanaReceiverConfig. Returns an error if the configuration cannot be parsed.
-func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver *GrafanaIntegrationConfig, decrypt GetDecryptedValueFn) error {
-	secureSettings, err := decodeSecretsFromBase64(receiver.SecureSettings)
+func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver *GrafanaIntegrationConfig, decode DecodeSecretsFn, decrypt GetDecryptedValueFn) error {
+	secureSettings, err := decode(receiver.SecureSettings)
 	if err != nil {
-		// An error means that the secure settings are not base-64 encoded.
-		secureSettings = make(map[string][]byte, len(receiver.SecureSettings))
-		for k, v := range receiver.SecureSettings {
-			secureSettings[k] = []byte(v)
-		}
+		return err
 	}
 
 	decryptFn := func(key string, fallback string) string {
@@ -394,21 +422,6 @@ func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver 
 		return fmt.Errorf("notifier %s is not supported", receiver.Type)
 	}
 	return nil
-}
-
-func decodeSecretsFromBase64(secrets map[string]string) (map[string][]byte, error) {
-	secureSettings := make(map[string][]byte, len(secrets))
-	if secrets == nil {
-		return secureSettings, nil
-	}
-	for k, v := range secrets {
-		d, err := base64.StdEncoding.DecodeString(v)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode secure settings key %s: %w", k, err)
-		}
-		secureSettings[k] = d
-	}
-	return secureSettings, nil
 }
 
 // GetActiveReceiversMap returns all receivers that are in use by a route.

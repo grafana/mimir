@@ -37,7 +37,7 @@ spec:
         {{- toYaml .Values.smoke_test.initContainers | nindent 8 }}
       containers:
         - name: smoke-test
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "smoke-test") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=continuous-test"
