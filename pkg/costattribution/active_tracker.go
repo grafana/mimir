@@ -78,14 +78,15 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
 	at.fillKeyFromLabels(lbls, buf)
 
 	at.observedMtx.RLock()
-	defer at.observedMtx.RUnlock()
 	as, ok := at.observed[string(buf.Bytes())]
 	if ok {
 		as.Inc()
+		at.observedMtx.RUnlock()
 		return
 	}
 
 	if !at.overflowSince.IsZero() {
+		at.observedMtx.RUnlock()
 		at.overflowCounter.Inc()
 		return
 	}
@@ -93,20 +94,26 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
 	as, ok = at.observed[string(buf.Bytes())]
 	if ok {
 		as.Inc()
+		at.observedMtx.RUnlock()
 		return
 	}
 
 	if !at.overflowSince.IsZero() {
+		at.observedMtx.RUnlock()
 		at.overflowCounter.Inc()
 		return
 	}
 
 	if len(at.observed) >= at.maxCardinality {
 		at.overflowSince = now
+		at.observedMtx.RUnlock()
 		at.overflowCounter.Inc()
 		return
 	}
+	at.observedMtx.RUnlock()
 
+	at.observedMtx.Lock()
+	defer at.observedMtx.Unlock()
 	at.observed[string(buf.Bytes())] = atomic.NewInt64(1)
 }
 
