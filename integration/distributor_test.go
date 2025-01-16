@@ -425,7 +425,7 @@ func TestDistributorRemoteWrite2(t *testing.T) {
 		"-distributor.ha-tracker.store":                      "consul",
 		"-distributor.ha-tracker.consul.hostname":            consul.NetworkHTTPEndpoint(),
 		"-distributor.ha-tracker.prefix":                     "prom_ha/",
-		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(false),
+		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(false), // TODO(krajorama): add cachingUnmarshalDataEnabled testcase.
 	}
 
 	flags := mergeFlags(
@@ -490,7 +490,7 @@ func TestDistributorRemoteWrite2(t *testing.T) {
 				}
 
 				res, err := client.PushRW2(ser)
-				require.Error(t, err)
+				require.NoError(t, err)
 				require.True(t, res.StatusCode == http.StatusOK || res.StatusCode == http.StatusAccepted, res.Status)
 			}
 

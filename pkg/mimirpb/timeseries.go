@@ -89,7 +89,7 @@ func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
 		return err
 	}
 
-	// Debugging.
+	// For debugging.
 	metadataReceived := 0
 	metadataBytes := 0
 	metricFamilies := map[string]*MetricMetadata{}
@@ -159,33 +159,30 @@ func (p *PreallocWriteRequest) unmarshalRW2(data []byte) error {
 			Help:             help,
 			Unit:             unit,
 		}
-
-		// if strings.HasPrefix(seriesName, "cortex_request_duration_seconds") {
-		// 	fmt.Printf("KRAJO: seriesName=%v, metricFamily=%v, type=%v, help=%v, unit=%v\n", seriesName, metricFamily, metricFamilies[metricFamily].Type, help, unit)
-		// }
 	}
 
 	// Fill the metadata
 	p.Metadata = make([]*MetricMetadata, 0, len(metricFamilies))
 	for _, metadata := range metricFamilies {
-		// fmt.Printf("KRAJO: adding metadata %v\n", metadata)
 		p.Metadata = append(p.Metadata, metadata)
 	}
 
-	// Debugging
-	familyBytes := 0
-	for metricFamily, metadata := range metricFamilies {
-		familyBytes += len(metricFamily)
-		familyBytes += 4 // type
-		familyBytes += len(metadata.Help)
-		familyBytes += len(metadata.Unit)
-	}
+	{
+		// Debugging
+		familyBytes := 0
+		for metricFamily, metadata := range metricFamilies {
+			familyBytes += len(metricFamily)
+			familyBytes += 4 // type
+			familyBytes += len(metadata.Help)
+			familyBytes += len(metadata.Unit)
+		}
 
-	for symbol := range symbolsInMeta {
-		metadataBytes += len(rw2req.Symbols[symbol])
-	}
+		for symbol := range symbolsInMeta {
+			metadataBytes += len(rw2req.Symbols[symbol])
+		}
 
-	fmt.Printf("KRAJO: RW2 timeseries=%v, metadata=%v, series meta=%v bytes, family meta=%v bytes\n", len(p.Timeseries), metadataReceived, metadataBytes, familyBytes)
+		fmt.Printf("KRAJO: RW2 timeseries=%v, metadata=%v, series meta=%v bytes, family meta=%v bytes\n", len(p.Timeseries), metadataReceived, metadataBytes, familyBytes)
+	}
 
 	return nil
 }
