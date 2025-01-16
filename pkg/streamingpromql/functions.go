@@ -5,6 +5,9 @@ package streamingpromql
 import (
 	"fmt"
 	"math"
+	"time"
+
+	//"time"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -25,6 +28,15 @@ type InstantVectorFunctionOperatorFactory func(
 ) (types.InstantVectorOperator, error)
 
 type ScalarFunctionOperatorFactory func(
+	args []types.Operator,
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	annotations *annotations.Annotations,
+	expressionPosition posrange.PositionRange,
+	timeRange types.QueryTimeRange,
+) (types.ScalarOperator, error)
+
+type TimeFunctionOperatorFactory func(
+	wrapper func(time time.Time) float64,
 	args []types.Operator,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
@@ -357,10 +369,6 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"cos":                InstantVectorTransformationFunctionOperatorFactory("cos", functions.Cos),
 	"cosh":               InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
 	"count_over_time":    FunctionOverRangeVectorOperatorFactory("count_over_time", functions.CountOverTime),
-	"days_in_month":      InstantVectorTransformationFunctionOperatorFactory("days_in_month", functions.DaysInMonth),
-	"day_of_month":       InstantVectorTransformationFunctionOperatorFactory("day_of_month", functions.DayOfMonth),
-	"day_of_week":        InstantVectorTransformationFunctionOperatorFactory("day_of_week", functions.DayOfWeek),
-	"day_of_year":        InstantVectorTransformationFunctionOperatorFactory("day_of_year", functions.DayOfYear),
 	"deg":                InstantVectorTransformationFunctionOperatorFactory("deg", functions.Deg),
 	"delta":              FunctionOverRangeVectorOperatorFactory("delta", functions.Delta),
 	"deriv":              FunctionOverRangeVectorOperatorFactory("deriv", functions.Deriv),
@@ -373,7 +381,6 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"histogram_stddev":   InstantVectorTransformationFunctionOperatorFactory("histogram_stddev", functions.HistogramStdDevStdVar(true)),
 	"histogram_stdvar":   InstantVectorTransformationFunctionOperatorFactory("histogram_stdvar", functions.HistogramStdDevStdVar(false)),
 	"histogram_sum":      InstantVectorTransformationFunctionOperatorFactory("histogram_sum", functions.HistogramSum),
-	"hour":               InstantVectorTransformationFunctionOperatorFactory("hour", functions.Hour),
 	"idelta":             FunctionOverRangeVectorOperatorFactory("idelta", functions.Idelta),
 	"increase":           FunctionOverRangeVectorOperatorFactory("increase", functions.Increase),
 	"irate":              FunctionOverRangeVectorOperatorFactory("irate", functions.Irate),
@@ -384,8 +391,6 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"log2":               InstantVectorTransformationFunctionOperatorFactory("log2", functions.Log2),
 	"max_over_time":      FunctionOverRangeVectorOperatorFactory("max_over_time", functions.MaxOverTime),
 	"min_over_time":      FunctionOverRangeVectorOperatorFactory("min_over_time", functions.MinOverTime),
-	"minute":             InstantVectorTransformationFunctionOperatorFactory("minute", functions.Minute),
-	"month":              InstantVectorTransformationFunctionOperatorFactory("month", functions.Month),
 	"present_over_time":  FunctionOverRangeVectorOperatorFactory("present_over_time", functions.PresentOverTime),
 	"rad":                InstantVectorTransformationFunctionOperatorFactory("rad", functions.Rad),
 	"rate":               FunctionOverRangeVectorOperatorFactory("rate", functions.Rate),
@@ -398,9 +403,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"sum_over_time":      FunctionOverRangeVectorOperatorFactory("sum_over_time", functions.SumOverTime),
 	"tan":                InstantVectorTransformationFunctionOperatorFactory("tan", functions.Tan),
 	"tanh":               InstantVectorTransformationFunctionOperatorFactory("tanh", functions.Tanh),
-	"time":               InstantVectorTransformationFunctionOperatorFactory("time", functions.Time),
 	"vector":             scalarToInstantVectorOperatorFactory,
-	"year":               InstantVectorTransformationFunctionOperatorFactory("year", functions.Year),
 }
 
 func RegisterInstantVectorFunctionOperatorFactory(functionName string, factory InstantVectorFunctionOperatorFactory) error {
@@ -415,8 +418,17 @@ func RegisterInstantVectorFunctionOperatorFactory(functionName string, factory I
 // These functions return a scalar.
 var scalarFunctionOperatorFactories = map[string]ScalarFunctionOperatorFactory{
 	// Please keep this list sorted alphabetically.
-	"pi":     piOperatorFactory,
-	"scalar": instantVectorToScalarOperatorFactory,
+	"days_in_month": newTimeAdapter(functions.DaysInMonth).wrapperTimeOperatorFactory,
+	"day_of_month":  newTimeAdapter(functions.DayOfMonth).wrapperTimeOperatorFactory,
+	"day_of_week":   newTimeAdapter(functions.DayOfWeek).wrapperTimeOperatorFactory,
+	"day_of_year":   newTimeAdapter(functions.DayOfYear).wrapperTimeOperatorFactory,
+	"hour":          newTimeAdapter(functions.Hour).wrapperTimeOperatorFactory,
+	"minute":        newTimeAdapter(functions.Minute).wrapperTimeOperatorFactory,
+	"month":         newTimeAdapter(functions.Month).wrapperTimeOperatorFactory,
+	"pi":            piOperatorFactory,
+	"scalar":        instantVectorToScalarOperatorFactory,
+	"time":          timeOperatorFactory,
+	"year":          newTimeAdapter(functions.Year).wrapperTimeOperatorFactory,
 }
 
 func RegisterScalarFunctionOperatorFactory(functionName string, factory ScalarFunctionOperatorFactory) error {
@@ -435,6 +447,34 @@ func piOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting
 	}
 
 	return scalars.NewScalarConstant(math.Pi, timeRange, memoryConsumptionTracker, expressionPosition), nil
+}
+
+func timeOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
+	if len(args) != 0 {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected exactly 0 arguments for time, got %v", len(args))
+	}
+
+	return functions.NewScalarTime(timeRange, memoryConsumptionTracker, expressionPosition), nil
+}
+
+type adapter struct {
+	wrapperFunc func(time time.Time) float64
+}
+
+func newTimeAdapter(wrapperFunc func(time time.Time) float64) adapter {
+	return adapter{
+		wrapperFunc: wrapperFunc,
+	}
+}
+
+func (a adapter) wrapperTimeOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
+	if len(args) != 0 {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected exactly 0 arguments for time, got %v", len(args))
+	}
+
+	return functions.NewWrapperTime(a.wrapperFunc, timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
 func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
