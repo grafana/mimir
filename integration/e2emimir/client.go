@@ -7,6 +7,7 @@ package e2emimir
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,6 +37,7 @@ import (
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
+	mimirapi "github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -172,6 +174,43 @@ func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 	req.Header.Add("Content-Encoding", "snappy")
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+	req.Header.Set("X-Scope-OrgID", c.orgID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	// Execute HTTP request
+	res, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	defer res.Body.Close()
+	return res, nil
+}
+
+// PushInflux the input timeseries to the remote endpoint in Influx format.
+func (c *Client) PushInflux(timeseries []prompb.TimeSeries) (*http.Response, error) {
+	// Create write request.
+	data := distributor.TimeseriesToInfluxRequest(timeseries)
+
+	// Compress it.
+	var buf bytes.Buffer
+
+	gzipData := gzip.NewWriter(&buf)
+	if _, err := gzipData.Write([]byte(data)); err != nil {
+		return nil, err
+	}
+	if err := gzipData.Close(); err != nil {
+		return nil, err
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s%s", c.distributorAddress, mimirapi.InfluxPushEndpoint), &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Encoding", "gzip")
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)

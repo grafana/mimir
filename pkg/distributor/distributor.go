@@ -87,7 +87,8 @@ const (
 	// metaLabelTenantID is the name of the metric_relabel_configs label with tenant ID.
 	metaLabelTenantID = model.MetaLabelPrefix + "tenant_id"
 
-	maxOTLPRequestSizeFlag = "distributor.max-otlp-request-size"
+	maxOTLPRequestSizeFlag   = "distributor.max-otlp-request-size"
+	maxInfluxRequestSizeFlag = "distributor.max-influx-request-size"
 
 	instanceIngestionRateTickInterval = time.Second
 
@@ -209,6 +210,7 @@ type Config struct {
 
 	MaxRecvMsgSize           int           `yaml:"max_recv_msg_size" category:"advanced"`
 	MaxOTLPRequestSize       int           `yaml:"max_otlp_request_size" category:"experimental"`
+	MaxInfluxRequestSize     int           `yaml:"max_influx_request_size" category:"experimental" doc:"hidden"`
 	MaxRequestPoolBufferSize int           `yaml:"max_request_pool_buffer_size" category:"experimental"`
 	RemoteTimeout            time.Duration `yaml:"remote_timeout" category:"advanced"`
 
@@ -251,6 +253,9 @@ type Config struct {
 	// OTelResourceAttributePromotionConfig allows for specializing OTel resource attribute promotion.
 	OTelResourceAttributePromotionConfig OTelResourceAttributePromotionConfig `yaml:"-"`
 
+	// Influx endpoint disabled by default
+	EnableInfluxEndpoint bool `yaml:"influx_endpoint_enabled" category:"experimental" doc:"hidden"`
+
 	// Change the implementation of OTel startTime from a real zero to a special NaN value.
 	EnableStartTimeQuietZero bool `yaml:"start_time_quiet_zero" category:"advanced" doc:"hidden"`
 }
@@ -267,9 +272,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected.")
 	f.IntVar(&cfg.MaxOTLPRequestSize, maxOTLPRequestSizeFlag, 100<<20, "Maximum OTLP request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
+	f.IntVar(&cfg.MaxInfluxRequestSize, maxInfluxRequestSizeFlag, 100<<20, "Maximum Influx request size in bytes that the distributors accept. Requests exceeding this limit are rejected.")
 	f.IntVar(&cfg.MaxRequestPoolBufferSize, "distributor.max-request-pool-buffer-size", 0, "Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.BoolVar(&cfg.WriteRequestsBufferPoolingEnabled, "distributor.write-requests-buffer-pooling-enabled", true, "Enable pooling of buffers used for marshaling write requests.")
+	f.BoolVar(&cfg.EnableInfluxEndpoint, "distributor.influx-endpoint-enabled", false, "Enable Influx endpoint.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
 
@@ -295,12 +302,27 @@ const (
 )
 
 type PushMetrics struct {
+	// Influx metrics.
+	influxRequestCounter       *prometheus.CounterVec
+	influxUncompressedBodySize *prometheus.HistogramVec
+	// OTLP metrics.
 	otlpRequestCounter   *prometheus.CounterVec
 	uncompressedBodySize *prometheus.HistogramVec
 }
 
 func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 	return &PushMetrics{
+		influxRequestCounter: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_influx_requests_total",
+			Help: "The total number of Influx requests that have come in to the distributor.",
+		}, []string{"user"}),
+		influxUncompressedBodySize: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_influx_uncompressed_request_body_size_bytes",
+			Help:                            "Size of uncompressed request body in bytes.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"user"}),
 		otlpRequestCounter: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_otlp_requests_total",
 			Help: "The total number of OTLP requests that have come in to the distributor.",
@@ -312,6 +334,18 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			NativeHistogramMaxBucketNumber:  100,
 		}, []string{"user"}),
+	}
+}
+
+func (m *PushMetrics) IncInfluxRequest(user string) {
+	if m != nil {
+		m.influxRequestCounter.WithLabelValues(user).Inc()
+	}
+}
+
+func (m *PushMetrics) ObserveInfluxUncompressedBodySize(user string, size float64) {
+	if m != nil {
+		m.influxUncompressedBodySize.WithLabelValues(user).Observe(size)
 	}
 }
 
@@ -328,6 +362,8 @@ func (m *PushMetrics) ObserveUncompressedBodySize(user string, size float64) {
 }
 
 func (m *PushMetrics) deleteUserMetrics(user string) {
+	m.influxRequestCounter.DeleteLabelValues(user)
+	m.influxUncompressedBodySize.DeleteLabelValues(user)
 	m.otlpRequestCounter.DeleteLabelValues(user)
 	m.uncompressedBodySize.DeleteLabelValues(user)
 }
