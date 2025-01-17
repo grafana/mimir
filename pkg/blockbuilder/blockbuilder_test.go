@@ -571,10 +571,10 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection_PullMode(t *testi
 		return bb.jobIteration.Load() >= 2
 	}, 20*time.Second, 100*time.Millisecond, "expected job completion")
 
-	assert.Equal(t, scheduler.runCallCount(), 1)
-	assert.Equal(t, scheduler.getJobCallCount(), 3, "expect 2 completed getJob calls and one in-flight")
-	assert.Equal(t, scheduler.completeJobCallCount(), 2)
-	assert.Equal(t, scheduler.closeCallCount(), 0)
+	assert.Equal(t, 1, scheduler.runCallCount())
+	assert.Equal(t, 3, scheduler.getJobCallCount(), "expect 2 completed getJob calls and one in-flight")
+	assert.Equal(t, 2, scheduler.completeJobCallCount())
+	assert.Equal(t, 0, scheduler.closeCallCount())
 
 	require.EqualValues(t,
 		[]schedulerpb.JobKey{{Id: "test-job-p0-4898", Epoch: 90002}, {Id: "test-job-p1-4899", Epoch: 90070}},
