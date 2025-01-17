@@ -624,7 +624,7 @@
     },
 
     // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
-    autoscaling_hpa_prefix: 'keda-hpa-',
+    autoscaling_hpa_prefix: 'keda-hpa-mimir-',
 
     autoscaling: {
       query_frontend: {
