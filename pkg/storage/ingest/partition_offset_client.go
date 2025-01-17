@@ -43,12 +43,14 @@ func newPartitionOffsetClient(client *kgo.Client, topic string, reg prometheus.R
 		topic:  topic,
 
 		lastProducedOffsetRequestsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_reader_last_produced_offset_requests_total",
-			Help: "Total number of requests issued to get the last produced offset.",
+			Name:        "cortex_ingest_storage_reader_last_produced_offset_requests_total",
+			Help:        "Total number of requests issued to get the last produced offset.",
+			ConstLabels: prometheus.Labels{"topic": topic},
 		}, []string{"partition"}),
 		lastProducedOffsetFailuresTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_reader_last_produced_offset_failures_total",
-			Help: "Total number of failed requests to get the last produced offset.",
+			Name:        "cortex_ingest_storage_reader_last_produced_offset_failures_total",
+			Help:        "Total number of failed requests to get the last produced offset.",
+			ConstLabels: prometheus.Labels{"topic": topic},
 		}, []string{"partition"}),
 		lastProducedOffsetLatency: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds",
@@ -57,15 +59,18 @@ func newPartitionOffsetClient(client *kgo.Client, topic string, reg prometheus.R
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.DefBuckets,
+			ConstLabels:                     prometheus.Labels{"topic": topic},
 		}, []string{"partition"}),
 
 		partitionStartOffsetRequestsTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_reader_partition_start_offset_requests_total",
-			Help: "Total number of requests issued to get the partition start offset.",
+			Name:        "cortex_ingest_storage_reader_partition_start_offset_requests_total",
+			Help:        "Total number of requests issued to get the partition start offset.",
+			ConstLabels: prometheus.Labels{"topic": topic},
 		}, []string{"partition"}),
 		partitionStartOffsetFailuresTotal: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ingest_storage_reader_partition_start_offset_failures_total",
-			Help: "Total number of failed requests to get the partition start offset.",
+			Name:        "cortex_ingest_storage_reader_partition_start_offset_failures_total",
+			Help:        "Total number of failed requests to get the partition start offset.",
+			ConstLabels: prometheus.Labels{"topic": topic},
 		}, []string{"partition"}),
 		partitionStartOffsetLatency: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_ingest_storage_reader_partition_start_offset_request_duration_seconds",
@@ -74,6 +79,7 @@ func newPartitionOffsetClient(client *kgo.Client, topic string, reg prometheus.R
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			Buckets:                         prometheus.DefBuckets,
+			ConstLabels:                     prometheus.Labels{"topic": topic},
 		}, []string{"partition"}),
 	}
 }
