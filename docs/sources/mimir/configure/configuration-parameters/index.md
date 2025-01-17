@@ -455,6 +455,24 @@ overrides_exporter:
 # (experimental) Enables optimized marshaling of timeseries.
 # CLI flag: -timeseries-unmarshal-caching-optimization-enabled
 [timeseries_unmarshal_caching_optimization_enabled: <boolean> | default = true]
+
+# (experimental) Specifies how often inactive cost attributions for received and
+# discarded sample trackers are evicted from the counter, ensuring they do not
+# contribute to the cost attribution cardinality per user limit. This setting
+# does not apply to active series, which are managed separately.
+# CLI flag: -cost-attribution.eviction-interval
+[cost_attribution_eviction_interval: <duration> | default = 20m]
+
+# (experimental) Defines a custom path for the registry. When specified, Mimir
+# exposes cost attribution metrics through this custom path. If not specified,
+# cost attribution metrics aren't exposed.
+# CLI flag: -cost-attribution.registry-path
+[cost_attribution_registry_path: <string> | default = ""]
+
+# (experimental) Time interval at which the cost attribution cleanup process
+# runs, ensuring inactive cost attribution entries are purged.
+# CLI flag: -cost-attribution.cleanup-interval
+[cost_attribution_cleanup_interval: <duration> | default = 3m]
 ```
 
 ### common
@@ -3359,19 +3377,32 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.ooo-native-histograms-ingestion-enabled
 [ooo_native_histograms_ingestion_enabled: <boolean> | default = false]
 
-# (advanced) Additional custom trackers for active metrics. If there are active
-# series matching a provided matcher (map value), the count will be exposed in
-# the custom trackers metric labeled using the tracker name (map key). Zero
-# valued counts are not exposed (and removed when they go back to zero).
+# (advanced) Custom trackers for active metrics. If there are active series
+# matching a provided matcher (map value), the count is exposed in the custom
+# trackers metric labeled using the tracker name (map key). Zero-valued counts
+# are not exposed and are removed when they go back to zero.
 # Example:
-#   The following configuration will count the active series coming from dev and
-#   prod namespaces for each tenant and label them as {name="dev"} and
+#   The following configuration counts the active series coming from dev and
+#   prod namespaces for each tenant and labels them as {name="dev"} and
 #   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
 #   active_series_custom_trackers:
 #       dev: '{namespace=~"dev-.*"}'
 #       prod: '{namespace=~"prod-.*"}'
 # CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
+
+# (advanced) Additional custom trackers for active metrics merged on top of the
+# base custom trackers. You can use this configuration option to define the base
+# custom trackers globally for all tenants, and then use the additional trackers
+# to add extra trackers on a per-tenant basis.
+# Example:
+#   The following configuration counts the active series coming from dev and
+#   prod namespaces for each tenant and labels them as {name="dev"} and
+#   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
+#   active_series_additional_custom_trackers:
+#       dev: '{namespace=~"dev-.*"}'
+#       prod: '{namespace=~"prod-.*"}'
+[active_series_additional_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
 # (experimental) Non-zero value enables out-of-order support for most recent
 # samples that are within the time window in relation to the TSDB's maximum
@@ -3559,6 +3590,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.enabled-promql-experimental-functions
 [enabled_promql_experimental_functions: <string> | default = ""]
 
+# (experimental) Rewrite queries using the same range selector and resolution
+# [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works
+# with Prometheus 3.0 semantics
+# CLI flag: -query-frontend.prom2-range-compat
+[prom2_range_compat: <boolean> | default = false]
+
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
 [cardinality_analysis_enabled: <boolean> | default = false]
@@ -3579,6 +3616,31 @@ The `limits` block configures default and per-tenant limits imposed by component
 # series request result shard in bytes. 0 to disable.
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
+
+# (experimental) Defines labels for cost attribution. Applies to metrics like
+# cortex_distributor_received_attributed_samples_total. To disable, set to an
+# empty string. For example, 'team,service' produces metrics such as
+# cortex_distributor_received_attributed_samples_total{team='frontend',
+# service='api'}.
+# CLI flag: -validation.cost-attribution-labels
+[cost_attribution_labels: <string> | default = ""]
+
+# (experimental) Maximum number of cost attribution labels allowed per user, the
+# value is capped at 4.
+# CLI flag: -validation.max-cost-attribution-labels-per-user
+[max_cost_attribution_labels_per_user: <int> | default = 2]
+
+# (experimental) Maximum cardinality of cost attribution labels allowed per
+# user.
+# CLI flag: -validation.max-cost-attribution-cardinality-per-user
+[max_cost_attribution_cardinality_per_user: <int> | default = 10000]
+
+# (experimental) Defines how long cost attribution stays in overflow before
+# attempting a reset, with received/discarded samples extending the cooldown if
+# overflow persists, while active series reset and restart tracking after the
+# cooldown.
+# CLI flag: -validation.cost-attribution-cooldown
+[cost_attribution_cooldown: <duration> | default = 0s]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.
