@@ -8,7 +8,6 @@ package indexcache
 import (
 	"context"
 	"encoding/base64"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -157,16 +156,8 @@ const bytesPerPosting = int(unsafe.Sizeof(storage.SeriesRef(0)))
 // unsafeCastPostingsToBytes returns the postings as a slice of bytes with minimal allocations.
 // It casts the memory region of the underlying array to a slice of bytes. The resulting byte slice is only valid as long as the postings slice exists and is unmodified.
 func unsafeCastPostingsToBytes(postings []storage.SeriesRef) []byte {
-	byteSlice := make([]byte, 0)
-	// Ignore deprecation warning for now
-	//nolint:staticcheck
-	slicePtr := (*reflect.SliceHeader)(unsafe.Pointer(&byteSlice))
-	// Ignore deprecation warning for now
-	//nolint:staticcheck
-	slicePtr.Data = (*reflect.SliceHeader)(unsafe.Pointer(&postings)).Data
-	slicePtr.Len = len(postings) * bytesPerPosting
-	slicePtr.Cap = slicePtr.Len
-	return byteSlice
+	underlying := unsafe.Pointer(unsafe.SliceData(postings))                //nolint:gosec
+	return unsafe.Slice((*byte)(underlying), len(postings)*bytesPerPosting) //nolint:gosec
 }
 
 // LabelMatchersKey represents a canonical key for a []*matchers.Matchers slice
