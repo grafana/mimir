@@ -1448,10 +1448,6 @@ How to **investigate** and **fix** it:
   - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. To investigate it you can run the following command for a given store-gateway replica. The command returns the top 10 tenants by disk utilization (in megabytes):
 
     ```
-    # If you're running the alpine image:
-    kubectl --context $CLUSTER --namespace $NAMESPACE exec -ti $POD -- sh -c 'du -sm /data/tsdb/* | sort -n -r | head -10'
-
-    # If you're running the distroless image:
     kubectl --context $CLUSTER --namespace $NAMESPACE debug pod/$POD --image=alpine:latest --target=store-gateway --container=debug -ti -- sh -c 'du -sm /proc/1/root/data/tsdb/* | sort -n -r | head -10'
     ```
 
