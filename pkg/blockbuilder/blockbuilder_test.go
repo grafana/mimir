@@ -246,8 +246,7 @@ func TestBlockBuilder_StartWithExistingCommit_PullMode(t *testing.T) {
 
 	// Wait for end of the cycles. We expect at least several cycles because of how the pushed records were structured.
 	require.Eventually(t, func() bool {
-		_, _, completeJobCalls, _ := scheduler.callCounts()
-		return completeJobCalls > 0
+		return scheduler.completeJobCallCount() > 0
 	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
 
 	require.EqualValues(t,
@@ -572,11 +571,10 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection_PullMode(t *testi
 		return bb.jobIteration.Load() >= 2
 	}, 20*time.Second, 100*time.Millisecond, "expected job completion")
 
-	runCalls, getJobCalls, completeCalls, flushCalls := scheduler.callCounts()
-	assert.Equal(t, runCalls, 1)
-	assert.Equal(t, getJobCalls, 3, "expect 2 completed getJob calls and one in-flight")
-	assert.Equal(t, completeCalls, 2)
-	assert.Equal(t, flushCalls, 0)
+	assert.Equal(t, scheduler.runCallCount(), 1)
+	assert.Equal(t, scheduler.getJobCallCount(), 3, "expect 2 completed getJob calls and one in-flight")
+	assert.Equal(t, scheduler.completeJobCallCount(), 2)
+	assert.Equal(t, scheduler.closeCallCount(), 0)
 
 	require.EqualValues(t,
 		[]schedulerpb.JobKey{{Id: "test-job-p0-4898", Epoch: 90002}, {Id: "test-job-p1-4899", Epoch: 90070}},
@@ -716,8 +714,7 @@ func TestBlockBuilder_WithMultipleTenants_PullMode(t *testing.T) {
 
 	// Wait for end of the cycles. We expect at least several cycles because of how the pushed records were structured.
 	require.Eventually(t, func() bool {
-		_, _, completeJobCalls, _ := scheduler.callCounts()
-		return completeJobCalls > 0
+		return scheduler.completeJobCallCount() > 0
 	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
 
 	require.EqualValues(t,
@@ -1174,8 +1171,7 @@ func TestPullMode(t *testing.T) {
 	})
 
 	require.Eventually(t, func() bool {
-		_, _, completeJobCalls, _ := scheduler.callCounts()
-		return completeJobCalls == 2
+		return scheduler.completeJobCallCount() == 2
 	}, 5*time.Second, 100*time.Millisecond, "expected to complete two jobs")
 
 	require.EqualValues(t,
@@ -1274,8 +1270,26 @@ func (m *mockSchedulerClient) addJob(key schedulerpb.JobKey, spec schedulerpb.Jo
 	}{key: key, spec: spec})
 }
 
-func (m *mockSchedulerClient) callCounts() (int, int, int, int) {
+func (m *mockSchedulerClient) runCallCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.runCalls, m.getJobCalls, len(m.completeJobCalls), m.closeCalls
+	return m.runCalls
+}
+
+func (m *mockSchedulerClient) getJobCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.getJobCalls
+}
+
+func (m *mockSchedulerClient) completeJobCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.completeJobCalls)
+}
+
+func (m *mockSchedulerClient) closeCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.closeCalls
 }
