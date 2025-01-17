@@ -61,7 +61,7 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		cortex_alertmanager_alerts_received_total{user="user1"} 10
 		cortex_alertmanager_alerts_received_total{user="user2"} 100
 		cortex_alertmanager_alerts_received_total{user="user3"} 1000
-		# HELP cortex_alertmanager_config_hash Hash of the currently loaded alertmanager configuration.
+		# HELP cortex_alertmanager_config_hash Hash of the currently loaded alertmanager configuration. Note that this is not a cryptographically strong hash.
 		# TYPE cortex_alertmanager_config_hash gauge
 		cortex_alertmanager_config_hash{user="user1"} 0
 		cortex_alertmanager_config_hash{user="user2"} 0
@@ -389,7 +389,7 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
         	            cortex_alertmanager_alerts_received_total{user="user2"} 100
         	            cortex_alertmanager_alerts_received_total{user="user3"} 1000
 
-        	            # HELP cortex_alertmanager_config_hash Hash of the currently loaded alertmanager configuration.
+        	            # HELP cortex_alertmanager_config_hash Hash of the currently loaded alertmanager configuration. Note that this is not a cryptographically strong hash.
         	            # TYPE cortex_alertmanager_config_hash gauge
         	            cortex_alertmanager_config_hash{user="user1"} 0
         	            cortex_alertmanager_config_hash{user="user2"} 0
@@ -720,7 +720,7 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
     		cortex_alertmanager_alerts_received_total{user="user1"} 10
     		cortex_alertmanager_alerts_received_total{user="user2"} 100
 
-    		# HELP cortex_alertmanager_config_hash Hash of the currently loaded alertmanager configuration.
+    		# HELP cortex_alertmanager_config_hash Hash of the currently loaded alertmanager configuration. Note that this is not a cryptographically strong hash.
     		# TYPE cortex_alertmanager_config_hash gauge
     		cortex_alertmanager_config_hash{user="user1"} 0
     		cortex_alertmanager_config_hash{user="user2"} 0
@@ -987,7 +987,7 @@ func populateAlertmanager(base float64) *prometheus.Registry {
 	reg := prometheus.NewRegistry()
 	promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 		Name: "alertmanager_config_hash",
-		Help: "Hash of the currently loaded alertmanager configuration.",
+		Help: "Hash of the currently loaded alertmanager configuration. Note that this is not a cryptographically strong hash.",
 	})
 
 	s := newSilenceMetrics(reg)
