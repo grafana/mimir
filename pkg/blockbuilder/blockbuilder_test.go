@@ -1168,6 +1168,7 @@ func TestPullMode(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+		require.Equal(t, 1, scheduler.closeCallCount())
 	})
 
 	require.Eventually(t, func() bool {
