@@ -764,7 +764,7 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 }
 
 func md5HashAsMetricValue(data []byte) float64 {
-	sum := md5.Sum(data)
+	sum := md5.Sum(data) //nolint:gosec
 	// We only want 48 bits as a float64 only has a 53 bit mantissa.
 	smallSum := sum[0:6]
 	var bytes = make([]byte, 8)
