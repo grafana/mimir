@@ -105,10 +105,6 @@ func InfluxHandler(
 				return
 			}
 			if errors.Is(err, influxio.ErrReadLimitExceeded) {
-				// TODO(alexg): One thing we have seen in the past is that telegraf clients send a batch of data
-				// if it is too big they should respond to the 413 below, but if a client doesn't understand this
-				// it just sends the next batch that is even bigger. In the past this has had to be dealt with by
-				// adding rate limits to drop the payloads.
 				level.Warn(logger).Log("msg", "request too large", "err", err, "bytesRead", bytesRead, "maxMsgSize", maxRecvMsgSize)
 				w.WriteHeader(http.StatusRequestEntityTooLarge)
 				return
