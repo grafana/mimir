@@ -141,6 +141,9 @@ type postingsForMatcherPromise struct {
 	// callers contexts get canceled.
 	callersCtxTracker *contextsTracker
 
+	// Keep track of the time this promise was evaluated, so we can understand the age of this cache entry in traces.
+	evaluatedAt time.Time
+
 	// The result of the promise is stored either in cloner or err (only of the two is valued).
 	// Do not access these fields until the done channel is closed.
 	done   chan struct{}
@@ -169,7 +172,9 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 	span := trace.SpanFromContext(ctx)
 
 	promiseCallersCtxTracker, promiseExecCtx := newContextsTracker()
+	ts := c.timeNow()
 	promise := &postingsForMatcherPromise{
+		evaluatedAt:       ts,
 		done:              make(chan struct{}),
 		callersCtxTracker: promiseCallersCtxTracker,
 	}
@@ -213,12 +218,16 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 
 		span.AddEvent("using cached postingsForMatchers promise", trace.WithAttributes(
 			attribute.String("cache_key", key),
+			attribute.Int64("cache_entry_evaluated_at", promise.evaluatedAt.Unix()),
 		))
 
 		return oldPromise.result
 	}
 
-	span.AddEvent("no postingsForMatchers promise in cache, executing query", trace.WithAttributes(attribute.String("cache_key", key)))
+	span.AddEvent("no postingsForMatchers promise in cache, executing query", trace.WithAttributes(
+		attribute.String("cache_key", key),
+		attribute.Int64("cache_entry_evaluated_at", promise.evaluatedAt.Unix()),
+	))
 
 	// promise was stored, close its channel after fulfilment
 	defer close(promise.done)
@@ -241,7 +250,7 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 
 	sizeBytes := int64(len(key) + size.Of(promise))
 
-	c.onPromiseExecutionDone(ctx, key, c.timeNow(), sizeBytes, promise.err)
+	c.onPromiseExecutionDone(ctx, key, ts, sizeBytes, promise.err)
 	return promise.result
 }
 
