@@ -1221,7 +1221,7 @@ type mockSchedulerClient struct {
 	runCalls         int
 	getJobCalls      int
 	completeJobCalls []schedulerpb.JobKey
-	flushCalls       int
+	closeCalls       int
 }
 
 func (m *mockSchedulerClient) Run(_ context.Context) {
@@ -1230,10 +1230,10 @@ func (m *mockSchedulerClient) Run(_ context.Context) {
 	m.runCalls++
 }
 
-func (m *mockSchedulerClient) Flush(_ context.Context) {
+func (m *mockSchedulerClient) Close() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.flushCalls++
+	m.closeCalls++
 }
 
 func (m *mockSchedulerClient) GetJob(ctx context.Context) (schedulerpb.JobKey, schedulerpb.JobSpec, error) {
@@ -1277,5 +1277,5 @@ func (m *mockSchedulerClient) addJob(key schedulerpb.JobKey, spec schedulerpb.Jo
 func (m *mockSchedulerClient) callCounts() (int, int, int, int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.runCalls, m.getJobCalls, len(m.completeJobCalls), m.flushCalls
+	return m.runCalls, m.getJobCalls, len(m.completeJobCalls), m.closeCalls
 }

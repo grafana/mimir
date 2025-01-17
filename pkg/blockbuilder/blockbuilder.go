@@ -178,15 +178,11 @@ func (b *BlockBuilder) starting(context.Context) (err error) {
 
 func (b *BlockBuilder) stoppingPullMode(_ error) error {
 	b.kafkaClient.Close()
-
-	flushCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
-	defer cancel()
-	b.scheduler.Flush(flushCtx)
+	b.scheduler.Close()
 
 	if b.schedulerConn != nil {
 		return b.schedulerConn.Close()
 	}
-
 	return nil
 }
 

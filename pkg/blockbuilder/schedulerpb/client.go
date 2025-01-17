@@ -22,7 +22,7 @@ import (
 // some time after completion.
 type SchedulerClient interface {
 	Run(context.Context)
-	Flush(context.Context)
+	Close()
 	GetJob(context.Context) (JobKey, JobSpec, error)
 	CompleteJob(JobKey) error
 }
@@ -33,6 +33,7 @@ type schedulerClient struct {
 	maxUpdateAge   time.Duration
 	scheduler      BlockBuilderSchedulerClient
 	logger         log.Logger
+	runDone        chan struct{}
 
 	mu   sync.Mutex
 	jobs map[JobKey]*job
@@ -72,6 +73,7 @@ func NewSchedulerClient(workerID string, scheduler BlockBuilderSchedulerClient, 
 		maxUpdateAge:   maxUpdateAge,
 		scheduler:      scheduler,
 		logger:         logger,
+		runDone:        make(chan struct{}),
 
 		jobs: make(map[JobKey]*job),
 	}, nil
@@ -81,6 +83,7 @@ func NewSchedulerClient(workerID string, scheduler BlockBuilderSchedulerClient, 
 // Run will block and run until the given context is canceled.
 func (s *schedulerClient) Run(ctx context.Context) {
 	ticker := time.NewTicker(s.updateInterval)
+	defer close(s.runDone)
 	defer ticker.Stop()
 	for {
 		select {
@@ -94,8 +97,13 @@ func (s *schedulerClient) Run(ctx context.Context) {
 	}
 }
 
-func (s *schedulerClient) Flush(ctx context.Context) {
-	s.sendUpdates(ctx)
+func (s *schedulerClient) Close() {
+	// Wait for the runloop to exit, then send a final update.
+	<-s.runDone
+
+	updateCtx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+	s.sendUpdates(updateCtx)
 }
 
 func (s *schedulerClient) sendUpdates(ctx context.Context) {
