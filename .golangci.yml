@@ -71,6 +71,7 @@ linters-settings:
       - G112
       - G114
       - G302
+      - G401
   
   gocritic:
     disable-all: true
