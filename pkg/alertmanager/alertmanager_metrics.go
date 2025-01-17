@@ -197,7 +197,7 @@ func newAlertmanagerMetrics(logger log.Logger) *alertmanagerMetrics {
 			[]string{"user", "state"}, nil),
 		configHashValue: prometheus.NewDesc(
 			"cortex_alertmanager_config_hash",
-			"Hash of the currently loaded alertmanager configuration.",
+			"Hash of the currently loaded alertmanager configuration. Note that this is not a cryptographically strong hash.",
 			[]string{"user"}, nil),
 		partialMerges: prometheus.NewDesc(
 			"cortex_alertmanager_partial_state_merges_total",

@@ -202,7 +202,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		maintenanceStop: make(chan struct{}),
 		configHashMetric: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "alertmanager_config_hash",
-			Help: "Hash of the currently loaded alertmanager configuration.",
+			Help: "Hash of the currently loaded alertmanager configuration. Note that this is not a cryptographically strong hash.",
 		}),
 
 		rateLimitedNotifications: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
