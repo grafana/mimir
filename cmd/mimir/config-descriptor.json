@@ -4402,6 +4402,50 @@
         },
         {
           "kind": "field",
+          "name": "cost_attribution_labels",
+          "required": false,
+          "desc": "Defines labels for cost attribution. Applies to metrics like cortex_distributor_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_distributor_received_attributed_samples_total{team='frontend', service='api'}.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "validation.cost-attribution-labels",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_cost_attribution_labels_per_user",
+          "required": false,
+          "desc": "Maximum number of cost attribution labels allowed per user, the value is capped at 4.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2,
+          "fieldFlag": "validation.max-cost-attribution-labels-per-user",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_cost_attribution_cardinality_per_user",
+          "required": false,
+          "desc": "Maximum cardinality of cost attribution labels allowed per user.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000,
+          "fieldFlag": "validation.max-cost-attribution-cardinality-per-user",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cost_attribution_cooldown",
+          "required": false,
+          "desc": "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.cost-attribution-cooldown",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "ruler_evaluation_delay_duration",
           "required": false,
           "desc": "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.",
@@ -19680,6 +19724,39 @@
       "fieldDefaultValue": true,
       "fieldFlag": "timeseries-unmarshal-caching-optimization-enabled",
       "fieldType": "boolean",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_eviction_interval",
+      "required": false,
+      "desc": "Specifies how often inactive cost attributions for received and discarded sample trackers are evicted from the counter, ensuring they do not contribute to the cost attribution cardinality per user limit. This setting does not apply to active series, which are managed separately.",
+      "fieldValue": null,
+      "fieldDefaultValue": 1200000000000,
+      "fieldFlag": "cost-attribution.eviction-interval",
+      "fieldType": "duration",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_registry_path",
+      "required": false,
+      "desc": "Defines a custom path for the registry. When specified, Mimir exposes cost attribution metrics through this custom path. If not specified, cost attribution metrics aren't exposed.",
+      "fieldValue": null,
+      "fieldDefaultValue": "",
+      "fieldFlag": "cost-attribution.registry-path",
+      "fieldType": "string",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_cleanup_interval",
+      "required": false,
+      "desc": "Time interval at which the cost attribution cleanup process runs, ensuring inactive cost attribution entries are purged.",
+      "fieldValue": null,
+      "fieldDefaultValue": 180000000000,
+      "fieldFlag": "cost-attribution.cleanup-interval",
+      "fieldType": "duration",
       "fieldCategory": "experimental"
     }
   ],
