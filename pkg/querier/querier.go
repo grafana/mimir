@@ -138,7 +138,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	queryables = append(queryables, TimeRangeQueryable{
 		Queryable:   NewDistributorQueryable(distributor, limits, queryMetrics, logger),
 		StorageName: "ingester",
-		IsApplicable: func(tenantID string, now time.Time, _, queryMaxT int64, _ ...*labels.Matcher) bool {
+		IsApplicable: func(_ context.Context, tenantID string, now time.Time, _, queryMaxT int64, _ ...*labels.Matcher) bool {
 			return ShouldQueryIngesters(limits.QueryIngestersWithin(tenantID), now, queryMaxT)
 		},
 	})
@@ -234,7 +234,7 @@ func newQueryable(
 // TimeRangeQueryable is a Queryable that is aware of when it is applicable.
 type TimeRangeQueryable struct {
 	storage.Queryable
-	IsApplicable func(tenantID string, now time.Time, queryMinT, queryMaxT int64, matchers ...*labels.Matcher) bool
+	IsApplicable func(ctx context.Context, tenantID string, now time.Time, queryMinT, queryMaxT int64, matchers ...*labels.Matcher) bool
 	StorageName  string
 }
 
@@ -242,7 +242,7 @@ func NewStoreGatewayTimeRangeQueryable(q storage.Queryable, querierConfig Config
 	return TimeRangeQueryable{
 		Queryable:   q,
 		StorageName: "store-gateway",
-		IsApplicable: func(_ string, now time.Time, queryMinT, _ int64, _ ...*labels.Matcher) bool {
+		IsApplicable: func(_ context.Context, _ string, now time.Time, queryMinT, _ int64, _ ...*labels.Matcher) bool {
 			return ShouldQueryBlockStore(querierConfig.QueryStoreAfter, now, queryMinT)
 		},
 	}
@@ -283,7 +283,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matc
 
 	var queriers []storage.Querier
 	for _, queryable := range mq.queryables {
-		if queryable.IsApplicable(tenantID, now, mq.minT, mq.maxT, matchers...) {
+		if queryable.IsApplicable(ctx, tenantID, now, mq.minT, mq.maxT, matchers...) {
 			q, err := queryable.Querier(mq.minT, mq.maxT)
 			if err != nil {
 				return nil, nil, err

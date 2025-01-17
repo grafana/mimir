@@ -215,6 +215,19 @@ var splitToBatchesTestCases = map[string]struct {
 			{43, 44, 47, 48, 49, 50, 53, 54, 57},
 		},
 	},
+	"self_reference": {
+		inputFile: "fixtures/rules_self_reference.yaml",
+		expectedGroups: []rules.ConcurrentRules{
+			{0, 1},
+			{2},
+			{3, 4},
+			{5, 6},
+		},
+	},
+	"self_and_same_name_reference": {
+		inputFile:      "fixtures/rules_self_and_same_name_reference.yaml",
+		expectedGroups: nil,
+	},
 }
 
 func TestSplitGroupIntoBatches(t *testing.T) {

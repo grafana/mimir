@@ -9180,7 +9180,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 	})
 
 	activeSeriesTenantOverride := new(TenantLimitsMock)
-	activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
+	activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesBaseCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
 	activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
 
 	tests := map[string]struct {
@@ -9470,7 +9470,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			cfg.ActiveSeriesMetrics.Enabled = !testData.disableActiveSeries
 
 			limits := defaultLimitsTestConfig()
-			limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+			limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 			limits.NativeHistogramsIngestionEnabled = true
 			overrides, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 			require.NoError(t, err)
@@ -9542,7 +9542,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 	defaultActiveSeriesTenantOverride := new(TenantLimitsMock)
 	defaultActiveSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
-	defaultActiveSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
+	defaultActiveSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesBaseCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
 
 	tests := map[string]struct {
 		test               func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
@@ -9603,9 +9603,9 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				// Add new runtime configs
 				activeSeriesTenantOverride := new(TenantLimitsMock)
 				activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
-				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
+				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesBaseCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
 				limits := defaultLimitsTestConfig()
-				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
 				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 				require.NoError(t, err)
@@ -9736,7 +9736,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 				// Remove runtime configs
 				limits := defaultLimitsTestConfig()
-				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
 				override, err := validation.NewOverrides(limits, nil)
 				require.NoError(t, err)
@@ -9853,14 +9853,14 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 				// Change runtime configs
 				activeSeriesTenantOverride := new(TenantLimitsMock)
-				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesBaseCustomTrackersConfig: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 					"team_a": `{team="a"}`,
 					"team_b": `{team="b"}`,
 					"team_c": `{team="b"}`,
 					"team_d": `{team="b"}`,
 				}), NativeHistogramsIngestionEnabled: true})
 				limits := defaultLimitsTestConfig()
-				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
 				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 				require.NoError(t, err)
@@ -9992,7 +9992,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			cfg.ActiveSeriesMetrics.Enabled = true
 
 			limits := defaultLimitsTestConfig()
-			limits.ActiveSeriesCustomTrackersConfig = testData.activeSeriesConfig
+			limits.ActiveSeriesBaseCustomTrackersConfig = testData.activeSeriesConfig
 			limits.NativeHistogramsIngestionEnabled = true
 			var overrides *validation.Overrides
 			var err error

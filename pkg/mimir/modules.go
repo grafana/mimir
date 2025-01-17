@@ -356,6 +356,8 @@ func (t *Mimir) initServer() (services.Service, error) {
 }
 
 func (t *Mimir) initIngesterRing() (serv services.Service, err error) {
+	t.Cfg.Ingester.IngesterRing.HideTokensInStatusPage = t.Cfg.IngestStorage.Enabled
+
 	t.IngesterRing, err = ring.New(t.Cfg.Ingester.IngesterRing.ToRingConfig(), "ingester", ingester.IngesterRingKey, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 	if err != nil {
 		return nil, err
@@ -667,6 +669,7 @@ func (t *Mimir) tsdbIngesterConfig() {
 
 func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngesterRing.ListenPort = t.Cfg.Server.GRPCListenPort
+	t.Cfg.Ingester.IngesterRing.HideTokensInStatusPage = t.Cfg.IngestStorage.Enabled
 	t.Cfg.Ingester.StreamTypeFn = ingesterChunkStreaming(t.RuntimeConfig)
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage

@@ -341,3 +341,104 @@ func TestCustomTrackersConfig_Equal(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeCustomTrackersConfig(t *testing.T) {
+	tests := map[string]struct {
+		first    string
+		second   string
+		expected string
+	}{
+		"both configs are empty": {
+			first:    "",
+			second:   "",
+			expected: "",
+		},
+		"the first config is empty": {
+			first: "",
+			second: `
+                baz: "{baz='bar'}"
+                foo: "{foo='bar'}"`,
+			expected: `
+                baz: "{baz='bar'}"
+                foo: "{foo='bar'}"`,
+		},
+		"the second config is empty": {
+			first: `
+                baz: "{baz='bar'}"
+                foo: "{foo='bar'}"`,
+			second: "",
+			expected: `
+                baz: "{baz='bar'}"
+                foo: "{foo='bar'}"`,
+		},
+		"both configs are non-empty and they both have the same key-value pairs in the same order": {
+			first: `
+                baz: "{baz='bar'}"
+                foo: "{foo='bar'}"`,
+			second: `
+                baz: "{baz='bar'}"
+                foo: "{foo='bar'}"`,
+			expected: `
+                baz: "{baz='bar'}"
+                foo: "{foo='bar'}"`,
+		},
+		"both configs are non-empty and they both have the same key-value pairs but in different order": {
+			first: `
+                baz: "{baz='bar'}"
+                foo: "{foo='bar'}"`,
+			second: `
+                foo: "{foo='bar'}"
+                baz: "{baz='bar'}"`,
+			expected: `
+                baz: "{baz='bar'}"
+                foo: "{foo='bar'}"`,
+		},
+		"both configs are non-empty and they some but not all overlapping keys": {
+			first: `
+                baz: "{baz='first'}"
+                foo: "{foo='first'}"`,
+			second: `
+                foo: "{foo='second'}"
+                bar: "{bar='second'}"`,
+			expected: `
+                bar: "{bar='second'}"
+                baz: "{baz='first'}"
+                foo: "{foo='second'}"`,
+		},
+		"both configs are non-empty and they no overlapping keys": {
+			first: `
+                baz: "{baz='first'}"
+                foo: "{foo='first'}"`,
+			second: `
+                bar: "{bar='second'}"`,
+			expected: `
+                bar: "{bar='second'}"
+                baz: "{baz='first'}"
+                foo: "{foo='first'}"`,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			first := mustNewCustomTrackersConfigDeserializedFromYaml(t, testData.first)
+			second := mustNewCustomTrackersConfigDeserializedFromYaml(t, testData.second)
+			expected := mustNewCustomTrackersConfigDeserializedFromYaml(t, testData.expected)
+
+			merged := MergeCustomTrackersConfig(first, second)
+			require.Equal(t, expected.source, merged.source)
+			require.Equal(t, expected.config, merged.config)
+			require.Equal(t, expected.string, merged.string)
+
+			// The original configs should NOT have been changed.
+			expectedFirst := mustNewCustomTrackersConfigDeserializedFromYaml(t, testData.first)
+			require.Equal(t, expectedFirst.source, first.source)
+			require.Equal(t, expectedFirst.config, first.config)
+			require.Equal(t, expectedFirst.string, first.string)
+
+			expectedSecond := mustNewCustomTrackersConfigDeserializedFromYaml(t, testData.second)
+			require.Equal(t, expectedSecond.source, second.source)
+			require.Equal(t, expectedSecond.config, second.config)
+			require.Equal(t, expectedSecond.string, second.string)
+		})
+	}
+}

@@ -1514,10 +1514,31 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-aggregation-operations
   [enable_aggregation_operations: <boolean> | default = true]
 
+  # (experimental) Enable support for binary logical operations in the Mimir
+  # query engine. Only applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-binary-logical-operations
+  [enable_binary_logical_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for one-to-many and many-to-one binary
+  # operations (group_left/group_right) in the Mimir query engine. Only applies
+  # if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations
+  [enable_one_to_many_and_many_to_one_binary_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for scalars in the Mimir query engine. Only
+  # applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-scalars
+  [enable_scalars: <boolean> | default = true]
+
   # (experimental) Enable support for binary comparison operations between two
-  # vectors in the Mimir query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
-  [enable_vector_vector_binary_comparison_operations: <boolean> | default = true]
+  # scalars in the Mimir query engine. Only applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
+  [enable_scalar_scalar_binary_comparison_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for subqueries in the Mimir query engine. Only
+  # applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-subqueries
+  [enable_subqueries: <boolean> | default = true]
 
   # (experimental) Enable support for binary comparison operations between a
   # vector and a scalar in the Mimir query engine. Only applies if the MQE is in
@@ -1526,35 +1547,19 @@ mimir_query_engine:
   [enable_vector_scalar_binary_comparison_operations: <boolean> | default = true]
 
   # (experimental) Enable support for binary comparison operations between two
-  # scalars in the Mimir query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
-  [enable_scalar_scalar_binary_comparison_operations: <boolean> | default = true]
+  # vectors in the Mimir query engine. Only applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
+  [enable_vector_vector_binary_comparison_operations: <boolean> | default = true]
 
-  # (experimental) Enable support for binary logical operations in the Mimir
-  # query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-binary-logical-operations
-  [enable_binary_logical_operations: <boolean> | default = true]
+  # (experimental) Comma-separated list of aggregations to disable support for.
+  # Only applies if MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.disabled-aggregations
+  [disabled_aggregations: <string> | default = ""]
 
-  # (experimental) Enable support for scalars in the Mimir query engine. Only
-  # applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-scalars
-  [enable_scalars: <boolean> | default = true]
-
-  # (experimental) Enable support for subqueries in the Mimir query engine. Only
-  # applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-subqueries
-  [enable_subqueries: <boolean> | default = true]
-
-  # (experimental) Enable support for the histogram_quantile function in the
-  # Mimir query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-histogram-quantile-function
-  [enable_histogram_quantile_function: <boolean> | default = true]
-
-  # (experimental) Enable support for one-to-many and many-to-one binary
-  # operations (group_left/group_right) in the Mimir query engine. Only applies
-  # if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations
-  [enable_one_to_many_and_many_to_one_binary_operations: <boolean> | default = true]
+  # (experimental) Comma-separated list of function names to disable support
+  # for. Only applies if MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.disabled-functions
+  [disabled_functions: <string> | default = ""]
 ```
 
 ### frontend
@@ -3372,19 +3377,32 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.ooo-native-histograms-ingestion-enabled
 [ooo_native_histograms_ingestion_enabled: <boolean> | default = false]
 
-# (advanced) Additional custom trackers for active metrics. If there are active
-# series matching a provided matcher (map value), the count will be exposed in
-# the custom trackers metric labeled using the tracker name (map key). Zero
-# valued counts are not exposed (and removed when they go back to zero).
+# (advanced) Custom trackers for active metrics. If there are active series
+# matching a provided matcher (map value), the count is exposed in the custom
+# trackers metric labeled using the tracker name (map key). Zero-valued counts
+# are not exposed and are removed when they go back to zero.
 # Example:
-#   The following configuration will count the active series coming from dev and
-#   prod namespaces for each tenant and label them as {name="dev"} and
+#   The following configuration counts the active series coming from dev and
+#   prod namespaces for each tenant and labels them as {name="dev"} and
 #   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
 #   active_series_custom_trackers:
 #       dev: '{namespace=~"dev-.*"}'
 #       prod: '{namespace=~"prod-.*"}'
 # CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
+
+# (advanced) Additional custom trackers for active metrics merged on top of the
+# base custom trackers. You can use this configuration option to define the base
+# custom trackers globally for all tenants, and then use the additional trackers
+# to add extra trackers on a per-tenant basis.
+# Example:
+#   The following configuration counts the active series coming from dev and
+#   prod namespaces for each tenant and labels them as {name="dev"} and
+#   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
+#   active_series_additional_custom_trackers:
+#       dev: '{namespace=~"dev-.*"}'
+#       prod: '{namespace=~"prod-.*"}'
+[active_series_additional_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
 # (experimental) Non-zero value enables out-of-order support for most recent
 # samples that are within the time window in relation to the TSDB's maximum
@@ -3571,6 +3589,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # enable all experimental functions.
 # CLI flag: -query-frontend.enabled-promql-experimental-functions
 [enabled_promql_experimental_functions: <string> | default = ""]
+
+# (experimental) Rewrite queries using the same range selector and resolution
+# [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works
+# with Prometheus 3.0 semantics
+# CLI flag: -query-frontend.prom2-range-compat
+[prom2_range_compat: <boolean> | default = false]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
