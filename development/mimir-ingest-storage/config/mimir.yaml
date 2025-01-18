@@ -27,6 +27,12 @@ ingester:
     min_partition_owners_duration:    10s
     delete_inactive_partition_after:  1m
 
+block_builder:
+  scheduler_config:
+    address: mimir-block-builder-scheduler-1:9095
+    update_interval: 5s
+    max_update_age: 30m
+
 blocks_storage:
   s3:
     bucket_name:       mimir-blocks
