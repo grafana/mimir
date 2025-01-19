@@ -156,7 +156,7 @@ func TestIngester_Start(t *testing.T) {
 
 			desc := ring.GetOrCreatePartitionRingDesc(in)
 			desc.AddPartition(partitionID, ring.PartitionActive, time.Now())
-			desc.AddOrUpdateOwner(cfg.IngesterRing.InstanceID, ring.OwnerDeleted, partitionID, time.Now())
+			desc.AddOrUpdateOwner(cfg.IngesterRing.InstanceID, ring.OwnerState_OwnerDeleted, partitionID, time.Now())
 
 			return desc, true, nil
 		}))

@@ -198,7 +198,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 
-				r.Ingesters["instance-3"] = ring.InstanceDesc{
+				r.Ingesters["instance-3"] = &ring.InstanceDesc{
 					Addr:      "127.0.0.3",
 					Timestamp: time.Now().Add(-time.Hour).Unix(),
 					State:     ring.ACTIVE,
@@ -224,7 +224,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 
-				r.Ingesters["instance-3"] = ring.InstanceDesc{
+				r.Ingesters["instance-3"] = &ring.InstanceDesc{
 					Addr:      "127.0.0.3",
 					Timestamp: time.Now().Add(-time.Hour).Unix(),
 					State:     ring.ACTIVE,
@@ -249,7 +249,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 
-				r.Ingesters["instance-3"] = ring.InstanceDesc{
+				r.Ingesters["instance-3"] = &ring.InstanceDesc{
 					Addr:      "127.0.0.3",
 					Timestamp: time.Now().Add(-time.Hour).Unix(),
 					State:     ring.ACTIVE,
@@ -274,7 +274,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 
-				r.Ingesters["instance-3"] = ring.InstanceDesc{
+				r.Ingesters["instance-3"] = &ring.InstanceDesc{
 					Addr:      "127.0.0.3",
 					Timestamp: time.Now().Add(-time.Hour).Unix(),
 					State:     ring.ACTIVE,

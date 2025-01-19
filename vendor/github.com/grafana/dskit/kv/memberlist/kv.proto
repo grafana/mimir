@@ -2,10 +2,7 @@ syntax = "proto3";
 
 package memberlist;
 
-import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
+option go_package = "github.com/grafana/dskit/kv/memberlist;memberlist";
 
 // KV Store is just a series of key-value pairs.
 message KeyValueStore {

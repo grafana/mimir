@@ -1744,7 +1744,7 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 
 				instance := desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 				instance.Timestamp = time.Now().Add(-time.Hour).Unix()
-				desc.Ingesters["alertmanager-2"] = instance
+				desc.Ingesters["alertmanager-2"] = &instance
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["alertmanager-2"]
@@ -1856,7 +1856,7 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 		ringDesc := ring.GetOrCreateRingDesc(in)
 		instance := ringDesc.AddIngester(unhealthyInstanceID, "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(RingNumTokens, nil), ring.ACTIVE, time.Now(), false, time.Time{})
 		instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
-		ringDesc.Ingesters[unhealthyInstanceID] = instance
+		ringDesc.Ingesters[unhealthyInstanceID] = &instance
 
 		return ringDesc, true, nil
 	}))

@@ -35,7 +35,7 @@ type PartitionInstanceLifecyclerConfig struct {
 	InstanceID string
 
 	// WaitOwnersCountOnPending is the minimum number of owners to wait before switching a
-	// PENDING partition to ACTIVE.
+	// InstanceState_PENDING partition to InstanceState_ACTIVE.
 	WaitOwnersCountOnPending int
 
 	// WaitOwnersDurationOnPending is how long each owner should have been added to the
@@ -275,13 +275,13 @@ func (l *PartitionInstanceLifecycler) createPartitionAndRegisterOwner(ctx contex
 
 		if !exists {
 			// The partition doesn't exist, so we create a new one. A new partition should always be created
-			// in PENDING state.
+			// in InstanceState_PENDING state.
 			ring.AddPartition(l.cfg.PartitionID, PartitionPending, now)
 			changed = true
 		}
 
 		// Ensure the instance is added as partition owner.
-		if ring.AddOrUpdateOwner(l.cfg.InstanceID, OwnerActive, l.cfg.PartitionID, now) {
+		if ring.AddOrUpdateOwner(l.cfg.InstanceID, OwnerState_OwnerActive, l.cfg.PartitionID, now) {
 			changed = true
 		}
 
@@ -329,7 +329,7 @@ func (l *PartitionInstanceLifecycler) waitPartitionAndRegisterOwner(ctx context.
 
 	// Ensure the instance is added as partition owner.
 	return l.updateRing(ctx, func(ring *PartitionRingDesc) (bool, error) {
-		return ring.AddOrUpdateOwner(l.cfg.InstanceID, OwnerActive, l.cfg.PartitionID, time.Now()), nil
+		return ring.AddOrUpdateOwner(l.cfg.InstanceID, OwnerState_OwnerActive, l.cfg.PartitionID, time.Now()), nil
 	})
 }
 

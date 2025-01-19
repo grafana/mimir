@@ -5444,12 +5444,12 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 }
 
 func prepareRingInstances(cfg prepConfig, ingesters []*mockIngester) *ring.Desc {
-	ingesterDescs := map[string]ring.InstanceDesc{}
+	ingesterDescs := map[string]*ring.InstanceDesc{}
 
 	for i := range ingesters {
 		addr := ingesters[i].address()
 		tokens := []uint32{uint32((math.MaxUint32 / len(ingesters)) * i)}
-		ingesterDescs[addr] = ring.InstanceDesc{
+		ingesterDescs[addr] = &ring.InstanceDesc{
 			Addr:                addr,
 			Zone:                ingesters[i].zone,
 			State:               cfg.ingesterRingState(ingesters[i].zone, ingesters[i].id),
@@ -5477,7 +5477,7 @@ func preparePartitionsRing(cfg prepConfig, ingesters []*mockIngester) *ring.Part
 
 	// Add all ingesters are partition owners.
 	for _, ingester := range ingesters {
-		desc.AddOrUpdateOwner(ingester.instanceID(), ring.OwnerActive, ingester.partitionID(), timeBeforeShuffleShardingLookbackPeriod)
+		desc.AddOrUpdateOwner(ingester.instanceID(), ring.OwnerState_OwnerActive, ingester.partitionID(), timeBeforeShuffleShardingLookbackPeriod)
 	}
 
 	return desc

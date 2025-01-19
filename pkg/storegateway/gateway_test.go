@@ -641,7 +641,7 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 
 				instance := desc.AddIngester("instance-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
 				instance.Timestamp = time.Now().Add(-time.Hour).Unix()
-				desc.Ingesters["instance-2"] = instance
+				desc.Ingesters["instance-2"] = &instance
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["instance-2"]
@@ -955,7 +955,7 @@ func TestStoreGateway_RingLifecyclerAutoForgetUnhealthyInstances(t *testing.T) {
 
 			instance := ringDesc.AddIngester(unhealthyInstanceID, "1.1.1.1", "", generateSortedTokens(ringNumTokensDefault), ring.ACTIVE, time.Now(), false, time.Time{})
 			instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
-			ringDesc.Ingesters[unhealthyInstanceID] = instance
+			ringDesc.Ingesters[unhealthyInstanceID] = &instance
 
 			return ringDesc, true, nil
 		}))

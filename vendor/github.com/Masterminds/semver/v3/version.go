@@ -55,14 +55,16 @@ func init() {
 	versionRegex = regexp.MustCompile("^" + semVerRegex + "$")
 }
 
-const num string = "0123456789"
-const allowed string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-" + num
+const (
+	num     string = "0123456789"
+	allowed string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-" + num
+)
 
 // StrictNewVersion parses a given version and returns an instance of Version or
 // an error if unable to parse the version. Only parses valid semantic versions.
 // Performs checking that can find errors within the version.
-// If you want to coerce a version, such as 1 or 1.2, and perse that as the 1.x
-// releases of semver provided use the NewSemver() function.
+// If you want to coerce a version such as 1 or 1.2 and parse it as the 1.x
+// releases of semver did, use the NewVersion() function.
 func StrictNewVersion(v string) (*Version, error) {
 	// Parsing here does not use RegEx in order to increase performance and reduce
 	// allocations.
@@ -81,22 +83,23 @@ func StrictNewVersion(v string) (*Version, error) {
 		original: v,
 	}
 
-	// check for prerelease or build metadata
-	var extra []string
-	if strings.ContainsAny(parts[2], "-+") {
-		// Start with the build metadata first as it needs to be on the right
-		extra = strings.SplitN(parts[2], "+", 2)
-		if len(extra) > 1 {
-			// build metadata found
-			sv.metadata = extra[1]
-			parts[2] = extra[0]
+	// Extract build metadata
+	if strings.Contains(parts[2], "+") {
+		extra := strings.SplitN(parts[2], "+", 2)
+		sv.metadata = extra[1]
+		parts[2] = extra[0]
+		if err := validateMetadata(sv.metadata); err != nil {
+			return nil, err
 		}
+	}
 
-		extra = strings.SplitN(parts[2], "-", 2)
-		if len(extra) > 1 {
-			// prerelease found
-			sv.pre = extra[1]
-			parts[2] = extra[0]
+	// Extract build prerelease
+	if strings.Contains(parts[2], "-") {
+		extra := strings.SplitN(parts[2], "-", 2)
+		sv.pre = extra[1]
+		parts[2] = extra[0]
+		if err := validatePrerelease(sv.pre); err != nil {
+			return nil, err
 		}
 	}
 
@@ -112,7 +115,7 @@ func StrictNewVersion(v string) (*Version, error) {
 		}
 	}
 
-	// Extract the major, minor, and patch elements onto the returned Version
+	// Extract major, minor, and patch
 	var err error
 	sv.major, err = strconv.ParseUint(parts[0], 10, 64)
 	if err != nil {
@@ -127,23 +130,6 @@ func StrictNewVersion(v string) (*Version, error) {
 	sv.patch, err = strconv.ParseUint(parts[2], 10, 64)
 	if err != nil {
 		return nil, err
-	}
-
-	// No prerelease or build metadata found so returning now as a fastpath.
-	if sv.pre == "" && sv.metadata == "" {
-		return sv, nil
-	}
-
-	if sv.pre != "" {
-		if err = validatePrerelease(sv.pre); err != nil {
-			return nil, err
-		}
-	}
-
-	if sv.metadata != "" {
-		if err = validateMetadata(sv.metadata); err != nil {
-			return nil, err
-		}
 	}
 
 	return sv, nil
@@ -207,6 +193,23 @@ func NewVersion(v string) (*Version, error) {
 	return sv, nil
 }
 
+// New creates a new instance of Version with each of the parts passed in as
+// arguments instead of parsing a version string.
+func New(major, minor, patch uint64, pre, metadata string) *Version {
+	v := Version{
+		major:    major,
+		minor:    minor,
+		patch:    patch,
+		pre:      pre,
+		metadata: metadata,
+		original: "",
+	}
+
+	v.original = v.String()
+
+	return &v
+}
+
 // MustParse parses a given version and panics on error.
 func MustParse(v string) *Version {
 	sv, err := NewVersion(v)
@@ -267,7 +270,6 @@ func (v Version) Metadata() string {
 
 // originalVPrefix returns the original 'v' prefix if any.
 func (v Version) originalVPrefix() string {
-
 	// Note, only lowercase v is supported as a prefix by the parser.
 	if v.original != "" && v.original[:1] == "v" {
 		return v.original[:1]
@@ -363,15 +365,31 @@ func (v *Version) LessThan(o *Version) bool {
 	return v.Compare(o) < 0
 }
 
+// LessThanEqual tests if one version is less or equal than another one.
+func (v *Version) LessThanEqual(o *Version) bool {
+	return v.Compare(o) <= 0
+}
+
 // GreaterThan tests if one version is greater than another one.
 func (v *Version) GreaterThan(o *Version) bool {
 	return v.Compare(o) > 0
+}
+
+// GreaterThanEqual tests if one version is greater or equal than another one.
+func (v *Version) GreaterThanEqual(o *Version) bool {
+	return v.Compare(o) >= 0
 }
 
 // Equal tests if two versions are equal to each other.
 // Note, versions can be equal with different metadata since metadata
 // is not considered part of the comparable version.
 func (v *Version) Equal(o *Version) bool {
+	if v == o {
+		return true
+	}
+	if v == nil || o == nil {
+		return false
+	}
 	return v.Compare(o) == 0
 }
 
@@ -436,6 +454,23 @@ func (v Version) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v.String())
 }
 
+// UnmarshalText implements the encoding.TextUnmarshaler interface.
+func (v *Version) UnmarshalText(text []byte) error {
+	temp, err := NewVersion(string(text))
+	if err != nil {
+		return err
+	}
+
+	*v = *temp
+
+	return nil
+}
+
+// MarshalText implements the encoding.TextMarshaler interface.
+func (v Version) MarshalText() ([]byte, error) {
+	return []byte(v.String()), nil
+}
+
 // Scan implements the SQL.Scanner interface.
 func (v *Version) Scan(value interface{}) error {
 	var s string
@@ -470,7 +505,6 @@ func compareSegment(v, o uint64) int {
 }
 
 func comparePrerelease(v, o string) int {
-
 	// split the prelease versions by their part. The separator, per the spec,
 	// is a .
 	sparts := strings.Split(v, ".")
@@ -562,7 +596,6 @@ func comparePrePart(s, o string) int {
 		return 1
 	}
 	return -1
-
 }
 
 // Like strings.ContainsAny but does an only instead of any.
