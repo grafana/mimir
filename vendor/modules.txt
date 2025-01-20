@@ -149,7 +149,7 @@ github.com/asaskevich/govalidator
 # github.com/at-wat/mqtt-go v0.19.4
 ## explicit; go 1.18
 github.com/at-wat/mqtt-go
-# github.com/aws/aws-sdk-go v1.55.5
+# github.com/aws/aws-sdk-go v1.55.6
 ## explicit; go 1.19
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/arn
