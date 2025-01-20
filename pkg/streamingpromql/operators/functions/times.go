@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
@@ -11,7 +12,6 @@ import (
 )
 
 type ScalarTime struct {
-	Value                    float64
 	ts                       time.Time
 	TimeRange                types.QueryTimeRange
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
@@ -45,7 +45,7 @@ func (s *ScalarTime) GetValues(_ context.Context) (types.ScalarData, error) {
 	for step := 0; step < s.TimeRange.StepCount; step++ {
 		t := s.TimeRange.StartT + int64(step)*s.TimeRange.IntervalMilliseconds
 		samples[step].T = t
-		samples[step].F = float64(t)
+		samples[step].F = float64(t) / 1000
 	}
 
 	return types.ScalarData{Samples: samples}, nil
@@ -59,84 +59,59 @@ func (s *ScalarTime) Close() {
 	// Nothing to do.
 }
 
-type WrapperTime struct {
-	WrapperFunc              func(time time.Time) float64
-	Value                    float64
-	ts                       time.Time
-	TimeRange                types.QueryTimeRange
-	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
-
-	expressionPosition posrange.PositionRange
-}
-
-func NewWrapperTime(
-	wrapperFunc func(time time.Time) float64,
-	timeRange types.QueryTimeRange,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	expressionPosition posrange.PositionRange,
-) *WrapperTime {
-	return &WrapperTime{
-		WrapperFunc:              wrapperFunc,
-		TimeRange:                timeRange,
-		MemoryConsumptionTracker: memoryConsumptionTracker,
-		expressionPosition:       expressionPosition,
-	}
-}
-
-func (s *WrapperTime) GetValues(_ context.Context) (types.ScalarData, error) {
-	samples, err := types.FPointSlicePool.Get(s.TimeRange.StepCount, s.MemoryConsumptionTracker)
-
-	if err != nil {
-		return types.ScalarData{}, err
-	}
-
-	samples = samples[:s.TimeRange.StepCount]
-
-	for step := 0; step < s.TimeRange.StepCount; step++ {
-		t := s.TimeRange.StartT + int64(step)*s.TimeRange.IntervalMilliseconds
-		samples[step].T = t
-		samples[step].F = s.WrapperFunc(time.Unix(int64(t), 0).UTC())
-	}
-
-	return types.ScalarData{Samples: samples}, nil
-}
-
-func (s *WrapperTime) ExpressionPosition() posrange.PositionRange {
-	return s.expressionPosition
-}
-
-func (s *WrapperTime) Close() {
-	// Nothing to do.
-}
-
-var DaysInMonth = func(t time.Time) float64 {
+var DaysInMonth = timeWrapperFunc(func(t time.Time) float64 {
 	return float64(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
-}
+})
 
-var DayOfMonth = func(t time.Time) float64 {
+var DayOfMonth = timeWrapperFunc(func(t time.Time) float64 {
 	return float64(t.Day())
-}
+})
 
-var DayOfWeek = func(t time.Time) float64 {
+var DayOfWeek = timeWrapperFunc(func(t time.Time) float64 {
 	return float64(t.Weekday())
-}
+})
 
-var DayOfYear = func(t time.Time) float64 {
+var DayOfYear = timeWrapperFunc(func(t time.Time) float64 {
 	return float64(t.YearDay())
-}
+})
 
-var Hour = func(t time.Time) float64 {
+var Hour = timeWrapperFunc(func(t time.Time) float64 {
 	return float64(t.Hour())
-}
+})
 
-var Minute = func(t time.Time) float64 {
+var Minute = timeWrapperFunc(func(t time.Time) float64 {
 	return float64(t.Minute())
-}
+})
 
-var Month = func(t time.Time) float64 {
-	return float64(t.Minute())
-}
+var Month = timeWrapperFunc(func(t time.Time) float64 {
+	return float64(t.Month())
+})
 
-var Year = func(t time.Time) float64 {
+var Year = timeWrapperFunc(func(t time.Time) float64 {
 	return float64(t.Year())
+})
+
+func timeWrapperFunc(f func(t time.Time) float64) InstantVectorSeriesFunction {
+	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, tr types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+		if len(seriesData.Floats)+len(seriesData.Histograms) == 0 {
+			fp := promql.FPoint{
+				F: f(time.Unix(tr.StartT, 0).UTC()),
+			}
+			seriesData.Floats = append(seriesData.Floats, fp)
+			return seriesData, nil
+		}
+
+		if len(seriesData.Floats) > 0 {
+			for i := range seriesData.Floats {
+				t := time.Unix(int64(seriesData.Floats[i].F), 0).UTC()
+				seriesData.Floats[i].F = f(t)
+			}
+			return seriesData, nil
+		}
+
+		// we don't do time based function on histograms
+		types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
+		seriesData.Histograms = nil
+		return seriesData, nil
+	}
 }
