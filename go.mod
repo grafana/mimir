@@ -59,7 +59,7 @@ require (
 	cloud.google.com/go/storage v1.43.0
 	github.com/alecthomas/chroma/v2 v2.15.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
-	github.com/aws/aws-sdk-go v1.55.5
+	github.com/aws/aws-sdk-go v1.55.6
 	github.com/dennwc/varint v1.0.0
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/google/go-cmp v0.6.0
