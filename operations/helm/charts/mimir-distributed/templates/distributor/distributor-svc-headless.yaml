@@ -10,7 +10,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
   annotations:
-    {{- toYaml .Values.distributor.service.annotations | nindent 4 }}
+    {{- toYaml .Values.distributor.service.headlessAnnotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
   type: ClusterIP
