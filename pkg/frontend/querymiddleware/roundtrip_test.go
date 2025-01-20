@@ -42,6 +42,7 @@ import (
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util/testkafka"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestTripperware_RangeQuery(t *testing.T) {
@@ -491,6 +492,94 @@ func TestTripperware_Metrics(t *testing.T) {
 				"cortex_query_frontend_non_step_aligned_queries_total",
 				"cortex_query_frontend_queries_total",
 			))
+		})
+	}
+}
+
+func TestTripperware_BlockedRequests(t *testing.T) {
+
+	s := httptest.NewServer(
+		middleware.AuthenticateUser.Wrap(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte("bar"))
+			}),
+		),
+	)
+	defer s.Close()
+
+	u, err := url.Parse(s.URL)
+	require.NoError(t, err)
+
+	downstream := singleHostRoundTripper{
+		host: u.Host,
+		next: http.DefaultTransport,
+	}
+
+	tw, err := NewTripperware(
+		Config{},
+		log.NewNopLogger(),
+		multiTenantMockLimits{
+			byTenant: map[string]mockLimits{
+				"user-1": {
+					blockedRequests: []*validation.BlockedRequest{
+						{
+							Path: "/api/v1/series",
+							QueryParams: map[string]string{
+								"match[]": "{my_env=\"production\"}",
+							},
+						},
+					},
+				},
+			},
+		},
+		newTestPrometheusCodec(),
+		nil,
+		promql.EngineOpts{
+			Logger:     promslog.NewNopLogger(),
+			Reg:        nil,
+			MaxSamples: 1000,
+			Timeout:    time.Minute,
+		},
+		true,
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	badQuery := url.Values{
+		"match[]": []string{"{my_env=\"production\"}"},
+	}
+
+	for i, tc := range []struct {
+		path, expectedBody string
+		expectError        error
+	}{
+		{"/api/v1/series", "bar", nil},
+		// Block due to match[] param
+		{"/api/v1/series?" + badQuery.Encode(), "", newRequestBlockedError()},
+	} {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			req, err := http.NewRequest("GET", tc.path, http.NoBody)
+			require.NoError(t, err)
+
+			ctx := user.InjectOrgID(context.Background(), "user-1")
+			req = req.WithContext(ctx)
+			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
+
+			resp, err := tw(downstream).RoundTrip(req)
+			if tc.expectError != nil {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Equal(t, 200, resp.StatusCode)
+
+			bs, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedBody, string(bs))
 		})
 	}
 }
