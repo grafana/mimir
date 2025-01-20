@@ -4329,6 +4329,16 @@
         },
         {
           "kind": "field",
+          "name": "blocked_requests",
+          "required": false,
+          "desc": "List of http requests to block.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "blocked_requests_config...",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "align_queries_with_step",
           "required": false,
           "desc": "Mutate incoming queries to align their start and end with their step to improve result caching.",

@@ -2550,6 +2550,19 @@ How to **fix** it:
 
 This error only occurs when an administrator has explicitly define a blocked list for a given tenant. After assessing whether or not the reason for blocking one or multiple queries you can update the tenant's limits and remove the pattern.
 
+### err-mimir-request-blocked
+
+This error occurs when a query-frontend blocks a HTTP request because the request matches at least one of the rules defined in the limits.
+
+How it **works**:
+
+- The query-frontend implements a checker responsible for assessing whether the request is blocked or not.
+- To configure the limit, set the block `blocked_requests` in the `limits`.
+
+How to **fix** it:
+
+This error only occurs when an administrator has explicitly define a blocked list for a given tenant. After assessing whether or not the reason for blocking one or multiple requests you can update the tenant's limits and remove the configuration.
+
 ### err-mimir-alertmanager-max-grafana-config-size
 
 This non-critical error occurs when the Alertmanager receives a Grafana Alertmanager configuration larger than the configured size limit.
