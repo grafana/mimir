@@ -85,6 +85,17 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *defaultHaTra
 	})
 }
 
+func waitForHaTrackerCacheEntryRemoval(t require.TestingT, tracker *defaultHaTracker, user string, cluster string, duration time.Duration, tick time.Duration) bool {
+	condition := assert.Eventually(t, func() bool {
+		tracker.electedLock.RLock()
+		defer tracker.electedLock.RUnlock()
+
+		info := tracker.clusters[user][cluster]
+		return info == nil
+	}, duration, tick)
+	return condition
+}
+
 func merge(r1, r2 *ReplicaDesc) (*ReplicaDesc, *ReplicaDesc) {
 	change, err := r1.Merge(r2, false)
 	if err != nil {
@@ -323,11 +334,12 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 	var config memberlist.KVConfig
 
 	const (
-		cluster         = "cluster"
-		replica1        = "r1"
-		replica2        = "r2"
-		updateTimeout   = time.Millisecond * 100
-		failoverTimeout = 2 * time.Millisecond
+		cluster                  = "cluster"
+		replica1                 = "r1"
+		replica2                 = "r2"
+		updateTimeout            = time.Millisecond * 100
+		failoverTimeout          = 2 * time.Millisecond
+		failoverTimeoutPlus100ms = failoverTimeout + 100*time.Millisecond
 	)
 
 	flagext.DefaultValues(&config)
@@ -381,11 +393,17 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 		d.DeletedAt = timestamp.FromTime(time.Now())
 		return d, true, nil
 	})
+
+	condition := waitForHaTrackerCacheEntryRemoval(t, tracker, "user", cluster, 2*time.Second, 50*time.Millisecond)
+	require.True(t, condition)
+
+	now = now.Add(failoverTimeoutPlus100ms)
+	// check replica2
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
 	assert.NoError(t, err)
 
-	receivedAt := timestamp.FromTime(now.Add(100 * time.Millisecond))
-	err = tracker.updateKVStore(context.Background(), "user", cluster, replica2, now, receivedAt)
-	assert.NoError(t, err)
+	// check replica1
+	assert.ErrorAs(t, tracker.checkReplica(context.Background(), "user", cluster, replica1, now), &replicasDidNotMatchError{})
 }
 
 func TestHATrackerCacheSyncOnStart(t *testing.T) {
