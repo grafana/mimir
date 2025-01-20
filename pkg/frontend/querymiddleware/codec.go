@@ -133,6 +133,8 @@ type MetricsQueryRequest interface {
 	// GetHints returns hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	GetHints() *Hints
+	// GetLookbackDelta returns the lookback delta for the request.
+	GetLookbackDelta() time.Duration
 	// WithID clones the current request with the provided ID.
 	WithID(id int64) (MetricsQueryRequest, error)
 	// WithStartEnd clone the current request with different start and end timestamp.
