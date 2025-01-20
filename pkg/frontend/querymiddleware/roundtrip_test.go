@@ -497,11 +497,11 @@ func TestTripperware_Metrics(t *testing.T) {
 }
 
 func TestTripperware_BlockedRequests(t *testing.T) {
-
 	s := httptest.NewServer(
 		middleware.AuthenticateUser.Wrap(
-			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte("bar"))
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, err := w.Write([]byte("bar"))
+				require.NoError(t, err)
 			}),
 		),
 	)
