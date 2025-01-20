@@ -4,6 +4,8 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/go-kit/log"
@@ -84,4 +86,10 @@ func (qb *queryBlockerMiddleware) isBlocked(tenant string, req MetricsQueryReque
 		}
 	}
 	return false
+}
+
+type BlockEverythingRoundTripper struct{}
+
+func (rt BlockEverythingRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	return nil, errors.New("the API endpoint is currently blocked")
 }

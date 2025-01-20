@@ -310,6 +310,9 @@ func newQueryTripperware(
 		series = NewLabelsQueryRequestValidationRoundTripper(codec, series)
 		cardinality = NewCardinalityQueryRequestValidationRoundTripper(cardinality)
 
+		// HACK: block /series endpoint
+		series = BlockEverythingRoundTripper{}
+
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
 			case IsRangeQuery(r.URL.Path):
