@@ -38,6 +38,7 @@
 * [BUGFIX] MQE: Fix <aggr_over_time> functions with histograms #10400
 * [BUGFIX] Distributor: return HTTP status 415 Unsupported Media Type instead of 200 Success for Remote Write 2.0 until we support it. #10423
 * [BUGFIX] Query-frontend: Add flag `-query-frontend.prom2-range-compat` and corresponding YAML to rewrite queries with ranges that worked in Prometheus 2 but are invalid in Prometheus 3. #10445 #10461
+* [BUGFIX] Distributor: Fix edge case at the ha-tracker with memberlist as KVStore, where a replica in the KVStore is marked as deleted but not yet removed, it would fail to update the KVStore. #10443
 
 ### Mixin
 

@@ -282,7 +282,6 @@ func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 			Help: "Number of elected replicas that failed to be marked for deletion, or deleted.",
 		}),
 	}
-
 	client, err := kv.NewClient(
 		cfg.KVStore,
 		GetReplicaDescCodec(),
@@ -637,8 +636,8 @@ func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, r
 			if desc == nil && electedAtTime == 0 {
 				electedAtTime = timestamp.FromTime(now)
 			} else if desc != nil && desc.DeletedAt > 0 {
-				// if we receive a ReplicaDesc that have been marked as deleted but not deleted from the kvStore yet,
-				// we need to set the value to electedAtTime, otherwise it's going be zero 0
+				//If a ReplicaDesc is marked as deleted but not yet removed from the kvStore, set its value to
+				//electedAtTime to avoid it being zero.
 				electedAtTime = timestamp.FromTime(now)
 			}
 		}

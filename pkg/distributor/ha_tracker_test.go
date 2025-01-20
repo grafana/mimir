@@ -319,6 +319,75 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateIsNotFailing(t *testing.T) {
+	var config memberlist.KVConfig
+
+	const (
+		cluster         = "cluster"
+		replica1        = "r1"
+		replica2        = "r2"
+		updateTimeout   = time.Millisecond * 100
+		failoverTimeout = 2 * time.Millisecond
+	)
+
+	flagext.DefaultValues(&config)
+	ctx := context.Background()
+
+	config.Codecs = []codec.Codec{
+		GetReplicaDescCodec(),
+	}
+
+	memberListSvc := memberlist.NewKVInitService(
+		&config,
+		log.NewNopLogger(),
+		&dnsProviderMock{},
+		prometheus.NewPedanticRegistry(),
+	)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, memberListSvc))
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, memberListSvc))
+	})
+
+	tracker, err := newHaTracker(HATrackerConfig{
+		EnableHATracker: true,
+		KVStore: kv.Config{Store: "memberlist", StoreConfig: kv.StoreConfig{
+			MemberlistKV: memberListSvc.GetMemberlistKV,
+		}},
+		UpdateTimeout:          updateTimeout,
+		UpdateTimeoutJitterMax: 0,
+		FailoverTimeout:        failoverTimeout,
+	}, trackerLimits{maxClusters: 100}, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, tracker))
+
+	t.Cleanup(func() {
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, tracker))
+	})
+
+	now := time.Now()
+
+	// Write the first time.
+	err = tracker.checkReplica(context.Background(), "user", cluster, replica1, now)
+	assert.NoError(t, err)
+
+	key := fmt.Sprintf("%s/%s", "user", cluster)
+
+	// Mark the ReplicaDesc as deleted in the KVStore, which will also remove it from the tracker cache.
+	err = tracker.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
+		d, ok := in.(*ReplicaDesc)
+		if !ok || d == nil {
+			return nil, false, nil
+		}
+		d.DeletedAt = timestamp.FromTime(time.Now())
+		return d, true, nil
+	})
+	assert.NoError(t, err)
+
+	receivedAt := timestamp.FromTime(now.Add(100 * time.Millisecond))
+	err = tracker.updateKVStore(context.Background(), "user", cluster, replica2, now, receivedAt)
+	assert.NoError(t, err)
+}
+
 func TestHATrackerCacheSyncOnStart(t *testing.T) {
 	const cluster = "c1"
 	const replicaOne = "r1"
