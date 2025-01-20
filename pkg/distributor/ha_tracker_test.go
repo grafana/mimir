@@ -335,6 +335,7 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 
 	const (
 		cluster                  = "cluster"
+		tenant                   = "tenant"
 		replica1                 = "r1"
 		replica2                 = "r2"
 		updateTimeout            = time.Millisecond * 100
@@ -379,10 +380,10 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 	now := time.Now()
 
 	// Write the first time.
-	err = tracker.checkReplica(context.Background(), "user", cluster, replica1, now)
+	err = tracker.checkReplica(context.Background(), tenant, cluster, replica1, now)
 	assert.NoError(t, err)
 
-	key := fmt.Sprintf("%s/%s", "user", cluster)
+	key := fmt.Sprintf("%s/%s", tenant, cluster)
 
 	// Mark the ReplicaDesc as deleted in the KVStore, which will also remove it from the tracker cache.
 	err = tracker.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -393,17 +394,18 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 		d.DeletedAt = timestamp.FromTime(time.Now())
 		return d, true, nil
 	})
+	require.NoError(t, err)
 
-	condition := waitForHaTrackerCacheEntryRemoval(t, tracker, "user", cluster, 2*time.Second, 50*time.Millisecond)
+	condition := waitForHaTrackerCacheEntryRemoval(t, tracker, tenant, cluster, 2*time.Second, 50*time.Millisecond)
 	require.True(t, condition)
 
 	now = now.Add(failoverTimeoutPlus100ms)
 	// check replica2
-	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
+	err = tracker.checkReplica(context.Background(), tenant, cluster, replica2, now)
 	assert.NoError(t, err)
 
 	// check replica1
-	assert.ErrorAs(t, tracker.checkReplica(context.Background(), "user", cluster, replica1, now), &replicasDidNotMatchError{})
+	assert.ErrorAs(t, tracker.checkReplica(context.Background(), tenant, cluster, replica1, now), &replicasDidNotMatchError{})
 }
 
 func TestHATrackerCacheSyncOnStart(t *testing.T) {

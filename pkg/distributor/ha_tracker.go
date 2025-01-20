@@ -634,8 +634,9 @@ func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, r
 			}
 		} else {
 			if desc == nil || (desc.DeletedAt > 0) {
-				// If the ReplicaDesc is nil or marked as deleted but not yet removed from the kvStore, set its value to electedAtTime to avoid it being zero.
-				// This ensures the replica is elected to "revive" the cluster entry after the previous one was deleted.
+				// if there is no desc in the kvStore , or if the entry in kvStore is marked as deleted but not yet removed,
+				// set the electedAtTime to avoid being zero
+				// The second part, (desc.DeletedAt > 0), ensures the replica is elected to "revive" the cluster entry after the previous one was deleted.
 				electedAtTime = timestamp.FromTime(now)
 			}
 		}
