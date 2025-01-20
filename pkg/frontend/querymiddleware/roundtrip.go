@@ -325,6 +325,8 @@ func newQueryTripperware(
 			case IsLabelsQuery(r.URL.Path):
 				return labels.RoundTrip(r)
 			case IsSeriesQuery(r.URL.Path):
+				// Temporarily blocking
+				return nil, errors.New("series queries are temporarily blocked")
 				return series.RoundTrip(r)
 			case IsRemoteReadQuery(r.URL.Path):
 				return remoteRead.RoundTrip(r)
@@ -352,22 +354,18 @@ func newQueryMiddlewares(
 	metrics := newInstrumentMiddlewareMetrics(registerer)
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
-	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log)
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
-		queryBlockerMiddleware,
-	)
+		queryBlockerMiddleware)
 
 	queryRangeMiddleware = append(queryRangeMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
-		newInstrumentMiddleware("prom2_compat", metrics),
-		prom2CompatMiddleware,
 		newInstrumentMiddleware("step_align", metrics),
 		newStepAlignMiddleware(limits, log, registerer),
 	)
@@ -403,8 +401,6 @@ func newQueryMiddlewares(
 		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
-		newInstrumentMiddleware("prom2_compat", metrics),
-		prom2CompatMiddleware,
 	)
 
 	// Inject the extra middlewares provided by the user before the query pruning and query sharding middleware.
