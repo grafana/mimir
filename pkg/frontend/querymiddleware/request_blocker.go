@@ -4,6 +4,7 @@ package querymiddleware
 
 import (
 	"net/http"
+	"regexp"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -62,8 +63,19 @@ func (rb *requestBlocker) isBlocked(r *http.Request) error {
 			if blockedParams := blockedRequest.QueryParams; len(blockedParams) > 0 {
 				query := r.URL.Query()
 				blockedByParams := false
-				for key, blockedValue := range blockedParams {
-					if query.Get(key) == blockedValue {
+				for key, blocked := range blockedParams {
+					if blocked.IsRegexp {
+						blockedRegexp, err := regexp.Compile(blocked.Value)
+						if err != nil {
+							level.Error(rb.logger).Log("msg", "failed to compile regexp. Not blocking", "regexp", blocked.Value, "err", err)
+							continue
+						}
+
+						if blockedRegexp.MatchString(query.Get(key)) {
+							blockedByParams = true
+							break
+						}
+					} else if query.Get(key) == blocked.Value {
 						blockedByParams = true
 						break
 					}

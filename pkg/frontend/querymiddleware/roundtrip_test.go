@@ -524,8 +524,8 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 					blockedRequests: []*validation.BlockedRequest{
 						{
 							Path: "/api/v1/series",
-							QueryParams: map[string]string{
-								"match[]": "{my_env=\"production\"}",
+							QueryParams: map[string]validation.BlockedRequestQueryParam{
+								"match[]": {Value: ".*\"production\".*", IsRegexp: true},
 							},
 						},
 					},

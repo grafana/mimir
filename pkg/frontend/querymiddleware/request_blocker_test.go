@@ -25,8 +25,19 @@ func TestRequestBlocker_IsBlocked(t *testing.T) {
 				blockedRequests: []*validation.BlockedRequest{
 					{Path: "/blocked-by-path"},
 					{Method: "POST"},
-					{QueryParams: map[string]string{"foo": "bar"}},
-					{Path: "/blocked-by-path2", Method: "GET", QueryParams: map[string]string{"foo": "bar2"}},
+					{QueryParams: map[string]validation.BlockedRequestQueryParam{"foo": validation.BlockedRequestQueryParam{Value: "bar"}}},
+					{
+						Path: "/blocked-by-path2", Method: "GET",
+						QueryParams: map[string]validation.BlockedRequestQueryParam{"foo": validation.BlockedRequestQueryParam{Value: "bar2"}},
+					},
+					{
+						Path: "/block-by-query-regexp", Method: "GET",
+						QueryParams: map[string]validation.BlockedRequestQueryParam{"foo": validation.BlockedRequestQueryParam{Value: ".*hello.*", IsRegexp: true}},
+					},
+					// Invalid regexp should not block anything.
+					{
+						QueryParams: map[string]validation.BlockedRequestQueryParam{"foo": validation.BlockedRequestQueryParam{Value: "\bar", IsRegexp: true}},
+					},
 				},
 			},
 		},
@@ -108,6 +119,24 @@ func TestRequestBlocker_IsBlocked(t *testing.T) {
 				return req
 			},
 			expected: nil,
+		},
+		{
+			name: "regexp does not match",
+			request: func() *http.Request {
+				req, err := http.NewRequest(http.MethodGet, "/block-by-query-regexp?foo=test", nil)
+				require.NoError(t, err)
+				return req
+			},
+			expected: nil,
+		},
+		{
+			name: "regexp matches",
+			request: func() *http.Request {
+				req, err := http.NewRequest(http.MethodGet, "/block-by-query-regexp?foo=my-value-hello-test", nil)
+				require.NoError(t, err)
+				return req
+			},
+			expected: newRequestBlockedError(),
 		},
 	}
 
