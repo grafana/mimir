@@ -5,7 +5,6 @@ package streamingpromql
 import (
 	"fmt"
 	"math"
-	//"time"
 
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
