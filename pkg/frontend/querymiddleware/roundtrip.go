@@ -257,6 +257,7 @@ func newQueryTripperware(
 	}
 
 	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, registerer)
+	requestBlocker := newRequestBlocker(limits, log, registerer)
 
 	return func(next http.RoundTripper) http.RoundTripper {
 		// IMPORTANT: roundtrippers are executed in *reverse* order because they are wrappers.
@@ -311,6 +312,10 @@ func newQueryTripperware(
 		cardinality = NewCardinalityQueryRequestValidationRoundTripper(cardinality)
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if err := requestBlocker.isBlocked(r); err != nil {
+				return nil, err
+			}
+
 			switch {
 			case IsRangeQuery(r.URL.Path):
 				return queryrange.RoundTrip(r)

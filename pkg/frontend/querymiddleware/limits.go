@@ -105,6 +105,9 @@ type Limits interface {
 	// BlockedQueries returns the blocked queries.
 	BlockedQueries(userID string) []*validation.BlockedQuery
 
+	// BlockedRequests returns the blocked http requests.
+	BlockedRequests(userID string) []*validation.BlockedRequest
+
 	// AlignQueriesWithStep returns if queries should be adjusted to be step-aligned
 	AlignQueriesWithStep(userID string) bool
 
