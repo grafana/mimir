@@ -25,18 +25,20 @@ func TestRequestBlocker_IsBlocked(t *testing.T) {
 				blockedRequests: []*validation.BlockedRequest{
 					{Path: "/blocked-by-path"},
 					{Method: "POST"},
-					{QueryParams: map[string]validation.BlockedRequestQueryParam{"foo": validation.BlockedRequestQueryParam{Value: "bar"}}},
+					{
+						QueryParams: map[string]validation.BlockedRequestQueryParam{"foo": {Value: "bar"}},
+					},
 					{
 						Path: "/blocked-by-path2", Method: "GET",
-						QueryParams: map[string]validation.BlockedRequestQueryParam{"foo": validation.BlockedRequestQueryParam{Value: "bar2"}},
+						QueryParams: map[string]validation.BlockedRequestQueryParam{"foo": {Value: "bar2"}},
 					},
 					{
 						Path: "/block-by-query-regexp", Method: "GET",
-						QueryParams: map[string]validation.BlockedRequestQueryParam{"foo": validation.BlockedRequestQueryParam{Value: ".*hello.*", IsRegexp: true}},
+						QueryParams: map[string]validation.BlockedRequestQueryParam{"foo": {Value: ".*hello.*", IsRegexp: true}},
 					},
 					// Invalid regexp should not block anything.
 					{
-						QueryParams: map[string]validation.BlockedRequestQueryParam{"foo": validation.BlockedRequestQueryParam{Value: "\bar", IsRegexp: true}},
+						QueryParams: map[string]validation.BlockedRequestQueryParam{"foo": {Value: "\bar", IsRegexp: true}},
 					},
 				},
 			},
