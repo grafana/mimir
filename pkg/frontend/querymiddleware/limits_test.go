@@ -601,6 +601,10 @@ func (m multiTenantMockLimits) IngestStorageReadConsistency(userID string) strin
 	return m.byTenant[userID].ingestStorageReadConsistency
 }
 
+func (m multiTenantMockLimits) BlockedRequests(userID string) []*validation.BlockedRequest {
+	return m.byTenant[userID].blockedRequests
+}
+
 type mockLimits struct {
 	maxQueryLookback                     time.Duration
 	maxQueryLength                       time.Duration
@@ -626,6 +630,7 @@ type mockLimits struct {
 	enabledPromQLExperimentalFunctions   []string
 	prom2RangeCompat                     bool
 	blockedQueries                       []*validation.BlockedQuery
+	blockedRequests                      []*validation.BlockedRequest
 	alignQueriesWithStep                 bool
 	queryIngestersWithin                 time.Duration
 	ingestStorageReadConsistency         string
@@ -739,6 +744,10 @@ func (m mockLimits) QueryIngestersWithin(string) time.Duration {
 
 func (m mockLimits) IngestStorageReadConsistency(string) string {
 	return m.ingestStorageReadConsistency
+}
+
+func (m mockLimits) BlockedRequests(string) []*validation.BlockedRequest {
+	return m.blockedRequests
 }
 
 type mockHandler struct {
