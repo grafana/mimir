@@ -208,6 +208,10 @@ func TestCases(metricSizes []int) []BenchCase {
 		//{
 		//	Expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
 		//},
+		{
+			Expr:             "sort(a_X)",
+			InstantQueryOnly: true,
+		},
 		// Simple aggregations.
 		{
 			Expr: "sum(a_X)",
