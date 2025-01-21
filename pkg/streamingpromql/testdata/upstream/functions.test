@@ -1129,11 +1129,11 @@ eval instant at 0m month()
 eval instant at 0m month(vector(1136239445))
   {} 1
 
-#eval instant at 0m day_of_month()
-#  {} 1
-#
-#eval instant at 0m day_of_month(vector(1136239445))
-#  {} 2
+eval instant at 0m day_of_month()
+  {} 1
+
+eval instant at 0m day_of_month(vector(1136239445))
+  {} 2
 
 eval instant at 0m day_of_year()
   {} 1
