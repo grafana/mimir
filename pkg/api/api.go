@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
@@ -256,6 +257,7 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc, userL
 
 const PrometheusPushEndpoint = "/api/v1/push"
 const OTLPPushEndpoint = "/otlp/v1/metrics"
+const InfluxPushEndpoint = "/api/v1/influx/push"
 
 // RegisterDistributor registers the endpoints associated with the distributor.
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer, limits *validation.Overrides) {
@@ -265,9 +267,17 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		pushConfig.MaxRecvMsgSize, d.RequestBufferPool, a.sourceIPs, a.cfg.SkipLabelNameValidationHeader,
 		a.cfg.SkipLabelCountValidationHeader, limits, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
 	), true, false, "POST")
+
+	if pushConfig.EnableInfluxEndpoint {
+		// The Influx Push endpoint is experimental.
+		a.RegisterRoute(InfluxPushEndpoint, distributor.InfluxHandler(
+			pushConfig.MaxInfluxRequestSize, d.RequestBufferPool, a.sourceIPs, pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, a.logger,
+		), true, false, "POST")
+	}
+
 	a.RegisterRoute(OTLPPushEndpoint, distributor.OTLPHandler(
 		pushConfig.MaxOTLPRequestSize, d.RequestBufferPool, a.sourceIPs, limits, pushConfig.OTelResourceAttributePromotionConfig,
-		pushConfig.RetryConfig, d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
+		pushConfig.RetryConfig, pushConfig.EnableStartTimeQuietZero, d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
 	), true, false, "POST")
 
 	a.indexPage.AddLinks(defaultWeight, "Distributor", []IndexPageLink{
@@ -279,6 +289,11 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 	a.RegisterRoute("/distributor/ring", d, false, true, "GET", "POST")
 	a.RegisterRoute("/distributor/all_user_stats", http.HandlerFunc(d.AllUserStatsHandler), false, true, "GET")
 	a.RegisterRoute("/distributor/ha_tracker", d.HATracker, false, true, "GET")
+}
+
+// RegisterCostAttribution registers a Prometheus HTTP handler for the cost attribution metrics.
+func (a *API) RegisterCostAttribution(customRegistryPath string, reg *prometheus.Registry) {
+	a.RegisterRoute(customRegistryPath, promhttp.HandlerFor(reg, promhttp.HandlerOpts{}), false, false, "GET")
 }
 
 // Ingester is defined as an interface to allow for alternative implementations

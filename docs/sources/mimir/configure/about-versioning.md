@@ -46,6 +46,19 @@ Experimental configuration and flags are subject to change.
 
 The following features are currently experimental:
 
+- Cost attribution
+  - Configure labels for cost attribution
+    - `-validation.cost-attribution-labels`
+  - Configure cost attribution limits, such as label cardinality and the maximum number of cost attribution labels
+    - `-validation.max-cost-attribution-labels-per-user`
+    - `-validation.max-cost-attribution-cardinality-per-user`
+  - Configure cooldown periods and eviction intervals for cost attribution
+    - `-validation.cost-attribution-cooldown`
+    - `-cost-attribution.eviction-interval`
+  - Configure the metrics endpoint dedicated to cost attribution
+    - `-cost-attribution.registry-path`
+  - Configure the cost attribution cleanup process run interval
+    - `-cost-attribution.cleanup-interval`
 - Alertmanager
   - Enable a set of experimental API endpoints to help support the migration of the Grafana Alertmanager to the Mimir Alertmanager.
     - `-alertmanager.grafana-alertmanager-compatibility-enabled`
@@ -74,6 +87,10 @@ The following features are currently experimental:
   - Cache rule group contents.
     - `-ruler-storage.cache.rule-group-enabled`
 - Distributor
+  - Influx ingestion
+    - `/api/v1/influx/push` endpoint
+    - `-distributor.influx-endpoint-enabled`
+    - `-distributor.max-influx-request-size`
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
   - Using status code 529 instead of 429 upon rate limit exhaustion.

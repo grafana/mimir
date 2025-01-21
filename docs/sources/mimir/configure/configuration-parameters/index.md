@@ -455,6 +455,24 @@ overrides_exporter:
 # (experimental) Enables optimized marshaling of timeseries.
 # CLI flag: -timeseries-unmarshal-caching-optimization-enabled
 [timeseries_unmarshal_caching_optimization_enabled: <boolean> | default = true]
+
+# (experimental) Specifies how often inactive cost attributions for received and
+# discarded sample trackers are evicted from the counter, ensuring they do not
+# contribute to the cost attribution cardinality per user limit. This setting
+# does not apply to active series, which are managed separately.
+# CLI flag: -cost-attribution.eviction-interval
+[cost_attribution_eviction_interval: <duration> | default = 20m]
+
+# (experimental) Defines a custom path for the registry. When specified, Mimir
+# exposes cost attribution metrics through this custom path. If not specified,
+# cost attribution metrics aren't exposed.
+# CLI flag: -cost-attribution.registry-path
+[cost_attribution_registry_path: <string> | default = ""]
+
+# (experimental) Time interval at which the cost attribution cleanup process
+# runs, ensuring inactive cost attribution entries are purged.
+# CLI flag: -cost-attribution.cleanup-interval
+[cost_attribution_cleanup_interval: <duration> | default = 3m]
 ```
 
 ### common
@@ -1238,10 +1256,6 @@ instance_limits:
 # CLI flag: -ingester.read-path-memory-utilization-limit
 [read_path_memory_utilization_limit: <int> | default = 0]
 
-# (experimental) Enable logging of utilization based limiter CPU samples.
-# CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
-[log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
-
 # (advanced) Each error will be logged once in this many times. Use 0 to log all
 # of them.
 # CLI flag: -ingester.error-sample-rate
@@ -1500,10 +1514,31 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-aggregation-operations
   [enable_aggregation_operations: <boolean> | default = true]
 
+  # (experimental) Enable support for binary logical operations in the Mimir
+  # query engine. Only applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-binary-logical-operations
+  [enable_binary_logical_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for one-to-many and many-to-one binary
+  # operations (group_left/group_right) in the Mimir query engine. Only applies
+  # if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations
+  [enable_one_to_many_and_many_to_one_binary_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for scalars in the Mimir query engine. Only
+  # applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-scalars
+  [enable_scalars: <boolean> | default = true]
+
   # (experimental) Enable support for binary comparison operations between two
-  # vectors in the Mimir query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
-  [enable_vector_vector_binary_comparison_operations: <boolean> | default = true]
+  # scalars in the Mimir query engine. Only applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
+  [enable_scalar_scalar_binary_comparison_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for subqueries in the Mimir query engine. Only
+  # applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-subqueries
+  [enable_subqueries: <boolean> | default = true]
 
   # (experimental) Enable support for binary comparison operations between a
   # vector and a scalar in the Mimir query engine. Only applies if the MQE is in
@@ -1512,29 +1547,19 @@ mimir_query_engine:
   [enable_vector_scalar_binary_comparison_operations: <boolean> | default = true]
 
   # (experimental) Enable support for binary comparison operations between two
-  # scalars in the Mimir query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
-  [enable_scalar_scalar_binary_comparison_operations: <boolean> | default = true]
+  # vectors in the Mimir query engine. Only applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
+  [enable_vector_vector_binary_comparison_operations: <boolean> | default = true]
 
-  # (experimental) Enable support for binary logical operations in the Mimir
-  # query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-binary-logical-operations
-  [enable_binary_logical_operations: <boolean> | default = true]
+  # (experimental) Comma-separated list of aggregations to disable support for.
+  # Only applies if MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.disabled-aggregations
+  [disabled_aggregations: <string> | default = ""]
 
-  # (experimental) Enable support for scalars in the Mimir query engine. Only
-  # applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-scalars
-  [enable_scalars: <boolean> | default = true]
-
-  # (experimental) Enable support for subqueries in the Mimir query engine. Only
-  # applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-subqueries
-  [enable_subqueries: <boolean> | default = true]
-
-  # (experimental) Enable support for the histogram_quantile function in the
-  # Mimir query engine. Only applies if the MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.enable-histogram-quantile-function
-  [enable_histogram_quantile_function: <boolean> | default = true]
+  # (experimental) Comma-separated list of function names to disable support
+  # for. Only applies if MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.disabled-functions
+  [disabled_functions: <string> | default = ""]
 ```
 
 ### frontend
@@ -2106,6 +2131,10 @@ query_frontend:
   # values: json, protobuf
   # CLI flag: -ruler.query-frontend.query-result-response-format
   [query_result_response_format: <string> | default = "protobuf"]
+
+  # Maximum number of retries for failed queries per second.
+  # CLI flag: -ruler.query-frontend.max-retries-rate
+  [max_retries_rate: <float> | default = 170]
 
 tenant_federation:
   # Enable rule groups to query against multiple tenants. The tenant IDs
@@ -3348,19 +3377,32 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.ooo-native-histograms-ingestion-enabled
 [ooo_native_histograms_ingestion_enabled: <boolean> | default = false]
 
-# (advanced) Additional custom trackers for active metrics. If there are active
-# series matching a provided matcher (map value), the count will be exposed in
-# the custom trackers metric labeled using the tracker name (map key). Zero
-# valued counts are not exposed (and removed when they go back to zero).
+# (advanced) Custom trackers for active metrics. If there are active series
+# matching a provided matcher (map value), the count is exposed in the custom
+# trackers metric labeled using the tracker name (map key). Zero-valued counts
+# are not exposed and are removed when they go back to zero.
 # Example:
-#   The following configuration will count the active series coming from dev and
-#   prod namespaces for each tenant and label them as {name="dev"} and
+#   The following configuration counts the active series coming from dev and
+#   prod namespaces for each tenant and labels them as {name="dev"} and
 #   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
 #   active_series_custom_trackers:
 #       dev: '{namespace=~"dev-.*"}'
 #       prod: '{namespace=~"prod-.*"}'
 # CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
+
+# (advanced) Additional custom trackers for active metrics merged on top of the
+# base custom trackers. You can use this configuration option to define the base
+# custom trackers globally for all tenants, and then use the additional trackers
+# to add extra trackers on a per-tenant basis.
+# Example:
+#   The following configuration counts the active series coming from dev and
+#   prod namespaces for each tenant and labels them as {name="dev"} and
+#   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
+#   active_series_additional_custom_trackers:
+#       dev: '{namespace=~"dev-.*"}'
+#       prod: '{namespace=~"prod-.*"}'
+[active_series_additional_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
 # (experimental) Non-zero value enables out-of-order support for most recent
 # samples that are within the time window in relation to the TSDB's maximum
@@ -3536,6 +3578,9 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) List of queries to block.
 [blocked_queries: <blocked_queries_config...> | default = ]
 
+# (experimental) List of http requests to block.
+[blocked_requests: <blocked_requests_config...> | default = ]
+
 # Mutate incoming queries to align their start and end with their step to
 # improve result caching.
 # CLI flag: -query-frontend.align-queries-with-step
@@ -3547,6 +3592,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # enable all experimental functions.
 # CLI flag: -query-frontend.enabled-promql-experimental-functions
 [enabled_promql_experimental_functions: <string> | default = ""]
+
+# (experimental) Rewrite queries using the same range selector and resolution
+# [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works
+# with Prometheus 3.0 semantics
+# CLI flag: -query-frontend.prom2-range-compat
+[prom2_range_compat: <boolean> | default = false]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
@@ -3568,6 +3619,31 @@ The `limits` block configures default and per-tenant limits imposed by component
 # series request result shard in bytes. 0 to disable.
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
+
+# (experimental) Defines labels for cost attribution. Applies to metrics like
+# cortex_distributor_received_attributed_samples_total. To disable, set to an
+# empty string. For example, 'team,service' produces metrics such as
+# cortex_distributor_received_attributed_samples_total{team='frontend',
+# service='api'}.
+# CLI flag: -validation.cost-attribution-labels
+[cost_attribution_labels: <string> | default = ""]
+
+# (experimental) Maximum number of cost attribution labels allowed per user, the
+# value is capped at 4.
+# CLI flag: -validation.max-cost-attribution-labels-per-user
+[max_cost_attribution_labels_per_user: <int> | default = 2]
+
+# (experimental) Maximum cardinality of cost attribution labels allowed per
+# user.
+# CLI flag: -validation.max-cost-attribution-cardinality-per-user
+[max_cost_attribution_cardinality_per_user: <int> | default = 10000]
+
+# (experimental) Defines how long cost attribution stays in overflow before
+# attempting a reset, with received/discarded samples extending the cooldown if
+# overflow persists, while active series reset and restart tracking after the
+# cooldown.
+# CLI flag: -validation.cost-attribution-cooldown
+[cost_attribution_cooldown: <duration> | default = 0s]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.

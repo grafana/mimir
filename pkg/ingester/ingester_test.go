@@ -60,6 +60,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/costattribution"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -3589,53 +3590,114 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 }
 
 func BenchmarkIngesterPush(b *testing.B) {
-	registry := prometheus.NewRegistry()
-	ctx := user.InjectOrgID(context.Background(), userID)
+	costAttributionCases := []struct {
+		state          string
+		limitsCfg      func(*validation.Limits)
+		customRegistry *prometheus.Registry
+	}{
+		{
+			state:          "enabled",
+			limitsCfg:      func(*validation.Limits) {},
+			customRegistry: nil,
+		},
+		{
+			state: "disabled",
+			limitsCfg: func(limits *validation.Limits) {
+				if limits == nil {
+					return
+				}
+				limits.CostAttributionLabels = []string{"cpu"}
+				limits.MaxCostAttributionCardinalityPerUser = 100
+			},
+			customRegistry: prometheus.NewRegistry(),
+		},
+	}
 
-	// Create a mocked ingester
-	cfg := defaultIngesterTestConfig(b)
+	tests := []struct {
+		name      string
+		limitsCfg func() validation.Limits
+	}{
+		{
+			name: "ingester push succeeded",
+			limitsCfg: func() validation.Limits {
+				limitsCfg := defaultLimitsTestConfig()
+				limitsCfg.NativeHistogramsIngestionEnabled = true
+				return limitsCfg
+			},
+		},
+	}
 
-	ingester, err := prepareIngesterWithBlocksStorage(b, cfg, nil, registry)
-	require.NoError(b, err)
-	require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
-	defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
+	for _, caCase := range costAttributionCases {
+		b.Run(fmt.Sprintf("cost_attribution=%s", caCase.state), func(b *testing.B) {
+			for _, t := range tests {
+				b.Run(fmt.Sprintf("scenario=%s", t.name), func(b *testing.B) {
+					registry := prometheus.NewRegistry()
+					ctx := user.InjectOrgID(context.Background(), userID)
 
-	// Wait until the ingester is healthy
-	test.Poll(b, 100*time.Millisecond, 1, func() interface{} {
-		return ingester.lifecycler.HealthyInstancesCount()
-	})
+					// Create a mocked ingester
+					cfg := defaultIngesterTestConfig(b)
 
-	// Push a single time series to set the TSDB min time.
-	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
-	startTime := util.TimeToMillis(time.Now())
+					limitCfg := t.limitsCfg()
+					caCase.limitsCfg(&limitCfg)
 
-	currTimeReq := mimirpb.ToWriteRequest(
-		metricLabelAdapters,
-		[]mimirpb.Sample{{Value: 1, TimestampMs: startTime}},
-		nil,
-		nil,
-		mimirpb.API,
-	)
-	_, err = ingester.Push(ctx, currTimeReq)
-	require.NoError(b, err)
+					overrides, err := validation.NewOverrides(limitCfg, nil)
+					require.NoError(b, err)
 
-	const (
-		series  = 10
-		samples = 1
-	)
+					var cam *costattribution.Manager
+					if caCase.customRegistry != nil {
+						cam, err = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, caCase.customRegistry)
+						require.NoError(b, err)
+					}
 
-	allLabels, allSamples := benchmarkData(series)
+					ingester, err := prepareIngesterWithBlockStorageOverridesAndCostAttribution(b, cfg, overrides, nil, "", "", registry, cam)
+					require.NoError(b, err)
+					require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
 
-	b.ResetTimer()
-	for iter := 0; iter < b.N; iter++ {
-		// Bump the timestamp on each of our test samples each time round the loop
-		for j := 0; j < samples; j++ {
-			for i := range allSamples {
-				allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
+					b.Cleanup(func() {
+						require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingester))
+					})
+
+					// Wait until the ingester is healthy
+					test.Poll(b, 100*time.Millisecond, 1, func() interface{} {
+						return ingester.lifecycler.HealthyInstancesCount()
+					})
+
+					// Push a single time series to set the TSDB min time.
+					metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+					startTime := util.TimeToMillis(time.Now())
+
+					currTimeReq := mimirpb.ToWriteRequest(
+						metricLabelAdapters,
+						[]mimirpb.Sample{{Value: 1, TimestampMs: startTime}},
+						nil,
+						nil,
+						mimirpb.API,
+					)
+					_, err = ingester.Push(ctx, currTimeReq)
+					require.NoError(b, err)
+
+					// so we are benchmark 5000 series with 10 sample each
+					const (
+						series  = 5000
+						samples = 10
+					)
+
+					allLabels, allSamples := benchmarkData(series)
+
+					b.ResetTimer()
+					for iter := 0; iter < b.N; iter++ {
+						// Bump the timestamp on each of our test samples each time round the loop
+						for j := 0; j < samples; j++ {
+							for i := range allSamples {
+								allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
+							}
+							_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, nil, mimirpb.API))
+							require.NoError(b, err)
+						}
+					}
+				})
 			}
-			_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, nil, mimirpb.API))
-			require.NoError(b, err)
-		}
+		})
 	}
 }
 
@@ -6232,10 +6294,14 @@ func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config,
 }
 
 func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, ingestersRing ring.ReadRing, dataDir string, bucketDir string, registerer prometheus.Registerer) (*Ingester, error) {
-	return prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t, ingesterCfg, overrides, ingestersRing, nil, dataDir, bucketDir, registerer)
+	return prepareIngesterWithBlockStorageOverridesAndCostAttribution(t, ingesterCfg, overrides, ingestersRing, dataDir, bucketDir, registerer, nil)
 }
 
-func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionRingWatcher, dataDir string, bucketDir string, registerer prometheus.Registerer) (*Ingester, error) {
+func prepareIngesterWithBlockStorageOverridesAndCostAttribution(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, ingestersRing ring.ReadRing, dataDir string, bucketDir string, registerer prometheus.Registerer, cam *costattribution.Manager) (*Ingester, error) {
+	return prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t, ingesterCfg, overrides, ingestersRing, nil, dataDir, bucketDir, registerer, cam)
+}
+
+func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionRingWatcher, dataDir string, bucketDir string, registerer prometheus.Registerer, cam *costattribution.Manager) (*Ingester, error) {
 	// Create a data dir if none has been provided.
 	if dataDir == "" {
 		dataDir = t.TempDir()
@@ -6256,7 +6322,7 @@ func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, i
 		ingestersRing = createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig())
 	}
 
-	ingester, err := New(ingesterCfg, overrides, ingestersRing, partitionsRing, nil, registerer, noDebugNoopLogger{}) // LOGGING: log.NewLogfmtLogger(os.Stderr)
+	ingester, err := New(ingesterCfg, overrides, ingestersRing, partitionsRing, nil, cam, registerer, noDebugNoopLogger{}) // LOGGING: log.NewLogfmtLogger(os.Stderr)
 	if err != nil {
 		return nil, err
 	}
@@ -6462,7 +6528,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			// setup the tsdbs dir
 			testData.setup(t, tempDir)
 
-			ingester, err := New(ingesterCfg, overrides, createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig()), nil, nil, nil, log.NewNopLogger())
+			ingester, err := New(ingesterCfg, overrides, createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig()), nil, nil, nil, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			startErr := services.StartAndAwaitRunning(context.Background(), ingester)
@@ -7622,7 +7688,7 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 	ingesterCfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
 	ingesterCfg.BlocksStorageConfig.TSDB.Retention = 2 * 24 * time.Hour // Make sure that no newly created blocks are deleted.
 
-	ingester, err := New(ingesterCfg, overrides, createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig()), nil, nil, nil, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, overrides, createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig()), nil, nil, nil, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
 
@@ -9114,7 +9180,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 	})
 
 	activeSeriesTenantOverride := new(TenantLimitsMock)
-	activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
+	activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesBaseCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
 	activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
 
 	tests := map[string]struct {
@@ -9404,7 +9470,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			cfg.ActiveSeriesMetrics.Enabled = !testData.disableActiveSeries
 
 			limits := defaultLimitsTestConfig()
-			limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+			limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 			limits.NativeHistogramsIngestionEnabled = true
 			overrides, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 			require.NoError(t, err)
@@ -9476,7 +9542,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 	defaultActiveSeriesTenantOverride := new(TenantLimitsMock)
 	defaultActiveSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
-	defaultActiveSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
+	defaultActiveSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesBaseCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
 
 	tests := map[string]struct {
 		test               func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
@@ -9537,9 +9603,9 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				// Add new runtime configs
 				activeSeriesTenantOverride := new(TenantLimitsMock)
 				activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
-				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
+				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesBaseCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
 				limits := defaultLimitsTestConfig()
-				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
 				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 				require.NoError(t, err)
@@ -9670,7 +9736,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 				// Remove runtime configs
 				limits := defaultLimitsTestConfig()
-				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
 				override, err := validation.NewOverrides(limits, nil)
 				require.NoError(t, err)
@@ -9787,14 +9853,14 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 				// Change runtime configs
 				activeSeriesTenantOverride := new(TenantLimitsMock)
-				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesBaseCustomTrackersConfig: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 					"team_a": `{team="a"}`,
 					"team_b": `{team="b"}`,
 					"team_c": `{team="b"}`,
 					"team_d": `{team="b"}`,
 				}), NativeHistogramsIngestionEnabled: true})
 				limits := defaultLimitsTestConfig()
-				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
 				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 				require.NoError(t, err)
@@ -9926,7 +9992,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			cfg.ActiveSeriesMetrics.Enabled = true
 
 			limits := defaultLimitsTestConfig()
-			limits.ActiveSeriesCustomTrackersConfig = testData.activeSeriesConfig
+			limits.ActiveSeriesBaseCustomTrackersConfig = testData.activeSeriesConfig
 			limits.NativeHistogramsIngestionEnabled = true
 			var overrides *validation.Overrides
 			var err error

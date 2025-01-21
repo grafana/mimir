@@ -5,10 +5,10 @@ kind: Role
 metadata:
   name: test-extra-args-values-rollout-operator
   labels:
-    helm.sh/chart: rollout-operator-0.21.0
+    helm.sh/chart: rollout-operator-0.23.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-extra-args-values
-    app.kubernetes.io/version: "v0.21.0"
+    app.kubernetes.io/version: "v0.23.0"
     app.kubernetes.io/managed-by: Helm
 rules:
 - apiGroups:

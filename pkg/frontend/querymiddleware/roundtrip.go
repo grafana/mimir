@@ -81,6 +81,8 @@ type Config struct {
 	ExtraInstantQueryMiddlewares []MetricsQueryMiddleware `yaml:"-"`
 	ExtraRangeQueryMiddlewares   []MetricsQueryMiddleware `yaml:"-"`
 
+	ExtraPropagateHeaders []string `yaml:"-"`
+
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 }
 
@@ -207,10 +209,10 @@ func NewTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	engineExperimentalFunctionsEnabled bool,
-	ingestStorageTopicOffsetsReader *ingest.TopicOffsetsReader,
+	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, engineExperimentalFunctionsEnabled, ingestStorageTopicOffsetsReader, registerer)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, engineExperimentalFunctionsEnabled, ingestStorageTopicOffsetsReaders, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +230,7 @@ func newQueryTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	engineExperimentalFunctionsEnabled bool,
-	ingestStorageTopicOffsetsReader *ingest.TopicOffsetsReader,
+	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
 	// Disable concurrency limits for sharded queries.
@@ -255,6 +257,7 @@ func newQueryTripperware(
 	}
 
 	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, registerer)
+	requestBlocker := newRequestBlocker(limits, log, registerer)
 
 	return func(next http.RoundTripper) http.RoundTripper {
 		// IMPORTANT: roundtrippers are executed in *reverse* order because they are wrappers.
@@ -281,18 +284,18 @@ func newQueryTripperware(
 		}
 
 		// Enforce read consistency after caching.
-		if ingestStorageTopicOffsetsReader != nil {
-			metrics := newReadConsistencyMetrics(registerer)
+		if len(ingestStorageTopicOffsetsReaders) > 0 {
+			metrics := newReadConsistencyMetrics(registerer, ingestStorageTopicOffsetsReaders)
 
-			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			instant = newReadConsistencyRoundTripper(instant, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			series = newReadConsistencyRoundTripper(series, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReader, limits, log, metrics)
-			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReader, limits, log, metrics)
+			queryrange = newReadConsistencyRoundTripper(queryrange, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			instant = newReadConsistencyRoundTripper(instant, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			cardinality = newReadConsistencyRoundTripper(cardinality, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			activeSeries = newReadConsistencyRoundTripper(activeSeries, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			activeNativeHistogramMetrics = newReadConsistencyRoundTripper(activeNativeHistogramMetrics, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			labels = newReadConsistencyRoundTripper(labels, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			series = newReadConsistencyRoundTripper(series, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			remoteRead = newReadConsistencyRoundTripper(remoteRead, ingestStorageTopicOffsetsReaders, limits, log, metrics)
+			next = newReadConsistencyRoundTripper(next, ingestStorageTopicOffsetsReaders, limits, log, metrics)
 		}
 
 		// Look up cache as first thing after validation.
@@ -309,6 +312,10 @@ func newQueryTripperware(
 		cardinality = NewCardinalityQueryRequestValidationRoundTripper(cardinality)
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if err := requestBlocker.isBlocked(r); err != nil {
+				return nil, err
+			}
+
 			switch {
 			case IsRangeQuery(r.URL.Path):
 				return queryrange.RoundTrip(r)
@@ -350,18 +357,22 @@ func newQueryMiddlewares(
 	metrics := newInstrumentMiddlewareMetrics(registerer)
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
+	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log)
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
-		queryBlockerMiddleware)
+		queryBlockerMiddleware,
+	)
 
 	queryRangeMiddleware = append(queryRangeMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
+		newInstrumentMiddleware("prom2_compat", metrics),
+		prom2CompatMiddleware,
 		newInstrumentMiddleware("step_align", metrics),
 		newStepAlignMiddleware(limits, log, registerer),
 	)
@@ -397,6 +408,8 @@ func newQueryMiddlewares(
 		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
+		newInstrumentMiddleware("prom2_compat", metrics),
+		prom2CompatMiddleware,
 	)
 
 	// Inject the extra middlewares provided by the user before the query pruning and query sharding middleware.

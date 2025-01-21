@@ -6,7 +6,7 @@ metadata:
   name: test-ruler-dedicated-query-path-values-minio
   labels:
     app: minio
-    chart: minio-5.3.0
+    chart: minio-5.4.0
     release: test-ruler-dedicated-query-path-values
     heritage: Helm
 spec:
@@ -27,8 +27,8 @@ spec:
         app: minio
         release: test-ruler-dedicated-query-path-values
       annotations:
-        checksum/secrets: 4a539a32977b5fb35ace69ebd2a0d4509d0fdfce24da90bd607de9f97f1626aa
-        checksum/config: cfb80dab323c58c0e2b76d1b410d1ae615b62f016b5830fde41a23162adc4292
+        checksum/secrets: d6192ffdfa07538ff559586dd26ccb114d316f2f0f1506ed0a7506d4aebf3e5a
+        checksum/config: 2e9c3371e78af1077dbfc3100fbb94f96842679907935bfd91ea02e7883b14e5
     spec:
       securityContext:
         
@@ -40,7 +40,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2024-04-18T19-09-19Z"
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"

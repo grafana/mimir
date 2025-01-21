@@ -25,7 +25,7 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 
 		var (
 			ctx       = context.Background()
-			w         = newPartitionOffsetWatcher()
+			w         = NewPartitionOffsetWatcher()
 			firstDone = atomic.NewBool(false)
 		)
 
@@ -56,7 +56,7 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 
 		var (
 			ctx        = context.Background()
-			w          = newPartitionOffsetWatcher()
+			w          = NewPartitionOffsetWatcher()
 			firstDone  = atomic.NewBool(false)
 			secondDone = atomic.NewBool(false)
 		)
@@ -96,7 +96,7 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 
 		var (
 			ctx        = context.Background()
-			w          = newPartitionOffsetWatcher()
+			w          = NewPartitionOffsetWatcher()
 			firstDone  = atomic.NewBool(false)
 			secondDone = atomic.NewBool(false)
 		)
@@ -135,7 +135,7 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 
 		var (
 			ctx = context.Background()
-			w   = newPartitionOffsetWatcher()
+			w   = NewPartitionOffsetWatcher()
 		)
 
 		w.Notify(10)
@@ -149,7 +149,7 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 
 		var (
 			ctx = context.Background()
-			w   = newPartitionOffsetWatcher()
+			w   = NewPartitionOffsetWatcher()
 		)
 
 		require.NoError(t, w.Wait(ctx, -1))
@@ -162,7 +162,7 @@ func TestPartitionOffsetWatcher(t *testing.T) {
 
 		ctx := context.Background()
 
-		w := newPartitionOffsetWatcher()
+		w := NewPartitionOffsetWatcher()
 		require.NoError(t, services.StartAndAwaitRunning(ctx, w))
 
 		wg := sync.WaitGroup{}
@@ -197,7 +197,7 @@ func TestPartitionOffsetWatcher_Concurrency(t *testing.T) {
 
 	var (
 		ctx, cancelCtx     = context.WithCancel(context.Background())
-		w                  = newPartitionOffsetWatcher()
+		w                  = NewPartitionOffsetWatcher()
 		lastNotifiedOffset = atomic.NewInt64(0)
 		lastWatchedOffset  = atomic.NewInt64(0)
 		notificationsCount = atomic.NewInt64(0)
@@ -257,7 +257,7 @@ func BenchmarkPartitionOffsetWatcher(b *testing.B) {
 
 		var (
 			ctx = context.Background()
-			w   = newPartitionOffsetWatcher()
+			w   = NewPartitionOffsetWatcher()
 		)
 
 		// Start all watching goroutines.
@@ -295,7 +295,7 @@ func BenchmarkPartitionOffsetWatcher(b *testing.B) {
 
 		var (
 			ctx, cancelCtx = context.WithCancel(context.Background())
-			w              = newPartitionOffsetWatcher()
+			w              = NewPartitionOffsetWatcher()
 			nextOffset     = atomic.NewInt64(0)
 			done           = atomic.NewBool(false)
 		)

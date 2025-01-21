@@ -41,7 +41,15 @@ If nothing obvious from the above, check for increased load:
 
 ### MimirIngesterReachingSeriesLimit
 
-This alert fires when the `max_series` per ingester instance limit is enabled and the actual number of in-memory series in an ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new series, while appending samples to existing ones will continue to succeed.
+This alert fires when the `max_series` per ingester instance limit is enabled and the actual number of in-memory series in an ingester is close to reaching the limit.
+The threshold is set at 80% to give the chance to react before the limit is reached.
+After the limit is reached, write requests to the ingester fail for new series. Appending samples to existing ones continue to succeed.
+
+Note that the error responses sent back to the sender are classified as "server errors" (5xx), which should result in a retry by the sender.
+While this situation continues, these retries stall the flow of data, and newer data queues up on the sender.
+If the condition is cleared in a short time, service can be restored with no data loss.
+
+This is different to what happens when the `max_global_series_per_user` limit is exceeded, which is considered a "client error" (4xx). In this case, excess data is discarded.
 
 In case of **emergency**:
 
@@ -123,7 +131,7 @@ How to **fix** it:
 
 ### MimirIngesterReachingTenantsLimit
 
-This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in an ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
+This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in an ingester is reaching the limit. Once the limit is reached, write requests to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
 
 The per-tenant memory utilisation in ingesters includes the overhead of allocations for TSDB stripes and chunk writer buffers. If the tenant number is high, this may contribute significantly to the total ingester memory utilization. The size of these allocations is controlled by `-blocks-storage.tsdb.stripe-size` (default 16KiB) and `-blocks-storage.tsdb.head-chunks-write-buffer-size-bytes` (default 4MiB), respectively.
 
@@ -767,17 +775,48 @@ The procedure to investigate it is the same as the one for [`MimirSchedulerQueri
 
 This alert fires if queries are piling up in the query-scheduler.
 
-The size of the queue is shown on the `Queue length` dashboard panel on the `Mimir / Reads` (for the standard query path) or `Mimir / Remote Ruler Reads`
+#### Dashboard Panels
+
+The size of the queue is shown on the `Queue Length` dashboard panel on the [`Mimir / Reads`](https://admin-ops-eu-south-0.grafana-ops.net/grafana/d/e327503188913dc38ad571c647eef643) (for the standard query path) or `Mimir / Remote Ruler Reads`
 (for the dedicated rule evaluation query path) dashboards.
 
-How it **works**:
+The `Queue Length` dashboard panel on the `Mimir / Reads` (for the standard query path)
+and `Mimir / Remote Ruler Reads` (for the dedicated rule evaluation query path) dashboards shows the queue size.
+The `Latency (Time in Queue)` is broken out in the dashboard row below by the "Expected Query Component" -
+the scheduler queue itself is partitioned by the Expected Query Component for each query,
+which is an estimate from the query time range of which component the querier utilizes to fetch data
 
-- A query-frontend API endpoint is called to execute a query
-- The query-frontend enqueues the request to the query-scheduler
-- The query-scheduler is responsible for dispatching enqueued queries to idle querier workers
-- The querier runs the query, sends the response back directly to the query-frontend and notifies the query-scheduler that it can process another query
+The row below shows peak values for `Query-scheduler <-> Querier Inflight Requests`, also broken out by query component.
+This shows when the queriers are saturated with inflight query requests,
+as well as which query components are utilized to service the queries.
 
-How to **investigate**:
+#### How it Works
+
+- A query-frontend API endpoint is called to execute a query.
+- The query-frontend enqueues the request to the query-scheduler.
+- The query-scheduler is responsible for dispatching enqueued queries to idle querier workers.
+- The querier fetches data from ingesters, store-gateways, or both, and runs the query against the data.
+  Then, it sends the response back directly to the query-frontend and notifies the query-scheduler that it can process another query.
+
+#### How to Investigate
+
+Note that elevated measures of _inflight_ queries at any part of the read path are likely a symptom and not a cause.
+
+**Ingester or Store-Gateway Issues**
+
+With querier autoscaling in place, the most common cause of a query backlog is that either ingesters or store-gateways
+are not able to keep up with their query load.
+
+Investigate the RPS and Latency panels for ingesters and store-gateways on the `Mimir / Reads` dashboard
+and compare this value to the `Latency (Time in Queue)` or `Query-scheduler <-> Querier Inflight Requests`
+breakouts on the `Mimir / Reads` or `Mimir / Remote Ruler Reads` dashboards.
+Additionally, check the `Mimir / Reads Resources` dashboard for elevated resource utilization or limiting on ingesters or store-gateways.
+
+Generally, this shows that one of either the ingesters or store-gateways is experiencing issues
+and then you can further investigate the query component on its own.
+Scaling up queriers is unlikely to help in this case, as it places more load on an already-overloaded component.
+
+**Querier Issues**
 
 - Are queriers in a crash loop (eg. OOMKilled)?
   - `OOMKilled`: temporarily increase queriers memory request/limit
@@ -791,7 +830,7 @@ How to **investigate**:
   - Check if a specific tenant is running heavy queries
     - Run `sum by (user) (cortex_query_scheduler_queue_length{namespace="<namespace>"}) > 0` to find tenants with enqueued queries
     - If remote ruler evaluation is enabled, make sure you understand which one of the read paths (user or ruler queries?) is being affected - check the alert message.
-    - Check the `Mimir / Slow Queries` dashboard to find slow queries
+    - Check the [Mimir / Slow Queries` dashboard to find slow queries
   - On multi-tenant Mimir cluster with **shuffle-sharing for queriers disabled**, you may consider to enable it for that specific tenant to reduce its blast radius. To enable queriers shuffle-sharding for a single tenant you need to set the `max_queriers_per_tenant` limit override for the specific tenant (the value should be set to the number of queriers assigned to the tenant).
   - On multi-tenant Mimir cluster with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Mimir return errors for that given user once the per-tenant queue is full.
   - On multi-tenant Mimir clusters with **query-sharding enabled** and **more than a few tenants** being affected: The workload exceeds the available downstream capacity. Scaling of queriers and potentially store-gateways should be considered.
@@ -799,6 +838,15 @@ How to **investigate**:
     - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
     - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
   - On a Mimir cluster with **querier auto-scaling enabled** after checking the health of the existing querier replicas, check to see if the auto-scaler has added additional querier replicas or if the maximum number of querier replicas has been reached and is not sufficient and should be increased.
+
+**Query-Scheduler Issues**
+
+In rare cases, the query-scheduler itself may be the bottleneck.
+When querier-connection utilization is low in the `Query-scheduler <-> Querier Inflight Requests` dashboard panels
+but the queue length or latency is high, it indicates that the query-scheduler is very slow in dispatching queries.
+
+In this case if the scheduler is not resource-constrained,
+you can use CPU profiles to see where the scheduler's query dispatch process is spending its time.
 
 ### MimirCacheRequestErrors
 
@@ -1400,10 +1448,6 @@ How to **investigate** and **fix** it:
   - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. To investigate it you can run the following command for a given store-gateway replica. The command returns the top 10 tenants by disk utilization (in megabytes):
 
     ```
-    # If you're running the alpine image:
-    kubectl --context $CLUSTER --namespace $NAMESPACE exec -ti $POD -- sh -c 'du -sm /data/tsdb/* | sort -n -r | head -10'
-
-    # If you're running the distroless image:
     kubectl --context $CLUSTER --namespace $NAMESPACE debug pod/$POD --image=alpine:latest --target=store-gateway --container=debug -ti -- sh -c 'du -sm /proc/1/root/data/tsdb/* | sort -n -r | head -10'
     ```
 
@@ -2506,6 +2550,19 @@ How to **fix** it:
 
 This error only occurs when an administrator has explicitly define a blocked list for a given tenant. After assessing whether or not the reason for blocking one or multiple queries you can update the tenant's limits and remove the pattern.
 
+### err-mimir-request-blocked
+
+This error occurs when a query-frontend blocks a HTTP request because the request matches at least one of the rules defined in the limits.
+
+How it **works**:
+
+- The query-frontend implements a checker responsible for assessing whether the request is blocked or not.
+- To configure the limit, set the block `blocked_requests` in the `limits`.
+
+How to **fix** it:
+
+This error only occurs when an administrator has explicitly define a blocked list for a given tenant. After assessing whether or not the reason for blocking one or multiple requests you can update the tenant's limits and remove the configuration.
+
 ### err-mimir-alertmanager-max-grafana-config-size
 
 This non-critical error occurs when the Alertmanager receives a Grafana Alertmanager configuration larger than the configured size limit.
@@ -2867,6 +2924,8 @@ For example, you can create a tar of the path you are interested in, and then ex
 ```bash
 kubectl --namespace mimir exec compactor-0 -c mimir-debug-container -- tar cf - "/proc/1/root/etc/cortex" | tar xf -
 ```
+
+Note that the container that you're copying files from must still be running. If you have already exited your debugging container before, that container has stopped, and it cannot be used to copy files. In that case you need to start a new container.
 
 ## Cleanup and Limitations
 

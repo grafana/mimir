@@ -4,11 +4,13 @@ package querymiddleware
 
 import (
 	"net/http"
+	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
@@ -19,19 +21,21 @@ import (
 type readConsistencyRoundTripper struct {
 	next http.RoundTripper
 
-	offsetsReader *ingest.TopicOffsetsReader
-	limits        Limits
-	logger        log.Logger
-	metrics       *ingest.StrongReadConsistencyInstrumentation[map[int32]int64]
+	// offsetsReaders is a map of offsets readers keyed by the request header the offsets get attached to.
+	offsetsReaders map[string]*ingest.TopicOffsetsReader
+
+	limits  Limits
+	logger  log.Logger
+	metrics *ingest.StrongReadConsistencyInstrumentation[map[int32]int64]
 }
 
-func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReader *ingest.TopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyInstrumentation[map[int32]int64]) http.RoundTripper {
+func newReadConsistencyRoundTripper(next http.RoundTripper, offsetsReaders map[string]*ingest.TopicOffsetsReader, limits Limits, logger log.Logger, metrics *ingest.StrongReadConsistencyInstrumentation[map[int32]int64]) http.RoundTripper {
 	return &readConsistencyRoundTripper{
-		next:          next,
-		limits:        limits,
-		logger:        logger,
-		offsetsReader: offsetsReader,
-		metrics:       metrics,
+		next:           next,
+		offsetsReaders: offsetsReaders,
+		limits:         limits,
+		logger:         logger,
+		metrics:        metrics,
 	}
 }
 
@@ -54,18 +58,41 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 	}
 
 	if level != querierapi.ReadConsistencyStrong {
+		spanLog.DebugLog("msg", "evaluating query with eventually consistent read consistency")
 		return r.next.RoundTrip(req)
 	}
 
-	// Fetch last produced offsets.
-	offsets, err := r.metrics.Observe(false, func() (map[int32]int64, error) {
-		return r.offsetsReader.WaitNextFetchLastProducedOffset(ctx)
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "wait for last produced offsets")
+	errGroup, ctx := errgroup.WithContext(ctx)
+	reqHeaderLock := &sync.Mutex{}
+
+	for headerKey, offsetsReader := range r.offsetsReaders {
+		headerKey := headerKey
+		offsetsReader := offsetsReader
+
+		errGroup.Go(func() error {
+			offsets, err := r.metrics.Observe(offsetsReader.Topic(), false, func() (map[int32]int64, error) {
+				return offsetsReader.WaitNextFetchLastProducedOffset(ctx)
+			})
+			if err != nil {
+				return errors.Wrapf(err, "wait for last produced offsets of topic '%s'", offsetsReader.Topic())
+			}
+
+			headerValue := string(querierapi.EncodeOffsets(offsets))
+			reqHeaderLock.Lock()
+			req.Header.Add(headerKey, headerValue)
+			reqHeaderLock.Unlock()
+
+			spanLog.DebugLog("msg", "got offsets for strong read consistency", "header", headerKey, "value", headerValue)
+
+			return nil
+		})
 	}
 
-	req.Header.Add(querierapi.ReadConsistencyOffsetsHeader, string(querierapi.EncodeOffsets(offsets)))
+	if err = errGroup.Wait(); err != nil {
+		return nil, err
+	}
+
+	spanLog.DebugLog("msg", "evaluating query with strong read consistency")
 
 	return r.next.RoundTrip(req)
 }
@@ -82,7 +109,13 @@ func getDefaultReadConsistency(tenantIDs []string, limits Limits) string {
 	return querierapi.ReadConsistencyEventual
 }
 
-func newReadConsistencyMetrics(reg prometheus.Registerer) *ingest.StrongReadConsistencyInstrumentation[map[int32]int64] {
+func newReadConsistencyMetrics(reg prometheus.Registerer, offsetsReaders map[string]*ingest.TopicOffsetsReader) *ingest.StrongReadConsistencyInstrumentation[map[int32]int64] {
 	const component = "query-frontend"
-	return ingest.NewStrongReadConsistencyInstrumentation[map[int32]int64](component, reg)
+
+	topics := make([]string, 0, len(offsetsReaders))
+	for _, r := range offsetsReaders {
+		topics = append(topics, r.Topic())
+	}
+
+	return ingest.NewStrongReadConsistencyInstrumentation[map[int32]int64](component, reg, topics)
 }

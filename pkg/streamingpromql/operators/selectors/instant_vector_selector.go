@@ -24,6 +24,7 @@ import (
 type InstantVectorSelector struct {
 	Selector                 *Selector
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	Stats                    *types.QueryStats
 
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
@@ -143,6 +144,9 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
 			lastHistogramT = t
 			lastHistogram = h
+
+			// For consistency with Prometheus' engine, we convert each histogram point to an equivalent number of float points.
+			v.Stats.TotalSamples += types.EquivalentFloatSampleCount(h)
 		} else {
 			// Only create the slice once we know the series is a histogram or not.
 			if len(data.Floats) == 0 {
@@ -160,6 +164,8 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 	if v.memoizedIterator.Err() != nil {
 		return types.InstantVectorSeriesData{}, v.memoizedIterator.Err()
 	}
+
+	v.Stats.TotalSamples += int64(len(data.Floats))
 
 	return data, nil
 }

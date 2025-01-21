@@ -1969,45 +1969,23 @@
             },
             {
               "kind": "field",
-              "name": "enable_vector_vector_binary_comparison_operations",
-              "required": false,
-              "desc": "Enable support for binary comparison operations between two vectors in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_vector_scalar_binary_comparison_operations",
-              "required": false,
-              "desc": "Enable support for binary comparison operations between a vector and a scalar in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_scalar_scalar_binary_comparison_operations",
-              "required": false,
-              "desc": "Enable support for binary comparison operations between two scalars in the Mimir query engine. Only applies if the MQE is in use.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "enable_binary_logical_operations",
               "required": false,
               "desc": "Enable support for binary logical operations in the Mimir query engine. Only applies if the MQE is in use.",
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-binary-logical-operations",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_one_to_many_and_many_to_one_binary_operations",
+              "required": false,
+              "desc": "Enable support for one-to-many and many-to-one binary operations (group_left/group_right) in the Mimir query engine. Only applies if the MQE is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
@@ -2024,6 +2002,17 @@
             },
             {
               "kind": "field",
+              "name": "enable_scalar_scalar_binary_comparison_operations",
+              "required": false,
+              "desc": "Enable support for binary comparison operations between two scalars in the Mimir query engine. Only applies if the MQE is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "enable_subqueries",
               "required": false,
               "desc": "Enable support for subqueries in the Mimir query engine. Only applies if the MQE is in use.",
@@ -2035,13 +2024,46 @@
             },
             {
               "kind": "field",
-              "name": "enable_histogram_quantile_function",
+              "name": "enable_vector_scalar_binary_comparison_operations",
               "required": false,
-              "desc": "Enable support for the histogram_quantile function in the Mimir query engine. Only applies if the MQE is in use.",
+              "desc": "Enable support for binary comparison operations between a vector and a scalar in the Mimir query engine. Only applies if the MQE is in use.",
               "fieldValue": null,
               "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-histogram-quantile-function",
+              "fieldFlag": "querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations",
               "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_vector_vector_binary_comparison_operations",
+              "required": false,
+              "desc": "Enable support for binary comparison operations between two vectors in the Mimir query engine. Only applies if the MQE is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "disabled_aggregations",
+              "required": false,
+              "desc": "Comma-separated list of aggregations to disable support for. Only applies if MQE is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "querier.mimir-query-engine.disabled-aggregations",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "disabled_functions",
+              "required": false,
+              "desc": "Comma-separated list of function names to disable support for. Only applies if MQE is in use.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "querier.mimir-query-engine.disabled-functions",
+              "fieldType": "string",
               "fieldCategory": "experimental"
             }
           ],
@@ -3405,17 +3427,6 @@
         },
         {
           "kind": "field",
-          "name": "log_utilization_based_limiter_cpu_samples",
-          "required": false,
-          "desc": "Enable logging of utilization based limiter CPU samples.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "ingester.log-utilization-based-limiter-cpu-samples",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "error_sample_rate",
           "required": false,
           "desc": "Each error will be logged once in this many times. Use 0 to log all of them.",
@@ -4009,10 +4020,20 @@
           "kind": "field",
           "name": "active_series_custom_trackers",
           "required": false,
-          "desc": "Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero).",
+          "desc": "Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero.",
           "fieldValue": null,
           "fieldDefaultValue": {},
           "fieldFlag": "ingester.active-series-custom-trackers",
+          "fieldType": "map of tracker name (string) to matcher (string)",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "active_series_additional_custom_trackers",
+          "required": false,
+          "desc": "Additional custom trackers for active metrics merged on top of the base custom trackers. You can use this configuration option to define the base custom trackers globally for all tenants, and then use the additional trackers to add extra trackers on a per-tenant basis.",
+          "fieldValue": null,
+          "fieldDefaultValue": {},
           "fieldType": "map of tracker name (string) to matcher (string)",
           "fieldCategory": "advanced"
         },
@@ -4308,6 +4329,16 @@
         },
         {
           "kind": "field",
+          "name": "blocked_requests",
+          "required": false,
+          "desc": "List of http requests to block.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "blocked_requests_config...",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "align_queries_with_step",
           "required": false,
           "desc": "Mutate incoming queries to align their start and end with their step to improve result caching.",
@@ -4325,6 +4356,17 @@
           "fieldDefaultValue": "",
           "fieldFlag": "query-frontend.enabled-promql-experimental-functions",
           "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "prom2_range_compat",
+          "required": false,
+          "desc": "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.prom2-range-compat",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         },
         {
@@ -4366,6 +4408,50 @@
           "fieldDefaultValue": 419430400,
           "fieldFlag": "querier.active-series-results-max-size-bytes",
           "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cost_attribution_labels",
+          "required": false,
+          "desc": "Defines labels for cost attribution. Applies to metrics like cortex_distributor_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_distributor_received_attributed_samples_total{team='frontend', service='api'}.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "validation.cost-attribution-labels",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_cost_attribution_labels_per_user",
+          "required": false,
+          "desc": "Maximum number of cost attribution labels allowed per user, the value is capped at 4.",
+          "fieldValue": null,
+          "fieldDefaultValue": 2,
+          "fieldFlag": "validation.max-cost-attribution-labels-per-user",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "max_cost_attribution_cardinality_per_user",
+          "required": false,
+          "desc": "Maximum cardinality of cost attribution labels allowed per user.",
+          "fieldValue": null,
+          "fieldDefaultValue": 10000,
+          "fieldFlag": "validation.max-cost-attribution-cardinality-per-user",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "cost_attribution_cooldown",
+          "required": false,
+          "desc": "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.cost-attribution-cooldown",
+          "fieldType": "duration",
           "fieldCategory": "experimental"
         },
         {
@@ -13227,6 +13313,16 @@
               "fieldDefaultValue": "protobuf",
               "fieldFlag": "ruler.query-frontend.query-result-response-format",
               "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries_rate",
+              "required": false,
+              "desc": "Maximum number of retries for failed queries per second.",
+              "fieldValue": null,
+              "fieldDefaultValue": 170,
+              "fieldFlag": "ruler.query-frontend.max-retries-rate",
+              "fieldType": "float"
             }
           ],
           "fieldValue": null,
@@ -19638,6 +19734,39 @@
       "fieldDefaultValue": true,
       "fieldFlag": "timeseries-unmarshal-caching-optimization-enabled",
       "fieldType": "boolean",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_eviction_interval",
+      "required": false,
+      "desc": "Specifies how often inactive cost attributions for received and discarded sample trackers are evicted from the counter, ensuring they do not contribute to the cost attribution cardinality per user limit. This setting does not apply to active series, which are managed separately.",
+      "fieldValue": null,
+      "fieldDefaultValue": 1200000000000,
+      "fieldFlag": "cost-attribution.eviction-interval",
+      "fieldType": "duration",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_registry_path",
+      "required": false,
+      "desc": "Defines a custom path for the registry. When specified, Mimir exposes cost attribution metrics through this custom path. If not specified, cost attribution metrics aren't exposed.",
+      "fieldValue": null,
+      "fieldDefaultValue": "",
+      "fieldFlag": "cost-attribution.registry-path",
+      "fieldType": "string",
+      "fieldCategory": "experimental"
+    },
+    {
+      "kind": "field",
+      "name": "cost_attribution_cleanup_interval",
+      "required": false,
+      "desc": "Time interval at which the cost attribution cleanup process runs, ensuring inactive cost attribution entries are purged.",
+      "fieldValue": null,
+      "fieldDefaultValue": 180000000000,
+      "fieldFlag": "cost-attribution.cleanup-interval",
+      "fieldType": "duration",
       "fieldCategory": "experimental"
     }
   ],

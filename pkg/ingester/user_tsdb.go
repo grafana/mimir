@@ -619,12 +619,15 @@ func (u *userTSDB) computeOwnedSeries() int {
 	}
 
 	count := 0
+	idx := u.Head().MustIndex()
+	defer idx.Close()
+
 	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
 		for i, sh := range secondaryHashes {
 			if u.ownedTokenRanges.IncludesKey(sh) {
 				count++
 			} else {
-				u.activeSeries.Delete(refs[i])
+				u.activeSeries.Delete(refs[i], idx)
 			}
 		}
 	})

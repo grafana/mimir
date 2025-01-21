@@ -50,7 +50,7 @@ type TSDBBuilder struct {
 var softErrProcessor = mimir_storage.NewSoftAppendErrorProcessor(
 	func() {}, func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {},
 	func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {}, func(int64, []mimirpb.LabelAdapter) {},
-	func() {}, func([]mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
+	func([]mimirpb.LabelAdapter) {}, func([]mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
 	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
 	func(error, int64, []mimirpb.LabelAdapter) {}, func(error, int64, []mimirpb.LabelAdapter) {},
 )
@@ -316,30 +316,26 @@ type blockUploader func(_ context.Context, tenantID, dbDir string, blockIDs []st
 // All the DBs are closed and directories cleared irrespective of success or failure of this function.
 func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUploader) (_ int, err error) {
 	var (
-		doneDBsMu sync.Mutex
-		doneDBs   = make(map[*userTSDB]bool)
+		closedDBsMu sync.Mutex
+		closedDBs   = make(map[*userTSDB]bool)
 	)
 
 	b.tsdbsMu.Lock()
 	defer func() {
-		b.tsdbsMu.Unlock()
-
 		var merr multierror.MultiError
 		merr.Add(err)
-		// If some TSDB was not compacted or uploaded, it will be re-tried in the next cycle, so we remove it here.
+		// If some TSDB was not compacted or uploaded, it will be re-tried in the next cycle, so we always remove it here.
 		for _, db := range b.tsdbs {
-			if doneDBs[db] {
-				continue
+			if !closedDBs[db] {
+				merr.Add(db.Close())
 			}
-			dbDir := db.Dir()
-			merr.Add(db.Close())
-			merr.Add(os.RemoveAll(dbDir))
+			merr.Add(os.RemoveAll(db.Dir()))
 		}
-
-		err = merr.Err()
-
 		// Clear the map so that it can be released from the memory. Not setting to nil in case we want to reuse the TSDBBuilder.
 		clear(b.tsdbs)
+		b.tsdbsMu.Unlock()
+
+		err = merr.Err()
 	}()
 
 	level.Info(b.logger).Log("msg", "compacting and uploading blocks", "num_tsdb", len(b.tsdbs))
@@ -384,13 +380,13 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 				return err
 			}
 
+			closedDBsMu.Lock()
+			closedDBs[db] = true
+			closedDBsMu.Unlock()
+
 			if err := uploadBlocks(ctx, tenant.tenantID, dbDir, blockIDs); err != nil {
 				return err
 			}
-
-			doneDBsMu.Lock()
-			doneDBs[db] = true
-			doneDBsMu.Unlock()
 
 			// Clear the DB from the disk. Don't need it anymore.
 			return os.RemoveAll(dbDir)

@@ -99,8 +99,14 @@ type Limits interface {
 	// EnabledPromQLExperimentalFunctions returns the names of PromQL experimental functions allowed for the tenant.
 	EnabledPromQLExperimentalFunctions(userID string) []string
 
+	// Prom2RangeCompat returns if Prometheus 2/3 range compatibility fixes are enabled for the tenant.
+	Prom2RangeCompat(userID string) bool
+
 	// BlockedQueries returns the blocked queries.
 	BlockedQueries(userID string) []*validation.BlockedQuery
+
+	// BlockedRequests returns the blocked http requests.
+	BlockedRequests(userID string) []*validation.BlockedRequest
 
 	// AlignQueriesWithStep returns if queries should be adjusted to be step-aligned
 	AlignQueriesWithStep(userID string) bool

@@ -202,7 +202,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		maintenanceStop: make(chan struct{}),
 		configHashMetric: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "alertmanager_config_hash",
-			Help: "Hash of the currently loaded alertmanager configuration.",
+			Help: "Hash of the currently loaded alertmanager configuration. Note that this is not a cryptographically strong hash.",
 		}),
 
 		rateLimitedNotifications: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -668,7 +668,7 @@ func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.API
 func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
 	// The decrypt functions and the context are used to decrypt the configuration.
 	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
-	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, alertingNotify.NoopDecrypt)
+	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, alertingNotify.NoopDecode, alertingNotify.NoopDecrypt)
 	if err != nil {
 		return nil, err
 	}
@@ -764,7 +764,7 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 }
 
 func md5HashAsMetricValue(data []byte) float64 {
-	sum := md5.Sum(data)
+	sum := md5.Sum(data) //nolint:gosec
 	// We only want 48 bits as a float64 only has a 53 bit mantissa.
 	smallSum := sum[0:6]
 	var bytes = make([]byte, 8)

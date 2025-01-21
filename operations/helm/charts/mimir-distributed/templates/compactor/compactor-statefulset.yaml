@@ -23,28 +23,30 @@ spec:
     {{- toYaml .Values.compactor.strategy | nindent 4 }}
   serviceName: {{ template "mimir.fullname" . }}-compactor
   {{- if .Values.compactor.persistentVolume.enabled }}
+  {{- with .Values.compactor.persistentVolume }}
   volumeClaimTemplates:
     - apiVersion: v1
       kind: PersistentVolumeClaim
       metadata:
-        name: storage
-        {{- if .Values.compactor.persistentVolume.annotations }}
+        name: {{ .name }}
+        {{- if .annotations }}
         annotations:
-          {{ toYaml .Values.compactor.persistentVolume.annotations | nindent 10 }}
+          {{ toYaml .annotations | nindent 10 }}
         {{- end }}
       spec:
-        {{- if .Values.compactor.persistentVolume.storageClass }}
-        {{- if (eq "-" .Values.compactor.persistentVolume.storageClass) }}
+        {{- if .storageClass }}
+        {{- if (eq "-" .storageClass) }}
         storageClassName: ""
         {{- else }}
-        storageClassName: "{{ .Values.compactor.persistentVolume.storageClass }}"
+        storageClassName: "{{ .storageClass }}"
         {{- end }}
         {{- end }}
         accessModes:
-          {{- toYaml .Values.compactor.persistentVolume.accessModes | nindent 10 }}
+          {{- toYaml .accessModes | nindent 10 }}
         resources:
           requests:
-            storage: "{{ .Values.compactor.persistentVolume.size }}"
+            storage: "{{ .size }}"
+  {{- end }}
   {{- end }}
   template:
     metadata:
@@ -115,7 +117,7 @@ spec:
         {{ toYaml .Values.compactor.extraContainers | nindent 8 }}
         {{- end }}
         - name: compactor
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "compactor") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=compactor"

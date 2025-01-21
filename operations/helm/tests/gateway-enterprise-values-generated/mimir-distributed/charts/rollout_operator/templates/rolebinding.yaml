@@ -5,10 +5,10 @@ kind: RoleBinding
 metadata:
   name: gateway-enterprise-values-rollout-operator
   labels:
-    helm.sh/chart: rollout-operator-0.21.0
+    helm.sh/chart: rollout-operator-0.23.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: gateway-enterprise-values
-    app.kubernetes.io/version: "v0.21.0"
+    app.kubernetes.io/version: "v0.23.0"
     app.kubernetes.io/managed-by: Helm
 roleRef:
   apiGroup: rbac.authorization.k8s.io

@@ -15,11 +15,12 @@ ingest_storage:
     address: kafka_1:9092
     topic:   mimir-ingest
     last_produced_offset_poll_interval: 500ms
-    startup_fetch_concurrency: 15
-    ongoing_fetch_concurrency: 2
+    fetch_concurrency_max: 15
 
 ingester:
   track_ingester_owned_series: true
+  active_series_metrics_update_period: 10s
+  active_series_metrics_idle_timeout:  1m
 
   partition_ring:
     min_partition_owners_count:       1

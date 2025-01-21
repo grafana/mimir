@@ -13,7 +13,9 @@ import (
 )
 
 const (
-	MaxExpectedPointsPerSeries = 131_072 // There's not too much science behind this number: 100,000 points allows for a point per minute for just under 70 days. Then we use the next power of two.
+	// There's not too much science behind this number: 100,000 points allows for a point per minute for just under 70 days.
+	// Then we use the next power of two, given the pools always return slices with capacity equal to a power of two.
+	MaxExpectedPointsPerSeries = 131_072
 
 	// Treat a native histogram sample as equivalent to this many float samples when considering max in-memory bytes limit.
 	// Keep in mind that float sample = timestamp + float value, so 5x this is equivalent to five timestamps and five floats.
@@ -23,10 +25,9 @@ const (
 	HPointSize           = uint64(FPointSize * nativeHistogramSampleSizeFactor)
 	VectorSampleSize     = uint64(unsafe.Sizeof(promql.Sample{})) // This assumes each sample is a float sample, not a histogram.
 	Float64Size          = uint64(unsafe.Sizeof(float64(0)))
+	IntSize              = uint64(unsafe.Sizeof(int(0)))
 	BoolSize             = uint64(unsafe.Sizeof(false))
 	HistogramPointerSize = uint64(unsafe.Sizeof((*histogram.FloatHistogram)(nil)))
-	StringSize           = uint64(unsafe.Sizeof(""))
-	UintSize             = uint64(unsafe.Sizeof(uint(0)))
 )
 
 var (
@@ -69,6 +70,15 @@ var (
 			return make([]float64, 0, size)
 		}),
 		Float64Size,
+		true,
+		nil,
+	)
+
+	IntSlicePool = NewLimitingBucketedPool(
+		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) []int {
+			return make([]int, 0, size)
+		}),
+		IntSize,
 		true,
 		nil,
 	)

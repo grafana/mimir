@@ -172,9 +172,10 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var maxGroups int
+	var maxGroups int32
 	if maxGroupsVal := req.URL.Query().Get("group_limit"); maxGroupsVal != "" {
-		maxGroups, err = strconv.Atoi(maxGroupsVal)
+		maxGroupsRaw, err := strconv.ParseInt(maxGroupsVal, 10, 32)
+		maxGroups = int32(maxGroupsRaw)
 		if err != nil || maxGroups < 0 {
 			respondInvalidRequest(logger, w, "invalid group limit value")
 			return
@@ -188,7 +189,7 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 		File:          req.URL.Query()["file"],
 		ExcludeAlerts: excludeAlerts,
 		NextToken:     req.URL.Query().Get("group_next_token"),
-		MaxGroups:     int32(maxGroups),
+		MaxGroups:     maxGroups,
 	}
 
 	ruleTypeFilter := strings.ToLower(req.URL.Query().Get("type"))
