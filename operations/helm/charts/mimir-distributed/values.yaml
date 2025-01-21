@@ -853,6 +853,7 @@ distributor:
 
   service:
     annotations: {}
+    headlessAnnotations: {}
     labels: {}
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
