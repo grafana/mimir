@@ -664,11 +664,26 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 
 func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[string]alertspb.AlertConfigDescs) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
+	userAlertmanagersToStop := map[string]*Alertmanager{}
 	for user, cfgs := range cfgMap {
-		cfg, err := am.computeConfig(cfgs)
+		cfg, startAm, err := am.computeConfig(cfgs)
 		if err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error computing config", "err", err)
+			continue
+		}
+
+		if !startAm {
+			am.alertmanagersMtx.Lock()
+			if userAM, ok := am.alertmanagers[user]; ok {
+				userAlertmanagersToStop[user] = userAM
+				delete(am.alertmanagers, user)
+				delete(am.cfgs, user)
+				am.multitenantMetrics.lastReloadSuccessful.DeleteLabelValues(user)
+				am.multitenantMetrics.lastReloadSuccessfulTimestamp.DeleteLabelValues(user)
+				am.alertmanagerMetrics.removeUserRegistry(user)
+			}
+			am.alertmanagersMtx.Unlock()
 			continue
 		}
 
@@ -685,8 +700,6 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 		am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(1))
 		am.multitenantMetrics.lastReloadSuccessfulTimestamp.WithLabelValues(user).SetToCurrentTime()
 	}
-
-	userAlertmanagersToStop := map[string]*Alertmanager{}
 
 	am.alertmanagersMtx.Lock()
 	for userID, userAM := range am.alertmanagers {
@@ -711,40 +724,43 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 
 // computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
 // It returns the final configuration and external URL the Alertmanager will use.
-func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, error) {
+func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	cfg := amConfig{
 		AlertConfigDesc: cfgs.Mimir,
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
-
+	shouldStartAlertmanager := !(am.fallbackConfig == cfgs.Mimir.RawConfig || cfgs.Mimir.RawConfig == "")
+	fmt.Println("shouldStartAlertmanager:", shouldStartAlertmanager)
 	switch {
 	// Mimir configuration.
 	case !cfgs.Grafana.Promoted:
 		level.Debug(am.logger).Log("msg", "grafana configuration not promoted, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, nil
+		return cfg, shouldStartAlertmanager, nil
 
 	case cfgs.Grafana.Default:
 		level.Debug(am.logger).Log("msg", "grafana configuration is default, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, nil
+		return cfg, shouldStartAlertmanager, nil
 
 	case cfgs.Grafana.RawConfig == "":
 		level.Debug(am.logger).Log("msg", "grafana configuration is empty, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, nil
+		return cfg, true, nil
 
 	// Grafana configuration.
 	case cfgs.Mimir.RawConfig == am.fallbackConfig:
 		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config with the default globals", "user", cfgs.Mimir.User)
-		return createUsableGrafanaConfig(cfgs.Grafana, cfgs.Mimir.RawConfig)
+		cfg, err := createUsableGrafanaConfig(cfgs.Grafana, cfgs.Mimir.RawConfig)
+		return cfg, true, err
 
 	case cfgs.Mimir.RawConfig == "":
 		level.Debug(am.logger).Log("msg", "mimir configuration is empty, using grafana config with the default globals", "user", cfgs.Grafana.User)
-		return createUsableGrafanaConfig(cfgs.Grafana, am.fallbackConfig)
+		cfg, err := createUsableGrafanaConfig(cfgs.Grafana, cfgs.Mimir.RawConfig)
+		return cfg, true, err
 
 	// Both configurations.
 	// TODO: merge configurations.
 	default:
 		level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, nil
+		return cfg, true, nil
 	}
 }
 

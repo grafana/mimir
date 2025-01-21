@@ -2702,7 +2702,8 @@ func TestComputeConfig(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			cfg, err := am.computeConfig(test.cfg)
+			// TODO: fix
+			cfg, _, err := am.computeConfig(test.cfg)
 			if test.expErr != "" {
 				require.EqualError(t, err, test.expErr)
 				return
