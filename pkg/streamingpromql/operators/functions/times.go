@@ -12,11 +12,9 @@ import (
 )
 
 type ScalarTime struct {
-	ts                       time.Time
 	TimeRange                types.QueryTimeRange
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
-
-	expressionPosition posrange.PositionRange
+	expressionPosition       posrange.PositionRange
 }
 
 var _ types.ScalarOperator = &ScalarTime{}
