@@ -143,7 +143,7 @@ func scalarToInstantVectorOperatorFactory(args []types.Operator, _ *limiting.Mem
 func LabelReplaceFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 5 {
 		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected exactly 5 argument for label_replace, got %v", len(args))
+		return nil, fmt.Errorf("expected exactly 5 arguments for label_replace, got %v", len(args))
 	}
 
 	inner, ok := args[0].(types.InstantVectorOperator)
@@ -192,7 +192,7 @@ func LabelReplaceFunctionOperatorFactory(args []types.Operator, memoryConsumptio
 func ClampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 3 {
 		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected exactly 3 argument for clamp, got %v", len(args))
+		return nil, fmt.Errorf("expected exactly 3 arguments for clamp, got %v", len(args))
 	}
 
 	inner, ok := args[0].(types.InstantVectorOperator)
@@ -225,7 +225,7 @@ func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) Instant
 	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) != 2 {
 			// Should be caught by the PromQL parser, but we check here for safety.
-			return nil, fmt.Errorf("expected exactly 2 argument for %s, got %v", functionName, len(args))
+			return nil, fmt.Errorf("expected exactly 2 arguments for %s, got %v", functionName, len(args))
 		}
 
 		inner, ok := args[0].(types.InstantVectorOperator)
@@ -252,7 +252,7 @@ func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) Instant
 func RoundFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 1 && len(args) != 2 {
 		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected exactly 1 or 2 argument for round, got %v", len(args))
+		return nil, fmt.Errorf("expected 1 or 2 arguments for round, got %v", len(args))
 	}
 
 	inner, ok := args[0].(types.InstantVectorOperator)
@@ -283,7 +283,7 @@ func RoundFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracke
 func HistogramQuantileFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 2 {
 		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected exactly 2 argument for histogram_quantile, got %v", len(args))
+		return nil, fmt.Errorf("expected exactly 2 arguments for histogram_quantile, got %v", len(args))
 	}
 
 	ph, ok := args[0].(types.ScalarOperator)
@@ -305,7 +305,7 @@ func HistogramQuantileFunctionOperatorFactory(args []types.Operator, memoryConsu
 func HistogramFractionFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 3 {
 		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected exactly 3 argument for histogram_fraction, got %v", len(args))
+		return nil, fmt.Errorf("expected exactly 3 arguments for histogram_fraction, got %v", len(args))
 	}
 
 	lower, ok := args[0].(types.ScalarOperator)
