@@ -71,6 +71,7 @@ func TimeFunctionOperatorFactory(name string, f functions.FunctionOverInstantVec
 		var inner types.InstantVectorOperator
 		var ok bool
 		if len(args) > 0 {
+			// time based function expect instant vector argument
 			inner, ok = args[0].(types.InstantVectorOperator)
 			if !ok {
 				// Should be caught by the PromQL parser, but we check here for safety.
@@ -78,11 +79,11 @@ func TimeFunctionOperatorFactory(name string, f functions.FunctionOverInstantVec
 			}
 
 		} else {
+			// if the argument is not provided, it will default to vector(time())
 			inner = scalars.NewScalarToInstantVector(functions.NewScalarTime(timeRange, memoryConsumptionTracker, expressionPosition), expressionPosition)
 		}
 
 		var o types.InstantVectorOperator = functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
-
 		if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
 			o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 		}
