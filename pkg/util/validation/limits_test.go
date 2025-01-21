@@ -1399,6 +1399,55 @@ alertmanager_max_grafana_state_size_bytes: "0"
 	}
 }
 
+func TestBlockedRequestsUnmarshal(t *testing.T) {
+	inputYAML := `
+user1:
+  blocked_requests:
+    - path: /api/v1/query
+      method: POST
+      query_params:
+        foo: 
+          value: bar
+    - query_params:
+        first: 
+          value: bar.*
+          is_regexp: true
+        other:
+          value: bar
+          is_regexp: false
+`
+	overrides := map[string]*Limits{}
+	err := yaml.Unmarshal([]byte(inputYAML), &overrides)
+	require.NoError(t, err)
+	tl := NewMockTenantLimits(overrides)
+	ov, err := NewOverrides(getDefaultLimits(), tl)
+	require.NoError(t, err)
+
+	blockedRequests := ov.BlockedRequests("user1")
+	require.Len(t, blockedRequests, 2)
+	require.Equal(t, &BlockedRequest{
+		Path:   "/api/v1/query",
+		Method: "POST",
+		QueryParams: map[string]BlockedRequestQueryParam{
+			"foo": {
+				Value: "bar",
+			},
+		},
+	}, blockedRequests[0])
+	require.Equal(t, &BlockedRequest{
+		QueryParams: map[string]BlockedRequestQueryParam{
+			"first": {
+				Value:    "bar.*",
+				IsRegexp: true,
+			},
+			"other": {
+				Value:    "bar",
+				IsRegexp: false,
+			},
+		},
+	}, blockedRequests[1])
+}
+
 func getDefaultLimits() Limits {
 	limits := Limits{}
 	flagext.DefaultValues(&limits)
