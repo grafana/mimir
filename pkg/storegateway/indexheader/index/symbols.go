@@ -351,5 +351,5 @@ func (r *SymbolsTableReaderV2) Read(o uint32) (string, error) {
 }
 
 func yoloString(b []byte) string {
-	return *((*string)(unsafe.Pointer(&b)))
+	return unsafe.String(unsafe.SliceData(b), len(b)) // nolint:gosec
 }

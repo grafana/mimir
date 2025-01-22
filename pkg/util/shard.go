@@ -9,6 +9,7 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"math"
+	"unsafe"
 )
 
 const (
@@ -25,10 +26,10 @@ var (
 func ShuffleShardSeed(identifier, zone string) int64 {
 	// Use the identifier to compute an hash we'll use to seed the random.
 	hasher := md5.New()               //nolint:gosec
-	hasher.Write(YoloBuf(identifier)) // nolint:errcheck
+	hasher.Write(yoloBuf(identifier)) // nolint:errcheck
 	if zone != "" {
 		hasher.Write(seedSeparator) // nolint:errcheck
-		hasher.Write(YoloBuf(zone)) // nolint:errcheck
+		hasher.Write(yoloBuf(zone)) // nolint:errcheck
 	}
 	checksum := hasher.Sum(nil)
 
@@ -47,4 +48,8 @@ func ShuffleShardExpectedInstancesPerZone(shardSize, numZones int) int {
 // tenant. If zone-aware replication is disabled, the input numZones should be 1.
 func ShuffleShardExpectedInstances(shardSize, numZones int) int {
 	return ShuffleShardExpectedInstancesPerZone(shardSize, numZones) * numZones
+}
+
+func yoloBuf(s string) []byte {
+	return unsafe.Slice(unsafe.StringData(s), len(s)) // nolint:gosec
 }
