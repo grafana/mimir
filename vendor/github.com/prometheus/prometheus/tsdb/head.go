@@ -193,6 +193,7 @@ type HeadOptions struct {
 	PostingsForMatchersCacheMaxItems int
 	PostingsForMatchersCacheMaxBytes int64
 	PostingsForMatchersCacheForce    bool
+	PostingsForMatchersCacheMetrics  *PostingsForMatchersCacheMetrics
 
 	// Optional hash function applied to each new series. Computed hash value is preserved for each series in the head,
 	// and values can be iterated by using Head.ForEachSecondaryHash method.
@@ -222,6 +223,7 @@ func DefaultHeadOptions() *HeadOptions {
 		PostingsForMatchersCacheMaxItems: DefaultPostingsForMatchersCacheMaxItems,
 		PostingsForMatchersCacheMaxBytes: DefaultPostingsForMatchersCacheMaxBytes,
 		PostingsForMatchersCacheForce:    DefaultPostingsForMatchersCacheForce,
+		PostingsForMatchersCacheMetrics:  NewPostingsForMatchersCacheMetrics(nil),
 		WALReplayConcurrency:             defaultWALReplayConcurrency,
 	}
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
@@ -296,7 +298,7 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		stats:             stats,
 		reg:               r,
 		secondaryHashFunc: shf,
-		pfmc:              NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce),
+		pfmc:              NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce, opts.PostingsForMatchersCacheMetrics),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
