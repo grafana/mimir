@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -23,7 +24,7 @@ func TestProm2RangeCompat_Do(t *testing.T) {
 	}
 
 	runHandler := func(ctx context.Context, inner MetricsQueryHandler, limits Limits, req MetricsQueryRequest) (Response, error) {
-		middleware := newProm2RangeCompatMiddleware(limits, log.NewNopLogger())
+		middleware := newProm2RangeCompatMiddleware(limits, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 		handler := middleware.Wrap(inner)
 		return handler.Do(ctx, req)
 	}

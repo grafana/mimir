@@ -357,7 +357,7 @@ func newQueryMiddlewares(
 	metrics := newInstrumentMiddlewareMetrics(registerer)
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
-	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log)
+	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
