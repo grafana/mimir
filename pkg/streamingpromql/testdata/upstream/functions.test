@@ -506,13 +506,11 @@ eval instant at 0m vector(1)
 eval instant at 0s vector(time())
   {} 0
 
-# Unsupported by streaming engine.
-# eval instant at 5s vector(time())
-#   {} 5
+eval instant at 5s vector(time())
+  {} 5
 
-# Unsupported by streaming engine.
-# eval instant at 60m vector(time())
-#   {} 3600
+eval instant at 60m vector(time())
+  {} 3600
 
 
 # Tests for clamp_max, clamp_min(), and clamp().
