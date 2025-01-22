@@ -104,6 +104,7 @@ type Config struct {
 	PersisterConfig   PersisterConfig
 
 	GrafanaAlertmanagerCompatibility bool
+	GrafanaAlertmanagerTenantSuffix  string
 }
 
 // An Alertmanager manages the alerts for one user.
