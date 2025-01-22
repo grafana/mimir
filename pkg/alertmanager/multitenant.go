@@ -728,45 +728,29 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 }
 
 // computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
-// It returns the final configuration and a bool indicating whether the Alertmanager shoould be started for the tenant.
+// It returns the final configuration and a bool indicating whether the Alertmanager should be started for the tenant.
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	cfg := amConfig{
 		AlertConfigDesc: cfgs.Mimir,
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 
-	isGrafanaTenant := am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(cfgs.Mimir.User, am.cfg.GrafanaAlertmanagerTenantSuffix)
-	switch {
-	// Mimir configuration.
-	case !cfgs.Grafana.Promoted:
-		level.Debug(am.logger).Log("msg", "grafana configuration not promoted, using mimir config", "user", cfgs.Mimir.User)
+	// If the Grafana configuration is either default, not promoted, or empty, use the Mimir configuration.
+	if !cfgs.Grafana.Promoted || cfgs.Grafana.Default || cfgs.Grafana.RawConfig == "" {
+		level.Debug(am.logger).Log("msg", "using mimir config", "user", cfgs.Mimir.User)
+		isGrafanaTenant := am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(cfgs.Mimir.User, am.cfg.GrafanaAlertmanagerTenantSuffix)
 		return cfg, !isGrafanaTenant, nil
+	}
 
-	case cfgs.Grafana.Default:
-		level.Debug(am.logger).Log("msg", "grafana configuration is default, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, !isGrafanaTenant, nil
-
-	case cfgs.Grafana.RawConfig == "":
-		level.Debug(am.logger).Log("msg", "grafana configuration is empty, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, !isGrafanaTenant, nil
-
-	// Grafana configuration.
-	case cfgs.Mimir.RawConfig == am.fallbackConfig:
-		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config with the default globals", "user", cfgs.Mimir.User)
-		cfg, err := createUsableGrafanaConfig(cfgs.Grafana, cfgs.Mimir.RawConfig)
-		return cfg, true, err
-
-	case cfgs.Mimir.RawConfig == "":
-		level.Debug(am.logger).Log("msg", "mimir configuration is empty, using grafana config with the default globals", "user", cfgs.Grafana.User)
+	// If the Mimir configuration is either default or empty, use the Grafana configuration.
+	if cfgs.Mimir.RawConfig == am.fallbackConfig || cfgs.Mimir.RawConfig == "" {
+		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", cfgs.Mimir.User)
 		cfg, err := createUsableGrafanaConfig(cfgs.Grafana, am.fallbackConfig)
 		return cfg, true, err
-
-	// Both configurations.
-	// TODO: merge configurations.
-	default:
-		level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, true, nil
 	}
+
+	level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
+	return cfg, true, nil
 }
 
 // syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
