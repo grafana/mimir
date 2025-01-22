@@ -55,6 +55,9 @@ func WithBuffers(bufDescs []InstanceDesc, bufHosts, bufZones []string) Option {
 }
 
 // WithReplicationFactor creates an Option that overrides the default replication factor for a single call.
+// Note that the overridden replication factor must be a multiple of the number of zones. That is, there
+// should be an identical number of instances in each zone. E.g. if Zones = 3 and Default RF = 3, overridden
+// replication factor must be 6, 9, etc.
 func WithReplicationFactor(replication int) Option {
 	return func(opts *Options) {
 		opts.ReplicationFactor = replication
@@ -516,11 +519,15 @@ func (r *Ring) getReplicationSetForKey(key uint32, op Operation, bufDescs []Inst
 // This function needs to be called with read lock on the ring.
 func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []InstanceDesc, bufHosts []string, replicationFactor int, instanceFilter func(instanceID string) (include, keepGoing bool)) ([]InstanceDesc, error) {
 	var (
-		n            = replicationFactor
-		instances    = bufDescs[:0]
-		start        = searchToken(r.ringTokens, key)
-		iterations   = 0
-		maxZones     = len(r.ringTokensByZone)
+		n          = replicationFactor
+		instances  = bufDescs[:0]
+		start      = searchToken(r.ringTokens, key)
+		iterations = 0
+		// The configured replication factor is treated as the expected number of zones
+		// when zone-awareness is enabled. Per-call replication factor may increase the
+		// number of instances selected per zone, but the number of inferred zones does
+		// not change in this case.
+		maxZones     = r.cfg.ReplicationFactor
 		maxInstances = len(r.ringDesc.Ingesters)
 
 		// We use a slice instead of a map because it's faster to search within a
@@ -528,7 +535,6 @@ func (r *Ring) findInstancesForKey(key uint32, op Operation, bufDescs []Instance
 		// to have low single-digit number of hosts.
 		distinctHosts = bufHosts[:0]
 
-		// TODO: Do we need to pass this in to avoid allocations?
 		hostsPerZone       = make(map[string]int)
 		targetHostsPerZone = max(1, replicationFactor/maxZones)
 	)

@@ -20,8 +20,10 @@ import (
 	"github.com/grafana/dskit/instrument"
 )
 
+const mb = 1024 * 1024
+
 // BodySizeBuckets defines buckets for request/response body sizes.
-var BodySizeBuckets = prometheus.ExponentialBuckets(4, 4, 15)
+var BodySizeBuckets = []float64{1 * mb, 2.5 * mb, 5 * mb, 10 * mb, 25 * mb, 50 * mb, 100 * mb, 250 * mb}
 
 // RouteMatcher matches routes
 type RouteMatcher interface {
