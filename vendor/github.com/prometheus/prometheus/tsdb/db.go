@@ -100,6 +100,7 @@ func DefaultOptions() *Options {
 		HeadPostingsForMatchersCacheMaxItems:  DefaultPostingsForMatchersCacheMaxItems,
 		HeadPostingsForMatchersCacheMaxBytes:  DefaultPostingsForMatchersCacheMaxBytes,
 		HeadPostingsForMatchersCacheForce:     DefaultPostingsForMatchersCacheForce,
+		HeadPostingsForMatchersCacheMetrics:   NewPostingsForMatchersCacheMetrics(nil),
 		BlockPostingsForMatchersCacheTTL:      DefaultPostingsForMatchersCacheTTL,
 		BlockPostingsForMatchersCacheMaxItems: DefaultPostingsForMatchersCacheMaxItems,
 		BlockPostingsForMatchersCacheMaxBytes: DefaultPostingsForMatchersCacheMaxBytes,
