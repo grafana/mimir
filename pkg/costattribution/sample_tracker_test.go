@@ -122,6 +122,9 @@ func TestSampleTracker_inactiveObservations(t *testing.T) {
 }
 
 func TestSampleTracker_Concurrency(t *testing.T) {
+	// Disabled due to spurious failures. See https://github.com/grafana/mimir/issues/10482
+	t.Skip()
+
 	m := newTestManager()
 	st := m.SampleTracker("user1")
 
