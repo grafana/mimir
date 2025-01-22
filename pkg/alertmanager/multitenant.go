@@ -667,7 +667,7 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 
 func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[string]alertspb.AlertConfigDescs) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
-	userAlertmanagersToStop := map[string]*Alertmanager{}
+	amInitSkipped := map[string]struct{}{}
 	for user, cfgs := range cfgMap {
 		cfg, startAM, err := am.computeConfig(cfgs)
 		if err != nil {
@@ -678,17 +678,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 
 		if !startAM {
 			level.Debug(am.logger).Log("msg", "not initializing alertmanager for grafana tenant without a promoted, non-default configuration", "user", user)
-			am.alertmanagersMtx.Lock()
-			if userAM, ok := am.alertmanagers[user]; ok {
-				// Stop the Alertmanager if it's already running.
-				userAlertmanagersToStop[user] = userAM
-				delete(am.alertmanagers, user)
-				delete(am.cfgs, user)
-				am.multitenantMetrics.lastReloadSuccessful.DeleteLabelValues(user)
-				am.multitenantMetrics.lastReloadSuccessfulTimestamp.DeleteLabelValues(user)
-				am.alertmanagerMetrics.removeUserRegistry(user)
-			}
-			am.alertmanagersMtx.Unlock()
+			amInitSkipped[user] = struct{}{}
 			continue
 		}
 
@@ -706,9 +696,12 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 		am.multitenantMetrics.lastReloadSuccessfulTimestamp.WithLabelValues(user).SetToCurrentTime()
 	}
 
+	userAlertmanagersToStop := map[string]*Alertmanager{}
 	am.alertmanagersMtx.Lock()
 	for userID, userAM := range am.alertmanagers {
-		if _, exists := cfgMap[userID]; !exists {
+		_, exists := cfgMap[userID]
+		_, initSkipped := amInitSkipped[userID]
+		if !exists || initSkipped {
 			userAlertmanagersToStop[userID] = userAM
 			delete(am.alertmanagers, userID)
 			delete(am.cfgs, userID)
