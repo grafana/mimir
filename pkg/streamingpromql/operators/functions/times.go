@@ -17,27 +17,27 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-type ScalarTime struct {
+type Time struct {
 	TimeRange                types.QueryTimeRange
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	expressionPosition       posrange.PositionRange
 }
 
-var _ types.ScalarOperator = &ScalarTime{}
+var _ types.ScalarOperator = &Time{}
 
-func NewScalarTime(
+func NewTime(
 	timeRange types.QueryTimeRange,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
-) *ScalarTime {
-	return &ScalarTime{
+) *Time {
+	return &Time{
 		TimeRange:                timeRange,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
 	}
 }
 
-func (s *ScalarTime) GetValues(_ context.Context) (types.ScalarData, error) {
+func (s *Time) GetValues(_ context.Context) (types.ScalarData, error) {
 	samples, err := types.FPointSlicePool.Get(s.TimeRange.StepCount, s.MemoryConsumptionTracker)
 
 	if err != nil {
@@ -55,11 +55,11 @@ func (s *ScalarTime) GetValues(_ context.Context) (types.ScalarData, error) {
 	return types.ScalarData{Samples: samples}, nil
 }
 
-func (s *ScalarTime) ExpressionPosition() posrange.PositionRange {
+func (s *Time) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
-func (s *ScalarTime) Close() {
+func (s *Time) Close() {
 	// Nothing to do.
 }
 

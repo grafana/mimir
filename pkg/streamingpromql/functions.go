@@ -80,7 +80,7 @@ func TimeFunctionOperatorFactory(name string, f functions.FunctionOverInstantVec
 
 		} else {
 			// if the argument is not provided, it will default to vector(time())
-			inner = scalars.NewScalarToInstantVector(functions.NewScalarTime(timeRange, memoryConsumptionTracker, expressionPosition), expressionPosition)
+			inner = scalars.NewScalarToInstantVector(functions.NewTime(timeRange, memoryConsumptionTracker, expressionPosition), expressionPosition)
 		}
 
 		var o types.InstantVectorOperator = functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
@@ -483,7 +483,7 @@ func timeOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiti
 		return nil, fmt.Errorf("expected exactly 0 arguments for time, got %v", len(args))
 	}
 
-	return functions.NewScalarTime(timeRange, memoryConsumptionTracker, expressionPosition), nil
+	return functions.NewTime(timeRange, memoryConsumptionTracker, expressionPosition), nil
 }
 
 func instantVectorToScalarOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
