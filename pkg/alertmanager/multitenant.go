@@ -723,27 +723,24 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 }
 
 // computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
-// It returns the final configuration and external URL the Alertmanager will use.
+// It returns a bool indicating whether the Alertmanager should be started for a tenant.
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	cfg := amConfig{
 		AlertConfigDesc: cfgs.Mimir,
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 	shouldStartAlertmanager := !(am.fallbackConfig == cfgs.Mimir.RawConfig || cfgs.Mimir.RawConfig == "")
-	fmt.Println("shouldStartAlertmanager:", shouldStartAlertmanager)
 	switch {
 	// Mimir configuration.
+	case cfgs.Grafana.RawConfig == "":
+		level.Debug(am.logger).Log("msg", "grafana configuration is empty, using mimir config", "user", cfgs.Mimir.User)
+		return cfg, shouldStartAlertmanager && cfgs.Grafana.User != "", nil
 	case !cfgs.Grafana.Promoted:
 		level.Debug(am.logger).Log("msg", "grafana configuration not promoted, using mimir config", "user", cfgs.Mimir.User)
 		return cfg, shouldStartAlertmanager, nil
-
 	case cfgs.Grafana.Default:
 		level.Debug(am.logger).Log("msg", "grafana configuration is default, using mimir config", "user", cfgs.Mimir.User)
 		return cfg, shouldStartAlertmanager, nil
-
-	case cfgs.Grafana.RawConfig == "":
-		level.Debug(am.logger).Log("msg", "grafana configuration is empty, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, true, nil
 
 	// Grafana configuration.
 	case cfgs.Mimir.RawConfig == am.fallbackConfig:
@@ -753,7 +750,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 	case cfgs.Mimir.RawConfig == "":
 		level.Debug(am.logger).Log("msg", "mimir configuration is empty, using grafana config with the default globals", "user", cfgs.Grafana.User)
-		cfg, err := createUsableGrafanaConfig(cfgs.Grafana, cfgs.Mimir.RawConfig)
+		cfg, err := createUsableGrafanaConfig(cfgs.Grafana, am.fallbackConfig)
 		return cfg, true, err
 
 	// Both configurations.
