@@ -158,6 +158,11 @@ func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth
 }
 
 func (a *API) newRoute(path string, handler http.Handler, isPrefix, auth, gzip bool, methods ...string) (route *mux.Route) {
+	if a.server.Cluster() != "" {
+		level.Debug(a.logger).Log("msg", "api: enabling cluster validation middleware", "path", path, "cluster", a.server.Cluster())
+		handler = ClusterValidationMiddleware(a.server.Cluster(), a.logger).Wrap(handler)
+	}
+
 	// Propagate the consistency level on all HTTP routes.
 	// They are not used everywhere, but for consistency and less surprise it's added everywhere.
 	handler = querierapi.ConsistencyMiddleware().Wrap(handler)
