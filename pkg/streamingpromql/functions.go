@@ -65,7 +65,7 @@ func TimeFunctionOperatorFactory(name string, f functions.FunctionOverInstantVec
 	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) > 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
-			return nil, fmt.Errorf("expected 1 or 0 argument for %s, got %v", name, len(args))
+			return nil, fmt.Errorf("expected 0 or 1 argument for %s, got %v", name, len(args))
 		}
 
 		var inner types.InstantVectorOperator
