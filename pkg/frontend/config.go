@@ -10,7 +10,6 @@ import (
 	"net/http"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/netutil"
 	"github.com/pkg/errors"
@@ -34,7 +33,7 @@ type CombinedFrontendConfig struct {
 
 	DownstreamURL string `yaml:"downstream_url" category:"advanced"`
 
-	ClusterValidationConfig clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
+	ClusterValidationLabel string `yaml:"-"`
 }
 
 func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -44,7 +43,6 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Log
 	cfg.QueryMiddleware.RegisterFlags(f)
 
 	f.StringVar(&cfg.DownstreamURL, "query-frontend.downstream-url", "", "URL of downstream Prometheus.")
-	cfg.ClusterValidationConfig.RegisterFlagsWithPrefix("query-frontend.client-cluster-validation.", f)
 }
 
 func (cfg *CombinedFrontendConfig) Validate() error {
@@ -108,15 +106,15 @@ func InitFrontend(
 
 func invalidClusterValidationReporter(cfg CombinedFrontendConfig, reg prometheus.Registerer, logger log.Logger) middleware.InvalidClusterValidationReporter {
 	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "querier", util.HTTPProtocol)
-	return util.NewInvalidClusterValidationReporter(cfg.ClusterValidationConfig.Label, invalidClusterValidation, logger)
+	return util.NewInvalidClusterValidationReporter(cfg.ClusterValidationLabel, invalidClusterValidation, logger)
 }
 
 func httpRoundTripper(cfg CombinedFrontendConfig, rt http.RoundTripper, reg prometheus.Registerer, logger log.Logger) http.RoundTripper {
 	if rt == nil {
 		return nil
 	}
-	if cfg.ClusterValidationConfig.Label != "" {
-		return middleware.ClusterValidationRoundTripper(cfg.ClusterValidationConfig.Label, invalidClusterValidationReporter(cfg, reg, logger), rt)
+	if cfg.ClusterValidationLabel != "" {
+		return middleware.ClusterValidationRoundTripper(cfg.ClusterValidationLabel, invalidClusterValidationReporter(cfg, reg, logger), rt)
 	}
 	return rt
 }
@@ -125,8 +123,8 @@ func grpcToHTTPRoundTripper(cfg CombinedFrontendConfig, grpcRoundTripper transpo
 	if grpcRoundTripper == nil {
 		return nil
 	}
-	if cfg.ClusterValidationConfig.Label != "" {
-		return middleware.ClusterValidationRoundTripper(cfg.ClusterValidationConfig.Label, invalidClusterValidationReporter(cfg, reg, logger), transport.AdaptGrpcRoundTripperToHTTPRoundTripper(grpcRoundTripper))
+	if cfg.ClusterValidationLabel != "" {
+		return middleware.ClusterValidationRoundTripper(cfg.ClusterValidationLabel, invalidClusterValidationReporter(cfg, reg, logger), transport.AdaptGrpcRoundTripperToHTTPRoundTripper(grpcRoundTripper))
 	}
 	return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(grpcRoundTripper)
 }
