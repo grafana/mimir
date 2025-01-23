@@ -1233,9 +1233,8 @@ eval instant at 1m count_over_time({__name__=~"data(_histogram)?"}[2m])
 clear
 
 # Test for absent()
-# Unsupported by streaming engine.
-# eval instant at 50m absent(nonexistent)
-# 	{} 1
+eval instant at 50m absent(nonexistent)
+ 	{} 1
 
 # Unsupported by streaming engine.
 # eval instant at 50m absent(nonexistent{job="testjob", instance="testinstance", method=~".x"})
