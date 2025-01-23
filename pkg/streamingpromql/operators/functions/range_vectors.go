@@ -486,8 +486,11 @@ var Deriv = FunctionOverRangeVectorDefinition{
 func deriv(step *types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 
-	if len(fHead)+len(fTail) == 1 && step.Histograms.Any() {
+	if step.Floats.Any() && step.Histograms.Any() {
 		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
+	}
+
+	if len(fHead)+len(fTail) == 1 && step.Histograms.Any() {
 		return 0, false, nil, nil
 	}
 
@@ -496,10 +499,6 @@ func deriv(step *types.RangeVectorStepData, _ float64, emitAnnotation types.Emit
 	}
 
 	slope, _ := linearRegression(fHead, fTail, fHead[0].T)
-
-	if step.Histograms.Any() {
-		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
-	}
 
 	return slope, true, nil, nil
 }
