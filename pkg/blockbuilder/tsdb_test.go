@@ -305,6 +305,16 @@ func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 	require.ErrorIs(t, err, errUploadFailed)
 }
 
+func compareQueryWithDir(t *testing.T, bucketDir string, expSamples []mimirpb.Sample, expHistograms []mimirpb.Histogram, matchers ...*labels.Matcher) *tsdb.DB {
+	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	compareQuery(t, db, expSamples, expHistograms, matchers...)
+
+	return db
+}
+
 func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHistograms []mimirpb.Histogram, matchers ...*labels.Matcher) {
 	querier, err := db.Querier(math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
