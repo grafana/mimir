@@ -153,6 +153,10 @@ func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
 	return r.hints
 }
 
+func (r *PrometheusRangeQueryRequest) GetLookbackDelta() time.Duration {
+	return r.lookbackDelta
+}
+
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
 func (r *PrometheusRangeQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
 	newRequest := *r
@@ -343,6 +347,10 @@ func (r *PrometheusInstantQueryRequest) GetOptions() Options {
 
 func (r *PrometheusInstantQueryRequest) GetHints() *Hints {
 	return r.hints
+}
+
+func (r *PrometheusInstantQueryRequest) GetLookbackDelta() time.Duration {
+	return r.lookbackDelta
 }
 
 func (r *PrometheusInstantQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
