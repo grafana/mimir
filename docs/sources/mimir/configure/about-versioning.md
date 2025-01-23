@@ -88,7 +88,7 @@ The following features are currently experimental:
     - `-ruler-storage.cache.rule-group-enabled`
 - Distributor
   - Influx ingestion
-    - `/api/v1/influx/push` endpoint
+    - `/api/v1/push/influx/write` endpoint
     - `-distributor.influx-endpoint-enabled`
     - `-distributor.max-influx-request-size`
   - Metrics relabeling
