@@ -225,6 +225,16 @@
         },
         {
           "kind": "field",
+          "name": "cluster",
+          "required": false,
+          "desc": "Optionally define the server's cluster, and enable validation that requests are for the same cluster.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "server.cluster",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
           "name": "tls_cipher_suites",
           "required": false,
           "desc": "Comma-separated list of cipher suites to use. If blank, the default Go cipher suites is used.",

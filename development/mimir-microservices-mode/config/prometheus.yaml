@@ -47,6 +47,8 @@ remote_write:
   - url: http://distributor-1:8000/api/v1/push
     send_native_histograms: true
     send_exemplars: true
+    headers:
+      'X-Cluster': 'development'
 
 rule_files:
   - '/etc/mixin/mimir-alerts.yaml'

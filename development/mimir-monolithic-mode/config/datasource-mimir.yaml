@@ -12,6 +12,9 @@ datasources:
     exemplarTraceIdDestinations:
     - name: traceID
       datasourceUid: jaeger
+    httpHeaderName1: 'X-Cluster'
+  secureJsonData:
+    httpHeaderValue1: 'development'
 - name: Jaeger
   type: jaeger
   access: proxy

@@ -50,3 +50,5 @@ prometheus:
 
       remote_write:
         - url: http://distributor-1:8000/api/v1/push
+          headers:
+            'X-Cluster': 'development'
