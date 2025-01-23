@@ -15,11 +15,6 @@
 * [CHANGE] Query-frontend: Add `topic` label to `cortex_ingest_storage_reader_last_produced_offset_requests_total`, `cortex_ingest_storage_reader_last_produced_offset_failures_total`, `cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds`, `cortex_ingest_storage_reader_partition_start_offset_requests_total`, `cortex_ingest_storage_reader_partition_start_offset_failures_total`, `cortex_ingest_storage_reader_partition_start_offset_request_duration_seconds` metrics. #10462
 * [CHANGE] Distributor, querier, ingester and store-gateway: Make use of LabelHints.Limit for label names and values requests. #10410
 * [FEATURE] Distributor: Add experimental Influx handler. #10153
-
->>>>>>> 332cfd40b (Add changelog)
-=======
-* [CHANGE] Distributor, Querier, Ingester and StoreGateway: Make use of LabelHints.Limit for label names and values requests. #10410
->>>>>>> 60678c44d (Fix changelog)
 * [ENHANCEMENT] Query Frontend: Return server-side `samples_processed` statistics. #10103
 * [ENHANCEMENT] Distributor: OTLP receiver now converts also metric metadata. See also https://github.com/prometheus/prometheus/pull/15416. #10168
 * [ENHANCEMENT] Distributor: discard float and histogram samples with duplicated timestamps from each timeseries in a request before the request is forwarded to ingesters. Discarded samples are tracked by `cortex_discarded_samples_total` metrics with the reason `sample_duplicate_timestamp`. #10145 #10430
