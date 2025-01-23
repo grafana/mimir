@@ -1,5 +1,8 @@
 multitenancy_enabled: false
 
+server:
+  cluster: development
+
 distributor:
   pool:
     health_check_ingesters: true

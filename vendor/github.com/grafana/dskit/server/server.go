@@ -88,6 +88,7 @@ type Config struct {
 	GRPCListenPort       int    `yaml:"grpc_listen_port"`
 	GRPCConnLimit        int    `yaml:"grpc_listen_conn_limit"`
 	ProxyProtocolEnabled bool   `yaml:"proxy_protocol_enabled"`
+	Cluster              string `yaml:"cluster"`
 
 	CipherSuites  string    `yaml:"tls_cipher_suites"`
 	MinVersion    string    `yaml:"tls_min_version"`
@@ -216,6 +217,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.LogRequestExcludeHeadersList, "server.log-request-headers-exclude-list", "", "Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.")
 	f.BoolVar(&cfg.LogRequestAtInfoLevel, "server.log-request-at-info-level-enabled", false, "Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.")
 	f.BoolVar(&cfg.ProxyProtocolEnabled, "server.proxy-protocol-enabled", false, "Enables PROXY protocol.")
+	f.StringVar(&cfg.Cluster, "server.cluster", "", "Optionally define the server's cluster, and enable validation that requests are for the same cluster.")
 	f.DurationVar(&cfg.Throughput.LatencyCutoff, "server.throughput.latency-cutoff", 0, "Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.")
 	f.StringVar(&cfg.Throughput.Unit, "server.throughput.unit", "samples_processed", "Unit of the server throughput metric, for example 'processed_bytes' or 'samples_processed'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name.")
 }
@@ -607,6 +609,11 @@ func handleGRPCError(err error, errChan chan error) {
 	case errChan <- err:
 	default:
 	}
+}
+
+// Cluster returns the configured server cluster.
+func (s *Server) Cluster() string {
+	return s.cfg.Cluster
 }
 
 // HTTPListenAddr exposes `net.Addr` that `Server` is listening to for HTTP connections.

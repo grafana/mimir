@@ -553,6 +553,11 @@ The `server` block configures the HTTP and gRPC server of the launched service(s
 # CLI flag: -server.proxy-protocol-enabled
 [proxy_protocol_enabled: <boolean> | default = false]
 
+# Optionally define the server's cluster, and enable validation that requests
+# are for the same cluster.
+# CLI flag: -server.cluster
+[cluster: <string> | default = ""]
+
 # Comma-separated list of cipher suites to use. If blank, the default Go cipher
 # suites is used.
 # CLI flag: -server.tls-cipher-suites
