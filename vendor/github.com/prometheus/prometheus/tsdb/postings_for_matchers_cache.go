@@ -66,7 +66,10 @@ func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64
 		force:    force,
 		metrics:  metrics,
 
-		timeNow:             time.Now,
+		timeNow: func() time.Time {
+			// Ensure it is UTC, so that it's faster to compute the cache entry size.
+			return time.Now().UTC()
+		},
 		postingsForMatchers: PostingsForMatchers,
 
 		tracer:      otel.Tracer(""),
@@ -219,7 +222,10 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 			case <-oldPromise.done:
 				if c.timeNow().Sub(oldPromise.evaluationCompletedAt) >= c.ttl {
 					// The cached promise already expired, but it has not been evicted.
-					// TODO trace
+					span.AddEvent("skipping cached postingsForMatchers promise because its TTL already expired", trace.WithAttributes(
+						attribute.Stringer("cached promise evaluation completed at", oldPromise.evaluationCompletedAt),
+						attribute.String("cache_key", key),
+					))
 					c.metrics.skipsBecauseStale.Inc()
 
 					return func(ctx context.Context) (index.Postings, error) {
