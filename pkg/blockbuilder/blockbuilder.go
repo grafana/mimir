@@ -209,12 +209,20 @@ func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
 			continue
 		}
 
-		if _, err := b.consumeJob(ctx, key, spec); err != nil {
+		ps, err := b.consumeJob(ctx, key, spec)
+		if err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 			continue
 		}
 
-		if err := b.scheduler.CompleteJob(key); err != nil {
+		ci := schedulerpb.CompletionInfo{
+			CommitOffset:   ps.Commit.At,
+			CommitRecTs:    ps.CommitRecordTimestamp,
+			LastSeenOffset: ps.LastSeenOffset,
+			LastBlockEndTs: ps.LastBlockEnd,
+		}
+
+		if err := b.scheduler.CompleteJob(key, ci); err != nil {
 			level.Error(b.logger).Log("msg", "failed to complete job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 		}
 
@@ -630,7 +638,7 @@ consumerLoop:
 		LastBlockEnd:          lastBlockEnd,
 	}
 	if err := b.committer.commitState(ctx, b, logger, b.cfg.ConsumerGroup, newState); err != nil {
-		return state, err
+		return state, fmt.Errorf("commit state: %w", err)
 	}
 
 	return newState, nil

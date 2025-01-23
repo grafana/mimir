@@ -236,6 +236,7 @@ func commitOffsetsFromLag(lag kadm.GroupLag) kadm.Offsets {
 	return offsets
 }
 
+// snapCommitted returns a snapshot of the known committed offsets.
 func (s *BlockBuilderScheduler) snapCommitted() kadm.Offsets {
 	cp := make(kadm.Offsets)
 
@@ -249,13 +250,12 @@ func (s *BlockBuilderScheduler) snapCommitted() kadm.Offsets {
 }
 
 func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
-	offsets := s.snapCommitted()
-	return s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, offsets)
+	return s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, s.snapCommitted())
 }
 
 // advanceCommittedOffset advances the committed offset for the given topic/partition.
 // It is a no-op if the new offset is not greater than the current committed offset.
-// Assumes the lock is held.
+// Assumes the scheduler mutex is held.
 func (s *BlockBuilderScheduler) advanceCommittedOffset(topic string, partition int32, newOffset int64, metadata string) {
 	if o, ok := s.committed.Lookup(topic, partition); ok {
 		if newOffset > o.At {
@@ -309,13 +309,13 @@ func (s *BlockBuilderScheduler) UpdateJob(_ context.Context, req *schedulerpb.Up
 		id:    req.Key.Id,
 		epoch: req.Key.Epoch,
 	}
-	if err := s.updateJob(k, req.WorkerId, req.Complete, *req.Spec); err != nil {
+	if err := s.updateJob(k, req.WorkerId, req.Complete, *req.Spec, req.CompletionInfo); err != nil {
 		return nil, err
 	}
 	return &schedulerpb.UpdateJobResponse{}, nil
 }
 
-func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete bool, j schedulerpb.JobSpec) error {
+func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete bool, j schedulerpb.JobSpec, ci *schedulerpb.CompletionInfo) error {
 	logger := log.With(s.logger, "job_id", key.id, "epoch", key.epoch, "worker", workerID)
 
 	s.mu.Lock()
@@ -323,7 +323,7 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 
 	if !s.observationComplete {
 		// We're still in observation mode. Record the observation.
-		if err := s.updateObservation(key, workerID, complete, j); err != nil {
+		if err := s.updateObservation(key, workerID, complete, j, ci); err != nil {
 			return fmt.Errorf("observe update: %w", err)
 		}
 
@@ -350,7 +350,8 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 		// TODO: More information to pass from block-builder here:
 		// - the true commit offset
 		// - metadata blob
-		s.advanceCommittedOffset(j.Topic, j.Partition, j.EndOffset, "{}")
+		//meta := marhshall
+		s.advanceCommittedOffset(j.Topic, j.Partition, ci.CommitOffset, "{}")
 		logger.Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
@@ -362,14 +363,15 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 	return nil
 }
 
-func (s *BlockBuilderScheduler) updateObservation(key jobKey, workerID string, complete bool, j schedulerpb.JobSpec) error {
+func (s *BlockBuilderScheduler) updateObservation(key jobKey, workerID string, complete bool, j schedulerpb.JobSpec, ci *schedulerpb.CompletionInfo) error {
 	rj, ok := s.observations[key.id]
 	if !ok {
 		s.observations[key.id] = &observation{
-			key:      key,
-			spec:     j,
-			workerID: workerID,
-			complete: complete,
+			key:            key,
+			spec:           j,
+			workerID:       workerID,
+			complete:       complete,
+			completionInfo: ci,
 		}
 		return nil
 	}
@@ -384,6 +386,7 @@ func (s *BlockBuilderScheduler) updateObservation(key jobKey, workerID string, c
 	rj.spec = j
 	rj.workerID = workerID
 	rj.complete = complete
+	rj.completionInfo = ci
 	return nil
 }
 
@@ -393,7 +396,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 	for _, rj := range s.observations {
 		if rj.complete {
 			// Completed.
-			s.advanceCommittedOffset(rj.spec.Topic, rj.spec.Partition, rj.spec.EndOffset, "{}")
+			s.advanceCommittedOffset(rj.spec.Topic, rj.spec.Partition, rj.completionInfo.CommitOffset, "{}")
 		} else {
 			// An in-progress job.
 			// These don't affect offsets, they just get added to the job queue.
@@ -407,10 +410,11 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 type obsMap map[string]*observation
 
 type observation struct {
-	key      jobKey
-	spec     schedulerpb.JobSpec
-	workerID string
-	complete bool
+	key            jobKey
+	spec           schedulerpb.JobSpec
+	workerID       string
+	complete       bool
+	completionInfo *schedulerpb.CompletionInfo
 }
 
 var _ schedulerpb.BlockBuilderSchedulerServer = (*BlockBuilderScheduler)(nil)

@@ -24,7 +24,7 @@ type SchedulerClient interface {
 	Run(context.Context)
 	Close()
 	GetJob(context.Context) (JobKey, JobSpec, error)
-	CompleteJob(JobKey) error
+	CompleteJob(JobKey, CompletionInfo) error
 }
 
 type schedulerClient struct {
@@ -40,8 +40,9 @@ type schedulerClient struct {
 }
 
 type job struct {
-	spec     JobSpec
-	complete bool
+	spec           JobSpec
+	complete       bool
+	completionInfo CompletionInfo
 	// The time, if non-zero, when this job entry will become eligible for purging.
 	forgetTime time.Time
 }
@@ -109,10 +110,11 @@ func (s *schedulerClient) Close() {
 func (s *schedulerClient) sendUpdates(ctx context.Context) {
 	for key, j := range s.snapshot() {
 		_, err := s.scheduler.UpdateJob(ctx, &UpdateJobRequest{
-			Key:      &key,
-			WorkerId: s.workerID,
-			Spec:     &j.spec,
-			Complete: j.complete,
+			Key:            &key,
+			WorkerId:       s.workerID,
+			Spec:           &j.spec,
+			Complete:       j.complete,
+			CompletionInfo: &j.completionInfo,
 		})
 		if err != nil {
 			level.Error(s.logger).Log("msg", "failed to update job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
@@ -195,7 +197,7 @@ func (s *schedulerClient) GetJob(ctx context.Context) (JobKey, JobSpec, error) {
 	return JobKey{}, JobSpec{}, lastErr
 }
 
-func (s *schedulerClient) CompleteJob(jobKey JobKey) error {
+func (s *schedulerClient) CompleteJob(jobKey JobKey, info CompletionInfo) error {
 	level.Info(s.logger).Log("msg", "marking job as completed", "job_id", jobKey.Id, "epoch", jobKey.Epoch)
 
 	s.mu.Lock()
@@ -211,7 +213,9 @@ func (s *schedulerClient) CompleteJob(jobKey JobKey) error {
 
 	// Set it as complete and also set a time when it'll become eligible for forgetting.
 	j.complete = true
+	j.completionInfo = info
 	j.forgetTime = time.Now().Add(s.maxUpdateAge)
+
 	return nil
 }
 

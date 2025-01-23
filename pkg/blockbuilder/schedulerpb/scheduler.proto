@@ -41,11 +41,22 @@ message AssignJobResponse {
     JobSpec spec = 2;
 }
 
+// CompletionInfo is the consumption state related to completion that should be
+// sent back to the scheduler for persisting back to Kafka.
+message CompletionInfo {
+    google.protobuf.Timestamp commit_rec_ts = 1  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
+    int64 last_seen_offset = 2;
+    google.protobuf.Timestamp last_block_end_ts = 3  [(gogoproto.nullable) = false, (gogoproto.stdtime) = true];
+    // the offset at which the next round of consumption should begin.
+    int64 commit_offset = 4;
+}
+
 message UpdateJobRequest {
     JobKey key = 1;
     string worker_id = 2;
     JobSpec spec = 3;
     bool complete = 4;
+    CompletionInfo completionInfo = 5;
 }
 
 message UpdateJobResponse {}

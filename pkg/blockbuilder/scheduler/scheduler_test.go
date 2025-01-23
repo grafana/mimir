@@ -77,6 +77,7 @@ func TestStartup(t *testing.T) {
 			Topic:       "ingest",
 			Partition:   64,
 			StartOffset: 1000,
+			EndOffset:   1200,
 			CommitRecTs: now.Add(-1 * time.Hour),
 		},
 	}
@@ -89,6 +90,7 @@ func TestStartup(t *testing.T) {
 			Topic:       "ingest",
 			Partition:   65,
 			StartOffset: 256,
+			EndOffset:   511,
 			CommitRecTs: now.Add(-2 * time.Hour),
 		},
 	}
@@ -101,40 +103,41 @@ func TestStartup(t *testing.T) {
 			Topic:       "ingest",
 			Partition:   66,
 			StartOffset: 57,
+			EndOffset:   123,
 			CommitRecTs: now.Add(-3 * time.Hour),
 		},
 	}
 
 	// Clients will be pinging with their updates for some time.
 
-	require.NoError(t, sched.updateJob(j1.key, "w0", false, j1.spec))
+	require.NoError(t, sched.updateJob(j1.key, "w0", false, j1.spec, nil))
 
-	require.NoError(t, sched.updateJob(j2.key, "w0", true, j2.spec))
+	require.NoError(t, sched.updateJob(j2.key, "w0", true, j2.spec, &schedulerpb.CompletionInfo{CommitOffset: 512}))
 
-	require.NoError(t, sched.updateJob(j3.key, "w0", false, j3.spec))
-	require.NoError(t, sched.updateJob(j3.key, "w0", false, j3.spec))
-	require.NoError(t, sched.updateJob(j3.key, "w0", false, j3.spec))
-	require.NoError(t, sched.updateJob(j3.key, "w0", true, j3.spec))
+	require.NoError(t, sched.updateJob(j3.key, "w0", false, j3.spec, nil))
+	require.NoError(t, sched.updateJob(j3.key, "w0", false, j3.spec, nil))
+	require.NoError(t, sched.updateJob(j3.key, "w0", false, j3.spec, nil))
+	require.NoError(t, sched.updateJob(j3.key, "w0", true, j3.spec, &schedulerpb.CompletionInfo{CommitOffset: 124}))
 
 	// Convert the observations to actual jobs.
 	sched.completeObservationMode()
 
 	// Now that we're out of observation mode, we should know about all the jobs.
 
-	require.NoError(t, sched.updateJob(j1.key, "w0", false, j1.spec))
-	require.NoError(t, sched.updateJob(j1.key, "w0", false, j1.spec))
+	require.NoError(t, sched.updateJob(j1.key, "w0", false, j1.spec, nil))
+	require.NoError(t, sched.updateJob(j1.key, "w0", false, j1.spec, nil))
 
-	require.NoError(t, sched.updateJob(j2.key, "w0", true, j2.spec))
+	require.NoError(t, sched.updateJob(j2.key, "w0", true, j2.spec, &schedulerpb.CompletionInfo{CommitOffset: 512}))
 
-	require.NoError(t, sched.updateJob(j3.key, "w0", true, j3.spec))
+	require.NoError(t, sched.updateJob(j3.key, "w0", true, j3.spec, &schedulerpb.CompletionInfo{CommitOffset: 124}))
 
 	_, ok := sched.jobs.jobs[j1.key.id]
 	require.True(t, ok)
 
 	// And eventually they'll all complete.
-	require.NoError(t, sched.updateJob(j1.key, "w0", true, j1.spec))
-	require.NoError(t, sched.updateJob(j2.key, "w0", true, j2.spec))
-	require.NoError(t, sched.updateJob(j3.key, "w0", true, j3.spec))
+	require.NoError(t, sched.updateJob(j1.key, "w0", true, j1.spec, &schedulerpb.CompletionInfo{CommitOffset: 1201}))
+	require.NoError(t, sched.updateJob(j2.key, "w0", true, j2.spec, &schedulerpb.CompletionInfo{CommitOffset: 512}))
+	require.NoError(t, sched.updateJob(j3.key, "w0", true, j3.spec, &schedulerpb.CompletionInfo{CommitOffset: 124}))
 
 	{
 		_, _, err := sched.assignJob("w0")
@@ -198,11 +201,12 @@ func TestObservations(t *testing.T) {
 	}
 
 	type observation struct {
-		key       jobKey
-		spec      schedulerpb.JobSpec
-		workerID  string
-		complete  bool
-		expectErr error
+		key            jobKey
+		spec           schedulerpb.JobSpec
+		workerID       string
+		complete       bool
+		completionInfo *schedulerpb.CompletionInfo
+		expectErr      error
 	}
 	var clientData []observation
 	const (
@@ -210,7 +214,7 @@ func TestObservations(t *testing.T) {
 		inProgress = false
 	)
 	maybeBadEpoch := errors.New("maybe bad epoch")
-	mkJob := func(isComplete bool, worker string, partition int32, id string, epoch int64, commitRecTs time.Time, endOffset int64, expectErr error) {
+	mkJob := func(isComplete bool, worker string, partition int32, id string, epoch int64, commitRecTs time.Time, endOffset int64, ci *schedulerpb.CompletionInfo, expectErr error) {
 		clientData = append(clientData, observation{
 			key: jobKey{id: id, epoch: epoch},
 			spec: schedulerpb.JobSpec{
@@ -219,45 +223,46 @@ func TestObservations(t *testing.T) {
 				CommitRecTs: commitRecTs,
 				EndOffset:   endOffset,
 			},
-			workerID:  worker,
-			complete:  isComplete,
-			expectErr: expectErr,
+			workerID:       worker,
+			complete:       isComplete,
+			completionInfo: ci,
+			expectErr:      expectErr,
 		})
 	}
 
 	// Rig up a bunch of data that clients are collectively sending.
 
 	// Partition 1: one job in progress.
-	mkJob(inProgress, "w0", 1, "ingest/1/5524", 10, time.Unix(200, 0), 6000, nil)
+	mkJob(inProgress, "w0", 1, "ingest/1/5524", 10, time.Unix(200, 0), 6000, nil, nil)
 
 	// Partition 2: Many complete jobs, followed by an in-progress job.
-	mkJob(complete, "w0", 2, "ingest/2/1", 3, time.Unix(1, 0), 15, nil)
-	mkJob(complete, "w0", 2, "ingest/2/16", 4, time.Unix(2, 0), 31, nil)
-	mkJob(complete, "w0", 2, "ingest/2/32", 4, time.Unix(3, 0), 45, nil)
-	mkJob(complete, "w0", 2, "ingest/2/1000", 11, time.Unix(500, 0), 2000, nil)
-	mkJob(inProgress, "w0", 2, "ingest/2/2001", 12, time.Unix(600, 0), 2199, nil)
+	mkJob(complete, "w0", 2, "ingest/2/1", 3, time.Unix(1, 0), 15, &schedulerpb.CompletionInfo{CommitOffset: 16}, nil)
+	mkJob(complete, "w0", 2, "ingest/2/16", 4, time.Unix(2, 0), 31, &schedulerpb.CompletionInfo{CommitOffset: 32}, nil)
+	mkJob(complete, "w0", 2, "ingest/2/32", 4, time.Unix(3, 0), 45, &schedulerpb.CompletionInfo{CommitOffset: 46}, nil)
+	mkJob(complete, "w0", 2, "ingest/2/1000", 11, time.Unix(500, 0), 2000, &schedulerpb.CompletionInfo{CommitOffset: 2001}, nil)
+	mkJob(inProgress, "w0", 2, "ingest/2/2001", 12, time.Unix(600, 0), 2199, nil, nil)
 
 	// (Partition 3 has no updates.)
 
 	// Partition 4 has a series of completed jobs that are entirely after what was found in Kafka.
-	mkJob(complete, "w0", 4, "ingest/4/500", 15, time.Unix(500, 0), 599, nil)
-	mkJob(complete, "w1", 4, "ingest/4/600", 16, time.Unix(600, 0), 699, nil)
-	mkJob(complete, "w2", 4, "ingest/4/700", 17, time.Unix(700, 0), 799, nil)
-	mkJob(complete, "w3", 4, "ingest/4/800", 18, time.Unix(800, 0), 899, nil)
+	mkJob(complete, "w0", 4, "ingest/4/500", 15, time.Unix(500, 0), 599, &schedulerpb.CompletionInfo{CommitOffset: 600}, nil)
+	mkJob(complete, "w1", 4, "ingest/4/600", 16, time.Unix(600, 0), 699, &schedulerpb.CompletionInfo{CommitOffset: 700}, nil)
+	mkJob(complete, "w2", 4, "ingest/4/700", 17, time.Unix(700, 0), 799, &schedulerpb.CompletionInfo{CommitOffset: 800}, nil)
+	mkJob(complete, "w3", 4, "ingest/4/800", 18, time.Unix(800, 0), 899, &schedulerpb.CompletionInfo{CommitOffset: 900}, nil)
 	// Here's a conflicting completion report from a worker whose lease was revoked at one point. It should be effectively dropped.
-	mkJob(complete, "w99", 4, "ingest/4/600", 6, time.Unix(600, 0), 699, maybeBadEpoch)
+	mkJob(complete, "w99", 4, "ingest/4/600", 6, time.Unix(600, 0), 699, &schedulerpb.CompletionInfo{CommitOffset: 700}, maybeBadEpoch)
 
 	// Partition 5 has a number of conflicting in-progress reports.
-	mkJob(inProgress, "w100", 5, "ingest/5/12000", 30, time.Unix(200, 0), 6000, maybeBadEpoch)
-	mkJob(inProgress, "w101", 5, "ingest/5/12000", 31, time.Unix(200, 0), 6000, maybeBadEpoch)
-	mkJob(inProgress, "w102", 5, "ingest/5/12000", 32, time.Unix(200, 0), 6000, maybeBadEpoch)
-	mkJob(inProgress, "w103", 5, "ingest/5/12000", 33, time.Unix(200, 0), 6000, maybeBadEpoch)
-	mkJob(inProgress, "w104", 5, "ingest/5/12000", 34, time.Unix(200, 0), 6000, nil)
+	mkJob(inProgress, "w100", 5, "ingest/5/12000", 30, time.Unix(200, 0), 6000, nil, maybeBadEpoch)
+	mkJob(inProgress, "w101", 5, "ingest/5/12000", 31, time.Unix(200, 0), 6000, nil, maybeBadEpoch)
+	mkJob(inProgress, "w102", 5, "ingest/5/12000", 32, time.Unix(200, 0), 6000, nil, maybeBadEpoch)
+	mkJob(inProgress, "w103", 5, "ingest/5/12000", 33, time.Unix(200, 0), 6000, nil, maybeBadEpoch)
+	mkJob(inProgress, "w104", 5, "ingest/5/12000", 34, time.Unix(200, 0), 6000, nil, nil)
 
 	// Partition 6 has a complete job, but wasn't among the offsets we learned from Kafka.
-	mkJob(complete, "w0", 6, "ingest/6/500", 48, time.Unix(500, 0), 599, nil)
+	mkJob(complete, "w0", 6, "ingest/6/500", 48, time.Unix(500, 0), 599, &schedulerpb.CompletionInfo{CommitOffset: 600}, nil)
 	// Partition 7 has an in-progress job, but wasn't among the offsets we learned from Kafka.
-	mkJob(complete, "w1", 7, "ingest/7/92874", 52, time.Unix(1500, 0), 93874, nil)
+	mkJob(complete, "w1", 7, "ingest/7/92874", 52, time.Unix(1500, 0), 93874, &schedulerpb.CompletionInfo{CommitOffset: 93875}, nil)
 
 	rnd := rand.New(rand.NewSource(64_000))
 
@@ -267,7 +272,7 @@ func TestObservations(t *testing.T) {
 			rnd.Shuffle(len(clientData), func(i, j int) { clientData[i], clientData[j] = clientData[j], clientData[i] })
 			for _, c := range clientData {
 				t.Log("sending update", c.key, c.workerID)
-				err := sched.updateJob(c.key, c.workerID, c.complete, c.spec)
+				err := sched.updateJob(c.key, c.workerID, c.complete, c.spec, c.completionInfo)
 				if errors.Is(c.expectErr, maybeBadEpoch) {
 					require.True(t, errors.Is(err, errBadEpoch) || err == nil, "expected either bad epoch or no error, got %v", err)
 				} else {
@@ -281,11 +286,11 @@ func TestObservations(t *testing.T) {
 
 	sched.completeObservationMode()
 	requireOffset(t, sched.committed, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
-	requireOffset(t, sched.committed, "ingest", 2, 2000, "ingest/2 job was complete, so it should move the offset forward")
+	requireOffset(t, sched.committed, "ingest", 2, 2001, "ingest/2 job was complete, so it should move the offset forward")
 	requireOffset(t, sched.committed, "ingest", 3, 974, "ingest/3 should be unchanged - no updates")
-	requireOffset(t, sched.committed, "ingest", 4, 899, "ingest/4 should be moved forward to account for the completed jobs")
+	requireOffset(t, sched.committed, "ingest", 4, 900, "ingest/4 should be moved forward to account for the completed jobs")
 	requireOffset(t, sched.committed, "ingest", 5, 12000, "ingest/5 has nothing new completed")
-	requireOffset(t, sched.committed, "ingest", 6, 599, "ingest/6 should have been added to the offsets")
+	requireOffset(t, sched.committed, "ingest", 6, 600, "ingest/6 should have been added to the offsets")
 
 	require.Len(t, sched.jobs.jobs, 3)
 	require.Equal(t, 35, int(sched.jobs.epoch))
@@ -328,14 +333,14 @@ func TestOffsetMovement(t *testing.T) {
 	key, _, err := sched.jobs.assign("w0")
 	require.NoError(t, err)
 
-	require.NoError(t, sched.updateJob(key, "w0", false, spec))
+	require.NoError(t, sched.updateJob(key, "w0", false, spec, nil))
 	requireOffset(t, sched.committed, "ingest", 1, 5000, "ingest/1 is in progress, so we should not move the offset")
-	require.NoError(t, sched.updateJob(key, "w0", true, spec))
-	requireOffset(t, sched.committed, "ingest", 1, 6000, "ingest/1 is complete, so offset should be advanced")
-	require.NoError(t, sched.updateJob(key, "w0", true, spec))
-	requireOffset(t, sched.committed, "ingest", 1, 6000, "ingest/1 is complete, so offset should be advanced")
+	require.NoError(t, sched.updateJob(key, "w0", true, spec, &schedulerpb.CompletionInfo{CommitOffset: 6001}))
+	requireOffset(t, sched.committed, "ingest", 1, 6001, "ingest/1 is complete, so offset should be advanced")
+	require.NoError(t, sched.updateJob(key, "w0", true, spec, &schedulerpb.CompletionInfo{CommitOffset: 6001}))
+	requireOffset(t, sched.committed, "ingest", 1, 6001, "ingest/1 is complete, so offset should be advanced")
 	sched.advanceCommittedOffset("ingest", 1, 2000, "{}")
-	requireOffset(t, sched.committed, "ingest", 1, 6000, "committed offsets cannot rewind")
+	requireOffset(t, sched.committed, "ingest", 1, 6001, "committed offsets cannot rewind")
 
 	sched.advanceCommittedOffset("ingest", 2, 6222, "{}")
 	requireOffset(t, sched.committed, "ingest", 2, 6222, "should create knowledge of partition 2")
