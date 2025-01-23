@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -17,20 +19,27 @@ import (
 
 // newProm2RangeCompatMiddleware creates a new query middleware that adjusts range and resolution
 // selectors in subqueries in some cases for compatibility with Prometheus 3.
-func newProm2RangeCompatMiddleware(limits Limits, logger log.Logger) MetricsQueryMiddleware {
+func newProm2RangeCompatMiddleware(limits Limits, logger log.Logger, reg prometheus.Registerer) MetricsQueryMiddleware {
+	rewritten := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_frontend_prom2_range_compat_rewritten_total",
+		Help: "The number of times a query was rewritten for Prometheus 2/3 range selector compatibility",
+	}, []string{"user"})
+
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &prom2RangeCompatHandler{
-			next:   next,
-			limits: limits,
-			logger: logger,
+			next:      next,
+			limits:    limits,
+			logger:    logger,
+			rewritten: rewritten,
 		}
 	})
 }
 
 type prom2RangeCompatHandler struct {
-	next   MetricsQueryHandler
-	limits Limits
-	logger log.Logger
+	next      MetricsQueryHandler
+	limits    Limits
+	logger    log.Logger
+	rewritten *prometheus.CounterVec
 }
 
 func (c *prom2RangeCompatHandler) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
@@ -52,8 +61,11 @@ func (c *prom2RangeCompatHandler) Do(ctx context.Context, r MetricsQueryRequest)
 
 	rewrittenQuery := rewritten.String()
 	if origQuery != rewrittenQuery {
+		tenantIDString := tenant.JoinTenantIDs(tenantIDs)
+		c.rewritten.WithLabelValues(tenantIDString).Inc()
 		spanLog.DebugLog(
 			"msg", "modified subquery for compatibility with Prometheus 3 range selectors",
+			"tenants", tenantIDString,
 			"original", origQuery,
 			"rewritten", rewrittenQuery,
 		)
