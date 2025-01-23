@@ -503,6 +503,34 @@ func deriv(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ t
 	return slope, true, nil, nil
 }
 
+var PredictLinear = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       predictLinear,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func predictLinear(step *types.RangeVectorStepData, _ float64, args []types.ScalarData, timeRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := step.Floats.UnsafePoints()
+
+	if step.Floats.Any() && step.Histograms.Any() {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
+	}
+
+	if len(fHead)+len(fTail) == 1 && step.Histograms.Any() {
+		return 0, false, nil, nil
+	}
+
+	if (len(fHead) + len(fTail)) < 2 {
+		return 0, false, nil, nil
+	}
+
+	slope, intercept := linearRegression(fHead, fTail, step.StepT)
+	tArg := args[0]
+	duration := tArg.Samples[timeRange.PointIndex(step.StepT)].F
+
+	return slope*duration + intercept, true, nil, nil
+}
+
 func linearRegression(head, tail []promql.FPoint, interceptTime int64) (slope, intercept float64) {
 	var (
 		n          float64
