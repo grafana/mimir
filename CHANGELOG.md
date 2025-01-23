@@ -26,6 +26,15 @@
 * [ENHANCEMENT] Ingester: Hide tokens in ingester ring status page when ingest storage is enabled #10399
 * [ENHANCEMENT] Ingester: add `active_series_additional_custom_trackers` configuration, in addition to the already existing `active_series_custom_trackers`. The `active_series_additional_custom_trackers` configuration allows you to configure additional custom trackers that get merged with `active_series_custom_trackers` at runtime. #10428
 * [ENHANCEMENT] Query-frontend: Allow blocking raw http requests with the `blocked_requests` configuration. Requests can be blocked based on their path, method or query parameters #10484
+* [ENHANCEMENT] Ingester: Added the following metrics exported by `PostingsForMatchers` cache: #10500
+  * `cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total`
+  * `cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total`
+  * `cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total`
+  * `cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total`
+  * `cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total`
+  * `cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total`
+  * `cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total`
+  * `cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total`
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 * [BUGFIX] Querier: fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #10154
 * [BUGFIX] Query-frontend and querier: show warning/info annotations in some cases where they were missing (if a lazy querier was used). #10277
@@ -40,6 +49,7 @@
 * [BUGFIX] Distributor: return HTTP status 415 Unsupported Media Type instead of 200 Success for Remote Write 2.0 until we support it. #10423
 * [BUGFIX] Query-frontend: Add flag `-query-frontend.prom2-range-compat` and corresponding YAML to rewrite queries with ranges that worked in Prometheus 2 but are invalid in Prometheus 3. #10445 #10461 #10502
 * [BUGFIX] Distributor: Fix edge case at the HA-tracker with memberlist as KVStore, where when a replica in the KVStore is marked as deleted but not yet removed, it fails to update the KVStore. #10443
+* [BUGFIX] Ingester: Fixed a race condition in the `PostingsForMatchers` cache that may have infrequently returned expired cached postings. #10500
 
 ### Mixin
 

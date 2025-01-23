@@ -280,22 +280,24 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	}
 
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), nil, &tsdb.Options{
-		RetentionDuration:           0,
-		MinBlockDuration:            2 * time.Hour.Milliseconds(),
-		MaxBlockDuration:            2 * time.Hour.Milliseconds(),
-		NoLockfile:                  true,
-		StripeSize:                  b.blocksStorageCfg.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:   b.blocksStorageCfg.TSDB.HeadChunksWriteBufferSize,
-		HeadChunksWriteQueueSize:    b.blocksStorageCfg.TSDB.HeadChunksWriteQueueSize,
-		WALSegmentSize:              -1,                                                                             // No WAL
-		BlocksToDelete:              func([]*tsdb.Block) map[ulid.ULID]struct{} { return map[ulid.ULID]struct{}{} }, // Always noop
-		IsolationDisabled:           true,
-		EnableOverlappingCompaction: false,                                                // Always false since Mimir only uploads lvl 1 compacted blocks
-		OutOfOrderTimeWindow:        b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
-		OutOfOrderCapMax:            int64(b.blocksStorageCfg.TSDB.OutOfOrderCapacityMax),
-		EnableNativeHistograms:      b.limits.NativeHistogramsIngestionEnabled(userID),
-		SecondaryHashFunction:       nil, // TODO(codesome): May needed when applying limits. Used to determine the owned series by an ingesters
-		SeriesLifecycleCallback:     udb,
+		RetentionDuration:                    0,
+		MinBlockDuration:                     2 * time.Hour.Milliseconds(),
+		MaxBlockDuration:                     2 * time.Hour.Milliseconds(),
+		NoLockfile:                           true,
+		StripeSize:                           b.blocksStorageCfg.TSDB.StripeSize,
+		HeadChunksWriteBufferSize:            b.blocksStorageCfg.TSDB.HeadChunksWriteBufferSize,
+		HeadChunksWriteQueueSize:             b.blocksStorageCfg.TSDB.HeadChunksWriteQueueSize,
+		WALSegmentSize:                       -1,                                                                             // No WAL
+		BlocksToDelete:                       func([]*tsdb.Block) map[ulid.ULID]struct{} { return map[ulid.ULID]struct{}{} }, // Always noop
+		IsolationDisabled:                    true,
+		EnableOverlappingCompaction:          false,                                                // Always false since Mimir only uploads lvl 1 compacted blocks
+		OutOfOrderTimeWindow:                 b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
+		OutOfOrderCapMax:                     int64(b.blocksStorageCfg.TSDB.OutOfOrderCapacityMax),
+		EnableNativeHistograms:               b.limits.NativeHistogramsIngestionEnabled(userID),
+		SecondaryHashFunction:                nil, // TODO(codesome): May needed when applying limits. Used to determine the owned series by an ingesters
+		SeriesLifecycleCallback:              udb,
+		HeadPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(nil),
+		BlockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(nil),
 	}, nil)
 	if err != nil {
 		return nil, err
