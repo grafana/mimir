@@ -758,7 +758,12 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // initQueryFrontendCodec initializes query frontend codec.
 // NOTE: Grafana Enterprise Metrics depends on this.
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
-	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Querier.EngineConfig.LookbackDelta, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat, t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders)
+	// Always pass through the cluster verification label header.
+	/*
+		propagateHeaders := append([]string{clusterutil.ClusterVerificationLabelHeader}, t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders...)
+	*/
+	propagateHeaders := t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders
+	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Querier.EngineConfig.LookbackDelta, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat, propagateHeaders)
 	return nil, nil
 }
 
@@ -822,10 +827,15 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 }
 
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
+	/*
+		t.Cfg.Frontend.ClusterVerificationLabel = t.Cfg.Server.ClusterVerificationLabel
+		t.Cfg.Frontend.CheckHTTPClusterVerificationLabel = t.Cfg.Server.ClusterVerificationLabelCheck.HTTPEnabled()
+	*/
 	t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 	t.Cfg.Frontend.FrontendV2.LookBackDelta = t.Cfg.Querier.EngineConfig.LookbackDelta
 	t.Cfg.Frontend.FrontendV2.QueryStoreAfter = t.Cfg.Querier.QueryStoreAfter
 
+	t.Cfg.Frontend.ClusterValidationLabel = t.Cfg.Common.ClientClusterValidation.Label
 	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(
 		t.Cfg.Frontend,
 		t.Overrides,
@@ -834,6 +844,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		util_log.Logger,
 		t.Registerer,
 		t.QueryFrontendCodec,
+		// t.ServerMetrics,
 	)
 	if err != nil {
 		return nil, err
