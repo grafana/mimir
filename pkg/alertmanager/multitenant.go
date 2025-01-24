@@ -326,6 +326,9 @@ type MultitenantAlertmanager struct {
 	tenantsDiscovered prometheus.Gauge
 	syncTotal         *prometheus.CounterVec
 	syncFailures      *prometheus.CounterVec
+
+	lolMtx          sync.RWMutex
+	receivingAlerts map[string]struct{}
 }
 
 // NewMultitenantAlertmanager creates a new MultitenantAlertmanager.
@@ -399,6 +402,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		registry:            registerer,
 		limits:              limits,
 		features:            features,
+		receivingAlerts:     map[string]struct{}{},
 		ringCheckErrors: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_alertmanager_ring_check_errors_total",
 			Help: "Number of errors that have occurred when checking the ring for ownership.",
@@ -729,7 +733,13 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	isMimirCfgUsable := cfgs.Mimir.RawConfig != "" && cfgs.Mimir.RawConfig != am.fallbackConfig
 	if am.cfg.StrictInitializationMode && !isGrafanaCfgUsable && !isMimirCfgUsable {
 		// Skip starting the Alertmanager if we have no usable configurations.
-		return amConfig{}, false, nil
+		am.lolMtx.RLock()
+		_, ok := am.receivingAlerts[cfgs.Mimir.User]
+		am.lolMtx.RUnlock()
+		if !ok {
+			return amConfig{}, false, nil
+		}
+		fmt.Printf("%s is receiving alerts!", cfgs.Mimir.User)
 	}
 
 	cfg := amConfig{
@@ -1012,6 +1022,12 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 	if ok {
 		userAM.mux.ServeHTTP(w, req)
 		return
+	}
+
+	if req.URL.Path == "/alertmanager/api/v2/alerts" && req.Method == http.MethodPost {
+		am.lolMtx.Lock()
+		am.receivingAlerts[userID] = struct{}{}
+		am.lolMtx.Unlock()
 	}
 
 	if am.fallbackConfig != "" {
