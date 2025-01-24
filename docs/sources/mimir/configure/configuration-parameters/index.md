@@ -3623,8 +3623,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) Defines labels for cost attribution. Applies to metrics like
 # cortex_distributor_received_attributed_samples_total. To disable, set to an
 # empty string. For example, 'team,service' produces metrics such as
-# cortex_distributor_received_attributed_samples_total{team='frontend',
-# service='api'}.
+# cortex_distributor_received_attributed_samples_total{attributed_team='frontend',
+# attributed_service='api'}.
 # CLI flag: -validation.cost-attribution-labels
 [cost_attribution_labels: <string> | default = ""]
 
