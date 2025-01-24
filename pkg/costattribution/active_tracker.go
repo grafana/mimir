@@ -21,8 +21,9 @@ type ActiveSeriesTracker struct {
 	activeSeriesPerUserAttribution *prometheus.Desc
 	logger                         log.Logger
 
-	labels           []string
-	overflowLabels   []string
+	labels         []string
+	overflowLabels []string
+
 	maxCardinality   int
 	cooldownDuration time.Duration
 
@@ -61,12 +62,12 @@ func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, co
 		cooldownDuration: cooldownDuration,
 	}
 
-	labelsWithPrefix := slices.Clone(trackedLabels)
-	labelsWithPrefix = addLabelsPrefix(labelsWithPrefix)
+	labelsWithPrefix := addLabelsPrefix(trackedLabels)
 	labelsWithPrefix = append(labelsWithPrefix, tenantLabel)
 	ast.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",
 		"The total number of active series per user and attribution.", labelsWithPrefix,
 		prometheus.Labels{trackerLabel: defaultTrackerName})
+
 	return ast
 }
 

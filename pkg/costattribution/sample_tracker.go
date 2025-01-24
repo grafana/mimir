@@ -66,8 +66,7 @@ func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown
 		overflowCounter:  observation{},
 	}
 
-	labelsWithPrefix := slices.Clone(trackedLabels)
-	labelsWithPrefix = addLabelsPrefix(labelsWithPrefix)
+	labelsWithPrefix := addLabelsPrefix(trackedLabels)
 	labelsWithPrefix = append(labelsWithPrefix, tenantLabel, "reason")
 
 	tracker.discardedSampleAttribution = prometheus.NewDesc("cortex_discarded_attributed_samples_total",
