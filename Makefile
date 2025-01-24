@@ -455,6 +455,9 @@ lint: check-makefiles
 	faillint -paths \
 		"github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation}" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
+	# We need to ensure that when creating http-grpc requests, the X-Cluster header is included.
+	faillint -paths "github.com/grafana/dskit/httpgrpc.{FromHTTPRequest}=github.com/grafana/dskit/httpgrpc.FromHTTPRequestWithCluster" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure lines are sorted after lint:sorted directives.
 	go run ./tools/lint-sorted/ \

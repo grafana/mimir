@@ -34,7 +34,7 @@ type CombinedFrontendConfig struct {
 
 	DownstreamURL string `yaml:"downstream_url" category:"advanced"`
 
-	ClusterValidationConfig clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
+	Cluster string `yaml:"-"`
 }
 
 func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -72,6 +72,9 @@ func InitFrontend(
 	reg prometheus.Registerer,
 	codec querymiddleware.Codec,
 ) (http.RoundTripper, *v1.Frontend, *v2.Frontend, error) {
+	if cfg.Cluster == "" {
+		panic("cluster not defined")
+	}
 	switch {
 	case cfg.DownstreamURL != "":
 		// If the user has specified a downstream Prometheus, then we should use that.
@@ -94,7 +97,7 @@ func InitFrontend(
 		}
 
 		fr, err := v2.NewFrontend(cfg.FrontendV2, v2Limits, log, reg, codec)
-		return grpcToHTTPRoundTripper(cfg, fr, reg, log), nil, fr, err
+		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr, cfg.Cluster), nil, fr, err
 
 	default:
 		// No scheduler = use original frontend.
@@ -102,7 +105,7 @@ func InitFrontend(
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		return grpcToHTTPRoundTripper(cfg, fr, reg, log), fr, nil, nil
+		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr, cfg.Cluster), fr, nil, nil
 	}
 }
 
