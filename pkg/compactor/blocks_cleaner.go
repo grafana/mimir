@@ -8,6 +8,7 @@ package compactor
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -192,6 +193,10 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
 		c.instrumentFinishedCleanupRun(err, logger)
 		return
 	}
+
+	rand.Shuffle(len(allUsers), func(i, j int) {
+		allUsers[i], allUsers[j] = allUsers[j], allUsers[i]
+	})
 
 	doCleanup := func() {
 		err := c.cleanUsers(ctx, allUsers, isDeleted, logger)
