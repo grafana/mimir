@@ -72,6 +72,10 @@ func TestDurationWithJitter_ZeroInputDuration(t *testing.T) {
 	assert.Equal(t, time.Duration(0), DurationWithJitter(time.Duration(0), 0.5))
 }
 
+func TestDurationWithJitter_SmallInput(t *testing.T) {
+	assert.Equal(t, time.Duration(0), DurationWithJitter(time.Duration(0x7), 0.1))
+}
+
 func TestDurationWithPositiveJitter(t *testing.T) {
 	const numRuns = 1000
 
