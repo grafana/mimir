@@ -2377,6 +2377,11 @@ sharding_ring:
 # CLI flag: -alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix
 [grafana_alertmanager_conditionally_skip_tenant_suffix: <string> | default = ""]
 
+# (experimental) Skip starting the Alertmanager for tenants without a
+# non-default, non-empty configuration.
+# CLI flag: -alertmanager.strict-initialization-mode
+[strict_initialization_mode: <boolean> | default = false]
+
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
 # whichever is larger. Status code 503 is served for GET requests that would
