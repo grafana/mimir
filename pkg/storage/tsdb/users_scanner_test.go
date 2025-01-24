@@ -51,9 +51,7 @@ func TestUsersScanner_ScanUsers_ShouldReturnUsersForWhichOwnerCheckOrTenantDelet
 	s := NewUsersScanner(bucketClient, isOwned, log.NewNopLogger())
 	actual, deleted, err := s.ScanUsers(context.Background())
 	require.NoError(t, err)
-	for _, userID := range users {
-		assert.Contains(t, actual, userID)
-	}
+	assert.ElementsMatch(t, actual, users)
 	assert.Empty(t, deleted)
 }
 
@@ -67,9 +65,7 @@ func TestUsersScanner_ScanUsers_ShouldNotReturnPrefixedUsedByMimirInternals(t *t
 	s := NewUsersScanner(bucketClient, AllUsers, log.NewNopLogger())
 	actual, _, err := s.ScanUsers(context.Background())
 	require.NoError(t, err)
-	for _, userID := range users {
-		assert.Contains(t, actual, userID)
-	}
+	assert.ElementsMatch(t, actual, users)
 }
 
 func TestUsersScanner_ScanUsers_ShouldReturnRandomizedOrder(t *testing.T) {
@@ -90,9 +86,7 @@ func TestUsersScanner_ScanUsers_ShouldReturnRandomizedOrder(t *testing.T) {
 	s := NewUsersScanner(bucketClient, isOwned, log.NewNopLogger())
 	actual, deleted, err := s.ScanUsers(context.Background())
 	require.NoError(t, err)
-	for _, userID := range users {
-		assert.Contains(t, actual, userID)
-	}
+	assert.ElementsMatch(t, actual, users)
 	assert.Empty(t, deleted)
 	assert.NotEqual(t, actual, users)
 }
