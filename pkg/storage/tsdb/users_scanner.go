@@ -7,10 +7,7 @@ package tsdb
 
 import (
 	"context"
-	"path"
-	"sort"
 	"strings"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -51,8 +48,6 @@ func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion 
 
 	// Check users for being owned by instance, and split users into non-deleted and deleted.
 	// We do these checks after listing all users, to improve cacheability of Iter (result is only cached at the end of Iter call).
-	now := time.Now().Unix()
-	var mtimes []int64
 	for ix := 0; ix < len(users); {
 		userID := users[ix]
 
@@ -74,26 +69,8 @@ func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion 
 			continue
 		}
 
-		// TODO: can't reference bucketindex.IndexCompressedFilename because of a circular dependency.
-		indexFile := path.Join(userID, "bucket-index.json.gz")
-		attr, err := s.bucketClient.Attributes(ctx, indexFile)
-		if err != nil {
-			level.Warn(s.logger).Log("msg", "unable to check user bucket index", "user", userID, "err", err)
-			mtimes = append(mtimes, now)
-		} else {
-			mtimes = append(mtimes, attr.LastModified.Unix())
-		}
 		ix++
 	}
-
-	// sort users increasing by bucket index's LastModified time
-	sort.SliceStable(users, func(i, j int) bool {
-		if mtimes[i] < mtimes[j] {
-			mtimes[i], mtimes[j] = mtimes[j], mtimes[i]
-			return true
-		}
-		return false
-	})
 
 	return users, markedForDeletion, nil
 }
