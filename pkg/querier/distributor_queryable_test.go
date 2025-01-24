@@ -644,7 +644,6 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 	hints := &storage.LabelHints{Limit: 1}
 	labelNames := []string{"foo", "job"}
 
-	t.Run("querierLabelNames", func(t *testing.T) {
 		t.Run("with matchers", func(t *testing.T) {
 			d := &mockDistributor{}
 			d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), &storage.LabelHints{}, someMatchers).
@@ -660,7 +659,7 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 			assert.Equal(t, labelNames, names)
 		})
 
-		t.Run("with limit", func(t *testing.T) {
+		t.Run("with matchers and limit", func(t *testing.T) {
 			d := &mockDistributor{}
 			d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), hints, []*labels.Matcher{}).
 				Return(labelNames[:hints.Limit], nil)
@@ -669,7 +668,7 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 			querier, err := queryable.Querier(mint, maxt)
 			require.NoError(t, err)
 
-			names, warnings, err := querier.LabelNames(ctx, hints, []*labels.Matcher{}...)
+			names, warnings, err := querier.LabelNames(ctx, hints, someMatchers...)
 			require.NoError(t, err)
 			assert.Empty(t, warnings)
 			assert.Equal(t, labelNames[:hints.Limit], names)

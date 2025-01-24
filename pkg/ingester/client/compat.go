@@ -116,7 +116,7 @@ func ToLabelValuesRequest(labelName model.LabelName, from, to model.Time, hints 
 	}
 
 	var limit int64
-	if hints != nil {
+	if hints != nil && hints.Limit > 0 {
 		limit = int64(hints.Limit)
 	}
 	return &LabelValuesRequest{
@@ -156,7 +156,7 @@ func ToLabelNamesRequest(from, to model.Time, hints *storage.LabelHints, matcher
 	}
 
 	var limit int64
-	if hints != nil {
+	if hints != nil && hints.Limit > 0 {
 		limit = int64(hints.Limit)
 	}
 

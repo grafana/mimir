@@ -226,7 +226,7 @@ func (q *distributorQuerier) LabelValues(ctx context.Context, name string, hints
 	return lvs, nil, err
 }
 
-func (q *distributorQuerier) LabelNames(ctx context.Context, labelHints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *distributorQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.LabelNames")
 	defer spanLog.Span.Finish()
 
@@ -244,7 +244,7 @@ func (q *distributorQuerier) LabelNames(ctx context.Context, labelHints *storage
 	now := time.Now().UnixMilli()
 	q.mint = clampMinTime(spanLog, q.mint, now, -queryIngestersWithin, "query ingesters within")
 
-	ln, err := q.distributor.LabelNames(ctx, model.Time(q.mint), model.Time(q.maxt), labelHints, matchers...)
+	ln, err := q.distributor.LabelNames(ctx, model.Time(q.mint), model.Time(q.maxt), hints, matchers...)
 	return ln, nil, err
 }
 

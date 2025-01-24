@@ -1187,7 +1187,7 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 
 func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, hints *storage.LabelHints, matchers []storepb.LabelMatcher) (*storepb.LabelNamesRequest, error) {
 	var limit int64
-	if hints != nil {
+	if hints != nil && hints.Limit > 0 {
 		limit = int64(hints.Limit)
 	}
 	req := &storepb.LabelNamesRequest{
@@ -1220,7 +1220,7 @@ func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, hints *stor
 
 func createLabelValuesRequest(minT, maxT int64, label string, blockIDs []ulid.ULID, hints *storage.LabelHints, matchers ...*labels.Matcher) (*storepb.LabelValuesRequest, error) {
 	var limit int64
-	if hints != nil {
+	if hints != nil && hints.Limit > 0 {
 		limit = int64(hints.Limit)
 	}
 
