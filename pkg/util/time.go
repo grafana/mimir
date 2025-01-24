@@ -89,6 +89,10 @@ func DurationWithPositiveJitter(input time.Duration, variancePerc float64) time.
 	}
 
 	variance := int64(float64(input) * variancePerc)
+	if variance == 0 {
+		return 0
+	}
+
 	jitter := rand.Int63n(variance)
 
 	return input + time.Duration(jitter)
@@ -102,6 +106,10 @@ func DurationWithNegativeJitter(input time.Duration, variancePerc float64) time.
 	}
 
 	variance := int64(float64(input) * variancePerc)
+	if variance == 0 {
+		return 0
+	}
+
 	jitter := rand.Int63n(variance)
 
 	return input - time.Duration(jitter)

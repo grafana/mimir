@@ -73,7 +73,7 @@ func TestDurationWithJitter_ZeroInputDuration(t *testing.T) {
 }
 
 func TestDurationWithJitter_SmallInput(t *testing.T) {
-	assert.Equal(t, time.Duration(0), DurationWithJitter(time.Duration(0x7), 0.1))
+	assert.Equal(t, time.Duration(0), DurationWithJitter(time.Duration(7), 0.1))
 }
 
 func TestDurationWithPositiveJitter(t *testing.T) {
@@ -90,6 +90,10 @@ func TestDurationWithPositiveJitter_ZeroInputDuration(t *testing.T) {
 	assert.Equal(t, time.Duration(0), DurationWithPositiveJitter(time.Duration(0), 0.5))
 }
 
+func TestDurationWithPositiveJitter_SmallInputDuration(t *testing.T) {
+	assert.Equal(t, time.Duration(0), DurationWithPositiveJitter(time.Duration(7), 0.1))
+}
+
 func TestDurationWithNegativeJitter(t *testing.T) {
 	const numRuns = 1000
 
@@ -102,6 +106,10 @@ func TestDurationWithNegativeJitter(t *testing.T) {
 
 func TestDurationWithNegativeJitter_ZeroInputDuration(t *testing.T) {
 	assert.Equal(t, time.Duration(0), DurationWithNegativeJitter(time.Duration(0), 0.5))
+}
+
+func TestDurationWithNegativeJitter_SmallInputDuration(t *testing.T) {
+	assert.Equal(t, time.Duration(0), DurationWithNegativeJitter(time.Duration(7), 0.1))
 }
 
 func TestParseTime(t *testing.T) {
