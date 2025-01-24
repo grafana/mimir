@@ -419,7 +419,7 @@
           "kind": "field",
           "name": "register_instrumentation",
           "required": false,
-          "desc": "Register the intrumentation handlers (/metrics etc).",
+          "desc": "Register the instrumentation handlers (/metrics etc).",
           "fieldValue": null,
           "fieldDefaultValue": true,
           "fieldFlag": "server.register-instrumentation",
