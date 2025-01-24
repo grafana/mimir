@@ -100,7 +100,7 @@ func TestUsersScanner_ScanUsers_ShouldReturnConsistentOrder(t *testing.T) {
 		bucketClient.MockAttributes(path.Join(users[i].ID, "bucket-index.json.gz"), users[i].indexAttrs, nil)
 	}
 
-	isOwned := func(userID string) (bool, error) {
+	isOwned := func(_ string) (bool, error) {
 		return true, nil
 	}
 
@@ -127,7 +127,7 @@ func TestUsersScanner_ScanUsers_ShouldReturnTenantWithoutBucketIndexLast(t *test
 		objstore.ObjectAttributes{LastModified: time.Now().Add(-20 * time.Minute)}, nil,
 	)
 
-	isOwned := func(userID string) (bool, error) {
+	isOwned := func(_ string) (bool, error) {
 		return true, nil
 	}
 
