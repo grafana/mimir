@@ -614,6 +614,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		nil,
 		nil,
 		promql.NewEngine(promql.EngineOpts{}),
+		defaultStepFunc,
 		nil,
 	)
 

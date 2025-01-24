@@ -1723,6 +1723,12 @@ results_cache:
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
 
+# (experimental) If set, subqueries in instant queries will be spun off as range
+# queries and sent to the given URL. Also requires
+# `instant_queries_with_subquery_spin_off` to be set for the tenant.
+# CLI flag: -query-frontend.spin-off-instant-subqueries-to-url
+[spin_off_instant_subqueries_to_url: <string> | default = ""]
+
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
@@ -3603,6 +3609,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # with Prometheus 3.0 semantics
 # CLI flag: -query-frontend.prom2-range-compat
 [prom2_range_compat: <boolean> | default = false]
+
+# (experimental) List of regexp patterns matching instant queries. Subqueries
+# within those instant queries will be spun off as range queries to optimize
+# their execution.
+[instant_queries_with_subquery_spin_off: <list of strings> | default = ]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
