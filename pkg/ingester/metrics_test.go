@@ -239,6 +239,42 @@ func TestTSDBMetrics(t *testing.T) {
 			# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
 			# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
 			cortex_ingester_tsdb_exemplar_exemplars_in_storage 30
+
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total Total number of postings lists returned from the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total counter
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total 0
+
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total Total number of requests to the PostingsForMatchers cache for which there is no valid cached entry. The subsequent result is cached.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total counter
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total 0
+
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total Total number of requests to the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total counter
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total 0
+
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total Total number of requests to the PostingsForMatchers cache that have been skipped the cache. The subsequent result is not cached.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total counter
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="canceled-cached-entry"} 0
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="ineligible"} 0
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="stale-cached-entry"} 0
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total Total number of postings lists returned from the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total counter
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total 0
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total Total number of requests to the PostingsForMatchers cache for which there is no valid cached entry. The subsequent result is cached.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total counter
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total 0
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total Total number of requests to the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total counter
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total 0
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total Total number of requests to the PostingsForMatchers cache that have been skipped the cache. The subsequent result is not cached.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total counter
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="canceled-cached-entry"} 0
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="ineligible"} 0
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="stale-cached-entry"} 0
 	`))
 	require.NoError(t, err)
 }
@@ -457,6 +493,42 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_out_of_order_samples_appended_total counter
 			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user1"} 3
 			cortex_ingester_tsdb_out_of_order_samples_appended_total{user="user2"} 3
+
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total Total number of postings lists returned from the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total counter
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total 0
+
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total Total number of requests to the PostingsForMatchers cache for which there is no valid cached entry. The subsequent result is cached.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total counter
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total 0
+
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total Total number of requests to the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total counter
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total 0
+
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total Total number of requests to the PostingsForMatchers cache that have been skipped the cache. The subsequent result is not cached.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total counter
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="canceled-cached-entry"} 0
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="ineligible"} 0
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="stale-cached-entry"} 0
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total Total number of postings lists returned from the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total counter
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total 0
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total Total number of requests to the PostingsForMatchers cache for which there is no valid cached entry. The subsequent result is cached.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total counter
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total 0
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total Total number of requests to the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total counter
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total 0
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total Total number of requests to the PostingsForMatchers cache that have been skipped the cache. The subsequent result is not cached.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total counter
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="canceled-cached-entry"} 0
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="ineligible"} 0
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="stale-cached-entry"} 0
 	`))
 	require.NoError(t, err)
 }

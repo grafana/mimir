@@ -38,6 +38,8 @@ blocks_storage:
     bucket_name:       mimir-blocks
   tsdb:
     dir: /data/ingester
+    head_postings_for_matchers_cache_force: true
+    block_postings_for_matchers_cache_force: true
 
   bucket_store:
     index_cache:

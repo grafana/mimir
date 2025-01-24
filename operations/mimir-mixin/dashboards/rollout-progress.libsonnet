@@ -6,8 +6,8 @@ local filename = 'mimir-rollout-progress.json';
   local config = $.queries {
     namespace_matcher: $.namespaceMatcher(),
     requests_per_second_metric: if $._config.gateway_enabled then $.queries.gateway.requestsPerSecondMetric else $.queries.distributor.requestsPerSecondMetric,
-    write_job_selector: if $._config.gateway_enabled then $.jobSelector($._config.job_names.gateway) else $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', $.queries.write_http_routes_regex)],
-    read_job_selector: if $._config.gateway_enabled then $.jobSelector($._config.job_names.gateway) else $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', $.queries.read_http_routes_regex)],
+    write_job_selector: (if $._config.gateway_enabled then $.jobSelector($._config.job_names.gateway) else $.jobSelector($._config.job_names.distributor)) + [utils.selector.re('route', $.queries.write_http_routes_regex)],
+    read_job_selector: (if $._config.gateway_enabled then $.jobSelector($._config.job_names.gateway) else $.jobSelector($._config.job_names.query_frontend)) + [utils.selector.re('route', $.queries.read_http_routes_regex)],
     workload_label_replace_open:
       std.repeat('label_replace(', std.length($._config.rollout_dashboard.workload_label_replaces)),
     workload_label_replace_close:
