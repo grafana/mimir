@@ -185,7 +185,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.GRPCListenAddress, "server.grpc-listen-address", "", "gRPC server listen address.")
 	f.IntVar(&cfg.GRPCListenPort, "server.grpc-listen-port", 9095, "gRPC server listen port.")
 	f.IntVar(&cfg.GRPCConnLimit, "server.grpc-conn-limit", 0, "Maximum number of simultaneous grpc connections, <=0 to disable")
-	f.BoolVar(&cfg.RegisterInstrumentation, "server.register-instrumentation", true, "Register the intrumentation handlers (/metrics etc).")
+	f.BoolVar(&cfg.RegisterInstrumentation, "server.register-instrumentation", true, "Register the instrumentation handlers (/metrics etc).")
 	f.BoolVar(&cfg.ReportGRPCCodesInInstrumentationLabel, "server.report-grpc-codes-in-instrumentation-label-enabled", false, "If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as \"error\".")
 	f.DurationVar(&cfg.ServerGracefulShutdownTimeout, "server.graceful-shutdown-timeout", 30*time.Second, "Timeout for graceful shutdowns")
 	f.DurationVar(&cfg.HTTPServerReadTimeout, "server.http-read-timeout", 30*time.Second, "Read timeout for entire HTTP request, including headers and body.")
@@ -520,10 +520,14 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		logSourceIPs = nil
 	}
 
+	if cfg.DoNotAddDefaultHTTPMiddleware {
+		return cfg.HTTPMiddleware, nil
+	}
+
 	defaultLogMiddleware := middleware.NewLogMiddleware(logger, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, logSourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ","))
 	defaultLogMiddleware.DisableRequestSuccessLog = cfg.DisableRequestSuccessLog
 
-	defaultHTTPMiddleware := []middleware.Interface{
+	httpMiddleware := []middleware.Interface{
 		middleware.RouteInjector{
 			RouteMatcher: router,
 		},
@@ -543,14 +547,10 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 			RequestThroughput: metrics.RequestThroughput,
 		},
 	}
-	var httpMiddleware []middleware.Interface
-	if cfg.DoNotAddDefaultHTTPMiddleware {
-		httpMiddleware = cfg.HTTPMiddleware
-	} else {
-		httpMiddleware = append(defaultHTTPMiddleware, cfg.HTTPMiddleware...)
+	if cfg.Cluster != "" {
+		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.Cluster, logger))
 	}
-
-	return httpMiddleware, nil
+	return append(httpMiddleware, cfg.HTTPMiddleware...), nil
 }
 
 // Run the server; blocks until SIGTERM (if signal handling is enabled), an error is received, or Stop() is called.

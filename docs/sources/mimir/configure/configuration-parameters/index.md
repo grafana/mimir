@@ -622,7 +622,7 @@ grpc_tls_config:
   # CLI flag: -server.grpc-tls-ca-path
   [client_ca_file: <string> | default = ""]
 
-# (advanced) Register the intrumentation handlers (/metrics etc).
+# (advanced) Register the instrumentation handlers (/metrics etc).
 # CLI flag: -server.register-instrumentation
 [register_instrumentation: <boolean> | default = true]
 

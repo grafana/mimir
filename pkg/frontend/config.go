@@ -68,9 +68,6 @@ func InitFrontend(
 	reg prometheus.Registerer,
 	codec querymiddleware.Codec,
 ) (http.RoundTripper, *v1.Frontend, *v2.Frontend, error) {
-	if cfg.Cluster == "" {
-		panic("cluster not defined")
-	}
 	switch {
 	case cfg.DownstreamURL != "":
 		// If the user has specified a downstream Prometheus, then we should use that.
