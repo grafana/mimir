@@ -78,7 +78,7 @@ func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_ts
 // lastBlockMax: max time of the block in the previous block building cycle.
 // blockMax: max time of the block in the current block building cycle. This blockMax is exclusive of the last sample by design in TSDB.
 // recordAlreadyProcessed: true if the record was processed in the previous cycle. (It gets processed again if some samples did not fit in the previous cycle.)
-func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax, blockMax int64, recordAlreadyProcessed bool) (_ bool, err error) {
+func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax, blockMax int64, recordAlreadyProcessed, processEverything bool) (_ bool, err error) {
 	userID := string(rec.Key)
 
 	req := mimirpb.PreallocWriteRequest{
@@ -133,12 +133,12 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
 		for _, s := range ts.Samples {
-			if s.TimestampMs >= blockMax {
+			if !processEverything && s.TimestampMs >= blockMax {
 				// We will process this sample in the next cycle.
 				allSamplesProcessed = false
 				continue
 			}
-			if recordAlreadyProcessed && s.TimestampMs < lastBlockMax {
+			if !processEverything && recordAlreadyProcessed && s.TimestampMs < lastBlockMax {
 				// This sample was already processed in the previous cycle.
 				continue
 			}
@@ -170,12 +170,12 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		}
 
 		for _, h := range ts.Histograms {
-			if h.Timestamp >= blockMax {
+			if !processEverything && h.Timestamp >= blockMax {
 				// We will process this sample in the next cycle.
 				allSamplesProcessed = false
 				continue
 			}
-			if recordAlreadyProcessed && h.Timestamp < lastBlockMax {
+			if !processEverything && recordAlreadyProcessed && h.Timestamp < lastBlockMax {
 				// This sample was already processed in the previous cycle.
 				continue
 			}
