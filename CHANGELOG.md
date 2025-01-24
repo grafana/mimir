@@ -50,7 +50,7 @@
 * [BUGFIX] Query-frontend: Add flag `-query-frontend.prom2-range-compat` and corresponding YAML to rewrite queries with ranges that worked in Prometheus 2 but are invalid in Prometheus 3. #10445 #10461 #10502
 * [BUGFIX] Distributor: Fix edge case at the HA-tracker with memberlist as KVStore, where when a replica in the KVStore is marked as deleted but not yet removed, it fails to update the KVStore. #10443
 * [BUGFIX] Ingester: Fixed a race condition in the `PostingsForMatchers` cache that may have infrequently returned expired cached postings. #10500
-* [BUGFIX] Fix a panic in `util.DurationWithJitter` when the computed variance is zero. #10507
+* [BUGFIX] Fix panics in `DurationWithJitter` util functions when computed variance is zero. #10507
 
 ### Mixin
 
