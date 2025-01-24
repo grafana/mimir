@@ -70,7 +70,7 @@ func TestActiveTracker_Concurrency(t *testing.T) {
 	expectedMetrics := `
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
-	cortex_ingester_attributed_active_series{team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
+	cortex_ingester_attributed_active_series{attributed_team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
 `
 	assert.NoError(t, testutil.GatherAndCompare(m.reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
 
