@@ -11,21 +11,20 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
 )
 
 type ActiveSeriesTracker struct {
+	name                           string
 	userID                         string
 	activeSeriesPerUserAttribution *prometheus.Desc
 	logger                         log.Logger
 
 	labels         []string
 	overflowLabels []string
-
-	maxCardinality   int
-	cooldownDuration time.Duration
 
 	observedMtx   sync.RWMutex
 	observed      map[string]*atomic.Int64
@@ -34,7 +33,29 @@ type ActiveSeriesTracker struct {
 	overflowCounter atomic.Int64
 }
 
-func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
+type ActiveSeriesTrackers struct {
+	maxCardinality   int
+	cooldownDuration time.Duration
+	trackers         map[string]*ActiveSeriesTracker
+	mtx              sync.RWMutex
+}
+
+func newActiveSeriesTrackers(userID string, maxCardinality int, cooldownDuration time.Duration, logger log.Logger, tksCfg []validation.CostAttributionTracker) *ActiveSeriesTrackers {
+	activeSeriesTrackers := &ActiveSeriesTrackers{
+		trackers:         make(map[string]*ActiveSeriesTracker),
+		maxCardinality:   maxCardinality,
+		cooldownDuration: cooldownDuration,
+	}
+	for _, tk := range tksCfg {
+		// sort the labels to ensure the order is consistent
+		orderedLables := slices.Clone(tk.Labels)
+		slices.Sort(orderedLables)
+		activeSeriesTrackers.trackers[tk.Name] = newActiveSeriesTracker(tk.Name, userID, orderedLables, logger)
+	}
+	return activeSeriesTrackers
+}
+
+func newActiveSeriesTracker(name, userID string, trackedLabels []string, logger log.Logger) *ActiveSeriesTracker {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -45,13 +66,12 @@ func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, co
 	overflowLabels[len(trackedLabels)+1] = overflowValue
 
 	ast := &ActiveSeriesTracker{
-		userID:           userID,
-		labels:           trackedLabels,
-		maxCardinality:   limit,
-		observed:         make(map[string]*atomic.Int64),
-		logger:           logger,
-		overflowLabels:   overflowLabels,
-		cooldownDuration: cooldownDuration,
+		name:           name,
+		userID:         userID,
+		labels:         trackedLabels,
+		observed:       make(map[string]*atomic.Int64),
+		logger:         logger,
+		overflowLabels: overflowLabels,
 	}
 
 	variableLabels := slices.Clone(trackedLabels)
@@ -59,7 +79,7 @@ func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, co
 
 	ast.activeSeriesPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_series",
 		"The total number of active series per user and attribution.", variableLabels[:len(variableLabels)-1],
-		prometheus.Labels{trackerLabel: defaultTrackerName})
+		prometheus.Labels{trackerLabel: ast.name})
 
 	return ast
 }
@@ -68,7 +88,23 @@ func (at *ActiveSeriesTracker) hasSameLabels(labels []string) bool {
 	return slices.Equal(at.labels, labels)
 }
 
-func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
+func (ats *ActiveSeriesTrackers) Increment(lbls labels.Labels, now time.Time) {
+	ats.mtx.RLock()
+	for _, ast := range ats.trackers {
+		ast.Increment(lbls, now, ats.maxCardinality)
+	}
+	ats.mtx.RUnlock()
+}
+
+func (ats *ActiveSeriesTrackers) Decrement(lbls labels.Labels) {
+	ats.mtx.RLock()
+	for _, ast := range ats.trackers {
+		ast.Decrement(lbls)
+	}
+	ats.mtx.RUnlock()
+}
+
+func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, maxCardinality int) {
 	if at == nil {
 		return
 	}
@@ -119,7 +155,7 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time) {
 		return
 	}
 
-	if len(at.observed) >= at.maxCardinality {
+	if len(at.observed) >= maxCardinality {
 		at.overflowSince = now
 		at.overflowCounter.Inc()
 		return

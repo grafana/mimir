@@ -269,16 +269,16 @@ export function write() {
             {
                 __name__: 'k6_generated_metric_${series_id/1000}', // Name of the series.
                 series_id: '${series_id}',                         // Each value of this label will match 1 series.
-                cardinality_1e1: '${series_id/10}',                // Each value of this label will match 10 series.
-                cardinality_1e2: '${series_id/100}',               // Each value of this label will match 100 series.
-                cardinality_1e3: '${series_id/1000}',              // Each value of this label will match 1000 series.
-                cardinality_1e4: '${series_id/10000}',             // Each value of this label will match 10000 series.
-                cardinality_1e5: '${series_id/100000}',            // Each value of this label will match 100000 series.
-                cardinality_1e6: '${series_id/1000000}',           // Each value of this label will match 1000000 series.
-                cardinality_1e7: '${series_id/10000000}',          // Each value of this label will match 10000000 series.
-                cardinality_1e8: '${series_id/100000000}',         // Each value of this label will match 100000000 series.
-                cardinality_1e9: '${series_id/1000000000}',        // Each value of this label will match 1000000000 series.
-                cluster: `cluster_${ha_cluster}`,                  // Name of the ha cluster sending this.
+                // cardinality_1e1: '${series_id/10}',                // Each value of this label will match 10 series.
+                // cardinality_1e2: '${series_id/100}',               // Each value of this label will match 100 series.
+                // cardinality_1e3: '${series_id/1000}',              // Each value of this label will match 1000 series.
+                // cardinality_1e4: '${series_id/10000}',             // Each value of this label will match 10000 series.
+                // cardinality_1e5: '${series_id/100000}',            // Each value of this label will match 100000 series.
+                // cardinality_1e6: '${series_id/1000000}',           // Each value of this label will match 1000000 series.
+                // cardinality_1e7: '${series_id/10000000}',          // Each value of this label will match 10000000 series.
+                // cardinality_1e8: '${series_id/100000000}',         // Each value of this label will match 100000000 series.
+                // cardinality_1e9: '${series_id/1000000000}',        // Each value of this label will match 1000000000 series.
+                cluster: `cluster_${series_id}`,                  // Name of the ha cluster sending this.
                 __replica__: `replica_${ha_replica}`,              // Name of the ha replica sending this.
             }
         );

@@ -63,7 +63,7 @@ const (
 	QueryIngestersWithinFlag                  = "querier.query-ingesters-within"
 	AlertmanagerMaxGrafanaConfigSizeFlag      = "alertmanager.max-grafana-config-size-bytes"
 	AlertmanagerMaxGrafanaStateSizeFlag       = "alertmanager.max-grafana-state-size-bytes"
-	costAttributionLabelsFlag                 = "validation.cost-attribution-labels"
+	costAttributionTrackersFlag               = "validation.cost-attribution-trackers"
 	maxCostAttributionLabelsPerUserFlag       = "validation.max-cost-attribution-labels-per-user"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
@@ -73,7 +73,7 @@ const (
 var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
-	errCostAttributionLabelsLimitExceeded          = errors.New("invalid value for -" + costAttributionLabelsFlag + ": exceeds the limit defined by -" + maxCostAttributionLabelsPerUserFlag)
+	errCostAttributionLabelsLimitExceeded          = errors.New("invalid value for -" + costAttributionTrackersFlag + ": the tracker's labels exceeds the limit defined by -" + maxCostAttributionLabelsPerUserFlag)
 	errInvalidMaxCostAttributionLabelsPerUser      = errors.New("invalid value for -" + maxCostAttributionLabelsPerUserFlag + ": must be less than or equal to 4")
 )
 
@@ -198,10 +198,10 @@ type Limits struct {
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"experimental"`
 
 	// Cost attribution and limit.
-	CostAttributionLabels                flagext.StringSliceCSV `yaml:"cost_attribution_labels" json:"cost_attribution_labels" category:"experimental"`
-	MaxCostAttributionLabelsPerUser      int                    `yaml:"max_cost_attribution_labels_per_user" json:"max_cost_attribution_labels_per_user" category:"experimental"`
-	MaxCostAttributionCardinalityPerUser int                    `yaml:"max_cost_attribution_cardinality_per_user" json:"max_cost_attribution_cardinality_per_user" category:"experimental"`
-	CostAttributionCooldown              model.Duration         `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	CostAttributionTrackers              []CostAttributionTracker `yaml:"cost_attribution_trackers,omitempty" json:"cost_attribution_trackers,omitempty" category:"experimental"`
+	MaxCostAttributionLabelsPerUser      int                      `yaml:"max_cost_attribution_labels_per_user" json:"max_cost_attribution_labels_per_user" category:"experimental"`
+	MaxCostAttributionCardinalityPerUser int                      `yaml:"max_cost_attribution_cardinality_per_user" json:"max_cost_attribution_cardinality_per_user" category:"experimental"`
+	CostAttributionCooldown              model.Duration           `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay                                  model.Duration         `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
@@ -316,7 +316,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
-	f.Var(&l.CostAttributionLabels, costAttributionLabelsFlag, "Defines labels for cost attribution. Applies to metrics like cortex_distributor_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_distributor_received_attributed_samples_total{team='frontend', service='api'}.")
+	// f.Var(&l.CostAttributionTrackers, costAttributionTrackersFlag, "Defines labels for cost attribution. Applies to metrics like cortex_distributor_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_distributor_received_attributed_samples_total{team='frontend', service='api'}.")
 	f.IntVar(&l.MaxCostAttributionLabelsPerUser, maxCostAttributionLabelsPerUserFlag, 2, "Maximum number of cost attribution labels allowed per user, the value is capped at 4.")
 	f.IntVar(&l.MaxCostAttributionCardinalityPerUser, "validation.max-cost-attribution-cardinality-per-user", 10000, "Maximum cardinality of cost attribution labels allowed per user.")
 	f.Var(&l.CostAttributionCooldown, "validation.cost-attribution-cooldown", "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.")
@@ -502,9 +502,10 @@ func (l *Limits) validate() error {
 	if !util.StringsContain(api.ReadConsistencies, l.IngestStorageReadConsistency) {
 		return errInvalidIngestStorageReadConsistency
 	}
-
-	if len(l.CostAttributionLabels) > l.MaxCostAttributionLabelsPerUser {
-		return errCostAttributionLabelsLimitExceeded
+	for _, cat := range l.CostAttributionTrackers {
+		if len(cat.Labels) > l.MaxCostAttributionCardinalityPerUser {
+			return errCostAttributionLabelsLimitExceeded
+		}
 	}
 
 	if l.MaxCostAttributionLabelsPerUser > 4 {
@@ -858,8 +859,8 @@ func (o *Overrides) SeparateMetricsGroupLabel(userID string) string {
 	return o.getOverridesForUser(userID).SeparateMetricsGroupLabel
 }
 
-func (o *Overrides) CostAttributionLabels(userID string) []string {
-	return o.getOverridesForUser(userID).CostAttributionLabels
+func (o *Overrides) CostAttributionTrackers(userID string) []CostAttributionTracker {
+	return o.getOverridesForUser(userID).CostAttributionTrackers
 }
 
 func (o *Overrides) MaxCostAttributionLabelsPerUser(userID string) int {

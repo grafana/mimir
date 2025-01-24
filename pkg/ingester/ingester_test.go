@@ -3606,7 +3606,7 @@ func BenchmarkIngesterPush(b *testing.B) {
 				if limits == nil {
 					return
 				}
-				limits.CostAttributionLabels = []string{"cpu"}
+				limits.CostAttribution = []string{"cpu"}
 				limits.MaxCostAttributionCardinalityPerUser = 100
 			},
 			customRegistry: prometheus.NewRegistry(),

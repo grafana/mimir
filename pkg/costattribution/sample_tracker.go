@@ -14,6 +14,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const sep = rune(0x80)
@@ -26,6 +27,12 @@ type observation struct {
 	totalDiscarded     atomic.Float64
 }
 
+type SampleTrackers struct {
+	maxCardinality   int
+	cooldownDuration time.Duration
+	trackers         map[string]*SampleTracker
+	mtx              sync.RWMutex
+}
 type SampleTracker struct {
 	userID                     string
 	receivedSamplesAttribution *prometheus.Desc
@@ -35,9 +42,6 @@ type SampleTracker struct {
 	labels         []string
 	overflowLabels []string
 
-	maxCardinality   int
-	cooldownDuration time.Duration
-
 	observedMtx   sync.RWMutex
 	observed      map[string]*observation
 	overflowSince time.Time
@@ -45,7 +49,22 @@ type SampleTracker struct {
 	overflowCounter observation
 }
 
-func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown time.Duration, logger log.Logger) *SampleTracker {
+func newSampleTrackers(userID string, maxCardinality int, cooldownDuration time.Duration, logger log.Logger, tksCfg []validation.CostAttributionTracker) *SampleTrackers {
+	simpleTrackers := &SampleTrackers{
+		trackers:         make(map[string]*SampleTracker),
+		maxCardinality:   maxCardinality,
+		cooldownDuration: cooldownDuration,
+	}
+	for _, tkCfg := range tksCfg {
+		// sort the labels to ensure the order is consistent
+		orderedLables := slices.Clone(tkCfg.Labels)
+		slices.Sort(orderedLables)
+		simpleTrackers.trackers[tkCfg.Name] = newSampleTracker(userID, orderedLables, logger)
+	}
+	return simpleTrackers
+}
+
+func newSampleTracker(userID string, trackedLabels []string, logger log.Logger) *SampleTracker {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -56,14 +75,12 @@ func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown
 	overflowLabels[len(trackedLabels)+1] = overflowValue
 
 	tracker := &SampleTracker{
-		userID:           userID,
-		labels:           trackedLabels,
-		maxCardinality:   limit,
-		observed:         make(map[string]*observation),
-		cooldownDuration: cooldown,
-		logger:           logger,
-		overflowLabels:   overflowLabels,
-		overflowCounter:  observation{},
+		userID:          userID,
+		labels:          trackedLabels,
+		observed:        make(map[string]*observation),
+		logger:          logger,
+		overflowLabels:  overflowLabels,
+		overflowCounter: observation{},
 	}
 
 	variableLabels := slices.Clone(trackedLabels)
@@ -80,8 +97,11 @@ func newSampleTracker(userID string, trackedLabels []string, limit int, cooldown
 	return tracker
 }
 
-func (st *SampleTracker) hasSameLabels(labels []string) bool {
-	return slices.Equal(st.labels, labels)
+func (st *SampleTrackers) hasSameLabels(name string, labels []string) bool {
+	if tk, exists := st.trackers[name]; !exists || !slices.Equal(tk.labels, labels) {
+		return false
+	}
+	return true
 }
 
 var bufferPool = sync.Pool{
@@ -299,6 +319,14 @@ func (st *SampleTracker) recoveredFromOverflow(deadline time.Time) bool {
 		st.observedMtx.RUnlock()
 	}
 	return false
+}
+
+func (sts *SampleTrackers) cleanupInactiveObservations(deadline time.Time) {
+	sts.mtx.RLock()
+	for _, st := range sts.trackers {
+		st.cleanupInactiveObservations(deadline)
+	}
+	sts.mtx.RUnlock()
 }
 
 func (st *SampleTracker) cleanupInactiveObservations(deadline time.Time) {

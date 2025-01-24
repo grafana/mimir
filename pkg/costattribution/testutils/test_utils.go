@@ -9,29 +9,29 @@ import (
 
 func NewMockCostAttributionLimits(idx int, lvs ...string) (*validation.Overrides, error) {
 	baseLimits := map[string]*validation.Limits{
-		"user1": {MaxCostAttributionCardinalityPerUser: 5, CostAttributionLabels: []string{"team"}},
-		"user2": {MaxCostAttributionCardinalityPerUser: 2, CostAttributionLabels: []string{}},
-		"user3": {MaxCostAttributionCardinalityPerUser: 2, CostAttributionLabels: []string{"department", "service"}},
-		"user4": {MaxCostAttributionCardinalityPerUser: 5, CostAttributionLabels: []string{"platform"}},
-		"user5": {MaxCostAttributionCardinalityPerUser: 10, CostAttributionLabels: []string{"a"}},
+		"user1": {MaxCostAttributionCardinalityPerUser: 5, CostAttribution: []string{"team"}},
+		"user2": {MaxCostAttributionCardinalityPerUser: 2, CostAttribution: []string{}},
+		"user3": {MaxCostAttributionCardinalityPerUser: 2, CostAttribution: []string{"department", "service"}},
+		"user4": {MaxCostAttributionCardinalityPerUser: 5, CostAttribution: []string{"platform"}},
+		"user5": {MaxCostAttributionCardinalityPerUser: 10, CostAttribution: []string{"a"}},
 	}
 	if len(lvs) > 0 {
 		baseLimits[lvs[0]] = &validation.Limits{
 			MaxCostAttributionCardinalityPerUser: 10,
-			CostAttributionLabels:                lvs[1:],
+			CostAttribution:                      lvs[1:],
 		}
 	}
 	switch idx {
 	case 1:
-		baseLimits["user1"].CostAttributionLabels = []string{}
+		baseLimits["user1"].CostAttribution = []string{}
 	case 2:
-		baseLimits["user3"].CostAttributionLabels = []string{"team", "feature"}
+		baseLimits["user3"].CostAttribution = []string{"team", "feature"}
 	case 3:
 		baseLimits["user3"].MaxCostAttributionCardinalityPerUser = 3
 	case 4:
 		baseLimits["user1"].MaxCostAttributionCardinalityPerUser = 2
 	case 5:
-		baseLimits["user1"].CostAttributionLabels = []string{"department"}
+		baseLimits["user1"].CostAttribution = []string{"department"}
 	}
 
 	return validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(baseLimits))
