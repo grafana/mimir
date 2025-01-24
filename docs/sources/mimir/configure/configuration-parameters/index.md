@@ -2372,10 +2372,10 @@ sharding_ring:
 # CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
 [grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
 
-# (experimental) Skip starting the Alertmanager for Grafana Alertmanager tenants
-# unless they have a promoted, non-default configuration.
-# CLI flag: -alertmanager.grafana-tenant-suffix
-[grafana_alertmanager_tenant_suffix: <string> | default = ""]
+# (experimental) Skip starting the Alertmanager for tenants matching this suffix
+# unless they have a promoted, non-default Grafana Alertmanager configuration.
+# CLI flag: -alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix
+[grafana_alertmanager_conditionally_skip_tenant_suffix: <string> | default = ""]
 
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
