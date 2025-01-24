@@ -68,14 +68,6 @@ func TestDurationWithJitter(t *testing.T) {
 	}
 }
 
-func TestDurationWithJitter_ZeroInputDuration(t *testing.T) {
-	assert.Equal(t, time.Duration(0), DurationWithJitter(time.Duration(0), 0.5))
-}
-
-func TestDurationWithJitter_SmallInput(t *testing.T) {
-	assert.Equal(t, time.Duration(0), DurationWithJitter(time.Duration(7), 0.1))
-}
-
 func TestDurationWithPositiveJitter(t *testing.T) {
 	const numRuns = 1000
 
@@ -84,14 +76,6 @@ func TestDurationWithPositiveJitter(t *testing.T) {
 		assert.GreaterOrEqual(t, int64(actual), int64(60*time.Second))
 		assert.LessOrEqual(t, int64(actual), int64(90*time.Second))
 	}
-}
-
-func TestDurationWithPositiveJitter_ZeroInputDuration(t *testing.T) {
-	assert.Equal(t, time.Duration(0), DurationWithPositiveJitter(time.Duration(0), 0.5))
-}
-
-func TestDurationWithPositiveJitter_SmallInputDuration(t *testing.T) {
-	assert.Equal(t, time.Duration(0), DurationWithPositiveJitter(time.Duration(7), 0.1))
 }
 
 func TestDurationWithNegativeJitter(t *testing.T) {
@@ -104,12 +88,16 @@ func TestDurationWithNegativeJitter(t *testing.T) {
 	}
 }
 
-func TestDurationWithNegativeJitter_ZeroInputDuration(t *testing.T) {
-	assert.Equal(t, time.Duration(0), DurationWithNegativeJitter(time.Duration(0), 0.5))
-}
+func TestDurationWithJitterFamily_ZeroOutputs(t *testing.T) {
+	// Make sure all of these functions return zero when the computed variance is <= 0.
 
-func TestDurationWithNegativeJitter_SmallInputDuration(t *testing.T) {
-	assert.Equal(t, time.Duration(0), DurationWithNegativeJitter(time.Duration(7), 0.1))
+	type durFunc func(time.Duration, float64) time.Duration
+	for _, f := range []durFunc{DurationWithJitter, DurationWithNegativeJitter, DurationWithPositiveJitter} {
+		assert.Equal(t, time.Duration(0), f(time.Duration(0), 0.5))
+		assert.Equal(t, time.Duration(0), f(time.Duration(7), 0.1))
+		assert.Equal(t, time.Duration(0), f(time.Duration(7), -0.1))
+		assert.Equal(t, time.Duration(0), f(10*time.Minute, -0.1))
+	}
 }
 
 func TestParseTime(t *testing.T) {
