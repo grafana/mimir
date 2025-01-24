@@ -74,6 +74,11 @@ func newWithSchedulerClient(
 	limits *validation.Overrides,
 	schedulerClient schedulerpb.SchedulerClient,
 ) (*BlockBuilder, error) {
+	if cfg.NoPartiallyConsumedRegion {
+		// We should not have a large buffer if we are putting all the records into a block.
+		cfg.ConsumeIntervalBuffer = 5 * time.Minute
+	}
+
 	b := &BlockBuilder{
 		cfg:                 cfg,
 		logger:              logger,
@@ -557,7 +562,9 @@ consumerLoop:
 			}
 
 			recordAlreadyProcessed := rec.Offset <= state.LastSeenOffset
-			allSamplesProcessed, err := builder.Process(ctx, rec, state.LastBlockEnd.UnixMilli(), blockEnd.UnixMilli(), recordAlreadyProcessed)
+			allSamplesProcessed, err := builder.Process(
+				ctx, rec, state.LastBlockEnd.UnixMilli(), blockEnd.UnixMilli(),
+				recordAlreadyProcessed, b.cfg.NoPartiallyConsumedRegion)
 			if err != nil {
 				// All "non-terminal" errors are handled by the TSDBBuilder.
 				return state, fmt.Errorf("process record in partition %d at offset %d: %w", rec.Partition, rec.Offset, err)
