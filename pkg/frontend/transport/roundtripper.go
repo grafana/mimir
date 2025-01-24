@@ -20,13 +20,17 @@ type GrpcRoundTripper interface {
 	RoundTripGRPC(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error)
 }
 
-func AdaptGrpcRoundTripperToHTTPRoundTripper(r GrpcRoundTripper) http.RoundTripper {
-	return &grpcRoundTripperAdapter{roundTripper: r}
+func AdaptGrpcRoundTripperToHTTPRoundTripper(r GrpcRoundTripper, cluster string) http.RoundTripper {
+	return &grpcRoundTripperAdapter{
+		roundTripper: r,
+		cluster:      cluster,
+	}
 }
 
 // This adapter wraps GrpcRoundTripper and converted it into http.RoundTripper
 type grpcRoundTripperAdapter struct {
 	roundTripper GrpcRoundTripper
+	cluster      string
 }
 
 type buffer struct {
@@ -39,7 +43,7 @@ func (b *buffer) Bytes() []byte {
 }
 
 func (a *grpcRoundTripperAdapter) RoundTrip(r *http.Request) (*http.Response, error) {
-	req, err := httpgrpc.FromHTTPRequest(r)
+	req, err := httpgrpc.FromHTTPRequestWithCluster(r, a.cluster)
 	if err != nil {
 		return nil, err
 	}

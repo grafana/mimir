@@ -17,6 +17,7 @@ import (
 	"github.com/gogo/status"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/log"
 )
@@ -42,7 +43,7 @@ func (nopCloser) Close() error { return nil }
 // BytesBuffer returns the underlaying `bytes.buffer` used to build this io.ReadCloser.
 func (n nopCloser) BytesBuffer() *bytes.Buffer { return n.Buffer }
 
-// FromHTTPRequest converts an ordinary http.Request into an httpgrpc.HTTPRequest
+// FromHTTPRequest converts an ordinary http.Request into an httpgrpc.HTTPRequest.
 func FromHTTPRequest(r *http.Request) (*HTTPRequest, error) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -54,6 +55,21 @@ func FromHTTPRequest(r *http.Request) (*HTTPRequest, error) {
 		Body:    body,
 		Headers: FromHeader(r.Header),
 	}, nil
+}
+
+// FromHTTPRequestWithCluster converts an ordinary http.Request into an httpgrpc.HTTPRequest.
+// It's the same as FromHTTPRequest except that if cluster is non-empty, it has to be equal to the
+// middleware.ClusterHeader header (or an error is returned).
+func FromHTTPRequestWithCluster(r *http.Request, cluster string) (*HTTPRequest, error) {
+	if cluster != "" {
+		if c := r.Header.Get(clusterutil.ClusterHeader); c != cluster {
+			return nil, fmt.Errorf(
+				"httpgrpc.FromHTTPRequest: %q header should be %q, but is %q",
+				clusterutil.ClusterHeader, cluster, c,
+			)
+		}
+	}
+	return FromHTTPRequest(r)
 }
 
 // ToHTTPRequest converts httpgrpc.HTTPRequest to http.Request.
