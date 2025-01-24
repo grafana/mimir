@@ -15578,12 +15578,12 @@
         },
         {
           "kind": "field",
-          "name": "grafana_alertmanager_tenant_suffix",
+          "name": "grafana_alertmanager_conditionally_skip_tenant_suffix",
           "required": false,
-          "desc": "Skip starting the Alertmanager for Grafana Alertmanager tenants unless they have a promoted, non-default configuration.",
+          "desc": "Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration.",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldFlag": "alertmanager.grafana-tenant-suffix",
+          "fieldFlag": "alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },
