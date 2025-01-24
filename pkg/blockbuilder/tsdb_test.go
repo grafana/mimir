@@ -99,13 +99,13 @@ func TestTSDBBuilder(t *testing.T) {
 	}
 	addFloatSample := func(builder *TSDBBuilder, ts int64, val float64, lastEnd, currEnd int64, recordProcessedBefore, wantAccepted bool) {
 		rec := createRequest(userID, floatSample(ts, val), nil, wantAccepted)
-		allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, recordProcessedBefore)
+		allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, recordProcessedBefore, false)
 		require.NoError(t, err)
 		require.Equal(t, wantAccepted, allProcessed)
 	}
 	addHistogramSample := func(builder *TSDBBuilder, ts int64, lastEnd, currEnd int64, recordProcessedBefore, wantAccepted bool) {
 		rec := createRequest(userID, nil, histogramSample(ts), wantAccepted)
-		allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, recordProcessedBefore)
+		allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, recordProcessedBefore, false)
 		require.NoError(t, err)
 		require.Equal(t, wantAccepted, allProcessed)
 	}
@@ -226,7 +226,7 @@ func TestTSDBBuilder(t *testing.T) {
 				// This one goes into the block.
 				samples := floatSample(lastEnd+20, 1)
 				rec := createRequest(userID, samples, nil, false)
-				allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false)
+				allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
 				require.NoError(t, err)
 				require.True(t, allProcessed)
 				expOOOSamples := append([]mimirpb.Sample(nil), samples...)
@@ -234,7 +234,7 @@ func TestTSDBBuilder(t *testing.T) {
 				// This one doesn't go into the block because of "ErrOutOfOrderSample" (soft error)
 				samples = floatSample(lastEnd-20, 1)
 				rec = createRequest(userID, samples, nil, false)
-				allProcessed, err = builder.Process(context.Background(), rec, lastEnd, currEnd, false)
+				allProcessed, err = builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
 				require.NoError(t, err)
 				require.True(t, allProcessed)
 
@@ -303,6 +303,16 @@ func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 		return errUploadFailed
 	})
 	require.ErrorIs(t, err, errUploadFailed)
+}
+
+func compareQueryWithDir(t *testing.T, bucketDir string, expSamples []mimirpb.Sample, expHistograms []mimirpb.Histogram, matchers ...*labels.Matcher) *tsdb.DB {
+	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	compareQuery(t, db, expSamples, expHistograms, matchers...)
+
+	return db
 }
 
 func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHistograms []mimirpb.Histogram, matchers ...*labels.Matcher) {
@@ -389,7 +399,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	data, err := req.Marshal()
 	require.NoError(t, err)
 	rec.Value = data
-	allProcessed, err := builder.Process(context.Background(), &rec, lastEnd, currEnd, false)
+	allProcessed, err := builder.Process(context.Background(), &rec, lastEnd, currEnd, false, false)
 	require.NoError(t, err)
 	require.True(t, allProcessed)
 
@@ -398,7 +408,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	data, err = req.Marshal()
 	require.NoError(t, err)
 	rec.Value = data
-	allProcessed, err = builder.Process(context.Background(), &rec, lastEnd, currEnd, false)
+	allProcessed, err = builder.Process(context.Background(), &rec, lastEnd, currEnd, false, false)
 	require.NoError(t, err)
 	require.True(t, allProcessed)
 
@@ -459,7 +469,7 @@ func TestTSDBBuilderLimits(t *testing.T) {
 	for seriesID := 1; seriesID <= 100; seriesID++ {
 		for userID := range limits {
 			rec := createRequest(userID, seriesID)
-			allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false)
+			allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
 			require.NoError(t, err)
 			require.Equal(t, true, allProcessed)
 		}
@@ -515,7 +525,7 @@ func TestTSDBBuilderNativeHistogramEnabledError(t *testing.T) {
 				Key:   []byte(userID),
 				Value: createWriteRequest(t, strconv.Itoa(seriesID), nil, histogramSample(ts)),
 			}
-			allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false)
+			allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
 			require.NoError(t, err)
 			require.Equal(t, true, allProcessed)
 		}
