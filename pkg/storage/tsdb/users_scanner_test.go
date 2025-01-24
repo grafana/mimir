@@ -8,7 +8,6 @@ package tsdb
 import (
 	"context"
 	"errors"
-	"fmt"
 	"path"
 	"testing"
 
@@ -37,10 +36,10 @@ func TestUsersScanner_ScanUsers_ShouldReturnedOwnedUsersOnly(t *testing.T) {
 }
 
 func TestUsersScanner_ScanUsers_ShouldReturnUsersForWhichOwnerCheckOrTenantDeletionCheckFailed(t *testing.T) {
-	users := []string{"user-1", "user-2"}
+	expected := []string{"user-1", "user-2"}
 
 	bucketClient := &bucket.ClientMock{}
-	bucketClient.MockIter("", users, nil)
+	bucketClient.MockIter("", expected, nil)
 	bucketClient.MockExists(path.Join("user-1", TenantDeletionMarkPath), false, nil)
 	bucketClient.MockExists(path.Join("user-2", TenantDeletionMarkPath), false, errors.New("fail"))
 
@@ -51,12 +50,11 @@ func TestUsersScanner_ScanUsers_ShouldReturnUsersForWhichOwnerCheckOrTenantDelet
 	s := NewUsersScanner(bucketClient, isOwned, log.NewNopLogger())
 	actual, deleted, err := s.ScanUsers(context.Background())
 	require.NoError(t, err)
-	assert.ElementsMatch(t, actual, users)
+	assert.Equal(t, expected, actual)
 	assert.Empty(t, deleted)
 }
 
 func TestUsersScanner_ScanUsers_ShouldNotReturnPrefixedUsedByMimirInternals(t *testing.T) {
-	users := []string{"user-1", "user-2"}
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{"user-1", "user-2", bucket.MimirInternalsPrefix}, nil)
 	bucketClient.MockExists(path.Join("user-1", TenantDeletionMarkPath), false, nil)
@@ -65,28 +63,5 @@ func TestUsersScanner_ScanUsers_ShouldNotReturnPrefixedUsedByMimirInternals(t *t
 	s := NewUsersScanner(bucketClient, AllUsers, log.NewNopLogger())
 	actual, _, err := s.ScanUsers(context.Background())
 	require.NoError(t, err)
-	assert.ElementsMatch(t, actual, users)
-}
-
-func TestUsersScanner_ScanUsers_ShouldReturnRandomizedOrder(t *testing.T) {
-	var users = make([]string, 20)
-	for i := 0; i < len(users); i++ {
-		users[i] = fmt.Sprintf("user-%d", i)
-	}
-	bucketClient := &bucket.ClientMock{}
-	bucketClient.MockIter("", users, nil)
-	for i := 0; i < len(users); i++ {
-		bucketClient.MockExists(path.Join(users[i], TenantDeletionMarkPath), false, nil)
-	}
-
-	isOwned := func(_ string) (bool, error) {
-		return true, nil
-	}
-
-	s := NewUsersScanner(bucketClient, isOwned, log.NewNopLogger())
-	actual, deleted, err := s.ScanUsers(context.Background())
-	require.NoError(t, err)
-	assert.ElementsMatch(t, actual, users)
-	assert.Empty(t, deleted)
-	assert.NotEqual(t, actual, users)
+	assert.Equal(t, []string{"user-1", "user-2"}, actual)
 }

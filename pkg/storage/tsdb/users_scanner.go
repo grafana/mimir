@@ -7,7 +7,6 @@ package tsdb
 
 import (
 	"context"
-	"math/rand"
 	"strings"
 
 	"github.com/go-kit/log"
@@ -46,10 +45,6 @@ func (s *UsersScanner) ScanUsers(ctx context.Context) (users, markedForDeletion 
 	if err != nil {
 		return nil, nil, err
 	}
-
-	rand.Shuffle(len(users), func(i, j int) {
-		users[i], users[j] = users[j], users[i]
-	})
 
 	// Check users for being owned by instance, and split users into non-deleted and deleted.
 	// We do these checks after listing all users, to improve cacheability of Iter (result is only cached at the end of Iter call).
