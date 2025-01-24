@@ -641,38 +641,38 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 	const mint, maxt = 0, 10
 
 	someMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
-	hints := &storage.LabelHints{Limit: 1}
+
 	labelNames := []string{"foo", "job"}
 
-		t.Run("with matchers", func(t *testing.T) {
-			d := &mockDistributor{}
-			d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), &storage.LabelHints{}, someMatchers).
-				Return(labelNames, nil)
-			ctx := user.InjectOrgID(context.Background(), "0")
-			queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
-			querier, err := queryable.Querier(mint, maxt)
-			require.NoError(t, err)
+	t.Run("with matchers", func(t *testing.T) {
+		d := &mockDistributor{}
+		d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), &storage.LabelHints{}, someMatchers).
+			Return(labelNames, nil)
+		ctx := user.InjectOrgID(context.Background(), "0")
+		queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
+		querier, err := queryable.Querier(mint, maxt)
+		require.NoError(t, err)
 
-			names, warnings, err := querier.LabelNames(ctx, &storage.LabelHints{}, someMatchers...)
-			require.NoError(t, err)
-			assert.Empty(t, warnings)
-			assert.Equal(t, labelNames, names)
-		})
+		names, warnings, err := querier.LabelNames(ctx, &storage.LabelHints{}, someMatchers...)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		assert.Equal(t, labelNames, names)
+	})
 
-		t.Run("with matchers and limit", func(t *testing.T) {
-			d := &mockDistributor{}
-			d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), hints, []*labels.Matcher{}).
-				Return(labelNames[:hints.Limit], nil)
-			ctx := user.InjectOrgID(context.Background(), "0")
-			queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
-			querier, err := queryable.Querier(mint, maxt)
-			require.NoError(t, err)
+	t.Run("with matchers and limit", func(t *testing.T) {
+		hints := &storage.LabelHints{Limit: 1}
+		d := &mockDistributor{}
+		d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), hints, someMatchers).
+			Return(labelNames[:hints.Limit], nil)
+		ctx := user.InjectOrgID(context.Background(), "0")
+		queryable := NewDistributorQueryable(d, newMockConfigProvider(0), nil, log.NewNopLogger())
+		querier, err := queryable.Querier(mint, maxt)
+		require.NoError(t, err)
 
-			names, warnings, err := querier.LabelNames(ctx, hints, someMatchers...)
-			require.NoError(t, err)
-			assert.Empty(t, warnings)
-			assert.Equal(t, labelNames[:hints.Limit], names)
-		})
+		names, warnings, err := querier.LabelNames(ctx, hints, someMatchers...)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+		assert.Equal(t, labelNames[:hints.Limit], names)
 	})
 }
 
