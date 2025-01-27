@@ -69,8 +69,8 @@ func TimeFunctionOperatorFactory(name string, f functions.FunctionOverInstantVec
 		}
 
 		var inner types.InstantVectorOperator
-		var ok bool
 		if len(args) > 0 {
+			var ok bool
 			// time based function expect instant vector argument
 			inner, ok = args[0].(types.InstantVectorOperator)
 			if !ok {
