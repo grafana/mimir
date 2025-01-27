@@ -208,9 +208,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			e.PosRange,
 		)
 	case *parser.Call:
-		if e.Func.Name == "absent" {
-			fmt.Println("here")
-		}
 		return q.convertFunctionCallToInstantVectorOperator(e, timeRange)
 	case *parser.BinaryExpr:
 		// We only need to handle three combinations of types here:
