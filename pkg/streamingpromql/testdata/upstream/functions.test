@@ -1234,7 +1234,7 @@ clear
 
 # Test for absent()
 eval instant at 50m absent(nonexistent)
- 	{} 1
+	{} 1
 
 eval instant at 50m absent(nonexistent{job="testjob", instance="testinstance", method=~".x"})
 	{instance="testinstance", job="testjob"} 1
@@ -1243,10 +1243,10 @@ eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",foo="bar"})
 	{foo="bar"} 1
 
 eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",job="three",foo="bar"})
-    {foo="bar"} 1
+	{foo="bar"} 1
 
 eval instant at 50m absent(nonexistent{job="testjob",job=~"testjob2",foo="bar"})
-    {foo="bar"} 1
+	{foo="bar"} 1
 
 clear
 
@@ -1266,22 +1266,22 @@ eval instant at 50m absent(sum(http_requests_histogram))
 clear
 
 eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
-    {} 1
+	{} 1
 
 eval instant at 50m absent(max(nonexistant))
-    {} 1
+	{} 1
 
 eval instant at 50m absent(nonexistant > 1)
-    {} 1
+	{} 1
 
 eval instant at 50m absent(a + b)
-    {} 1
+	{} 1
 
 eval instant at 50m absent(a and b)
-    {} 1
+	{} 1
 
 eval instant at 50m absent(rate(nonexistant[5m]))
-    {} 1
+	{} 1
 
 clear
 
