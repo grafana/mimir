@@ -739,7 +739,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		if !ok {
 			return amConfig{}, false, nil
 		}
-		fmt.Printf("%s is receiving alerts!", cfgs.Mimir.User)
+		level.Debug(am.logger).Log("msg", "user has no usable config but is receiving alerts, starting Alertmanager", "user", cfgs.Mimir.User)
 	}
 
 	cfg := amConfig{
@@ -1028,6 +1028,16 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 		am.lolMtx.Lock()
 		am.receivingAlerts[userID] = struct{}{}
 		am.lolMtx.Unlock()
+		userAM, err = am.startAlertmanager(req.Context(), userID)
+		if err != nil {
+			level.Error(am.logger).Log("msg", "unable to initialize the Alertmanager", "user", userID, "err", err)
+			http.Error(w, "Failed to initialize the Alertmanager", http.StatusInternalServerError)
+			return
+		}
+
+		level.Debug(am.logger).Log("msg", "alerts received, Alertmanager initialized", "user", userID, "err", err)
+		userAM.mux.ServeHTTP(w, req)
+		return
 	}
 
 	if am.fallbackConfig != "" {
@@ -1048,6 +1058,53 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 
 	level.Info(am.logger).Log("msg", "the Alertmanager has no configuration and no fallback specified", "user", userID)
 	http.Error(w, "the Alertmanager is not configured", http.StatusPreconditionFailed)
+}
+
+func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID string) (*Alertmanager, error) {
+	if !am.isUserOwned(userID) {
+		return nil, errors.Wrap(errNotUploadingFallback, "user not owned by this instance")
+	}
+
+	cfg, err := am.store.GetAlertConfig(ctx, userID)
+	if err != nil {
+		if !errors.Is(err, alertspb.ErrNotFound) {
+			return nil, errors.Wrap(err, "failed to check for existing configuration")
+		}
+
+		level.Warn(am.logger).Log("msg", "no configuration exists for user; uploading fallback configuration", "user", userID)
+
+		// Upload an empty config so that the Alertmanager is not de-activated in the next poll.
+		cfgDesc := alertspb.ToProto("", nil, userID)
+		err = am.store.SetAlertConfig(ctx, cfgDesc)
+		if err != nil {
+			return nil, err
+		}
+
+		// Calling setConfig with an empty configuration will use the fallback config.
+		amConfig := amConfig{
+			AlertConfigDesc: cfgDesc,
+			tmplExternalURL: am.cfg.ExternalURL.URL,
+		}
+		err = am.setConfig(amConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		am.alertmanagersMtx.Lock()
+		defer am.alertmanagersMtx.Unlock()
+		return am.alertmanagers[userID], nil
+	}
+
+	amConfig := amConfig{
+		AlertConfigDesc: cfg,
+		tmplExternalURL: am.cfg.ExternalURL.URL,
+	}
+	if err := am.setConfig(amConfig); err != nil {
+		return nil, err
+	}
+	am.alertmanagersMtx.Lock()
+	defer am.alertmanagersMtx.Unlock()
+	return am.alertmanagers[userID], nil
 }
 
 func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Context, userID string) (*Alertmanager, error) {
