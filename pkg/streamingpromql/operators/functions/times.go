@@ -5,8 +5,6 @@ package functions
 import (
 	"time"
 
-	"github.com/prometheus/prometheus/promql"
-
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -45,14 +43,6 @@ var Year = timeWrapperFunc(func(t time.Time) float64 {
 
 func timeWrapperFunc(f func(t time.Time) float64) InstantVectorSeriesFunction {
 	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, tr types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
-		if len(seriesData.Floats)+len(seriesData.Histograms) == 0 {
-			fp := promql.FPoint{
-				F: f(time.Unix(tr.StartT, 0).UTC()),
-			}
-			seriesData.Floats = append(seriesData.Floats, fp)
-			return seriesData, nil
-		}
-
 		if len(seriesData.Floats) > 0 {
 			for i := range seriesData.Floats {
 				t := time.Unix(int64(seriesData.Floats[i].F), 0).UTC()
