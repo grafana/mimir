@@ -18,7 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-// AbsentOperator is an operator that implements the vector() function.
+// AbsentOperator is an operator that implements the absent() function.
 type AbsentOperator struct {
 	timeRange                types.QueryTimeRange
 	innerExpr                parser.Expr
@@ -30,6 +30,7 @@ type AbsentOperator struct {
 
 var _ types.InstantVectorOperator = &AbsentOperator{}
 
+// NewAbsent creates a new AbsentOperator.
 func NewAbsent(inner types.InstantVectorOperator, innerExpr parser.Expr, timeRange types.QueryTimeRange, expressionPosition posrange.PositionRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *AbsentOperator {
 	return &AbsentOperator{
 		timeRange:                timeRange,
