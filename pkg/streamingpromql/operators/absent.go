@@ -30,8 +30,8 @@ type AbsentOperator struct {
 
 var _ types.InstantVectorOperator = &AbsentOperator{}
 
-// NewAbsent creates a new AbsentOperator.
-func NewAbsent(inner types.InstantVectorOperator, innerExpr parser.Expr, timeRange types.QueryTimeRange, expressionPosition posrange.PositionRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *AbsentOperator {
+// NewAbsentOperator creates a new AbsentOperator.
+func NewAbsentOperator(inner types.InstantVectorOperator, innerExpr parser.Expr, timeRange types.QueryTimeRange, expressionPosition posrange.PositionRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *AbsentOperator {
 	return &AbsentOperator{
 		timeRange:                timeRange,
 		inner:                    inner,
