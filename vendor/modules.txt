@@ -925,7 +925,7 @@ github.com/oklog/ulid
 # github.com/okzk/sdnotify v0.0.0-20240725214427-1c1fdd37c5ac
 ## explicit
 github.com/okzk/sdnotify
-# github.com/opentracing-contrib/go-grpc v0.1.0 => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
+# github.com/opentracing-contrib/go-grpc v0.1.1 => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 ## explicit; go 1.11
 github.com/opentracing-contrib/go-grpc
 # github.com/opentracing-contrib/go-stdlib v1.1.0 => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
