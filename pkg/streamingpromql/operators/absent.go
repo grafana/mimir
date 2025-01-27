@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/promql/functions.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors.
 
 package operators
 
@@ -87,6 +90,9 @@ func (s *AbsentOperator) Close() {
 	s.inner.Close()
 }
 
+// createLabelsForAbsentFunction returns the labels that are uniquely and exactly matched
+// in a given expression. It is used in the absent functions.
+// This function is copied from Prometheus
 func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	b := labels.NewBuilder(labels.EmptyLabels())
 
