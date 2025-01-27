@@ -155,7 +155,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		return s.next.Do(ctx, req)
 	}
 
-	// Increment total number of instant queries attempted to split metrics
+	// Increment total number of instant queries attempted to spin off subqueries from.
 	s.metrics.spinOffAttempts.Inc()
 
 	mapperStats := astmapper.NewSubquerySpinOffMapperStats()
@@ -173,23 +173,24 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	spinOffQuery, err := mapper.Map(expr)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
-			level.Error(spanLog).Log("msg", "timeout while splitting query by instant interval, please fill in a bug report with this query, falling back to try executing without splitting", "err", err)
+			level.Error(spanLog).Log("msg", "timeout while spinning off subqueries, please fill in a bug report with this query, falling back to try executing without spin-off", "err", err)
 		} else {
-			level.Error(spanLog).Log("msg", "failed to map the input query, falling back to try executing without splitting", "err", err)
+			level.Error(spanLog).Log("msg", "failed to map the input query, falling back to try executing without spin-off", "err", err)
 		}
 		s.metrics.spinOffSkipped.WithLabelValues(subquerySpinoffSkippedReasonMappingFailed).Inc()
 		return s.next.Do(ctx, req)
 	}
 
 	if mapperStats.SpunOffSubqueries() == 0 {
-		// the query cannot be split, so continue
+		// the query has no subqueries, so continue downstream
 		spanLog.DebugLog("msg", "input query resulted in a no operation, falling back to try executing without spinning off subqueries")
 		s.metrics.spinOffSkipped.WithLabelValues(subquerySpinoffSkippedReasonNoSubqueries).Inc()
 		return s.next.Do(ctx, req)
 	}
 
 	if mapperStats.DownstreamQueries() > mapperStats.SpunOffSubqueries() {
-		// the query cannot be split, so continue
+		// the query has more downstream queries than subqueries, so continue downstream
+		// It's probably more efficient to just execute the query as is
 		spanLog.DebugLog("msg", "input query resulted in more downstream queries than subqueries, falling back to try executing without spinning off subqueries")
 		s.metrics.spinOffSkipped.WithLabelValues(subquerySpinoffSkippedReasonDownstreamQueries).Inc()
 		return s.next.Do(ctx, req)
@@ -218,14 +219,14 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 
 	qry, err := newQuery(ctx, req, s.engine, lazyquery.NewLazyQueryable(queryable))
 	if err != nil {
-		level.Warn(spanLog).Log("msg", "failed to create new query from splittable request", "err", err)
+		level.Warn(spanLog).Log("msg", "failed to create new query from subquery spin request", "err", err)
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	res := qry.Exec(ctx)
 	extracted, err := promqlResultToSamples(res)
 	if err != nil {
-		level.Warn(spanLog).Log("msg", "failed to execute split instant query", "err", err)
+		level.Warn(spanLog).Log("msg", "failed to execute spun off subquery", "err", err)
 		return nil, mapEngineError(err)
 	}
 

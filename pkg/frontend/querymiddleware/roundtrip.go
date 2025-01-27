@@ -102,7 +102,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
-	f.StringVar(&cfg.SpinOffInstantSubqueriesToURL, "query-frontend.spin-off-instant-subqueries-to-url", "", "If set, subqueries in instant queries will be spun off as range queries and sent to the given URL. Also requires `instant_queries_with_subquery_spin_off` to be set for the tenant.")
+	f.StringVar(&cfg.SpinOffInstantSubqueriesToURL, "query-frontend.spin-off-instant-subqueries-to-url", "", "If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to set `instant_queries_with_subquery_spin_off` for the tenant.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 

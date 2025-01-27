@@ -31,7 +31,7 @@ type subquerySpinOffMapper struct {
 	stats  *SubquerySpinOffMapperStats
 }
 
-// NewSubqueryExtractor creates a new instant query mapper.
+// NewSubquerySpinOffMapper creates a new instant query mapper.
 func NewSubquerySpinOffMapper(ctx context.Context, defaultStepFunc func(rangeMillis int64) int64, logger log.Logger, stats *SubquerySpinOffMapperStats) ASTMapper {
 	queryMapper := NewASTExprMapper(
 		&subquerySpinOffMapper{
@@ -47,6 +47,15 @@ func NewSubquerySpinOffMapper(ctx context.Context, defaultStepFunc func(rangeMil
 	)
 }
 
+// MapExpr implements the ASTMapper interface.
+// The strategy here is to look for aggregated subqueries (all subqueries should be aggregated) and spin them off into separate queries.
+// The frontend does not have internal control of the engine,
+// so MapExpr has to remap subqueries into "fake metrics" that can be queried by a Queryable that we can inject into the engine.
+// This "fake metric selector" is the "__subquery_spinoff__" metric.
+// For everything else, we have to pass it through to the downstream execution path (other instant middlewares),
+// so we remap them into a "__downstream_query__" selector.
+//
+// See sharding.go and embedded.go for another example of mapping into a fake metric selector.
 func (m *subquerySpinOffMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	if err := m.ctx.Err(); err != nil {
 		return nil, false, err
@@ -78,6 +87,8 @@ func (m *subquerySpinOffMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, f
 			return expr, false, nil
 		}
 		lastArgIdx := len(e.Args) - 1
+		// The last argument will typically contain the subquery in an aggregation function
+		// Examples: last_over_time(<subquery>[5m:]) or quantile_over_time(0.5, <subquery>[5m:])
 		if sq, ok := e.Args[lastArgIdx].(*parser.SubqueryExpr); ok {
 			// Filter out subqueries with offsets, not supported yet
 			if sq.OriginalOffset > 0 {
@@ -134,7 +145,7 @@ func (m *subquerySpinOffMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, f
 
 		return downstreamQuery(expr)
 	default:
-		// If there's no subquery in the children, we can just
+		// If there's no subquery in the children, we can abort early and pass the expression through to the downstream execution path.
 		if !hasSubqueryInChildren(expr) {
 			return downstreamQuery(expr)
 		}

@@ -191,7 +191,7 @@ type Limits struct {
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
 	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions" category:"experimental"`
 	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
-	InstantQueriesWithSubquerySpinOff      []string               `yaml:"instant_queries_with_subquery_spin_off" json:"instant_queries_with_subquery_spin_off" doc:"nocli|description=List of regexp patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their execution." category:"experimental"`
+	InstantQueriesWithSubquerySpinOff      []string               `yaml:"instant_queries_with_subquery_spin_off" json:"instant_queries_with_subquery_spin_off" doc:"nocli|description=List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance." category:"experimental"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
