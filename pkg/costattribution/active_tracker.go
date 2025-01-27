@@ -37,7 +37,7 @@ type ActiveSeriesTracker struct {
 func addLabelsPrefix(labels []string) []string {
 	out := make([]string, 0, len(labels))
 	for _, l := range labels {
-		out = append(out, strings.Join([]string{usagePrefix, l}, "_"))
+		out = append(out, strings.Join([]string{usagePrefix, l}, ""))
 	}
 	return out
 }

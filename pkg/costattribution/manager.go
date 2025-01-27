@@ -21,7 +21,7 @@ const (
 	defaultTrackerName = "cost-attribution"
 	missingValue       = "__missing__"
 	overflowValue      = "__overflow__"
-	usagePrefix        = "attributed"
+	usagePrefix        = "attributed_"
 )
 
 type Manager struct {
