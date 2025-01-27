@@ -4,7 +4,6 @@ package functions
 
 import (
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -23,35 +22,6 @@ var DropSeriesName = SeriesMetadataFunctionDefinition{
 		return seriesMetadata, nil
 	},
 	NeedsSeriesDeduplication: true,
-}
-
-// UniqueSeriesLabel set series labels to be unique.
-var UniqueSeriesLabel = SeriesMetadataFunctionDefinition{
-	Func: func(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-		for i := range seriesMetadata {
-			b := labels.NewBuilder(labels.EmptyLabels())
-			lm := seriesMetadata[i].Labels
-
-			// The 'has' map implements backwards-compatibility for historic behaviour:
-			// e.g. in `absent(x{job="a",job="b",foo="bar"})` then `job` is removed from the output.
-			// Note this gives arguably wrong behaviour for `absent(x{job="a",job="a",foo="bar"})`.
-			has := make(map[string]bool, len(lm))
-			for _, ma := range lm {
-				if ma.Name == labels.MetricName {
-					continue
-				}
-				if !has[ma.Name] {
-					b.Set(ma.Name, ma.Value)
-					has[ma.Name] = true
-				} else {
-					b.Del(ma.Name)
-				}
-			}
-			seriesMetadata[i].Labels = b.Labels()
-		}
-
-		return seriesMetadata, nil
-	},
 }
 
 // InstantVectorSeriesFunction is a function that takes in an instant vector and produces an instant vector.
