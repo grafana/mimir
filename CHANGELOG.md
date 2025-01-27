@@ -36,6 +36,7 @@
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total`
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total`
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total`
+* [ENHANCEMENT] Compactor: Shuffle users' order in `BlocksCleaner`. Prevents bucket indexes from going an extended period without cleanup during compactor restarts. #10513
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 * [BUGFIX] Querier: fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #10154
 * [BUGFIX] Query-frontend and querier: show warning/info annotations in some cases where they were missing (if a lazy querier was used). #10277
