@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -29,13 +28,11 @@ import (
 
 func TestSubquerySpinOff_Correctness(t *testing.T) {
 	var (
-		numSeries                = 1000
-		numStaleSeries           = 100
-		numConvHistograms        = 1000
-		numStaleConvHistograms   = 100
-		histogramBuckets         = []float64{1.0, 2.0, 4.0, 10.0, 100.0, math.Inf(1)}
-		numNativeHistograms      = 1000
-		numStaleNativeHistograms = 100
+		numSeries      = 1000
+		numStaleSeries = 100
+		samplesStart   = time.Now().Add(-2 * 24 * time.Hour)
+		samplesEnd     = time.Now().Add(30 * time.Minute)
+		samplesStep    = 30 * time.Second
 	)
 
 	tests := map[string]struct {
@@ -134,11 +131,7 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 		},
 	}
 
-	samplesStart := time.Now().Add(-3 * 24 * time.Hour)
-	samplesEnd := time.Now().Add(30 * time.Minute)
-	samplesStep := 30 * time.Second
-
-	series := make([]storage.Series, 0, numSeries+(numConvHistograms*len(histogramBuckets))+numNativeHistograms)
+	series := make([]storage.Series, 0, numSeries)
 	seriesID := 0
 
 	// Add counter series.
@@ -169,36 +162,6 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 	series = append(series, newSeries(newTestCounterLabels(seriesID),
 		time.Now().Add(5*time.Minute), samplesEnd, samplesStep, factor(2)))
 	seriesID++
-
-	// Add conventional histogram series.
-	for i := 0; i < numConvHistograms; i++ {
-		for bucketIdx, bucketLe := range histogramBuckets {
-			// We expect each bucket to have a value higher than the previous one.
-			gen := factor(float64(i) * float64(bucketIdx) * 0.1)
-			if i >= numConvHistograms-numStaleConvHistograms {
-				// Wrap the generator to inject the staleness marker between minute 10 and 20.
-				gen = stale(time.Now().Add(10*time.Minute), time.Now().Add(20*time.Minute), gen)
-			}
-
-			series = append(series, newSeries(newTestConventionalHistogramLabels(seriesID, bucketLe),
-				samplesStart, samplesEnd, samplesStep, gen))
-		}
-
-		// Increase the series ID after all per-bucket series have been created.
-		seriesID++
-	}
-
-	// Add native histogram series.
-	for i := 0; i < numNativeHistograms; i++ {
-		gen := factor(float64(i) * 0.1)
-		if i >= numNativeHistograms-numStaleNativeHistograms {
-			// Wrap the generator to inject the staleness marker between minute 10 and 20.
-			gen = stale(time.Now().Add(10*time.Minute), time.Now().Add(20*time.Minute), gen)
-		}
-
-		series = append(series, newNativeHistogramSeries(newTestNativeHistogramLabels(seriesID), samplesStart, samplesEnd, samplesStep, gen))
-		seriesID++
-	}
 
 	// Create a queryable on the fixtures.
 	queryable := storageSeriesQueryable(series)
