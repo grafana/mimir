@@ -90,8 +90,8 @@ func (m *subquerySpinOffMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, f
 		// The last argument will typically contain the subquery in an aggregation function
 		// Examples: last_over_time(<subquery>[5m:]) or quantile_over_time(0.5, <subquery>[5m:])
 		if sq, ok := e.Args[lastArgIdx].(*parser.SubqueryExpr); ok {
-			// Filter out subqueries with offsets, not supported yet
-			if sq.OriginalOffset > 0 {
+			// @ is not supported
+			if sq.StartOrEnd != 0 || sq.Timestamp != nil {
 				return downstreamQuery(expr)
 			}
 
@@ -133,6 +133,11 @@ func (m *subquerySpinOffMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, f
 					labels.MustNewMatcher(labels.MatchEqual, SubqueryRangeLabelName, sq.Range.String()),
 					labels.MustNewMatcher(labels.MatchEqual, SubqueryStepLabelName, step.String()),
 				},
+			}
+
+			if sq.OriginalOffset != 0 {
+				selector.LabelMatchers = append(selector.LabelMatchers, labels.MustNewMatcher(labels.MatchEqual, SubqueryOffsetLabelName, sq.OriginalOffset.String()))
+				selector.OriginalOffset = sq.OriginalOffset
 			}
 
 			e.Args[lastArgIdx] = &parser.MatrixSelector{

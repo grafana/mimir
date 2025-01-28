@@ -6,7 +6,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -93,6 +92,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 		expr := values[astmapper.SubqueryQueryLabelName]
 		rangeStr := values[astmapper.SubqueryRangeLabelName]
 		stepStr := values[astmapper.SubqueryStepLabelName]
+		offsetStr := values[astmapper.SubqueryOffsetLabelName]
 		if expr == "" || rangeStr == "" || stepStr == "" {
 			return storage.ErrSeriesSet(errors.New("missing required labels for subquery"))
 		}
@@ -110,62 +110,64 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 		if err != nil {
 			return storage.ErrSeriesSet(errors.Wrap(err, "failed to parse subquery step"))
 		}
+		var queryOffset time.Duration
+		if offsetStr == "" {
+			queryOffset = 0
+		} else if queryOffset, err = time.ParseDuration(offsetStr); err != nil {
+			return storage.ErrSeriesSet(errors.Wrap(err, "failed to parse subquery offset"))
+		}
 
-		end := q.req.GetEnd()
-		// Align query to absolute time by querying slightly into the future.
+		end := q.req.GetEnd() - queryOffset.Milliseconds()
+		// Subqueries are aligned on absolute time, while range queries are aligned on relative time.
+		// To match the same behavior, we can query slightly into the future.
+		// The extra data points aren't used because the subquery is aggregated with an _over_time-style function.
 		step := queryStep.Milliseconds()
 		if end%step != 0 {
 			end += step - (end % step)
 		}
-		reqRange := q.req.GetEnd() - q.req.GetStart()
 		// Calculate the earliest data point we need to query.
-		start := end - reqRange - queryRange.Milliseconds()
-		// Split queries into multiple smaller queries if they have more than 10000 datapoints
+		start := end - queryRange.Milliseconds()
+
+		// Split queries into multiple smaller queries if they have more than 11000 datapoints
 		rangeStart := start
 		var rangeQueries []MetricsQueryRequest
 		for {
 			var rangeEnd int64
-			if remainingPoints := (end - start) / step; remainingPoints > 10000 {
-				rangeEnd = start + 10000*step
+			if remainingPoints := (end - rangeStart) / step; remainingPoints > maxResolutionPoints {
+				rangeEnd = rangeStart + maxResolutionPoints*step
 			} else {
 				rangeEnd = end
 			}
 			headers := q.req.GetHeaders()
 			headers = append(headers,
-				&PrometheusHeader{Name: "Content-Type", Values: []string{"application/json"}},
 				&PrometheusHeader{Name: "X-Mimir-Spun-Off-Subquery", Values: []string{"true"}},
+				&PrometheusHeader{Name: "Content-Type", Values: []string{"application/x-www-form-urlencoded"}},
 			) // Downstream is the querier, which is HTTP req.
-			newRangeRequest := NewPrometheusRangeQueryRequest("/prometheus"+queryRangePathSuffix, headers, rangeStart, rangeEnd, step, q.req.GetLookbackDelta(), queryExpr, q.req.GetOptions(), q.req.GetHints())
+			newRangeRequest := NewPrometheusRangeQueryRequest(queryRangePathSuffix, headers, rangeStart, rangeEnd, step, q.req.GetLookbackDelta(), queryExpr, q.req.GetOptions(), q.req.GetHints())
 			rangeQueries = append(rangeQueries, newRangeRequest)
 			if rangeEnd == end {
 				break
 			}
+			rangeStart = rangeEnd // Move the start to the end of the previous range.
 		}
 
-		// Concurrently run each query. It breaks and cancels each worker context on first error.
 		streams := make([][]SampleStream, len(rangeQueries))
-		err = concurrency.ForEachJob(ctx, len(rangeQueries), len(rangeQueries), func(ctx context.Context, idx int) error {
-			req := rangeQueries[idx]
-
+		for idx, req := range rangeQueries {
 			resp, err := q.upstreamRangeHandler.Do(ctx, req)
 			if err != nil {
-				return err
+				return storage.ErrSeriesSet(err)
 			}
 			promRes, ok := resp.(*PrometheusResponse)
 			if !ok {
-				return errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{})
+				return storage.ErrSeriesSet(errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{}))
 			}
 			resStreams, err := ResponseToSamples(promRes)
 			if err != nil {
-				return err
+				return storage.ErrSeriesSet(err)
 			}
-			streams[idx] = resStreams // No mutex is needed since each job writes its own index. This is like writing separate variables.
+			streams[idx] = resStreams
 			q.annotationAccumulator.addInfos(promRes.Infos)
 			q.annotationAccumulator.addWarnings(promRes.Warnings)
-			return nil
-		})
-		if err != nil {
-			return storage.ErrSeriesSet(err)
 		}
 		return newSeriesSetFromEmbeddedQueriesResults(streams, hints)
 	default:

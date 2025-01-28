@@ -36,6 +36,27 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 			expectedDownstreamQueries: 0,
 		},
 		{
+			name:                      "@ end ignored",
+			in:                        `avg_over_time((foo * bar)[3d:1m] @ end())`,
+			out:                       `__downstream_query__{__query__="avg_over_time((foo * bar)[3d:1m] @ end())"}`,
+			expectedSubqueries:        0,
+			expectedDownstreamQueries: 1,
+		},
+		{
+			name:                      "@ start ignored",
+			in:                        `avg_over_time((foo * bar)[3d:1m] @ start())`,
+			out:                       `__downstream_query__{__query__="avg_over_time((foo * bar)[3d:1m] @ start())"}`,
+			expectedSubqueries:        0,
+			expectedDownstreamQueries: 1,
+		},
+		{
+			name:                      "@ <timestamp> ignored",
+			in:                        `avg_over_time((foo * bar)[3d:1m] @ 1738086610)`,
+			out:                       `__downstream_query__{__query__="avg_over_time((foo * bar)[3d:1m] @ 1738086610.000)"}`,
+			expectedSubqueries:        0,
+			expectedDownstreamQueries: 1,
+		},
+		{
 			name:                      "range too short",
 			in:                        `avg_over_time((foo * bar)[30m:1m])`,
 			out:                       `__downstream_query__{__query__="avg_over_time((foo * bar)[30m:1m])"}`,
@@ -72,11 +93,11 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 			expectedDownstreamQueries: 0,
 		},
 		{
-			name:                      "offsets aren't supported",
+			name:                      "with an offset",
 			in:                        `avg_over_time((foo * bar)[3d:1m] offset 3d) * 2`,
-			out:                       `__downstream_query__{__query__="avg_over_time((foo * bar)[3d:1m] offset 3d)"} * 2`,
-			expectedSubqueries:        0,
-			expectedDownstreamQueries: 1,
+			out:                       `avg_over_time(__subquery_spinoff__{__offset__="72h0m0s",__query__="(foo * bar)",__range__="72h0m0s",__step__="1m0s"}[3d] offset 3d) * 2`,
+			expectedSubqueries:        1,
+			expectedDownstreamQueries: 0,
 		},
 		{
 			name:                      "aggregated query",

@@ -257,23 +257,23 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 }
 
 func newSpinOffQueryHandler(codec Codec, logger log.Logger, sendURL string) (MetricsQueryHandler, error) {
-	baseURL, err := url.Parse(sendURL)
+	rangeQueryURL, err := url.Parse(sendURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid spin off URL: %w", err)
 	}
 
 	return &spinOffQueryHandler{
-		codec:   codec,
-		logger:  logger,
-		baseURL: baseURL,
+		codec:         codec,
+		logger:        logger,
+		rangeQueryURL: rangeQueryURL,
 	}, nil
 }
 
 // spinOffQueryHandler is a query handler that takes a request and sends it to a remote endpoint.
 type spinOffQueryHandler struct {
-	codec   Codec
-	logger  log.Logger
-	baseURL *url.URL
+	codec         Codec
+	logger        log.Logger
+	rangeQueryURL *url.URL
 }
 
 func (s *spinOffQueryHandler) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
@@ -282,7 +282,16 @@ func (s *spinOffQueryHandler) Do(ctx context.Context, req MetricsQueryRequest) (
 		return nil, fmt.Errorf("error encoding request: %w", err)
 	}
 	httpReq.RequestURI = "" // Reset RequestURI to force URL to be used in the request.
-	httpReq.URL = s.baseURL.ResolveReference(httpReq.URL)
+	// Override the URL with the configured range query URL (only parts that are set).
+	if s.rangeQueryURL.Scheme != "" {
+		httpReq.URL.Scheme = s.rangeQueryURL.Scheme
+	}
+	if s.rangeQueryURL.Host != "" {
+		httpReq.URL.Host = s.rangeQueryURL.Host
+	}
+	if s.rangeQueryURL.Path != "" {
+		httpReq.URL.Path = s.rangeQueryURL.Path
+	}
 
 	if err := user.InjectOrgIDIntoHTTPRequest(ctx, httpReq); err != nil {
 		return nil, fmt.Errorf("error injecting org ID into request: %v", err)
