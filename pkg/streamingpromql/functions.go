@@ -61,7 +61,27 @@ func SingleInputVectorFunctionOperatorFactory(name string, f functions.FunctionO
 	}
 }
 
-func TimeFunctionOperatorFactory(name string, f functions.FunctionOverInstantVectorDefinition) InstantVectorFunctionOperatorFactory {
+// InstantVectorTransformationFunctionOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
+// that have exactly 1 argument (v instant-vector), and drop the series __name__ label.
+//
+// Parameters:
+//   - name: The name of the function
+//   - seriesDataFunc: The function to handle series data
+func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataFunc functions.InstantVectorSeriesFunction) InstantVectorFunctionOperatorFactory {
+	f := functions.FunctionOverInstantVectorDefinition{
+		SeriesDataFunc:         seriesDataFunc,
+		SeriesMetadataFunction: functions.DropSeriesName,
+	}
+
+	return SingleInputVectorFunctionOperatorFactory(name, f)
+}
+
+func TimeTransformationFunctionOperatorFactory(name string, seriesDataFunc functions.InstantVectorSeriesFunction) InstantVectorFunctionOperatorFactory {
+	f := functions.FunctionOverInstantVectorDefinition{
+		SeriesDataFunc:         seriesDataFunc,
+		SeriesMetadataFunction: functions.DropSeriesName,
+	}
+
 	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 		if len(args) > 1 {
 			// Should be caught by the PromQL parser, but we check here for safety.
@@ -90,30 +110,6 @@ func TimeFunctionOperatorFactory(name string, f functions.FunctionOverInstantVec
 
 		return o, nil
 	}
-}
-
-// InstantVectorTransformationFunctionOperatorFactory creates an InstantVectorFunctionOperatorFactory for functions
-// that have exactly 1 argument (v instant-vector), and drop the series __name__ label.
-//
-// Parameters:
-//   - name: The name of the function
-//   - seriesDataFunc: The function to handle series data
-func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataFunc functions.InstantVectorSeriesFunction) InstantVectorFunctionOperatorFactory {
-	f := functions.FunctionOverInstantVectorDefinition{
-		SeriesDataFunc:         seriesDataFunc,
-		SeriesMetadataFunction: functions.DropSeriesName,
-	}
-
-	return SingleInputVectorFunctionOperatorFactory(name, f)
-}
-
-func TimeTransformationFunctionOperatorFactory(name string, seriesDataFunc functions.InstantVectorSeriesFunction) InstantVectorFunctionOperatorFactory {
-	f := functions.FunctionOverInstantVectorDefinition{
-		SeriesDataFunc:         seriesDataFunc,
-		SeriesMetadataFunction: functions.DropSeriesName,
-	}
-
-	return TimeFunctionOperatorFactory(name, f)
 }
 
 // InstantVectorLabelManipulationFunctionOperatorFactory creates an InstantVectorFunctionOperator for functions
