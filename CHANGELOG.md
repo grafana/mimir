@@ -12,6 +12,7 @@
 * [CHANGE] Query-frontend: Add `topic` label to `cortex_ingest_storage_strong_consistency_requests_total`, `cortex_ingest_storage_strong_consistency_failures_total`, and `cortex_ingest_storage_strong_consistency_wait_duration_seconds` metrics. #10220
 * [CHANGE] Ruler: cap the rate of retries for remote query evaluation to 170/sec. This is configurable via `-ruler.query-frontend.max-retries-rate`. #10375 #10403
 * [CHANGE] Query-frontend: Add `topic` label to `cortex_ingest_storage_reader_last_produced_offset_requests_total`, `cortex_ingest_storage_reader_last_produced_offset_failures_total`, `cortex_ingest_storage_reader_last_produced_offset_request_duration_seconds`, `cortex_ingest_storage_reader_partition_start_offset_requests_total`, `cortex_ingest_storage_reader_partition_start_offset_failures_total`, `cortex_ingest_storage_reader_partition_start_offset_request_duration_seconds` metrics. #10462
+* [CHANGE] Ingester: Set `-ingester.ooo-native-histograms-ingestion-enabled` to true by default. #10483
 * [CHANGE] Distributor, querier, ingester and store-gateway: Make use of LabelHints.Limit for label names and values requests. #10410
 * [FEATURE] Distributor: Add experimental Influx handler. #10153
 * [ENHANCEMENT] Query Frontend: Return server-side `samples_processed` statistics. #10103
@@ -36,6 +37,7 @@
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total`
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total`
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total`
+* [ENHANCEMENT] Compactor: Shuffle users' order in `BlocksCleaner`. Prevents bucket indexes from going an extended period without cleanup during compactor restarts. #10513
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 * [BUGFIX] Querier: fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #10154
 * [BUGFIX] Query-frontend and querier: show warning/info annotations in some cases where they were missing (if a lazy querier was used). #10277
@@ -50,6 +52,7 @@
 * [BUGFIX] Distributor: return HTTP status 415 Unsupported Media Type instead of 200 Success for Remote Write 2.0 until we support it. #10423
 * [BUGFIX] Query-frontend: Add flag `-query-frontend.prom2-range-compat` and corresponding YAML to rewrite queries with ranges that worked in Prometheus 2 but are invalid in Prometheus 3. #10445 #10461 #10502
 * [BUGFIX] Distributor: Fix edge case at the HA-tracker with memberlist as KVStore, where when a replica in the KVStore is marked as deleted but not yet removed, it fails to update the KVStore. #10443
+* [BUGFIX] Distributor: Fix panics in `DurationWithJitter` util functions when computed variance is zero. #10507
 * [BUGFIX] Ingester: Fixed a race condition in the `PostingsForMatchers` cache that may have infrequently returned expired cached postings. #10500
 
 ### Mixin

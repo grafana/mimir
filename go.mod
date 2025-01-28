@@ -22,7 +22,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250117173157-36b56b12711d
+	github.com/grafana/dskit v0.0.0-20250122122458-53db97b18080
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.11
@@ -30,7 +30,7 @@ require (
 	github.com/minio/minio-go/v7 v7.0.84
 	github.com/mitchellh/go-wordwrap v1.0.1
 	github.com/oklog/ulid v1.3.1
-	github.com/opentracing-contrib/go-grpc v0.1.0
+	github.com/opentracing-contrib/go-grpc v0.1.1
 	github.com/opentracing-contrib/go-stdlib v1.1.0
 	github.com/opentracing/opentracing-go v1.2.1-0.20220228012449-10b1cf09e00b
 	github.com/pkg/errors v0.9.1
@@ -46,7 +46,7 @@ require (
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.3.0
-	golang.org/x/crypto v0.31.0
+	golang.org/x/crypto v0.32.0
 	golang.org/x/net v0.33.0
 	golang.org/x/sync v0.10.0
 	golang.org/x/time v0.8.0
@@ -77,10 +77,10 @@ require (
 	github.com/prometheus/procfs v0.15.1
 	github.com/shirou/gopsutil/v4 v4.24.12
 	github.com/thanos-io/objstore v0.0.0-20250120094545-4b72edf06a59
-	github.com/tjhop/slog-gokit v0.1.2
-	github.com/twmb/franz-go v1.18.0
+	github.com/tjhop/slog-gokit v0.1.3
+	github.com/twmb/franz-go v1.18.1
 	github.com/twmb/franz-go/pkg/kadm v1.14.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20241202133023-293b7c4c56bb
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250121044851-f30c518d6b72
 	github.com/twmb/franz-go/pkg/kmsg v1.9.0
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
@@ -89,7 +89,7 @@ require (
 	go.opentelemetry.io/otel v1.33.0
 	go.opentelemetry.io/otel/trace v1.33.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/term v0.27.0
+	golang.org/x/term v0.28.0
 	google.golang.org/api v0.213.0
 	google.golang.org/protobuf v1.36.3
 	sigs.k8s.io/kustomize/kyaml v0.18.1
@@ -116,7 +116,7 @@ require (
 	github.com/go-test/deep v1.1.0 // indirect
 	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
-	github.com/golang/glog v1.2.2 // indirect
+	github.com/golang/glog v1.2.4 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.8 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
@@ -277,12 +277,12 @@ require (
 	golang.org/x/exp v0.0.0-20241215155358-4a5509556b9e // indirect
 	golang.org/x/mod v0.22.0 // indirect
 	golang.org/x/oauth2 v0.24.0 // indirect
-	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/tools v0.28.0 // indirect
 	google.golang.org/genproto v0.0.0-20241113202542-65e8d215514f // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241216192217-9240e9c98484 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250115164207-1a7da9e5054f
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250124145028-65684f501c47
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
 	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect

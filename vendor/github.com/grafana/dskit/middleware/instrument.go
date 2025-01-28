@@ -21,7 +21,7 @@ import (
 )
 
 // BodySizeBuckets defines buckets for request/response body sizes.
-var BodySizeBuckets = prometheus.ExponentialBuckets(1024, 2, 20)
+var BodySizeBuckets = prometheus.ExponentialBuckets(4, 4, 15)
 
 // RouteMatcher matches routes
 type RouteMatcher interface {

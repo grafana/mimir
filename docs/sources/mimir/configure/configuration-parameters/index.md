@@ -2372,6 +2372,11 @@ sharding_ring:
 # CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
 [grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
 
+# (experimental) Skip starting the Alertmanager for tenants matching this suffix
+# unless they have a promoted, non-default Grafana Alertmanager configuration.
+# CLI flag: -alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix
+[grafana_alertmanager_conditionally_skip_tenant_suffix: <string> | default = ""]
+
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
 # whichever is larger. Status code 503 is served for GET requests that would
@@ -3375,7 +3380,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # greater than zero and if `-ingester.native-histograms-ingestion-enabled =
 # true`
 # CLI flag: -ingester.ooo-native-histograms-ingestion-enabled
-[ooo_native_histograms_ingestion_enabled: <boolean> | default = false]
+[ooo_native_histograms_ingestion_enabled: <boolean> | default = true]
 
 # (advanced) Custom trackers for active metrics. If there are active series
 # matching a provided matcher (map value), the count is exposed in the custom

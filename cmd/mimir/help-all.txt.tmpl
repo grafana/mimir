@@ -239,6 +239,8 @@ Usage of ./cmd/mimir/mimir:
     	Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration. (default true)
   -alertmanager.grafana-alertmanager-compatibility-enabled
     	[experimental] Enable routes to support the migration and operation of the Grafana Alertmanager.
+  -alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix string
+    	[experimental] Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration.
   -alertmanager.log-parsing-label-matchers
     	[experimental] Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.
   -alertmanager.max-alerts-count int
@@ -1646,7 +1648,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.native-histograms-ingestion-enabled
     	[experimental] Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.
   -ingester.ooo-native-histograms-ingestion-enabled
-    	[experimental] Enable experimental out-of-order native histogram ingestion. This only takes effect if the `-ingester.out-of-order-time-window` value is greater than zero and if `-ingester.native-histograms-ingestion-enabled = true`
+    	[experimental] Enable experimental out-of-order native histogram ingestion. This only takes effect if the `-ingester.out-of-order-time-window` value is greater than zero and if `-ingester.native-histograms-ingestion-enabled = true` (default true)
   -ingester.out-of-order-blocks-external-label-enabled
     	[experimental] Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks
   -ingester.out-of-order-time-window duration

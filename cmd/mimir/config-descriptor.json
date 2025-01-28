@@ -4011,7 +4011,7 @@
           "required": false,
           "desc": "Enable experimental out-of-order native histogram ingestion. This only takes effect if the `-ingester.out-of-order-time-window` value is greater than zero and if `-ingester.native-histograms-ingestion-enabled = true`",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.ooo-native-histograms-ingestion-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -15584,6 +15584,17 @@
           "fieldDefaultValue": false,
           "fieldFlag": "alertmanager.grafana-alertmanager-compatibility-enabled",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "grafana_alertmanager_conditionally_skip_tenant_suffix",
+          "required": false,
+          "desc": "Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix",
+          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
