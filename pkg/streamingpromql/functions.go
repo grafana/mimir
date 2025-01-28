@@ -24,7 +24,7 @@ type InstantVectorFunctionOperatorFactory func(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 	timeRange types.QueryTimeRange,
-	innerExpressions parser.Expressions,
+	argExpressions parser.Expressions,
 ) (types.InstantVectorOperator, error)
 
 type ScalarFunctionOperatorFactory func(
