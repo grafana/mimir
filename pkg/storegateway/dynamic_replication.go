@@ -67,9 +67,9 @@ func (n NopDynamicReplication) EligibleForQuerying(ReplicatedBlock) bool {
 
 func NewMaxTimeDynamicReplication(maxTime time.Duration, gracePeriod time.Duration) *MaxTimeDynamicReplication {
 	return &MaxTimeDynamicReplication{
-		maxTime:     maxTime,
-		gracePeriod: gracePeriod,
-		now:         time.Now,
+		maxTimeThreshold: maxTime,
+		gracePeriod:      gracePeriod,
+		now:              time.Now,
 	}
 }
 
@@ -78,9 +78,9 @@ func NewMaxTimeDynamicReplication(maxTime time.Duration, gracePeriod time.Durati
 // recent sample) is. A grace period can optionally be used to ensure that blocks are
 // synced to store-gateways until they are no longer being queried.
 type MaxTimeDynamicReplication struct {
-	maxTime     time.Duration
-	gracePeriod time.Duration
-	now         func() time.Time
+	maxTimeThreshold time.Duration
+	gracePeriod      time.Duration
+	now              func() time.Time
 }
 
 func (e *MaxTimeDynamicReplication) EligibleForSync(b ReplicatedBlock) bool {
@@ -89,11 +89,11 @@ func (e *MaxTimeDynamicReplication) EligibleForSync(b ReplicatedBlock) bool {
 	// We keep syncing blocks for `gracePeriod` after they are no longer eligible for
 	// querying to ensure that they are not unloaded by store-gateways while still being
 	// queried.
-	return maxTimeDelta <= (e.maxTime + e.gracePeriod)
+	return maxTimeDelta <= (e.maxTimeThreshold + e.gracePeriod)
 }
 
 func (e *MaxTimeDynamicReplication) EligibleForQuerying(b ReplicatedBlock) bool {
 	now := e.now()
 	maxTimeDelta := now.Sub(b.GetMaxTime())
-	return maxTimeDelta <= e.maxTime
+	return maxTimeDelta <= e.maxTimeThreshold
 }
