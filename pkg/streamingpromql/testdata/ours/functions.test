@@ -807,14 +807,14 @@ load 1m
 eval range from 0 to 7m step 1m year(some_metric)
   {case="gap1"} _ 2006 2006 2017 2017 2022 2022 2022
   {case="gap2"} 2006 2006 2006 2017 2017 2017 2022 2022
-  {case="histogram-float"} 2006 2006 2006 2006 2006 2006 2006 2006
+  {case="histogram-float"} 2006 2006 2017
   {case="series1"} 1970 2006 2042 2078 2114 2150 2186 2222
   {case="series2"} 1970 2022 2075 2128 2181 2234 2287 2340
 
 eval range from 0 to 7m step 1m month(some_metric)
   {case="gap1"} _ 1 1 2 2 12 12 12
   {case="gap2"} 1 1 1 2 2 2 12 12
-  {case="histogram-float"} 1 1 1 1 1 1 1 1
+  {case="histogram-float"} 1 1 2
   {case="series1"} 1 1 1 1 1 1 1 1
   {case="series2"} 1 12 12 12 12 12 12 12
 
