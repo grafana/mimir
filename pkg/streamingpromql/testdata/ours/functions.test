@@ -802,7 +802,7 @@ load 1m
   some_metric{case="gap1"} _ 1136239445 _ 1485907200 _ 1672493820
   some_metric{case="gap2"} 1136239445 _ _ 1485907200 _ _ 1672493820
   some_metric{case="histogram-gap"} _ {{count:5}} _ {{count:5}}
-  some_metric{case="histogram-float"} 1136239445x7 {{count:5}} 1485907200 {{count:5}}
+  some_metric{case="histogram-float"} 1136239445 {{count:5}} 1485907200 {{count:5}}
 
 eval range from 0 to 7m step 1m year(some_metric)
   {case="gap1"} _ 2006 2006 2017 2017 2022 2022 2022
