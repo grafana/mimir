@@ -785,7 +785,7 @@ eval range from 0 to 7m step 1m hour(histogram_sample)
 
 eval range from 0 to 7m step 1m minute(histogram_sample)
 
-eval range from 0 to 7m step 1m  month(histogram_sample)
+eval range from 0 to 7m step 1m month(histogram_sample)
 
 eval range from 0 to 7m step 1m year(histogram_sample)
 
