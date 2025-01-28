@@ -91,7 +91,7 @@ func AbsentFunctionOperatorFactory(args []types.Operator, memoryConsumptionTrack
 		return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", functionName, args[0])
 	}
 
-	var o types.InstantVectorOperator = functions.NewAbsentOperator(inner, innerExpressions[0], timeRange, expressionPosition, memoryConsumptionTracker)
+	var o types.InstantVectorOperator = functions.NewAbsent(inner, innerExpressions[0], timeRange, expressionPosition, memoryConsumptionTracker)
 
 	return o, nil
 }

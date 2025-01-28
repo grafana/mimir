@@ -18,8 +18,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-// AbsentOperator is an operator that implements the absent() function.
-type AbsentOperator struct {
+// Absent is an operator that implements the absent() function.
+type Absent struct {
 	timeRange                types.QueryTimeRange
 	innerExpr                parser.Expr
 	inner                    types.InstantVectorOperator
@@ -28,11 +28,11 @@ type AbsentOperator struct {
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 }
 
-var _ types.InstantVectorOperator = &AbsentOperator{}
+var _ types.InstantVectorOperator = &Absent{}
 
-// NewAbsentOperator creates a new AbsentOperator.
-func NewAbsentOperator(inner types.InstantVectorOperator, innerExpr parser.Expr, timeRange types.QueryTimeRange, expressionPosition posrange.PositionRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *AbsentOperator {
-	return &AbsentOperator{
+// NewAbsent creates a new Absent.
+func NewAbsent(inner types.InstantVectorOperator, innerExpr parser.Expr, timeRange types.QueryTimeRange, expressionPosition posrange.PositionRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *Absent {
+	return &Absent{
 		timeRange:                timeRange,
 		inner:                    inner,
 		innerExpr:                innerExpr,
@@ -41,7 +41,7 @@ func NewAbsentOperator(inner types.InstantVectorOperator, innerExpr parser.Expr,
 	}
 }
 
-func (s *AbsentOperator) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (s *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	innerMetadata, err := s.inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func (s *AbsentOperator) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 	return metadata, nil
 }
 
-func (s *AbsentOperator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (s *Absent) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	output := types.InstantVectorSeriesData{}
 	var err error
 	output.Floats, err = types.FPointSlicePool.Get(s.absentCount, s.memoryConsumptionTracker)
@@ -83,11 +83,11 @@ func (s *AbsentOperator) NextSeries(ctx context.Context) (types.InstantVectorSer
 	return output, nil
 }
 
-func (s *AbsentOperator) ExpressionPosition() posrange.PositionRange {
+func (s *Absent) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
-func (s *AbsentOperator) Close() {
+func (s *Absent) Close() {
 	s.inner.Close()
 }
 
