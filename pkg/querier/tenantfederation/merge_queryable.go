@@ -51,7 +51,7 @@ func NewQueryable(upstream storage.Queryable, bypassWithSingleID bool, maxConcur
 			}, nil
 		},
 	}
-	return NewMergeQueryable(defaultTenantLabel, callbacks, tenant.NewMultiResolver(), bypassWithSingleID, maxConcurrency, reg, logger)
+	return NewMergeQueryable(defaultTenantLabel, callbacks, tenant.NewMultiResolver(), bypassWithSingleID, maxConcurrency, reg, logger, nil)
 }
 
 // MergeQueryableCallbacks contains callbacks to NewMergeQueryable, for customizing its behaviour.
@@ -103,17 +103,11 @@ func (q *tenantQuerier) Close() error {
 // If the label `idLabelName` already exists, its value is overwritten and
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively.
-func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, resolver tenant.Resolver, bypassWithSingleID bool, maxConcurrency int, reg prometheus.Registerer, logger log.Logger) storage.Queryable {
-	// Note that we allow tenant.Resolver to be injected instead of using the
-	// tenant.TenantIDs() method because GEM needs to inject different behavior
-	// here for the cluster federation feature.
-	return &mergeQueryable{
-		logger:             logger,
-		idLabelName:        idLabelName,
-		callbacks:          callbacks,
-		resolver:           resolver,
-		bypassWithSingleID: bypassWithSingleID,
-		maxConcurrency:     maxConcurrency,
+func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, resolver tenant.Resolver, bypassWithSingleID bool, maxConcurrency int, reg prometheus.Registerer, logger log.Logger, innerSelectFunc InnerSelectFunc) storage.Queryable {
+	if innerSelectFunc == nil {
+		innerSelectFunc = defaultInnerSelectFunc
+	}
+	metrics := mergeQueryableMetrics{
 		tenantsQueried: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_querier_federation_tenants_queried",
 			Help:    "Number of tenants queried for a single standard query.",
@@ -129,15 +123,34 @@ func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, re
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 	}
+	// Note that we allow tenant.Resolver to be injected instead of using the
+	// tenant.TenantIDs() method because GEM needs to inject different behavior
+	// here for the cluster federation feature.
+	return &mergeQueryable{
+		logger:                logger,
+		idLabelName:           idLabelName,
+		callbacks:             callbacks,
+		resolver:              resolver,
+		bypassWithSingleID:    bypassWithSingleID,
+		maxConcurrency:        maxConcurrency,
+		innerSelectFunc:       innerSelectFunc,
+		mergeQueryableMetrics: metrics,
+	}
 }
 
 type mergeQueryable struct {
-	logger                    log.Logger
-	idLabelName               string
-	bypassWithSingleID        bool
-	callbacks                 MergeQueryableCallbacks
-	resolver                  tenant.Resolver
-	maxConcurrency            int
+	logger             log.Logger
+	idLabelName        string
+	bypassWithSingleID bool
+	callbacks          MergeQueryableCallbacks
+	resolver           tenant.Resolver
+	maxConcurrency     int
+	innerSelectFunc    InnerSelectFunc
+
+	mergeQueryableMetrics
+}
+
+type mergeQueryableMetrics struct {
 	tenantsQueried            prometheus.Histogram
 	upstreamQueryWaitDuration prometheus.Histogram
 }
@@ -159,6 +172,7 @@ func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error
 		bypassWithSingleID:        m.bypassWithSingleID,
 		tenantsQueried:            m.tenantsQueried,
 		upstreamQueryWaitDuration: m.upstreamQueryWaitDuration,
+		innerSelectFunc:           m.innerSelectFunc,
 	}, nil
 }
 
@@ -177,6 +191,7 @@ type mergeQuerier struct {
 	bypassWithSingleID        bool
 	tenantsQueried            prometheus.Histogram
 	upstreamQueryWaitDuration prometheus.Histogram
+	innerSelectFunc           InnerSelectFunc
 }
 
 // LabelValues returns all potential values for a label name given involved federation IDs.
@@ -352,29 +367,36 @@ func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
 
 	jobs := make([]string, 0, len(matchedIDs))
-	seriesSets := make([]storage.SeriesSet, len(matchedIDs))
 	for id := range matchedIDs {
 		jobs = append(jobs, id)
 	}
 
+	return m.innerSelectFunc(ctx, jobs, start, m.upstreamQueryWaitDuration, m.upstream, m.idLabelName, m.maxConcurrency, sortSeries, hints, filteredMatchers...)
+}
+
+type InnerSelectFunc func(ctx context.Context, jobs []string, start time.Time, upstreamQueryWaitDuration prometheus.Histogram, upstream MergeQuerierUpstream, idLabelName string, maxConcurrency int, sortSeries bool, hints *storage.SelectHints, filteredMatchers ...*labels.Matcher) storage.SeriesSet
+
+func defaultInnerSelectFunc(ctx context.Context, jobs []string, start time.Time, upstreamQueryWaitDuration prometheus.Histogram, upstream MergeQuerierUpstream, idLabelName string, maxConcurrency int, sortSeries bool, hints *storage.SelectHints, filteredMatchers ...*labels.Matcher) storage.SeriesSet {
+	seriesSets := make([]storage.SeriesSet, len(jobs))
+
 	// We don't use the context passed to this function, since the context has to live longer
 	// than the call to ForEachJob (i.e. as long as seriesSets)
 	run := func(_ context.Context, idx int) error {
-		m.upstreamQueryWaitDuration.Observe(time.Since(start).Seconds())
+		upstreamQueryWaitDuration.Observe(time.Since(start).Seconds())
 		id := jobs[idx]
-		seriesSets[idx] = &addLabelsSeriesSet{
-			upstream: m.upstream.Select(ctx, id, sortSeries, hints, filteredMatchers...),
-			labels: []labels.Label{
+		seriesSets[idx] = NewAddLabelsSeriesSet(
+			upstream.Select(ctx, id, sortSeries, hints, filteredMatchers...),
+			[]labels.Label{
 				{
-					Name:  m.idLabelName,
+					Name:  idLabelName,
 					Value: id,
 				},
 			},
-		}
+		)
 		return nil
 	}
 
-	if err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run); err != nil {
+	if err := concurrency.ForEachJob(ctx, len(jobs), maxConcurrency, run); err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 
@@ -385,6 +407,13 @@ type addLabelsSeriesSet struct {
 	upstream   storage.SeriesSet
 	labels     []labels.Label
 	currSeries storage.Series
+}
+
+func NewAddLabelsSeriesSet(upstream storage.SeriesSet, labels []labels.Label) storage.SeriesSet {
+	return &addLabelsSeriesSet{
+		upstream: upstream,
+		labels:   labels,
+	}
 }
 
 func (m *addLabelsSeriesSet) Next() bool {
