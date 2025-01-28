@@ -22,7 +22,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250122122458-53db97b18080
+	github.com/grafana/dskit v0.0.0-20250128193928-104df19e2080
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.11
@@ -326,5 +326,3 @@ replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-202410091
 // Pin Google GRPC to v1.65.0 as v1.66.0 has API changes and also potentially performance regressions.
 // Following https://github.com/grafana/dskit/pull/581
 replace google.golang.org/grpc => google.golang.org/grpc v1.65.0
-
-replace github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20250122173303-e72fd2fc7563

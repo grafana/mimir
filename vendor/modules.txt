@@ -644,7 +644,7 @@ github.com/grafana/alerting/receivers/webex
 github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
-# github.com/grafana/dskit v0.0.0-20250117173157-36b56b12711d => github.com/grafana/dskit v0.0.0-20250122173303-e72fd2fc7563
+# github.com/grafana/dskit v0.0.0-20250128193928-104df19e2080
 ## explicit; go 1.21
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -1720,4 +1720,3 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240930132144-b5e64e81e8d3
 # github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937
 # google.golang.org/grpc => google.golang.org/grpc v1.65.0
-# github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20250122173303-e72fd2fc7563
