@@ -21,13 +21,13 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		Timeseries: []PreallocTimeseries{
 			{TimeSeries: &TimeSeries{
 				Labels:     FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1", "pod", "test-application-123456")),
-				Samples:    []Sample{{TimestampMs: 20}},
-				Exemplars:  []Exemplar{{TimestampMs: 30}},
-				Histograms: []Histogram{{Timestamp: 10}},
+				Samples:    []*Sample{{TimestampMs: 20}},
+				Exemplars:  []*Exemplar{{TimestampMs: 30}},
+				Histograms: []*Histogram{{Timestamp: 10}},
 			}},
 			{TimeSeries: &TimeSeries{
 				Labels:  FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2", "pod", "test-application-123456")),
-				Samples: []Sample{{TimestampMs: 30}},
+				Samples: []*Sample{{TimestampMs: 30}},
 			}},
 		},
 		Metadata: []*MetricMetadata{
@@ -298,9 +298,9 @@ func generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, nu
 		curr.Labels = FromLabelsToLabelAdapters(builder.Labels())
 
 		// Generate samples.
-		curr.Samples = make([]Sample, 0, numSamplesPerSeries)
+		curr.Samples = make([]*Sample, 0, numSamplesPerSeries)
 		for s := 0; s < numSamplesPerSeries; s++ {
-			curr.Samples = append(curr.Samples, Sample{
+			curr.Samples = append(curr.Samples, &Sample{
 				TimestampMs: int64(s),
 				Value:       float64(s),
 			})
@@ -309,7 +309,7 @@ func generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, nu
 		// Add an exemplar.
 		builder.Reset()
 		builder.Add("trace_id", fmt.Sprintf("the-trace-id-for-%d", i))
-		curr.Exemplars = []Exemplar{{
+		curr.Exemplars = []*Exemplar{{
 			Labels:      FromLabelsToLabelAdapters(builder.Labels()),
 			TimestampMs: int64(i),
 			Value:       float64(i),

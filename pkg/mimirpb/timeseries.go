@@ -35,9 +35,9 @@ var (
 	timeSeriesPool = sync.Pool{
 		New: func() interface{} {
 			return &TimeSeries{
-				Labels:     make([]mimirpb_custom.LabelAdapter, 0, minPreallocatedLabels),
-				Samples:    make([]Sample, 0, minPreallocatedSamplesPerSeries),
-				Exemplars:  make([]Exemplar, 0, minPreallocatedExemplarsPerSeries),
+				Labels:     make([]*mimirpb_custom.LabelAdapter, 0, minPreallocatedLabels),
+				Samples:    make([]*Sample, 0, minPreallocatedSamplesPerSeries),
+				Exemplars:  make([]*Exemplar, 0, minPreallocatedExemplarsPerSeries),
 				Histograms: nil,
 			}
 		},
@@ -107,7 +107,7 @@ func (p *PreallocTimeseries) RemoveLabel(labelName string) {
 	}
 }
 
-func (p *PreallocTimeseries) SetLabels(lbls []mimirpb_custom.LabelAdapter) {
+func (p *PreallocTimeseries) SetLabels(lbls []*mimirpb_custom.LabelAdapter) {
 	p.Labels = lbls
 
 	// We can't reuse raw unmarshalled data for the timeseries after setting new labels.
@@ -147,7 +147,7 @@ func (p *PreallocTimeseries) SortLabelsIfNeeded() {
 		return
 	}
 
-	slices.SortFunc(p.Labels, func(a, b mimirpb_custom.LabelAdapter) int {
+	slices.SortFunc(p.Labels, func(a, b *mimirpb_custom.LabelAdapter) int {
 		switch {
 		case a.Name < b.Name:
 			return -1
@@ -384,7 +384,7 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 
 	// Copy the samples.
 	if cap(dstTs.Samples) < len(srcTs.Samples) {
-		dstTs.Samples = make([]Sample, len(srcTs.Samples))
+		dstTs.Samples = make([]*Sample, len(srcTs.Samples))
 	} else {
 		dstTs.Samples = dstTs.Samples[:len(srcTs.Samples)]
 	}
@@ -393,7 +393,7 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 	// Copy the histograms.
 	if keepHistograms {
 		if cap(dstTs.Histograms) < len(srcTs.Histograms) {
-			dstTs.Histograms = make([]Histogram, len(srcTs.Histograms))
+			dstTs.Histograms = make([]*Histogram, len(srcTs.Histograms))
 		} else {
 			dstTs.Histograms = dstTs.Histograms[:len(srcTs.Histograms)]
 		}
@@ -407,18 +407,20 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 	// Prepare the slice of exemplars.
 	if keepExemplars {
 		if cap(dstTs.Exemplars) < len(srcTs.Exemplars) {
-			dstTs.Exemplars = make([]Exemplar, len(srcTs.Exemplars))
+			dstTs.Exemplars = make([]*Exemplar, len(srcTs.Exemplars))
 		} else {
 			dstTs.Exemplars = dstTs.Exemplars[:len(srcTs.Exemplars)]
 		}
 
 		for exemplarIdx := range srcTs.Exemplars {
+			dstExemplar := &Exemplar{}
 			// Copy the exemplar labels by using the prepared buffer.
-			dstTs.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, dstTs.Exemplars[exemplarIdx].Labels, srcTs.Exemplars[exemplarIdx].Labels)
+			dstExemplar.Labels, buf = copyToYoloLabels(buf, dstExemplar.Labels, srcTs.Exemplars[exemplarIdx].Labels)
 
 			// Copy the other exemplar properties.
-			dstTs.Exemplars[exemplarIdx].Value = srcTs.Exemplars[exemplarIdx].Value
-			dstTs.Exemplars[exemplarIdx].TimestampMs = srcTs.Exemplars[exemplarIdx].TimestampMs
+			dstExemplar.Value = srcTs.Exemplars[exemplarIdx].Value
+			dstExemplar.TimestampMs = srcTs.Exemplars[exemplarIdx].TimestampMs
+			dstTs.Exemplars[exemplarIdx] = dstExemplar
 		}
 	} else {
 		dstTs.Exemplars = dstTs.Exemplars[:0]
@@ -461,16 +463,18 @@ func countTotalLabelLen(ts *TimeSeries, includeExemplars bool) int {
 
 // copyToYoloLabels copies the values of src to dst, it uses the given buffer to store all the string values in it.
 // The returned buffer is the remainder of the given buffer, which remains unused after the copying is complete.
-func copyToYoloLabels(buf []byte, dst, src []mimirpb_custom.LabelAdapter) ([]mimirpb_custom.LabelAdapter, []byte) {
+func copyToYoloLabels(buf []byte, dst, src []*mimirpb_custom.LabelAdapter) ([]*mimirpb_custom.LabelAdapter, []byte) {
 	if cap(dst) < len(src) {
-		dst = make([]mimirpb_custom.LabelAdapter, len(src))
+		dst = make([]*mimirpb_custom.LabelAdapter, len(src))
 	} else {
 		dst = dst[:len(src)]
 	}
 
 	for labelIdx := range src {
-		dst[labelIdx].Name, buf = copyToYoloString(buf, src[labelIdx].Name)
-		dst[labelIdx].Value, buf = copyToYoloString(buf, src[labelIdx].Value)
+		dstLabel := &mimirpb_custom.LabelAdapter{}
+		dstLabel.Name, buf = copyToYoloString(buf, src[labelIdx].Name)
+		dstLabel.Value, buf = copyToYoloString(buf, src[labelIdx].Value)
+		dst[labelIdx] = dstLabel
 	}
 
 	return dst, buf
@@ -486,7 +490,7 @@ func copyToYoloString(buf []byte, src string) (string, []byte) {
 
 // copyHistogram copies the given histogram by value.
 // The returned histogram does not share any memory with the given one.
-func copyHistogram(src Histogram) Histogram {
+func copyHistogram(src *Histogram) *Histogram {
 	var (
 		dstCount     isHistogram_Count
 		dstZeroCount isHistogram_ZeroCount
@@ -507,7 +511,7 @@ func copyHistogram(src Histogram) Histogram {
 		dstZeroCount = &Histogram_ZeroCountFloat{ZeroCountFloat: src.GetZeroCountFloat()}
 	}
 
-	return Histogram{
+	return &Histogram{
 		Count:          dstCount,
 		Sum:            src.Sum,
 		Schema:         src.Schema,

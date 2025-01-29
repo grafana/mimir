@@ -13,9 +13,9 @@ index 2fcc5ccde1..0688358568 100644
  
  func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
 @@ -392,9 +389,6 @@ type TimeSeries struct {
- 	Samples    []Sample    `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
- 	Exemplars  []Exemplar  `protobuf:"bytes,3,rep,name=exemplars,proto3" json:"exemplars"`
- 	Histograms []Histogram `protobuf:"bytes,4,rep,name=histograms,proto3" json:"histograms"`
+ 	Samples    []*Sample    `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples,omitempty"`
+    Exemplars  []*Exemplar  `protobuf:"bytes,3,rep,name=exemplars,proto3" json:"exemplars,omitempty"`
+    Histograms []*Histogram `protobuf:"bytes,4,rep,name=histograms,proto3" json:"histograms,omitempty"`
 -
 -	// Skip unmarshaling of exemplars.
 -	SkipUnmarshalingExemplars bool

@@ -16,27 +16,27 @@ import (
 func TestWriteRequest_MinTimestamp(t *testing.T) {
 	req := &WriteRequest{
 		Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
-			Samples:    []Sample{{TimestampMs: 10}},
-			Exemplars:  []Exemplar{{TimestampMs: 20}},
-			Histograms: []Histogram{{Timestamp: 30}},
+			Samples:    []*Sample{{TimestampMs: 10}},
+			Exemplars:  []*Exemplar{{TimestampMs: 20}},
+			Histograms: []*Histogram{{Timestamp: 30}},
 		}}},
 	}
 	assert.Equal(t, int64(10), req.MinTimestamp())
 
 	req = &WriteRequest{
 		Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
-			Samples:    []Sample{{TimestampMs: 20}},
-			Exemplars:  []Exemplar{{TimestampMs: 10}},
-			Histograms: []Histogram{{Timestamp: 30}},
+			Samples:    []*Sample{{TimestampMs: 20}},
+			Exemplars:  []*Exemplar{{TimestampMs: 10}},
+			Histograms: []*Histogram{{Timestamp: 30}},
 		}}},
 	}
 	assert.Equal(t, int64(10), req.MinTimestamp())
 
 	req = &WriteRequest{
 		Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
-			Samples:    []Sample{{TimestampMs: 20}},
-			Exemplars:  []Exemplar{{TimestampMs: 30}},
-			Histograms: []Histogram{{Timestamp: 10}},
+			Samples:    []*Sample{{TimestampMs: 20}},
+			Exemplars:  []*Exemplar{{TimestampMs: 30}},
+			Histograms: []*Histogram{{Timestamp: 10}},
 		}}},
 	}
 	assert.Equal(t, int64(10), req.MinTimestamp())
@@ -46,7 +46,7 @@ func TestWriteRequest_IsEmpty(t *testing.T) {
 	t.Run("should return false if a WriteRequest has both Timeseries and Metadata", func(t *testing.T) {
 		req := &WriteRequest{
 			Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
-				Samples: []Sample{{TimestampMs: 20}},
+				Samples: []*Sample{{TimestampMs: 20}},
 			}}},
 			Metadata: []*MetricMetadata{
 				{Type: COUNTER, MetricFamilyName: "test_metric", Help: "This is a test metric."},
@@ -59,7 +59,7 @@ func TestWriteRequest_IsEmpty(t *testing.T) {
 	t.Run("should return false if a WriteRequest has only Timeseries", func(t *testing.T) {
 		req := &WriteRequest{
 			Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
-				Samples: []Sample{{TimestampMs: 20}},
+				Samples: []*Sample{{TimestampMs: 20}},
 			}}},
 		}
 
@@ -89,9 +89,9 @@ func TestWriteRequest_IsEmpty(t *testing.T) {
 func TestWriteRequest_MetadataSize_TimeseriesSize(t *testing.T) {
 	req := &WriteRequest{
 		Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
-			Samples:    []Sample{{TimestampMs: 20}},
-			Exemplars:  []Exemplar{{TimestampMs: 30}},
-			Histograms: []Histogram{{Timestamp: 10}},
+			Samples:    []*Sample{{TimestampMs: 20}},
+			Exemplars:  []*Exemplar{{TimestampMs: 30}},
+			Histograms: []*Histogram{{Timestamp: 10}},
 		}}},
 		Metadata: []*MetricMetadata{
 			{Type: COUNTER, MetricFamilyName: "test_metric", Help: "This is a test metric."},

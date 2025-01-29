@@ -30,7 +30,7 @@ import (
 // method implies that only a single sample and optionally exemplar can be set for each series.
 //
 // For histograms use NewWriteRequest and Add* functions to build write request with Floats and Histograms
-func ToWriteRequest(lbls [][]mimirpb_custom.LabelAdapter, samples []Sample, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
+func ToWriteRequest(lbls [][]*mimirpb_custom.LabelAdapter, samples []*Sample, exemplars []*Exemplar, metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
 	return NewWriteRequest(metadata, source).AddFloatSeries(lbls, samples, exemplars)
 }
 
@@ -46,7 +46,7 @@ func NewWriteRequest(metadata []*MetricMetadata, source WriteRequest_SourceEnum)
 // AddFloatSeries converts matched slices of Labels, Samples, Exemplars into a WriteRequest
 // proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
 // method implies that only a single sample and optionally exemplar can be set for each series.
-func (req *WriteRequest) AddFloatSeries(lbls [][]mimirpb_custom.LabelAdapter, samples []Sample, exemplars []*Exemplar) *WriteRequest {
+func (req *WriteRequest) AddFloatSeries(lbls [][]*mimirpb_custom.LabelAdapter, samples []*Sample, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range samples {
 		ts := TimeseriesFromPool()
 		ts.Labels = append(ts.Labels, lbls[i]...)
@@ -56,7 +56,7 @@ func (req *WriteRequest) AddFloatSeries(lbls [][]mimirpb_custom.LabelAdapter, sa
 			// If provided, we expect a matched entry for exemplars (like labels and samples) but the
 			// entry may be nil since not every timeseries is guaranteed to have an exemplar.
 			if e := exemplars[i]; e != nil {
-				ts.Exemplars = append(ts.Exemplars, *e)
+				ts.Exemplars = append(ts.Exemplars, e)
 			}
 		}
 
@@ -68,7 +68,7 @@ func (req *WriteRequest) AddFloatSeries(lbls [][]mimirpb_custom.LabelAdapter, sa
 // AddHistogramSeries converts matched slices of Labels, Histograms, Exemplars into a WriteRequest
 // proto. It gets timeseries from the pool, so ReuseSlice() should be called when done. Note that this
 // method implies that only a single sample and optionally exemplar can be set for each series.
-func (req *WriteRequest) AddHistogramSeries(lbls [][]mimirpb_custom.LabelAdapter, histograms []Histogram, exemplars []*Exemplar) *WriteRequest {
+func (req *WriteRequest) AddHistogramSeries(lbls [][]*mimirpb_custom.LabelAdapter, histograms []*Histogram, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range histograms {
 		ts := TimeseriesFromPool()
 		ts.Labels = append(ts.Labels, lbls[i]...)
@@ -78,7 +78,7 @@ func (req *WriteRequest) AddHistogramSeries(lbls [][]mimirpb_custom.LabelAdapter
 			// If provided, we expect a matched entry for exemplars (like labels and samples) but the
 			// entry may be nil since not every timeseries is guaranteed to have an exemplar.
 			if e := exemplars[i]; e != nil {
-				ts.Exemplars = append(ts.Exemplars, *e)
+				ts.Exemplars = append(ts.Exemplars, e)
 			}
 		}
 
@@ -93,7 +93,7 @@ func (req *WriteRequest) AddHistogramSeries(lbls [][]mimirpb_custom.LabelAdapter
 // to be added per time series for simplicity.
 func (req *WriteRequest) AddExemplarsAt(i int, exemplars []*Exemplar) *WriteRequest {
 	for _, e := range exemplars {
-		req.Timeseries[i].Exemplars = append(req.Timeseries[i].Exemplars, *e)
+		req.Timeseries[i].Exemplars = append(req.Timeseries[i].Exemplars, e)
 	}
 	return req
 }
@@ -598,7 +598,7 @@ type PreallocatingMetric struct {
 func (m *PreallocatingMetric) Unmarshal(dAtA []byte) error {
 	numLabels, ok := m.labelsCount(dAtA)
 	if ok && numLabels > 0 {
-		m.Labels = make([]mimirpb_custom.LabelAdapter, 0, numLabels)
+		m.Labels = make([]*mimirpb_custom.LabelAdapter, 0, numLabels)
 	}
 
 	return m.Metric.Unmarshal(dAtA)

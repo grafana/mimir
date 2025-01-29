@@ -69,8 +69,8 @@ func TestTimeseriesFromPool(t *testing.T) {
 
 	t.Run("instance is cleaned before reusing", func(t *testing.T) {
 		ts := TimeseriesFromPool()
-		ts.Labels = []mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}}
-		ts.Samples = []Sample{{Value: 1, TimestampMs: 2}}
+		ts.Labels = []*mimirpb_custom.LabelAdapter{{Name: "foo", Value: "bar"}}
+		ts.Samples = []*Sample{{Value: 1, TimestampMs: 2}}
 		ReuseTimeseries(ts)
 
 		reused := TimeseriesFromPool()
@@ -115,15 +115,15 @@ func TestCopyToYoloString(t *testing.T) {
 func TestDeepCopyTimeseries(t *testing.T) {
 	src := PreallocTimeseries{
 		TimeSeries: &TimeSeries{
-			Labels: []mimirpb_custom.LabelAdapter{
+			Labels: []*mimirpb_custom.LabelAdapter{
 				{Name: "sampleLabel1", Value: "sampleValue1"},
 				{Name: "sampleLabel2", Value: "sampleValue2"},
 			},
-			Samples: []Sample{
+			Samples: []*Sample{
 				{Value: 1, TimestampMs: 2},
 				{Value: 3, TimestampMs: 4},
 			},
-			Histograms: []Histogram{
+			Histograms: []*Histogram{
 				{
 					Timestamp:      4*time.Minute.Milliseconds() - 1,
 					Count:          &Histogram_CountInt{CountInt: 35},
@@ -137,10 +137,10 @@ func TestDeepCopyTimeseries(t *testing.T) {
 					ResetHint:      Histogram_UNKNOWN,
 				},
 			},
-			Exemplars: []Exemplar{{
+			Exemplars: []*Exemplar{{
 				Value:       1,
 				TimestampMs: 2,
-				Labels: []mimirpb_custom.LabelAdapter{
+				Labels: []*mimirpb_custom.LabelAdapter{
 					{Name: "exemplarLabel1", Value: "exemplarValue1"},
 					{Name: "exemplarLabel2", Value: "exemplarValue2"},
 				},
@@ -246,11 +246,11 @@ func TestDeepCopyTimeseries(t *testing.T) {
 func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 	src := PreallocTimeseries{
 		TimeSeries: &TimeSeries{
-			Labels: []mimirpb_custom.LabelAdapter{
+			Labels: []*mimirpb_custom.LabelAdapter{
 				{Name: "sampleLabel1", Value: "sampleValue1"},
 				{Name: "sampleLabel2", Value: "sampleValue2"},
 			},
-			Samples: []Sample{
+			Samples: []*Sample{
 				{Value: 1, TimestampMs: 2},
 				{Value: 3, TimestampMs: 4},
 			},
@@ -258,10 +258,10 @@ func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 	}
 
 	for i := 0; i < 100; i++ {
-		src.Exemplars = append(src.Exemplars, Exemplar{
+		src.Exemplars = append(src.Exemplars, &Exemplar{
 			Value:       1,
 			TimestampMs: 2,
-			Labels: []mimirpb_custom.LabelAdapter{
+			Labels: []*mimirpb_custom.LabelAdapter{
 				{Name: "exemplarLabel1", Value: "exemplarValue1"},
 				{Name: "exemplarLabel2", Value: "exemplarValue2"},
 			},
@@ -288,11 +288,11 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 	{
 		src := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
-				Labels: []mimirpb_custom.LabelAdapter{
+				Labels: []*mimirpb_custom.LabelAdapter{
 					{Name: "sampleLabel1", Value: "sampleValue1"},
 					{Name: "sampleLabel2", Value: "sampleValue2"},
 				},
-				Samples: []Sample{
+				Samples: []*Sample{
 					{Value: 1, TimestampMs: 2},
 					{Value: 3, TimestampMs: 4},
 				},
@@ -382,7 +382,7 @@ func TestPreallocTimeseries_SortLabelsIfNeeded(t *testing.T) {
 	t.Run("sorted", func(t *testing.T) {
 		sorted := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
-				Labels: []mimirpb_custom.LabelAdapter{
+				Labels: []*mimirpb_custom.LabelAdapter{
 					{Name: "__name__", Value: "foo"},
 					{Name: "bar", Value: "baz"},
 					{Name: "cluster", Value: "cluster"},
@@ -401,7 +401,7 @@ func TestPreallocTimeseries_SortLabelsIfNeeded(t *testing.T) {
 	t.Run("unsorted", func(t *testing.T) {
 		unsorted := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
-				Labels: []mimirpb_custom.LabelAdapter{
+				Labels: []*mimirpb_custom.LabelAdapter{
 					{Name: "__name__", Value: "foo"},
 					{Name: "sample", Value: "1"},
 					{Name: "cluster", Value: "cluster"},
@@ -424,7 +424,7 @@ func TestPreallocTimeseries_RemoveLabel(t *testing.T) {
 	t.Run("with label", func(t *testing.T) {
 		p := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
-				Labels: []mimirpb_custom.LabelAdapter{
+				Labels: []*mimirpb_custom.LabelAdapter{
 					{Name: "__name__", Value: "foo"},
 					{Name: "bar", Value: "baz"},
 				},
@@ -433,14 +433,14 @@ func TestPreallocTimeseries_RemoveLabel(t *testing.T) {
 		}
 		p.RemoveLabel("bar")
 
-		require.Equal(t, []mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "foo"}}, p.Labels)
+		require.Equal(t, []*mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "foo"}}, p.Labels)
 		require.Nil(t, p.marshalledData)
 	})
 
 	t.Run("with no matching label", func(t *testing.T) {
 		p := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
-				Labels: []mimirpb_custom.LabelAdapter{
+				Labels: []*mimirpb_custom.LabelAdapter{
 					{Name: "__name__", Value: "foo"},
 					{Name: "bar", Value: "baz"},
 				},
@@ -449,7 +449,7 @@ func TestPreallocTimeseries_RemoveLabel(t *testing.T) {
 		}
 		p.RemoveLabel("foo")
 
-		require.Equal(t, []mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
+		require.Equal(t, []*mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
 		require.NotNil(t, p.marshalledData)
 	})
 }
@@ -458,7 +458,7 @@ func TestPreallocTimeseries_RemoveEmptyLabelValues(t *testing.T) {
 	t.Run("with empty labels", func(t *testing.T) {
 		p := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
-				Labels: []mimirpb_custom.LabelAdapter{
+				Labels: []*mimirpb_custom.LabelAdapter{
 					{Name: "__name__", Value: "foo"},
 					{Name: "empty1", Value: ""},
 					{Name: "bar", Value: "baz"},
@@ -469,14 +469,14 @@ func TestPreallocTimeseries_RemoveEmptyLabelValues(t *testing.T) {
 		}
 		p.RemoveEmptyLabelValues()
 
-		require.Equal(t, []mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
+		require.Equal(t, []*mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
 		require.Nil(t, p.marshalledData)
 	})
 
 	t.Run("without empty labels", func(t *testing.T) {
 		p := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
-				Labels: []mimirpb_custom.LabelAdapter{
+				Labels: []*mimirpb_custom.LabelAdapter{
 					{Name: "__name__", Value: "foo"},
 					{Name: "bar", Value: "baz"},
 				},
@@ -485,7 +485,7 @@ func TestPreallocTimeseries_RemoveEmptyLabelValues(t *testing.T) {
 		}
 		p.RemoveLabel("foo")
 
-		require.Equal(t, []mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
+		require.Equal(t, []*mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "foo"}, {Name: "bar", Value: "baz"}}, p.Labels)
 		require.NotNil(t, p.marshalledData)
 	})
 }
@@ -493,14 +493,14 @@ func TestPreallocTimeseries_RemoveEmptyLabelValues(t *testing.T) {
 func TestPreallocTimeseries_SetLabels(t *testing.T) {
 	p := PreallocTimeseries{
 		TimeSeries: &TimeSeries{
-			Labels: []mimirpb_custom.LabelAdapter{
+			Labels: []*mimirpb_custom.LabelAdapter{
 				{Name: "__name__", Value: "foo"},
 				{Name: "bar", Value: "baz"},
 			},
 		},
 		marshalledData: []byte{1, 2, 3},
 	}
-	expected := []mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "hello"}, {Name: "lbl", Value: "world"}}
+	expected := []*mimirpb_custom.LabelAdapter{{Name: "__name__", Value: "hello"}, {Name: "lbl", Value: "world"}}
 	p.SetLabels(expected)
 
 	require.Equal(t, expected, p.Labels)
@@ -511,13 +511,13 @@ func TestPreallocTimeseries_ResizeExemplars(t *testing.T) {
 	t.Run("should resize Exemplars when size is bigger than target size", func(t *testing.T) {
 		p := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
-				Exemplars: make([]Exemplar, 10),
+				Exemplars: make([]*Exemplar, 10),
 			},
 			marshalledData: []byte{1, 2, 3},
 		}
 
 		for i := range p.Exemplars {
-			p.Exemplars[i] = Exemplar{Labels: []mimirpb_custom.LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: int64(i)}
+			p.Exemplars[i] = &Exemplar{Labels: []*mimirpb_custom.LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: int64(i)}
 		}
 		p.ResizeExemplars(5)
 		require.Len(t, p.Exemplars, 5)
@@ -531,16 +531,16 @@ func BenchmarkPreallocTimeseries_SortLabelsIfNeeded(b *testing.B) {
 	for _, lbCount := range bcs {
 		b.Run(fmt.Sprintf("num_labels=%d", lbCount), func(b *testing.B) {
 			// Generate labels set in reverse order for worst case.
-			unorderedLabels := make([]mimirpb_custom.LabelAdapter, 0, lbCount)
+			unorderedLabels := make([]*mimirpb_custom.LabelAdapter, 0, lbCount)
 			for i := 0; i < lbCount; i++ {
 				lbName := fmt.Sprintf("lbl_%d", lbCount-i)
 				lbValue := fmt.Sprintf("val_%d", lbCount-i)
-				unorderedLabels = append(unorderedLabels, mimirpb_custom.LabelAdapter{Name: lbName, Value: lbValue})
+				unorderedLabels = append(unorderedLabels, &mimirpb_custom.LabelAdapter{Name: lbName, Value: lbValue})
 			}
 
 			b.Run("unordered", benchmarkSortLabelsIfNeeded(unorderedLabels))
 
-			slices.SortFunc(unorderedLabels, func(a, b mimirpb_custom.LabelAdapter) int {
+			slices.SortFunc(unorderedLabels, func(a, b *mimirpb_custom.LabelAdapter) int {
 				switch {
 				case a.Name < b.Name:
 					return -1
@@ -555,12 +555,12 @@ func BenchmarkPreallocTimeseries_SortLabelsIfNeeded(b *testing.B) {
 	}
 }
 
-func benchmarkSortLabelsIfNeeded(inputLabels []mimirpb_custom.LabelAdapter) func(b *testing.B) {
+func benchmarkSortLabelsIfNeeded(inputLabels []*mimirpb_custom.LabelAdapter) func(b *testing.B) {
 	return func(b *testing.B) {
 		// Copy unordered labels set for each benchmark iteration.
-		benchmarkUnorderedLabels := make([][]mimirpb_custom.LabelAdapter, b.N)
+		benchmarkUnorderedLabels := make([][]*mimirpb_custom.LabelAdapter, b.N)
 		for i := 0; i < b.N; i++ {
-			benchmarkLabels := make([]mimirpb_custom.LabelAdapter, len(inputLabels))
+			benchmarkLabels := make([]*mimirpb_custom.LabelAdapter, len(inputLabels))
 			copy(benchmarkLabels, inputLabels)
 			benchmarkUnorderedLabels[i] = benchmarkLabels
 		}
@@ -580,14 +580,14 @@ func benchmarkSortLabelsIfNeeded(inputLabels []mimirpb_custom.LabelAdapter) func
 
 func TestClearExemplars(t *testing.T) {
 	t.Run("should reset TimeSeries.Exemplars keeping the slices if there are <= 10 entries", func(t *testing.T) {
-		ts := &TimeSeries{Exemplars: []Exemplar{
-			{Labels: []mimirpb_custom.LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: 2},
-			{Labels: []mimirpb_custom.LabelAdapter{{Name: "trace", Value: "2"}, {Name: "service", Value: "B"}}, Value: 2, TimestampMs: 3},
+		ts := &TimeSeries{Exemplars: []*Exemplar{
+			{Labels: []*mimirpb_custom.LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: 2},
+			{Labels: []*mimirpb_custom.LabelAdapter{{Name: "trace", Value: "2"}, {Name: "service", Value: "B"}}, Value: 2, TimestampMs: 3},
 		}}
 
 		ClearExemplars(ts)
 
-		assert.Equal(t, &TimeSeries{Exemplars: []Exemplar{}}, ts)
+		assert.Equal(t, &TimeSeries{Exemplars: []*Exemplar{}}, ts)
 		assert.Equal(t, 2, cap(ts.Exemplars))
 
 		ts.Exemplars = ts.Exemplars[:2]
@@ -597,9 +597,9 @@ func TestClearExemplars(t *testing.T) {
 	})
 
 	t.Run("should reset TimeSeries.Exemplars releasing the slices if there are > 10 entries", func(t *testing.T) {
-		ts := &TimeSeries{Exemplars: make([]Exemplar, 11)}
+		ts := &TimeSeries{Exemplars: make([]*Exemplar, 11)}
 		for i := range ts.Exemplars {
-			ts.Exemplars[i] = Exemplar{Labels: []mimirpb_custom.LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: 2}
+			ts.Exemplars[i] = &Exemplar{Labels: []*mimirpb_custom.LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: 2}
 		}
 
 		ClearExemplars(ts)
@@ -613,9 +613,9 @@ func TestSortExemplars(t *testing.T) {
 	t.Run("should sort TimeSeries.Exemplars in order", func(t *testing.T) {
 		p := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
-				Exemplars: []Exemplar{
-					{Labels: []mimirpb_custom.LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: 3},
-					{Labels: []mimirpb_custom.LabelAdapter{{Name: "trace", Value: "2"}, {Name: "service", Value: "B"}}, Value: 2, TimestampMs: 2},
+				Exemplars: []*Exemplar{
+					{Labels: []*mimirpb_custom.LabelAdapter{{Name: "trace", Value: "1"}, {Name: "service", Value: "A"}}, Value: 1, TimestampMs: 3},
+					{Labels: []*mimirpb_custom.LabelAdapter{{Name: "trace", Value: "2"}, {Name: "service", Value: "B"}}, Value: 2, TimestampMs: 2},
 				},
 			},
 			marshalledData: []byte{1, 2, 3},

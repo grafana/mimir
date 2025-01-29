@@ -59,11 +59,11 @@ message ErrorDetails {
 }
 
 message TimeSeries {
-  repeated cortexpb_custom.LabelAdapter labels = 1 [(gogoproto.nullable) = false];
+  repeated cortexpb_custom.LabelAdapter labels = 1;
   // Sorted by time, oldest sample first.
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
-  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
+  repeated Sample samples = 2;
+  repeated Exemplar exemplars = 3;
+  repeated Histogram histograms = 4;
 }
 
 //message LabelPair {
@@ -96,12 +96,12 @@ message MetricMetadata {
 }
 
 message Metric {
-  repeated cortexpb_custom.LabelAdapter labels = 1 [(gogoproto.nullable) = false];
+  repeated cortexpb_custom.LabelAdapter labels = 1;
 }
 
 message Exemplar {
   // Exemplar labels, different than series labels
-  repeated cortexpb_custom.LabelAdapter labels = 1 [(gogoproto.nullable) = false];
+  repeated cortexpb_custom.LabelAdapter labels = 1;
   double value = 2;
   int64 timestamp_ms = 3;
 }
