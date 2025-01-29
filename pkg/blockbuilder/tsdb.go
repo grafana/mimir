@@ -22,7 +22,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -311,12 +310,12 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 }
 
 // Function to upload the blocks.
-type blockUploader func(_ context.Context, tenantID, dbDir string, blockIDs []string) error
+type blockUploader func(_ context.Context, tenantID, dbDir string, metas []tsdb.BlockMeta) error
 
 // CompactAndUpload compacts the blocks of all the TSDBs and uploads them.
 // uploadBlocks is a function that uploads the blocks to the required storage.
 // All the DBs are closed and directories cleared irrespective of success or failure of this function.
-func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUploader) (_ int, err error) {
+func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUploader) (metas []tsdb.BlockMeta, err error) {
 	var (
 		closedDBsMu sync.Mutex
 		closedDBs   = make(map[*userTSDB]bool)
@@ -343,10 +342,8 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 	level.Info(b.logger).Log("msg", "compacting and uploading blocks", "num_tsdb", len(b.tsdbs))
 
 	if len(b.tsdbs) == 0 {
-		return 0, nil
+		return nil, nil
 	}
-
-	numBlocks := atomic.NewInt64(0)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	if b.blocksStorageCfg.TSDB.ShipConcurrency > 0 {
@@ -371,12 +368,12 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 				return err
 			}
 
-			var blockIDs []string
 			dbDir := db.Dir()
+			var localMetas []tsdb.BlockMeta
 			for _, b := range db.Blocks() {
-				blockIDs = append(blockIDs, b.Meta().ULID.String())
+				localMetas = append(localMetas, b.Meta())
 			}
-			numBlocks.Add(int64(len(blockIDs)))
+			metas = append(metas, localMetas...)
 
 			if err := db.Close(); err != nil {
 				return err
@@ -386,7 +383,7 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			closedDBs[db] = true
 			closedDBsMu.Unlock()
 
-			if err := uploadBlocks(ctx, tenant.tenantID, dbDir, blockIDs); err != nil {
+			if err := uploadBlocks(ctx, tenant.tenantID, dbDir, localMetas); err != nil {
 				return err
 			}
 
@@ -395,7 +392,7 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 		})
 	}
 	err = eg.Wait()
-	return int(numBlocks.Load()), err
+	return metas, err
 }
 
 // Close closes all DBs and deletes their data directories.
