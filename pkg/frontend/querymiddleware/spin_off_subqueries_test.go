@@ -30,8 +30,9 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 	var (
 		numSeries      = 1000
 		numStaleSeries = 100
-		samplesStart   = time.Now().Add(-2 * 24 * time.Hour)
-		samplesEnd     = time.Now().Add(30 * time.Minute)
+		now            = time.Now()
+		samplesStart   = now.Add(-2 * 24 * time.Hour)
+		samplesEnd     = now.Add(30 * time.Minute)
 		samplesStep    = 30 * time.Second
 	)
 
@@ -100,11 +101,11 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 			expectedSpunOffSubqueries: 1,
 		},
 		"sum of subquery min with small offset": {
-			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[3d:2m] offset 20s))`,
+			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[1d:1m] offset 20s))`,
 			expectedSpunOffSubqueries: 1,
 		},
 		"sum of subquery min with offset": {
-			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[3d:2m] offset 1d))`,
+			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[1d:1m] offset 1d))`,
 			expectedSpunOffSubqueries: 1,
 		},
 		"triple subquery": {
@@ -161,7 +162,6 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 	// Add a special series whose data points start later than the start of the queried time range.
 	series = append(series, newSeries(newTestCounterLabels(seriesID),
 		time.Now().Add(5*time.Minute), samplesEnd, samplesStep, factor(2)))
-	seriesID++
 
 	// Create a queryable on the fixtures.
 	queryable := storageSeriesQueryable(series)
@@ -274,10 +274,10 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 # HELP cortex_frontend_spun_off_subqueries_total Total number of subqueries that were spun off.
 # TYPE cortex_frontend_spun_off_subqueries_total counter
 cortex_frontend_spun_off_subqueries_total %d
-# HELP cortex_frontend_subquery_spinoff_attempts_total Total number of queries the query-frontend attempted to spin off subqueries from.
+# HELP cortex_frontend_subquery_spinoff_attempts_total Total number of queries the query-frontend attempted to spin-off subqueries from.
 # TYPE cortex_frontend_subquery_spinoff_attempts_total counter
 cortex_frontend_subquery_spinoff_attempts_total 1
-# HELP cortex_frontend_subquery_spinoff_skipped_total Total number of queries the query-frontend skipped or failed to spin off subqueries from.
+# HELP cortex_frontend_subquery_spinoff_skipped_total Total number of queries the query-frontend skipped or failed to spin-off subqueries from.
 # TYPE cortex_frontend_subquery_spinoff_skipped_total counter
 cortex_frontend_subquery_spinoff_skipped_total{reason="mapping-failed"} 0
 cortex_frontend_subquery_spinoff_skipped_total{reason="no-subqueries"} %d

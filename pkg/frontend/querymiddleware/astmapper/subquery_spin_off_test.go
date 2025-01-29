@@ -29,7 +29,7 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 			expectedDownstreamQueries: 1,
 		},
 		{
-			name:                      "spin off subquery",
+			name:                      "spin-off subquery",
 			in:                        `avg_over_time((foo * bar)[3d:1m])`,
 			out:                       `avg_over_time(__subquery_spinoff__{__query__="(foo * bar)",__range__="72h0m0s",__step__="1m0s"}[3d])`,
 			expectedSubqueries:        1,
@@ -71,7 +71,7 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 			expectedDownstreamQueries: 1,
 		},
 		{
-			name: "spin off multiple subqueries",
+			name: "spin-off multiple subqueries",
 			in:   `avg_over_time((foo * bar)[3d:1m]) * max_over_time((foo * bar)[2d:2m])`,
 			out: `avg_over_time(__subquery_spinoff__{__query__="(foo * bar)",__range__="72h0m0s",__step__="1m0s"}[3d])
 									* max_over_time(__subquery_spinoff__{__query__="(foo * bar)",__range__="48h0m0s",__step__="2m0s"}[2d])`,

@@ -57,7 +57,7 @@ func newSpinOffSubqueriesMetrics(registerer prometheus.Registerer) spinOffSubque
 	m := spinOffSubqueriesMetrics{
 		spinOffAttempts: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_subquery_spinoff_attempts_total",
-			Help: "Total number of queries the query-frontend attempted to spin off subqueries from.",
+			Help: "Total number of queries the query-frontend attempted to spin-off subqueries from.",
 		}),
 		spinOffSuccesses: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_subquery_spinoff_successes_total",
@@ -65,7 +65,7 @@ func newSpinOffSubqueriesMetrics(registerer prometheus.Registerer) spinOffSubque
 		}),
 		spinOffSkipped: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_frontend_subquery_spinoff_skipped_total",
-			Help: "Total number of queries the query-frontend skipped or failed to spin off subqueries from.",
+			Help: "Total number of queries the query-frontend skipped or failed to spin-off subqueries from.",
 		}, []string{"reason"}),
 		spunOffSubqueries: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_frontend_spun_off_subqueries_total",
@@ -135,8 +135,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		for _, pattern := range patterns {
 			matcher, err := labels.NewFastRegexMatcher(pattern)
 			if err != nil {
-				level.Error(spanLog).Log("msg", "failed to compile regex pattern", "pattern", pattern, "err", err)
-				continue
+				return nil, apierror.New(apierror.TypeBadData, err.Error())
 			}
 
 			if matcher.MatchString(req.GetQuery()) {
@@ -151,11 +150,11 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	}
 
 	if !matched {
-		spanLog.DebugLog("msg", "subquery spin off is disabled for this query")
+		spanLog.DebugLog("msg", "expression did not match any configured subquery spin-off patterns, so subquery spin-off is disabled for this query")
 		return s.next.Do(ctx, req)
 	}
 
-	// Increment total number of instant queries attempted to spin off subqueries from.
+	// Increment total number of instant queries attempted to spin-off subqueries from.
 	s.metrics.spinOffAttempts.Inc()
 
 	mapperStats := astmapper.NewSubquerySpinOffMapperStats()
@@ -196,7 +195,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		return s.next.Do(ctx, req)
 	}
 
-	spanLog.DebugLog("msg", "instant query has been rewritten to spin off subqueries", "rewritten", spinOffQuery, "regular_downstream_queries", mapperStats.DownstreamQueries(), "subqueries_spun_off", mapperStats.SpunOffSubqueries())
+	spanLog.DebugLog("msg", "instant query has been rewritten to spin-off subqueries", "rewritten", spinOffQuery, "regular_downstream_queries", mapperStats.DownstreamQueries(), "subqueries_spun_off", mapperStats.SpunOffSubqueries())
 
 	// Update query stats.
 	queryStats := stats.FromContext(ctx)
@@ -259,7 +258,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 func newSpinOffQueryHandler(codec Codec, logger log.Logger, sendURL string) (MetricsQueryHandler, error) {
 	rangeQueryURL, err := url.Parse(sendURL)
 	if err != nil {
-		return nil, fmt.Errorf("invalid spin off URL: %w", err)
+		return nil, fmt.Errorf("invalid spin-off URL: %w", err)
 	}
 
 	return &spinOffQueryHandler{
@@ -282,16 +281,10 @@ func (s *spinOffQueryHandler) Do(ctx context.Context, req MetricsQueryRequest) (
 		return nil, fmt.Errorf("error encoding request: %w", err)
 	}
 	httpReq.RequestURI = "" // Reset RequestURI to force URL to be used in the request.
-	// Override the URL with the configured range query URL (only parts that are set).
-	if s.rangeQueryURL.Scheme != "" {
-		httpReq.URL.Scheme = s.rangeQueryURL.Scheme
-	}
-	if s.rangeQueryURL.Host != "" {
-		httpReq.URL.Host = s.rangeQueryURL.Host
-	}
-	if s.rangeQueryURL.Path != "" {
-		httpReq.URL.Path = s.rangeQueryURL.Path
-	}
+	// Override the URL with the configured range query URL.
+	httpReq.URL.Scheme = s.rangeQueryURL.Scheme
+	httpReq.URL.Host = s.rangeQueryURL.Host
+	httpReq.URL.Path = s.rangeQueryURL.Path
 
 	if err := user.InjectOrgIDIntoHTTPRequest(ctx, httpReq); err != nil {
 		return nil, fmt.Errorf("error injecting org ID into request: %v", err)

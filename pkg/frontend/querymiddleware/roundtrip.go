@@ -382,11 +382,13 @@ func newQueryMiddlewares(
 	)
 
 	if spinOffURL := cfg.SpinOffInstantSubqueriesToURL; spinOffURL != "" {
-		// Spin off subqueries to a remote URL (or localhost)
+		// Spin-off subqueries to a remote URL (or localhost)
 		spinOffQueryHandler, err := newSpinOffQueryHandler(codec, log, spinOffURL)
 		if err != nil {
-			level.Error(log).Log("msg", "failed to create spin off query handler", "error", err)
+			level.Error(log).Log("msg", "failed to create spin-off query handler", "error", err)
 		} else {
+			// We're only interested in instant queries for now because their query rate is usually much higher than range queries.
+			// They are also less optimized than range queries, so we can benefit more from the spin-off.
 			queryInstantMiddleware = append(
 				queryInstantMiddleware,
 				newInstrumentMiddleware("spin_off_subqueries", metrics),

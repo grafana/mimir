@@ -117,19 +117,26 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			return storage.ErrSeriesSet(errors.Wrap(err, "failed to parse subquery offset"))
 		}
 
-		end := q.req.GetEnd() - queryOffset.Milliseconds()
-		// Subqueries are aligned on absolute time, while range queries are aligned on relative time.
-		// To match the same behavior, we can query slightly into the future.
-		// The extra data points aren't used because the subquery is aggregated with an _over_time-style function.
+		start := q.req.GetStart()
+		end := q.req.GetEnd()
 		step := queryStep.Milliseconds()
-		if end%step != 0 {
-			end += step - (end % step)
+
+		// The following code only works for instant queries. Supporting subqueries within range queries would
+		// require lots of changes. It hasnt been tested.
+		if start != end {
+			return storage.ErrSeriesSet(errors.New("subqueries spin-off is not supported in range queries"))
 		}
-		// Calculate the earliest data point we need to query.
-		start := end - queryRange.Milliseconds()
+
+		// Subqueries are always aligned to absolute time in PromQL, so we need to make the same adjustment here for correctness.
+		// Find the first timestamp inside the subquery range that is aligned to the step.
+		// This is taken from MQE: https://github.com/grafana/mimir/blob/266a393379b2c981a83557c5d66e56c97251ffeb/pkg/streamingpromql/query.go#L384-L398
+		alignedStart := step * ((start - queryOffset.Milliseconds() - queryRange.Milliseconds()) / step)
+		if alignedStart < start-queryOffset.Milliseconds()-queryRange.Milliseconds() {
+			alignedStart += step
+		}
 
 		// Split queries into multiple smaller queries if they have more than 11000 datapoints
-		rangeStart := start
+		rangeStart := alignedStart
 		var rangeQueries []MetricsQueryRequest
 		for {
 			var rangeEnd int64
@@ -142,7 +149,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			headers = append(headers,
 				&PrometheusHeader{Name: "X-Mimir-Spun-Off-Subquery", Values: []string{"true"}},
 				&PrometheusHeader{Name: "Content-Type", Values: []string{"application/x-www-form-urlencoded"}},
-			) // Downstream is the querier, which is HTTP req.
+			)
 			newRangeRequest := NewPrometheusRangeQueryRequest(queryRangePathSuffix, headers, rangeStart, rangeEnd, step, q.req.GetLookbackDelta(), queryExpr, q.req.GetOptions(), q.req.GetHints())
 			rangeQueries = append(rangeQueries, newRangeRequest)
 			if rangeEnd == end {
@@ -171,7 +178,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 		}
 		return newSeriesSetFromEmbeddedQueriesResults(streams, hints)
 	default:
-		return storage.ErrSeriesSet(errors.Errorf("invalid metric name for the spin off middleware: %s", name))
+		return storage.ErrSeriesSet(errors.Errorf("invalid metric name for the spin-off middleware: %s", name))
 	}
 }
 
