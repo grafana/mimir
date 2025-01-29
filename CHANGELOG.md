@@ -27,15 +27,17 @@
 * [ENHANCEMENT] Ingester: Hide tokens in ingester ring status page when ingest storage is enabled #10399
 * [ENHANCEMENT] Ingester: add `active_series_additional_custom_trackers` configuration, in addition to the already existing `active_series_custom_trackers`. The `active_series_additional_custom_trackers` configuration allows you to configure additional custom trackers that get merged with `active_series_custom_trackers` at runtime. #10428
 * [ENHANCEMENT] Query-frontend: Allow blocking raw http requests with the `blocked_requests` configuration. Requests can be blocked based on their path, method or query parameters #10484
-* [ENHANCEMENT] Ingester: Added the following metrics exported by `PostingsForMatchers` cache: #10500
+* [ENHANCEMENT] Ingester: Added the following metrics exported by `PostingsForMatchers` cache: #10500 #10525
   * `cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total`
   * `cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total`
   * `cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total`
   * `cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total`
+  * `cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total`
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total`
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_misses_total`
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total`
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total`
+  * `cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total`
 * [ENHANCEMENT] Compactor: Shuffle users' order in `BlocksCleaner`. Prevents bucket indexes from going an extended period without cleanup during compactor restarts. #10513
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 * [BUGFIX] Querier: fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #10154
