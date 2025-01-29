@@ -8,6 +8,7 @@ package compactor
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -231,6 +232,10 @@ func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) ([]string, map[st
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to discover users from bucket")
 	}
+
+	rand.Shuffle(len(users), func(i, j int) {
+		users[i], users[j] = users[j], users[i]
+	})
 
 	isActive := util.StringsMap(users)
 	isDeleted := util.StringsMap(deleted)

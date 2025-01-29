@@ -127,7 +127,7 @@ func (m *ClientMock) MockGetAndLastModified(name, content string, lastModified t
 	} else {
 		m.On("Exists", mock.Anything, name).Return(false, err)
 		m.On("Get", mock.Anything, name).Return(nil, ErrObjectDoesNotExist)
-		m.On("Attributes", mock.Anything, name).Return(nil, ErrObjectDoesNotExist)
+		m.On("Attributes", mock.Anything, name).Return(objstore.ObjectAttributes{}, ErrObjectDoesNotExist)
 	}
 }
 
