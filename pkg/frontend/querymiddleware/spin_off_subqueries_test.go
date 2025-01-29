@@ -27,6 +27,7 @@ import (
 )
 
 func TestSubquerySpinOff_Correctness(t *testing.T) {
+	t.Parallel()
 	var (
 		numSeries      = 1000
 		numStaleSeries = 100
@@ -43,6 +44,7 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 		expectedDownstreamQueries int
 		expectSpecificOrder       bool
 		expectEmptyResult         bool
+		offsetQueryTime           time.Duration
 	}{
 		"skipped: no subquery": {
 			query: `sum(
@@ -108,6 +110,31 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[1d:1m] offset 1d))`,
 			expectedSpunOffSubqueries: 1,
 		},
+		"sum of subquery min: offset query time -10m": {
+			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[3d:2m]))`,
+			expectedSpunOffSubqueries: 1,
+			offsetQueryTime:           -10 * time.Minute,
+		},
+		"sum of subquery min: offset query time +10m": {
+			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[3d:2m]))`,
+			expectedSpunOffSubqueries: 1,
+			offsetQueryTime:           10 * time.Minute,
+		},
+		"sum of subquery min: offset query time -33s": {
+			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[3d:2m]))`,
+			expectedSpunOffSubqueries: 1,
+			offsetQueryTime:           -33 * time.Second,
+		},
+		"sum of subquery min: offset query time +33s": {
+			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[3d:2m]))`,
+			expectedSpunOffSubqueries: 1,
+			offsetQueryTime:           33 * time.Second,
+		},
+		"sum of subquery min: offset query time +1h": {
+			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[3d:2m]))`,
+			expectedSpunOffSubqueries: 1,
+			offsetQueryTime:           1 * time.Hour,
+		},
 		"triple subquery": {
 			query: `max_over_time(
 						stddev_over_time(
@@ -172,11 +199,141 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 		queryable: queryable,
 	}
 
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			req := &PrometheusInstantQueryRequest{
+				path:      "/query",
+				time:      util.TimeToMillis(time.Now().Add(testData.offsetQueryTime)),
+				queryExpr: parseQuery(t, testData.query),
+			}
+
+			// Run the query without subquery spin-off.
+			expectedRes, err := downstream.Do(context.Background(), req)
+			require.Nil(t, err)
+			expectedPrometheusRes := expectedRes.(*PrometheusResponse)
+			if !testData.expectSpecificOrder {
+				sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
+			}
+
+			// Ensure the query produces some results.
+			if !testData.expectEmptyResult {
+				require.NotEmpty(t, expectedPrometheusRes.Data.Result)
+				requireValidSamples(t, expectedPrometheusRes.Data.Result)
+			}
+
+			if testData.expectedSpunOffSubqueries > 0 {
+				// Remove position information from annotations, to mirror what we expect from the sharded queries below.
+				removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
+				removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
+			}
+
+			reg := prometheus.NewPedanticRegistry()
+			spinoffMiddleware := newSpinOffSubqueriesMiddleware(
+				mockLimits{
+					instantQueriesWithSubquerySpinOff: []string{".*"},
+				},
+				log.NewNopLogger(),
+				engine,
+				downstream,
+				reg,
+				defaultStepFunc,
+			)
+
+			ctx := user.InjectOrgID(context.Background(), "test")
+			spinoffRes, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
+			require.Nil(t, err)
+
+			// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
+			// if you rerun the same query twice).
+			shardedPrometheusRes := spinoffRes.(*PrometheusResponse)
+			if !testData.expectSpecificOrder {
+				sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
+			}
+			approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
+
+			var noSubqueries int
+			if testData.expectedSkippedReason == "no-subquery" {
+				noSubqueries = 1
+			}
+
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+# HELP cortex_frontend_spun_off_subqueries_total Total number of subqueries that were spun off.
+# TYPE cortex_frontend_spun_off_subqueries_total counter
+cortex_frontend_spun_off_subqueries_total %d
+# HELP cortex_frontend_subquery_spinoff_attempts_total Total number of queries the query-frontend attempted to spin-off subqueries from.
+# TYPE cortex_frontend_subquery_spinoff_attempts_total counter
+cortex_frontend_subquery_spinoff_attempts_total 1
+# HELP cortex_frontend_subquery_spinoff_skipped_total Total number of queries the query-frontend skipped or failed to spin-off subqueries from.
+# TYPE cortex_frontend_subquery_spinoff_skipped_total counter
+cortex_frontend_subquery_spinoff_skipped_total{reason="mapping-failed"} 0
+cortex_frontend_subquery_spinoff_skipped_total{reason="no-subqueries"} %d
+cortex_frontend_subquery_spinoff_skipped_total{reason="parsing-failed"} 0
+cortex_frontend_subquery_spinoff_skipped_total{reason="too-many-downstream-queries"} 0
+# HELP cortex_frontend_subquery_spinoff_successes_total Total number of queries the query-frontend successfully spun off subqueries from.
+# TYPE cortex_frontend_subquery_spinoff_successes_total counter
+cortex_frontend_subquery_spinoff_successes_total %d
+				`, testData.expectedSpunOffSubqueries, noSubqueries, testData.expectedSpunOffSubqueries)),
+				"cortex_frontend_subquery_spinoff_attempts_total",
+				"cortex_frontend_subquery_spinoff_successes_total",
+				"cortex_frontend_subquery_spinoff_skipped_total",
+				"cortex_frontend_spun_off_subqueries_total"))
+		})
+	}
+}
+
+func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {
+	req := &PrometheusInstantQueryRequest{
+		path:      "/query",
+		time:      util.TimeToMillis(end),
+		queryExpr: parseQuery(t, "vector(1)"),
+	}
+
+	// Mock the downstream handler to always return error.
+	downstreamErr := errors.Errorf("some err")
+	downstream := mockHandlerWith(nil, downstreamErr)
+
+	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{instantQueriesWithSubquerySpinOff: []string{".*"}}, log.NewNopLogger(), newEngine(), downstream, nil, defaultStepFunc)
+
+	// Run the query with subquery spin-off middleware wrapping the downstream one.
+	// We expect to get the downstream error.
+	ctx := user.InjectOrgID(context.Background(), "test")
+	_, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
+	require.Error(t, err)
+	assert.Equal(t, downstreamErr, err)
+}
+
+func TestSpinOffQueryHandler(t *testing.T) {
+	now := time.Now()
+
+	numSeries := 5
+	series := make([]storage.Series, 0, numSeries)
+	// Add counter series.
+	for i := 0; i < numSeries; i++ {
+		gen := factor(float64(i) * 0.1)
+		series = append(series, newSeries(newTestCounterLabels(len(series)), now.Add(-5*time.Minute), now, 30*time.Second, gen))
+	}
+	// Create a queryable on the fixtures.
+	queryable := storageSeriesQueryable(series)
+
+	engine := newEngine()
+	downstream := &downstreamHandler{
+		engine:    engine,
+		queryable: queryable,
+	}
+
+	gotRequestCt := 0
 	codec := newTestPrometheusCodec()
 	// Create a local server that handles queries.
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/prometheus/api/v1/query_range" {
 			http.Error(w, "invalid path", http.StatusNotFound)
+			return
+		}
+
+		if org := r.Header.Get(user.OrgIDHeaderName); org != "test" {
+			http.Error(w, "invalid org", http.StatusUnauthorized)
 			return
 		}
 
@@ -203,120 +360,42 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 		w.Header().Set("Content-Length", httpResp.Header.Get("Content-Length"))
 		io.Copy(w, httpResp.Body)
 		httpResp.Body.Close()
+		gotRequestCt++
 	}))
 	t.Cleanup(httpServer.Close)
 
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			for _, queryOffset := range []time.Duration{-10 * time.Minute, -33 * time.Second, 0, 33 * time.Second, 10 * time.Minute, 1 * time.Hour} {
-				t.Run(fmt.Sprintf("queryOffset=%s", queryOffset), func(t *testing.T) {
-					t.Parallel()
+	spinOffQueryHandler, err := newSpinOffQueryHandler(codec, log.NewLogfmtLogger(os.Stdout), httpServer.URL+"/prometheus/api/v1/query_range")
+	require.NoError(t, err)
 
-					req := &PrometheusInstantQueryRequest{
-						path:      "/query",
-						time:      util.TimeToMillis(time.Now().Add(queryOffset)),
-						queryExpr: parseQuery(t, testData.query),
-					}
+	// Ensure we have had no requests yet.
+	require.Equal(t, 0, gotRequestCt)
 
-					// Run the query without subquery spin-off.
-					expectedRes, err := downstream.Do(context.Background(), req)
-					require.Nil(t, err)
-					expectedPrometheusRes := expectedRes.(*PrometheusResponse)
-					if !testData.expectSpecificOrder {
-						sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
-					}
-
-					// Ensure the query produces some results.
-					if !testData.expectEmptyResult {
-						require.NotEmpty(t, expectedPrometheusRes.Data.Result)
-						requireValidSamples(t, expectedPrometheusRes.Data.Result)
-					}
-
-					if testData.expectedSpunOffSubqueries > 0 {
-						// Remove position information from annotations, to mirror what we expect from the sharded queries below.
-						removeAllAnnotationPositionInformation(expectedPrometheusRes.Infos)
-						removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
-					}
-
-					spinOffQueryHandler, err := newSpinOffQueryHandler(codec, log.NewLogfmtLogger(os.Stdout), httpServer.URL+"/prometheus/api/v1/query_range")
-					require.NoError(t, err)
-
-					reg := prometheus.NewPedanticRegistry()
-					spinoffMiddleware := newSpinOffSubqueriesMiddleware(
-						mockLimits{
-							instantQueriesWithSubquerySpinOff: []string{".*"},
-						},
-						log.NewNopLogger(),
-						engine,
-						spinOffQueryHandler,
-						reg,
-						defaultStepFunc,
-					)
-
-					ctx := user.InjectOrgID(context.Background(), "test")
-					spinoffRes, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
-					require.Nil(t, err)
-
-					// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
-					// if you rerun the same query twice).
-					shardedPrometheusRes := spinoffRes.(*PrometheusResponse)
-					if !testData.expectSpecificOrder {
-						sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
-					}
-					approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
-
-					var noSubqueries int
-					if testData.expectedSkippedReason == "no-subquery" {
-						noSubqueries = 1
-					}
-
-					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-# HELP cortex_frontend_spun_off_subqueries_total Total number of subqueries that were spun off.
-# TYPE cortex_frontend_spun_off_subqueries_total counter
-cortex_frontend_spun_off_subqueries_total %d
-# HELP cortex_frontend_subquery_spinoff_attempts_total Total number of queries the query-frontend attempted to spin-off subqueries from.
-# TYPE cortex_frontend_subquery_spinoff_attempts_total counter
-cortex_frontend_subquery_spinoff_attempts_total 1
-# HELP cortex_frontend_subquery_spinoff_skipped_total Total number of queries the query-frontend skipped or failed to spin-off subqueries from.
-# TYPE cortex_frontend_subquery_spinoff_skipped_total counter
-cortex_frontend_subquery_spinoff_skipped_total{reason="mapping-failed"} 0
-cortex_frontend_subquery_spinoff_skipped_total{reason="no-subqueries"} %d
-cortex_frontend_subquery_spinoff_skipped_total{reason="parsing-failed"} 0
-cortex_frontend_subquery_spinoff_skipped_total{reason="too-many-downstream-queries"} 0
-# HELP cortex_frontend_subquery_spinoff_successes_total Total number of queries the query-frontend successfully spun off subqueries from.
-# TYPE cortex_frontend_subquery_spinoff_successes_total counter
-cortex_frontend_subquery_spinoff_successes_total %d
-				`, testData.expectedSpunOffSubqueries, noSubqueries, testData.expectedSpunOffSubqueries)),
-						"cortex_frontend_subquery_spinoff_attempts_total",
-						"cortex_frontend_subquery_spinoff_successes_total",
-						"cortex_frontend_subquery_spinoff_skipped_total",
-						"cortex_frontend_spun_off_subqueries_total"))
-				})
-			}
-		})
-
+	req := &PrometheusRangeQueryRequest{
+		path:      "/query_range",
+		start:     util.TimeToMillis(now.Add(-5 * time.Minute)),
+		end:       util.TimeToMillis(now),
+		step:      30 * time.Second.Milliseconds(),
+		queryExpr: parseQuery(t, "max_over_time(rate(metric_counter[1m])[5m:1m])"),
 	}
-}
-
-func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {
-	req := &PrometheusInstantQueryRequest{
-		path:      "/query",
-		time:      util.TimeToMillis(end),
-		queryExpr: parseQuery(t, "vector(1)"),
-	}
-
-	// Mock the downstream handler to always return error.
-	downstreamErr := errors.Errorf("some err")
-	downstream := mockHandlerWith(nil, downstreamErr)
-
-	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{instantQueriesWithSubquerySpinOff: []string{".*"}}, log.NewNopLogger(), newEngine(), downstream, nil, defaultStepFunc)
-
-	// Run the query with subquery spin-off middleware wrapping the downstream one.
-	// We expect to get the downstream error.
 	ctx := user.InjectOrgID(context.Background(), "test")
-	_, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
-	require.Error(t, err)
-	assert.Equal(t, downstreamErr, err)
+	resp, err := spinOffQueryHandler.Do(ctx, req)
+	require.NoError(t, err)
+
+	// Ensure we got the expected number of requests.
+	require.Equal(t, 1, gotRequestCt)
+
+	// Ensure the query produces some results.
+	require.NotEmpty(t, resp.(*PrometheusResponse).Data.Result)
+	requireValidSamples(t, resp.(*PrometheusResponse).Data.Result)
+
+	// Ensure the result is the same as the one produced by the downstream handler.
+	expectedRes, err := downstream.Do(context.Background(), req)
+	require.Nil(t, err)
+
+	expectedPrometheusRes := expectedRes.(*PrometheusResponse)
+	sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
+	sort.Sort(byLabels(resp.(*PrometheusResponse).Data.Result))
+	approximatelyEquals(t, expectedPrometheusRes, resp.(*PrometheusResponse))
 }
 
 var defaultStepFunc = func(int64) int64 {

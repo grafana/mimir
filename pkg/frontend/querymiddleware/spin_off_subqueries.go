@@ -298,7 +298,7 @@ func (s *spinOffQueryHandler) Do(ctx context.Context, req MetricsQueryRequest) (
 	defer resp.Body.Close()
 	decoded, err := s.codec.DecodeMetricsQueryResponse(ctx, resp, req, s.logger)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding response: %v", err)
+		return nil, fmt.Errorf("error decoding response: %v. Status: %s", err, resp.Status)
 	}
 	promRes, ok := decoded.(*PrometheusResponse)
 	if !ok {
