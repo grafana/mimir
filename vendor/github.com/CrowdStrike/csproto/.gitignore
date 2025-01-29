@@ -1,0 +1,12 @@
+# build/test outputs
+bin/
+dist/
+*.test
+*profile.out
+
+# editor-related files
+.vscode/
+.idea
+
+# Go workspace files
+go.work*

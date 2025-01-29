@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package cortexpb_custom;
 
-option go_package = "mimirpb_custom";
+option go_package = "github.com/grafana/mimir/pkg/mimirpb_custom;mimirpb_custom";
 
 message LabelAdapter {
   string name  = 1;
