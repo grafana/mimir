@@ -258,6 +258,13 @@ func TestTSDBMetrics(t *testing.T) {
 			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="ineligible"} 0
 			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="stale-cached-entry"} 0
 
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total Total number of evictions from the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total counter
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="max-bytes-reached"} 0
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="max-items-reached"} 0
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="ttl-expired"} 0
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="unknown"} 0
+
 			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total Total number of postings lists returned from the PostingsForMatchers cache.
 			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total counter
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total 0
@@ -275,6 +282,13 @@ func TestTSDBMetrics(t *testing.T) {
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="canceled-cached-entry"} 0
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="ineligible"} 0
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="stale-cached-entry"} 0
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total Total number of evictions from the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total counter
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="max-bytes-reached"} 0
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="max-items-reached"} 0
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="ttl-expired"} 0
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="unknown"} 0
 	`))
 	require.NoError(t, err)
 }
@@ -512,6 +526,13 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="ineligible"} 0
 			cortex_ingester_tsdb_head_postings_for_matchers_cache_skips_total{reason="stale-cached-entry"} 0
 
+			# HELP cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total Total number of evictions from the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total counter
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="max-bytes-reached"} 0
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="max-items-reached"} 0
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="ttl-expired"} 0
+			cortex_ingester_tsdb_head_postings_for_matchers_cache_evictions_total{reason="unknown"} 0
+
 			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total Total number of postings lists returned from the PostingsForMatchers cache.
 			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total counter
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_hits_total 0
@@ -529,6 +550,13 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="canceled-cached-entry"} 0
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="ineligible"} 0
 			cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total{reason="stale-cached-entry"} 0
+
+			# HELP cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total Total number of evictions from the PostingsForMatchers cache.
+			# TYPE cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total counter
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="max-bytes-reached"} 0
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="max-items-reached"} 0
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="ttl-expired"} 0
+			cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total{reason="unknown"} 0
 	`))
 	require.NoError(t, err)
 }
