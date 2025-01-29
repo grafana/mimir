@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -371,6 +372,30 @@ func HistogramFractionFunctionOperatorFactory(args []types.Operator, memoryConsu
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
+func TimestampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	if len(args) != 1 {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected exactly 1 argument for timestamp, got %v", len(args))
+	}
+
+	inner, ok := args[0].(types.InstantVectorOperator)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected an instant vector for 1st argument for timestamp, got %T", args[0])
+	}
+
+	f := functions.Timestamp
+	selector, isSelector := args[0].(*selectors.InstantVectorSelector)
+
+	if isSelector {
+		selector.ReturnSampleTimestamps = true
+		f.SeriesDataFunc = functions.PassthroughData
+	}
+
+	o := functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
+	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+}
+
 // These functions return an instant-vector.
 var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
 	// Please keep this list sorted alphabetically.
@@ -431,6 +456,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"sum_over_time":      FunctionOverRangeVectorOperatorFactory("sum_over_time", functions.SumOverTime),
 	"tan":                InstantVectorTransformationFunctionOperatorFactory("tan", functions.Tan),
 	"tanh":               InstantVectorTransformationFunctionOperatorFactory("tanh", functions.Tanh),
+	"timestamp":          TimestampFunctionOperatorFactory,
 	"vector":             scalarToInstantVectorOperatorFactory,
 	"year":               TimeTransformationFunctionOperatorFactory("year", functions.Year),
 }
