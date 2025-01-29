@@ -362,6 +362,7 @@ func newQueryMiddlewares(
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
 	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
+	retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
@@ -383,7 +384,9 @@ func newQueryMiddlewares(
 
 	if spinOffURL := cfg.SpinOffInstantSubqueriesToURL; spinOffURL != "" {
 		// Spin-off subqueries to a remote URL (or localhost)
-		spinOffQueryHandler, err := newSpinOffQueryHandler(codec, log, spinOffURL)
+		// Add the retry middleware to the spin-off query handler.
+		// Spun-off queries are terminated in that handler (they don't call "next" so the retry middleware has to be added here).
+		spinOffQueryHandler, err := newSpinOffQueryHandler(codec, log, spinOffURL, cfg.MaxRetries, retryMiddlewareMetrics)
 		if err != nil {
 			level.Error(log).Log("msg", "failed to create spin-off query handler", "error", err)
 		} else {
@@ -494,7 +497,6 @@ func newQueryMiddlewares(
 	}
 
 	if cfg.MaxRetries > 0 {
-		retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 	}

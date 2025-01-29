@@ -327,6 +327,13 @@ func TestSpinOffQueryHandler(t *testing.T) {
 	codec := newTestPrometheusCodec()
 	// Create a local server that handles queries.
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRequestCt++
+		if gotRequestCt == 1 {
+			// Test a failure case where the first request fails.
+			http.Error(w, "unexpected request", http.StatusInternalServerError)
+			return
+		}
+
 		if r.URL.Path != "/prometheus/api/v1/query_range" {
 			http.Error(w, "invalid path", http.StatusNotFound)
 			return
@@ -360,11 +367,11 @@ func TestSpinOffQueryHandler(t *testing.T) {
 		w.Header().Set("Content-Length", httpResp.Header.Get("Content-Length"))
 		io.Copy(w, httpResp.Body)
 		httpResp.Body.Close()
-		gotRequestCt++
 	}))
 	t.Cleanup(httpServer.Close)
 
-	spinOffQueryHandler, err := newSpinOffQueryHandler(codec, log.NewLogfmtLogger(os.Stdout), httpServer.URL+"/prometheus/api/v1/query_range")
+	spinOffQueryHandler, err := newSpinOffQueryHandler(
+		codec, log.NewLogfmtLogger(os.Stdout), httpServer.URL+"/prometheus/api/v1/query_range", 3, &mockRetryMetrics{})
 	require.NoError(t, err)
 
 	// Ensure we have had no requests yet.
@@ -382,7 +389,7 @@ func TestSpinOffQueryHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	// Ensure we got the expected number of requests.
-	require.Equal(t, 1, gotRequestCt)
+	require.Equal(t, 2, gotRequestCt)
 
 	// Ensure the query produces some results.
 	require.NotEmpty(t, resp.(*PrometheusResponse).Data.Result)

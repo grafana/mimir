@@ -255,24 +255,29 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	}, nil
 }
 
-func newSpinOffQueryHandler(codec Codec, logger log.Logger, sendURL string) (MetricsQueryHandler, error) {
-	rangeQueryURL, err := url.Parse(sendURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid spin-off URL: %w", err)
-	}
-
-	return &spinOffQueryHandler{
-		codec:         codec,
-		logger:        logger,
-		rangeQueryURL: rangeQueryURL,
-	}, nil
-}
-
 // spinOffQueryHandler is a query handler that takes a request and sends it to a remote endpoint.
 type spinOffQueryHandler struct {
 	codec         Codec
 	logger        log.Logger
 	rangeQueryURL *url.URL
+}
+
+func newSpinOffQueryHandler(codec Codec, logger log.Logger, sendURL string, maxRetries int, retryMiddlewareMetrics prometheus.Observer) (MetricsQueryHandler, error) {
+	rangeQueryURL, err := url.Parse(sendURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid spin-off URL: %w", err)
+	}
+	var handler MetricsQueryHandler = &spinOffQueryHandler{
+		codec:         codec,
+		logger:        logger,
+		rangeQueryURL: rangeQueryURL,
+	}
+
+	if maxRetries > 0 {
+		handler = newRetryMiddleware(logger, maxRetries, retryMiddlewareMetrics).Wrap(handler)
+	}
+
+	return handler, nil
 }
 
 func (s *spinOffQueryHandler) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
