@@ -42,6 +42,7 @@
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 * [BUGFIX] Querier: fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #10154
 * [BUGFIX] Query-frontend and querier: show warning/info annotations in some cases where they were missing (if a lazy querier was used). #10277
+* [BUGFIX] Query-frontend: Fix an issue where transient errors could be inadvertently cached. #10537
 * [BUGFIX] Ruler: fix indeterminate rules being always run concurrently (instead of never) when `-ruler.max-independent-rule-evaluation-concurrency` is set. https://github.com/prometheus/prometheus/pull/15560 #10258
 * [BUGFIX] PromQL: Fix various UTF-8 bugs related to quoting. https://github.com/prometheus/prometheus/pull/15531 #10258
 * [BUGFIX] Ruler: Fixed an issue when using the experimental `-ruler.max-independent-rule-evaluation-concurrency` feature, where if a rule group was eligible for concurrency, it would flap between running concurrently or not based on the time it took after running concurrently. #9726 #10189
@@ -67,7 +68,14 @@
 * [CHANGE] Update rollout-operator version to 0.22.0. #10229
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [ENHANCEMENT] Enforce `persistentVolumeClaimRetentionPolicy` `Retain` policy on partition ingesters during migration to experimental ingest storage. #10395
+* [ENHANCEMENT] Allow to not configure `topologySpreadConstraints` by setting the following configuration options to a negative value: #10540
+  * `distributor_topology_spread_max_skew`
+  * `query_frontend_topology_spread_max_skew`
+  * `querier_topology_spread_max_skew`
+  * `ruler_topology_spread_max_skew`
+  * `ruler_querier_topology_spread_max_skew`
 * [BUGFIX] Ports in container rollout-operator. #10273
+* [BUGFIX] When downscaling is enabled, the components must annotate `prepare-downscale-http-port` with the value set in `$._config.server_http_port`. #10367
 
 ### Mimirtool
 

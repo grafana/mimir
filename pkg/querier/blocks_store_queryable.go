@@ -70,7 +70,7 @@ type BlocksStoreSet interface {
 	// GetClientsFor returns the store gateway clients that should be used to
 	// query the set of blocks in input. The exclude parameter is the map of
 	// blocks -> store-gateway addresses that should be excluded.
-	GetClientsFor(userID string, blockIDs []ulid.ULID, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][]ulid.ULID, error)
+	GetClientsFor(userID string, blocks bucketindex.Blocks, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][]ulid.ULID, error)
 }
 
 // BlocksFinder is the interface used to find blocks for a given user and time range.
@@ -244,7 +244,17 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "failed to create store-gateway ring client")
 	}
 
-	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, limits, querierCfg.StoreGatewayClient, logger, reg)
+	var dynamicReplication storegateway.DynamicReplication = storegateway.NewNopDynamicReplication()
+	if gatewayCfg.DynamicReplication.Enabled {
+		dynamicReplication = storegateway.NewMaxTimeDynamicReplication(
+			gatewayCfg.DynamicReplication.MaxTimeThreshold,
+			// Keep syncing blocks to store-gateways for a grace period (3 times the sync interval) to
+			// ensure they are not unloaded while they are still being queried.
+			mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,
+		)
+	}
+
+	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, dynamicReplication, limits, querierCfg.StoreGatewayClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create store set")
 	}
@@ -537,7 +547,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 
 	var (
 		// At the beginning the list of blocks to query are all known blocks.
-		remainingBlocks = knownBlocks.GetULIDs()
+		remainingBlocks = knownBlocks
 		attemptedBlocks = map[ulid.ULID][]string{}
 		touchedStores   = map[string]struct{}{}
 	)
@@ -597,11 +607,11 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 			return nil
 		}
 
-		spanLog.DebugLog("msg", "couldn't query all blocks", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(remainingBlocks), " "))
+		spanLog.DebugLog("msg", "couldn't query all blocks", "attempt", attempt, "missing blocks", strings.Join(convertULIDsToString(remainingBlocks.GetULIDs()), " "))
 	}
 
 	// We've not been able to query all expected blocks after all retries.
-	err = newStoreConsistencyCheckFailedError(remainingBlocks)
+	err = newStoreConsistencyCheckFailedError(remainingBlocks.GetULIDs())
 	level.Warn(util_log.WithContext(ctx, spanLog)).Log("msg", "failed consistency check after all attempts", "err", err)
 	return err
 }
