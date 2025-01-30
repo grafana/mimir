@@ -1804,7 +1804,7 @@ kind: StatefulSet
 metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
-    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/prepare-downscale-http-port: "8080"
     rollout-max-unavailable: "50"
   labels:
     grafana.com/min-time-between-zones-downscale: 12h
@@ -1942,7 +1942,7 @@ kind: StatefulSet
 metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
-    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/prepare-downscale-http-port: "8080"
     rollout-max-unavailable: "50"
   labels:
     grafana.com/prepare-downscale: "true"
@@ -2091,7 +2091,7 @@ kind: StatefulSet
 metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
-    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-downscale-leader: ingester-zone-a
     rollout-max-unavailable: "50"
   labels:
@@ -2223,7 +2223,7 @@ kind: StatefulSet
 metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
-    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/prepare-downscale-http-port: "8080"
     rollout-max-unavailable: "50"
   labels:
     grafana.com/prepare-downscale: "true"
@@ -2366,7 +2366,7 @@ kind: StatefulSet
 metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
-    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-downscale-leader: ingester-zone-b
     rollout-max-unavailable: "50"
   labels:
@@ -2498,7 +2498,7 @@ kind: StatefulSet
 metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
-    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/prepare-downscale-http-port: "8080"
     rollout-max-unavailable: "50"
   labels:
     grafana.com/prepare-downscale: "true"
