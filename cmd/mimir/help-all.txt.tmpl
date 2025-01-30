@@ -2215,6 +2215,8 @@ Usage of ./cmd/mimir/mimir:
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.active-series-write-timeout duration
     	[experimental] Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used. (default 5m0s)
+  -query-frontend.adjust-to-max-future-query-window duration
+    	[experimental] Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.
   -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step to improve result caching.
   -query-frontend.block-promql-experimental-functions
