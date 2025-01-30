@@ -1144,6 +1144,7 @@ func TestNoPartiallyConsumedRegions(t *testing.T) {
 
 	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 	cfg.NoPartiallyConsumedRegion = true
+	cfg.ConsumeIntervalBuffer = 5 * time.Minute
 
 	// Set up a hook to track commits from block-builder to kafka. Those indicate the end of a cycle.
 	kafkaCommits := atomic.NewInt32(0)
@@ -1154,9 +1155,6 @@ func TestNoPartiallyConsumedRegions(t *testing.T) {
 
 	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
-
-	// NoPartiallyConsumedRegion changes the buffer to 5 mins.
-	require.Equal(t, 5*time.Minute, bb.cfg.ConsumeIntervalBuffer)
 
 	require.NoError(t, bb.starting(ctx))
 	t.Cleanup(func() {
