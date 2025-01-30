@@ -67,6 +67,12 @@
 * [CHANGE] Update rollout-operator version to 0.22.0. #10229
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [ENHANCEMENT] Enforce `persistentVolumeClaimRetentionPolicy` `Retain` policy on partition ingesters during migration to experimental ingest storage. #10395
+* [ENHANCEMENT] Allow to not configure `topologySpreadConstraints` by setting the following configuration options to a negative value: #10540
+  * `distributor_topology_spread_max_skew`
+  * `query_frontend_topology_spread_max_skew`
+  * `querier_topology_spread_max_skew`
+  * `ruler_topology_spread_max_skew`
+  * `ruler_querier_topology_spread_max_skew`
 * [BUGFIX] Ports in container rollout-operator. #10273
 * [BUGFIX] When downscaling is enabled, the components must annotate `prepare-downscale-http-port` with the value set in `$._config.server_http_port`. #10367
 
