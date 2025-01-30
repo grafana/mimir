@@ -641,7 +641,6 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 	const mint, maxt = 0, 10
 
 	someMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
-
 	labelNames := []string{"foo", "job"}
 
 	t.Run("with matchers", func(t *testing.T) {
