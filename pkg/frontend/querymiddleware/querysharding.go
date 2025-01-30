@@ -254,6 +254,13 @@ func mapEngineError(err error) error {
 		cause = err
 	}
 
+	// The engine sometimes returns context.Canceled without mapping it to one of the expected
+	// error types. Handle that specially here since we rely on the error type for errors being
+	// accurate.
+	if errors.Is(cause, context.Canceled) {
+		return apierror.New(apierror.TypeCanceled, cause.Error())
+	}
+
 	// By default, all errors returned by engine.Eval() are execution errors,
 	// This is the same as Prometheus API does: http://github.com/prometheus/prometheus/blob/076109fa1910ad2198bf2c447a174fee31114982/web/api/v1/api.go#L550-L550
 	errorType := apierror.TypeExec
