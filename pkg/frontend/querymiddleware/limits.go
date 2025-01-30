@@ -120,6 +120,9 @@ type Limits interface {
 	// InstantQueriesWithSubquerySpinOff returns a list of regexp patterns of instant queries that can be optimized by spinning off range queries.
 	// If the list is empty, the feature is disabled.
 	InstantQueriesWithSubquerySpinOff(userID string) []string
+
+	// MaxFutureQueryWindow returns the maximum duration into the future a query can be executed for the tenant.
+	MaxFutureQueryWindow(userID string) time.Duration
 }
 
 type limitsMiddleware struct {
@@ -197,6 +200,22 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 		queryLen := timestamp.Time(r.GetEnd()).Sub(timestamp.Time(r.GetStart()))
 		if queryLen > maxQueryLength {
 			return nil, newMaxTotalQueryLengthError(queryLen, maxQueryLength)
+		}
+	}
+
+	if maxFutureQueryWindow := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxFutureQueryWindow); maxFutureQueryWindow > 0 {
+		maxAllowedTs := util.TimeToMillis(time.Now().Add(maxFutureQueryWindow))
+		if r.GetEnd() > maxAllowedTs {
+			level.Debug(log).Log(
+				"msg", "the end time of the query has been manipulated because of the 'adjust-to-max-future-window' setting",
+				"original", util.FormatTimeMillis(r.GetEnd()),
+				"updated", util.FormatTimeMillis(maxAllowedTs),
+				"maxFutureWindow", maxFutureQueryWindow,
+			)
+			r, err = r.WithStartEnd(r.GetStart(), maxAllowedTs)
+			if err != nil {
+				return nil, apierror.New(apierror.TypeInternal, err.Error())
+			}
 		}
 	}
 
