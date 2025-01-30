@@ -205,6 +205,17 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 
 	if maxFutureQueryWindow := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxFutureQueryWindow); maxFutureQueryWindow > 0 {
 		maxAllowedTs := util.TimeToMillis(time.Now().Add(maxFutureQueryWindow))
+		if r.GetStart() > maxAllowedTs {
+			// The request is fully outside the allowed range, so we can return an empty response.
+			level.Debug(log).Log(
+				"msg", "skipping the execution of the query because its time range is exclusively after the 'max future window' setting",
+				"reqStart", util.FormatTimeMillis(r.GetStart()),
+				"redEnd", util.FormatTimeMillis(r.GetEnd()),
+				"maxFutureWindow", maxFutureQueryWindow,
+			)
+			return newEmptyPrometheusResponse(), nil
+		}
+
 		if r.GetEnd() > maxAllowedTs {
 			level.Debug(log).Log(
 				"msg", "the end time of the query has been manipulated because of the 'adjust-to-max-future-window' setting",

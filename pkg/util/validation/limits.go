@@ -65,6 +65,7 @@ const (
 	AlertmanagerMaxGrafanaStateSizeFlag       = "alertmanager.max-grafana-state-size-bytes"
 	costAttributionLabelsFlag                 = "validation.cost-attribution-labels"
 	maxCostAttributionLabelsPerUserFlag       = "validation.max-cost-attribution-labels-per-user"
+	maxFutureQueryWindowFlag                  = "query-frontend.adjust-to-max-future-query-window"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -75,6 +76,7 @@ var (
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
 	errCostAttributionLabelsLimitExceeded          = errors.New("invalid value for -" + costAttributionLabelsFlag + ": exceeds the limit defined by -" + maxCostAttributionLabelsPerUserFlag)
 	errInvalidMaxCostAttributionLabelsPerUser      = errors.New("invalid value for -" + maxCostAttributionLabelsPerUserFlag + ": must be less than or equal to 4")
+	errInvalidMaxFutureQueryWindow                 = errors.New("invalid value for -" + maxFutureQueryWindowFlag + ": must be greater than or equal to 0")
 )
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
@@ -395,7 +397,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.AlignQueriesWithStep, alignQueriesWithStepFlag, false, "Mutate incoming queries to align their start and end with their step to improve result caching.")
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
 	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
-	f.Var(&l.MaxFutureQueryWindow, "query-frontend.adjust-to-max-future-query-window", "Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.")
+	f.Var(&l.MaxFutureQueryWindow, maxFutureQueryWindowFlag, "Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -513,6 +515,10 @@ func (l *Limits) validate() error {
 
 	if l.MaxCostAttributionLabelsPerUser > 4 {
 		return errInvalidMaxCostAttributionLabelsPerUser
+	}
+
+	if l.MaxFutureQueryWindow < 0 {
+		return errInvalidMaxFutureQueryWindow
 	}
 
 	return nil
