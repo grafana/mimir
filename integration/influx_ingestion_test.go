@@ -57,7 +57,7 @@ func TestInfluxIngestion(t *testing.T) {
 	series, expectedVector, expectedMatrix := generateFloatSeries("series_f1", now, prompb.Label{Name: "foo", Value: "bar"})
 	// Fix up the expectation as Influx values seem to be rounded to millionths
 	for _, s := range expectedVector {
-		s.Metric[model.LabelName("__mimir_source__")] = model.LabelValue("influx")
+		s.Metric[model.LabelName("__proxy_source__")] = model.LabelValue("influx")
 		s.Value = model.SampleValue(math.Round(float64(s.Value)*1000000) / 1000000.0)
 	}
 	// Fix up the expectation as Influx values seem to be rounded to millionths
@@ -87,7 +87,7 @@ func TestInfluxIngestion(t *testing.T) {
 
 	labelNames, err := c.LabelNames(v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"__mimir_source__", "__name__", "foo"}, labelNames)
+	require.Equal(t, []string{"__name", "__proxy_source__", "foo"}, labelNames)
 
 	rangeResult, err := c.QueryRange("series_f1", now.Add(-15*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
