@@ -47,7 +47,7 @@ spec:
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}
       ignoreNullValues: {{ .Values.kedaAutoscaling.ignoreNullValues }}
-      unsafeSsl: {{ .Values.kedaAutoscaling.ignoreNullValues }}
+      unsafeSsl: {{ .Values.kedaAutoscaling.unsafeSsl }}
     name: cortex_querier_hpa_default_requests_duration
     type: prometheus
     {{- if .Values.kedaAutoscaling.authentication.enabled }}
