@@ -4919,6 +4919,20 @@ sharding_ring:
   # CLI flag: -store-gateway.sharding-ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
 
+# Experimental dynamic replication configuration.
+dynamic_replication:
+  # (experimental) Use a higher number of replicas for recent blocks. Useful to
+  # spread query load more evenly at the cost of slightly higher disk usage.
+  # CLI flag: -store-gateway.dynamic-replication.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Threshold of the most recent sample in a block used to
+  # determine it is eligible for higher than default replication. If a block has
+  # samples within this amount of time, it is considered recent and will be
+  # owned by more replicas.
+  # CLI flag: -store-gateway.dynamic-replication.max-time-threshold
+  [max_time_threshold: <duration> | default = 25h]
+
 # (advanced) Comma separated list of tenants that can be loaded by the
 # store-gateway. If specified, only blocks for these tenants will be loaded by
 # the store-gateway, otherwise all tenants can be loaded. Subject to sharding.
