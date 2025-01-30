@@ -2614,3 +2614,64 @@ func TestRemoveAnnotationPositionInformation(t *testing.T) {
 		})
 	}
 }
+
+func TestMapEngineError(t *testing.T) {
+	type testCase struct {
+		err      error
+		expected error
+	}
+
+	testCases := map[string]testCase{
+		"already APIError": {
+			err:      apierror.New(apierror.TypeNotFound, "not found"),
+			expected: apierror.New(apierror.TypeNotFound, "not found"),
+		},
+		"context canceled": {
+			err:      context.Canceled,
+			expected: apierror.New(apierror.TypeCanceled, "context canceled"),
+		},
+		"context canceled wrapped": {
+			err:      fmt.Errorf("%w: oh no", context.Canceled),
+			expected: apierror.New(apierror.TypeCanceled, "context canceled"),
+		},
+		"promql canceled": {
+			err:      promql.ErrQueryCanceled("something"),
+			expected: apierror.New(apierror.TypeCanceled, "query was canceled in something"),
+		},
+		"promql canceled wrapped": {
+			err:      fmt.Errorf("%w: oh no", promql.ErrQueryCanceled("something")),
+			expected: apierror.New(apierror.TypeCanceled, "query was canceled in something"),
+		},
+		"promql timeout": {
+			err:      promql.ErrQueryTimeout("something"),
+			expected: apierror.New(apierror.TypeTimeout, "query timed out in something"),
+		},
+		"promql timeout wrapped": {
+			err:      fmt.Errorf("%w: oh no", promql.ErrQueryTimeout("something")),
+			expected: apierror.New(apierror.TypeTimeout, "query timed out in something"),
+		},
+		"promql storage": {
+			err:      promql.ErrStorage{Err: errors.New("storage")},
+			expected: apierror.New(apierror.TypeInternal, "storage"),
+		},
+		"promql storage wrapped": {
+			err:      fmt.Errorf("%w: oh no", promql.ErrStorage{Err: errors.New("storage")}),
+			expected: apierror.New(apierror.TypeInternal, "storage"),
+		},
+		"promql too many samples": {
+			err:      promql.ErrTooManySamples("something"),
+			expected: apierror.New(apierror.TypeExec, "query processing would load too many samples into memory in something"),
+		},
+		"promql too many samples wrapped": {
+			err:      fmt.Errorf("%w: oh no", promql.ErrTooManySamples("something")),
+			expected: apierror.New(apierror.TypeExec, "query processing would load too many samples into memory in something"),
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			res := mapEngineError(tc.err)
+			require.Equal(t, res, tc.expected)
+		})
+	}
+}
