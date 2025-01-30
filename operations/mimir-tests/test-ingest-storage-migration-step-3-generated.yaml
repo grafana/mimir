@@ -1700,8 +1700,6 @@ spec:
           name: alertmanager-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 900
       volumes:
       - configMap:
@@ -1799,8 +1797,6 @@ spec:
           name: compactor-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 900
       volumes:
       - configMap:
@@ -1937,8 +1933,6 @@ spec:
           name: ingester-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 1200
       volumes:
       - configMap:
@@ -2086,8 +2080,6 @@ spec:
           name: ingester-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 1200
       volumes:
       - configMap:
@@ -2218,8 +2210,6 @@ spec:
           name: ingester-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 1200
       volumes:
       - configMap:
@@ -2361,8 +2351,6 @@ spec:
           name: ingester-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 1200
       volumes:
       - configMap:
@@ -2493,8 +2481,6 @@ spec:
           name: ingester-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 1200
       volumes:
       - configMap:
@@ -2636,8 +2622,6 @@ spec:
           name: ingester-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 1200
       volumes:
       - configMap:
@@ -2989,8 +2973,6 @@ spec:
           name: store-gateway-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 120
       volumes:
       - configMap:
@@ -3132,8 +3114,6 @@ spec:
           name: store-gateway-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 120
       volumes:
       - configMap:
@@ -3273,8 +3253,6 @@ spec:
           name: store-gateway-data
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 120
       volumes:
       - configMap:

@@ -1017,8 +1017,6 @@ spec:
           name: new-config-map
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 900
       volumes:
       - configMap:
@@ -1121,8 +1119,6 @@ spec:
           name: new-config-map
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 900
       volumes:
       - configMap:
@@ -1237,8 +1233,6 @@ spec:
           name: new-config-map
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 1200
       volumes:
       - configMap:
@@ -1579,8 +1573,6 @@ spec:
           name: new-config-map
         - mountPath: /etc/mimir
           name: overrides
-      securityContext:
-        runAsUser: 0
       terminationGracePeriodSeconds: 120
       volumes:
       - configMap:
