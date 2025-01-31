@@ -681,7 +681,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RulerTooManyFailedPushes'),
           expr: |||
             100 * (
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_failed_total{reason="error"}[%(range_interval)s]))
+            # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_failed_total{reason=~"(error|$^)"}[%(range_interval)s]))
               /
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_total[%(range_interval)s]))
             ) > 1
@@ -702,7 +703,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RulerTooManyFailedQueries'),
           expr: |||
             100 * (
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_failed_total{reason="error"}[%(range_interval)s]))
+            # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_failed_total{reason=~"(error|$^)"}[%(range_interval)s]))
               /
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_total[%(range_interval)s]))
             ) > 1
