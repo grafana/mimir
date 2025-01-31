@@ -375,7 +375,7 @@ func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 		jobs = append(jobs, id)
 	}
 
-	wrMergeQuerier := WaitRecordingMergeQuerier{
+	wrMergeQuerier := waitRecordingMergeQuerier{
 		start:                     start,
 		upstreamQueryWaitDuration: m.upstreamQueryWaitDuration,
 		upstream:                  m.upstream,
@@ -388,9 +388,9 @@ func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 // By default, jobs would be the list of tenant IDs, idLabelName is used to add a label to the series
 // to identify the tenant it belongs to, maxConcurrency is the maximum number of concurrent queries allowed,
 // and ctx, sortSeries, hints, and matchers are the same as the Select method.
-type MultiTenantSelectFunc func(ctx context.Context, jobs []string, wrMergeQuerier WaitRecordingMergeQuerier, idLabelName string, maxConcurrency int, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
+type MultiTenantSelectFunc func(ctx context.Context, jobs []string, selMergeQuerier SelectMergeQuerier, idLabelName string, maxConcurrency int, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
 
-func defaultMultiTenantSelectFunc(ctx context.Context, jobs []string, wrMergeQuerier WaitRecordingMergeQuerier, idLabelName string, maxConcurrency int, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func defaultMultiTenantSelectFunc(ctx context.Context, jobs []string, selMergeQuerier SelectMergeQuerier, idLabelName string, maxConcurrency int, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	seriesSets := make([]storage.SeriesSet, len(jobs))
 
 	// We don't use the context passed to this function, since the context has to live longer
@@ -398,7 +398,7 @@ func defaultMultiTenantSelectFunc(ctx context.Context, jobs []string, wrMergeQue
 	run := func(_ context.Context, idx int) error {
 		id := jobs[idx]
 		seriesSets[idx] = NewAddLabelsSeriesSet(
-			wrMergeQuerier.Select(ctx, id, sortSeries, hints, matchers...),
+			selMergeQuerier.Select(ctx, id, sortSeries, hints, matchers...),
 			[]labels.Label{
 				{
 					Name:  idLabelName,
@@ -416,15 +416,19 @@ func defaultMultiTenantSelectFunc(ctx context.Context, jobs []string, wrMergeQue
 	return storage.NewMergeSeriesSet(seriesSets, 0, storage.ChainedSeriesMerge)
 }
 
-// WaitRecordingMergeQuerier is a wrapper for MergeQuerierUpstream that records the time it took to start
+type SelectMergeQuerier interface {
+	Select(ctx context.Context, id string, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
+}
+
+// waitRecordingMergeQuerier is a wrapper for MergeQuerierUpstream that records the time it took to start
 // the upstream query.
-type WaitRecordingMergeQuerier struct {
+type waitRecordingMergeQuerier struct {
 	start                     time.Time
 	upstreamQueryWaitDuration prometheus.Histogram
 	upstream                  MergeQuerierUpstream
 }
 
-func (q WaitRecordingMergeQuerier) Select(ctx context.Context, id string, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q waitRecordingMergeQuerier) Select(ctx context.Context, id string, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	q.upstreamQueryWaitDuration.Observe(time.Since(q.start).Seconds())
 	return q.upstream.Select(ctx, id, sortSeries, hints, matchers...)
 }
