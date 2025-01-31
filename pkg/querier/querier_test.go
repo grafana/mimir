@@ -231,7 +231,7 @@ func TestQuerier(t *testing.T) {
 			db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), q.valueType)
 			dbQueryable := TimeRangeQueryable{
 				Queryable: db,
-				IsApplicable: func(_ context.Context, _ string, _ time.Time, _, _ int64, _ ...*labels.Matcher) bool {
+				IsApplicable: func(_ context.Context, _ string, _ time.Time, _, _ int64, _ log.Logger, _ ...*labels.Matcher) bool {
 					return true
 				},
 			}
