@@ -163,7 +163,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			rangeStart = rangeEnd // Move the start to the end of the previous range.
 		}
 
-		streams := make([][]SampleStream, len(rangeQueries))
+		sets := make([]storage.SeriesSet, len(rangeQueries))
 		for idx, req := range rangeQueries {
 			resp, err := q.upstreamRangeHandler.Do(ctx, req)
 			if err != nil {
@@ -177,11 +177,12 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			if err != nil {
 				return storage.ErrSeriesSet(err)
 			}
-			streams[idx] = resStreams
+			sets[idx] = newSeriesSetFromEmbeddedQueriesResults([][]SampleStream{resStreams}, hints)
 			q.annotationAccumulator.addInfos(promRes.Infos)
 			q.annotationAccumulator.addWarnings(promRes.Warnings)
 		}
-		return newSeriesSetFromEmbeddedQueriesResults(streams, hints)
+
+		return storage.NewMergeSeriesSet(sets, 0, storage.ChainedSeriesMerge)
 	default:
 		return storage.ErrSeriesSet(errors.Errorf("invalid metric name for the spin-off middleware: %s", name))
 	}
