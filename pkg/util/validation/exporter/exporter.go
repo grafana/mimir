@@ -63,7 +63,7 @@ var (
 const (
 	ingestionRate                              = "ingestion_rate"
 	ingestionBurstSize                         = "ingestion_burst_size"
-	ingestionArtificialDelay                   = "ingestion_artificial_delay_msec"
+	ingestionArtificialDelay                   = "ingestion_artificial_delay"
 	maxGlobalSeriesPerUser                     = "max_global_series_per_user"
 	maxGlobalSeriesPerMetric                   = "max_global_series_per_metric"
 	maxGlobalExemplarsPerUser                  = "max_global_exemplars_per_user"
@@ -192,7 +192,7 @@ func setupExportedMetrics(enabledMetrics *util.AllowedTenants, extraMetrics []Ex
 	}
 	if enabledMetrics.IsAllowed(ingestionArtificialDelay) {
 		exportedMetrics = append(exportedMetrics, ExportedMetric{ingestionArtificialDelay, func(limits *validation.Limits) float64 {
-			return float64(time.Duration(limits.IngestionArtificialDelay) / time.Millisecond)
+			return float64(time.Duration(limits.IngestionArtificialDelay) / time.Second)
 		}})
 	}
 	if enabledMetrics.IsAllowed(maxGlobalSeriesPerUser) {
