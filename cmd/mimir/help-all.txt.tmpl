@@ -1909,6 +1909,8 @@ Usage of ./cmd/mimir/mimir:
     	Name of the node in memberlist cluster. Defaults to hostname.
   -memberlist.notify-interval duration
     	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
+  -memberlist.obsolete-entries-timeout duration
+    	[experimental] How long to keep obsolete entries in the KV store. (default 30s)
   -memberlist.packet-dial-timeout duration
     	Timeout used when connecting to other nodes to send packet. (default 2s)
   -memberlist.packet-write-timeout duration

@@ -17341,6 +17341,17 @@
         },
         {
           "kind": "field",
+          "name": "obsolete_entries_timeout",
+          "required": false,
+          "desc": "How long to keep obsolete entries in the KV store.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "memberlist.obsolete-entries-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "leave_timeout",
           "required": false,
           "desc": "Timeout for leaving memberlist cluster.",
