@@ -134,16 +134,21 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 		if alignedStart < start-queryOffset.Milliseconds()-queryRange.Milliseconds() {
 			alignedStart += step
 		}
+		// Align the end too, to allow for caching
+		alignedEnd := alignedStart + queryRange.Milliseconds()
+		if alignedEnd > end {
+			alignedEnd -= step
+		}
 
 		// Split queries into multiple smaller queries if they have more than 11000 datapoints
 		rangeStart := alignedStart
 		var rangeQueries []MetricsQueryRequest
 		for {
 			var rangeEnd int64
-			if remainingPoints := (end - rangeStart) / step; remainingPoints > maxResolutionPoints {
+			if remainingPoints := (alignedEnd - rangeStart) / step; remainingPoints > maxResolutionPoints {
 				rangeEnd = rangeStart + maxResolutionPoints*step
 			} else {
-				rangeEnd = end
+				rangeEnd = alignedEnd
 			}
 			headers := q.req.GetHeaders()
 			headers = append(headers,
@@ -152,7 +157,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			)
 			newRangeRequest := NewPrometheusRangeQueryRequest(queryRangePathSuffix, headers, rangeStart, rangeEnd, step, q.req.GetLookbackDelta(), queryExpr, q.req.GetOptions(), q.req.GetHints())
 			rangeQueries = append(rangeQueries, newRangeRequest)
-			if rangeEnd == end {
+			if rangeEnd == alignedEnd {
 				break
 			}
 			rangeStart = rangeEnd // Move the start to the end of the previous range.
