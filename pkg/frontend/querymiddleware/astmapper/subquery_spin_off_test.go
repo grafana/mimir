@@ -114,6 +114,19 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 			expectedDownstreamQueries: 2,
 		},
 		{
+			name: "subquery of aggregation",
+			in: `avg_over_time(
+  max by (job, instance) (
+    probe_success{instance="my-instance",job="my-job"}
+  )[120d:45s]
+)`,
+			out: `avg_over_time(
+  __subquery_spinoff__{__query__="max by (job, instance) (probe_success{instance=\"my-instance\",job=\"my-job\"})",__range__="2880h0m0s",__step__="45s"}[120d]
+)`,
+			expectedSubqueries:        1,
+			expectedDownstreamQueries: 0,
+		},
+		{
 			name: "complex query 1",
 			in: `
 				  (

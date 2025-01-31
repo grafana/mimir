@@ -162,6 +162,8 @@ func isComplexExpr(expr parser.Node) bool {
 	switch e := expr.(type) {
 	case *parser.SubqueryExpr:
 		return true
+	case *parser.AggregateExpr:
+		return countSelectors(e.Expr) > 0
 	case *parser.Call:
 		for _, arg := range e.Args {
 			if _, ok := arg.(*parser.MatrixSelector); ok || isComplexExpr(arg) {
