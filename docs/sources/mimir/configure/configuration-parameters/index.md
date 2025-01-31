@@ -436,7 +436,8 @@ overrides_exporter:
     [wait_stability_max_duration: <duration> | default = 5m]
 
   # Comma-separated list of metrics to include in the exporter. Allowed metric
-  # names: ingestion_rate, ingestion_burst_size, max_global_series_per_user,
+  # names: ingestion_rate, ingestion_burst_size,
+  # ingestion_artificial_delay_msec, max_global_series_per_user,
   # max_global_series_per_metric, max_global_exemplars_per_user,
   # max_fetched_chunks_per_query, max_fetched_series_per_query,
   # max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group,
