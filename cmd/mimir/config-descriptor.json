@@ -4371,6 +4371,16 @@
         },
         {
           "kind": "field",
+          "name": "instant_queries_with_subquery_spin_off",
+          "required": false,
+          "desc": "List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.",
+          "fieldValue": null,
+          "fieldDefaultValue": [],
+          "fieldType": "list of strings",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cardinality_analysis_enabled",
           "required": false,
           "desc": "Enables endpoints used for cardinality analysis.",
@@ -6584,6 +6594,17 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.use-active-series-decoder",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "spin_off_instant_subqueries_to_url",
+          "required": false,
+          "desc": "If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to set `instant_queries_with_subquery_spin_off` for the tenant.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.spin-off-instant-subqueries-to-url",
+          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
