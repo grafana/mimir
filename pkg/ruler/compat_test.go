@@ -287,7 +287,7 @@ func TestPusherErrors(t *testing.T) {
 
 			expectedFailureReason := tc.expectedFailureReason
 			if expectedFailureReason == "" {
-				expectedFailureReason = "error"
+				expectedFailureReason = defaultFailureReason
 			}
 			require.Equal(t, tc.expectedFailures, int(testutil.ToFloat64(failures.WithLabelValues("user-1", expectedFailureReason))))
 		})

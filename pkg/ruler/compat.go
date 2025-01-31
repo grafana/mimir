@@ -31,6 +31,8 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
+const defaultFailureReason = "error"
+
 // Pusher is an ingester server that accepts pushes.
 type Pusher interface {
 	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
@@ -99,7 +101,7 @@ func (a *PusherAppender) Commit() error {
 	_, err := a.pusher.Push(user.InjectOrgID(a.ctx, a.userID), req)
 
 	if err != nil {
-		failureReason := "error"
+		failureReason := defaultFailureReason
 		if mimirpb.IsClientError(err) {
 			// Client errors, which are the same ones that would be reported with 4xx HTTP status code
 			// (e.g. series limits, duplicate samples, out of order, etc.) are reported with a separate reason.
@@ -219,7 +221,7 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 			return result, nil
 		}
 
-		failureReason := "error"
+		failureReason := defaultFailureReason
 		qerr := QueryableError{}
 		if errors.As(err, &qerr) {
 			origErr := qerr.Unwrap()
