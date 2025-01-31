@@ -702,7 +702,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RulerTooManyFailedQueries'),
           expr: |||
             100 * (
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_failed_total[%(range_interval)s]))
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_failed_total{reason="error"}[%(range_interval)s]))
               /
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_total[%(range_interval)s]))
             ) > 1
