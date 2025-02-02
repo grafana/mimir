@@ -43,10 +43,10 @@ func (i *InstantVectorSeriesDataIterator) Reset(data InstantVectorSeriesData) {
 	i.data = data
 }
 
-// Next returns either a float or histogram iterating through both sets of points.
-// It returns the next point with the lowest timestamp.
-// If h is not nil, the value is a histogram, otherwise it is a float.
-// If no more values exist ok is false.
+// Next returns the value of the next point (either a float or histogram) iterating through both sets of points in timestamp order.
+// If the next value is a histogram, ok is true, h is not nil and hIndex is the index into the series' histograms slice.
+// If the next value is a float, ok is true and h is nil.
+// If there are no more values then ok is false.
 func (i *InstantVectorSeriesDataIterator) Next() (t int64, f float64, h *histogram.FloatHistogram, hIndex int, ok bool) {
 	if i.fIndex >= len(i.data.Floats) && i.hIndex >= len(i.data.Histograms) {
 		return 0, 0, nil, -1, false
