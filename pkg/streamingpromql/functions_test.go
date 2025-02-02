@@ -65,8 +65,8 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		load 30s
 			float_a{env="prod"}      _   0 1                       _ _   _ _   _ _   _ _   _ _   _ _
 			float_b{env="prod"}      _   _ _                       _ _   _ _   _ _   _ _   _ _   8 9
-            histogram_a{env="prod"}  _   {{count:0}} {{count:1}}   _ _   _ _   _ _   _ _   _ _   _ _
-            histogram_b{env="prod"}  _   _ _                       _ _   _ _   _ _   _ _   _ _   {{count:8}} {{count:9}}
+			histogram_a{env="prod"}  _   {{count:0}} {{count:1}}   _ _   _ _   _ _   _ _   _ _   _ _
+			histogram_b{env="prod"}  _   _ _                       _ _   _ _   _ _   _ _   _ _   {{count:8}} {{count:9}}
 	`
 
 	storage := promqltest.LoadedStorage(t, data)
