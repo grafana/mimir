@@ -490,10 +490,6 @@ func deriv(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ t
 		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 	}
 
-	if len(fHead)+len(fTail) == 1 && step.Histograms.Any() {
-		return 0, false, nil, nil
-	}
-
 	if (len(fHead) + len(fTail)) < 2 {
 		return 0, false, nil, nil
 	}
@@ -514,10 +510,6 @@ func predictLinear(step *types.RangeVectorStepData, _ float64, args []types.Scal
 
 	if step.Floats.Any() && step.Histograms.Any() {
 		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
-	}
-
-	if len(fHead)+len(fTail) == 1 && step.Histograms.Any() {
-		return 0, false, nil, nil
 	}
 
 	if (len(fHead) + len(fTail)) < 2 {
