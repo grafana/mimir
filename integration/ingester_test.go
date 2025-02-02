@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/e2e"
 	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
@@ -782,4 +783,74 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 	require.Equalf(t, 1.0, totalQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
 	require.Equalf(t, 1.0, successfulQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
 	require.Equalf(t, 0.0, cancelledQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+}
+
+func TestInvalidCluster(t *testing.T) {
+	series := []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{
+					Name:  "__name__",
+					Value: "not_foobar",
+				},
+			},
+			Samples: []prompb.Sample{
+				{
+					Timestamp: time.Now().Round(time.Second).UnixMilli(),
+					Value:     100,
+				},
+			},
+		},
+	}
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	baseFlags := map[string]string{
+		"-distributor.ingestion-tenant-shard-size": "0",
+		"-ingester.ring.heartbeat-period":          "1s",
+	}
+
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		baseFlags,
+	)
+
+	distributorFlags := mergeFlags(
+		flags,
+		map[string]string{
+			"-server.cluster": "distributor-cluster",
+		},
+	)
+
+	ingesterFlags := mergeFlags(
+		flags,
+		map[string]string{
+			"-server.cluster": "ingester-cluster",
+		},
+	)
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	// Start Mimir components.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), distributorFlags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), ingesterFlags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester))
+
+	// Wait until distributor has updated the ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID, e2emimir.WithAddHeader(clusterutil.ClusterHeader, "distributor-cluster"))
+	require.NoError(t, err)
+
+	res, err := client.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, res.StatusCode)
 }
