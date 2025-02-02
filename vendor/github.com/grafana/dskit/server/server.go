@@ -409,6 +409,9 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		middleware.HTTPGRPCTracingInterceptor(router), // This must appear after the OpenTracingServerInterceptor.
 		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
 	}
+	if cfg.Cluster != "" {
+		grpcMiddleware = append(grpcMiddleware, middleware.ClusterUnaryServerInterceptor(cfg.Cluster, metrics.InvalidClusters, logger))
+	}
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
 	if cfg.ClusterValidation.GRPC.Enabled {
 		grpcMiddleware = append(grpcMiddleware, middleware.ClusterUnaryServerInterceptor(cfg.ClusterValidation.Label, cfg.ClusterValidation.GRPC.SoftValidation, logger))
@@ -570,7 +573,7 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		},
 	}
 	if cfg.Cluster != "" {
-		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.Cluster, logger))
+		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.Cluster, metrics.InvalidClusters, logger))
 	}
 	return append(httpMiddleware, cfg.HTTPMiddleware...), nil
 }

@@ -25,6 +25,7 @@ type Metrics struct {
 	SentMessageSize          *prometheus.HistogramVec
 	InflightRequests         *prometheus.GaugeVec
 	RequestThroughput        *prometheus.HistogramVec
+	InvalidClusters          *prometheus.CounterVec
 }
 
 func NewServerMetrics(cfg Config) *Metrics {
@@ -91,5 +92,11 @@ func NewServerMetrics(cfg Config) *Metrics {
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
 		}, []string{"method", "route"}),
+		InvalidClusters: reg.NewCounterVec(prometheus.CounterOpts{
+			Namespace:   cfg.MetricsNamespace,
+			Name:        "request_invalid_clusters_total",
+			Help:        "Number of requests with invalid cluster.",
+			ConstLabels: nil,
+		}, []string{"protocol", "method", "request_cluster"}),
 	}
 }
