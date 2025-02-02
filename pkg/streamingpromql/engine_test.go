@@ -2431,7 +2431,7 @@ func TestDerivPredictLinearAnnotations(t *testing.T) {
 			expr: `deriv(only_histograms[1m1s])`,
 			// Expect no annotations.
 		},
-		"deriv() over series with both floats histograms": {
+		"deriv() over series with both floats and histograms": {
 			data: data,
 			expr: `deriv(mixed[1m1s])`,
 			expectedInfoAnnotations: []string{
@@ -2449,7 +2449,7 @@ func TestDerivPredictLinearAnnotations(t *testing.T) {
 			expr: `predict_linear(only_histograms[1m1s], 5)`,
 			// Expect no annotations.
 		},
-		"predict_linear() over series with both floats histograms": {
+		"predict_linear() over series with both floats and histograms": {
 			data: data,
 			expr: `predict_linear(mixed[1m1s], 5)`,
 			expectedInfoAnnotations: []string{
