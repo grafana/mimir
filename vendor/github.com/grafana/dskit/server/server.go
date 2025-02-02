@@ -408,17 +408,9 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 	grpcMiddleware := []grpc.UnaryServerInterceptor{
 		serverLog.UnaryServerInterceptor,
 	}
-
-	if opentracing.IsGlobalTracerRegistered() {
-		grpcMiddleware = append(grpcMiddleware,
-			otgrpc.OpenTracingServerInterceptor(opentracing.GlobalTracer()),
-		)
+	if cfg.Cluster != "" {
+		grpcMiddleware = append(grpcMiddleware, middleware.ClusterUnaryServerInterceptor(cfg.Cluster, metrics.InvalidClusters, logger))
 	}
-
-	grpcMiddleware = append(grpcMiddleware,
-		middleware.HTTPGRPCTracingInterceptor(router), // This must appear after the OpenTracingServerInterceptor, if that's configured.
-		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
-	)
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
 	if cfg.ClusterValidation.GRPC.Enabled {
 		grpcMiddleware = append(grpcMiddleware, middleware.ClusterUnaryServerInterceptor(
@@ -594,7 +586,7 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		},
 	}
 	if cfg.Cluster != "" {
-		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.Cluster, logger))
+		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.Cluster, metrics.InvalidClusters, logger))
 	}
 	return append(httpMiddleware, cfg.HTTPMiddleware...), nil
 }

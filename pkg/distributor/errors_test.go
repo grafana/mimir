@@ -422,6 +422,10 @@ func TestWrapIngesterPushError(t *testing.T) {
 			ingesterPushError:         createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE).Err(),
 			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.Unavailable, testErrorMsg, mimirpb.UNKNOWN_CAUSE), ingesterID),
 		},
+		"a gRPC error with details with grpcutil.WRONG_CLUSTER_NAME cause gives an ingesterPushError with BAD_DATA cause": {
+			ingesterPushError:         grpcutil.Status(codes.FailedPrecondition, testErrorMsg, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME}).Err(),
+			expectedIngesterPushError: newIngesterPushError(createStatusWithDetails(t, codes.FailedPrecondition, testErrorMsg, mimirpb.BAD_DATA), ingesterID),
+		},
 		"a DeadlineExceeded gRPC ingester error gives an ingesterPushError with UNKNOWN_CAUSE cause": {
 			// This is how context.DeadlineExceeded error is translated into a gRPC error.
 			ingesterPushError:         status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error()),
