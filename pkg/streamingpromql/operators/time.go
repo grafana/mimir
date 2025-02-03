@@ -41,7 +41,7 @@ func (s *Time) GetValues(_ context.Context) (types.ScalarData, error) {
 	samples = samples[:s.TimeRange.StepCount]
 
 	for step := 0; step < s.TimeRange.StepCount; step++ {
-		t := s.TimeRange.StartT + int64(step)*s.TimeRange.IntervalMilliseconds
+		t := s.TimeRange.IndexTime(step)
 		samples[step].T = t
 		samples[step].F = float64(t) / 1000
 	}
