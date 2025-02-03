@@ -28,8 +28,6 @@ const (
 	IntSize              = uint64(unsafe.Sizeof(int(0)))
 	BoolSize             = uint64(unsafe.Sizeof(false))
 	HistogramPointerSize = uint64(unsafe.Sizeof((*histogram.FloatHistogram)(nil)))
-	StringSize           = uint64(unsafe.Sizeof(""))
-	UintSize             = uint64(unsafe.Sizeof(uint(0)))
 )
 
 var (

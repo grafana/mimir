@@ -56,6 +56,8 @@ var (
 	prometheusCodecPropagateHeadersLabels = []string{api.ReadConsistencyOffsetsHeader}
 )
 
+const maxResolutionPoints = 11000
+
 const (
 	// statusSuccess Prometheus success result.
 	statusSuccess = "success"
@@ -133,6 +135,8 @@ type MetricsQueryRequest interface {
 	// GetHints returns hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.
 	GetHints() *Hints
+	// GetLookbackDelta returns the lookback delta for the request.
+	GetLookbackDelta() time.Duration
 	// WithID clones the current request with the provided ID.
 	WithID(id int64) (MetricsQueryRequest, error)
 	// WithStartEnd clone the current request with different start and end timestamp.
@@ -530,7 +534,7 @@ func DecodeRangeQueryTimeParams(reqValues *url.Values) (start, end, step int64, 
 
 	// For safety, limit the number of returned points per timeseries.
 	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
-	if (end-start)/step > 11000 {
+	if (end-start)/step > maxResolutionPoints {
 		return 0, 0, 0, errStepTooSmall
 	}
 

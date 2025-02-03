@@ -2506,6 +2506,11 @@ func TestComputeConfig(t *testing.T) {
 	cfg := mockAlertmanagerConfig(t)
 	am := setupSingleMultitenantAlertmanager(t, cfg, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg)
 
+	reg2 := prometheus.NewPedanticRegistry()
+	cfg2 := mockAlertmanagerConfig(t)
+	cfg2.GrafanaAlertmanagerTenantSuffix = "-grafana"
+	amWithSuffix := setupSingleMultitenantAlertmanager(t, cfg2, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg2)
+
 	var grafanaCfg GrafanaAlertmanagerConfig
 	require.NoError(t, json.Unmarshal([]byte(grafanaConfig), &grafanaCfg))
 
@@ -2523,6 +2528,7 @@ func TestComputeConfig(t *testing.T) {
 	tests := []struct {
 		name       string
 		cfg        alertspb.AlertConfigDescs
+		expStartAM bool
 		expErr     string
 		expCfg     alertspb.AlertConfigDesc
 		expURL     string
@@ -2532,12 +2538,13 @@ func TestComputeConfig(t *testing.T) {
 			name: "no grafana configuration",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
-					User:      "user",
+					User:      "user-grafana",
 					RawConfig: simpleConfigOne,
 				},
 			},
+			expStartAM: false,
 			expCfg: alertspb.AlertConfigDesc{
-				User:      "user",
+				User:      "user-grafana",
 				RawConfig: simpleConfigOne,
 			},
 			expURL: mimirExternalURL,
@@ -2546,11 +2553,11 @@ func TestComputeConfig(t *testing.T) {
 			name: "empty grafana configuration",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
-					User:      "user",
+					User:      "user-grafana",
 					RawConfig: simpleConfigOne,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user",
+					User:          "user-grafana",
 					RawConfig:     "",
 					Default:       false,
 					Promoted:      true,
@@ -2558,8 +2565,9 @@ func TestComputeConfig(t *testing.T) {
 					StaticHeaders: map[string]string{"Test-Header": "test-value"},
 				},
 			},
+			expStartAM: false,
 			expCfg: alertspb.AlertConfigDesc{
-				User:      "user",
+				User:      "user-grafana",
 				RawConfig: simpleConfigOne,
 			},
 			expURL: mimirExternalURL,
@@ -2568,19 +2576,20 @@ func TestComputeConfig(t *testing.T) {
 			name: "grafana configuration is not promoted",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
-					User:      "user",
+					User:      "user-grafana",
 					RawConfig: simpleConfigOne,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user",
+					User:          "user-grafana",
 					RawConfig:     grafanaConfig,
 					Promoted:      false,
 					ExternalUrl:   grafanaExternalURL,
 					StaticHeaders: map[string]string{"Test-Header": "test-value"},
 				},
 			},
+			expStartAM: false,
 			expCfg: alertspb.AlertConfigDesc{
-				User:      "user",
+				User:      "user-grafana",
 				RawConfig: simpleConfigOne,
 			},
 			expURL: mimirExternalURL,
@@ -2589,11 +2598,11 @@ func TestComputeConfig(t *testing.T) {
 			name: "grafana configuration is default",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
-					User:      "user",
+					User:      "user-grafana",
 					RawConfig: simpleConfigOne,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user",
+					User:          "user-grafana",
 					RawConfig:     grafanaConfig,
 					Default:       true,
 					Promoted:      true,
@@ -2601,41 +2610,22 @@ func TestComputeConfig(t *testing.T) {
 					StaticHeaders: map[string]string{"Test-Header": "test-value"},
 				},
 			},
+			expStartAM: false,
 			expCfg: alertspb.AlertConfigDesc{
-				User:      "user",
+				User:      "user-grafana",
 				RawConfig: simpleConfigOne,
 			},
 			expURL: mimirExternalURL,
 		},
 		{
-			name: "no mimir configuration",
-			cfg: alertspb.AlertConfigDescs{
-				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user",
-					RawConfig:     grafanaConfig,
-					Default:       false,
-					Promoted:      true,
-					ExternalUrl:   grafanaExternalURL,
-					StaticHeaders: map[string]string{"Test-Header": "test-value"},
-				},
-			},
-			expCfg: alertspb.AlertConfigDesc{
-				User:      "user",
-				RawConfig: string(combinedCfg),
-				Templates: []*alertspb.TemplateDesc{},
-			},
-			expURL:     grafanaExternalURL,
-			expHeaders: map[string]string{"Test-Header": "test-value"},
-		},
-		{
 			name: "empty mimir configuration",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
-					User:      "user",
+					User:      "user-grafana",
 					RawConfig: "",
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user",
+					User:          "user-grafana",
 					RawConfig:     grafanaConfig,
 					Default:       false,
 					Promoted:      true,
@@ -2643,8 +2633,9 @@ func TestComputeConfig(t *testing.T) {
 					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 				},
 			},
+			expStartAM: true,
 			expCfg: alertspb.AlertConfigDesc{
-				User:      "user",
+				User:      "user-grafana",
 				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
@@ -2655,11 +2646,11 @@ func TestComputeConfig(t *testing.T) {
 			name: "default mimir configuration",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
-					User:      "user",
+					User:      "user-grafana",
 					RawConfig: am.fallbackConfig,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user",
+					User:          "user-grafana",
 					RawConfig:     grafanaConfig,
 					Default:       false,
 					Promoted:      true,
@@ -2667,8 +2658,9 @@ func TestComputeConfig(t *testing.T) {
 					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 				},
 			},
+			expStartAM: true,
 			expCfg: alertspb.AlertConfigDesc{
-				User:      "user",
+				User:      "user-grafana",
 				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
@@ -2680,11 +2672,11 @@ func TestComputeConfig(t *testing.T) {
 			name: "both mimir and grafana configurations (merging not implemented)",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
-					User:      "user",
+					User:      "user-grafana",
 					RawConfig: simpleConfigOne,
 				},
 				Grafana: alertspb.GrafanaAlertConfigDesc{
-					User:          "user",
+					User:          "user-grafana",
 					RawConfig:     grafanaConfig,
 					Default:       false,
 					Promoted:      true,
@@ -2692,8 +2684,9 @@ func TestComputeConfig(t *testing.T) {
 					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 				},
 			},
+			expStartAM: true,
 			expCfg: alertspb.AlertConfigDesc{
-				User:      "user",
+				User:      "user-grafana",
 				RawConfig: simpleConfigOne,
 			},
 			expURL: am.cfg.ExternalURL.String(),
@@ -2702,12 +2695,31 @@ func TestComputeConfig(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			cfg, err := am.computeConfig(test.cfg)
+			cfg, startAM, err := am.computeConfig(test.cfg)
 			if test.expErr != "" {
 				require.EqualError(t, err, test.expErr)
 				return
 			}
 
+			require.True(t, startAM)
+			require.NoError(t, err)
+			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
+			require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
+			require.Equal(t, test.expHeaders, cfg.staticHeaders)
+		})
+
+		t.Run(fmt.Sprintf("%s with Grafana tenant suffix", test.name), func(t *testing.T) {
+			cfg, startAM, err := amWithSuffix.computeConfig(test.cfg)
+			if test.expErr != "" {
+				require.EqualError(t, err, test.expErr)
+				return
+			}
+
+			if !test.expStartAM {
+				require.False(t, startAM)
+				return
+			}
+			require.True(t, startAM)
 			require.NoError(t, err)
 			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
 			require.Equal(t, test.expURL, cfg.tmplExternalURL.String())

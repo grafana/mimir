@@ -27,11 +27,19 @@ ingester:
     min_partition_owners_duration:    10s
     delete_inactive_partition_after:  1m
 
+block_builder:
+  scheduler_config:
+    address: mimir-block-builder-scheduler-1:9095
+    update_interval: 5s
+    max_update_age: 30m
+
 blocks_storage:
   s3:
     bucket_name:       mimir-blocks
   tsdb:
     dir: /data/ingester
+    head_postings_for_matchers_cache_force: true
+    block_postings_for_matchers_cache_force: true
 
   bucket_store:
     index_cache:
@@ -91,6 +99,8 @@ alertmanager_storage:
     bucket_name: mimir-alertmanager
 
 overrides_exporter:
+  enabled_metrics: ingestion_rate,ingestion_burst_size,ingestion_artificial_delay,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant
+
   ring:
     enabled: true
     wait_stability_min_duration: 30s

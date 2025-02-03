@@ -31,7 +31,8 @@
     ingester_allow_multiple_replicas_on_same_node: false,
     store_gateway_allow_multiple_replicas_on_same_node: false,
 
-    // Controls the max skew for pod topology spread constraints.
+    // Controls the max skew for pod topology spread constraints. Set to a negative value to
+    // not configure the pod topology spread constraints at all.
     // See: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
     distributor_topology_spread_max_skew: 1,
     query_frontend_topology_spread_max_skew: 1,

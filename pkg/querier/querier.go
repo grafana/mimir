@@ -57,6 +57,8 @@ type Config struct {
 	QueryEngine               string `yaml:"query_engine" category:"experimental"`
 	EnableQueryEngineFallback bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
 
+	FilterQueryablesEnabled bool `yaml:"filter_queryables_enabled" category:"advanced"`
+
 	// PromQL engine config.
 	EngineConfig engine.Config `yaml:",inline"`
 }
@@ -86,6 +88,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&cfg.QueryEngine, "querier.query-engine", prometheusEngine, fmt.Sprintf("Query engine to use, either '%v' or '%v'", prometheusEngine, mimirEngine))
 	f.BoolVar(&cfg.EnableQueryEngineFallback, "querier.enable-query-engine-fallback", true, "If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine.")
+
+	f.BoolVar(&cfg.FilterQueryablesEnabled, "querier.filter-queryables-enabled", false, "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.")
 
 	cfg.EngineConfig.RegisterFlags(f)
 }
@@ -138,7 +142,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	queryables = append(queryables, TimeRangeQueryable{
 		Queryable:   NewDistributorQueryable(distributor, limits, queryMetrics, logger),
 		StorageName: "ingester",
-		IsApplicable: func(_ context.Context, tenantID string, now time.Time, _, queryMaxT int64, _ ...*labels.Matcher) bool {
+		IsApplicable: func(_ context.Context, tenantID string, now time.Time, _, queryMaxT int64, _ log.Logger, _ ...*labels.Matcher) bool {
 			return ShouldQueryIngesters(limits.QueryIngestersWithin(tenantID), now, queryMaxT)
 		},
 	})
@@ -234,7 +238,7 @@ func newQueryable(
 // TimeRangeQueryable is a Queryable that is aware of when it is applicable.
 type TimeRangeQueryable struct {
 	storage.Queryable
-	IsApplicable func(ctx context.Context, tenantID string, now time.Time, queryMinT, queryMaxT int64, matchers ...*labels.Matcher) bool
+	IsApplicable func(ctx context.Context, tenantID string, now time.Time, queryMinT, queryMaxT int64, logger log.Logger, matchers ...*labels.Matcher) bool
 	StorageName  string
 }
 
@@ -242,7 +246,7 @@ func NewStoreGatewayTimeRangeQueryable(q storage.Queryable, querierConfig Config
 	return TimeRangeQueryable{
 		Queryable:   q,
 		StorageName: "store-gateway",
-		IsApplicable: func(_ context.Context, _ string, now time.Time, queryMinT, _ int64, _ ...*labels.Matcher) bool {
+		IsApplicable: func(_ context.Context, _ string, now time.Time, queryMinT, _ int64, _ log.Logger, _ ...*labels.Matcher) bool {
 			return ShouldQueryBlockStore(querierConfig.QueryStoreAfter, now, queryMinT)
 		},
 	}
@@ -261,6 +265,9 @@ type multiQuerier struct {
 }
 
 func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matcher) (context.Context, []storage.Querier, error) {
+	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "multiQuerier.getQueriers")
+	defer spanLog.Span.Finish()
+
 	now := time.Now()
 
 	tenantID, err := tenant.TenantID(ctx)
@@ -282,8 +289,19 @@ func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matc
 	}
 
 	var queriers []storage.Querier
+	useQueryables, filterUsedQueryables := getFilterQueryablesFromContext(ctx)
 	for _, queryable := range mq.queryables {
-		if queryable.IsApplicable(ctx, tenantID, now, mq.minT, mq.maxT, matchers...) {
+		if filterUsedQueryables {
+			if !useQueryables.use(queryable.StorageName) {
+				level.Debug(spanLog).Log("queryable_name", queryable.StorageName, "use_queryable", false)
+				// Skip this queryable if it's not in the list of queryables to use.
+				continue
+			}
+		}
+
+		isApplicable := queryable.IsApplicable(ctx, tenantID, now, mq.minT, mq.maxT, mq.logger, matchers...)
+		level.Debug(spanLog).Log("queryable_name", queryable.StorageName, "use_queryable", true, "is_applicable", isApplicable)
+		if isApplicable {
 			q, err := queryable.Querier(mq.minT, mq.maxT)
 			if err != nil {
 				return nil, nil, err

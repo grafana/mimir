@@ -46,21 +46,23 @@ type ShardingLimits interface {
 // ShuffleShardingStrategy is a shuffle sharding strategy, based on the hash ring formed by store-gateways,
 // where each tenant blocks are sharded across a subset of store-gateway instances.
 type ShuffleShardingStrategy struct {
-	r            *ring.Ring
-	instanceID   string
-	instanceAddr string
-	limits       ShardingLimits
-	logger       log.Logger
+	r                  *ring.Ring
+	instanceID         string
+	instanceAddr       string
+	dynamicReplication DynamicReplication
+	limits             ShardingLimits
+	logger             log.Logger
 }
 
 // NewShuffleShardingStrategy makes a new ShuffleShardingStrategy.
-func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, limits ShardingLimits, logger log.Logger) *ShuffleShardingStrategy {
+func NewShuffleShardingStrategy(r *ring.Ring, instanceID, instanceAddr string, dynamicReplication DynamicReplication, limits ShardingLimits, logger log.Logger) *ShuffleShardingStrategy {
 	return &ShuffleShardingStrategy{
-		r:            r,
-		instanceID:   instanceID,
-		instanceAddr: instanceAddr,
-		limits:       limits,
-		logger:       logger,
+		r:                  r,
+		instanceID:         instanceID,
+		instanceAddr:       instanceAddr,
+		dynamicReplication: dynamicReplication,
+		limits:             limits,
+		logger:             logger,
 	}
 }
 
@@ -111,20 +113,26 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 	}
 
 	r := GetShuffleShardingSubring(s.r, userID, s.limits)
+	replicationOption := ring.WithReplicationFactor(r.InstancesCount())
 	bufDescs, bufHosts, bufZones := ring.MakeBuffersForGet()
+	bufOption := ring.WithBuffers(bufDescs, bufHosts, bufZones)
 
 	for blockID := range metas {
-		key := mimir_tsdb.HashBlockID(blockID)
+		ringOpts := []ring.Option{bufOption}
+		if s.dynamicReplication.EligibleForSync(metas[blockID]) {
+			ringOpts = append(ringOpts, replicationOption)
+		}
 
 		// Check if the block is owned by the store-gateway
-		set, err := r.Get(key, BlocksOwnerSync, bufDescs, bufHosts, bufZones)
+		key := mimir_tsdb.HashBlockID(blockID)
+		set, err := r.GetWithOptions(key, BlocksOwnerSync, ringOpts...)
 
 		// If an error occurs while checking the ring, we keep the previously loaded blocks.
 		if err != nil {
 			if _, ok := loaded[blockID]; ok {
-				level.Warn(s.logger).Log("msg", "failed to check block owner but block is kept because was previously loaded", "block", blockID.String(), "err", err)
+				level.Warn(s.logger).Log("msg", "failed to check block owner but block is kept because was previously loaded", "block", blockID, "err", err)
 			} else {
-				level.Warn(s.logger).Log("msg", "failed to check block owner and block has been excluded because was not previously loaded", "block", blockID.String(), "err", err)
+				level.Warn(s.logger).Log("msg", "failed to check block owner and block has been excluded because was not previously loaded", "block", blockID, "err", err)
 
 				// Skip the block.
 				synced.WithLabelValues(shardExcludedMeta).Inc()
@@ -143,8 +151,8 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 		// we can safely unload it only once at least 1 authoritative owner is available
 		// for queries.
 		if _, ok := loaded[blockID]; ok {
-			// The ring Get() returns an error if there's no available instance.
-			if _, err := r.Get(key, BlocksOwnerRead, bufDescs, bufHosts, bufZones); err != nil {
+			// The ring GetWithOptions() method returns an error if there's no available instance.
+			if _, err := r.GetWithOptions(key, BlocksOwnerRead, ringOpts...); err != nil {
 				// Keep the block.
 				continue
 			}

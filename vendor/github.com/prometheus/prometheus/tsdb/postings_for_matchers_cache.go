@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/DmitriyVTitov/size"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -27,6 +29,14 @@ const (
 	DefaultPostingsForMatchersCacheMaxItems = 100
 	DefaultPostingsForMatchersCacheMaxBytes = 10 * 1024 * 1024 // DefaultPostingsForMatchersCacheMaxBytes is based on the default max items, 10MB / 100 = 100KB per cached entry on average.
 	DefaultPostingsForMatchersCacheForce    = false
+)
+
+const (
+	evictionReasonTTL = iota
+	evictionReasonMaxBytes
+	evictionReasonMaxItems
+	evictionReasonUnknown
+	evictionReasonsLength
 )
 
 // IndexPostingsReader is a subset of IndexReader methods, the minimum required to evaluate PostingsForMatchers.
@@ -52,7 +62,7 @@ type IndexPostingsReader interface {
 // NewPostingsForMatchersCache creates a new PostingsForMatchersCache.
 // If `ttl` is 0, then it only deduplicates in-flight requests.
 // If `force` is true, then all requests go through cache, regardless of the `concurrent` param provided to the PostingsForMatchers method.
-func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64, force bool) *PostingsForMatchersCache {
+func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64, force bool, metrics *PostingsForMatchersCacheMetrics) *PostingsForMatchersCache {
 	b := &PostingsForMatchersCache{
 		calls:            &sync.Map{},
 		cached:           list.New(),
@@ -62,8 +72,12 @@ func NewPostingsForMatchersCache(ttl time.Duration, maxItems int, maxBytes int64
 		maxItems: maxItems,
 		maxBytes: maxBytes,
 		force:    force,
+		metrics:  metrics,
 
-		timeNow:             time.Now,
+		timeNow: func() time.Time {
+			// Ensure it is UTC, so that it's faster to compute the cache entry size.
+			return time.Now().UTC()
+		},
 		postingsForMatchers: PostingsForMatchers,
 
 		tracer:      otel.Tracer(""),
@@ -86,6 +100,7 @@ type PostingsForMatchersCache struct {
 	maxItems int
 	maxBytes int64
 	force    bool
+	metrics  *PostingsForMatchersCacheMetrics
 
 	// Signal whether there's already a call to expire() in progress, in order to avoid multiple goroutines
 	// cleaning up expired entries at the same time (1 at a time is enough).
@@ -101,6 +116,9 @@ type PostingsForMatchersCache struct {
 	// beginning of onPromiseExecutionDone() execution.
 	onPromiseExecutionDoneBeforeHook func()
 
+	// evictHeadBeforeHook is used for testing purposes. It allows to hook before calls to evictHead().
+	evictHeadBeforeHook func()
+
 	tracer trace.Tracer
 	// Preallocated for performance
 	ttlAttrib   attribute.KeyValue
@@ -108,6 +126,8 @@ type PostingsForMatchersCache struct {
 }
 
 func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+	c.metrics.requests.Inc()
+
 	span := trace.SpanFromContext(ctx)
 	defer func(startTime time.Time) {
 		span.AddEvent(
@@ -117,7 +137,9 @@ func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix I
 	}(time.Now())
 
 	if !concurrent && !c.force {
+		c.metrics.skipsBecauseIneligible.Inc()
 		span.AddEvent("cache not used")
+
 		p, err := c.postingsForMatchers(ctx, ix, ms...)
 		if err != nil {
 			span.SetStatus(codes.Error, "getting postings for matchers without cache failed")
@@ -146,6 +168,10 @@ type postingsForMatcherPromise struct {
 	done   chan struct{}
 	cloner *index.PostingsCloner
 	err    error
+
+	// Keep track of the time this promise completed evaluation.
+	// Do not access this field until the done channel is closed.
+	evaluationCompletedAt time.Time
 }
 
 func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings, error) {
@@ -161,6 +187,12 @@ func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings,
 		if p.err != nil {
 			return nil, fmt.Errorf("postingsForMatchers promise completed with error: %w", p.err)
 		}
+
+		trace.SpanFromContext(ctx).AddEvent("completed postingsForMatchers promise", trace.WithAttributes(
+			// Do not format the timestamp to introduce a performance regression.
+			attribute.Int64("evaluation completed at (epoch seconds)", p.evaluationCompletedAt.Unix()),
+		))
+
 		return p.cloner.Clone(), nil
 	}
 }
@@ -195,6 +227,31 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 
 		oldPromise := oldPromiseValue.(*postingsForMatcherPromise)
 
+		// Check if the promise already completed the execution and its TTL has not expired yet.
+		// If the TTL has expired, we don't want to return it, so we just recompute the postings
+		// on-the-fly, bypassing the cache logic. It's less performant, but more accurate, because
+		// avoids returning stale data.
+		if c.ttl > 0 {
+			select {
+			case <-oldPromise.done:
+				if c.timeNow().Sub(oldPromise.evaluationCompletedAt) >= c.ttl {
+					// The cached promise already expired, but it has not been evicted.
+					span.AddEvent("skipping cached postingsForMatchers promise because its TTL already expired", trace.WithAttributes(
+						attribute.Stringer("cached promise evaluation completed at", oldPromise.evaluationCompletedAt),
+						attribute.String("cache_key", key),
+					))
+					c.metrics.skipsBecauseStale.Inc()
+
+					return func(ctx context.Context) (index.Postings, error) {
+						return c.postingsForMatchers(ctx, ix, ms...)
+					}
+				}
+
+			default:
+				// The evaluation is still in-flight. We wait for it.
+			}
+		}
+
 		// Add the caller context to the ones tracked by the old promise (currently in-flight).
 		if err := oldPromise.callersCtxTracker.add(ctx); err != nil && errors.Is(err, errContextsTrackerCanceled{}) {
 			// We've hit a race condition happening when the "loaded" promise execution was just canceled,
@@ -202,6 +259,7 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 			//
 			// We expect this race condition to be infrequent. In this case we simply skip the cache and
 			// pass through the execution to the underlying postingsForMatchers().
+			c.metrics.skipsBecauseCanceled.Inc()
 			span.AddEvent("looked up in-flight postingsForMatchers promise, but the promise was just canceled due to a race condition: skipping the cache", trace.WithAttributes(
 				attribute.String("cache_key", key),
 			))
@@ -211,13 +269,15 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 			}
 		}
 
-		span.AddEvent("using cached postingsForMatchers promise", trace.WithAttributes(
+		c.metrics.hits.Inc()
+		span.AddEvent("waiting cached postingsForMatchers promise", trace.WithAttributes(
 			attribute.String("cache_key", key),
 		))
 
 		return oldPromise.result
 	}
 
+	c.metrics.misses.Inc()
 	span.AddEvent("no postingsForMatchers promise in cache, executing query", trace.WithAttributes(attribute.String("cache_key", key)))
 
 	// promise was stored, close its channel after fulfilment
@@ -235,13 +295,16 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 		promise.cloner = index.NewPostingsCloner(postings)
 	}
 
+	// Keep track of when the evaluation completed.
+	promise.evaluationCompletedAt = c.timeNow()
+
 	// The execution terminated (or has been canceled). We have to close the tracker to release resources.
 	// It's important to close it before computing the promise size, so that the actual size is smaller.
 	promise.callersCtxTracker.close()
 
 	sizeBytes := int64(len(key) + size.Of(promise))
 
-	c.onPromiseExecutionDone(ctx, key, c.timeNow(), sizeBytes, promise.err)
+	c.onPromiseExecutionDone(ctx, key, promise.evaluationCompletedAt, sizeBytes, promise.err)
 	return promise.result
 }
 
@@ -267,24 +330,43 @@ func (c *PostingsForMatchersCache) expire() {
 	defer c.expireInProgress.Store(false)
 
 	c.cachedMtx.RLock()
-	if !c.shouldEvictHead() {
+	if !c.shouldEvictHead(c.timeNow()) {
 		c.cachedMtx.RUnlock()
 		return
 	}
 	c.cachedMtx.RUnlock()
 
-	c.cachedMtx.Lock()
-	defer c.cachedMtx.Unlock()
-
-	for c.shouldEvictHead() {
-		c.evictHead()
+	// Call the registered hook, if any. It's used only for testing purposes.
+	if c.evictHeadBeforeHook != nil {
+		c.evictHeadBeforeHook()
 	}
+
+	var evictionReasons [evictionReasonsLength]int
+
+	// Evict the head taking an exclusive lock.
+	{
+		c.cachedMtx.Lock()
+
+		now := c.timeNow()
+		for c.shouldEvictHead(now) {
+			reason := c.evictHead(now)
+			evictionReasons[reason]++
+		}
+
+		c.cachedMtx.Unlock()
+	}
+
+	// Keep track of the reason why items where evicted.
+	c.metrics.evictionsBecauseTTL.Add(float64(evictionReasons[evictionReasonTTL]))
+	c.metrics.evictionsBecauseMaxBytes.Add(float64(evictionReasons[evictionReasonMaxBytes]))
+	c.metrics.evictionsBecauseMaxItems.Add(float64(evictionReasons[evictionReasonMaxItems]))
+	c.metrics.evictionsBecauseUnknown.Add(float64(evictionReasons[evictionReasonUnknown]))
 }
 
 // shouldEvictHead returns true if cache head should be evicted, either because it's too old,
 // or because the cache has too many elements
 // should be called while read lock is held on cachedMtx.
-func (c *PostingsForMatchersCache) shouldEvictHead() bool {
+func (c *PostingsForMatchersCache) shouldEvictHead(now time.Time) bool {
 	// The cache should be evicted for sure if the max size (either items or bytes) is reached.
 	if c.cached.Len() > c.maxItems || c.cachedBytes > c.maxBytes {
 		return true
@@ -295,21 +377,43 @@ func (c *PostingsForMatchersCache) shouldEvictHead() bool {
 		return false
 	}
 	ts := h.Value.(*postingsForMatchersCachedCall).ts
-	return c.timeNow().Sub(ts) >= c.ttl
+	return now.Sub(ts) >= c.ttl
 }
 
-func (c *PostingsForMatchersCache) evictHead() {
+func (c *PostingsForMatchersCache) evictHead(now time.Time) (reason int) {
 	front := c.cached.Front()
 	oldest := front.Value.(*postingsForMatchersCachedCall)
+
+	// Detect the reason why we're evicting it.
+	//
+	// The checks order is:
+	// 1. TTL: if an item is expired, it should be tracked as such even if the cache was full.
+	// 2. Max bytes: "max items" is deprecated, and we expect to set it to a high value because
+	//    we want to primarily limit by bytes size.
+	// 3. Max items: the last one.
+	switch {
+	case now.Sub(oldest.ts) >= c.ttl:
+		reason = evictionReasonTTL
+	case c.cachedBytes > c.maxBytes:
+		reason = evictionReasonMaxBytes
+	case c.cached.Len() > c.maxItems:
+		reason = evictionReasonMaxItems
+	default:
+		// This should never happen, but we track it to detect unexpected behaviours.
+		reason = evictionReasonUnknown
+	}
+
 	c.calls.Delete(oldest.key)
 	c.cached.Remove(front)
 	c.cachedBytes -= oldest.sizeBytes
+
+	return
 }
 
 // onPromiseExecutionDone must be called once the execution of PostingsForMatchers promise has done.
 // The input err contains details about any error that could have occurred when executing it.
 // The input ts is the function call time.
-func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, key string, ts time.Time, sizeBytes int64, err error) {
+func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, key string, completedAt time.Time, sizeBytes int64, err error) {
 	span := trace.SpanFromContext(ctx)
 
 	// Call the registered hook, if any. It's used only for testing purposes.
@@ -339,7 +443,7 @@ func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, k
 
 		c.cached.PushBack(&postingsForMatchersCachedCall{
 			key:       key,
-			ts:        ts,
+			ts:        completedAt,
 			sizeBytes: sizeBytes,
 		})
 		c.cachedBytes += sizeBytes
@@ -349,7 +453,7 @@ func (c *PostingsForMatchersCache) onPromiseExecutionDone(ctx context.Context, k
 	}
 
 	span.AddEvent("added cached value to expiry queue", trace.WithAttributes(
-		attribute.Stringer("timestamp", ts),
+		attribute.Stringer("evaluation completed at", completedAt),
 		attribute.Int64("size in bytes", sizeBytes),
 		attribute.Int64("cached bytes", lastCachedBytes),
 	))
@@ -498,4 +602,77 @@ func (t *contextsTracker) trackedContextsCount() int {
 	defer t.mx.Unlock()
 
 	return t.trackedCount
+}
+
+type PostingsForMatchersCacheMetrics struct {
+	requests                 prometheus.Counter
+	hits                     prometheus.Counter
+	misses                   prometheus.Counter
+	skipsBecauseIneligible   prometheus.Counter
+	skipsBecauseStale        prometheus.Counter
+	skipsBecauseCanceled     prometheus.Counter
+	evictionsBecauseTTL      prometheus.Counter
+	evictionsBecauseMaxBytes prometheus.Counter
+	evictionsBecauseMaxItems prometheus.Counter
+	evictionsBecauseUnknown  prometheus.Counter
+}
+
+func NewPostingsForMatchersCacheMetrics(reg prometheus.Registerer) *PostingsForMatchersCacheMetrics {
+	const (
+		skipsMetric = "postings_for_matchers_cache_skips_total"
+		skipsHelp   = "Total number of requests to the PostingsForMatchers cache that have been skipped the cache. The subsequent result is not cached."
+
+		evictionsMetric = "postings_for_matchers_cache_evictions_total"
+		evictionsHelp   = "Total number of evictions from the PostingsForMatchers cache."
+	)
+
+	return &PostingsForMatchersCacheMetrics{
+		requests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "postings_for_matchers_cache_requests_total",
+			Help: "Total number of requests to the PostingsForMatchers cache.",
+		}),
+		hits: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "postings_for_matchers_cache_hits_total",
+			Help: "Total number of postings lists returned from the PostingsForMatchers cache.",
+		}),
+		misses: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "postings_for_matchers_cache_misses_total",
+			Help: "Total number of requests to the PostingsForMatchers cache for which there is no valid cached entry. The subsequent result is cached.",
+		}),
+		skipsBecauseIneligible: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        skipsMetric,
+			Help:        skipsHelp,
+			ConstLabels: map[string]string{"reason": "ineligible"},
+		}),
+		skipsBecauseStale: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        skipsMetric,
+			Help:        skipsHelp,
+			ConstLabels: map[string]string{"reason": "stale-cached-entry"},
+		}),
+		skipsBecauseCanceled: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        skipsMetric,
+			Help:        skipsHelp,
+			ConstLabels: map[string]string{"reason": "canceled-cached-entry"},
+		}),
+		evictionsBecauseTTL: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        evictionsMetric,
+			Help:        evictionsHelp,
+			ConstLabels: map[string]string{"reason": "ttl-expired"},
+		}),
+		evictionsBecauseMaxBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        evictionsMetric,
+			Help:        evictionsHelp,
+			ConstLabels: map[string]string{"reason": "max-bytes-reached"},
+		}),
+		evictionsBecauseMaxItems: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        evictionsMetric,
+			Help:        evictionsHelp,
+			ConstLabels: map[string]string{"reason": "max-items-reached"},
+		}),
+		evictionsBecauseUnknown: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        evictionsMetric,
+			Help:        evictionsHelp,
+			ConstLabels: map[string]string{"reason": "unknown"},
+		}),
+	}
 }

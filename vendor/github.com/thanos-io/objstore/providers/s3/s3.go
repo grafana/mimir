@@ -513,7 +513,14 @@ func (b *Bucket) GetRange(ctx context.Context, name string, off, length int64) (
 
 // Exists checks if the given object exists.
 func (b *Bucket) Exists(ctx context.Context, name string) (bool, error) {
-	_, err := b.client.StatObject(ctx, b.name, name, minio.StatObjectOptions{})
+	sse, err := b.getServerSideEncryption(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	_, err = b.client.StatObject(ctx, b.name, name, minio.StatObjectOptions{
+		ServerSideEncryption: sse,
+	})
 	if err != nil {
 		if b.IsObjNotFoundErr(err) {
 			return false, nil
@@ -576,7 +583,14 @@ func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader) error {
 
 // Attributes returns information about the specified object.
 func (b *Bucket) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
-	objInfo, err := b.client.StatObject(ctx, b.name, name, minio.StatObjectOptions{})
+	sse, err := b.getServerSideEncryption(ctx)
+	if err != nil {
+		return objstore.ObjectAttributes{}, err
+	}
+
+	objInfo, err := b.client.StatObject(ctx, b.name, name, minio.StatObjectOptions{
+		ServerSideEncryption: sse,
+	})
 	if err != nil {
 		return objstore.ObjectAttributes{}, err
 	}

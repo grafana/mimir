@@ -231,7 +231,7 @@ func TestQuerier(t *testing.T) {
 			db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), q.valueType)
 			dbQueryable := TimeRangeQueryable{
 				Queryable: db,
-				IsApplicable: func(_ context.Context, _ string, _ time.Time, _, _ int64, _ ...*labels.Matcher) bool {
+				IsApplicable: func(_ context.Context, _ string, _ time.Time, _, _ int64, _ log.Logger, _ ...*labels.Matcher) bool {
 					return true
 				},
 			}
@@ -735,6 +735,7 @@ func TestQuerier_ValidateQueryTimeRange(t *testing.T) {
 
 func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 	const maxQueryLength = 30 * 24 * time.Hour
+	now := time.Now()
 
 	tests := map[string]struct {
 		query          string
@@ -744,26 +745,26 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 	}{
 		"should allow query on short time range and rate time window close to the limit": {
 			query:          "rate(foo[29d])",
-			queryStartTime: time.Now().Add(-time.Hour),
-			queryEndTime:   time.Now(),
+			queryStartTime: now.Add(-time.Hour),
+			queryEndTime:   now,
 			expected:       nil,
 		},
 		"should allow query on large time range close to the limit and short rate time window": {
 			query:          "rate(foo[1m])",
-			queryStartTime: time.Now().Add(-maxQueryLength).Add(time.Hour),
-			queryEndTime:   time.Now(),
+			queryStartTime: now.Add(-maxQueryLength).Add(time.Hour),
+			queryEndTime:   now,
 			expected:       nil,
 		},
 		"should forbid query on short time range and rate time window over the limit": {
 			query:          "rate(foo[31d])",
-			queryStartTime: time.Now().Add(-time.Hour),
-			queryEndTime:   time.Now(),
+			queryStartTime: now.Add(-time.Hour),
+			queryEndTime:   now,
 			expected:       errors.Errorf("expanding series: %s", NewMaxQueryLengthError(745*time.Hour-time.Millisecond, 720*time.Hour)),
 		},
 		"should forbid query on large time range over the limit and short rate time window": {
 			query:          "rate(foo[1m])",
-			queryStartTime: time.Now().Add(-maxQueryLength).Add(-time.Hour),
-			queryEndTime:   time.Now(),
+			queryStartTime: now.Add(-maxQueryLength).Add(-time.Hour),
+			queryEndTime:   now,
 			expected:       errors.Errorf("expanding series: %s", NewMaxQueryLengthError((721*time.Hour)+time.Minute-time.Millisecond, 720*time.Hour)),
 		},
 	}

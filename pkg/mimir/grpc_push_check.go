@@ -88,6 +88,10 @@ func (g *grpcInflightMethodLimiter) RPCCallStarting(ctx context.Context, methodN
 	return ctx, nil
 }
 
+func (g *grpcInflightMethodLimiter) RPCCallProcessing(_ context.Context, _ string) (func(error), error) {
+	return nil, nil
+}
+
 func (g *grpcInflightMethodLimiter) RPCCallFinished(ctx context.Context) {
 	if pt, ok := ctx.Value(pushTypeCtxKey).(int); ok {
 		switch pt {

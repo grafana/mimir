@@ -75,7 +75,7 @@ func (s *ScalarScalarBinaryOperation) GetValues(ctx context.Context) (types.Scal
 	for i, left := range leftValues.Samples {
 		right := rightValues.Samples[i]
 
-		f, h, ok, valid, err := s.opFunc(left.F, right.F, nil, nil)
+		f, h, ok, valid, err := s.opFunc(left.F, right.F, nil, nil, true, true)
 
 		if err != nil {
 			return types.ScalarData{}, err

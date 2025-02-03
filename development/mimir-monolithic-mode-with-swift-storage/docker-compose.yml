@@ -42,7 +42,7 @@ services:
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is not supported by Prometheus).
   grafana-agent:
-    image: grafana/agent:v0.43.4
+    image: grafana/agent:v0.44.2
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-metrics.wal-directory=/tmp", "-server.http.address=127.0.0.1:9091"]
     volumes:
       - ./config:/etc/agent-config
@@ -50,7 +50,8 @@ services:
       - 9091:9091
 
   jaeger:
-    image: jaegertracing/all-in-one
+    # Use 1.62 specifically since 1.63 removes the agent which we depend on for now.
+    image: jaegertracing/all-in-one:1.65.0
     ports:
       - 16686:16686
       - "14268"

@@ -18,8 +18,6 @@ import (
 	"github.com/go-openapi/strfmt"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/alerting/cluster"
-	"github.com/grafana/alerting/notify/nfstatus"
 	amv2 "github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/dispatch"
@@ -36,6 +34,9 @@ import (
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+
+	"github.com/grafana/alerting/cluster"
+	"github.com/grafana/alerting/notify/nfstatus"
 
 	"github.com/grafana/alerting/models"
 	"github.com/grafana/alerting/templates"
@@ -663,13 +664,24 @@ func (am *GrafanaAlertmanager) ApplyConfig(cfg Configuration) (err error) {
 
 	// Finally, build the integrations map using the receiver configuration and templates.
 	apiReceivers := cfg.Receivers()
+	nameToReceiver := make(map[string]*APIReceiver, len(apiReceivers))
+	for _, receiver := range apiReceivers {
+		if existing, ok := nameToReceiver[receiver.Name]; ok {
+			itypes := make([]string, 0, len(existing.GrafanaIntegrations.Integrations))
+			for _, i := range existing.GrafanaIntegrations.Integrations {
+				itypes = append(itypes, i.Type)
+			}
+			level.Warn(am.logger).Log("msg", "receiver with same name is defined multiple times. Only the last one will be used", "receiver_name", receiver.Name, "overwritten_integrations", itypes)
+		}
+		nameToReceiver[receiver.Name] = receiver
+	}
 	integrationsMap := make(map[string][]*Integration, len(apiReceivers))
-	for _, apiReceiver := range apiReceivers {
+	for name, apiReceiver := range nameToReceiver {
 		integrations, err := cfg.BuildReceiverIntegrationsFunc()(apiReceiver, tmpl)
 		if err != nil {
 			return err
 		}
-		integrationsMap[apiReceiver.Name] = integrations
+		integrationsMap[name] = integrations
 	}
 
 	// Now, let's put together our notification pipeline

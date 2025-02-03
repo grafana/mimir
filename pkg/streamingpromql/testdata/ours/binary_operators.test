@@ -1391,6 +1391,45 @@ eval instant at 0 first_histogram / on(job) group_left metric
 
 clear
 
+# Check binary operations with native histograms and group_left/group_right don't mutate the original histogram.
+# We don't bother testing all the combinations of label matching, group_right etc. given that's covered by floats above.
+load 5m
+  floats{idx="1"}           2
+  floats{idx="2"}           3
+  histograms{idx="1"}       {{schema:0 sum:10 count:8 buckets:[2 4 2]}}
+  histograms{idx="2"}       {{schema:0 sum:15 count:12 buckets:[3 6 3]}}
+  same_histograms{idx="1"}  {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+  same_histograms{idx="2"}  {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+  other_histograms{idx="1"} {{schema:0 sum:50 count:4 buckets:[1 2 1]}}
+  other_histograms{idx="2"} {{schema:0 sum:6 count:4 buckets:[1 2 1]}}
+  single_histogram          {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+
+eval instant at 0 single_histogram + on() group_right histograms
+  {idx="1"} {{schema:0 sum:15 count:12 buckets:[3 6 3]}}
+  {idx="2"} {{schema:0 sum:20 count:16 buckets:[4 8 4]}}
+
+eval instant at 0 single_histogram - on() group_right histograms
+  {idx="1"} {{schema:0 sum:-5 count:-4 buckets:[-1 -2 -1]}}
+  {idx="2"} {{schema:0 sum:-10 count:-8 buckets:[-2 -4 -2]}}
+
+eval instant at 0 floats * on() group_left single_histogram
+  {idx="1"} {{schema:0 sum:10 count:8 buckets:[2 4 2]}}
+  {idx="2"} {{schema:0 sum:15 count:12 buckets:[3 6 3]}}
+
+eval instant at 0 single_histogram / on() group_right floats
+  {idx="1"} {{schema:0 sum:2.5 count:2 buckets:[0.5 1 0.5]}}
+  {idx="2"} {{schema:0 sum:1.6666666666666666 count:1.3333333333333333 buckets:[0.3333333333333333 0.6666666666666666 0.3333333333333333]}}
+
+eval instant at 0 single_histogram == on() group_right same_histograms
+  same_histograms{idx="1"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+  same_histograms{idx="2"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+
+eval instant at 0 single_histogram != on() group_right other_histograms
+  other_histograms{idx="1"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+  other_histograms{idx="2"} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+
+clear
+
 # Test comparison operator edge cases.
 load 6m
   left_side_a{env="test", pod="a"} 1 2 3 4
@@ -1577,3 +1616,12 @@ eval range from 0 to 24m step 6m side_b > bool ignoring(pod, region, dc, ignored
   {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
   {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
   {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1
+
+clear
+
+load 1m
+  left_side{pod="pod-1"} 1
+  right_side{base_name="base-1", region="region-1", system_name="system-1", pod="pod-1"} 1
+
+eval instant at 0m left_side{pod="pod-1"} * on(pod) group_left(base_name, region, system_name) right_side{pod="pod-1"}
+  {base_name="base-1", region="region-1", system_name="system-1", pod="pod-1"} 1

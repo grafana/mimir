@@ -1889,6 +1889,17 @@
         },
         {
           "kind": "field",
+          "name": "filter_queryables_enabled",
+          "required": false,
+          "desc": "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.filter-queryables-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum",
@@ -4011,7 +4022,7 @@
           "required": false,
           "desc": "Enable experimental out-of-order native histogram ingestion. This only takes effect if the `-ingester.out-of-order-time-window` value is greater than zero and if `-ingester.native-histograms-ingestion-enabled = true`",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.ooo-native-histograms-ingestion-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -4329,6 +4340,16 @@
         },
         {
           "kind": "field",
+          "name": "blocked_requests",
+          "required": false,
+          "desc": "List of http requests to block.",
+          "fieldValue": null,
+          "fieldDefaultValue": null,
+          "fieldType": "blocked_requests_config...",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "align_queries_with_step",
           "required": false,
           "desc": "Mutate incoming queries to align their start and end with their step to improve result caching.",
@@ -4357,6 +4378,16 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.prom2-range-compat",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "instant_queries_with_subquery_spin_off",
+          "required": false,
+          "desc": "List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.",
+          "fieldValue": null,
+          "fieldDefaultValue": [],
+          "fieldType": "list of strings",
           "fieldCategory": "experimental"
         },
         {
@@ -6574,6 +6605,17 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.use-active-series-decoder",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "spin_off_instant_subqueries_to_url",
+          "required": false,
+          "desc": "If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to set `instant_queries_with_subquery_spin_off` for the tenant.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.spin-off-instant-subqueries-to-url",
+          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
@@ -11646,6 +11688,38 @@
           "fieldDefaultValue": null
         },
         {
+          "kind": "block",
+          "name": "dynamic_replication",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Use a higher number of replicas for recent blocks. Useful to spread query load more evenly at the cost of slightly higher disk usage.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "store-gateway.dynamic-replication.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_time_threshold",
+              "required": false,
+              "desc": "Threshold of the most recent sample in a block used to determine it is eligible for higher than default replication. If a block has samples within this amount of time, it is considered recent and will be owned by more replicas.",
+              "fieldValue": null,
+              "fieldDefaultValue": 90000000000000,
+              "fieldFlag": "store-gateway.dynamic-replication.max-time-threshold",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
           "kind": "field",
           "name": "enabled_tenants",
           "required": false,
@@ -15578,6 +15652,17 @@
         },
         {
           "kind": "field",
+          "name": "grafana_alertmanager_conditionally_skip_tenant_suffix",
+          "required": false,
+          "desc": "Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix",
+          "fieldType": "string",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent_get_requests_per_tenant",
           "required": false,
           "desc": "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.",
@@ -17267,6 +17352,17 @@
         },
         {
           "kind": "field",
+          "name": "obsolete_entries_timeout",
+          "required": false,
+          "desc": "How long to keep obsolete entries in the KV store.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "memberlist.obsolete-entries-timeout",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "leave_timeout",
           "required": false,
           "desc": "Timeout for leaving memberlist cluster.",
@@ -18654,7 +18750,7 @@
           "kind": "field",
           "name": "enabled_metrics",
           "required": false,
-          "desc": "Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes.",
+          "desc": "Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, ingestion_artificial_delay, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes.",
           "fieldValue": null,
           "fieldDefaultValue": "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant",
           "fieldFlag": "overrides-exporter.enabled-metrics",

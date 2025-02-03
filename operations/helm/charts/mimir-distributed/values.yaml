@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: 2.15.0
+  tag: r327-0c923bb
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -636,6 +636,10 @@ alertmanager:
     # If false, use emptyDir
     enabled: true
 
+    # Alertmanager data Persistent Volume Claim template name
+    #
+    name: storage
+
     # Alertmanager data Persistent Volume Claim annotations
     #
     annotations: {}
@@ -1014,6 +1018,10 @@ ingester:
     # It is advisable to enable volume persistence in ingester to avoid losing metrics.
     #
     enabled: true
+
+    # Ingester data Persistent Volume Claim template name
+    #
+    name: storage
 
     # Ingester data Persistent Volume Claim annotations
     #
@@ -2154,6 +2162,10 @@ store_gateway:
     #
     enabled: true
 
+    # Store-gateway data Persistent Volume Claim template name
+    #
+    name: storage
+
     # Store-gateway data Persistent Volume Claim annotations
     #
     annotations: {}
@@ -2365,6 +2377,10 @@ compactor:
     # If false, use emptyDir
     #
     enabled: true
+
+    # compactor data Persistent Volume Claim template name
+    #
+    name: storage
 
     # compactor data Persistent Volume Claim annotations
     #
@@ -4037,7 +4053,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: v2.15.0
+    tag: r327-a39c1408
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics

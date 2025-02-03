@@ -105,6 +105,9 @@ type Limits interface {
 	// BlockedQueries returns the blocked queries.
 	BlockedQueries(userID string) []*validation.BlockedQuery
 
+	// BlockedRequests returns the blocked http requests.
+	BlockedRequests(userID string) []*validation.BlockedRequest
+
 	// AlignQueriesWithStep returns if queries should be adjusted to be step-aligned
 	AlignQueriesWithStep(userID string) bool
 
@@ -113,6 +116,10 @@ type Limits interface {
 
 	// IngestStorageReadConsistency returns the default read consistency for the tenant.
 	IngestStorageReadConsistency(userID string) string
+
+	// InstantQueriesWithSubquerySpinOff returns a list of regexp patterns of instant queries that can be optimized by spinning off range queries.
+	// If the list is empty, the feature is disabled.
+	InstantQueriesWithSubquerySpinOff(userID string) []string
 }
 
 type limitsMiddleware struct {

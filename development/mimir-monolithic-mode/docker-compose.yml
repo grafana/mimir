@@ -42,7 +42,7 @@ services:
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-    image: grafana/grafana:11.4.0
+    image: grafana/grafana:11.5.0
     ports:
       - 3000:3000
     volumes:
@@ -53,7 +53,7 @@ services:
   grafana-agent:
     profiles:
       - grafana-agent-static
-    image: grafana/agent:v0.43.4
+    image: grafana/agent:v0.44.2
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-metrics.wal-directory=/tmp", "-server.http.address=127.0.0.1:9091"]
     volumes:
       - ./config:/etc/agent-config
@@ -63,7 +63,7 @@ services:
   grafana-alloy:
     profiles:
       - grafana-alloy
-    image: grafana/alloy:v1.5.1
+    image: grafana/alloy:v1.6.1
     command: ["run", "--server.http.listen-addr=0.0.0.0:9092", "--storage.path=/var/lib/alloy/data", "/etc/alloy/config.alloy"]
     volumes:
       - ./config/config.alloy:/etc/alloy/config.alloy
@@ -71,7 +71,8 @@ services:
       - 9092:9092
 
   jaeger:
-    image: jaegertracing/all-in-one
+    # Use 1.62 specifically since 1.63 removes the agent which we depend on for now.
+    image: jaegertracing/all-in-one:1.65.0
     ports:
       - 16681:16686
       - "14268"

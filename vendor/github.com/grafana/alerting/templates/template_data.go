@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"path"
 	"slices"
-	"sort"
 	"strings"
 	tmpltext "text/template"
 	"time"
@@ -226,28 +225,45 @@ func extendAlert(alert template.Alert, externalURL string, logger log.Logger) *E
 		extended.ValueString = alert.Annotations[models.ValueStringAnnotation]
 	}
 
-	matchers := make([]string, 0)
-	for key, value := range alert.Labels {
-		if !(strings.HasPrefix(key, "__") && strings.HasSuffix(key, "__")) {
-			matchers = append(matchers, key+"="+value)
-		}
-	}
-	sort.Strings(matchers)
-	u.Path = path.Join(externalPath, "/alerting/silence/new")
+	extended.SilenceURL = generateSilenceURL(alert, *u, externalPath)
+
+	return extended
+}
+
+// generateSilenceURL generates a URL to silence the given alert in Grafana.
+func generateSilenceURL(alert template.Alert, baseURL url.URL, externalPath string) string {
+	baseURL.Path = path.Join(externalPath, "/alerting/silence/new")
 
 	query := make(url.Values)
 	query.Add("alertmanager", "grafana")
-	for _, matcher := range matchers {
-		query.Add("matcher", matcher)
+
+	ruleUID := alert.Labels[models.RuleUIDLabel]
+	if ruleUID != "" {
+		query.Add("matcher", models.RuleUIDLabel+"="+ruleUID)
 	}
 
-	u.RawQuery = query.Encode()
-	if len(orgID) > 0 {
-		extended.SilenceURL = setOrgIDQueryParam(u, orgID)
-	} else {
-		extended.SilenceURL = u.String()
+	for _, pair := range alert.Labels.SortedPairs() {
+		if strings.HasPrefix(pair.Name, "__") && strings.HasSuffix(pair.Name, "__") {
+			continue
+		}
+
+		// If the alert has a rule uid available, it can more succinctly and accurately replace alertname + folder labels.
+		// In addition, using rule uid is more compatible with minimal permission RBAC users as they require the rule uid to silence.
+		if ruleUID != "" && (pair.Name == models.FolderTitleLabel || pair.Name == model.AlertNameLabel) {
+			continue
+		}
+
+		query.Add("matcher", pair.Name+"="+pair.Value)
 	}
-	return extended
+
+	baseURL.RawQuery = query.Encode()
+
+	orgID := alert.Annotations[models.OrgIDAnnotation]
+	if len(orgID) > 0 {
+		_ = setOrgIDQueryParam(&baseURL, orgID)
+	}
+
+	return baseURL.String()
 }
 
 func setOrgIDQueryParam(url *url.URL, orgID string) string {

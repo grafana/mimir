@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
@@ -68,6 +69,7 @@ type Config struct {
 	TargetSeriesPerShard             uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 	ShardActiveSeriesQueries         bool          `yaml:"shard_active_series_queries" category:"experimental"`
 	UseActiveSeriesDecoder           bool          `yaml:"use_active_series_decoder" category:"experimental"`
+	SpinOffInstantSubqueriesToURL    string        `yaml:"spin_off_instant_subqueries_to_url" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -100,6 +102,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
+	f.StringVar(&cfg.SpinOffInstantSubqueriesToURL, "query-frontend.spin-off-instant-subqueries-to-url", "", "If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to set `instant_queries_with_subquery_spin_off` for the tenant.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -256,7 +259,8 @@ func newQueryTripperware(
 		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
 
-	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, registerer)
+	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, engineOpts.NoStepSubqueryIntervalFn, registerer)
+	requestBlocker := newRequestBlocker(limits, log, registerer)
 
 	return func(next http.RoundTripper) http.RoundTripper {
 		// IMPORTANT: roundtrippers are executed in *reverse* order because they are wrappers.
@@ -311,6 +315,10 @@ func newQueryTripperware(
 		cardinality = NewCardinalityQueryRequestValidationRoundTripper(cardinality)
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if err := requestBlocker.isBlocked(r); err != nil {
+				return nil, err
+			}
+
 			switch {
 			case IsRangeQuery(r.URL.Path):
 				return queryrange.RoundTrip(r)
@@ -346,13 +354,15 @@ func newQueryMiddlewares(
 	cacheKeyGenerator CacheKeyGenerator,
 	cacheExtractor Extractor,
 	engine *promql.Engine,
+	defaultStepFunc func(rangeMillis int64) int64,
 	registerer prometheus.Registerer,
 ) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
-	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log)
+	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
+	retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
@@ -371,6 +381,24 @@ func newQueryMiddlewares(
 		newInstrumentMiddleware("step_align", metrics),
 		newStepAlignMiddleware(limits, log, registerer),
 	)
+
+	if spinOffURL := cfg.SpinOffInstantSubqueriesToURL; spinOffURL != "" {
+		// Spin-off subqueries to a remote URL (or localhost)
+		// Add the retry middleware to the spin-off query handler.
+		// Spun-off queries are terminated in that handler (they don't call "next" so the retry middleware has to be added here).
+		spinOffQueryHandler, err := newSpinOffQueryHandler(codec, log, spinOffURL, cfg.MaxRetries, retryMiddlewareMetrics)
+		if err != nil {
+			level.Error(log).Log("msg", "failed to create spin-off query handler", "error", err)
+		} else {
+			// We're only interested in instant queries for now because their query rate is usually much higher than range queries.
+			// They are also less optimized than range queries, so we can benefit more from the spin-off.
+			queryInstantMiddleware = append(
+				queryInstantMiddleware,
+				newInstrumentMiddleware("spin_off_subqueries", metrics),
+				newSpinOffSubqueriesMiddleware(limits, log, engine, spinOffQueryHandler, registerer, defaultStepFunc),
+			)
+		}
+	}
 
 	if cfg.CacheResults && cfg.CacheErrors {
 		queryRangeMiddleware = append(
@@ -469,7 +497,6 @@ func newQueryMiddlewares(
 	}
 
 	if cfg.MaxRetries > 0 {
-		retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 	}
