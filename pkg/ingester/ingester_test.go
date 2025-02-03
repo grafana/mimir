@@ -4205,7 +4205,7 @@ func Test_Ingester_LabelValues(t *testing.T) {
 			assert.ElementsMatch(t, expectedValues, res.LabelValues)
 		}
 	})
-	
+
 	t.Run("limited due to resource utilization", func(t *testing.T) {
 		origLimiter := i.utilizationBasedLimiter
 		t.Cleanup(func() {

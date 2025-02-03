@@ -3323,7 +3323,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult:    []string{labels.MetricName, "reason"},
+			expectedResult:    []string{labels.MetricName, "reason", "status"},
 			expectedIngesters: numIngesters,
 		},
 		"should filter metrics by single matcher and ignore limit when it is equal than the number of items returned": {
