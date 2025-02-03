@@ -1,6 +1,6 @@
 {
-  "min_time": 1738278585000,
-  "max_time": 1738279965000,
+  "min_time": 1738283066000,
+  "max_time": 1738283066001,
   "matchers": [
     {
       "type": "LabelMatcher_EQ",
