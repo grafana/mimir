@@ -154,6 +154,8 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		}),
 	}
 
+	c.instrumentBeforeStartBlocksCleaner(context.Background())
+
 	c.Service = services.NewTimerService(cfg.CleanupInterval, c.starting, c.ticker, c.stopping)
 
 	return c
@@ -203,6 +205,22 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
 		go doCleanup()
 	} else {
 		doCleanup()
+	}
+}
+
+func (c *BlocksCleaner) instrumentBeforeStartBlocksCleaner(ctx context.Context) {
+	allUsers, _, err := c.refreshOwnedUsers(ctx)
+	if err != nil {
+		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
+		return
+	}
+	for _, userID := range allUsers {
+		idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, c.logger)
+		if err != nil {
+			level.Error(c.logger).Log("msg", "failed to read bucket index", "user", userID, "err", err)
+			return
+		}
+		c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
 	}
 }
 
