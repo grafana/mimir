@@ -317,8 +317,9 @@ type blockUploader func(_ context.Context, tenantID, dbDir string, metas []tsdb.
 // All the DBs are closed and directories cleared irrespective of success or failure of this function.
 func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUploader) (metas []tsdb.BlockMeta, err error) {
 	var (
-		closedDBsMu sync.Mutex
-		closedDBs   = make(map[*userTSDB]bool)
+		closedDBsMu, metasMu sync.Mutex
+
+		closedDBs = make(map[*userTSDB]bool)
 	)
 
 	b.tsdbsMu.Lock()
@@ -373,7 +374,9 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			for _, b := range db.Blocks() {
 				localMetas = append(localMetas, b.Meta())
 			}
+			metasMu.Lock()
 			metas = append(metas, localMetas...)
+			metasMu.Unlock()
 
 			if err := db.Close(); err != nil {
 				return err
