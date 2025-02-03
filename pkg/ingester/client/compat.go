@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -108,62 +109,82 @@ func FromMetricsForLabelMatchersResponse(resp *MetricsForLabelMatchersResponse) 
 }
 
 // ToLabelValuesRequest builds a LabelValuesRequest proto
-func ToLabelValuesRequest(labelName model.LabelName, from, to model.Time, matchers []*labels.Matcher) (*LabelValuesRequest, error) {
+func ToLabelValuesRequest(labelName model.LabelName, from, to model.Time, hints *storage.LabelHints, matchers []*labels.Matcher) (*LabelValuesRequest, error) {
 	ms, err := ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
 
+	var limit int64
+	if hints != nil && hints.Limit > 0 {
+		limit = int64(hints.Limit)
+	}
 	return &LabelValuesRequest{
 		LabelName:        string(labelName),
 		StartTimestampMs: int64(from),
 		EndTimestampMs:   int64(to),
 		Matchers:         &LabelMatchers{Matchers: ms},
+		Limit:            limit,
 	}, nil
 }
 
 // FromLabelValuesRequest unpacks a LabelValuesRequest proto
-func FromLabelValuesRequest(req *LabelValuesRequest) (string, int64, int64, []*labels.Matcher, error) {
+func FromLabelValuesRequest(req *LabelValuesRequest) (string, int64, int64, *storage.LabelHints, []*labels.Matcher, error) {
 	var err error
+	var hints *storage.LabelHints
 	var matchers []*labels.Matcher
 
 	if req.Matchers != nil {
 		matchers, err = FromLabelMatchers(req.Matchers.Matchers)
 		if err != nil {
-			return "", 0, 0, nil, err
+			return "", 0, 0, nil, nil, err
 		}
 	}
 
-	return req.LabelName, req.StartTimestampMs, req.EndTimestampMs, matchers, nil
+	if req.Limit > 0 {
+		hints = &storage.LabelHints{Limit: int(req.Limit)}
+	}
+
+	return req.LabelName, req.StartTimestampMs, req.EndTimestampMs, hints, matchers, nil
 }
 
 // ToLabelNamesRequest builds a LabelNamesRequest proto
-func ToLabelNamesRequest(from, to model.Time, matchers []*labels.Matcher) (*LabelNamesRequest, error) {
+func ToLabelNamesRequest(from, to model.Time, hints *storage.LabelHints, matchers []*labels.Matcher) (*LabelNamesRequest, error) {
 	ms, err := ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
+	}
+
+	var limit int64
+	if hints != nil && hints.Limit > 0 {
+		limit = int64(hints.Limit)
 	}
 
 	return &LabelNamesRequest{
 		StartTimestampMs: int64(from),
 		EndTimestampMs:   int64(to),
 		Matchers:         &LabelMatchers{Matchers: ms},
+		Limit:            limit,
 	}, nil
 }
 
 // FromLabelNamesRequest unpacks a LabelNamesRequest proto
-func FromLabelNamesRequest(req *LabelNamesRequest) (int64, int64, []*labels.Matcher, error) {
+func FromLabelNamesRequest(req *LabelNamesRequest) (int64, int64, *storage.LabelHints, []*labels.Matcher, error) {
 	var err error
+	var hints *storage.LabelHints
 	var matchers []*labels.Matcher
-
 	if req.Matchers != nil {
 		matchers, err = FromLabelMatchers(req.Matchers.Matchers)
 		if err != nil {
-			return 0, 0, nil, err
+			return 0, 0, nil, nil, err
 		}
 	}
 
-	return req.StartTimestampMs, req.EndTimestampMs, matchers, nil
+	if req.Limit != 0 {
+		hints = &storage.LabelHints{Limit: int(req.Limit)}
+	}
+
+	return req.StartTimestampMs, req.EndTimestampMs, hints, matchers, nil
 }
 
 func ToActiveSeriesRequest(matchers []*labels.Matcher) (*ActiveSeriesRequest, error) {

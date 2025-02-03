@@ -137,6 +137,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"sum_over_time":      `sum_over_time({__name__=~"float.*"}[1m])`,
 		"tan":                `tan({__name__=~"float.*"})`,
 		"tanh":               `tanh({__name__=~"float.*"})`,
+		"timestamp":          `timestamp({__name__=~"float.*"})`,
 		"vector":             `<skip>`, // vector() takes a scalar, so this test doesn't apply.
 		"year":               `year({__name__=~"float.*"})`,
 	}
