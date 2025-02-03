@@ -83,24 +83,21 @@ func TimeTransformationFunctionOperatorFactory(name string, seriesDataFunc funct
 	}
 
 	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
-		if len(args) > 1 {
-			// Should be caught by the PromQL parser, but we check here for safety.
-			return nil, fmt.Errorf("expected 0 or 1 argument for %s, got %v", name, len(args))
-		}
-
 		var inner types.InstantVectorOperator
-		if len(args) > 0 {
+		if len(args) == 0 {
+			// if the argument is not provided, it will default to vector(time())
+			inner = scalars.NewScalarToInstantVector(operators.NewTime(timeRange, memoryConsumptionTracker, expressionPosition), expressionPosition)
+		} else if len(args) == 1 {
+			// if one argument is provided, it must be an instant vector
 			var ok bool
-			// time based function expect instant vector argument
 			inner, ok = args[0].(types.InstantVectorOperator)
 			if !ok {
 				// Should be caught by the PromQL parser, but we check here for safety.
 				return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", name, args[0])
 			}
-
 		} else {
-			// if the argument is not provided, it will default to vector(time())
-			inner = scalars.NewScalarToInstantVector(operators.NewTime(timeRange, memoryConsumptionTracker, expressionPosition), expressionPosition)
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected 0 or 1 argument for %s, got %v", name, len(args))
 		}
 
 		var o types.InstantVectorOperator = functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
