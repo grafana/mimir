@@ -355,6 +355,13 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 		})
 	}
 
+	// NOTE (dmwilson) - metaSyncMaxAgeThresholdID is ULID chosen deterministically
+	// s.t. any blocks older than this ULID aren't fetched. The 168h threshold is a
+	// placeholder, to be replaced by some value _larger than_ max(cfg.BlockRanges) and 
+	// OoO maximum.
+	metaSyncMaxAgeThresholdID := ulid.ULID{}
+	metaSyncMaxAgeThresholdID.SetTime(uint64(time.Now().Add(-168 * time.Hour).UnixMilli()))
+
 	// Workers scheduled, distribute blocks.
 	eg.Go(func() error {
 		defer close(ch)
@@ -367,6 +374,11 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 			// If requested, skip any block marked for deletion.
 			if _, marked := markedForDeletion[id]; excludeMarkedForDeletion && marked {
 				resp.markedForDeletionCount++
+				return nil
+			}
+
+			// skip any blocks older than the sync max age threshold
+			if id.Compare(metaSyncMaxAgeThresholdID) == -1 {
 				return nil
 			}
 
