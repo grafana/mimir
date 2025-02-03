@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 # Begin of configuration.
-K8S_CONTEXT="dev-us-central-0"
-K8S_NAMESPACE="cortex-dev-01"
-MIMIR_TENANT_ID="9960"
+K8S_CONTEXT=""
+K8S_NAMESPACE=""
+MIMIR_TENANT_ID=""
 # End of configuration.
 
 SCRIPT_DIR=$(realpath "$(dirname "${0}")")
