@@ -1616,3 +1616,12 @@ eval range from 0 to 24m step 6m side_b > bool ignoring(pod, region, dc, ignored
   {env="test", pod="a", region="au", dc="2"} _ 1 _ _ 0
   {env="test", pod="a", region="us", dc="1"} 0 _ _ 1 _
   {env="test", pod="a", region="us", dc="2"} _ 0 _ _ 1
+
+clear
+
+load 1m
+  left_side{pod="pod-1"} 1
+  right_side{base_name="base-1", region="region-1", system_name="system-1", pod="pod-1"} 1
+
+eval instant at 0m left_side{pod="pod-1"} * on(pod) group_left(base_name, region, system_name) right_side{pod="pod-1"}
+  {base_name="base-1", region="region-1", system_name="system-1", pod="pod-1"} 1

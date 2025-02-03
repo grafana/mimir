@@ -416,7 +416,9 @@ func (g *GroupedVectorVectorBinaryOperation) manySideGroupKeyFunc() func(manySid
 	labelsToRemove := g.VectorMatching.Include
 
 	if g.shouldRemoveMetricNameFromManySide() {
+		labelsToRemove = make([]string, 0, len(g.VectorMatching.Include)+1)
 		labelsToRemove = append(labelsToRemove, labels.MetricName)
+		labelsToRemove = append(labelsToRemove, g.VectorMatching.Include...)
 		slices.Sort(labelsToRemove)
 	}
 
