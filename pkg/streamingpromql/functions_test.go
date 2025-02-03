@@ -95,6 +95,10 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"cos":                `cos({__name__=~"float.*"})`,
 		"cosh":               `cosh({__name__=~"float.*"})`,
 		"count_over_time":    `count_over_time({__name__=~"float.*"}[1m])`,
+		"days_in_month":      `days_in_month({__name__=~"float.*"})`,
+		"day_of_month":       `day_of_month({__name__=~"float.*"})`,
+		"day_of_week":        `day_of_week({__name__=~"float.*"})`,
+		"day_of_year":        `day_of_year({__name__=~"float.*"})`,
 		"deg":                `deg({__name__=~"float.*"})`,
 		"delta":              `delta({__name__=~"float.*"}[1m])`,
 		"deriv":              `deriv({__name__=~"float.*"}[1m])`,
@@ -107,6 +111,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"histogram_stddev":   `histogram_stddev({__name__=~"histogram.*"})`,
 		"histogram_stdvar":   `histogram_stdvar({__name__=~"histogram.*"})`,
 		"histogram_sum":      `histogram_sum({__name__=~"histogram.*"})`,
+		"hour":               `hour({__name__=~"float.*"})`,
 		"idelta":             `idelta({__name__=~"float.*"}[1m])`,
 		"increase":           `increase({__name__=~"float.*"}[1m])`,
 		"irate":              `irate({__name__=~"float.*"}[1m])`,
@@ -117,6 +122,8 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"log2":               `log2({__name__=~"float.*"})`,
 		"max_over_time":      `max_over_time({__name__=~"float.*"}[1m])`,
 		"min_over_time":      `min_over_time({__name__=~"float.*"}[1m])`,
+		"minute":             `minute({__name__=~"float.*"})`,
+		"month":              `month({__name__=~"float.*"})`,
 		"present_over_time":  `present_over_time({__name__=~"float.*"}[1m])`,
 		"rad":                `rad({__name__=~"float.*"})`,
 		"rate":               `rate({__name__=~"float.*"}[1m])`,
@@ -130,6 +137,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"tan":                `tan({__name__=~"float.*"})`,
 		"tanh":               `tanh({__name__=~"float.*"})`,
 		"vector":             `<skip>`, // vector() takes a scalar, so this test doesn't apply.
+		"year":               `year({__name__=~"float.*"})`,
 	}
 
 	for name := range instantVectorFunctionOperatorFactories {
