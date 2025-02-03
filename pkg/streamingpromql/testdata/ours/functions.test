@@ -839,3 +839,7 @@ eval range from 0 to 2m step 1m timestamp(some_metric * 2)
   {case="floats only"} 0 60 120
   {case="histograms only"} 0 60 120
   {case="floats and histograms"} 0 60 120
+
+eval_info range from 0 to 2m step 1m timestamp(rate(some_metric{case=~".* only"}[2m]))
+  {case="floats only"} _ 60 120
+  {case="histograms only"} _ 60 120
