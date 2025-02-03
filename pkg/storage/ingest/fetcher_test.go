@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
@@ -936,19 +937,25 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 		partitionID = 1
 	)
 
-	var (
-		ctx                  = context.Background()
-		cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topic)
-		client               = newKafkaProduceClient(t, clusterAddr)
-		fetchers             = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0)
-	)
+	setup := func() (*concurrentFetchers, *kfake.Cluster, context.Context) {
+		var (
+			ctx                  = context.Background()
+			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topic)
+			client               = newKafkaProduceClient(t, clusterAddr)
+			fetchers             = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0)
+		)
+		t.Cleanup(cluster.Close)
+		t.Cleanup(fetchers.Stop)
 
-	// Produce some records.
-	produceRecord(ctx, t, client, topic, partitionID, []byte("record-1"))
-	produceRecord(ctx, t, client, topic, partitionID, []byte("record-2"))
-	produceRecord(ctx, t, client, topic, partitionID, []byte("record-3"))
+		// Produce some records.
+		produceRecord(ctx, t, client, topic, partitionID, []byte("record-1"))
+		produceRecord(ctx, t, client, topic, partitionID, []byte("record-2"))
+		produceRecord(ctx, t, client, topic, partitionID, []byte("record-3"))
+		return fetchers, cluster, ctx
+	}
 
 	t.Run("should fetch records honoring the start offset", func(t *testing.T) {
+		fetchers, _, ctx := setup()
 		res := fetchers.fetchSingle(ctx, fetchWant{
 			startOffset:             1,
 			endOffset:               5,
@@ -963,6 +970,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 	})
 
 	t.Run("should return an empty non-error response if context is canceled", func(t *testing.T) {
+		fetchers, _, ctx := setup()
 		ctx, cancel := context.WithCancel(ctx)
 		cancel()
 
@@ -978,8 +986,10 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 	})
 
 	t.Run("should return an error response if the Fetch request fails", func(t *testing.T) {
+		fetchers, cluster, ctx := setup()
 		// Control only the next request, then drop it.
 		cluster.ControlKey(kmsg.Fetch.Int16(), func(_ kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
 			return nil, errors.New("failed request"), true
 		})
 
@@ -995,8 +1005,9 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 	})
 
 	t.Run("should return an error response if the Fetch request contains an error", func(t *testing.T) {
-		// Control only the next request, then drop it.
+		fetchers, cluster, ctx := setup()
 		cluster.ControlKey(kmsg.Fetch.Int16(), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
 			req := kreq.(*kmsg.FetchRequest)
 
 			return &kmsg.FetchResponse{
