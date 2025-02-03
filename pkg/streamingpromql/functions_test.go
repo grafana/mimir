@@ -124,6 +124,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"min_over_time":      `min_over_time({__name__=~"float.*"}[1m])`,
 		"minute":             `minute({__name__=~"float.*"})`,
 		"month":              `month({__name__=~"float.*"})`,
+		"predict_linear":     `predict_linear({__name__=~"float.*"}[1m], 30)`,
 		"present_over_time":  `present_over_time({__name__=~"float.*"}[1m])`,
 		"rad":                `rad({__name__=~"float.*"})`,
 		"rate":               `rate({__name__=~"float.*"}[1m])`,
