@@ -646,9 +646,13 @@ consumerLoop:
 }
 
 func getBlockCategoryCount(sectionEndTime time.Time, blockMetas []tsdb.BlockMeta) (prev, curr, next int) {
-	// Doing -30m will take care
+	// Doing -30m will take care of ConsumeIntervalBuffer up to 30 mins.
+	// For sectionEndTime of 13:15, the 2-hour block will be 12:00-14:00.
+	// For sectionEndTime of 14:15, the 2-hour block will be 14:00-16:00.
 	currHour := sectionEndTime.Add(-30 * time.Minute).Truncate(2 * time.Hour).Hour()
 	for _, m := range blockMetas {
+		// The min and max time can be aligned to the 2hr mark. The MaxTime is exclusive of the last sample.
+		// So taking average of both will remove any edge cases.
 		hour := time.UnixMilli(m.MinTime/2 + m.MaxTime/2).Truncate(2 * time.Hour).Hour()
 		if hour < currHour {
 			prev++
