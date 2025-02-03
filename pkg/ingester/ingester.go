@@ -1717,7 +1717,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	}
 	defer func() { finishReadRequest(err) }()
 
-	labelName, startTimestampMs, endTimestampMs, matchers, err := client.FromLabelValuesRequest(req)
+	labelName, startTimestampMs, endTimestampMs, hints, matchers, err := client.FromLabelValuesRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1744,10 +1744,16 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	}
 	defer q.Close()
 
-	hints := &storage.LabelHints{}
 	vals, _, err := q.LabelValues(ctx, labelName, hints, matchers...)
 	if err != nil {
 		return nil, err
+	}
+
+	// Besides we are passing the hints to q.LabelValues, we also limit the number of returned values here
+	// because LabelQuerier can resolve the labelValues using different instance and then joining the results,
+	// so we want to apply the limit at the end.
+	if hints != nil && hints.Limit > 0 && len(vals) > hints.Limit {
+		vals = vals[:hints.Limit]
 	}
 
 	// The label value strings are sometimes pointing to memory mapped file
@@ -1789,7 +1795,7 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 		return &client.LabelNamesResponse{}, nil
 	}
 
-	mint, maxt, matchers, err := client.FromLabelNamesRequest(req)
+	mint, maxt, hints, matchers, err := client.FromLabelNamesRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1803,10 +1809,16 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 	// Log the actual matchers passed down to TSDB. This can be useful for troubleshooting purposes.
 	spanlog.DebugLog("num_matchers", len(matchers), "matchers", util.LabelMatchersToString(matchers))
 
-	hints := &storage.LabelHints{}
 	names, _, err := q.LabelNames(ctx, hints, matchers...)
 	if err != nil {
 		return nil, err
+	}
+
+	// Besides we are passing the hints to q.LabelNames, we also limit the number of returned values here
+	// because LabelQuerier can resolve the labelNames using different instance and then joining the results,
+	// so we want to apply the limit at the end.
+	if hints != nil && hints.Limit > 0 && len(names) > hints.Limit {
+		names = names[:hints.Limit]
 	}
 
 	return &client.LabelNamesResponse{
