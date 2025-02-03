@@ -843,3 +843,12 @@ eval range from 0 to 2m step 1m timestamp(some_metric * 2)
 eval_info range from 0 to 2m step 1m timestamp(rate(some_metric{case=~".* only"}[2m]))
   {case="floats only"} _ 60 120
   {case="histograms only"} _ 60 120
+
+clear
+
+load 30s
+  prediction_time 5 10 15 20 25
+  metric 3 20 4 7 80
+
+eval range from 0 to 2m step 1m predict_linear(metric[1m1s], scalar(prediction_time))
+  {} _ 9.75 100
