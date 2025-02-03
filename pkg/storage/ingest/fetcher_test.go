@@ -987,7 +987,6 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 
 	t.Run("should return an error response if the Fetch request fails", func(t *testing.T) {
 		fetchers, cluster, ctx := setup(t)
-		// Control only the next request, then drop it.
 		cluster.ControlKey(kmsg.Fetch.Int16(), func(_ kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 			return nil, errors.New("failed request"), true
