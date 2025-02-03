@@ -937,7 +937,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 		partitionID = 1
 	)
 
-	setup := func() (*concurrentFetchers, *kfake.Cluster, context.Context) {
+	setup := func(t *testing.T) (*concurrentFetchers, *kfake.Cluster, context.Context) {
 		var (
 			ctx                  = context.Background()
 			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topic)
@@ -955,7 +955,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 	}
 
 	t.Run("should fetch records honoring the start offset", func(t *testing.T) {
-		fetchers, _, ctx := setup()
+		fetchers, _, ctx := setup(t)
 		res := fetchers.fetchSingle(ctx, fetchWant{
 			startOffset:             1,
 			endOffset:               5,
@@ -970,7 +970,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 	})
 
 	t.Run("should return an empty non-error response if context is canceled", func(t *testing.T) {
-		fetchers, _, ctx := setup()
+		fetchers, _, ctx := setup(t)
 		ctx, cancel := context.WithCancel(ctx)
 		cancel()
 
@@ -986,7 +986,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 	})
 
 	t.Run("should return an error response if the Fetch request fails", func(t *testing.T) {
-		fetchers, cluster, ctx := setup()
+		fetchers, cluster, ctx := setup(t)
 		// Control only the next request, then drop it.
 		cluster.ControlKey(kmsg.Fetch.Int16(), func(_ kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
@@ -1005,7 +1005,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 	})
 
 	t.Run("should return an error response if the Fetch request contains an error", func(t *testing.T) {
-		fetchers, cluster, ctx := setup()
+		fetchers, cluster, ctx := setup(t)
 		cluster.ControlKey(kmsg.Fetch.Int16(), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
 			cluster.KeepControl()
 			req := kreq.(*kmsg.FetchRequest)
