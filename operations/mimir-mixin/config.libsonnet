@@ -624,7 +624,10 @@
     },
 
     // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
-    autoscaling_hpa_prefix: 'keda-hpa-',
+    //
+    // IMPORTANT: use non-capture groups in the regular expression so that when they're used as part
+    // of other regexps we don't break existing capture groups.
+    autoscaling_hpa_prefix: 'keda-hpa-(?:mimir-)?',
 
     autoscaling: {
       query_frontend: {

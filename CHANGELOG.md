@@ -28,6 +28,7 @@
 * [ENHANCEMENT] Ingester: add `active_series_additional_custom_trackers` configuration, in addition to the already existing `active_series_custom_trackers`. The `active_series_additional_custom_trackers` configuration allows you to configure additional custom trackers that get merged with `active_series_custom_trackers` at runtime. #10428
 * [ENHANCEMENT] Query-frontend: Allow blocking raw http requests with the `blocked_requests` configuration. Requests can be blocked based on their path, method or query parameters #10484
 * [ENHANCEMENT] Ingester: Added the following metrics exported by `PostingsForMatchers` cache: #10500 #10525
+* [ENHANCEMENT] Add support for the HTTP header `X-Filter-Queryables` which allows callers to decide which queryables should be used by the querier, useful for debugging and testing queryables in isolation. #10552
   * `cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total`
   * `cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total`
   * `cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total`
@@ -52,6 +53,8 @@
 * [BUGFIX] PromQL: Fix <aggr_over_time> functions with histograms https://github.com/prometheus/prometheus/pull/15711 #10400
 * [BUGFIX] MQE: Fix <aggr_over_time> functions with histograms #10400
 * [BUGFIX] Distributor: return HTTP status 415 Unsupported Media Type instead of 200 Success for Remote Write 2.0 until we support it. #10423
+* [BUGFIX] Query-frontend: Add flag `-query-frontend.prom2-range-compat` and corresponding YAML to rewrite queries with ranges that worked in Prometheus 2 but are invalid in Prometheus 3. #10445 #10461
+* [BUGFIX] mixin: fix autoscaling panels. #10473
 * [BUGFIX] Query-frontend: Add flag `-query-frontend.prom2-range-compat` and corresponding YAML to rewrite queries with ranges that worked in Prometheus 2 but are invalid in Prometheus 3. #10445 #10461 #10502
 * [BUGFIX] Distributor: Fix edge case at the HA-tracker with memberlist as KVStore, where when a replica in the KVStore is marked as deleted but not yet removed, it fails to update the KVStore. #10443
 * [BUGFIX] Distributor: Fix panics in `DurationWithJitter` util functions when computed variance is zero. #10507

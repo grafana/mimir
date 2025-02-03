@@ -76,7 +76,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.22
 	github.com/prometheus/procfs v0.15.1
 	github.com/shirou/gopsutil/v4 v4.24.12
-	github.com/thanos-io/objstore v0.0.0-20250120094545-4b72edf06a59
+	github.com/thanos-io/objstore v0.0.0-20250129163715-ec72e5a88a79
 	github.com/tjhop/slog-gokit v0.1.3
 	github.com/twmb/franz-go v1.18.1
 	github.com/twmb/franz-go/pkg/kadm v1.14.0
@@ -91,7 +91,7 @@ require (
 	go.uber.org/multierr v1.11.0
 	golang.org/x/term v0.28.0
 	google.golang.org/api v0.213.0
-	google.golang.org/protobuf v1.36.3
+	google.golang.org/protobuf v1.36.4
 	sigs.k8s.io/kustomize/kyaml v0.18.1
 )
 
@@ -282,7 +282,7 @@ require (
 	golang.org/x/tools v0.28.0 // indirect
 	google.golang.org/genproto v0.0.0-20241113202542-65e8d215514f // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241216192217-9240e9c98484 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250124145028-65684f501c47
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250127172529-29210b9bc287
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
 	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect

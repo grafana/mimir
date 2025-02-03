@@ -494,6 +494,10 @@ func (t *Mimir) initDistributor() (serv services.Service, err error) {
 func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	registerer := prometheus.WrapRegistererWith(querierEngine, t.Registerer)
 
+	if t.Cfg.Querier.FilterQueryablesEnabled {
+		t.Server.HTTP.Use(querier.FilterQueryablesMiddleware().Wrap)
+	}
+
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, err = querier.New(
 		t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker,
