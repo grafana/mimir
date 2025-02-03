@@ -1889,6 +1889,17 @@
         },
         {
           "kind": "field",
+          "name": "filter_queryables_enabled",
+          "required": false,
+          "desc": "If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.filter-queryables-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "max_concurrent",
           "required": false,
           "desc": "The number of workers running in each querier process. This setting limits the maximum number of concurrent queries in each querier. The minimum value is four; lower values are ignored and set to the minimum",
