@@ -605,6 +605,10 @@ func (m multiTenantMockLimits) BlockedRequests(userID string) []*validation.Bloc
 	return m.byTenant[userID].blockedRequests
 }
 
+func (m multiTenantMockLimits) InstantQueriesWithSubquerySpinOff(userID string) []string {
+	return m.byTenant[userID].instantQueriesWithSubquerySpinOff
+}
+
 type mockLimits struct {
 	maxQueryLookback                     time.Duration
 	maxQueryLength                       time.Duration
@@ -634,6 +638,7 @@ type mockLimits struct {
 	alignQueriesWithStep                 bool
 	queryIngestersWithin                 time.Duration
 	ingestStorageReadConsistency         string
+	instantQueriesWithSubquerySpinOff    []string
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -748,6 +753,10 @@ func (m mockLimits) IngestStorageReadConsistency(string) string {
 
 func (m mockLimits) BlockedRequests(string) []*validation.BlockedRequest {
 	return m.blockedRequests
+}
+
+func (m mockLimits) InstantQueriesWithSubquerySpinOff(string) []string {
+	return m.instantQueriesWithSubquerySpinOff
 }
 
 type mockHandler struct {

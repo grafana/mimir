@@ -1909,6 +1909,8 @@ Usage of ./cmd/mimir/mimir:
     	Name of the node in memberlist cluster. Defaults to hostname.
   -memberlist.notify-interval duration
     	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
+  -memberlist.obsolete-entries-timeout duration
+    	[experimental] How long to keep obsolete entries in the KV store. (default 30s)
   -memberlist.packet-dial-timeout duration
     	Timeout used when connecting to other nodes to send packet. (default 2s)
   -memberlist.packet-write-timeout duration
@@ -1944,7 +1946,7 @@ Usage of ./cmd/mimir/mimir:
   -modules
     	List available values that can be used as target.
   -overrides-exporter.enabled-metrics comma-separated-list-of-strings
-    	Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
+    	Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, ingestion_artificial_delay, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
   -overrides-exporter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -overrides-exporter.ring.consul.cas-retry-delay duration
@@ -2429,6 +2431,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of concurrent workers forwarding queries to single query-scheduler. (default 5)
   -query-frontend.shard-active-series-queries
     	[experimental] True to enable sharding of active series queries.
+  -query-frontend.spin-off-instant-subqueries-to-url string
+    	[experimental] If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to set `instant_queries_with_subquery_spin_off` for the tenant.
   -query-frontend.split-instant-queries-by-interval duration
     	[experimental] Split instant queries by an interval and execute in parallel. 0 to disable it.
   -query-frontend.split-queries-by-interval duration

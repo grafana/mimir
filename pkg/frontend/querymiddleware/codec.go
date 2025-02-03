@@ -56,6 +56,8 @@ var (
 	prometheusCodecPropagateHeadersLabels = []string{api.ReadConsistencyOffsetsHeader}
 )
 
+const maxResolutionPoints = 11000
+
 const (
 	// statusSuccess Prometheus success result.
 	statusSuccess = "success"
@@ -532,7 +534,7 @@ func DecodeRangeQueryTimeParams(reqValues *url.Values) (start, end, step int64, 
 
 	// For safety, limit the number of returned points per timeseries.
 	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
-	if (end-start)/step > 11000 {
+	if (end-start)/step > maxResolutionPoints {
 		return 0, 0, 0, errStepTooSmall
 	}
 

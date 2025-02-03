@@ -610,7 +610,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20250113170557-b4ab2ba363a8
+# github.com/grafana/alerting v0.0.0-20250128163937-4446935bbcce
 ## explicit; go 1.22
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
@@ -960,7 +960,7 @@ github.com/pmezard/go-difflib/difflib
 # github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c
 ## explicit; go 1.14
 github.com/power-devops/perfstat
-# github.com/prometheus/alertmanager v0.27.0 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240930132144-b5e64e81e8d3
+# github.com/prometheus/alertmanager v0.27.0 => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250129145443-ee06e515687c
 ## explicit; go 1.22
 github.com/prometheus/alertmanager/api
 github.com/prometheus/alertmanager/api/metrics
@@ -1718,6 +1718,6 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce
 # github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
-# github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20240930132144-b5e64e81e8d3
+# github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250129145443-ee06e515687c
 # github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937
 # google.golang.org/grpc => google.golang.org/grpc v1.65.0
