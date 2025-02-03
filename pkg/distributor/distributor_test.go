@@ -3318,6 +3318,30 @@ func TestDistributor_LabelNames(t *testing.T) {
 			expectedResult:    []string{labels.MetricName, "reason"},
 			expectedIngesters: numIngesters,
 		},
+		"should filter metrics by single matcher and ignore limit when it is zero": {
+			hints: &storage.LabelHints{Limit: 0},
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName, "reason"},
+			expectedIngesters: numIngesters,
+		},
+		"should filter metrics by single matcher and ignore limit when it is equal than the number of items returned": {
+			hints: &storage.LabelHints{Limit: 3},
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName, "reason", "status"},
+			expectedIngesters: numIngesters,
+		},
+		"should filter metrics by single matcher and ignore limit when it is greater than the number of items returned": {
+			hints: &storage.LabelHints{Limit: 5},
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName, "reason", "status"},
+			expectedIngesters: numIngesters,
+		},
 		"should filter metrics by multiple matchers": {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, "status", "200"),
@@ -3609,6 +3633,18 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 			to:                  300_000,
 			hints:               &storage.LabelHints{Limit: 1},
 			expectedLabelValues: []string{"label_0"},
+		},
+		"all time selected, no matchers, limit equal to number of label values": {
+			from:                0,
+			to:                  300_000,
+			hints:               &storage.LabelHints{Limit: 2},
+			expectedLabelValues: []string{"label_0", "label_1"},
+		},
+		"all time selected, no matchers, limit greater than number of label values": {
+			from:                0,
+			to:                  300_000,
+			hints:               &storage.LabelHints{Limit: 4},
+			expectedLabelValues: []string{"label_0", "label_1"},
 		},
 	}
 

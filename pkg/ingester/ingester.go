@@ -1749,6 +1749,9 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 		return nil, err
 	}
 
+	// Besides we are passing the hints to q.LabelValues, we also limit the number of returned values here
+	// because LabelQuerier can resolve the labelValues using different instance and then joining the results,
+	// so we want to apply the limit at the end.
 	if hints != nil && hints.Limit > 0 && len(vals) > hints.Limit {
 		vals = vals[:hints.Limit]
 	}
@@ -1811,6 +1814,9 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 		return nil, err
 	}
 
+	// Besides we are passing the hints to q.LabelNames, we also limit the number of returned values here
+	// because LabelQuerier can resolve the labelNames using different instance and then joining the results,
+	// so we want to apply the limit at the end.
 	if hints != nil && hints.Limit > 0 && len(names) > hints.Limit {
 		names = names[:hints.Limit]
 	}

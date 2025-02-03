@@ -4080,6 +4080,48 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		assert.ElementsMatch(t, expected, res.LabelNames)
 	})
 
+	t.Run("without matchers, with limit set to 0", func(t *testing.T) {
+		expected := []string{"__name__", "status", "route"}
+
+		hints := &storage.LabelHints{Limit: 0}
+
+		req, err := client.ToLabelNamesRequest(0, model.Latest, hints, nil)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.LabelNames(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
+	})
+
+	t.Run("without matchers, with limit set to same number of items returned", func(t *testing.T) {
+		expected := []string{"__name__", "status", "route"}
+
+		hints := &storage.LabelHints{Limit: 3}
+
+		req, err := client.ToLabelNamesRequest(0, model.Latest, hints, nil)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.LabelNames(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
+	})
+
+	t.Run("without matchers, with limit set to a higher number than the items returned", func(t *testing.T) {
+		expected := []string{"__name__", "status", "route"}
+
+		hints := &storage.LabelHints{Limit: 10}
+
+		req, err := client.ToLabelNamesRequest(0, model.Latest, hints, nil)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.LabelNames(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
+	})
+
 	t.Run("limited due to resource utilization", func(t *testing.T) {
 		origLimiter := i.utilizationBasedLimiter
 		t.Cleanup(func() {
@@ -4144,20 +4186,26 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		assert.ElementsMatch(t, expectedValues, res.LabelValues)
 	}
 
+	expectedLimit := map[int][]string{
+		0: {"test_1", "test_2"}, // no limit
+		1: {"test_1"},
+		2: {"test_1", "test_2"}, // limit equals to the number of results
+		4: {"test_1", "test_2"}, // limit greater than the number of results
+	}
 	t.Run("with limit", func(t *testing.T) {
-		expected := []string{"test_1"}
+		for limit, expectedValues := range expectedLimit {
+			hints := &storage.LabelHints{Limit: limit}
 
-		hints := &storage.LabelHints{Limit: 1}
+			req, err := client.ToLabelValuesRequest("__name__", 0, model.Latest, hints, nil)
+			require.NoError(t, err)
 
-		req, err := client.ToLabelValuesRequest("__name__", 0, model.Latest, hints, nil)
-		require.NoError(t, err)
-
-		// Get label names
-		res, err := i.LabelValues(ctx, req)
-		require.NoError(t, err)
-		assert.ElementsMatch(t, expected, res.LabelValues)
+			// Get label names
+			res, err := i.LabelValues(ctx, req)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, expectedValues, res.LabelValues)
+		}
 	})
-
+	
 	t.Run("limited due to resource utilization", func(t *testing.T) {
 		origLimiter := i.utilizationBasedLimiter
 		t.Cleanup(func() {
