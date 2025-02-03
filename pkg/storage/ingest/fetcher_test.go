@@ -945,7 +945,6 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 			fetchers             = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0)
 		)
 		t.Cleanup(cluster.Close)
-		t.Cleanup(fetchers.Stop)
 
 		// Produce some records.
 		produceRecord(ctx, t, client, topic, partitionID, []byte("record-1"))
