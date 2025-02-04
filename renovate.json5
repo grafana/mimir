@@ -40,7 +40,7 @@
         "paths": ["operations/mimir-mixin-tools/screenshots"],
         "managers": ["npm"],
         "enabled": true
-      }
+      },
       {
         "description": "Pin jaegertracing/all-in-one Docker image, since newer versions lack the agent we depend on",
         "matchPackageNames": ["jaegertracing/all-in-one"],
@@ -48,7 +48,7 @@
           "docker",
         ],
         "enabled": false
-      },
+      }
     ],
     "branchPrefix": "deps-update/",
     "vulnerabilityAlerts": {
