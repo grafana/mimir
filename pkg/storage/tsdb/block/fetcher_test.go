@@ -421,7 +421,8 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 	olderULID, err := ulid.New(uint64(time.Now().Add(-336*time.Hour).UnixMilli()), nil)
 	require.NoError(t, err)
 	olderULIDDir := strings.ReplaceAll(block4Dir, block4ID.String(), olderULID.String())
-	os.Rename(block4Dir, olderULIDDir)
+	err = os.Rename(block4Dir, olderULIDDir)
+	require.NoError(t, err)
 	meta := &Meta{
 		BlockMeta: tsdb.BlockMeta{
 			ULID:       olderULID,
