@@ -467,7 +467,7 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.MinimiseIngesterRequestsHedgingDelay = t.Cfg.Querier.MinimiseIngesterRequestsHedgingDelay
 	t.Cfg.Distributor.PreferAvailabilityZone = t.Cfg.Querier.PreferAvailabilityZone
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
-	t.Cfg.IngesterClient.Cluster = "AAA"
+	t.Cfg.IngesterClient.Cluster = t.Cfg.Server.Cluster
 
 	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
 		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRing,
@@ -970,7 +970,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		return nil, err
 	}
 
-	t.Cfg.Ruler.Cluster = "AAA"
+	t.Cfg.Ruler.Cluster = t.Cfg.Server.Cluster
 	t.Ruler, err = ruler.NewRuler(
 		t.Cfg.Ruler,
 		manager,
