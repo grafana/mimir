@@ -42,7 +42,7 @@ func Test_newRulerClientFactory(t *testing.T) {
 	flagext.DefaultValues(&cfg)
 
 	reg := prometheus.NewPedanticRegistry()
-	factory := newRulerClientFactory(cfg, reg)
+	factory := newRulerClientFactory(cfg, reg, "")
 
 	for i := 0; i < 2; i++ {
 		inst := ring.InstanceDesc{Addr: listener.Addr().String()}
