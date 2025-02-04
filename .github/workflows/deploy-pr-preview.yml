@@ -21,11 +21,11 @@ jobs:
       sources: |
         [
           {
-            "index_file": "content/docs/mimir/_index.md",
-            "relative_prefix": "/docs/mimir/latest/",
+            "index_file": null,
+            "relative_prefix": "/docs/mimir/v2.15.x/",
             "repo": "mimir",
             "source_directory": "docs/sources/mimir",
-            "website_directory": "content/docs/mimir/latest"
+            "website_directory": "content/docs/mimir/v2.15.x"
           },
           {
             "index_file": "content/docs/helm-charts/mimir-distributed/_index.md",
