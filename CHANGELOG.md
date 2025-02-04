@@ -40,7 +40,7 @@
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total`
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total`
 * [ENHANCEMENT] Compactor: Shuffle users' order in `BlocksCleaner`. Prevents bucket indexes from going an extended period without cleanup during compactor restarts. #10513
-* [ENHANCEMENT] Compactor: Add experimental `-compactor.max-lookback` option to limit blocks considered in each compaction cycle. Blocks uploaded prior to the lookback period won't be processed. This option may help reduce CPU utilization in tenants with large block metadata files that are processed before each compaction. #XXXXX
+* [ENHANCEMENT] Compactor: Add experimental `-compactor.max-lookback` option to limit blocks considered in each compaction cycle. Blocks uploaded prior to the lookback period won't be processed. This option may help reduce CPU utilization in tenants with large block metadata files that are processed before each compaction. #10585
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 * [BUGFIX] Querier: fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #10154
 * [BUGFIX] Query-frontend and querier: show warning/info annotations in some cases where they were missing (if a lazy querier was used). #10277
