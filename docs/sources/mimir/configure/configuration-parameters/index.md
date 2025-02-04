@@ -4811,6 +4811,12 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
+
+# (experimental) Blocks uploaded before the lookback period will not be
+# considered in compactor cycles. The value 0 means all blocks will be
+# considered regardless of their upload time.
+# CLI flag: -compactor.max-lookback
+[max_lookback: <duration> | default = 0s]
 ```
 
 ### store_gateway

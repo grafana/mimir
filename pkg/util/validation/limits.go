@@ -379,7 +379,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.CompactorBlockUploadVerifyChunks, "compactor.block-upload-verify-chunks", true, "Verify chunks when uploading blocks via the upload API for the tenant.")
 	f.Int64Var(&l.CompactorBlockUploadMaxBlockSizeBytes, "compactor.block-upload-max-block-size-bytes", 0, "Maximum size in bytes of a block that is allowed to be uploaded or validated. 0 = no limit.")
 	f.IntVar(&l.CompactorInMemoryTenantMetaCacheSize, "compactor.in-memory-tenant-meta-cache-size", 0, "Size of per-tenant in-memory cache for parsed meta.json files. This is useful when meta.json files are big and parsing is expensive. Small meta.json files are not cached. 0 means this cache is disabled.")
-	f.Var(&l.CompactorMaxLookback, "compactor.max-lookback", "Blocks uploaded before the lookback period will not be considered in compactor cycles. The value 0 means all blocks which are not marked for deletion will be considered.")
 
 	// Query-frontend.
 	f.Var(&l.MaxTotalQueryLength, MaxTotalQueryLengthFlag, "Limit the total query time range (end - start time). This limit is enforced in the query-frontend on the received instant, range or remote read query.")
@@ -895,10 +894,6 @@ func (o *Overrides) CompactorTenantShardSize(userID string) int {
 
 func (o *Overrides) CompactorInMemoryTenantMetaCacheSize(userID string) int {
 	return o.getOverridesForUser(userID).CompactorInMemoryTenantMetaCacheSize
-}
-
-func (o *Overrides) CompactorMaxLookback(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).CompactorMaxLookback)
 }
 
 // EvaluationDelay returns the rules evaluation delay for a given user.
