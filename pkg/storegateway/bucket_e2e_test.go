@@ -881,6 +881,14 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 				},
 				expected: []string{"a", "b", "c"},
 			},
+			"basic labelNames, limit = 1": {
+				req: &storepb.LabelNamesRequest{
+					Start: timestamp.FromTime(minTime),
+					End:   timestamp.FromTime(maxTime),
+					Limit: 1,
+				},
+				expected: []string{"a"},
+			},
 			"outside the time range": {
 				req: &storepb.LabelNamesRequest{
 					Start: timestamp.FromTime(time.Now().Add(-24 * time.Hour)),
@@ -1023,6 +1031,15 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 					},
 				},
 				expected: []string{"2"},
+			},
+			"label a, limit=1": {
+				req: &storepb.LabelValuesRequest{
+					Label: "a",
+					Start: timestamp.FromTime(minTime),
+					End:   timestamp.FromTime(maxTime),
+					Limit: 1,
+				},
+				expected: []string{"1"},
 			},
 			"label ext1": {
 				req: &storepb.LabelValuesRequest{
