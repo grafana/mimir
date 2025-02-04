@@ -2215,8 +2215,6 @@ Usage of ./cmd/mimir/mimir:
     	The timeout for a query. This config option should be set on query-frontend too when query sharding is enabled. This also applies to queries evaluated by the ruler (internally or remotely). (default 2m0s)
   -query-frontend.active-series-write-timeout duration
     	[experimental] Timeout for writing active series responses. 0 means the value from `-server.http-write-timeout` is used. (default 5m0s)
-  -query-frontend.adjust-to-max-future-query-window duration
-    	[experimental] Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.
   -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step to improve result caching.
   -query-frontend.block-promql-experimental-functions
@@ -2291,6 +2289,8 @@ Usage of ./cmd/mimir/mimir:
     	Max body size for downstream prometheus. (default 10485760)
   -query-frontend.max-cache-freshness duration
     	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 10m)
+  -query-frontend.max-future-query-window duration
+    	[experimental] Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.
   -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
   -query-frontend.max-query-expression-size-bytes int

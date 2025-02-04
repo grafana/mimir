@@ -3627,7 +3627,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 
 # (experimental) Mutate incoming queries that look far into the future to only
 # look into the future by the set duration. 0 to disable.
-# CLI flag: -query-frontend.adjust-to-max-future-query-window
+# CLI flag: -query-frontend.max-future-query-window
 [max_future_query_window: <duration> | default = 0s]
 
 # Enables endpoints used for cardinality analysis.

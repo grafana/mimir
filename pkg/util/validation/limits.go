@@ -65,7 +65,7 @@ const (
 	AlertmanagerMaxGrafanaStateSizeFlag       = "alertmanager.max-grafana-state-size-bytes"
 	costAttributionLabelsFlag                 = "validation.cost-attribution-labels"
 	maxCostAttributionLabelsPerUserFlag       = "validation.max-cost-attribution-labels-per-user"
-	maxFutureQueryWindowFlag                  = "query-frontend.adjust-to-max-future-query-window"
+	maxFutureQueryWindowFlag                  = "query-frontend.max-future-query-window"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour

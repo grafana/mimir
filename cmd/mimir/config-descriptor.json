@@ -4397,7 +4397,7 @@
           "desc": "Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.adjust-to-max-future-query-window",
+          "fieldFlag": "query-frontend.max-future-query-window",
           "fieldType": "duration",
           "fieldCategory": "experimental"
         },
