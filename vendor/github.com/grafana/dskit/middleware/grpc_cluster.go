@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/dskit/grpcutil"
 
@@ -35,6 +36,9 @@ func ClusterUnaryClientInterceptor(cluster string) grpc.UnaryClientInterceptor {
 // Otherwise, an error is returned.
 func ClusterUnaryServerInterceptor(cluster string, invalidClusters *prometheus.CounterVec, logger log.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		if _, ok := info.Server.(healthpb.HealthServer); ok {
+			return handler(ctx, req)
+		}
 		reqCluster := getClusterFromIncomingContext(ctx, logger)
 		if cluster != reqCluster {
 			level.Warn(logger).Log("msg", "rejecting request intended for wrong cluster",
