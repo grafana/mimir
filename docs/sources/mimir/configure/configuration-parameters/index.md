@@ -1350,6 +1350,140 @@ read_circuit_breaker:
   # and its timeouts aren't reported as errors.
   # CLI flag: -ingester.read-circuit-breaker.request-timeout
   [request_timeout: <duration> | default = 30s]
+
+rejection_prioritizer:
+  # (experimental) Enable adaptive limiting when making requests to ingesters
+  # CLI flag: -ingester.rejection-prioritizer.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) The interval at which the rejection threshold should be
+  # calibrated
+  # CLI flag: -ingester.rejection-prioritizer.calibration-interval
+  [calibration_interval: <duration> | default = 1s]
+
+push_adaptive_limiter:
+  # (experimental) Enable adaptive limiting when making requests to ingesters
+  # CLI flag: -ingester.push-adaptive-limiter.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Min duration of the window that is used to determine recent,
+  # short-term load on the system
+  # CLI flag: -ingester.push-adaptive-limiter.short-window-min-duration
+  [short_window_min_duration: <duration> | default = 1s]
+
+  # (experimental) Max duration of the window that is used to determine recent,
+  # short-term load on the system
+  # CLI flag: -ingester.push-adaptive-limiter.short-window-max-duration
+  [short_window_max_duration: <duration> | default = 30s]
+
+  # (experimental) Min number of samples that must be recorded in the window
+  # CLI flag: -ingester.push-adaptive-limiter.short-window-min-samples
+  [short_window_min_samples: <int> | default = 1]
+
+  # (experimental) Short-term window measurements that will be stored in an
+  # exponentially weighted moving average window, representing the long-term
+  # baseline inflight time
+  # CLI flag: -ingester.push-adaptive-limiter.long-window
+  [long_window: <int> | default = 60]
+
+  # (experimental) The quantile of recorded response times to consider when
+  # adjusting the concurrency limit
+  # CLI flag: -ingester.push-adaptive-limiter.sample-quantile
+  [sample_quantile: <float> | default = 0.9]
+
+  # (experimental) Min inflight requests limit
+  # CLI flag: -ingester.push-adaptive-limiter.min-inflight-limit
+  [min_inflight_limit: <int> | default = 2]
+
+  # (experimental) Max inflight requests limit
+  # CLI flag: -ingester.push-adaptive-limiter.max-inflight-limit
+  [max_inflight_limit: <int> | default = 200]
+
+  # (experimental) Initial inflight requests limit
+  # CLI flag: -ingester.push-adaptive-limiter.initial-inflight-limit
+  [initial_inflight_limit: <int> | default = 20]
+
+  # (experimental) The max limit as a multiple of current inflight requests
+  # CLI flag: -ingester.push-adaptive-limiter.max-limit-factor
+  [max_limit_factor: <float> | default = 5]
+
+  # (experimental) How many recent limit and inflight time measurements are
+  # stored to detect whether increases in limits correlate with increases in
+  # inflight times
+  # CLI flag: -ingester.push-adaptive-limiter.correlation-window
+  [correlation_window: <int> | default = 50]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which rejections will start
+  # CLI flag: -ingester.push-adaptive-limiter.initial-rejection-factor
+  [initial_rejection_factor: <float> | default = 2]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which all requests will be rejected
+  # CLI flag: -ingester.push-adaptive-limiter.max-rejection-factor
+  [max_rejection_factor: <float> | default = 3]
+
+read_adaptive_limiter:
+  # (experimental) Enable adaptive limiting when making requests to ingesters
+  # CLI flag: -ingester.read-adaptive-limiter.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Min duration of the window that is used to determine recent,
+  # short-term load on the system
+  # CLI flag: -ingester.read-adaptive-limiter.short-window-min-duration
+  [short_window_min_duration: <duration> | default = 1s]
+
+  # (experimental) Max duration of the window that is used to determine recent,
+  # short-term load on the system
+  # CLI flag: -ingester.read-adaptive-limiter.short-window-max-duration
+  [short_window_max_duration: <duration> | default = 30s]
+
+  # (experimental) Min number of samples that must be recorded in the window
+  # CLI flag: -ingester.read-adaptive-limiter.short-window-min-samples
+  [short_window_min_samples: <int> | default = 1]
+
+  # (experimental) Short-term window measurements that will be stored in an
+  # exponentially weighted moving average window, representing the long-term
+  # baseline inflight time
+  # CLI flag: -ingester.read-adaptive-limiter.long-window
+  [long_window: <int> | default = 60]
+
+  # (experimental) The quantile of recorded response times to consider when
+  # adjusting the concurrency limit
+  # CLI flag: -ingester.read-adaptive-limiter.sample-quantile
+  [sample_quantile: <float> | default = 0.9]
+
+  # (experimental) Min inflight requests limit
+  # CLI flag: -ingester.read-adaptive-limiter.min-inflight-limit
+  [min_inflight_limit: <int> | default = 2]
+
+  # (experimental) Max inflight requests limit
+  # CLI flag: -ingester.read-adaptive-limiter.max-inflight-limit
+  [max_inflight_limit: <int> | default = 200]
+
+  # (experimental) Initial inflight requests limit
+  # CLI flag: -ingester.read-adaptive-limiter.initial-inflight-limit
+  [initial_inflight_limit: <int> | default = 20]
+
+  # (experimental) The max limit as a multiple of current inflight requests
+  # CLI flag: -ingester.read-adaptive-limiter.max-limit-factor
+  [max_limit_factor: <float> | default = 5]
+
+  # (experimental) How many recent limit and inflight time measurements are
+  # stored to detect whether increases in limits correlate with increases in
+  # inflight times
+  # CLI flag: -ingester.read-adaptive-limiter.correlation-window
+  [correlation_window: <int> | default = 50]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which rejections will start
+  # CLI flag: -ingester.read-adaptive-limiter.initial-rejection-factor
+  [initial_rejection_factor: <float> | default = 2]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which all requests will be rejected
+  # CLI flag: -ingester.read-adaptive-limiter.max-rejection-factor
+  [max_rejection_factor: <float> | default = 3]
 ```
 
 ### querier

@@ -3653,6 +3653,344 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "rejection_prioritizer",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable adaptive limiting when making requests to ingesters",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.rejection-prioritizer.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "calibration_interval",
+              "required": false,
+              "desc": "The interval at which the rejection threshold should be calibrated",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingester.rejection-prioritizer.calibration-interval",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "push_adaptive_limiter",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable adaptive limiting when making requests to ingesters",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.push-adaptive-limiter.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "short_window_min_duration",
+              "required": false,
+              "desc": "Min duration of the window that is used to determine recent, short-term load on the system",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingester.push-adaptive-limiter.short-window-min-duration",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "short_window_max_duration",
+              "required": false,
+              "desc": "Max duration of the window that is used to determine recent, short-term load on the system",
+              "fieldValue": null,
+              "fieldDefaultValue": 30000000000,
+              "fieldFlag": "ingester.push-adaptive-limiter.short-window-max-duration",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "short_window_min_samples",
+              "required": false,
+              "desc": "Min number of samples that must be recorded in the window",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "ingester.push-adaptive-limiter.short-window-min-samples",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "long_window",
+              "required": false,
+              "desc": "Short-term window measurements that will be stored in an exponentially weighted moving average window, representing the long-term baseline inflight time",
+              "fieldValue": null,
+              "fieldDefaultValue": 60,
+              "fieldFlag": "ingester.push-adaptive-limiter.long-window",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "sample_quantile",
+              "required": false,
+              "desc": "The quantile of recorded response times to consider when adjusting the concurrency limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.9,
+              "fieldFlag": "ingester.push-adaptive-limiter.sample-quantile",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "min_inflight_limit",
+              "required": false,
+              "desc": "Min inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "ingester.push-adaptive-limiter.min-inflight-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_inflight_limit",
+              "required": false,
+              "desc": "Max inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 200,
+              "fieldFlag": "ingester.push-adaptive-limiter.max-inflight-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_inflight_limit",
+              "required": false,
+              "desc": "Initial inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "ingester.push-adaptive-limiter.initial-inflight-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_limit_factor",
+              "required": false,
+              "desc": "The max limit as a multiple of current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 5,
+              "fieldFlag": "ingester.push-adaptive-limiter.max-limit-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "correlation_window",
+              "required": false,
+              "desc": "How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times",
+              "fieldValue": null,
+              "fieldDefaultValue": 50,
+              "fieldFlag": "ingester.push-adaptive-limiter.correlation-window",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_rejection_factor",
+              "required": false,
+              "desc": "The number of allowed queued requests, as a multiple of current inflight requests, after which rejections will start",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "ingester.push-adaptive-limiter.initial-rejection-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_rejection_factor",
+              "required": false,
+              "desc": "The number of allowed queued requests, as a multiple of current inflight requests, after which all requests will be rejected",
+              "fieldValue": null,
+              "fieldDefaultValue": 3,
+              "fieldFlag": "ingester.push-adaptive-limiter.max-rejection-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "read_adaptive_limiter",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable adaptive limiting when making requests to ingesters",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.read-adaptive-limiter.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "short_window_min_duration",
+              "required": false,
+              "desc": "Min duration of the window that is used to determine recent, short-term load on the system",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingester.read-adaptive-limiter.short-window-min-duration",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "short_window_max_duration",
+              "required": false,
+              "desc": "Max duration of the window that is used to determine recent, short-term load on the system",
+              "fieldValue": null,
+              "fieldDefaultValue": 30000000000,
+              "fieldFlag": "ingester.read-adaptive-limiter.short-window-max-duration",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "short_window_min_samples",
+              "required": false,
+              "desc": "Min number of samples that must be recorded in the window",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "ingester.read-adaptive-limiter.short-window-min-samples",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "long_window",
+              "required": false,
+              "desc": "Short-term window measurements that will be stored in an exponentially weighted moving average window, representing the long-term baseline inflight time",
+              "fieldValue": null,
+              "fieldDefaultValue": 60,
+              "fieldFlag": "ingester.read-adaptive-limiter.long-window",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "sample_quantile",
+              "required": false,
+              "desc": "The quantile of recorded response times to consider when adjusting the concurrency limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.9,
+              "fieldFlag": "ingester.read-adaptive-limiter.sample-quantile",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "min_inflight_limit",
+              "required": false,
+              "desc": "Min inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "ingester.read-adaptive-limiter.min-inflight-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_inflight_limit",
+              "required": false,
+              "desc": "Max inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 200,
+              "fieldFlag": "ingester.read-adaptive-limiter.max-inflight-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_inflight_limit",
+              "required": false,
+              "desc": "Initial inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "ingester.read-adaptive-limiter.initial-inflight-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_limit_factor",
+              "required": false,
+              "desc": "The max limit as a multiple of current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 5,
+              "fieldFlag": "ingester.read-adaptive-limiter.max-limit-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "correlation_window",
+              "required": false,
+              "desc": "How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times",
+              "fieldValue": null,
+              "fieldDefaultValue": 50,
+              "fieldFlag": "ingester.read-adaptive-limiter.correlation-window",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_rejection_factor",
+              "required": false,
+              "desc": "The number of allowed queued requests, as a multiple of current inflight requests, after which rejections will start",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "ingester.read-adaptive-limiter.initial-rejection-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_rejection_factor",
+              "required": false,
+              "desc": "The number of allowed queued requests, as a multiple of current inflight requests, after which all requests will be rejected",
+              "fieldValue": null,
+              "fieldDefaultValue": 3,
+              "fieldFlag": "ingester.read-adaptive-limiter.max-rejection-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

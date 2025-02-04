@@ -1713,6 +1713,32 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -ingester.partition-ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
+  -ingester.push-adaptive-limiter.correlation-window uint
+    	[experimental] How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times (default 50)
+  -ingester.push-adaptive-limiter.enabled
+    	[experimental] Enable adaptive limiting when making requests to ingesters
+  -ingester.push-adaptive-limiter.initial-inflight-limit uint
+    	[experimental] Initial inflight requests limit (default 20)
+  -ingester.push-adaptive-limiter.initial-rejection-factor float
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which rejections will start (default 2)
+  -ingester.push-adaptive-limiter.long-window uint
+    	[experimental] Short-term window measurements that will be stored in an exponentially weighted moving average window, representing the long-term baseline inflight time (default 60)
+  -ingester.push-adaptive-limiter.max-inflight-limit uint
+    	[experimental] Max inflight requests limit (default 200)
+  -ingester.push-adaptive-limiter.max-limit-factor float
+    	[experimental] The max limit as a multiple of current inflight requests (default 5)
+  -ingester.push-adaptive-limiter.max-rejection-factor float
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests will be rejected (default 3)
+  -ingester.push-adaptive-limiter.min-inflight-limit uint
+    	[experimental] Min inflight requests limit (default 2)
+  -ingester.push-adaptive-limiter.sample-quantile float
+    	[experimental] The quantile of recorded response times to consider when adjusting the concurrency limit (default 0.9)
+  -ingester.push-adaptive-limiter.short-window-max-duration duration
+    	[experimental] Max duration of the window that is used to determine recent, short-term load on the system (default 30s)
+  -ingester.push-adaptive-limiter.short-window-min-duration duration
+    	[experimental] Min duration of the window that is used to determine recent, short-term load on the system (default 1s)
+  -ingester.push-adaptive-limiter.short-window-min-samples uint
+    	[experimental] Min number of samples that must be recorded in the window (default 1)
   -ingester.push-circuit-breaker.cooldown-period duration
     	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
   -ingester.push-circuit-breaker.enabled
@@ -1729,6 +1755,32 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
+  -ingester.read-adaptive-limiter.correlation-window uint
+    	[experimental] How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times (default 50)
+  -ingester.read-adaptive-limiter.enabled
+    	[experimental] Enable adaptive limiting when making requests to ingesters
+  -ingester.read-adaptive-limiter.initial-inflight-limit uint
+    	[experimental] Initial inflight requests limit (default 20)
+  -ingester.read-adaptive-limiter.initial-rejection-factor float
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which rejections will start (default 2)
+  -ingester.read-adaptive-limiter.long-window uint
+    	[experimental] Short-term window measurements that will be stored in an exponentially weighted moving average window, representing the long-term baseline inflight time (default 60)
+  -ingester.read-adaptive-limiter.max-inflight-limit uint
+    	[experimental] Max inflight requests limit (default 200)
+  -ingester.read-adaptive-limiter.max-limit-factor float
+    	[experimental] The max limit as a multiple of current inflight requests (default 5)
+  -ingester.read-adaptive-limiter.max-rejection-factor float
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests will be rejected (default 3)
+  -ingester.read-adaptive-limiter.min-inflight-limit uint
+    	[experimental] Min inflight requests limit (default 2)
+  -ingester.read-adaptive-limiter.sample-quantile float
+    	[experimental] The quantile of recorded response times to consider when adjusting the concurrency limit (default 0.9)
+  -ingester.read-adaptive-limiter.short-window-max-duration duration
+    	[experimental] Max duration of the window that is used to determine recent, short-term load on the system (default 30s)
+  -ingester.read-adaptive-limiter.short-window-min-duration duration
+    	[experimental] Min duration of the window that is used to determine recent, short-term load on the system (default 1s)
+  -ingester.read-adaptive-limiter.short-window-min-samples uint
+    	[experimental] Min number of samples that must be recorded in the window (default 1)
   -ingester.read-circuit-breaker.cooldown-period duration
     	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
   -ingester.read-circuit-breaker.enabled
@@ -1747,6 +1799,10 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
     	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
+  -ingester.rejection-prioritizer.calibration-interval duration
+    	[experimental] The interval at which the rejection threshold should be calibrated (default 1s)
+  -ingester.rejection-prioritizer.enabled
+    	[experimental] Enable adaptive limiting when making requests to ingesters
   -ingester.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -ingester.ring.consul.cas-retry-delay duration

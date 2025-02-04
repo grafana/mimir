@@ -2163,6 +2163,21 @@ How to **fix** it:
 - Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
 - Consider scaling out the ingesters.
 
+### err-mimir-ingester-max-inflight-read-requests
+
+This error occurs when an ingester rejects a read request because the maximum in-flight requests limit has been reached.
+
+How it **works**:
+
+- The ingester has a per-instance limit on the number of in-flight read requests.
+- The limit applies to all in-flight read requests, across all tenants, and it protects the ingester from becoming overloaded in case of high traffic.
+- To configure the limit, set the `-ingester.read-adaptive-limiter` options.
+
+How to **fix** it:
+
+- Check the read requests latency through the `Mimir / Reads` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight read requests).
+- Consider scaling out the ingesters.
+
 ### err-mimir-max-series-per-user
 
 This error occurs when the number of in-memory series for a given tenant exceeds the configured limit.
