@@ -124,6 +124,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"min_over_time":      `min_over_time({__name__=~"float.*"}[1m])`,
 		"minute":             `minute({__name__=~"float.*"})`,
 		"month":              `month({__name__=~"float.*"})`,
+		"predict_linear":     `predict_linear({__name__=~"float.*"}[1m], 30)`,
 		"present_over_time":  `present_over_time({__name__=~"float.*"}[1m])`,
 		"rad":                `rad({__name__=~"float.*"})`,
 		"rate":               `rate({__name__=~"float.*"}[1m])`,
@@ -136,6 +137,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"sum_over_time":      `sum_over_time({__name__=~"float.*"}[1m])`,
 		"tan":                `tan({__name__=~"float.*"})`,
 		"tanh":               `tanh({__name__=~"float.*"})`,
+		"timestamp":          `timestamp({__name__=~"float.*"})`,
 		"vector":             `<skip>`, // vector() takes a scalar, so this test doesn't apply.
 		"year":               `year({__name__=~"float.*"})`,
 	}
