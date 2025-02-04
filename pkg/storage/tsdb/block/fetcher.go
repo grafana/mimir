@@ -73,6 +73,9 @@ const (
 
 	// MarkedForNoCompactionMeta is label for blocks which are loaded but also marked for no compaction. This label is also counted in `loaded` label metric.
 	MarkedForNoCompactionMeta = "marked-for-no-compact"
+
+	// LookbackExcludedMeta is label for blocks which are not loaded because their ULID pre-dates the fetcher's configured lookback period
+	LookbackExcludedMeta = "lookback-excluded"
 )
 
 func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) *FetcherMetrics {
@@ -112,6 +115,7 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 			{duplicateMeta},
 			{MarkedForDeletionMeta},
 			{MarkedForNoCompactionMeta},
+			{LookbackExcludedMeta},
 		}, syncedExtraLabels...)...,
 	)
 	return &m
@@ -139,6 +143,7 @@ type MetaFetcher struct {
 	bkt         objstore.InstrumentedBucketReader
 	metrics     *FetcherMetrics
 	filters     []MetadataFilter
+	maxLookback time.Duration
 
 	// Optional local directory to cache meta.json files.
 	cacheDir string
@@ -152,7 +157,7 @@ type MetaFetcher struct {
 }
 
 // NewMetaFetcher returns a MetaFetcher.
-func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter, metaCache *MetaCache) (*MetaFetcher, error) {
+func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter, metaCache *MetaCache, lookback time.Duration) (*MetaFetcher, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -174,6 +179,7 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 		metrics:     NewFetcherMetrics(reg, nil),
 		filters:     filters,
 		metaCache:   metaCache,
+		maxLookback: lookback,
 	}, nil
 }
 
@@ -295,6 +301,7 @@ type response struct {
 	noMetasCount           float64
 	corruptedMetasCount    float64
 	markedForDeletionCount float64
+	exceededLookbackCount  float64
 }
 
 func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool) (interface{}, error) {
@@ -307,7 +314,18 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 		ch  = make(chan ulid.ULID, f.concurrency)
 		mtx sync.Mutex
 	)
-	level.Debug(f.logger).Log("msg", "fetching meta data", "concurrency", f.concurrency)
+
+	level.Debug(f.logger).Log("msg", "fetching meta data", "concurrency", f.concurrency, "max-lookback", f.maxLookback)
+	var minAllowedBlockID ulid.ULID
+	if f.maxLookback.Milliseconds() > 0 {
+		var err error
+		minAllowedBlockID, err = ulid.New(
+			uint64(time.Now().Add(-f.maxLookback).UnixMilli()), nil,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// Get the list of blocks marked for deletion so that we'll exclude them (if required).
 	var markedForDeletion map[ulid.ULID]struct{}
@@ -355,13 +373,6 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 		})
 	}
 
-	// NOTE (dmwilson) - metaSyncMaxAgeThresholdID is ULID chosen deterministically
-	// s.t. any blocks older than this ULID aren't fetched. The 168h threshold is a
-	// placeholder, to be replaced by some value _larger than_ max(cfg.BlockRanges) and
-	// OoO maximum.
-	metaSyncMaxAgeThresholdID := ulid.ULID{}
-	metaSyncMaxAgeThresholdID.SetTime(uint64(time.Now().Add(-168 * time.Hour).UnixMilli()))
-
 	// Workers scheduled, distribute blocks.
 	eg.Go(func() error {
 		defer close(ch)
@@ -377,8 +388,9 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 				return nil
 			}
 
-			// skip any blocks older than the sync max age threshold.
-			if id.Compare(metaSyncMaxAgeThresholdID) == -1 {
+			// skip any blocks older than the fetcher's max lookback.
+			if id.Compare(minAllowedBlockID) == -1 {
+				resp.exceededLookbackCount++
 				return nil
 			}
 
@@ -491,6 +503,7 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) 
 	f.metrics.Synced.WithLabelValues(FailedMeta).Set(float64(len(resp.metaErrs)))
 	f.metrics.Synced.WithLabelValues(NoMeta).Set(resp.noMetasCount)
 	f.metrics.Synced.WithLabelValues(CorruptedMeta).Set(resp.corruptedMetasCount)
+	f.metrics.Synced.WithLabelValues(LookbackExcludedMeta).Set(resp.exceededLookbackCount)
 	if excludeMarkedForDeletion {
 		f.metrics.Synced.WithLabelValues(MarkedForDeletionMeta).Set(resp.markedForDeletionCount)
 	}
