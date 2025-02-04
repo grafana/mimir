@@ -161,14 +161,12 @@ func TestGrpcInflightMethodLimiter(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 1, m.startReadCalls)
 		require.Equal(t, 0, m.prepareReadCalls)
-		require.Equal(t, 0, m.finishReadCalls)
 		_, err = l.RPCCallProcessing(ctx, ingesterMethod)
 		require.NoError(t, err)
 		require.Equal(t, 1, m.prepareReadCalls)
 		require.NotPanics(t, func() {
 			l.RPCCallFinished(ctx)
 		})
-		require.Equal(t, 1, m.finishReadCalls)
 	})
 
 	t.Run("distributor push via httpgrpc", func(t *testing.T) {
@@ -273,7 +271,6 @@ type mockIngesterReceiver struct {
 
 	startReadCalls   int
 	prepareReadCalls int
-	finishReadCalls  int
 }
 
 func (i *mockIngesterReceiver) StartPushRequest(ctx context.Context, size int64) (context.Context, error) {
@@ -301,10 +298,6 @@ func (i *mockIngesterReceiver) StartReadRequest(ctx context.Context) (context.Co
 func (i *mockIngesterReceiver) PrepareReadRequest(_ context.Context) (func(error), error) {
 	i.prepareReadCalls++
 	return nil, i.returnError
-}
-
-func (i *mockIngesterReceiver) FinishReadRequest(_ context.Context) {
-	i.finishReadCalls++
 }
 
 type mockDistributorReceiver struct {

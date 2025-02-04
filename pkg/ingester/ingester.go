@@ -994,7 +994,7 @@ type pushRequestState struct {
 }
 
 type readRequestState struct {
-	requestFinish func()
+	requestFinish func(err error)
 }
 
 func getPushRequestState(ctx context.Context) *pushRequestState {
@@ -1011,17 +1011,20 @@ func getReadRequestState(ctx context.Context) *readRequestState {
 	return nil
 }
 
-// StartPushRequest checks if ingester can start push request, and increments relevant counters.
-// If new push request cannot be started, errors convertible to gRPC status code are returned, and metrics are updated.
+// StartPushRequest implements pushReceiver and checks if ingester can start push request, incrementing relevant
+// counters. If new push request cannot be started, errors convertible to gRPC status code are returned, and metrics are
+// updated.
 func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context.Context, error) {
 	ctx, _, err := i.startPushRequest(ctx, reqSize)
 	return ctx, err
 }
 
+// PreparePushRequest implements pushReceiver.
 func (i *Ingester) PreparePushRequest(_ context.Context) (finishFn func(error), err error) {
 	return nil, nil
 }
 
+// FinishPushRequest implements pushReceiver.
 func (i *Ingester) FinishPushRequest(ctx context.Context) {
 	st := getPushRequestState(ctx)
 	if st == nil {
@@ -1661,9 +1664,10 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	return nil
 }
 
-// StartReadRequest tries to start a read request. If it was successful, startReadRequest returns a context with a
-// function that should be called to finish the started read request once the request is completed. If it wasn't
-// successful, the causing error is returned and a nil context is returned.
+// StartReadRequest implements ingesterReceiver and is called by a gRPC tap Handle when a request is first received to
+// determine if a request should be permitted. When permitted, StartReadRequest returns a context with a function that
+// should be called to finish the started read request once the request is completed. If it wasn't successful, the
+// causing error is returned and a nil context is returned.
 func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Context, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
@@ -1679,22 +1683,20 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 	}
 	start := time.Now()
 	return context.WithValue(ctx, readReqCtxKey, &readRequestState{
-		requestFinish: func() {
+		requestFinish: func(err error) {
 			finish(time.Since(start), err)
 		},
 	}), nil
 }
 
-func (i *Ingester) PrepareReadRequest(_ context.Context) (finishFn func(error), err error) {
-	return nil, nil
-}
-
-func (i *Ingester) FinishReadRequest(ctx context.Context) {
-	st := getReadRequestState(ctx)
-	if st == nil {
-		return
+// PrepareReadRequest implements ingesterReceiver and is called by a gRPC interceptor when a request is in progress.
+// When successful, PrepareReadRequest returns a function that should be called once the request is completed.
+func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error), err error) {
+	// Propagate any error from the read request to the finish function embedded in the context
+	if st := getReadRequestState(ctx); st != nil {
+		return st.requestFinish, nil
 	}
-	st.requestFinish()
+	return func(error) {}, nil
 }
 
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {

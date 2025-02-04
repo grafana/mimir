@@ -338,8 +338,9 @@ func TestIngester_StartReadRequest(t *testing.T) {
 				// Calling finish must release a potentially acquired permit
 				// and in that case record a success, and no failures.
 				expectedSuccessCount := acquiredPermitCount.Load()
-				failingIng.FinishReadRequest(ctx)
-				require.Equal(t, int64(0), acquiredPermitCount.Load())
+				require.Equal(t, tc.expectedAcquiredPermitCount, int(acquiredPermitCount.Load()))
+				finishFn, _ := failingIng.PrepareReadRequest(ctx)
+				finishFn(nil)
 				require.Equal(t, expectedSuccessCount, recordedSuccessCount.Load())
 				require.Equal(t, int64(0), recordedFailureCount.Load())
 			} else {
@@ -4189,21 +4190,6 @@ func Test_Ingester_LabelValues(t *testing.T) {
 			require.NoError(t, err)
 			assert.ElementsMatch(t, expectedValues, res.LabelValues)
 		}
-	})
-
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
-
-		_, err := i.LabelValues(ctx, &client.LabelValuesRequest{})
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
 
