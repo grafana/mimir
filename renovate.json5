@@ -41,6 +41,14 @@
         "managers": ["npm"],
         "enabled": true
       }
+      {
+        "description": "Pin jaegertracing/all-in-one Docker image, since newer versions lack the agent we depend on",
+        "matchPackageNames": ["jaegertracing/all-in-one"],
+        "matchDatasources": [
+          "docker",
+        ],
+        "enabled": false
+      },
     ],
     "branchPrefix": "deps-update/",
     "vulnerabilityAlerts": {
