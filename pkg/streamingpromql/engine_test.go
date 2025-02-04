@@ -900,6 +900,107 @@ func TestRangeVectorSelectors(t *testing.T) {
 	}
 }
 
+func FuzzQueries(f *testing.F) {
+	data := `
+	           load 1m
+	           some_metric{env="1"} 0+1x4
+	           some_metric{env="2"} 0+2x4
+	           some_metric_with_gaps 0 1 _ 3
+	           some_metric_with_stale_marker 0 1 stale 3
+	           incr_histogram{env="1"}	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:2 count:1 buckets:[1] offset:1}}x4
+	           incr_histogram{env="2"}	{{schema:0 sum:4 count:4 buckets:[1 2 1]}}+{{sum:4 count:2 buckets:[1 2] offset:1}}x4
+	           histogram_with_gaps	{{sum:1 count:1 buckets:[1]}} {{sum:2 count:2 buckets:[1 1]}} _ {{sum:3 count:3 buckets:[1 1 1]}}
+	           histogram_with_stale_marker	{{sum:1 count:1 buckets:[1]}} {{sum:2 count:2 buckets:[1 1]}} stale {{sum:4 count:4 buckets:[1 1 1 1]}}
+	           mixed_metric {{schema:0 sum:4 count:4 buckets:[1 2 1]}} 1 2 {{schema:0 sum:3 count:3 buckets:[1 2 1]}}
+	           mixed_metric_histogram_first {{schema:0 sum:4 count:4 buckets:[1 2 1]}} 1
+	           mixed_metric_float_first 1 {{schema:0 sum:4 count:4 buckets:[1 2 1]}}
+
+	           load 10s
+	           metric{type="floats"} 1 2
+	           metric{type="histograms"} {{count:1}} {{count:2}}
+	           http_requests{job="api-server", instance="0", group="production"} 0+10x1000 100+30x1000
+	           http_requests{job="api-server", instance="1", group="production"} 0+20x1000 200+30x1000
+	           http_requests{job="api-server", instance="0", group="canary"}     0+30x1000 300+80x1000
+	           http_requests{job="api-server", instance="1", group="canary"}     0+40x2000
+	           other_metric{type="floats"} 0 4 3 6 -1 10
+	           other_metric{type="histograms"} {{count:0}} {{count:4}} {{count:3}} {{count:6}} {{count:-1}} {{count:10}}
+	           other_metric{type="mixed"} 0 4 3 6 {{count:-1}} {{count:10}}
+	`
+
+	opts := NewTestEngineOpts()
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(f, err)
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+	storage := promqltest.LoadedStorage(f, data)
+	f.Cleanup(func() { storage.Close() })
+
+	f.Add(`metric[20s:10s]`)
+	f.Add(`(metric{type="floats"} > Inf)[20s:10s]`)
+	f.Add(`last_over_time((metric{type="floats"} > Inf)[20s:10s])[30s:5s]`)
+	f.Add(`metric[20s:5s]`)
+	f.Add(`metric[20s:5s] offset 2s`)
+	f.Add(`metric[20s:5s] offset 6s`)
+	f.Add(`metric[20s:5s] offset 4s`)
+	f.Add(`metric[20s:5s]`)
+	f.Add(`metric[20s:5s] offset 5s`)
+	f.Add(`metric[20s:5s] offset 6s`)
+	f.Add(`metric[20s:5s] offset 7s`)
+	f.Add(`http_requests{group=~"pro.*",instance="0"}[30s:10s]`)
+	f.Add(`http_requests{group=~"pro.*",instance="0"}[30s1ms:10s]`)
+	f.Add(`http_requests{group=~"pro.*",instance="0"}[5m:]`)
+	f.Add(`http_requests{group=~"pro.*",instance="0"}[5m:] offset 20m`)
+	f.Add(`rate(http_requests[1m])[15s:5s]`)
+	f.Add(`rate(http_requests[1m])[15s1ms:5s]`)
+	f.Add(`sum(http_requests{group=~"pro.*"})[30s:10s]`)
+	f.Add(`sum(http_requests{group=~"pro.*"})[30s:10s]`)
+	f.Add(`sum(http_requests)[40s:10s]`)
+	f.Add(`sum(http_requests)[40s1ms:10s]`)
+	f.Add(`(sum(http_requests{group=~"p.*"})+sum(http_requests{group=~"c.*"}))[20s:5s]`)
+	f.Add(`(sum(http_requests{group=~"p.*"})+sum(http_requests{group=~"c.*"}))[20s1ms:5s]`)
+	f.Add(`last_over_time(other_metric[20s:10s] @ start())`)
+	f.Add(`last_over_time(other_metric[20s:10s] @ end())`)
+	f.Add(`some_nonexistent_metric[1m]`)
+	f.Add(`some_metric_with_gaps[1m1s]`)
+	f.Add(`mixed_metric_histogram_first[2m]`)
+	f.Add(`some_metric[1m1s]`)
+	f.Add(`incr_histogram[1m]`)
+	f.Add(`histogram_with_gaps[1m1s]`)
+	f.Add(`histogram_with_stale_marker[3m1s]`)
+	f.Add(`mixed_metric[4m]`)
+	f.Add(`mixed_metric_float_first[2m1s]`)
+	f.Add(`some_metric[1m]`)
+	f.Add(`some_metric[1m1s] offset -1m`)
+	f.Add(`some_metric[1m] offset 10m`)
+	f.Add(`some_metric[1m1s] @ 3m offset 1m`)
+	f.Add(`some_metric_with_stale_marker[3m1s]`)
+	f.Add(`incr_histogram[1m1s]`)
+	f.Add(`some_metric[1m1s] offset 1m`)
+	f.Add(`some_metric[1m] offset -20m`)
+	f.Add(`some_metric[1m1s] @ 2m`)
+
+	f.Fuzz(func(t *testing.T, query string) {
+		var prom, mimir *promql.Result
+		{
+			qry, err := prometheusEngine.NewInstantQuery(context.Background(), storage, nil, query, time.Unix(30, 0))
+			if err != nil {
+				return
+			}
+
+			prom = qry.Exec(context.Background())
+			defer qry.Close()
+		}
+
+		{
+			qry, err := mimirEngine.NewInstantQuery(context.Background(), storage, nil, query, time.Unix(30, 0))
+			require.NoError(t, err)
+
+			mimir = qry.Exec(context.Background())
+			defer qry.Close()
+		}
+		testutils.RequireEqualResults(t, query, prom, mimir, false)
+	})
+}
+
 func TestSubqueries(t *testing.T) {
 	// This test is based on Prometheus' TestSubquerySelector.
 	data := `load 10s

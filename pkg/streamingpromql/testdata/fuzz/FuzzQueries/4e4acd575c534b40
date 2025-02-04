@@ -1,0 +1,2 @@
+go test fuzz v1
+string("some_metric[0]@1m")
