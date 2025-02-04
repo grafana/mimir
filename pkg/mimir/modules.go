@@ -299,7 +299,7 @@ func (t *Mimir) initServer() (services.Service, error) {
 	// t.Ingester or t.Distributor will be available. There's no race condition here, because gRPC server (service returned by this method, ie. initServer)
 	// is started only after t.Ingester and t.Distributor are set in initIngester or initDistributorService.
 
-	ingFn := func() pushReceiver {
+	ingFn := func() ingesterReceiver {
 		// Return explicit nil if there's no ingester. We don't want to return typed-nil as interface value.
 		if t.Ingester == nil {
 			return nil
