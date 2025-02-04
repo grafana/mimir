@@ -154,8 +154,6 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		}),
 	}
 
-	c.instrumentBeforeStartBlocksCleaner(context.Background())
-
 	c.Service = services.NewTimerService(cfg.CleanupInterval, c.starting, c.ticker, c.stopping)
 
 	return c
@@ -167,6 +165,7 @@ func (c *BlocksCleaner) stopping(error) error {
 }
 
 func (c *BlocksCleaner) starting(ctx context.Context) error {
+	c.instrumentBucketIndexUpdate(context.Background())
 	// Run an initial cleanup in starting state. (Note that the compactor no longer waits
 	// for the blocks cleaner to finish starting before it starts compactions.)
 	c.runCleanup(ctx, false)
@@ -208,7 +207,7 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
 	}
 }
 
-func (c *BlocksCleaner) instrumentBeforeStartBlocksCleaner(ctx context.Context) {
+func (c *BlocksCleaner) instrumentBucketIndexUpdate(ctx context.Context) {
 	allUsers, _, err := c.refreshOwnedUsers(ctx)
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
