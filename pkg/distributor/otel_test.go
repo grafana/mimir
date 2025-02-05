@@ -835,7 +835,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 		return nil
 	}, nil, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
-	assert.Equal(t, 200, resp.Code)
+	assert.Equal(t, http.StatusBadRequest, resp.Code)
 }
 
 func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
@@ -881,7 +881,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		return nil
 	}, nil, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
-	assert.Equal(t, 200, resp.Code)
+	assert.Equal(t, http.StatusBadRequest, resp.Code)
 
 	// Second case is to make sure that histogram metrics are counted correctly.
 	metric3 := resource1.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
@@ -907,7 +907,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 		return nil
 	}, nil, nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
-	assert.Equal(t, 200, resp.Code)
+	assert.Equal(t, http.StatusBadRequest, resp.Code)
 }
 
 func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
