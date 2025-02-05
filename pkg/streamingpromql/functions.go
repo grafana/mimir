@@ -203,6 +203,53 @@ func scalarToInstantVectorOperatorFactory(args []types.Operator, _ *limiting.Mem
 	return scalars.NewScalarToInstantVector(inner, expressionPosition), nil
 }
 
+func LabelJoinFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	if len(args) < 3 {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected 3 or more arguments for label_join, got %v", len(args))
+	}
+
+	inner, ok := args[0].(types.InstantVectorOperator)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected an instant vector for 1st argument for label_join, got %T", args[0])
+	}
+
+	dstLabel, ok := args[1].(types.StringOperator)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected a string for 2nd argument for label_join, got %T", args[1])
+	}
+
+	separator, ok := args[2].(types.StringOperator)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected a string for 3rd argument for label_join, got %T", args[2])
+	}
+
+	srcLabels := make([]types.StringOperator, len(args)-3)
+	for i := 3; i < len(args); i++ {
+		srcLabel, ok := args[i].(types.StringOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected a string for %dth argument for label_join, got %T", i+1, args[i])
+		}
+		srcLabels[i-3] = srcLabel
+	}
+
+	f := functions.FunctionOverInstantVectorDefinition{
+		SeriesDataFunc: functions.PassthroughData,
+		SeriesMetadataFunction: functions.SeriesMetadataFunctionDefinition{
+			Func:                     functions.LabelJoinFactory(dstLabel, separator, srcLabels),
+			NeedsSeriesDeduplication: true,
+		},
+	}
+
+	o := functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange)
+
+	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
+}
+
 func LabelReplaceFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 5 {
 		// Should be caught by the PromQL parser, but we check here for safety.
@@ -492,6 +539,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"idelta":             FunctionOverRangeVectorOperatorFactory("idelta", functions.Idelta),
 	"increase":           FunctionOverRangeVectorOperatorFactory("increase", functions.Increase),
 	"irate":              FunctionOverRangeVectorOperatorFactory("irate", functions.Irate),
+	"label_join":         LabelJoinFunctionOperatorFactory,
 	"label_replace":      LabelReplaceFunctionOperatorFactory,
 	"last_over_time":     FunctionOverRangeVectorOperatorFactory("last_over_time", functions.LastOverTime),
 	"ln":                 InstantVectorTransformationFunctionOperatorFactory("ln", functions.Ln),
