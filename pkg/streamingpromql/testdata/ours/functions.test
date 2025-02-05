@@ -683,6 +683,8 @@ eval range from 0 to 7m step 1m last_over_time(some_metric_count[3m])
   some_metric_count{env="prod", cluster="us"} _ _ _ 0 2 4 6 8
   some_metric_count{env="prod", cluster="au"} _ _ _ {{count:5}} {{count:10}} {{count:15}} {{count:20}} {{count:25}}
 
+clear
+
 # Test time-related functions.
 load 5m
     histogram_sample {{schema:0 sum:1 count:1}}
@@ -852,3 +854,89 @@ load 30s
 
 eval range from 0 to 2m step 1m predict_linear(metric[1m1s], scalar(prediction_time))
   {} _ 9.75 100
+
+clear
+
+# Test sort / sort_desc.
+load 1m
+  test_metric{case="float 1"}             0+10x4
+  test_metric{case="float 2"}             0+15x4
+  test_metric{case="float with NaN"}      NaN NaN NaN NaN NaN
+  test_metric{case="float with +Inf"}     +Inf +Inf +Inf +Inf +Inf
+  test_metric{case="float with -Inf"}     -Inf -Inf -Inf -Inf -Inf
+  test_metric{case="histogram 1"}         {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}}
+  test_metric{case="histogram 2"}         {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}}
+  test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}}
+  test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}}
+  test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}}
+
+# Sorting of identical values is not stable, so we exclude those from these test cases and check them below.
+eval_ordered instant at 1m sort(test_metric{case!~".*(NaN|Inf)"})
+  test_metric{case="histogram 2"} {{count:20 sum:5}}
+  test_metric{case="float 1"}     10
+  test_metric{case="histogram 1"} {{count:0 sum:12}}
+  test_metric{case="float 2"}     15
+
+eval_ordered instant at 1m sort_desc(test_metric{case!~".*(NaN|Inf)"})
+  test_metric{case="float 2"}     15
+  test_metric{case="histogram 1"} {{count:0 sum:12}}
+  test_metric{case="float 1"}     10
+  test_metric{case="histogram 2"} {{count:20 sum:5}}
+
+eval_ordered instant at 1m sort(test_metric{case=~"float.*"})
+  test_metric{case="float with -Inf"} -Inf
+  test_metric{case="float 1"}         10
+  test_metric{case="float 2"}         15
+  test_metric{case="float with +Inf"} +Inf
+  test_metric{case="float with NaN"}  NaN
+
+eval_ordered instant at 1m sort_desc(test_metric{case=~"float.*"})
+  test_metric{case="float with +Inf"} +Inf
+  test_metric{case="float 2"}         15
+  test_metric{case="float 1"}         10
+  test_metric{case="float with -Inf"} -Inf
+  test_metric{case="float with NaN"}  NaN
+
+eval_ordered instant at 1m sort(test_metric{case=~"histogram.*"})
+  test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}}
+  test_metric{case="histogram 2"}         {{count:20 sum:5}}
+  test_metric{case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}}
+  test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}}
+
+eval_ordered instant at 1m sort_desc(test_metric{case=~"histogram.*"})
+  test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}}
+  test_metric{case="histogram 1"}         {{count:0 sum:12}}
+  test_metric{case="histogram 2"}         {{count:20 sum:5}}
+  test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}}
+  test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}}
+
+# Test the case where some series have no sample at all.
+eval_ordered instant at 1m sort(test_metric{case=~"float.*"} > 11)
+  test_metric{case="float 2"}         15
+  test_metric{case="float with +Inf"} +Inf
+
+# sort / sort_desc do nothing for range queries.
+eval range from 0 to 4m step 1m sort(test_metric)
+  test_metric{case="float 1"}             0+10x4
+  test_metric{case="float 2"}             0+15x4
+  test_metric{case="float with NaN"}      NaN NaN NaN NaN NaN
+  test_metric{case="float with +Inf"}     +Inf +Inf +Inf +Inf +Inf
+  test_metric{case="float with -Inf"}     -Inf -Inf -Inf -Inf -Inf
+  test_metric{case="histogram 1"}         {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}}
+  test_metric{case="histogram 2"}         {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}}
+  test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}}
+  test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}}
+  test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}}
+
+eval range from 0 to 4m step 1m sort_desc(test_metric)
+  test_metric{case="float 1"}             0+10x4
+  test_metric{case="float 2"}             0+15x4
+  test_metric{case="float with NaN"}      NaN NaN NaN NaN NaN
+  test_metric{case="float with +Inf"}     +Inf +Inf +Inf +Inf +Inf
+  test_metric{case="float with -Inf"}     -Inf -Inf -Inf -Inf -Inf
+  test_metric{case="histogram 1"}         {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}}
+  test_metric{case="histogram 2"}         {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}}
+  test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}}
+  test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}}
+  test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}}
