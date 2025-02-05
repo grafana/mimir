@@ -1395,6 +1395,10 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 	return ctx, err
 }
 
+func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error) {
+	return nil, nil
+}
+
 // startPushRequest does limits checks at the beginning of Push request in distributor.
 // This can be called from different places, even multiple times for the same request:
 //

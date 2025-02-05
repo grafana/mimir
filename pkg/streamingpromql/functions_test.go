@@ -133,6 +133,8 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"sgn":                `sgn({__name__=~"float.*"})`,
 		"sin":                `sin({__name__=~"float.*"})`,
 		"sinh":               `sinh({__name__=~"float.*"})`,
+		"sort":               `<skip>`, // sort() and sort_desc() don't drop the metric name, so this test doesn't apply.
+		"sort_desc":          `<skip>`, // sort() and sort_desc() don't drop the metric name, so this test doesn't apply.
 		"sqrt":               `sqrt({__name__=~"float.*"})`,
 		"sum_over_time":      `sum_over_time({__name__=~"float.*"}[1m])`,
 		"tan":                `tan({__name__=~"float.*"})`,
