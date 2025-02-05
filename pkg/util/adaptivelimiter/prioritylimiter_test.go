@@ -11,7 +11,7 @@ import (
 
 func TestPriorityLimiter_AcquirePermit(t *testing.T) {
 	p := NewPrioritizer(nil).(*prioritizer)
-	limiter := NewPrioritizedLimiter(createLimiterConfig(), p, nil).(*priorityLimiter)
+	limiter := NewPriorityLimiter(createLimiterConfig(), p, nil).(*priorityLimiter)
 
 	t.Run("with no rejection threshold", func(t *testing.T) {
 		permit, err := limiter.AcquirePermit(context.Background(), PriorityLow)

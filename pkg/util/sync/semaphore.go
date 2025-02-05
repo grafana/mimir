@@ -14,7 +14,7 @@ import (
 type DynamicSemaphore struct {
 	mu      sync.Mutex
 	size    int64
-	cur     int64
+	used    int64
 	waiters list.List
 }
 
@@ -32,6 +32,17 @@ func NewDynamicSemaphore(n int64) *DynamicSemaphore {
 func (s *DynamicSemaphore) SetSize(n int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// If capacity increased, wake up waiters that can now acquire
+	if n > s.size {
+		for s.used < n && s.waiters.Len() > 0 {
+			s.used++
+			next := s.waiters.Front()
+			s.waiters.Remove(next)
+			close(next.Value.(chan struct{}))
+		}
+	}
+
 	s.size = n
 }
 
@@ -42,8 +53,8 @@ func (s *DynamicSemaphore) SetSize(n int64) {
 // If ctx is already done, Acquire may still succeed without blocking.
 func (s *DynamicSemaphore) Acquire(ctx context.Context) error {
 	s.mu.Lock()
-	if s.cur < s.size {
-		s.cur++
+	if s.used < s.size {
+		s.used++
 		s.mu.Unlock()
 		return nil
 	}
@@ -79,8 +90,8 @@ func (s *DynamicSemaphore) TryAcquire() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.cur < s.size {
-		s.cur++
+	if s.used < s.size {
+		s.used++
 		return true
 	}
 	return false
@@ -92,42 +103,39 @@ func (s *DynamicSemaphore) Release() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.cur < 1 {
-		panic("semaphore: bad release")
+	if s.used < 1 {
+		panic("DynamicSemaphore: unexpected release")
 	}
 
-	next := s.waiters.Front()
+	waiter := s.waiters.Front()
 
-	// If there are no waiters, or if we recently resized and cur is too high, just decrement and we're done
-	if next == nil || s.cur > s.size {
-		s.cur--
+	// If there are no waiters or if we recently resized and used is too high, just decrement and we're done
+	if waiter == nil || s.used > s.size {
+		s.used--
 		return
 	}
 
-	// Need to yield our slot to the next waiter.
-	// Remove them from the list
-	s.waiters.Remove(next)
-
-	// And trigger it's chan before we release the lock
-	close(next.Value.(chan struct{}))
-	// Note we _don't_ decrement inflight since the slot was yielded directly.
+	// Remove and release the waiter
+	s.waiters.Remove(waiter)
+	close(waiter.Value.(chan struct{}))
 }
 
 func (s *DynamicSemaphore) IsFull() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.cur >= s.size
+	return s.used >= s.size
 }
 
-// Waiters returns how many callers are blocked waiting for the semaphore.
+// Waiters returns how many callers are blocked waiting for permits.
 func (s *DynamicSemaphore) Waiters() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.waiters.Len()
 }
 
-func (s *DynamicSemaphore) Inflight() int {
+// Used returns how many slots are currently in use.
+func (s *DynamicSemaphore) Used() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return int(s.cur)
+	return int(s.used)
 }

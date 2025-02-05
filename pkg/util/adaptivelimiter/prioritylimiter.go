@@ -6,6 +6,7 @@ import (
 	"context"
 	"math/rand"
 
+	"github.com/go-kit/log"
 	"go.uber.org/atomic"
 )
 
@@ -50,8 +51,18 @@ type PriorityLimiter interface {
 	CanAcquirePermit(priority Priority) bool
 }
 
+func NewPriorityLimiter(config *Config, prioritizer Prioritizer, logger log.Logger) PriorityLimiter {
+	limiter := &priorityLimiter{
+		adaptiveLimiter: newLimiter(config, logger),
+		prioritizer:     prioritizer,
+	}
+	prioritizer.register(limiter)
+	return limiter
+}
+
 type priorityLimiter struct {
 	*adaptiveLimiter
+	prioritizer Prioritizer
 
 	inCount  atomic.Uint32 // Requests received in current calibration period
 	outCount atomic.Uint32 // Requests permitted in current calibration period
@@ -84,7 +95,7 @@ func (l *priorityLimiter) getAndResetStats() (in, out, limit, inflight, queued, 
 	in = int(l.inCount.Swap(0))
 	out = int(l.outCount.Swap(0))
 	limit = l.Limit()
-	rejectionThreshold = int(float64(limit) * l.InitialRejectionFactor)
-	maxQueue = int(float64(limit) * l.MaxRejectionFactor)
+	rejectionThreshold = int(float64(limit) * l.config.InitialRejectionFactor)
+	maxQueue = int(float64(limit) * l.config.MaxRejectionFactor)
 	return in, out, limit, l.Inflight(), l.Blocked(), rejectionThreshold, maxQueue
 }

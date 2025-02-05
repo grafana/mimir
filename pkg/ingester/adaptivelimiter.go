@@ -82,7 +82,7 @@ func newPriorityLimiter(cfg *adaptivelimiter.Config, prioritizer adaptivelimiter
 		return nil
 	}
 
-	limiter := adaptivelimiter.NewPrioritizedLimiter(cfg, prioritizer, log.With(logger, "requestType", requestType))
+	limiter := adaptivelimiter.NewPriorityLimiter(cfg, prioritizer, log.With(logger, "requestType", requestType))
 	registerAdaptiveLimiterMetrics(limiter, requestType, registerer)
 	return &priorityLimiter{
 		limiter:  limiter,

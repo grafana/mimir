@@ -27,39 +27,6 @@ const (
 	smoothedSamples = 5
 )
 
-// AdaptiveLimiter is a concurrency limiter that adjusts its limit up or down based on execution time trends:
-//
-// When recent execution times are trending up relative to longer term execution times, the concurrency limit is decreased.
-// When recent execution times are trending down relative to longer term execution times, the concurrency limit is increased.
-//
-// To accomplish this, short-term execution times are tracked and regularly compared to a weighted moving average of
-// longer-term execution times. Limit increases are additionally controlled to ensure they don't increase execution times. Any
-// executions in excess of the limit will be rejected with ErrExceeded.
-//
-// By default, an AdaptiveLimiter will converge on a concurrency limit that represents the capacity of the machine it's
-// running on, and avoids having executions block. Since enforcing a limit without allowing for blocking is too strict in
-// some cases and may cause unexpected rejections, optional blocking of executions when the limiter is full can be
-// enabled via WithBlocking, and blocking with prioritized rejection can be enabled via WithPrioritizedRejection.
-//
-// This type is concurrency safe.
-type AdaptiveLimiter interface {
-	Metrics
-
-	// AcquirePermit attempts to acquire a permit to perform an execution via the limiter, waiting until one is
-	// available or the execution is canceled. Returns [context.Canceled] if the ctx is canceled.
-	// Callers must call Record or Drop to release a successfully acquired permit back to the limiter.
-	// ctx may be nil.
-	AcquirePermit(context.Context) (Permit, error)
-
-	// TryAcquirePermit attempts to acquire a permit to perform an execution via the limiter, returning whether the Permit
-	// was acquired or not. This method will not block if the limiter is full. Callers must call Record or Drop to release a
-	// successfully acquired permit back to the limiter.
-	TryAcquirePermit() (Permit, bool)
-
-	// CanAcquirePermit returns whether it's currently possible to acquire a permit.
-	CanAcquirePermit() bool
-}
-
 // Metrics provides info about the adaptive limiter.
 //
 // This type is concurrency safe.
@@ -104,8 +71,7 @@ type Config struct {
 	CorrelationWindow      uint          `yaml:"correlation_window" category:"experimental"`
 	InitialRejectionFactor float64       `yaml:"initial_rejection_factor" category:"experimental"`
 	MaxRejectionFactor     float64       `yaml:"max_rejection_factor" category:"experimental"`
-
-	prioritizer                Prioritizer
+	
 	alphaFunc, betaFunc        func(int) int
 	increaseFunc, decreaseFunc func(int) int
 }
@@ -133,7 +99,7 @@ func newLimiter(config *Config, logger log.Logger) *adaptiveLimiter {
 	config.decreaseFunc = math2.Log10Func(1)
 	return &adaptiveLimiter{
 		logger:                logger,
-		Config:                config,
+		config:                config,
 		minLimit:              float64(config.MinInflightLimit),
 		maxLimit:              float64(config.MaxInflightLimit),
 		semaphore:             sync2.NewDynamicSemaphore(int64(config.InitialInflightLimit)),
@@ -146,13 +112,6 @@ func newLimiter(config *Config, logger log.Logger) *adaptiveLimiter {
 		medianFilter:          math2.NewMedianFilter(smoothedSamples),
 		smoothedShortRTT:      math2.NewEwma(smoothedSamples, warmupSamples),
 	}
-}
-
-func NewPrioritizedLimiter(config *Config, prioritizer Prioritizer, logger log.Logger) PriorityLimiter {
-	config.prioritizer = prioritizer
-	limiter := &priorityLimiter{adaptiveLimiter: newLimiter(config, logger)}
-	prioritizer.register(limiter)
-	return limiter
 }
 
 type limitChange int
@@ -190,8 +149,8 @@ func (td *tDigestSample) Reset() {
 }
 
 type adaptiveLimiter struct {
-	logger log.Logger
-	*Config
+	logger             log.Logger
+	config             *Config
 	minLimit, maxLimit float64
 
 	// Mutable state
@@ -221,7 +180,7 @@ func (l *adaptiveLimiter) AcquirePermit(ctx context.Context) (Permit, error) {
 	return &recordingPermit{
 		limiter:         l,
 		startTime:       time.Now(),
-		currentInflight: l.semaphore.Inflight(),
+		currentInflight: l.semaphore.Used(),
 	}, nil
 }
 
@@ -232,7 +191,7 @@ func (l *adaptiveLimiter) TryAcquirePermit() (Permit, bool) {
 	return &recordingPermit{
 		limiter:         l,
 		startTime:       time.Now(),
-		currentInflight: l.semaphore.Inflight(),
+		currentInflight: l.semaphore.Used(),
 	}, true
 }
 
@@ -247,7 +206,7 @@ func (l *adaptiveLimiter) Limit() int {
 }
 
 func (l *adaptiveLimiter) Inflight() int {
-	return l.semaphore.Inflight()
+	return l.semaphore.Used()
 }
 
 func (l *adaptiveLimiter) Blocked() int {
@@ -266,15 +225,15 @@ func (l *adaptiveLimiter) record(now time.Time, rtt time.Duration, inflight int,
 		l.shortRTT.Add(rtt, inflight)
 	}
 
-	if now.After(l.nextUpdateTime) && l.shortRTT.Size >= l.ShortWindowMinSamples {
-		quantile := l.shortRTT.Quantile(l.SampleQuantile)
+	if now.After(l.nextUpdateTime) && l.shortRTT.Size >= l.config.ShortWindowMinSamples {
+		quantile := l.shortRTT.Quantile(l.config.SampleQuantile)
 		filteredRTT := l.medianFilter.Add(quantile)
 		smoothedRTT := l.smoothedShortRTT.Add(filteredRTT)
 		l.updateLimit(smoothedRTT, l.shortRTT.MaxInflight)
 		minRTT := l.shortRTT.MinRTT
 		l.shortRTT.Reset()
-		minWindowTime := max(minRTT*2, l.ShortWindowMinDuration)
-		l.nextUpdateTime = now.Add(min(minWindowTime, l.ShortWindowMaxDuration))
+		minWindowTime := max(minRTT*2, l.config.ShortWindowMinDuration)
+		l.nextUpdateTime = now.Add(min(minWindowTime, l.config.ShortWindowMaxDuration))
 	}
 
 	l.semaphore.Release()
@@ -298,8 +257,8 @@ func (l *adaptiveLimiter) updateLimit(shortRTT float64, inflight int) {
 
 	// Additional values for thresholding the limit
 	overloaded := l.semaphore.IsFull()
-	alpha := l.alphaFunc(int(l.limit)) // alpha is the queueSize threshold below which we increase
-	beta := l.betaFunc(int(l.limit))   // beta is the queueSize threshold above which we decrease
+	alpha := l.config.alphaFunc(int(l.limit)) // alpha is the queueSize threshold below which we increase
+	beta := l.config.betaFunc(int(l.limit))   // beta is the queueSize threshold above which we decrease
 
 	change, reason := computeChange(queueSize, alpha, beta, overloaded, throughputCorr, throughputCV, rttCorr)
 
@@ -308,19 +267,19 @@ func (l *adaptiveLimiter) updateLimit(shortRTT float64, inflight int) {
 	switch change {
 	case decrease:
 		direction = "decrease"
-		newLimit = l.limit - float64(l.decreaseFunc(int(l.limit)))
+		newLimit = l.limit - float64(l.config.decreaseFunc(int(l.limit)))
 	case increase:
 		direction = "increase"
-		newLimit = l.limit + float64(l.increaseFunc(int(l.limit)))
+		newLimit = l.limit + float64(l.config.increaseFunc(int(l.limit)))
 	default:
 		direction = "hold"
 	}
 
 	// Decrease the limit if needed, based on the max limit factor
-	if newLimit > float64(inflight)*l.MaxLimitFactor {
+	if newLimit > float64(inflight)*l.config.MaxLimitFactor {
 		direction = "decrease"
 		reason = "max"
-		newLimit = l.limit - float64(l.decreaseFunc(int(l.limit)))
+		newLimit = l.limit - float64(l.config.decreaseFunc(int(l.limit)))
 	}
 
 	// Clamp the limit

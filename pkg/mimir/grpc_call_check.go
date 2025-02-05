@@ -128,8 +128,6 @@ func (g *grpcInflightMethodLimiter) RPCCallFinished(ctx context.Context) {
 		switch rpcCall {
 		case rpcCallIngesterPush:
 			g.getIngester().FinishPushRequest(ctx)
-		case rpcCallIngesterRead:
-			g.getIngester().FinishReadRequest(ctx)
 		case rpcCallDistributorPush:
 			g.getDistributor().FinishPushRequest(ctx)
 		}

@@ -18,7 +18,7 @@ func TestPrioritizer_Calibrate(t *testing.T) {
 	config.InitialInflightLimit = 1
 	config.ShortWindowMinSamples = 10
 	config.MaxRejectionFactor = 4
-	limiter := NewPrioritizedLimiter(config, p, nil).(*priorityLimiter)
+	limiter := NewPriorityLimiter(config, p, nil).(*priorityLimiter)
 
 	acquireBlocking := func() {
 		_, _ = limiter.AcquirePermit(context.Background(), PriorityLow)
