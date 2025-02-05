@@ -218,7 +218,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 
 		if r.GetEnd() > maxAllowedTs {
 			level.Debug(log).Log(
-				"msg", "the end time of the query has been manipulated because of the 'adjust-to-max-future-window' setting",
+				"msg", "the end time of the query has been manipulated because of the 'max-future-query-window' setting",
 				"original", util.FormatTimeMillis(r.GetEnd()),
 				"updated", util.FormatTimeMillis(maxAllowedTs),
 				"maxFutureWindow", maxFutureQueryWindow,
