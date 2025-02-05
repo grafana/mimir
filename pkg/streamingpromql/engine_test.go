@@ -394,7 +394,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 		expected *promql.Result
 		ts       time.Time
 	}{
-		"matches series with points in range": {
+		"floats: matches series with points in range": {
 			expr: "some_metric[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
@@ -416,21 +416,21 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"matches no series": {
+		"floats: matches no series": {
 			expr: "some_nonexistent_metric[1m]",
 			ts:   baseT,
 			expected: &promql.Result{
 				Value: promql.Matrix{},
 			},
 		},
-		"no samples in range": {
+		"floats: no samples in range": {
 			expr: "some_metric[1m]",
 			ts:   baseT.Add(20 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{},
 			},
 		},
-		"does not return points outside range if last selected point does not align to end of range": {
+		"floats: does not return points outside range if last selected point does not align to end of range": {
 			expr: "some_metric_with_gaps[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
@@ -444,7 +444,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"metric with stale marker": {
+		"floats: metric with stale marker": {
 			expr: "some_metric_with_stale_marker[3m1s]",
 			ts:   baseT.Add(3 * time.Minute),
 			expected: &promql.Result{
@@ -460,7 +460,14 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"histogram: matches series with points in range": {
+		"floats: 0 length range": {
+			expr: "some_metric[0]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
+		"histograms: matches series with points in range": {
 			expr: "incr_histogram[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
@@ -546,14 +553,14 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"histogram: no samples in range": {
+		"histograms: no samples in range": {
 			expr: "incr_histogram[1m]",
 			ts:   baseT.Add(20 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{},
 			},
 		},
-		"histogram: does not return points outside range if last selected point does not align to end of range": {
+		"histograms: does not return points outside range if last selected point does not align to end of range": {
 			expr: "histogram_with_gaps[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
@@ -583,7 +590,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"histogram: metric with stale marker": {
+		"histograms: metric with stale marker": {
 			expr: "histogram_with_stale_marker[3m1s]",
 			ts:   baseT.Add(3 * time.Minute),
 			expected: &promql.Result{
@@ -645,6 +652,13 @@ func TestRangeVectorSelectors(t *testing.T) {
 						},
 					},
 				},
+			},
+		},
+		"histograms: 0 length range": {
+			expr: "incr_histogram[0]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{},
 			},
 		},
 		"mixed series with histograms and floats": {
@@ -1082,6 +1096,13 @@ func TestSubqueries(t *testing.T) {
 				},
 			},
 			Start: time.Unix(35, 0),
+		},
+		{
+			Query: "metric[0:5s]",
+			Result: promql.Result{
+				Value: promql.Matrix{},
+			},
+			Start: time.Unix(10, 0),
 		},
 		{ // Normal selector.
 			Query: `http_requests{group=~"pro.*",instance="0"}[30s:10s]`,
