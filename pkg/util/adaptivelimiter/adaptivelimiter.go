@@ -71,7 +71,7 @@ type Config struct {
 	CorrelationWindow      uint          `yaml:"correlation_window" category:"experimental"`
 	InitialRejectionFactor float64       `yaml:"initial_rejection_factor" category:"experimental"`
 	MaxRejectionFactor     float64       `yaml:"max_rejection_factor" category:"experimental"`
-	
+
 	alphaFunc, betaFunc        func(int) int
 	increaseFunc, decreaseFunc func(int) int
 }

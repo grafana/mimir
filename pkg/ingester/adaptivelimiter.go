@@ -44,13 +44,13 @@ func newIngesterAdaptiveLimiter(prioritizerConfig *adaptivelimiter.RejectionPrio
 	}
 	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_ingester_rejection_rate",
-		Help: "Ingester rejection rate.",
+		Help: "Ingester prioritizer rejection rate.",
 	}, func() float64 {
 		return prioritizer.RejectionRate()
 	})
 	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_ingester_rejection_threshold",
-		Help: "Ingester rejection threshold.",
+		Help: "Ingester prioritizer rejection threshold.",
 	}, func() float64 {
 		return float64(prioritizer.RejectionThreshold())
 	})
@@ -101,21 +101,21 @@ func (l *priorityLimiter) AcquirePermit(ctx context.Context) (adaptivelimiter.Pe
 func registerAdaptiveLimiterMetrics(limiter adaptivelimiter.PriorityLimiter, requestType string, r prometheus.Registerer) {
 	promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        "cortex_ingester_adaptive_limiter_inflight_limit",
-		Help:        "Current inflight request limit.",
+		Help:        "Ingester adaptive limiter inflight request limit.",
 		ConstLabels: map[string]string{adaptiveLimiterRequestTypeLabel: requestType},
 	}, func() float64 {
 		return float64(limiter.Limit())
 	})
 	promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        "cortex_ingester_adaptive_limiter_inflight_requests",
-		Help:        "Current inflight request.",
+		Help:        "Ingester adaptive limiter inflight requests.",
 		ConstLabels: map[string]string{adaptiveLimiterRequestTypeLabel: requestType},
 	}, func() float64 {
 		return float64(limiter.Inflight())
 	})
 	promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        "cortex_ingester_adaptive_limiter_blocked_requests",
-		Help:        "Current blocked request.",
+		Help:        "Ingester adaptive limiter blocked requests.",
 		ConstLabels: map[string]string{adaptiveLimiterRequestTypeLabel: requestType},
 	}, func() float64 {
 		return float64(limiter.Blocked())
