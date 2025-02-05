@@ -22,8 +22,6 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/pierrec/lz4/v4"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -42,11 +40,6 @@ import (
 )
 
 func TestOTelMetricsToTimeSeries(t *testing.T) {
-	const tenantID = "testTenant"
-	discardedDueToOTelParseError := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{
-		Name: "discarded_due_to_otel_parse_error",
-		Help: "Number of metrics discarded due to OTLP parse errors.",
-	}, []string{tenantID, "group"})
 	resourceAttrs := map[string]string{
 		"service.name":        "service name",
 		"service.namespace":   "service namespace",
@@ -282,11 +275,21 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			mimirTS, err := otelMetricsToTimeseries(
-				context.Background(), tenantID, true, false, false, tc.promoteResourceAttributes, tc.keepIdentifyingResourceAttributes, discardedDueToOTelParseError, log.NewNopLogger(), md,
+			converter := newOTLPMimirConverter()
+			mimirTS, dropped, err := otelMetricsToTimeseries(
+				context.Background(),
+				converter,
+				true,
+				false,
+				false,
+				tc.promoteResourceAttributes,
+				tc.keepIdentifyingResourceAttributes,
+				md,
+				log.NewNopLogger(),
 			)
 			require.NoError(t, err)
 			require.Len(t, mimirTS, 2)
+			require.Equal(t, 0, dropped)
 			var ts mimirpb.PreallocTimeseries
 			var targetInfo mimirpb.PreallocTimeseries
 			for i := range mimirTS {
