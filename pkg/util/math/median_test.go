@@ -9,10 +9,10 @@ import (
 )
 
 func TestMedianFilter(t *testing.T) {
-	t.Run("single value", func(t *testing.T) {
+	t.Run("not full window", func(t *testing.T) {
 		filter := NewMedianFilter(3)
-		result := filter.Add(5.0)
-		assert.Equal(t, 5.0, result)
+		median := filter.Add(5.0)
+		assert.Equal(t, 5.0, median)
 		assert.Equal(t, 0.0, filter.Median())
 	})
 
@@ -29,8 +29,8 @@ func TestMedianFilter(t *testing.T) {
 		filter.Add(1.0)
 		filter.Add(2.0)
 		filter.Add(3.0)
-		result := filter.Add(4.0)
-		assert.Equal(t, 3.0, result)
+		median := filter.Add(4.0)
+		assert.Equal(t, 3.0, median)
 	})
 
 	t.Run("unsorted input", func(t *testing.T) {
@@ -39,7 +39,7 @@ func TestMedianFilter(t *testing.T) {
 		filter.Add(2.0)
 		filter.Add(8.0)
 		filter.Add(1.0)
-		result := filter.Add(9.0)
-		assert.Equal(t, 5.0, result)
+		median := filter.Add(9.0)
+		assert.Equal(t, 5.0, median)
 	})
 }

@@ -7,7 +7,6 @@ package sync
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"runtime"
 	"sync"
@@ -86,12 +85,10 @@ func TestDynamicSemaphore_SetSize(t *testing.T) {
 		wg.Add(2)
 		go func() {
 			_ = s.Acquire(context.Background())
-			fmt.Println("done")
 			wg.Done()
 		}()
 		go func() {
 			_ = s.Acquire(context.Background())
-			fmt.Println("done")
 			wg.Done()
 		}()
 

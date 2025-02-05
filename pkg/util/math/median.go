@@ -3,7 +3,7 @@
 package math
 
 import (
-	"sort"
+	"slices"
 )
 
 // MedianFilter provides the median value over a rolling window.
@@ -23,6 +23,7 @@ func NewMedianFilter(size int) *MedianFilter {
 	}
 }
 
+// Add adds a value to the filter, sorts the values, and returns the current median.
 func (f *MedianFilter) Add(value float64) float64 {
 	f.values[f.index] = value
 	f.index = (f.index + 1) % len(f.values)
@@ -33,12 +34,11 @@ func (f *MedianFilter) Add(value float64) float64 {
 	}
 
 	copy(f.sorted, f.values)
-	sort.Slice(f.sorted, func(i, j int) bool {
-		return f.sorted[i] < f.sorted[j]
-	})
+	slices.Sort(f.sorted)
 	return f.Median()
 }
 
+// Median returns the current median, else 0 if the filter isn't full yet.
 func (f *MedianFilter) Median() float64 {
 	if f.size < len(f.values)-1 {
 		return 0
