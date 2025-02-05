@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -251,16 +252,16 @@ func OTLPHandler(
 		}
 		req := newRequest(supplier)
 
-		err := push(ctx, req)
-		if err == nil {
-			// Push was successful, but OTLP converter left out some of the incoming samples. We let the user know about it by returning 4xx (and an insight log).
-			if err := otlpConverter.Err(); err != nil {
-				err = httpgrpc.Error(http.StatusBadRequest, err.Error())
+		pushErr := push(ctx, req)
+		if pushErr == nil {
+			// Push was successful, but OTLP converter left out some samples. We let the client know about it by replying with 4xx (and an insight log).
+			if otlpErr := otlpConverter.Err(); otlpErr != nil {
+				pushErr = httpgrpc.Error(http.StatusBadRequest, otlpErr.Error())
 			}
 		}
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				level.Warn(logger).Log("msg", "push request canceled", "err", err)
+		if pushErr != nil {
+			if errors.Is(pushErr, context.Canceled) {
+				level.Warn(logger).Log("msg", "push request canceled", "err", pushErr)
 				writeErrorToHTTPResponseBody(r.Context(), w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
 				return
 			}
@@ -269,25 +270,25 @@ func OTLPHandler(
 				grpcCode codes.Code
 				errorMsg string
 			)
-			if st, ok := grpcutil.ErrorToStatus(err); ok {
+			if st, ok := grpcutil.ErrorToStatus(pushErr); ok {
 				// This code is needed for a correct handling of errors returned by the supplier function.
 				// These errors are created by using the httpgrpc package.
 				httpCode = httpRetryableToOTLPRetryable(int(st.Code()))
 				grpcCode = st.Code()
 				errorMsg = st.Message()
 			} else {
-				grpcCode, httpCode = toOtlpGRPCHTTPStatus(err)
-				errorMsg = err.Error()
+				grpcCode, httpCode = toOtlpGRPCHTTPStatus(pushErr)
+				errorMsg = pushErr.Error()
 			}
 			if httpCode != 202 {
 				// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
-				msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", err}
+				msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", pushErr}
 				if httpCode/100 == 4 {
 					msgs = append(msgs, "insight", true)
 				}
 				level.Error(logger).Log(msgs...)
 			}
-			addHeaders(w, err, r, httpCode, retryCfg)
+			addHeaders(w, pushErr, r, httpCode, retryCfg)
 			writeErrorToHTTPResponseBody(r.Context(), w, httpCode, grpcCode, errorMsg, logger)
 		}
 	})
@@ -478,11 +479,11 @@ func (c *otlpMimirConverter) DroppedTotal() int {
 
 func (c *otlpMimirConverter) Err() error {
 	if c.err != nil {
-		parseErrs := c.err.Error()
-		if len(parseErrs) > maxErrMsgLen {
-			parseErrs = parseErrs[:maxErrMsgLen]
+		errMsg := c.err.Error()
+		if len(errMsg) > maxErrMsgLen {
+			errMsg = errMsg[:maxErrMsgLen]
 		}
-		return errors.New(parseErrs)
+		return fmt.Errorf("otlp parse error: %s", errMsg)
 	}
 	return nil
 }
