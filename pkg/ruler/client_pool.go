@@ -21,6 +21,11 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
+type ClientConfig struct {
+	grpcclient.Config
+	Cluster string `yaml:"-"`
+}
+
 // ClientsPool is the interface used to get the client from the pool for a specified address.
 type ClientsPool interface {
 	services.Service
@@ -40,7 +45,7 @@ func (p *rulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (RulerCl
 	return c.(RulerClient), nil
 }
 
-func newRulerClientPool(clientCfg grpcclient.Config, logger log.Logger, reg prometheus.Registerer, cluster string) ClientsPool {
+func newRulerClientPool(clientCfg ClientConfig, logger log.Logger, reg prometheus.Registerer) ClientsPool {
 	// We prefer sane defaults instead of exposing further config options.
 	poolCfg := client.PoolConfig{
 		CheckInterval:      10 * time.Second,
@@ -54,11 +59,11 @@ func newRulerClientPool(clientCfg grpcclient.Config, logger log.Logger, reg prom
 	})
 
 	return &rulerClientsPool{
-		client.NewPool("ruler", poolCfg, nil, newRulerClientFactory(clientCfg, reg, cluster), clientsCount, logger),
+		client.NewPool("ruler", poolCfg, nil, newRulerClientFactory(clientCfg, reg), clientsCount, logger),
 	}
 }
 
-func newRulerClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer, cluster string) client.PoolFactory {
+func newRulerClientFactory(clientCfg ClientConfig, reg prometheus.Registerer) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cortex_ruler_client_request_duration_seconds",
 		Help:    "Time spent executing requests to the ruler.",
@@ -66,13 +71,13 @@ func newRulerClientFactory(clientCfg grpcclient.Config, reg prometheus.Registere
 	}, []string{"operation", "status_code"})
 
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
-		return dialRulerClient(clientCfg, inst, requestDuration, cluster)
+		return dialRulerClient(clientCfg, inst, requestDuration)
 	})
 }
 
-func dialRulerClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, cluster string) (*rulerExtendedClient, error) {
+func dialRulerClient(clientCfg ClientConfig, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec) (*rulerExtendedClient, error) {
 	unary, stream := grpcclient.Instrument(requestDuration)
-	unary = append(unary, middleware.ClusterUnaryClientInterceptor(cluster))
+	unary = append(unary, middleware.ClusterUnaryClientInterceptor(clientCfg.Cluster))
 	opts, err := clientCfg.DialOption(unary, stream)
 	if err != nil {
 		return nil, err

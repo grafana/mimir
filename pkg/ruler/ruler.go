@@ -23,7 +23,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
@@ -94,7 +93,7 @@ type Config struct {
 	// This is used for template expansion in alerts; must be a valid URL.
 	ExternalURL flagext.URLValue `yaml:"external_url"`
 	// GRPC Client configuration.
-	ClientTLSConfig grpcclient.Config `yaml:"ruler_client" doc:"description=Configures the gRPC client used to communicate between ruler instances."`
+	ClientTLSConfig ClientConfig `yaml:"ruler_client" doc:"description=Configures the gRPC client used to communicate between ruler instances."`
 	// How frequently to evaluate rules by default.
 	EvaluationInterval time.Duration `yaml:"evaluation_interval" category:"advanced"`
 	// How frequently to poll for updated rules.
@@ -144,8 +143,6 @@ type Config struct {
 	IndependentRuleEvaluationConcurrencyMinDurationPercentage float64 `yaml:"independent_rule_evaluation_concurrency_min_duration_percentage" category:"experimental"`
 
 	RuleEvaluationWriteEnabled bool `yaml:"rule_evaluation_write_enabled" category:"experimental"`
-
-	Cluster string `yaml:"-"`
 }
 
 // Validate config and returns error on failure
@@ -349,7 +346,7 @@ type Ruler struct {
 
 // NewRuler creates a new ruler from a distributor and chunk store.
 func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, store rulestore.RuleStore, limits RulesLimits) (*Ruler, error) {
-	return newRuler(cfg, manager, reg, logger, store, limits, newRulerClientPool(cfg.ClientTLSConfig, logger, reg, cfg.Cluster))
+	return newRuler(cfg, manager, reg, logger, store, limits, newRulerClientPool(cfg.ClientTLSConfig, logger, reg))
 }
 
 func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, store rulestore.RuleStore, limits RulesLimits, clientPool ClientsPool) (*Ruler, error) {

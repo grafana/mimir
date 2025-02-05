@@ -120,7 +120,7 @@ func (p *mockRulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (Rul
 
 func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer, rulerAddrMap map[string]*Ruler) *mockRulerClientsPool {
 	return &mockRulerClientsPool{
-		ClientsPool:  newRulerClientPool(cfg.ClientTLSConfig, logger, reg, ""),
+		ClientsPool:  newRulerClientPool(cfg.ClientTLSConfig, logger, reg),
 		cfg:          cfg,
 		rulerAddrMap: rulerAddrMap,
 	}
