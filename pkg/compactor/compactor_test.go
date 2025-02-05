@@ -305,7 +305,7 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
 
 	// Ensure the bucket iteration has been retried the configured number of times.
-	bucketClient.AssertNumberOfCalls(t, "Iter", 1+3)
+	bucketClient.AssertNumberOfCalls(t, "Iter", 1+1+3)
 
 	assert.Equal(t, []string{
 		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
@@ -915,6 +915,8 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{"user-1"}, nil)
 	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D"}, nil)
+	bucketClient.MockGet("user-1/bucket-index.json.gz", "", nil)
+
 	bucketClient.MockGet(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), `{"deletion_time": 1}`, nil)
 	bucketClient.MockUpload(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), nil)
 
