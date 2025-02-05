@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
@@ -51,13 +52,14 @@ const (
 var errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("querier query-scheduler processing loop terminated")
 var errQueryEvaluationFinished = cancellation.NewErrorf("query evaluation finished")
 
-func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
+func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer, cluster string) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
 		log:              log,
 		handler:          handler,
 		streamResponse:   streamResponse,
 		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:        cfg.QuerierID,
+		cluster:          cluster,
 		grpcConfig:       cfg.QueryFrontendGRPCClientConfig,
 		streamingEnabled: cfg.ResponseStreamingEnabled,
 
@@ -106,6 +108,7 @@ type schedulerProcessor struct {
 	grpcConfig       grpcclient.Config
 	maxMessageSize   int
 	querierID        string
+	cluster          string
 	streamingEnabled bool
 
 	frontendPool                  *client.Pool
@@ -439,7 +442,8 @@ func (w httpGrpcHeaderWriter) Set(key, val string) {
 
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
 	unary, stream := grpcclient.Instrument(sp.frontendClientRequestDuration)
-	opts, err := sp.grpcConfig.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(sp.grpcConfig.ClusterValidation.Label, sp.invalidClusterValidation, sp.log))
+	unary = append(unary, middleware.ClusterUnaryClientInterceptor(sp.cluster))
+	opts, err := sp.grpcConfig.DialOption(unary, stream)
 	if err != nil {
 		return nil, err
 	}
