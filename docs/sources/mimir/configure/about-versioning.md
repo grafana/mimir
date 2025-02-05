@@ -167,6 +167,35 @@ The following features are currently experimental:
     - `-ingester.read-circuit-breaker.cooldown-period`
     - `-ingester.read-circuit-breaker.initial-delay`
     - `-ingester.read-circuit-breaker.request-timeout`
+  - Adaptive concurrency limiters
+    - `-ingester.push-adaptive-limiter.enabled`
+    - `-ingester.push-adaptive-limiter.short-window-min-duration`
+    - `-ingester.push-adaptive-limiter.short-window-max-duration`
+    - `-ingester.push-adaptive-limiter.short-window-min-samples`
+    - `-ingester.push-adaptive-limiter.long-window`
+    - `-ingester.push-adaptive-limiter.sample-quantile`
+    - `-ingester.push-adaptive-limiter.min-inflight-limit`
+    - `-ingester.push-adaptive-limiter.max-inflight-limit`
+    - `-ingester.push-adaptive-limiter.initial-inflight-limit`
+    - `-ingester.push-adaptive-limiter.max-limit-factor`
+    - `-ingester.push-adaptive-limiter.correlation-window`
+    - `-ingester.push-adaptive-limiter.initial-rejection-factor`
+    - `-ingester.push-adaptive-limiter.max-rejection-factor`
+    - `-ingester.read-adaptive-limiter.enabled`
+    - `-ingester.read-adaptive-limiter.short-window-min-duration`
+    - `-ingester.read-adaptive-limiter.short-window-max-duration`
+    - `-ingester.read-adaptive-limiter.short-window-min-samples`
+    - `-ingester.read-adaptive-limiter.long-window`
+    - `-ingester.read-adaptive-limiter.sample-quantile`
+    - `-ingester.read-adaptive-limiter.min-inflight-limit`
+    - `-ingester.read-adaptive-limiter.max-inflight-limit`
+    - `-ingester.read-adaptive-limiter.initial-inflight-limit`
+    - `-ingester.read-adaptive-limiter.max-limit-factor`
+    - `-ingester.read-adaptive-limiter.correlation-window`
+    - `-ingester.read-adaptive-limiter.initial-rejection-factor`
+    - `-ingester.read-adaptive-limiter.max-rejection-factor`
+    - `-ingester.rejection-prioritizer.enabled`
+    - `-ingester.rejection-prioritizer.calibration-interval`
 - Querier
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
