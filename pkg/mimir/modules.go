@@ -638,13 +638,11 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		return nil, nil
 	}
 
-	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter, httpgrpc_server.WithReturn4XXErrors), util_log.Logger, t.Registerer)
+	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter, httpgrpc_server.WithReturn4XXErrors), util_log.Logger, t.Registerer, t.Cfg.Server.Cluster)
 }
 
 func (t *Mimir) initStoreQueryable() (services.Service, error) {
-	q, err := querier.NewBlocksStoreQueryableFromConfig(
-		t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer,
-	)
+	q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer, t.Cfg.Server.Cluster)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
 	}

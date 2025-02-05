@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -106,6 +107,7 @@ type querierWorker struct {
 
 	maxConcurrentRequests int
 	grpcClientConfig      grpcclient.Config
+	cluster               string
 	log                   log.Logger
 
 	processor processor
@@ -119,7 +121,7 @@ type querierWorker struct {
 	instances map[string]servicediscovery.Instance
 }
 
-func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (services.Service, error) {
+func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer, cluster string) (services.Service, error) {
 	if cfg.QuerierID == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -142,7 +144,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		}
 
 		grpcCfg = cfg.QuerySchedulerGRPCClientConfig
-		processor, servs = newSchedulerProcessor(cfg, handler, log, reg)
+		processor, servs = newSchedulerProcessor(cfg, handler, log, reg, "")
 
 	case cfg.FrontendAddress != "":
 		level.Info(log).Log("msg", "Starting querier worker connected to query-frontend", "frontend", cfg.FrontendAddress)
@@ -158,13 +160,14 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		return nil, errors.New("no query-scheduler or query-frontend address")
 	}
 
-	return newQuerierWorkerWithProcessor(grpcCfg, cfg.MaxConcurrentRequests, log, processor, factory, servs)
+	return newQuerierWorkerWithProcessor(grpcCfg, cfg.MaxConcurrentRequests, log, processor, factory, servs, cluster)
 }
 
-func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, maxConcReq int, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service) (*querierWorker, error) {
+func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, maxConcReq int, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service, cluster string) (*querierWorker, error) {
 	f := &querierWorker{
 		grpcClientConfig:      grpcCfg,
 		maxConcurrentRequests: maxConcReq,
+		cluster:               cluster,
 		log:                   log,
 		managers:              map[string]*processorManager{},
 		instances:             map[string]servicediscovery.Instance{},
@@ -389,7 +392,7 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 
 func (w *querierWorker) connect(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	opts, err := w.grpcClientConfig.DialOption(nil, nil)
+	opts, err := w.grpcClientConfig.DialOption([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(w.cluster)}, nil)
 
 	if err != nil {
 		return nil, err

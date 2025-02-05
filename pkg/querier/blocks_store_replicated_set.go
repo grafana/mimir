@@ -47,18 +47,10 @@ type blocksStoreReplicationSet struct {
 	subservicesWatcher *services.FailureWatcher
 }
 
-func newBlocksStoreReplicationSet(
-	storesRing *ring.Ring,
-	balancingStrategy loadBalancingStrategy,
-	dynamicReplication storegateway.DynamicReplication,
-	limits BlocksStoreLimits,
-	clientConfig ClientConfig,
-	logger log.Logger,
-	reg prometheus.Registerer,
-) (*blocksStoreReplicationSet, error) {
+func newBlocksStoreReplicationSet(storesRing *ring.Ring, balancingStrategy loadBalancingStrategy, dynamicReplication storegateway.DynamicReplication, limits BlocksStoreLimits, clientConfig ClientConfig, logger log.Logger, reg prometheus.Registerer, cluster string) (*blocksStoreReplicationSet, error) {
 	s := &blocksStoreReplicationSet{
 		storesRing:         storesRing,
-		clientsPool:        newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
+		clientsPool:        newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg, cluster),
 		dynamicReplication: dynamicReplication,
 		balancingStrategy:  balancingStrategy,
 		limits:             limits,

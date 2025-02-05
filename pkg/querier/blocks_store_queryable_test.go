@@ -1779,7 +1779,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 		clientCfg := grpcclient.Config{}
 		flagext.DefaultValues(&clientCfg)
 
-		client, err := dialStoreGatewayClient(clientCfg, ring.InstanceDesc{Addr: listener.Addr().String()}, promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{}, []string{"route", "status_code"}))
+		client, err := dialStoreGatewayClient(clientCfg, ring.InstanceDesc{Addr: listener.Addr().String()}, promauto.With(nil).NewHistogramVec(prometheus.HistogramOpts{}, []string{"route", "status_code"}), "")
 		require.NoError(t, err)
 		t.Cleanup(func() {
 			require.NoError(t, client.Close())
