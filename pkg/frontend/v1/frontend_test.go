@@ -355,7 +355,7 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	go grpcServer.Serve(grpcListen) //nolint:errcheck
 
 	var worker services.Service
-	worker, err = querier_worker.NewQuerierWorker(workerConfig, httpgrpc_server.NewServer(handler, httpgrpc_server.WithReturn4XXErrors), logger, nil)
+	worker, err = querier_worker.NewQuerierWorker(workerConfig, httpgrpc_server.NewServer(handler, httpgrpc_server.WithReturn4XXErrors), logger, nil, "")
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), worker))
 
