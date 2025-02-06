@@ -80,7 +80,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable adaptive limiting when making requests to ingesters")
 	f.DurationVar(&cfg.ShortWindowMinDuration, prefix+"short-window-min-duration", time.Second, "Min duration of the window that is used to determine recent, short-term load on the system")
 	f.DurationVar(&cfg.ShortWindowMaxDuration, prefix+"short-window-max-duration", 30*time.Second, "Max duration of the window that is used to determine recent, short-term load on the system")
-	f.UintVar(&cfg.ShortWindowMinSamples, prefix+"short-window-min-samples", 1, "Min number of samples that must be recorded in the window")
+	f.UintVar(&cfg.ShortWindowMinSamples, prefix+"short-window-min-samples", 50, "Min number of samples that must be recorded in the window")
 	f.UintVar(&cfg.LongWindow, prefix+"long-window", 60, "Short-term window measurements that will be stored in an exponentially weighted moving average window, representing the long-term baseline inflight time")
 	f.Float64Var(&cfg.SampleQuantile, prefix+"sample-quantile", .9, "The quantile of recorded response times to consider when adjusting the concurrency limit")
 	f.UintVar(&cfg.MinInflightLimit, prefix+"min-inflight-limit", 2, "Min inflight requests limit")

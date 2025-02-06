@@ -1738,7 +1738,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.push-adaptive-limiter.short-window-min-duration duration
     	[experimental] Min duration of the window that is used to determine recent, short-term load on the system (default 1s)
   -ingester.push-adaptive-limiter.short-window-min-samples uint
-    	[experimental] Min number of samples that must be recorded in the window (default 1)
+    	[experimental] Min number of samples that must be recorded in the window (default 50)
   -ingester.push-circuit-breaker.cooldown-period duration
     	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
   -ingester.push-circuit-breaker.enabled
@@ -1780,7 +1780,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-adaptive-limiter.short-window-min-duration duration
     	[experimental] Min duration of the window that is used to determine recent, short-term load on the system (default 1s)
   -ingester.read-adaptive-limiter.short-window-min-samples uint
-    	[experimental] Min number of samples that must be recorded in the window (default 1)
+    	[experimental] Min number of samples that must be recorded in the window (default 50)
   -ingester.read-circuit-breaker.cooldown-period duration
     	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
   -ingester.read-circuit-breaker.enabled

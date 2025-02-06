@@ -3720,7 +3720,7 @@
               "required": false,
               "desc": "Min number of samples that must be recorded in the window",
               "fieldValue": null,
-              "fieldDefaultValue": 1,
+              "fieldDefaultValue": 50,
               "fieldFlag": "ingester.push-adaptive-limiter.short-window-min-samples",
               "fieldType": "int",
               "fieldCategory": "experimental"
@@ -3873,7 +3873,7 @@
               "required": false,
               "desc": "Min number of samples that must be recorded in the window",
               "fieldValue": null,
-              "fieldDefaultValue": 1,
+              "fieldDefaultValue": 50,
               "fieldFlag": "ingester.read-adaptive-limiter.short-window-min-samples",
               "fieldType": "int",
               "fieldCategory": "experimental"
