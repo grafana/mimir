@@ -475,9 +475,6 @@ func (c *otlpMimirConverter) ToTimeseries(ctx context.Context, md pmetric.Metric
 	_, c.err = c.converter.FromMetrics(ctx, md, settings, utillog.SlogFromGoKit(logger))
 
 	mimirTS := c.converter.TimeSeries()
-	if len(mimirTS) == 0 {
-		return nil
-	}
 	return mimirTS
 }
 
