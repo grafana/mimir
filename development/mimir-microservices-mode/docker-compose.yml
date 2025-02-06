@@ -201,11 +201,6 @@
       - "./config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml"
       - "../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir"
   "ingester-1":
-    deploy:
-      resources:
-        limits:
-          cpus: "1"
-          memory: "2g"
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
