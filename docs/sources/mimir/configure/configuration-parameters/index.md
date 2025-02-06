@@ -1433,7 +1433,7 @@ read_adaptive_limiter:
   # CLI flag: -ingester.read-adaptive-limiter.short-window-min-duration
   [short_window_min_duration: <duration> | default = 1s]
 
-  # (experimental) Max duration of the window that is used to determine recent,
+  # (experimental) Maximum duration of the window that is used to determine recent,
   # short-term load on the system
   # CLI flag: -ingester.read-adaptive-limiter.short-window-max-duration
   [short_window_max_duration: <duration> | default = 30s]
