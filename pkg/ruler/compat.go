@@ -31,7 +31,10 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-const defaultFailureReason = "error"
+const (
+	failureReasonServerError = "server_error"
+	failureReasonClientError = "client_error"
+)
 
 // Pusher is an ingester server that accepts pushes.
 type Pusher interface {
@@ -101,11 +104,11 @@ func (a *PusherAppender) Commit() error {
 	_, err := a.pusher.Push(user.InjectOrgID(a.ctx, a.userID), req)
 
 	if err != nil {
-		failureReason := defaultFailureReason
+		failureReason := failureReasonServerError
 		if mimirpb.IsClientError(err) {
 			// Client errors, which are the same ones that would be reported with 4xx HTTP status code
-			// (e.g. series limits, duplicate samples, out of order, etc.) are reported with a separate reason.
-			failureReason = "4xx"
+			// (e.g. series limits, duplicate samples, out of order, etc.) are reported with their own reason.
+			failureReason = failureReasonClientError
 		}
 		a.failedWrites.WithLabelValues(a.userID, failureReason).Inc()
 	}
@@ -221,7 +224,7 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 			return result, nil
 		}
 
-		failureReason := defaultFailureReason
+		failureReason := failureReasonServerError
 		qerr := QueryableError{}
 		if errors.As(err, &qerr) {
 			origErr := qerr.Unwrap()
@@ -242,9 +245,9 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 			// Return unwrapped error.
 			return result, origErr
 		} else if remoteQuerier {
-			// When remote querier enabled, consider anything an "error" except those with 4xx status code.
+			// When remote querier's enabled, consider anything a "server error" except those with 4xx status code ("client error").
 			if mimirpb.IsClientError(err) {
-				failureReason = "4xx"
+				failureReason = failureReasonClientError
 			}
 			failedQueries.WithLabelValues(userID, failureReason).Inc()
 		}

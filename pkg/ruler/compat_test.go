@@ -236,7 +236,7 @@ func TestPusherErrors(t *testing.T) {
 			returnedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
 			expectedWrites:        1,
 			expectedFailures:      1,
-			expectedFailureReason: "4xx",
+			expectedFailureReason: failureReasonClientError,
 		},
 		"a 500 HTTPgRPC error is reported as failure": {
 			returnedError:    httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
@@ -247,7 +247,7 @@ func TestPusherErrors(t *testing.T) {
 			returnedError:         mustStatusWithDetails(codes.FailedPrecondition, mimirpb.BAD_DATA).Err(),
 			expectedWrites:        1,
 			expectedFailures:      1,
-			expectedFailureReason: "4xx",
+			expectedFailureReason: failureReasonClientError,
 		},
 		"a METHOD_NOT_ALLOWED push error is reported as failure": {
 			returnedError:    mustStatusWithDetails(codes.Unimplemented, mimirpb.METHOD_NOT_ALLOWED).Err(),
@@ -287,7 +287,7 @@ func TestPusherErrors(t *testing.T) {
 
 			expectedFailureReason := tc.expectedFailureReason
 			if expectedFailureReason == "" {
-				expectedFailureReason = defaultFailureReason
+				expectedFailureReason = failureReasonServerError
 			}
 			require.Equal(t, tc.expectedFailures, int(testutil.ToFloat64(failures.WithLabelValues("user-1", expectedFailureReason))))
 		})
@@ -354,7 +354,7 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 			expectedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
 			expectedQueries:       1,
 			expectedFailedQueries: 1,
-			expectedFailedReason:  "4xx", // 400 errors coming from remote querier are reported as their own reason.
+			expectedFailedReason:  failureReasonClientError, // 400 errors coming from remote querier are reported as their own reason.
 			remoteQuerier:         true,
 		},
 		"httpgrpc 500 error": {
@@ -407,7 +407,7 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 
 			expectedFailedReason := tc.expectedFailedReason
 			if expectedFailedReason == "" {
-				expectedFailedReason = "error"
+				expectedFailedReason = failureReasonServerError
 			}
 			require.Equal(t, tc.expectedFailedQueries, int(testutil.ToFloat64(failures.WithLabelValues("user-1", expectedFailedReason))))
 		})
