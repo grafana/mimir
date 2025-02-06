@@ -146,7 +146,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		}
 
 		grpcCfg = cfg.QuerySchedulerGRPCClientConfig
-		processor, servs = newSchedulerProcessor(cfg, handler, log, reg, "")
+		processor, servs = newSchedulerProcessor(cfg, handler, log, reg, cluster)
 
 	case cfg.FrontendAddress != "":
 		level.Info(log).Log("msg", "Starting querier worker connected to query-frontend", "frontend", cfg.FrontendAddress)
