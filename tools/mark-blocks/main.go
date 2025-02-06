@@ -300,7 +300,7 @@ func metaPresenceFunc(tenantID string, bkt objstore.Bucket, policy string) (meta
 	switch policy {
 	case "none":
 		// The meta is not checked at all
-		return func(ctx context.Context, blk string) (bool, error) {
+		return func(_ context.Context, _ string) (bool, error) {
 			return false, nil
 		}, nil
 	case "skip-block":
