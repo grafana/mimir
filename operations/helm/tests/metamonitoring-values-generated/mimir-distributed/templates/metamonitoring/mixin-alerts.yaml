@@ -453,7 +453,7 @@ spec:
             expr: |
               100 * (
               # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
-              sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_failed_total{reason=~"(error|$^)"}[1m]))
+              sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_failed_total{reason=~"(error|^$)"}[1m]))
                 /
               sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_total[1m]))
               ) > 1
@@ -468,7 +468,7 @@ spec:
             expr: |
               100 * (
               # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
-              sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_failed_total{reason=~"(error|$^)"}[1m]))
+              sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_failed_total{reason=~"(error|^$)"}[1m]))
                 /
               sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_total[1m]))
               ) > 1
