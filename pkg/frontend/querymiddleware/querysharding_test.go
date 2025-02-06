@@ -2582,7 +2582,7 @@ func newEngine() *promql.Engine {
 	return promql.NewEngine(promql.EngineOpts{
 		Logger:               promslog.NewNopLogger(),
 		Reg:                  nil,
-		MaxSamples:           10e6,
+		MaxSamples:           10e7,
 		Timeout:              1 * time.Hour,
 		ActiveQueryTracker:   nil,
 		LookbackDelta:        lookbackDelta,

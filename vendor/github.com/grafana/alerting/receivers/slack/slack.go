@@ -258,7 +258,7 @@ func (sn *Notifier) createSlackMessage(ctx context.Context, alerts []*types.Aler
 		// https://api.slack.com/messaging/composing/layouts#when-to-use-attachments
 		Attachments: []attachment{
 			{
-				Color:      receivers.GetAlertStatusColor(types.Alerts(alerts...).Status()),
+				Color:      tmpl(sn.settings.Color),
 				Title:      title,
 				Fallback:   title,
 				Footer:     "Grafana v" + sn.appVersion,
