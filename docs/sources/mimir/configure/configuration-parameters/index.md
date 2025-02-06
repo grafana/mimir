@@ -1414,7 +1414,7 @@ push_adaptive_limiter:
   [correlation_window: <int> | default = 50]
 
   # (experimental) The number of allowed queued requests, as a multiple of
-  # current inflight requests, after which rejections will start
+  # current inflight requests, after which rejections start
   # CLI flag: -ingester.push-adaptive-limiter.initial-rejection-factor
   [initial_rejection_factor: <float> | default = 2]
 
