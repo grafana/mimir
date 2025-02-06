@@ -5,12 +5,6 @@ package util
 import (
 	"errors"
 	"time"
-
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
-	"go.uber.org/atomic"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var ErrCloseAndExhaustTimedOut = errors.New("timed out waiting to exhaust stream after calling CloseSend, will continue exhausting stream in background")
@@ -48,27 +42,5 @@ func CloseAndExhaust[T any](stream Stream[T]) error {
 		return nil
 	case <-time.After(200 * time.Millisecond):
 		return ErrCloseAndExhaustTimedOut
-	}
-}
-
-type LoggerWithRate struct {
-	log.Logger
-	count *atomic.Int64
-}
-
-func NewLoggerWithRate(logger log.Logger) LoggerWithRate {
-	if logger == nil {
-		logger = util_log.Logger
-	}
-	return LoggerWithRate{
-		Logger: logger,
-		count:  atomic.NewInt64(0),
-	}
-}
-
-func (l LoggerWithRate) LogIfNeeded(msgs []string) {
-	next := l.count.Inc()
-	if next%1000 == 0 || next%1000 == 1 {
-		level.Info(l.Logger).Log(msgs)
 	}
 }
