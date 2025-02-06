@@ -33,10 +33,6 @@ type ingesterAdaptiveLimiter struct {
 }
 
 func newIngesterAdaptiveLimiter(prioritizerConfig *adaptivelimiter.RejectionPrioritizerConfig, pushConfig *adaptivelimiter.Config, readConfig *adaptivelimiter.Config, logger log.Logger, registerer prometheus.Registerer) *ingesterAdaptiveLimiter {
-	if !prioritizerConfig.Enabled {
-		return nil
-	}
-
 	// Create prioritizer to prioritize the rejection threshold between push and read limiters
 	prioritizer := &rejectionPrioritizer{
 		cfg:         prioritizerConfig,

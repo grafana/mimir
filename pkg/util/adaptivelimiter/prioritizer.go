@@ -32,12 +32,10 @@ type Prioritizer interface {
 }
 
 type RejectionPrioritizerConfig struct {
-	Enabled             bool          `yaml:"enabled" category:"experimental" `
 	CalibrationInterval time.Duration `yaml:"calibration_interval" category:"experimental"`
 }
 
 func (cfg *RejectionPrioritizerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable adaptive limiting when making requests to ingesters")
 	f.DurationVar(&cfg.CalibrationInterval, prefix+"calibration-interval", time.Second, "The interval at which the rejection threshold should be calibrated")
 }
 
