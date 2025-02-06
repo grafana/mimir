@@ -214,9 +214,8 @@ func (f *frontendSchedulerWorkers) getWorkersCount() int {
 }
 
 func (f *frontendSchedulerWorkers) connectToScheduler(ctx context.Context, address string) (*grpc.ClientConn, error) {
-	loggweWithRate := util.NewLoggerWithRate(f.log)
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	opts, err := f.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(f.cluster, loggweWithRate.LogIfNeeded)}, nil)
+	opts, err := f.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(f.cluster)}, nil)
 	if err != nil {
 		return nil, err
 	}

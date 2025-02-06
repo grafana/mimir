@@ -25,7 +25,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/middleware"
@@ -52,7 +51,6 @@ import (
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
@@ -278,8 +276,6 @@ func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
 
 	return result
 }
-
-var count = atomic.NewInt64(0)
 
 // Ingester deals with "in flight" chunks.  Based on Prometheus 1.x
 // MemorySeriesStorage.
@@ -1129,16 +1125,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
 	defer cleanUp()
-
-	if count.Inc()%1000 == 0 {
-		val := metadata.ValueFromIncomingContext(ctx, clusterutil.ClusterHeader)
-		if len(val) > 0 {
-			level.Info(i.logger).Log("msg", "cluster in the incoming context", "cluster", val[0])
-		} else {
-			level.Warn(i.logger).Log("msg", "no cluster in the incoming context")
-		}
-	}
-
 	start := time.Now()
 	// Only start/finish request here when the request comes NOT from grpc handlers (i.e., from ingest.Store).
 	// NOTE: request coming from grpc handler may end up calling start multiple times during its lifetime (e.g., when migrating to ingest storage).

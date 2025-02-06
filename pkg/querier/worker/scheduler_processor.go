@@ -30,8 +30,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/grafana/mimir/pkg/util"
-
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -439,9 +437,8 @@ func (w httpGrpcHeaderWriter) Set(key, val string) {
 }
 
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
-	loggerWithRate := util.NewLoggerWithRate(sp.log)
 	unary, stream := grpcclient.Instrument(sp.frontendClientRequestDuration)
-	unary = append(unary, middleware.ClusterUnaryClientInterceptor(sp.cluster, loggerWithRate.LogIfNeeded))
+	unary = append(unary, middleware.ClusterUnaryClientInterceptor(sp.cluster))
 	opts, err := sp.grpcConfig.DialOption(unary, stream)
 	if err != nil {
 		return nil, err

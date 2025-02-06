@@ -19,8 +19,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 type ClientConfig struct {
@@ -78,9 +76,8 @@ func newRulerClientFactory(clientCfg ClientConfig, reg prometheus.Registerer, lo
 }
 
 func dialRulerClient(clientCfg ClientConfig, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, logger log.Logger) (*rulerExtendedClient, error) {
-	loggerWithRate := util.NewLoggerWithRate(logger)
 	unary, stream := grpcclient.Instrument(requestDuration)
-	unary = append(unary, middleware.ClusterUnaryClientInterceptor(clientCfg.Cluster, loggerWithRate.LogIfNeeded))
+	unary = append(unary, middleware.ClusterUnaryClientInterceptor(clientCfg.Cluster))
 	opts, err := clientCfg.DialOption(unary, stream)
 	if err != nil {
 		return nil, err

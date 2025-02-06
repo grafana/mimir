@@ -18,19 +18,3 @@ type Sizer interface {
 func AppendMessageSizeToOutgoingContext(ctx context.Context, req Sizer) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, MetadataMessageSize, strconv.Itoa(req.Size()))
 }
-
-func ValueFromIncommingContext(ctx context.Context, key string) []string {
-	return metadata.ValueFromIncomingContext(ctx, key)
-}
-
-func ValueFromOutgoingContext(ctx context.Context, key string) ([]string, bool) {
-	md, ok := metadata.FromOutgoingContext(ctx)
-	if !ok {
-		return nil, false
-	}
-	values, ok := md[key]
-	if !ok {
-		return nil, false
-	}
-	return values, true
-}

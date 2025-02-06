@@ -24,8 +24,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/pkg/util"
-
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 )
@@ -393,9 +391,8 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 }
 
 func (w *querierWorker) connect(ctx context.Context, address string) (*grpc.ClientConn, error) {
-	loggerWithRate := util.NewLoggerWithRate(w.log)
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	opts, err := w.grpcClientConfig.DialOption([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(w.cluster, loggerWithRate.LogIfNeeded)}, nil)
+	opts, err := w.grpcClientConfig.DialOption([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(w.cluster)}, nil)
 
 	if err != nil {
 		return nil, err

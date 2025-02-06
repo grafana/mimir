@@ -21,22 +21,12 @@ const (
 )
 
 // ClusterUnaryClientInterceptor propagates the given cluster info to gRPC metadata.
-func ClusterUnaryClientInterceptor(cluster string, logFn func([]string)) grpc.UnaryClientInterceptor {
+func ClusterUnaryClientInterceptor(cluster string) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		if logFn != nil {
-			values := grpcutil.ValueFromIncommingContext(ctx, MetadataClusterKey)
-			logFn([]string{"msg", fmt.Sprintf("incoming context contains the following values for key %s: %v", MetadataClusterKey, values)})
-		}
 		if cluster != "" {
 			ctx = metadata.AppendToOutgoingContext(ctx, MetadataClusterKey, cluster)
 		}
-		if logFn != nil {
-			if values, ok := grpcutil.ValueFromOutgoingContext(ctx, MetadataClusterKey); ok {
-				logFn([]string{"msg", fmt.Sprintf("outgoing context contains the following values for key %s: %v", MetadataClusterKey, values)})
-			} else {
-				logFn([]string{"msg", fmt.Sprintf("outgoing context contains no values for key %s", MetadataClusterKey)})
-			}
-		}
+
 		return invoker(ctx, method, req, reply, cc, opts...)
 	}
 }
@@ -50,7 +40,6 @@ func ClusterUnaryServerInterceptor(cluster string, invalidClusters *prometheus.C
 			return handler(ctx, req)
 		}
 		reqCluster := getClusterFromIncomingContext(ctx, logger)
-		level.Info(logger).Log("msg", "ClusterUnaryServerInterceptor is being executed", "requestCluster", reqCluster, "serverCluster", cluster)
 		if cluster != reqCluster {
 			level.Warn(logger).Log("msg", "rejecting request intended for wrong cluster",
 				"cluster", cluster, "request_cluster", reqCluster, "method", info.FullMethod)

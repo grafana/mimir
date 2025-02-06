@@ -21,8 +21,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/grafana/mimir/pkg/util"
-
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
 
@@ -41,9 +39,8 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 }
 
 func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, cluster string, logger log.Logger) (*storeGatewayClient, error) {
-	loggerWithRate := util.NewLoggerWithRate(logger)
 	unary, stream := grpcclient.Instrument(requestDuration)
-	unary = append(unary, middleware.ClusterUnaryClientInterceptor(cluster, loggerWithRate.LogIfNeeded))
+	unary = append(unary, middleware.ClusterUnaryClientInterceptor(cluster))
 	opts, err := clientCfg.DialOption(unary, stream)
 	if err != nil {
 		return nil, err
