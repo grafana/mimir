@@ -78,18 +78,18 @@ type Config struct {
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable adaptive limiting when making requests to ingesters")
-	f.DurationVar(&cfg.ShortWindowMinDuration, prefix+"short-window-min-duration", time.Second, "Min duration of the window that is used to determine recent, short-term load on the system")
-	f.DurationVar(&cfg.ShortWindowMaxDuration, prefix+"short-window-max-duration", 30*time.Second, "Max duration of the window that is used to determine recent, short-term load on the system")
-	f.UintVar(&cfg.ShortWindowMinSamples, prefix+"short-window-min-samples", 50, "Min number of samples that must be recorded in the window")
-	f.UintVar(&cfg.LongWindow, prefix+"long-window", 60, "Short-term window measurements that will be stored in an exponentially weighted moving average window, representing the long-term baseline inflight time")
+	f.DurationVar(&cfg.ShortWindowMinDuration, prefix+"short-window-min-duration", time.Second, "Minimum duration of the window that is used to determine the recent, short-term load on the system")
+	f.DurationVar(&cfg.ShortWindowMaxDuration, prefix+"short-window-max-duration", 30*time.Second, "Maximum duration of the window that is used to determine the recent, short-term load on the system")
+	f.UintVar(&cfg.ShortWindowMinSamples, prefix+"short-window-min-samples", 50, "Minimum number of samples that must be recorded in the window")
+	f.UintVar(&cfg.LongWindow, prefix+"long-window", 60, "Short-term window measurements that are stored in an exponentially weighted moving average window, representing the long-term baseline inflight time")
 	f.Float64Var(&cfg.SampleQuantile, prefix+"sample-quantile", .9, "The quantile of recorded response times to consider when adjusting the concurrency limit")
-	f.UintVar(&cfg.MinInflightLimit, prefix+"min-inflight-limit", 2, "Min inflight requests limit")
-	f.UintVar(&cfg.MaxInflightLimit, prefix+"max-inflight-limit", 200, "Max inflight requests limit")
+	f.UintVar(&cfg.MinInflightLimit, prefix+"min-inflight-limit", 2, "Minimum inflight requests limit")
+	f.UintVar(&cfg.MaxInflightLimit, prefix+"max-inflight-limit", 200, "Maximum inflight requests limit")
 	f.UintVar(&cfg.InitialInflightLimit, prefix+"initial-inflight-limit", 20, "Initial inflight requests limit")
-	f.Float64Var(&cfg.MaxLimitFactor, prefix+"max-limit-factor", 5, "The max limit as a multiple of current inflight requests")
+	f.Float64Var(&cfg.MaxLimitFactor, prefix+"max-limit-factor", 5, "The maximum limit as a multiple of current inflight requests")
 	f.UintVar(&cfg.CorrelationWindow, prefix+"correlation-window", 50, "How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times")
-	f.Float64Var(&cfg.InitialRejectionFactor, prefix+"initial-rejection-factor", 2, "The number of allowed queued requests, as a multiple of current inflight requests, after which rejections will start")
-	f.Float64Var(&cfg.MaxRejectionFactor, prefix+"max-rejection-factor", 3, "The number of allowed queued requests, as a multiple of current inflight requests, after which all requests will be rejected")
+	f.Float64Var(&cfg.InitialRejectionFactor, prefix+"initial-rejection-factor", 2, "The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start")
+	f.Float64Var(&cfg.MaxRejectionFactor, prefix+"max-rejection-factor", 3, "The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected")
 }
 
 func newLimiter(config *Config, logger log.Logger) *adaptiveLimiter {

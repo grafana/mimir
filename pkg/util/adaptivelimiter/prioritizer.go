@@ -36,7 +36,7 @@ type RejectionPrioritizerConfig struct {
 }
 
 func (cfg *RejectionPrioritizerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.DurationVar(&cfg.CalibrationInterval, prefix+"calibration-interval", time.Second, "The interval at which the rejection threshold should be calibrated")
+	f.DurationVar(&cfg.CalibrationInterval, prefix+"calibration-interval", time.Second, "The interval at which the rejection threshold is calibrated")
 }
 
 func NewPrioritizer(logger log.Logger) Prioritizer {
