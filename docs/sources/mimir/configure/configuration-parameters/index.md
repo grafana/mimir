@@ -1465,7 +1465,7 @@ read_adaptive_limiter:
   # CLI flag: -ingester.read-adaptive-limiter.initial-inflight-limit
   [initial_inflight_limit: <int> | default = 20]
 
-  # (experimental) The max limit as a multiple of current inflight requests
+  # (experimental) The maximum limit as a multiple of current inflight requests
   # CLI flag: -ingester.read-adaptive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
 
