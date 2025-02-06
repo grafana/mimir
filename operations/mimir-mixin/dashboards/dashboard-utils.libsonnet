@@ -1716,37 +1716,75 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       ),
     ] +
-    $.ingesterStoreGatewayReadsDashboardsRows('ingester', $.queries.ingester.requestsPerSecondMetric, $.queries.ingester.readRequestsPerSecondSelector, $._config.job_names.ingester, $._config.ingester_read_path_routes_regex) +
-    $.ingesterStoreGatewayReadsDashboardsRows('store-gateway', $.queries.store_gateway.requestsPerSecondMetric, $.queries.store_gateway.readRequestsPerSecondSelector, $._config.job_names.store_gateway, $._config.store_gateway_read_path_routes_regex),
+    $.ingesterStoreGatewayReadsDashboardsRows(
+      'ingester',
+      $.queries.ingester.requestsPerSecondMetric,
+      $.queries.ingester.readRequestsPerSecondSelector,
+      $._config.job_names.ingester,
+      $._config.ingester_read_path_routes_regex,
+      $.queries.querier.ingesterClientRequestsPerSecondMetric,
+      querierJobName,
+    ) +
+    $.ingesterStoreGatewayReadsDashboardsRows(
+      'store-gateway',
+      $.queries.store_gateway.requestsPerSecondMetric,
+      $.queries.store_gateway.readRequestsPerSecondSelector,
+      $._config.job_names.store_gateway,
+      $._config.store_gateway_read_path_routes_regex,
+      $.queries.querier.storeGatewayClientRequestsPerSecondMetric,
+      querierJobName,
+    ),
 
   ingesterStoreGatewayReadsDashboardsRows(
-    componentName,
-    requestsPerSecondMetric,
-    readRequestsPerSecondSelector,
-    jobNames,
-    routesRegex,
+    ingesterStoreGatewayComponentName,
+    ingesterStoreGatewayRequestsPerSecondMetric,
+    ingesterStoreGatewayRequestsPerSecondSelector,
+    ingesterStoreGatewayJobNames,
+    ingesterStoreGatewayRoutesRegex,
+    querierRequestsPerSecondMetric,
+    querierJobNames,
   ):: [
-    local description = 'This panel shows %(componentName)s query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by %(componentName)s.' % { componentName: componentName };
+    local description = 'This panel shows %(ingesterStoreGatewayComponentName)s query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by %(ingesterStoreGatewayComponentName)ss.' % { ingesterStoreGatewayComponentName: ingesterStoreGatewayComponentName };
 
-    $.row($.capitalize(componentName + ' - incoming query requests from all sources'))
+    $.row($.capitalize(ingesterStoreGatewayComponentName + ' - query requests from all sources'))
     .addPanel(
       $.timeseriesPanel('Requests / sec') +
       $.panelDescription('Requests / sec', description) +
-      $.qpsPanelNativeHistogram(requestsPerSecondMetric, readRequestsPerSecondSelector)
+      $.qpsPanelNativeHistogram(ingesterStoreGatewayRequestsPerSecondMetric, ingesterStoreGatewayRequestsPerSecondSelector)
     )
     .addPanel(
       $.timeseriesPanel('Latency') +
       $.panelDescription('Latency', description) +
-      $.latencyRecordingRulePanelNativeHistogram(requestsPerSecondMetric, $.jobSelector(jobNames) + [utils.selector.re('route', routesRegex)])
+      $.latencyRecordingRulePanelNativeHistogram(ingesterStoreGatewayRequestsPerSecondMetric, $.jobSelector(ingesterStoreGatewayJobNames) + [utils.selector.re('route', ingesterStoreGatewayRoutesRegex)])
     )
     .addPanel(
-      $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-      $.panelDescription('Per %s p99 latency' % $._config.per_instance_label, description) +
+      $.timeseriesPanel('Per %s %s p99 latency' % [ingesterStoreGatewayComponentName, $._config.per_instance_label]) +
+      $.panelDescription('Per %s %s p99 latency' % [ingesterStoreGatewayComponentName, $._config.per_instance_label], description) +
       $.perInstanceLatencyPanelNativeHistogram(
         '0.99',
-        requestsPerSecondMetric,
-        $.jobSelector(jobNames) + [utils.selector.re('route', routesRegex)],
+        ingesterStoreGatewayRequestsPerSecondMetric,
+        $.jobSelector(ingesterStoreGatewayJobNames) + [utils.selector.re('route', ingesterStoreGatewayRoutesRegex)],
       ),
+    ),
+
+    local description = 'This panel shows %(ingesterStoreGatewayComponentName)s query requests from just this query path. The data shown is as reported by queriers.' % { ingesterStoreGatewayComponentName: ingesterStoreGatewayComponentName };
+    local selectors = $.jobSelector(querierJobNames) + [utils.selector.re('operation', ingesterStoreGatewayRoutesRegex)];
+
+    $.row($.capitalize(ingesterStoreGatewayComponentName + ' - query requests from this query path only'))
+    .addPanel(
+      $.timeseriesPanel('Requests / sec') +
+      $.panelDescription('Requests / sec', description) +
+      $.qpsPanelNativeHistogram(querierRequestsPerSecondMetric, utils.toPrometheusSelectorNaked(selectors))
+    )
+    .addPanel(
+      $.timeseriesPanel('Latency') +
+      $.panelDescription('Latency', description) +
+      $.latencyPanel(querierRequestsPerSecondMetric, utils.toPrometheusSelector(selectors))
+    )
+    .addPanel(
+      $.timeseriesPanel('Per querier %s p99 latency' % $._config.per_instance_label) +
+      $.panelDescription('Per querier %s p99 latency' % $._config.per_instance_label, description) +
+      $.perInstanceLatencyPanelNativeHistogram('0.99', querierRequestsPerSecondMetric, selectors),
     ),
   ],
 

@@ -334,5 +334,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       requestsPerSecondMetric: $.queries.requests_per_second_metric,
       readRequestsPerSecondSelector: '%(rulerQueryFrontendMatcher)s,route=~"%(rulerQueryFrontendRoutesRegex)s"' % variables,
     },
+
+    querier: {
+      ingesterClientRequestsPerSecondMetric: 'cortex_ingester_client_request_duration_seconds',
+      storeGatewayClientRequestsPerSecondMetric: 'cortex_storegateway_client_request_duration_seconds',
+    },
   },
 }
