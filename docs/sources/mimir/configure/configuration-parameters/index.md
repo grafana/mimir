@@ -1442,7 +1442,7 @@ read_adaptive_limiter:
   # CLI flag: -ingester.read-adaptive-limiter.short-window-min-samples
   [short_window_min_samples: <int> | default = 1]
 
-  # (experimental) Short-term window measurements that will be stored in an
+  # (experimental) Short-term window measurements that are stored in an
   # exponentially weighted moving average window, representing the long-term
   # baseline inflight time
   # CLI flag: -ingester.read-adaptive-limiter.long-window
