@@ -441,5 +441,44 @@ local filename = 'mimir-reads.json';
     // Object store metrics for the querier.
     .addRows(
       $.getObjectStoreRows('Blocks object store (querier accesses)', 'querier')
+    )
+    .addRow(
+      $.row('Instance Limits')
+      .addPanel(
+        $.timeseriesPanel('Ingester per pod blocked requests') +
+        $.queryPanel(
+          'sum by (pod) (cortex_ingester_adaptive_limiter_blocked_requests{%s, request_type="read"})'
+          % $.jobMatcher($._config.job_names.ingester),
+          '{{pod}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'req' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Ingester per pod inflight requests') +
+        $.queryPanel(
+          'sum by (pod) (cortex_ingester_adaptive_limiter_inflight_requests{%s, request_type="read"})'
+          % $.jobMatcher($._config.job_names.ingester),
+          '{{pod}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'req' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Ingester per pod inflight request limit') +
+        $.queryPanel(
+          'sum by (pod) (cortex_ingester_adaptive_limiter_inflight_limit{%s, request_type="read"})'
+          % $.jobMatcher($._config.job_names.ingester),
+          '{{pod}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'req' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Rejected ingester requests') +
+        $.queryPanel(
+          'sum by (reason) (rate(cortex_ingester_instance_rejected_requests_total{%s, reason="ingester_max_inflight_read_requests"}[$__rate_interval]))'
+          % $.jobMatcher($._config.job_names.ingester),
+          '{{reason}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } }
+      ),
     ),
 }

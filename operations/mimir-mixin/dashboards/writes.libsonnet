@@ -737,6 +737,36 @@ local filename = 'mimir-writes.json';
     .addRow(
       $.row('Instance Limits')
       .addPanel(
+        $.timeseriesPanel('Ingester per pod blocked requests') +
+        $.queryPanel(
+          'sum by (pod) (cortex_ingester_adaptive_limiter_blocked_requests{%s, request_type="push"})'
+          % $.jobMatcher($._config.job_names.ingester),
+          '{{pod}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'req' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Ingester per pod inflight requests') +
+        $.queryPanel(
+          'sum by (pod) (cortex_ingester_adaptive_limiter_inflight_requests{%s, request_type="push"})'
+          % $.jobMatcher($._config.job_names.ingester),
+          '{{pod}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'req' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Ingester per pod inflight request limit') +
+        $.queryPanel(
+          'sum by (pod) (cortex_ingester_adaptive_limiter_inflight_limit{%s, request_type="push"})'
+          % $.jobMatcher($._config.job_names.ingester),
+          '{{pod}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'req' } } }
+      ),
+    )
+    .addRow(
+      $.row('')
+      .addPanel(
         $.timeseriesPanel('Rejected distributor requests') +
         $.queryPanel(
           'sum by (reason) (rate(cortex_distributor_instance_rejected_requests_total{%s}[$__rate_interval]))'
@@ -753,6 +783,15 @@ local filename = 'mimir-writes.json';
           '{{reason}}',
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Ingester per pod rejection rate') +
+        $.queryPanel(
+          'sum by (pod) (cortex_ingester_rejection_rate{%s})'
+          % $.jobMatcher($._config.job_names.ingester),
+          '{{pod}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'percentunit' } } }
       ),
     ),
 }
