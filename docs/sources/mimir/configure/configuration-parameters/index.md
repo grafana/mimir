@@ -1457,7 +1457,7 @@ read_adaptive_limiter:
   # CLI flag: -ingester.read-adaptive-limiter.min-inflight-limit
   [min_inflight_limit: <int> | default = 2]
 
-  # (experimental) Max inflight requests limit
+  # (experimental) Maximum inflight requests limit
   # CLI flag: -ingester.read-adaptive-limiter.max-inflight-limit
   [max_inflight_limit: <int> | default = 200]
 
