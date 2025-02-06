@@ -35,6 +35,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/util"
+
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -95,10 +97,12 @@ func (c *QueryFrontendConfig) Validate() error {
 }
 
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
-func DialQueryFrontend(cfg QueryFrontendConfig) (httpgrpc.HTTPClient, error) {
+func DialQueryFrontend(cfg QueryFrontendConfig, cluster string, logger log.Logger) (httpgrpc.HTTPClient, error) {
+	loggerWithRate := util.NewLoggerWithRate(logger)
 	opts, err := cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
 		middleware.ClientUserHeaderInterceptor,
+		middleware.ClusterUnaryClientInterceptor(cluster, loggerWithRate.LogIfNeeded),
 	}, nil)
 	if err != nil {
 		return nil, err

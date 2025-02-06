@@ -152,7 +152,7 @@ type enqueueResult struct {
 }
 
 // NewFrontend creates a new frontend.
-func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Registerer, codec querymiddleware.Codec) (*Frontend, error) {
+func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Registerer, codec querymiddleware.Codec, cluster string) (*Frontend, error) {
 	requestsCh := make(chan *frontendRequest)
 	toSchedulerAdapter := frontendToSchedulerAdapter{
 		log:    log,
@@ -161,7 +161,7 @@ func NewFrontend(cfg Config, limits Limits, log log.Logger, reg prometheus.Regis
 		codec:  codec,
 	}
 
-	schedulerWorkers, err := newFrontendSchedulerWorkers(cfg, net.JoinHostPort(cfg.Addr, strconv.Itoa(cfg.Port)), requestsCh, toSchedulerAdapter, log, reg)
+	schedulerWorkers, err := newFrontendSchedulerWorkers(cfg, net.JoinHostPort(cfg.Addr, strconv.Itoa(cfg.Port)), requestsCh, toSchedulerAdapter, log, reg, cluster)
 	if err != nil {
 		return nil, err
 	}

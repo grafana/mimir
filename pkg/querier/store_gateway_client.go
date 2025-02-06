@@ -21,10 +21,12 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
+	"github.com/grafana/mimir/pkg/util"
+
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
 
-func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer, cluster string) client.PoolFactory {
+func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer, cluster string, logger log.Logger) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   "cortex",
 		Name:        "storegateway_client_request_duration_seconds",
@@ -34,13 +36,14 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 	}, []string{"operation", "status_code"})
 
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
-		return dialStoreGatewayClient(clientCfg, inst, requestDuration, cluster)
+		return dialStoreGatewayClient(clientCfg, inst, requestDuration, cluster, logger)
 	})
 }
 
-func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, cluster string) (*storeGatewayClient, error) {
+func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, cluster string, logger log.Logger) (*storeGatewayClient, error) {
+	loggerWithRate := util.NewLoggerWithRate(logger)
 	unary, stream := grpcclient.Instrument(requestDuration)
-	unary = append(unary, middleware.ClusterUnaryClientInterceptor(cluster))
+	unary = append(unary, middleware.ClusterUnaryClientInterceptor(cluster, loggerWithRate.LogIfNeeded))
 	opts, err := clientCfg.DialOption(unary, stream)
 	if err != nil {
 		return nil, err
@@ -102,7 +105,7 @@ func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConf
 		ConstLabels: map[string]string{"client": "querier"},
 	})
 
-	return client.NewPool("store-gateway", poolCfg, discovery, newStoreGatewayClientFactory(clientCfg, reg, cluster), clientsCount, logger)
+	return client.NewPool("store-gateway", poolCfg, discovery, newStoreGatewayClientFactory(clientCfg, reg, cluster, logger), clientsCount, logger)
 }
 
 type ClientConfig struct {

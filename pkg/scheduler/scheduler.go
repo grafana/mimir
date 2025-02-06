@@ -86,6 +86,7 @@ type Scheduler struct {
 	connectedFrontendClients prometheus.GaugeFunc
 	queueDuration            *prometheus.HistogramVec
 	inflightRequests         prometheus.Summary
+	cluster                  string
 }
 
 type connectedFrontend struct {
@@ -119,13 +120,14 @@ func (cfg *Config) Validate() error {
 }
 
 // NewScheduler creates a new Scheduler.
-func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*Scheduler, error) {
+func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer, cluster string) (*Scheduler, error) {
 	var err error
 
 	s := &Scheduler{
-		cfg:    cfg,
-		log:    log,
-		limits: limits,
+		cfg:     cfg,
+		log:     log,
+		limits:  limits,
+		cluster: cluster,
 
 		schedulerInflightRequests: map[queue.RequestKey]*queue.SchedulerRequest{},
 		connectedFrontends:        map[string]*connectedFrontend{},
@@ -560,9 +562,11 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 }
 
 func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.SchedulerRequest, requestErr error) {
+	loggerWithRate := util.NewLoggerWithRate(s.log)
 	opts, err := s.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
-		middleware.ClientUserHeaderInterceptor},
+		middleware.ClientUserHeaderInterceptor,
+		middleware.ClusterUnaryClientInterceptor(s.cluster, loggerWithRate.LogIfNeeded)},
 		nil)
 	if err != nil {
 		level.Warn(s.log).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)

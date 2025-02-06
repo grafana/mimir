@@ -50,7 +50,7 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 	flagext.DefaultValues(&cfg)
 	cfg.MaxOutstandingPerTenant = testMaxOutstandingPerTenant
 
-	s, err := NewScheduler(cfg, &limits{queriers: 2}, log.NewNopLogger(), reg)
+	s, err := NewScheduler(cfg, &limits{queriers: 2}, log.NewNopLogger(), reg, "")
 	require.NoError(t, err)
 
 	server := grpc.NewServer()

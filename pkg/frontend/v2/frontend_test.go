@@ -78,7 +78,7 @@ func setupFrontendWithConcurrencyAndServerOptions(t *testing.T, reg prometheus.R
 	logger := log.NewLogfmtLogger(os.Stdout)
 	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
 
-	f, err := NewFrontend(cfg, limits{}, logger, reg, codec)
+	f, err := NewFrontend(cfg, limits{}, logger, reg, codec, "")
 	require.NoError(t, err)
 
 	frontendv2pb.RegisterFrontendForQuerierServer(server, f)

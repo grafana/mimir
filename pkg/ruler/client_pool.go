@@ -19,6 +19,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type ClientConfig struct {
@@ -59,11 +61,11 @@ func newRulerClientPool(clientCfg ClientConfig, logger log.Logger, reg prometheu
 	})
 
 	return &rulerClientsPool{
-		client.NewPool("ruler", poolCfg, nil, newRulerClientFactory(clientCfg, reg), clientsCount, logger),
+		client.NewPool("ruler", poolCfg, nil, newRulerClientFactory(clientCfg, reg, logger), clientsCount, logger),
 	}
 }
 
-func newRulerClientFactory(clientCfg ClientConfig, reg prometheus.Registerer) client.PoolFactory {
+func newRulerClientFactory(clientCfg ClientConfig, reg prometheus.Registerer, logger log.Logger) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cortex_ruler_client_request_duration_seconds",
 		Help:    "Time spent executing requests to the ruler.",
@@ -71,13 +73,14 @@ func newRulerClientFactory(clientCfg ClientConfig, reg prometheus.Registerer) cl
 	}, []string{"operation", "status_code"})
 
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
-		return dialRulerClient(clientCfg, inst, requestDuration)
+		return dialRulerClient(clientCfg, inst, requestDuration, logger)
 	})
 }
 
-func dialRulerClient(clientCfg ClientConfig, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec) (*rulerExtendedClient, error) {
+func dialRulerClient(clientCfg ClientConfig, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, logger log.Logger) (*rulerExtendedClient, error) {
+	loggerWithRate := util.NewLoggerWithRate(logger)
 	unary, stream := grpcclient.Instrument(requestDuration)
-	unary = append(unary, middleware.ClusterUnaryClientInterceptor(clientCfg.Cluster))
+	unary = append(unary, middleware.ClusterUnaryClientInterceptor(clientCfg.Cluster, loggerWithRate.LogIfNeeded))
 	opts, err := clientCfg.DialOption(unary, stream)
 	if err != nil {
 		return nil, err
