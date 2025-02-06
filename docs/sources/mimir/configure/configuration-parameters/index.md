@@ -1366,7 +1366,7 @@ push_adaptive_limiter:
   # CLI flag: -ingester.push-adaptive-limiter.enabled
   [enabled: <boolean> | default = false]
 
-  # (experimental) Min duration of the window that is used to determine recent,
+  # (experimental) Minimum duration of the window that is used to determine the recent,
   # short-term load on the system
   # CLI flag: -ingester.push-adaptive-limiter.short-window-min-duration
   [short_window_min_duration: <duration> | default = 1s]
