@@ -1356,7 +1356,7 @@ rejection_prioritizer:
   # CLI flag: -ingester.rejection-prioritizer.enabled
   [enabled: <boolean> | default = false]
 
-  # (experimental) The interval at which the rejection threshold should be
+  # (experimental) The interval at which the rejection threshold is
   # calibrated
   # CLI flag: -ingester.rejection-prioritizer.calibration-interval
   [calibration_interval: <duration> | default = 1s]
