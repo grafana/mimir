@@ -1438,7 +1438,7 @@ read_adaptive_limiter:
   # CLI flag: -ingester.read-adaptive-limiter.short-window-max-duration
   [short_window_max_duration: <duration> | default = 30s]
 
-  # (experimental) Min number of samples that must be recorded in the window
+  # (experimental) Minimum number of samples that must be recorded in the window
   # CLI flag: -ingester.read-adaptive-limiter.short-window-min-samples
   [short_window_min_samples: <int> | default = 1]
 
