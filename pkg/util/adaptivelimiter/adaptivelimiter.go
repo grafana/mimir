@@ -15,8 +15,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/influxdata/tdigest"
 
-	math2 "github.com/grafana/mimir/pkg/util/math"
-	sync2 "github.com/grafana/mimir/pkg/util/sync"
+	mimirmath "github.com/grafana/mimir/pkg/util/math"
+	mimirsync "github.com/grafana/mimir/pkg/util/sync"
 )
 
 // ErrExceeded is returned when an execution exceeds the current limit.
@@ -93,24 +93,24 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 }
 
 func newLimiter(config *Config, logger log.Logger) *adaptiveLimiter {
-	config.alphaFunc = math2.Log10Func(3)
-	config.betaFunc = math2.Log10Func(6)
-	config.increaseFunc = math2.Log10Func(1)
-	config.decreaseFunc = math2.Log10Func(1)
+	config.alphaFunc = mimirmath.Log10Func(3)
+	config.betaFunc = mimirmath.Log10Func(6)
+	config.increaseFunc = mimirmath.Log10Func(1)
+	config.decreaseFunc = mimirmath.Log10Func(1)
 	return &adaptiveLimiter{
 		logger:                logger,
 		config:                config,
 		minLimit:              float64(config.MinInflightLimit),
 		maxLimit:              float64(config.MaxInflightLimit),
-		semaphore:             sync2.NewDynamicSemaphore(int64(config.InitialInflightLimit)),
+		semaphore:             mimirsync.NewDynamicSemaphore(int64(config.InitialInflightLimit)),
 		limit:                 float64(config.InitialInflightLimit),
 		shortRTT:              &tDigestSample{TDigest: tdigest.NewWithCompression(100)},
-		longRTT:               math2.NewEwma(config.LongWindow, warmupSamples),
+		longRTT:               mimirmath.NewEwma(config.LongWindow, warmupSamples),
 		nextUpdateTime:        time.Now(),
-		rttCorrelation:        math2.NewCorrelationWindow(config.CorrelationWindow, warmupSamples),
-		throughputCorrelation: math2.NewCorrelationWindow(config.CorrelationWindow, warmupSamples),
-		medianFilter:          math2.NewMedianFilter(smoothedSamples),
-		smoothedShortRTT:      math2.NewEwma(smoothedSamples, warmupSamples),
+		rttCorrelation:        mimirmath.NewCorrelationWindow(config.CorrelationWindow, warmupSamples),
+		throughputCorrelation: mimirmath.NewCorrelationWindow(config.CorrelationWindow, warmupSamples),
+		medianFilter:          mimirmath.NewMedianFilter(smoothedSamples),
+		smoothedShortRTT:      mimirmath.NewEwma(smoothedSamples, warmupSamples),
 	}
 }
 
@@ -154,19 +154,19 @@ type adaptiveLimiter struct {
 	minLimit, maxLimit float64
 
 	// Mutable state
-	semaphore *sync2.DynamicSemaphore
+	semaphore *mimirsync.DynamicSemaphore
 	mu        sync.Mutex
 
 	// Guarded by mu
 	limit            float64        // The current concurrency limit
 	shortRTT         *tDigestSample // Short term execution times
-	medianFilter     *math2.MedianFilter
-	smoothedShortRTT math2.Ewma
-	longRTT          math2.Ewma // Tracks long term average execution time
-	nextUpdateTime   time.Time  // Tracks when the limit can next be updated
+	medianFilter     *mimirmath.MedianFilter
+	smoothedShortRTT mimirmath.Ewma
+	longRTT          mimirmath.Ewma // Tracks long term average execution time
+	nextUpdateTime   time.Time      // Tracks when the limit can next be updated
 
-	throughputCorrelation *math2.CorrelationWindow // Tracks the correlation between concurrency and throughput
-	rttCorrelation        *math2.CorrelationWindow // Tracks the correlation between concurrency and round trip times (RTT)
+	throughputCorrelation *mimirmath.CorrelationWindow // Tracks the correlation between concurrency and throughput
+	rttCorrelation        *mimirmath.CorrelationWindow // Tracks the correlation between concurrency and round trip times (RTT)
 }
 
 func (l *adaptiveLimiter) AcquirePermit(ctx context.Context) (Permit, error) {
