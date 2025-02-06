@@ -1391,7 +1391,7 @@ push_adaptive_limiter:
   # CLI flag: -ingester.push-adaptive-limiter.sample-quantile
   [sample_quantile: <float> | default = 0.9]
 
-  # (experimental) Min inflight requests limit
+  # (experimental) Minimum inflight requests limit
   # CLI flag: -ingester.push-adaptive-limiter.min-inflight-limit
   [min_inflight_limit: <int> | default = 2]
 
