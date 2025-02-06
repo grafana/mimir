@@ -66,7 +66,10 @@ const (
 	// Synced label values.
 	labelExcludedMeta = "label-excluded"
 	timeExcludedMeta  = "time-excluded"
-	duplicateMeta     = "duplicate"
+
+	// DuplicateMeta is the label for blocks that are contained in other compacted blocks.
+	DuplicateMeta = "duplicate"
+
 	// Blocks that are marked for deletion can be loaded as well. This is done to make sure that we load blocks that are meant to be deleted,
 	// but don't have a replacement block yet.
 	MarkedForDeletionMeta = "marked-for-deletion"
@@ -112,7 +115,7 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 			{FailedMeta},
 			{labelExcludedMeta},
 			{timeExcludedMeta},
-			{duplicateMeta},
+			{DuplicateMeta},
 			{MarkedForDeletionMeta},
 			{MarkedForNoCompactionMeta},
 			{LookbackExcludedMeta},
