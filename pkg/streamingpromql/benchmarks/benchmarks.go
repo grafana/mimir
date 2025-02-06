@@ -105,9 +105,9 @@ func TestCases(metricSizes []int) []BenchCase {
 		//{
 		//	Expr: "holt_winters(a_X[1d], 0.3, 0.3)",
 		//},
-		//{
-		//	Expr: "changes(a_X[1d])",
-		//},
+		{
+			Expr: "changes(a_X[1d])",
+		},
 		{
 			Expr: "rate(a_X[1d])",
 		},
@@ -140,11 +140,11 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum(sum_over_time(a_X[10m:3m]))",
 		},
-		//// Unary operators.
-		//{
-		//	Expr: "-a_X",
-		//},
-		//// Binary operators.
+		// Unary operators.
+		{
+			Expr: "-a_X",
+		},
+		// Binary operators.
 		{
 			Expr: "a_X - b_X",
 		},
@@ -208,6 +208,10 @@ func TestCases(metricSizes []int) []BenchCase {
 		//{
 		//	Expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
 		//},
+		{
+			Expr:             "sort(a_X)",
+			InstantQueryOnly: true,
+		},
 		// Simple aggregations.
 		{
 			Expr: "sum(a_X)",
@@ -261,7 +265,7 @@ func TestCases(metricSizes []int) []BenchCase {
 		//{
 		//	Expr: "topk(5, a_X)",
 		//},
-		//// Combinations.
+		// Combinations.
 		{
 			Expr: "rate(a_X[1m]) + rate(b_X[1m])",
 		},
@@ -283,23 +287,19 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "histogram_quantile(0.9, nh_X)",
 		},
-		//// Many-to-one join.
-		//{
-		//	Expr: "a_X + on(l) group_right a_one",
-		//},
-		//// Label compared to blank string.
-		//{
-		//	Expr:  "count({__name__!=\"\"})",
-		//	Steps: 1,
-		//},
-		//{
-		//	Expr:  "count({__name__!=\"\",l=\"\"})",
-		//	Steps: 1,
-		//},
-		//// Functions which have special handling inside eval()
-		//{
-		//	Expr: "timestamp(a_X)",
-		//},
+		// Label compared to blank string.
+		{
+			Expr:  "count({__name__!=\"\"})",
+			Steps: 1,
+		},
+		{
+			Expr:  "count({__name__!=\"\",l=\"\"})",
+			Steps: 1,
+		},
+		// Functions which have special handling inside eval()
+		{
+			Expr: "timestamp(a_X)",
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.

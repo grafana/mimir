@@ -12,6 +12,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -85,7 +86,7 @@ func (e *errorCachingHandler) Do(ctx context.Context, request MetricsQueryReques
 		return e.next.Do(ctx, request)
 	}
 
-	e.cacheLoadAttempted.Inc()
+	addWithExemplar(ctx, e.cacheLoadAttempted, 1)
 	key := e.keyGen.QueryRequestError(ctx, tenant.JoinTenantIDs(tenantIDs), request)
 	hashedKey := cacheHashKey(key)
 
@@ -103,7 +104,7 @@ func (e *errorCachingHandler) Do(ctx context.Context, request MetricsQueryReques
 
 	res, err := e.next.Do(ctx, request)
 	if err != nil {
-		e.cacheStoreAttempted.Inc()
+		addWithExemplar(ctx, e.cacheStoreAttempted, 1)
 
 		var apiErr *apierror.APIError
 		if !errors.As(err, &apiErr) {
@@ -123,6 +124,14 @@ func (e *errorCachingHandler) Do(ctx context.Context, request MetricsQueryReques
 
 		ttl := validation.MinDurationPerTenant(tenantIDs, e.limits.ResultsCacheTTLForErrors)
 		e.storeErrorToCache(key, hashedKey, ttl, apiErr, spanLog)
+
+		spanLog.DebugLog(
+			"msg", "stored API error to cache",
+			"key", key,
+			"hashed_key", hashedKey,
+			"error_type", apiErr.Type,
+			"error_message", apiErr.Message,
+		)
 	}
 
 	return res, err
@@ -163,7 +172,14 @@ func (e *errorCachingHandler) storeErrorToCache(key, hashedKey string, ttl time.
 	})
 
 	if err != nil {
-		level.Warn(spanLog).Log("msg", "unable to marshal cached error", "err", err)
+		level.Warn(spanLog).Log(
+			"msg", "unable to marshal cached error",
+			"key", key,
+			"hashed_key", hashedKey,
+			"error_type", apiErr.Type,
+			"error_message", apiErr.Message,
+			"err", err,
+		)
 		return
 	}
 
@@ -176,4 +192,11 @@ func (e *errorCachingHandler) isCacheable(apiErr *apierror.APIError) (bool, stri
 	}
 
 	return true, ""
+}
+
+func addWithExemplar(ctx context.Context, counter prometheus.Counter, val float64) {
+	// TODO: Add this to dskit as instrument.AddWithExemplar just like instrument.ObserveWithExemplar
+	if traceID, traceOK := tracing.ExtractSampledTraceID(ctx); traceOK {
+		counter.(prometheus.ExemplarAdder).AddWithExemplar(val, prometheus.Labels{"trace_id": traceID, "traceID": traceID})
+	}
 }

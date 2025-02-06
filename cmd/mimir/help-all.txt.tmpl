@@ -1909,6 +1909,8 @@ Usage of ./cmd/mimir/mimir:
     	Name of the node in memberlist cluster. Defaults to hostname.
   -memberlist.notify-interval duration
     	How frequently to notify watchers when a key changes. Can reduce CPU activity in large memberlist deployments. 0 to notify without delay.
+  -memberlist.obsolete-entries-timeout duration
+    	[experimental] How long to keep obsolete entries in the KV store. (default 30s)
   -memberlist.packet-dial-timeout duration
     	Timeout used when connecting to other nodes to send packet. (default 2s)
   -memberlist.packet-write-timeout duration
@@ -1944,7 +1946,7 @@ Usage of ./cmd/mimir/mimir:
   -modules
     	List available values that can be used as target.
   -overrides-exporter.enabled-metrics comma-separated-list-of-strings
-    	Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
+    	Comma-separated list of metrics to include in the exporter. Allowed metric names: ingestion_rate, ingestion_burst_size, ingestion_artificial_delay, max_global_series_per_user, max_global_series_per_metric, max_global_exemplars_per_user, max_fetched_chunks_per_query, max_fetched_series_per_query, max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant, max_global_metadata_per_user, max_global_metadata_per_metric, request_rate, request_burst_size, alertmanager_notification_rate_limit, alertmanager_max_dispatcher_aggregation_groups, alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
   -overrides-exporter.ring.consul.acl-token string
     	ACL Token used to interact with Consul.
   -overrides-exporter.ring.consul.cas-retry-delay duration
@@ -2029,6 +2031,8 @@ Usage of ./cmd/mimir/mimir:
     	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
   -querier.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
+  -querier.filter-queryables-enabled
+    	If set to true, the header 'X-Filter-Queryables' can be used to filter down the list of queryables that shall be used. This is useful to test and monitor single queryables in isolation.
   -querier.frontend-address string
     	Address of the query-frontend component, in host:port format. If multiple query-frontends are running, the host should be a DNS resolving to all query-frontend instances. This option should be set only when query-scheduler component is not in use.
   -querier.frontend-client.backoff-max-period duration
@@ -2285,6 +2289,8 @@ Usage of ./cmd/mimir/mimir:
     	Max body size for downstream prometheus. (default 10485760)
   -query-frontend.max-cache-freshness duration
     	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 10m)
+  -query-frontend.max-future-query-window duration
+    	[experimental] Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.
   -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
   -query-frontend.max-query-expression-size-bytes int
@@ -2429,6 +2435,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of concurrent workers forwarding queries to single query-scheduler. (default 5)
   -query-frontend.shard-active-series-queries
     	[experimental] True to enable sharding of active series queries.
+  -query-frontend.spin-off-instant-subqueries-to-url string
+    	[experimental] If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to set `instant_queries_with_subquery_spin_off` for the tenant.
   -query-frontend.split-instant-queries-by-interval duration
     	[experimental] Split instant queries by an interval and execute in parallel. 0 to disable it.
   -query-frontend.split-queries-by-interval duration
@@ -3191,6 +3199,10 @@ Usage of ./cmd/mimir/mimir:
     	How long to wait between SIGTERM and shutdown. After receiving SIGTERM, Mimir will report not-ready status via /ready endpoint.
   -store-gateway.disabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that cannot be loaded by the store-gateway. If specified, and the store-gateway would normally load a given tenant for (via -store-gateway.enabled-tenants or sharding), it will be ignored instead.
+  -store-gateway.dynamic-replication.enabled
+    	[experimental] Use a higher number of replicas for recent blocks. Useful to spread query load more evenly at the cost of slightly higher disk usage.
+  -store-gateway.dynamic-replication.max-time-threshold duration
+    	[experimental] Threshold of the most recent sample in a block used to determine it is eligible for higher than default replication. If a block has samples within this amount of time, it is considered recent and will be owned by more replicas. (default 25h0m0s)
   -store-gateway.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.
   -store-gateway.sharding-ring.auto-forget-enabled

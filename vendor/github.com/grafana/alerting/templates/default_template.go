@@ -9,6 +9,7 @@ import (
 const (
 	DefaultMessageTitleEmbed = `{{ template "default.title" . }}`
 	DefaultMessageEmbed      = `{{ template "default.message" . }}`
+	DefaultMessageColor      = `{{ if eq .Status "firing" }}#D63232{{ else }}#36a64f{{ end }}`
 )
 
 var DefaultTemplateString = `

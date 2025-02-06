@@ -28,24 +28,31 @@ type RouteMatcher interface {
 	Match(*http.Request, *mux.RouteMatch) bool
 }
 
-// PerTenantCallback is a function that returns a tenant ID for a given request. When the returned tenant ID is not empty, it is used to label the duration histogram.
-type PerTenantCallback func(context.Context) string
+type PerTenantConfig struct {
+	TenantID          string
+	DurationHistogram bool
+	TotalCounter      bool
+}
 
-func (f PerTenantCallback) shouldInstrument(ctx context.Context) (string, bool) {
+// PerTenantCallback is a function that returns a per-tenant metrics config for a given request. If the function returns a non-nil config, the request will be instrumented with per-tenant metrics.
+type PerTenantCallback func(context.Context) *PerTenantConfig
+
+func (f PerTenantCallback) shouldInstrument(ctx context.Context) (*PerTenantConfig, bool) {
 	if f == nil {
-		return "", false
+		return nil, false
 	}
-	tenantID := f(ctx)
-	if tenantID == "" {
-		return "", false
+	cfg := f(ctx)
+	if cfg == nil || cfg.TenantID == "" {
+		return nil, false
 	}
-	return tenantID, true
+	return cfg, true
 }
 
 // Instrument is a Middleware which records timings for every HTTP request
 type Instrument struct {
 	Duration          *prometheus.HistogramVec
 	PerTenantDuration *prometheus.HistogramVec
+	PerTenantTotal    *prometheus.CounterVec
 	PerTenantCallback PerTenantCallback
 	RequestBodySize   *prometheus.HistogramVec
 	ResponseBodySize  *prometheus.HistogramVec
@@ -104,9 +111,14 @@ func (i Instrument) Wrap(next http.Handler) http.Handler {
 		}
 		labelValues = labelValues[:len(labelValues)-1]
 		instrument.ObserveWithExemplar(r.Context(), i.Duration.WithLabelValues(labelValues...), respMetrics.Duration.Seconds())
-		if tenantID, ok := i.PerTenantCallback.shouldInstrument(r.Context()); ok {
-			labelValues = append(labelValues, tenantID)
-			instrument.ObserveWithExemplar(r.Context(), i.PerTenantDuration.WithLabelValues(labelValues...), respMetrics.Duration.Seconds())
+		if cfg, ok := i.PerTenantCallback.shouldInstrument(r.Context()); ok {
+			labelValues = append(labelValues, cfg.TenantID)
+			if cfg.DurationHistogram {
+				instrument.ObserveWithExemplar(r.Context(), i.PerTenantDuration.WithLabelValues(labelValues...), respMetrics.Duration.Seconds())
+			}
+			if cfg.TotalCounter {
+				i.PerTenantTotal.WithLabelValues(labelValues...).Inc()
+			}
 		}
 		if i.LatencyCutoff > 0 && respMetrics.Duration > i.LatencyCutoff {
 			volume, err := extractValueFromMultiValueHeader(w.Header().Get("Server-Timing"), i.ThroughputUnit, "val")

@@ -2413,6 +2413,54 @@ func TestDeltaAnnotations(t *testing.T) {
 	runAnnotationTests(t, testCases)
 }
 
+func TestDerivPredictLinearAnnotations(t *testing.T) {
+	data := `
+		only_floats 0 1
+		only_histograms {{count:0}} {{count:0}}
+		mixed 0 {{count:0}}
+    `
+
+	testCases := map[string]annotationTestCase{
+		"deriv() over series with only floats": {
+			data: data,
+			expr: `deriv(only_floats[1m1s])`,
+			// Expect no annotations.
+		},
+		"deriv() over series with only histograms": {
+			data: data,
+			expr: `deriv(only_histograms[1m1s])`,
+			// Expect no annotations.
+		},
+		"deriv() over series with both floats and histograms": {
+			data: data,
+			expr: `deriv(mixed[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed" (1:7)`,
+			},
+		},
+
+		"predict_linear() over series with only floats": {
+			data: data,
+			expr: `predict_linear(only_floats[1m1s], 5)`,
+			// Expect no annotations.
+		},
+		"predict_linear() over series with only histograms": {
+			data: data,
+			expr: `predict_linear(only_histograms[1m1s], 5)`,
+			// Expect no annotations.
+		},
+		"predict_linear() over series with both floats and histograms": {
+			data: data,
+			expr: `predict_linear(mixed[1m1s], 5)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed" (1:16)`,
+			},
+		},
+	}
+
+	runAnnotationTests(t, testCases)
+}
+
 func TestBinaryOperationAnnotations(t *testing.T) {
 	mixedFloatHistogramData := `
 	metric{type="float", series="1"} 0+1x3
@@ -2764,6 +2812,7 @@ func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
 		expressions = append(expressions, fmt.Sprintf(`histogram_stddev(series{label=~"(%s)"})`, labelRegex))
 		expressions = append(expressions, fmt.Sprintf(`histogram_stdvar(series{label=~"(%s)"})`, labelRegex))
 		expressions = append(expressions, fmt.Sprintf(`histogram_sum(series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`timestamp(series{label=~"(%s)"})`, labelRegex))
 	}
 
 	// We skip comparing the annotation results as Prometheus does not output any series name
@@ -2874,12 +2923,14 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta", "delta"} {
+		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta", "delta", "deriv"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[45s])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[1m])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[2m15s]))`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[5m]))`, function, labelRegex))
 		}
+
+		expressions = append(expressions, fmt.Sprintf(`predict_linear(series{label=~"(%s)"}[1m], 30)`, labelRegex))
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)

@@ -436,13 +436,13 @@ overrides_exporter:
     [wait_stability_max_duration: <duration> | default = 5m]
 
   # Comma-separated list of metrics to include in the exporter. Allowed metric
-  # names: ingestion_rate, ingestion_burst_size, max_global_series_per_user,
-  # max_global_series_per_metric, max_global_exemplars_per_user,
-  # max_fetched_chunks_per_query, max_fetched_series_per_query,
-  # max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group,
-  # ruler_max_rule_groups_per_tenant, max_global_metadata_per_user,
-  # max_global_metadata_per_metric, request_rate, request_burst_size,
-  # alertmanager_notification_rate_limit,
+  # names: ingestion_rate, ingestion_burst_size, ingestion_artificial_delay,
+  # max_global_series_per_user, max_global_series_per_metric,
+  # max_global_exemplars_per_user, max_fetched_chunks_per_query,
+  # max_fetched_series_per_query, max_fetched_chunk_bytes_per_query,
+  # ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant,
+  # max_global_metadata_per_user, max_global_metadata_per_metric, request_rate,
+  # request_burst_size, alertmanager_notification_rate_limit,
   # alertmanager_max_dispatcher_aggregation_groups,
   # alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes.
   # CLI flag: -overrides-exporter.enabled-metrics
@@ -1474,6 +1474,12 @@ store_gateway_client:
 # CLI flag: -querier.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
 
+# (advanced) If set to true, the header 'X-Filter-Queryables' can be used to
+# filter down the list of queryables that shall be used. This is useful to test
+# and monitor single queryables in isolation.
+# CLI flag: -querier.filter-queryables-enabled
+[filter_queryables_enabled: <boolean> | default = false]
+
 # The number of workers running in each querier process. This setting limits the
 # maximum number of concurrent queries in each querier. The minimum value is
 # four; lower values are ignored and set to the minimum
@@ -1722,6 +1728,12 @@ results_cache:
 # active series queries.
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
+
+# (experimental) If set, subqueries in instant queries are spun off as range
+# queries and sent to the given URL. This parameter also requires you to set
+# `instant_queries_with_subquery_spin_off` for the tenant.
+# CLI flag: -query-frontend.spin-off-instant-subqueries-to-url
+[spin_off_instant_subqueries_to_url: <string> | default = ""]
 
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
@@ -3091,6 +3103,10 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.left-ingesters-timeout
 [left_ingesters_timeout: <duration> | default = 5m]
 
+# (experimental) How long to keep obsolete entries in the KV store.
+# CLI flag: -memberlist.obsolete-entries-timeout
+[obsolete_entries_timeout: <duration> | default = 30s]
+
 # (advanced) Timeout for leaving memberlist cluster.
 # CLI flag: -memberlist.leave-timeout
 [leave_timeout: <duration> | default = 20s]
@@ -3603,6 +3619,16 @@ The `limits` block configures default and per-tenant limits imposed by component
 # with Prometheus 3.0 semantics
 # CLI flag: -query-frontend.prom2-range-compat
 [prom2_range_compat: <boolean> | default = false]
+
+# (experimental) List of regular expression patterns matching instant queries.
+# Subqueries within those instant queries will be spun off as range queries to
+# optimize their performance.
+[instant_queries_with_subquery_spin_off: <list of strings> | default = ]
+
+# (experimental) Mutate incoming queries that look far into the future to only
+# look into the future by the set duration. 0 to disable.
+# CLI flag: -query-frontend.max-future-query-window
+[max_future_query_window: <duration> | default = 0s]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
@@ -4918,6 +4944,20 @@ sharding_ring:
   # Unregister from the ring upon clean shutdown.
   # CLI flag: -store-gateway.sharding-ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
+
+# Experimental dynamic replication configuration.
+dynamic_replication:
+  # (experimental) Use a higher number of replicas for recent blocks. Useful to
+  # spread query load more evenly at the cost of slightly higher disk usage.
+  # CLI flag: -store-gateway.dynamic-replication.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Threshold of the most recent sample in a block used to
+  # determine it is eligible for higher than default replication. If a block has
+  # samples within this amount of time, it is considered recent and will be
+  # owned by more replicas.
+  # CLI flag: -store-gateway.dynamic-replication.max-time-threshold
+  [max_time_threshold: <duration> | default = 25h]
 
 # (advanced) Comma separated list of tenants that can be loaded by the
 # store-gateway. If specified, only blocks for these tenants will be loaded by

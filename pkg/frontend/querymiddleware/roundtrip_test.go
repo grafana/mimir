@@ -594,6 +594,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg.ShardedQueries = true
 	cfg.PrunedQueries = true
 	cfg.BlockPromQLExperimentalFunctions = true
+	cfg.SpinOffInstantSubqueriesToURL = "http://localhost"
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)
@@ -614,6 +615,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 		nil,
 		nil,
 		promql.NewEngine(promql.EngineOpts{}),
+		defaultStepFunc,
 		nil,
 	)
 
@@ -626,8 +628,11 @@ func TestMiddlewaresConsistency(t *testing.T) {
 			exceptions: []string{"splitAndCacheMiddleware", "stepAlignMiddleware"},
 		},
 		"range query": {
-			instances:  queryRangeMiddlewares,
-			exceptions: []string{"splitInstantQueryByIntervalMiddleware"},
+			instances: queryRangeMiddlewares,
+			exceptions: []string{
+				"splitInstantQueryByIntervalMiddleware",
+				"spinOffSubqueriesMiddleware", // This middleware is only for instant queries.
+			},
 		},
 		"remote read": {
 			instances: remoteReadMiddlewares,
@@ -641,6 +646,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 				"pruneMiddleware",                       // No query pruning support.
 				"experimentalFunctionsMiddleware",       // No blocking for PromQL experimental functions as it is executed remotely.
 				"prom2RangeCompatHandler",               // No rewriting Prometheus 2 subqueries to Prometheus 3
+				"spinOffSubqueriesMiddleware",           // This middleware is only for instant queries.
 			},
 		},
 	}

@@ -21,10 +21,13 @@ import (
 // FunctionOverRangeVector performs a rate calculation over a range vector.
 type FunctionOverRangeVector struct {
 	Inner                    types.RangeVectorOperator
+	ScalarArgs               []types.ScalarOperator
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	Func                     FunctionOverRangeVectorDefinition
 
 	Annotations *annotations.Annotations
+
+	scalarArgsData []types.ScalarData
 
 	metricNames        *operators.MetricNames
 	currentSeriesIndex int
@@ -41,6 +44,7 @@ var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
 
 func NewFunctionOverRangeVector(
 	inner types.RangeVectorOperator,
+	scalarArgs []types.ScalarOperator,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	f FunctionOverRangeVectorDefinition,
 	annotations *annotations.Annotations,
@@ -49,6 +53,7 @@ func NewFunctionOverRangeVector(
 ) *FunctionOverRangeVector {
 	o := &FunctionOverRangeVector{
 		Inner:                    inner,
+		ScalarArgs:               scalarArgs,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Func:                     f,
 		Annotations:              annotations,
@@ -74,6 +79,10 @@ func (m *FunctionOverRangeVector) ExpressionPosition() posrange.PositionRange {
 }
 
 func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	if err := m.processScalarArgs(ctx); err != nil {
+		return nil, err
+	}
+
 	metadata, err := m.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -90,6 +99,24 @@ func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context) ([]types.S
 	}
 
 	return metadata, nil
+}
+
+func (m *FunctionOverRangeVector) processScalarArgs(ctx context.Context) error {
+	if len(m.ScalarArgs) == 0 {
+		return nil
+	}
+
+	m.scalarArgsData = make([]types.ScalarData, 0, len(m.ScalarArgs))
+
+	for _, arg := range m.ScalarArgs {
+		d, err := arg.GetValues(ctx)
+		if err != nil {
+			return err
+		}
+		m.scalarArgsData = append(m.scalarArgsData, d)
+	}
+
+	return nil
 }
 
 func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -117,7 +144,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		f, hasFloat, h, err := m.Func.StepFunc(step, m.rangeSeconds, m.emitAnnotationFunc)
+		f, hasFloat, h, err := m.Func.StepFunc(step, m.rangeSeconds, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -157,4 +184,8 @@ func (m *FunctionOverRangeVector) emitAnnotation(generator types.AnnotationGener
 
 func (m *FunctionOverRangeVector) Close() {
 	m.Inner.Close()
+
+	for _, d := range m.scalarArgsData {
+		types.FPointSlicePool.Put(d.Samples, m.MemoryConsumptionTracker)
+	}
 }

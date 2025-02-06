@@ -31,6 +31,14 @@ const (
 	DefaultPostingsForMatchersCacheForce    = false
 )
 
+const (
+	evictionReasonTTL = iota
+	evictionReasonMaxBytes
+	evictionReasonMaxItems
+	evictionReasonUnknown
+	evictionReasonsLength
+)
+
 // IndexPostingsReader is a subset of IndexReader methods, the minimum required to evaluate PostingsForMatchers.
 type IndexPostingsReader interface {
 	// LabelValues returns possible label values which may not be sorted.
@@ -179,6 +187,12 @@ func (p *postingsForMatcherPromise) result(ctx context.Context) (index.Postings,
 		if p.err != nil {
 			return nil, fmt.Errorf("postingsForMatchers promise completed with error: %w", p.err)
 		}
+
+		trace.SpanFromContext(ctx).AddEvent("completed postingsForMatchers promise", trace.WithAttributes(
+			// Do not format the timestamp to introduce a performance regression.
+			attribute.Int64("evaluation completed at (epoch seconds)", p.evaluationCompletedAt.Unix()),
+		))
+
 		return p.cloner.Clone(), nil
 	}
 }
@@ -256,7 +270,7 @@ func (c *PostingsForMatchersCache) postingsForMatchersPromise(ctx context.Contex
 		}
 
 		c.metrics.hits.Inc()
-		span.AddEvent("using cached postingsForMatchers promise", trace.WithAttributes(
+		span.AddEvent("waiting cached postingsForMatchers promise", trace.WithAttributes(
 			attribute.String("cache_key", key),
 		))
 
@@ -316,7 +330,7 @@ func (c *PostingsForMatchersCache) expire() {
 	defer c.expireInProgress.Store(false)
 
 	c.cachedMtx.RLock()
-	if !c.shouldEvictHead() {
+	if !c.shouldEvictHead(c.timeNow()) {
 		c.cachedMtx.RUnlock()
 		return
 	}
@@ -327,18 +341,32 @@ func (c *PostingsForMatchersCache) expire() {
 		c.evictHeadBeforeHook()
 	}
 
-	c.cachedMtx.Lock()
-	defer c.cachedMtx.Unlock()
+	var evictionReasons [evictionReasonsLength]int
 
-	for c.shouldEvictHead() {
-		c.evictHead()
+	// Evict the head taking an exclusive lock.
+	{
+		c.cachedMtx.Lock()
+
+		now := c.timeNow()
+		for c.shouldEvictHead(now) {
+			reason := c.evictHead(now)
+			evictionReasons[reason]++
+		}
+
+		c.cachedMtx.Unlock()
 	}
+
+	// Keep track of the reason why items where evicted.
+	c.metrics.evictionsBecauseTTL.Add(float64(evictionReasons[evictionReasonTTL]))
+	c.metrics.evictionsBecauseMaxBytes.Add(float64(evictionReasons[evictionReasonMaxBytes]))
+	c.metrics.evictionsBecauseMaxItems.Add(float64(evictionReasons[evictionReasonMaxItems]))
+	c.metrics.evictionsBecauseUnknown.Add(float64(evictionReasons[evictionReasonUnknown]))
 }
 
 // shouldEvictHead returns true if cache head should be evicted, either because it's too old,
 // or because the cache has too many elements
 // should be called while read lock is held on cachedMtx.
-func (c *PostingsForMatchersCache) shouldEvictHead() bool {
+func (c *PostingsForMatchersCache) shouldEvictHead(now time.Time) bool {
 	// The cache should be evicted for sure if the max size (either items or bytes) is reached.
 	if c.cached.Len() > c.maxItems || c.cachedBytes > c.maxBytes {
 		return true
@@ -349,15 +377,37 @@ func (c *PostingsForMatchersCache) shouldEvictHead() bool {
 		return false
 	}
 	ts := h.Value.(*postingsForMatchersCachedCall).ts
-	return c.timeNow().Sub(ts) >= c.ttl
+	return now.Sub(ts) >= c.ttl
 }
 
-func (c *PostingsForMatchersCache) evictHead() {
+func (c *PostingsForMatchersCache) evictHead(now time.Time) (reason int) {
 	front := c.cached.Front()
 	oldest := front.Value.(*postingsForMatchersCachedCall)
+
+	// Detect the reason why we're evicting it.
+	//
+	// The checks order is:
+	// 1. TTL: if an item is expired, it should be tracked as such even if the cache was full.
+	// 2. Max bytes: "max items" is deprecated, and we expect to set it to a high value because
+	//    we want to primarily limit by bytes size.
+	// 3. Max items: the last one.
+	switch {
+	case now.Sub(oldest.ts) >= c.ttl:
+		reason = evictionReasonTTL
+	case c.cachedBytes > c.maxBytes:
+		reason = evictionReasonMaxBytes
+	case c.cached.Len() > c.maxItems:
+		reason = evictionReasonMaxItems
+	default:
+		// This should never happen, but we track it to detect unexpected behaviours.
+		reason = evictionReasonUnknown
+	}
+
 	c.calls.Delete(oldest.key)
 	c.cached.Remove(front)
 	c.cachedBytes -= oldest.sizeBytes
+
+	return
 }
 
 // onPromiseExecutionDone must be called once the execution of PostingsForMatchers promise has done.
@@ -555,18 +605,25 @@ func (t *contextsTracker) trackedContextsCount() int {
 }
 
 type PostingsForMatchersCacheMetrics struct {
-	requests               prometheus.Counter
-	hits                   prometheus.Counter
-	misses                 prometheus.Counter
-	skipsBecauseIneligible prometheus.Counter
-	skipsBecauseStale      prometheus.Counter
-	skipsBecauseCanceled   prometheus.Counter
+	requests                 prometheus.Counter
+	hits                     prometheus.Counter
+	misses                   prometheus.Counter
+	skipsBecauseIneligible   prometheus.Counter
+	skipsBecauseStale        prometheus.Counter
+	skipsBecauseCanceled     prometheus.Counter
+	evictionsBecauseTTL      prometheus.Counter
+	evictionsBecauseMaxBytes prometheus.Counter
+	evictionsBecauseMaxItems prometheus.Counter
+	evictionsBecauseUnknown  prometheus.Counter
 }
 
 func NewPostingsForMatchersCacheMetrics(reg prometheus.Registerer) *PostingsForMatchersCacheMetrics {
 	const (
 		skipsMetric = "postings_for_matchers_cache_skips_total"
 		skipsHelp   = "Total number of requests to the PostingsForMatchers cache that have been skipped the cache. The subsequent result is not cached."
+
+		evictionsMetric = "postings_for_matchers_cache_evictions_total"
+		evictionsHelp   = "Total number of evictions from the PostingsForMatchers cache."
 	)
 
 	return &PostingsForMatchersCacheMetrics{
@@ -596,6 +653,26 @@ func NewPostingsForMatchersCacheMetrics(reg prometheus.Registerer) *PostingsForM
 			Name:        skipsMetric,
 			Help:        skipsHelp,
 			ConstLabels: map[string]string{"reason": "canceled-cached-entry"},
+		}),
+		evictionsBecauseTTL: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        evictionsMetric,
+			Help:        evictionsHelp,
+			ConstLabels: map[string]string{"reason": "ttl-expired"},
+		}),
+		evictionsBecauseMaxBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        evictionsMetric,
+			Help:        evictionsHelp,
+			ConstLabels: map[string]string{"reason": "max-bytes-reached"},
+		}),
+		evictionsBecauseMaxItems: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        evictionsMetric,
+			Help:        evictionsHelp,
+			ConstLabels: map[string]string{"reason": "max-items-reached"},
+		}),
+		evictionsBecauseUnknown: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        evictionsMetric,
+			Help:        evictionsHelp,
+			ConstLabels: map[string]string{"reason": "unknown"},
 		}),
 	}
 }
