@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -46,6 +47,7 @@ type frontendSchedulerWorkers struct {
 	cfg             Config
 	log             log.Logger
 	frontendAddress string
+	cluster         string
 
 	// Channel with requests that should be forwarded to the scheduler.
 	requestsCh         <-chan *frontendRequest
@@ -62,18 +64,12 @@ type frontendSchedulerWorkers struct {
 	invalidClusterValidation *prometheus.CounterVec
 }
 
-func newFrontendSchedulerWorkers(
-	cfg Config,
-	frontendAddress string,
-	requestsCh <-chan *frontendRequest,
-	toSchedulerAdapter frontendToSchedulerAdapter,
-	log log.Logger,
-	reg prometheus.Registerer,
-) (*frontendSchedulerWorkers, error) {
+func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh <-chan *frontendRequest, toSchedulerAdapter frontendToSchedulerAdapter, log log.Logger, reg prometheus.Registerer, cluster string) (*frontendSchedulerWorkers, error) {
 	f := &frontendSchedulerWorkers{
 		cfg:                       cfg,
 		log:                       log,
 		frontendAddress:           frontendAddress,
+		cluster:                   cluster,
 		requestsCh:                requestsCh,
 		toSchedulerAdapter:        toSchedulerAdapter,
 		workers:                   map[string]*frontendSchedulerWorker{},
@@ -220,8 +216,9 @@ func (f *frontendSchedulerWorkers) getWorkersCount() int {
 }
 
 func (f *frontendSchedulerWorkers) connectToScheduler(ctx context.Context, address string) (*grpc.ClientConn, error) {
+	loggweWithRate := util.NewLoggerWithRate(f.log)
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	opts, err := f.cfg.GRPCClientConfig.DialOption(nil, nil, util.NewInvalidClusterValidationReporter(f.cfg.GRPCClientConfig.ClusterValidation.Label, f.invalidClusterValidation, f.log))
+	opts, err := f.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(f.cluster, loggweWithRate.LogIfNeeded)}, nil)
 	if err != nil {
 		return nil, err
 	}
