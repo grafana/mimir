@@ -165,6 +165,7 @@ func (c *BlocksCleaner) stopping(error) error {
 }
 
 func (c *BlocksCleaner) starting(ctx context.Context) error {
+	c.instrumentBucketIndexUpdate(ctx)
 	// Run an initial cleanup in starting state. (Note that the compactor no longer waits
 	// for the blocks cleaner to finish starting before it starts compactions.)
 	c.runCleanup(ctx, false)
@@ -203,6 +204,22 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
 		go doCleanup()
 	} else {
 		doCleanup()
+	}
+}
+
+func (c *BlocksCleaner) instrumentBucketIndexUpdate(ctx context.Context) {
+	allUsers, _, err := c.refreshOwnedUsers(ctx)
+	if err != nil {
+		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
+		return
+	}
+	for _, userID := range allUsers {
+		idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, c.logger)
+		if err != nil {
+			level.Error(c.logger).Log("msg", "failed to read bucket index", "user", userID, "err", err)
+			return
+		}
+		c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
 	}
 }
 
