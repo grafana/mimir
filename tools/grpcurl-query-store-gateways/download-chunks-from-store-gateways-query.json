@@ -5,37 +5,17 @@
     {
       "type": "LabelMatcher_EQ",
       "name": "__name__",
-      "value": "k6cloud_ingestapi_http_response_message_bytes_bucket"
+      "value": "cortex_request_duration_seconds_count"
     },
     {
-      "type": "LabelMatcher_EQ",
+      "type": "LabelMatcher_NEQ",
       "name": "cluster",
       "value": "dev-us-east-0"
     },
     {
-      "type": "LabelMatcher_EQ",
+      "type": "LabelMatcher_RE",
       "name": "method",
-      "value": "POST"
-    },
-    {
-      "type": "LabelMatcher_EQ",
-      "name": "route",
-      "value": "/v1/instance-register-auth"
-    },
-    {
-      "type": "LabelMatcher_EQ",
-      "name": "status",
-      "value": "200"
-    },
-    {
-      "type": "LabelMatcher_EQ",
-      "name": "le",
-      "value": "+Inf"
-    },
-    {
-      "type": "LabelMatcher_EQ",
-      "name": "instance",
-      "value": "ingest-api-6957884d8c-4w55c:http:http-metrics"
+      "value": "POST|GET"
     }
   ]
 }
