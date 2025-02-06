@@ -160,10 +160,10 @@ func forEachJobSuccessUntil(ctx context.Context, numJobs int, jobConcurrency int
 		succeeded[idx] = true
 		return nil
 	})
-	if err == nil {
-		return numJobs, err
+	if err != nil {
+		return slices.Index(succeeded, false), err
 	}
-	return slices.Index(succeeded, false), err
+	return numJobs, nil
 }
 
 // removeMarksFunc returns a function that removes block markers for a given block index
