@@ -1419,7 +1419,7 @@ push_adaptive_limiter:
   [initial_rejection_factor: <float> | default = 2]
 
   # (experimental) The number of allowed queued requests, as a multiple of
-  # current inflight requests, after which all requests will be rejected
+  # current inflight requests, after which all requests are rejected
   # CLI flag: -ingester.push-adaptive-limiter.max-rejection-factor
   [max_rejection_factor: <float> | default = 3]
 
