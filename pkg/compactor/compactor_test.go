@@ -305,6 +305,9 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
 
 	// Ensure the bucket iteration has been retried the configured number of times.
+	// 1 initial Iter to expose metrics before the cleanup run
+	// 1 adittional Iter on cleanup run
+	// 3 additional Iters on compaction run
 	bucketClient.AssertNumberOfCalls(t, "Iter", 1+1+3)
 
 	assert.Equal(t, []string{

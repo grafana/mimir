@@ -165,7 +165,7 @@ func (c *BlocksCleaner) stopping(error) error {
 }
 
 func (c *BlocksCleaner) starting(ctx context.Context) error {
-	c.instrumentBucketIndexUpdate(context.Background())
+	c.instrumentBucketIndexUpdate(ctx)
 	// Run an initial cleanup in starting state. (Note that the compactor no longer waits
 	// for the blocks cleaner to finish starting before it starts compactions.)
 	c.runCleanup(ctx, false)
