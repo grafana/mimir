@@ -1715,7 +1715,40 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(querierJobName), $.queries.read_http_routes_regex], ''
         )
       ),
-    ],
+    ] +
+    $.ingesterStoreGatewayReadsDashboardsRows('ingester', $.queries.ingester.requestsPerSecondMetric, $.queries.ingester.readRequestsPerSecondSelector, $._config.job_names.ingester, $._config.ingester_read_path_routes_regex) +
+    $.ingesterStoreGatewayReadsDashboardsRows('store-gateway', $.queries.store_gateway.requestsPerSecondMetric, $.queries.store_gateway.readRequestsPerSecondSelector, $._config.job_names.store_gateway, $._config.store_gateway_read_path_routes_regex),
+
+  ingesterStoreGatewayReadsDashboardsRows(
+    componentName,
+    requestsPerSecondMetric,
+    readRequestsPerSecondSelector,
+    jobNames,
+    routesRegex,
+  ):: [
+    local description = 'This panel shows %(componentName)s query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by %(componentName)s.' % { componentName: componentName };
+
+    $.row($.capitalize(componentName + ' - incoming query requests from all sources'))
+    .addPanel(
+      $.timeseriesPanel('Requests / sec') +
+      $.panelDescription('Requests / sec', description) +
+      $.qpsPanelNativeHistogram(requestsPerSecondMetric, readRequestsPerSecondSelector)
+    )
+    .addPanel(
+      $.timeseriesPanel('Latency') +
+      $.panelDescription('Latency', description) +
+      $.latencyRecordingRulePanelNativeHistogram(requestsPerSecondMetric, $.jobSelector(jobNames) + [utils.selector.re('route', routesRegex)])
+    )
+    .addPanel(
+      $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+      $.panelDescription('Per %s p99 latency' % $._config.per_instance_label, description) +
+      $.perInstanceLatencyPanelNativeHistogram(
+        '0.99',
+        requestsPerSecondMetric,
+        $.jobSelector(jobNames) + [utils.selector.re('route', routesRegex)],
+      ),
+    ),
+  ],
 
   ingestStorageIngesterEndToEndLatencyWhenStartingPanel()::
     $.timeseriesPanel('Kafka end-to-end latency when starting') +

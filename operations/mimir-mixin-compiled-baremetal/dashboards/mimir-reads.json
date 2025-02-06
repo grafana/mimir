@@ -1822,6 +1822,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
+                  "description": "### Requests / sec\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingester.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2012,6 +2013,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingester.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2091,6 +2093,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Per instance p99 latency\nThis panel shows ingester query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by ingester.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2151,7 +2154,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Ingester",
+            "title": "Ingester - incoming query requests from all sources",
             "titleSize": "h6"
          },
          {
@@ -2160,6 +2163,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
+                  "description": "### Requests / sec\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateway.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2350,6 +2354,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateway.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2429,6 +2434,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Per instance p99 latency\nThis panel shows store-gateway query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by store-gateway.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2489,7 +2495,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Store-gateway",
+            "title": "Store-gateway - incoming query requests from all sources",
             "titleSize": "h6"
          },
          {
