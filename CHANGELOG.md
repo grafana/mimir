@@ -71,6 +71,10 @@
 
 * [CHANGE] Update rollout-operator version to 0.22.0. #10229
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
+* [CHANGE] Change multi-AZ deployments default toleration value from 'multi-az' to 'secondary-az', and make it configurable via the following settings: #10596
+  * `_config.multi_zone_schedule_toleration` (default)
+  * `_config.multi_zone_distributor_schedule_toleration` (distributor's override)
+  * `_config.multi_zone_etcd_schedule_toleration` (etcd's override)
 * [ENHANCEMENT] Enforce `persistentVolumeClaimRetentionPolicy` `Retain` policy on partition ingesters during migration to experimental ingest storage. #10395
 * [ENHANCEMENT] Allow to not configure `topologySpreadConstraints` by setting the following configuration options to a negative value: #10540
   * `distributor_topology_spread_max_skew`

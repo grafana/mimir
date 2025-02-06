@@ -2397,6 +2397,6 @@ spec:
     - effect: NoSchedule
       key: topology
       operator: Equal
-      value: multi-az
+      value: secondary-az
   size: 3
   version: 3.3.13
