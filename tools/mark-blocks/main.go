@@ -180,17 +180,17 @@ func removeMarksFunc(cfg config, bkt objstore.Bucket, blocks []ulid.ULID, mpf me
 			return nil
 		}
 
-		blockMarkPath := localMarkPath(cfg.tenantID, block, suffix)
+		localMarkPath := localMarkPath(cfg.tenantID, block, suffix)
 		globalMarkPath := globalMarkPath(cfg.tenantID, block, suffix)
 
 		if cfg.dryRun {
 			level.Info(logger).Log("msg", fmt.Sprintf("would delete global mark at %s", globalMarkPath))
-			level.Info(logger).Log("msg", fmt.Sprintf("would delete mark at %s", blockMarkPath))
+			level.Info(logger).Log("msg", fmt.Sprintf("would delete mark at %s", localMarkPath))
 			return nil
 		}
 
 		// Global mark deleted first, local mark deleted second to follow write ordering
-		for _, markPath := range []string{globalMarkPath, blockMarkPath} {
+		for _, markPath := range []string{globalMarkPath, localMarkPath} {
 			if err := bkt.Delete(ctx, markPath); err != nil {
 				if bkt.IsObjNotFoundErr(err) {
 					level.Info(logger).Log("msg", fmt.Sprintf("deleted mark, but it was not present at %s", markPath))
@@ -232,17 +232,17 @@ func addMarksFunc(
 			return err
 		}
 
-		blockMarkPath := localMarkPath(cfg.tenantID, blockStr, suffix)
+		localMarkPath := localMarkPath(cfg.tenantID, blockStr, suffix)
 		globalMarkPath := globalMarkPath(cfg.tenantID, blockStr, suffix)
 
 		if cfg.dryRun {
-			level.Info(logger).Log("msg", fmt.Sprintf("would upload mark to %s", blockMarkPath))
+			level.Info(logger).Log("msg", fmt.Sprintf("would upload mark to %s", localMarkPath))
 			level.Info(logger).Log("msg", fmt.Sprintf("would upload global mark to %s", globalMarkPath))
 			return nil
 		}
 
 		// Local mark first, global mark second to follow write ordering
-		for _, markPath := range []string{globalMarkPath, blockMarkPath} {
+		for _, markPath := range []string{localMarkPath, globalMarkPath} {
 			if err := bkt.Upload(ctx, markPath, bytes.NewReader(b)); err != nil {
 				return err
 			}
