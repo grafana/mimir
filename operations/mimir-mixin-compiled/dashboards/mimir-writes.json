@@ -3109,7 +3109,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 0,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -3132,19 +3132,21 @@
                   "links": [ ],
                   "options": {
                      "legend": {
-                        "showLegend": true
+                        "displayMode": "hidden",
+                        "showLegend": false
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
+                        "exemplar": true,
                         "expr": "sum by (pod) (cortex_ingester_adaptive_limiter_blocked_requests{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", request_type=\"push\"})",
                         "format": "time_series",
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "",
                         "legendLink": null
                      }
                   ],
@@ -3157,7 +3159,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 0,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -3180,19 +3182,21 @@
                   "links": [ ],
                   "options": {
                      "legend": {
-                        "showLegend": true
+                        "displayMode": "hidden",
+                        "showLegend": false
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
+                        "exemplar": true,
                         "expr": "sum by (pod) (cortex_ingester_adaptive_limiter_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", request_type=\"push\"})",
                         "format": "time_series",
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "",
                         "legendLink": null
                      }
                   ],
@@ -3205,7 +3209,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 0,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -3228,19 +3232,21 @@
                   "links": [ ],
                   "options": {
                      "legend": {
-                        "showLegend": true
+                        "displayMode": "hidden",
+                        "showLegend": false
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
+                        "exemplar": true,
                         "expr": "sum by (pod) (cortex_ingester_adaptive_limiter_inflight_limit{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", request_type=\"push\"})",
                         "format": "time_series",
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "",
                         "legendLink": null
                      }
                   ],
@@ -3361,7 +3367,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 0,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -3371,6 +3377,7 @@
                               "mode": "none"
                            }
                         },
+                        "max": "1",
                         "min": 0,
                         "thresholds": {
                            "mode": "absolute",
@@ -3384,19 +3391,21 @@
                   "links": [ ],
                   "options": {
                      "legend": {
-                        "showLegend": true
+                        "displayMode": "hidden",
+                        "showLegend": false
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
+                        "exemplar": true,
                         "expr": "sum by (pod) (cortex_ingester_rejection_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
                         "format": "time_series",
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "",
                         "legendLink": null
                      }
                   ],

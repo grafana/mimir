@@ -4904,7 +4904,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 0,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -4927,19 +4927,21 @@
                   "links": [ ],
                   "options": {
                      "legend": {
-                        "showLegend": true
+                        "displayMode": "hidden",
+                        "showLegend": false
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 3,
                   "targets": [
                      {
+                        "exemplar": true,
                         "expr": "sum by (pod) (cortex_ingester_adaptive_limiter_blocked_requests{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", request_type=\"read\"})",
                         "format": "time_series",
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "",
                         "legendLink": null
                      }
                   ],
@@ -4952,7 +4954,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 0,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -4975,19 +4977,21 @@
                   "links": [ ],
                   "options": {
                      "legend": {
-                        "showLegend": true
+                        "displayMode": "hidden",
+                        "showLegend": false
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 3,
                   "targets": [
                      {
+                        "exemplar": true,
                         "expr": "sum by (pod) (cortex_ingester_adaptive_limiter_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", request_type=\"read\"})",
                         "format": "time_series",
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "",
                         "legendLink": null
                      }
                   ],
@@ -5000,7 +5004,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 0,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -5023,23 +5027,25 @@
                   "links": [ ],
                   "options": {
                      "legend": {
-                        "showLegend": true
+                        "displayMode": "hidden",
+                        "showLegend": false
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 3,
                   "targets": [
                      {
+                        "exemplar": true,
                         "expr": "sum by (pod) (cortex_ingester_adaptive_limiter_inflight_limit{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", request_type=\"read\"})",
                         "format": "time_series",
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "",
                         "legendLink": null
                      }
                   ],
-                  "title": "Ingester per pod inflight request limit",
+                  "title": "Ingester pod pod inflight request limit",
                   "type": "timeseries"
                },
                {

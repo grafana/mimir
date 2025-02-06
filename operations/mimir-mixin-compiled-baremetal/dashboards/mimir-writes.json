@@ -3109,7 +3109,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 0,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -3132,23 +3132,25 @@
                   "links": [ ],
                   "options": {
                      "legend": {
-                        "showLegend": true
+                        "displayMode": "hidden",
+                        "showLegend": false
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by (pod) (cortex_ingester_adaptive_limiter_blocked_requests{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", request_type=\"push\"})",
+                        "exemplar": true,
+                        "expr": "sum by (instance) (cortex_ingester_adaptive_limiter_blocked_requests{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", request_type=\"push\"})",
                         "format": "time_series",
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "",
                         "legendLink": null
                      }
                   ],
-                  "title": "Ingester per pod blocked requests",
+                  "title": "Ingester per instance blocked requests",
                   "type": "timeseries"
                },
                {
@@ -3157,7 +3159,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 0,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -3180,23 +3182,25 @@
                   "links": [ ],
                   "options": {
                      "legend": {
-                        "showLegend": true
+                        "displayMode": "hidden",
+                        "showLegend": false
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by (pod) (cortex_ingester_adaptive_limiter_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", request_type=\"push\"})",
+                        "exemplar": true,
+                        "expr": "sum by (instance) (cortex_ingester_adaptive_limiter_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", request_type=\"push\"})",
                         "format": "time_series",
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "",
                         "legendLink": null
                      }
                   ],
-                  "title": "Ingester per pod inflight requests",
+                  "title": "Ingester per instance inflight requests",
                   "type": "timeseries"
                },
                {
@@ -3205,7 +3209,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 0,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -3228,23 +3232,25 @@
                   "links": [ ],
                   "options": {
                      "legend": {
-                        "showLegend": true
+                        "displayMode": "hidden",
+                        "showLegend": false
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by (pod) (cortex_ingester_adaptive_limiter_inflight_limit{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", request_type=\"push\"})",
+                        "exemplar": true,
+                        "expr": "sum by (instance) (cortex_ingester_adaptive_limiter_inflight_limit{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\", request_type=\"push\"})",
                         "format": "time_series",
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "",
                         "legendLink": null
                      }
                   ],
-                  "title": "Ingester per pod inflight request limit",
+                  "title": "Ingester per instance inflight request limit",
                   "type": "timeseries"
                }
             ],
@@ -3361,7 +3367,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 0,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -3371,6 +3377,7 @@
                               "mode": "none"
                            }
                         },
+                        "max": "1",
                         "min": 0,
                         "thresholds": {
                            "mode": "absolute",
@@ -3384,23 +3391,25 @@
                   "links": [ ],
                   "options": {
                      "legend": {
-                        "showLegend": true
+                        "displayMode": "hidden",
+                        "showLegend": false
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by (pod) (cortex_ingester_rejection_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
+                        "exemplar": true,
+                        "expr": "sum by (instance) (cortex_ingester_rejection_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir|mimir-write.*))\"})",
                         "format": "time_series",
-                        "legendFormat": "{{pod}}",
+                        "legendFormat": "",
                         "legendLink": null
                      }
                   ],
-                  "title": "Ingester per pod rejection rate",
+                  "title": "Ingester per instance rejection rate",
                   "type": "timeseries"
                }
             ],
