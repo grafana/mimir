@@ -38,7 +38,7 @@ type closableHealthAndIngesterClient struct {
 func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, logger log.Logger) (HealthAndIngesterClient, error) {
 	reportGRPCStatusesOptions := []middleware.InstrumentationOption{middleware.ReportGRPCStatusOption}
 	unary, stream := grpcclient.Instrument(metrics.requestDuration, reportGRPCStatusesOptions...)
-	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor, middleware.ClusterUnaryClientInterceptor(cfg.Cluster, nil))
+	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor, middleware.ClusterUnaryClientInterceptor(cfg.Cluster))
 	stream = append(stream, querierapi.ReadConsistencyClientStreamInterceptor)
 
 	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(cfg.GRPCClientConfig.ClusterValidation.Label, metrics.invalidClusterVerificationLabels, logger))
