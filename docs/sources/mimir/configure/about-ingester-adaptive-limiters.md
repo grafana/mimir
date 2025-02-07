@@ -32,7 +32,7 @@ Ingesters support separate adaptive limiters for push and read requests since th
 
 ## Configure Grafana Mimir ingester adaptive limiters
 
-To enable Grafana Mimir ingester push and read adaptive limiters, set `-ingester.push-adaptive-limiter.enabled=true` and `-ingester.read-adaptive-limiter.enabled=true`. You can enable the adaptive limiters independently. Enabling one of them does not require enabling the other one.
+To enable Grafana Mimir ingester push and read adaptive limiters, set `-ingester.push-adaptive-limiter.enabled=true` and `-ingester.read-adaptive-limiter.enabled=true`. You can enable the push and read adaptive limiters independently. Enabling one of them does not require enabling the other one.
 
 ### Primary configuration
 
