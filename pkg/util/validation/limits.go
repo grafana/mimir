@@ -235,7 +235,6 @@ type Limits struct {
 	CompactorBlockUploadVerifyChunks      bool           `yaml:"compactor_block_upload_verify_chunks" json:"compactor_block_upload_verify_chunks"`
 	CompactorBlockUploadMaxBlockSizeBytes int64          `yaml:"compactor_block_upload_max_block_size_bytes" json:"compactor_block_upload_max_block_size_bytes" category:"advanced"`
 	CompactorInMemoryTenantMetaCacheSize  int            `yaml:"compactor_in_memory_tenant_meta_cache_size" json:"compactor_in_memory_tenant_meta_cache_size" category:"experimental" doc:"hidden"`
-	CompactorMaxLookback                  model.Duration `yaml:"compactor_max_lookback" json:"compactor_max_lookback" category:"experimental" doc:"hidden"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.
