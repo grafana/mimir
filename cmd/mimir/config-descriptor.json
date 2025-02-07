@@ -11191,7 +11191,7 @@
           "kind": "field",
           "name": "max_lookback",
           "required": false,
-          "desc": "Blocks uploaded before the lookback period will not be considered in compactor cycles. The value 0 means all blocks will be considered regardless of their upload time.",
+          "desc": "Blocks uploaded before the lookback will not be considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. The value 0s means all blocks will be considered regardless of their upload time.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.max-lookback",
