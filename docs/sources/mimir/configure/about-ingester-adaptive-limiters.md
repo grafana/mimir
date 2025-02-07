@@ -36,7 +36,7 @@ To enable Grafana Mimir ingester push and read adaptive limiters, set `-ingester
 
 ### Primary configuration
 
-When enabled, adaptive limiters come with some default configurations which should work well for many workloads. First among these are configurations for the short and long response time windows. These track how changes in recent, short-term response times compare to long-term response times.
+When enabled, adaptive limiters come with some default configurations that work well for many workloads. First among these are configurations for the short and long response time windows. These track how changes in recent, short-term response times compare to long-term response times.
 
 When requests are processed by ingesters, their response times are first aggregated in the short window. A quantile from these is regularly taken once the window is full and added to the long window. By default, the minimum duration of the short window is `1s`, the minimum number of responses that must be observed is `50`, and the aggregated response time quantile that's taken is `.9`. The long window defaults to `60` measurements, which are smoothed over time. These values can be changed via `short-window-min-duration`, `short-window-max-duration`, `short-window-min-samples`, `sample-quantile`, and `long-window`.
 
