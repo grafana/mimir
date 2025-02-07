@@ -4818,7 +4818,7 @@ sharding_ring:
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 
 # (experimental) Blocks uploaded before the lookback will not be considered in
-# compactor cycles. This should be larger than the
+# compactor cycles. If set, this value should be larger than all values in
 # `-blocks-storage.tsdb.block-ranges-period`. The value 0s means all blocks will
 # be considered regardless of their upload time.
 # CLI flag: -compactor.max-lookback
