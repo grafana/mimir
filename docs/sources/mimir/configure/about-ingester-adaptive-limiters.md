@@ -52,7 +52,7 @@ Rejection rates, which are based on recent limiter throughput statistics, are co
 
 ## Grafana Mimir ingester adaptive limiter metrics
 
-Grafana Mimir ingester adaptive limiters add several metrics, which aren't part of any API guarantee and can be changed at any time:
+Grafana Mimir ingester adaptive limiters add the following metrics. These metrics aren't part of any API guarantee, and you can change them at any time:
 
 - `cortex_ingester_adaptive_limiter_inflight_requests`: Gauge showing the current number of requests that are inflight within the adaptive limiter. It contains the `request_type` label which is either `push` or `read`.
 - `cortex_ingester_adaptive_limiter_inflight_limit`: Gauge showing the current inflight request limit. It contains the `request_type` label, which is either `push` or `read`.
