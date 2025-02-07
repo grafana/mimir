@@ -19,6 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
+	"time"
 
 	"github.com/prometheus/common/model"
 
@@ -623,6 +625,15 @@ type Encoder struct{}
 
 // Series appends the encoded series to b and returns the resulting slice.
 func (e *Encoder) Series(series []RefSeries, b []byte) []byte {
+	// Add log line to show series IDs and labels
+	if len(series) > 0 {
+		entries := make([]string, len(series))
+		for i, s := range series {
+			entries[i] = fmt.Sprintf("id=%d labels=%s", s.Ref, s.Labels.String())
+		}
+		fmt.Printf("[unknownRefs][%s] Encoding series: [%s]\n", time.Now(), strings.Join(entries, ", "))
+	}
+
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(Series))
 
@@ -666,6 +677,15 @@ func EncodeLabels(buf *encoding.Encbuf, lbls labels.Labels) {
 
 // Samples appends the encoded samples to b and returns the resulting slice.
 func (e *Encoder) Samples(samples []RefSample, b []byte) []byte {
+	// Add log line to show all refs with timestamps
+	if len(samples) > 0 {
+		entries := make([]string, len(samples))
+		for i, s := range samples {
+			entries[i] = fmt.Sprintf("%d@%d(%s)", s.Ref, s.T, time.Unix(s.T/1000, 0).UTC())
+		}
+		fmt.Printf("[unknownRefs][%s] Encoding samples with refs: [%s]\n", time.Now(), strings.Join(entries, ","))
+	}
+
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(Samples))
 

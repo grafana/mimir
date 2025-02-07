@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
 # Begin of configuration.
-K8S_CONTEXT=""
-K8S_NAMESPACE=""
-MIMIR_TENANT_ID=""
+K8S_CONTEXT="dev-us-central-0"
+K8S_NAMESPACE="cortex-dev-01"
+MIMIR_TENANT_ID="9960"
 # End of configuration.
 
 SCRIPT_DIR=$(realpath "$(dirname "${0}")")
 OUTPUT_DIR="chunks-dump"
-NEXT_PORT=9010
+NEXT_PORT=$(( ((RANDOM % 49152) + 16384) ))
 
 # File used to keep track of the list of ingesters failed to be queried.
 # Reset it each time this script is called.
@@ -40,7 +40,7 @@ query_ingester() {
   echo "Querying $POD"
 
   # Open port-forward
-  kubectl port-forward --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" "$POD" ${LOCAL_PORT}:9095 > /dev/null &
+  # kubectl port-forward --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" "$POD" ${LOCAL_PORT}:9095 > /dev/null &
   KUBECTL_PID=$!
 
   # Wait some time
@@ -57,11 +57,11 @@ query_ingester() {
     -import-path "$SCRIPT_DIR/../.." \
     -import-path "$SCRIPT_DIR/../../vendor" \
     -plaintext \
-    localhost:${LOCAL_PORT} "cortex.Ingester/QueryStream" > "$OUTPUT_DIR/$POD"
+    $POD.mimir-microservices-mode.orb.local:$LOCAL_PORT "cortex.Ingester/QueryStream" > "$OUTPUT_DIR/$POD"
   STATUS_CODE=$?
 
-  kill $KUBECTL_PID > /dev/null
-  wait $KUBECTL_PID > /dev/null 2> /dev/null
+#  kill $KUBECTL_PID > /dev/null
+#  wait $KUBECTL_PID > /dev/null 2> /dev/null
 
   if [ $STATUS_CODE -eq 0 ]; then
     print_success "Successfully queried $POD"
@@ -74,20 +74,45 @@ query_ingester() {
 }
 
 # Get list of pods.
-PODS=$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get pods --no-headers | grep ingester | awk '{print $1}')
+# PODS=$(kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" get pods --no-headers | grep ingester | head -1 | awk '{print $1}')
 
-# Concurrently query ingesters.
-for POD in $PODS; do
-  query_ingester "${POD}" "${NEXT_PORT}" &
+query_ingester ingester-1 9002 &
+query_ingester ingester-2 9003 &
+query_ingester ingester-3 9004 &
 
-  NEXT_PORT=$((NEXT_PORT+1))
+wait
+# # Concurrently query ingesters.
+# for POD in $PODS; do
+#   query_ingester "${POD}" "${NEXT_PORT}" &
 
-  # Throttle to reduce the likelihood of networking issues and K8S rate limiting.
-  sleep 0.25
-done
+#   NEXT_PORT=$((NEXT_PORT+1))
+
+#   # Throttle to reduce the likelihood of networking issues and K8S rate limiting.
+#   sleep 0.25
+# done
 
 # Wait for all background jobs to finish
 wait
+
+# Retry failed ingesters
+if [ -s "${FAILURES_TRACKING_FILE}" ]; then
+    echo "Retrying failed ingesters..."
+
+    # Store failures in temp file and reset failures tracking
+    TEMP_FAILURES=$(mktemp)
+    cat "${FAILURES_TRACKING_FILE}" > "${TEMP_FAILURES}"
+    echo -n "" > "${FAILURES_TRACKING_FILE}"
+
+    # Retry each failed ingester
+    while read -r POD; do
+        NEXT_PORT=$((NEXT_PORT+1))
+        query_ingester "${POD}" "${NEXT_PORT}" &
+        sleep 0.25
+    done < "${TEMP_FAILURES}"
+
+    rm "${TEMP_FAILURES}"
+    wait
+fi
 
 # Print final report.
 echo ""

@@ -428,6 +428,9 @@ Outer:
 			"histograms", unknownHistogramRefs.Load(),
 			"metadata", unknownMetadataRefs.Load(),
 		)
+		if unknownRefs.Load() > 0 {
+			panic("Unknown series references")
+		}
 	}
 	if count := mmapOverlappingChunks.Load(); count > 0 {
 		h.logger.Info("Overlapping m-map chunks on duplicate series records", "count", count)
@@ -585,6 +588,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			ms := h.series.getByID(s.Ref)
 			if ms == nil {
 				unknownRefs++
+				fmt.Printf("[unknownRefs][%s] Unknown series reference %d\n", time.Now(), s.Ref)
 				continue
 			}
 			if s.T <= ms.mmMaxTime {

@@ -1,11 +1,36 @@
 {
-  "start_timestamp_ms": 1724657563000,
-  "end_timestamp_ms": 1724659363000,
+  "start_timestamp_ms": 100,
+  "end_timestamp_ms": 1838868029650,
   "matchers": [
     {
       "type": 0,
       "name": "__name__",
-      "value": "mimir_continuous_test_sine_wave_v2"
+      "value": "cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate"
+    },
+    {
+      "type": 0,
+      "name": "cluster",
+      "value": "docker-compose"
+    },
+    {
+      "type": 0,
+      "name": "job",
+      "value": "mimir-microservices-mode/store-gateway"
+    },
+    {
+      "type": 0,
+      "name": "le",
+      "value": "0.005"
+    },
+    {
+      "type": 0,
+      "name": "route",
+      "value": "/gatewaypb.StoreGateway/Series"
+    },
+    {
+      "type": 0,
+      "name": "scraped_by",
+      "value": "prometheus"
     }
   ]
 }

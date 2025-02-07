@@ -23,6 +23,7 @@ ingester:
     # We want to start immediately.
     final_sleep: 0s
     num_tokens: 512
+    min_ready_duration: 0s
     kvstore:
       store: memberlist
 
