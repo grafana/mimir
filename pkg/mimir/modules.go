@@ -965,15 +965,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		return nil, err
 	}
 
-	t.Cfg.Ruler.ClientTLSConfig.Cluster = t.Cfg.Server.Cluster
-	t.Ruler, err = ruler.NewRuler(
-		t.Cfg.Ruler,
-		manager,
-		t.Registerer,
-		util_log.Logger,
-		t.RulerStorage,
-		t.Overrides,
-	)
+	t.Ruler, err = ruler.NewRuler(t.Cfg.Ruler, manager, t.Registerer, util_log.Logger, t.RulerStorage, t.Overrides, t.Cfg.Server.Cluster)
 	if err != nil {
 		return
 	}
