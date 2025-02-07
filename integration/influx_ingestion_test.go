@@ -87,7 +87,7 @@ func TestInfluxIngestion(t *testing.T) {
 
 	labelNames, err := c.LabelNames(v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
-	require.Equal(t, []string{"__name", "__proxy_source__", "foo"}, labelNames)
+	require.Equal(t, []string{"__name__", "__proxy_source__", "foo"}, labelNames)
 
 	rangeResult, err := c.QueryRange("series_f1", now.Add(-15*time.Minute), now, 15*time.Second)
 	require.NoError(t, err)
