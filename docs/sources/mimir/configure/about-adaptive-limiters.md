@@ -1,14 +1,14 @@
 ---
 aliases:
-  - ../configuring/configuring-ingester-adaptive-limiters/
-description: Learn about ingester adaptive limiters.
-menuTitle: Ingester adaptive limiters
-title: About Grafana Mimir ingester adaptive limiters
+  - ../configuring/configuring-adaptive-limiters/
+description: Learn about adaptive limiters.
+menuTitle: Adaptive limiters
+title: About Grafana Mimir adaptive limiters
 ---
 
-# About Grafana Mimir ingester adaptive limiters
+# About Grafana Mimir adaptive limiters
 
-Mimir's adaptive concurrency limiters automatically adapt concurrency limits based on indications of overload. You can use adaptive concurrency limiters to guard against ingester overload.
+Mimir's adaptive concurrency limiters automatically adapt concurrency limits based on indications of overload. You can use adaptive limiters to guard against ingester overload.
 
 ## How do adaptive limiters work?
 
@@ -16,21 +16,19 @@ Adaptive limiters detect overload by observing response times, inflight requests
 
 When recent response times increase significantly relative to the longer term trend, an adaptive limiter temporarily decreases concurrency limits to avoid potential overload. Similarly, when increasing inflight requests correlate with flat or decreasing throughput and increasing response times, this indicates overload and causes an adaptive limiter to decrease concurrency limits.
 
-## How do adaptive limiters behave in practice?
-
 When an ingester is not overloaded, the concurrency limit increases to a multiple of current inflight requests, based on the `max-limit-factor`. This provides headroom for bursts of requests without being too high to lower quickly if overload is detected.
 
 When ingester overload is detected, the limit gradually decreases to the concurrent request processing capacity of whichever resource is overloaded, then oscillates around that level, as long as the overload continues.
 
-## Request queueing
+### Request queueing
 
 Since inflight limits are, at most, a multiple of the current inflight ingester requests, some queueing of requests occurs when an ingester's adaptive limiter is full. This allows short bursts of requests to be tolerated while still keeping the number of inflight requests under control. The amount of blocking that is allowed is based on the `initial-rejection-factor` and `max-rejection-factor`, and requests only queue when the limiter is full.
 
-## Request rejection
+### Request rejection
 
 Ingesters support separate adaptive limiters for push and read requests, since these requests may be overloaded by different resources at different times. When ingesters are heavily loaded, these limiters may be full, and when the load is sustained, queues might fill up as well. When this happens, requests may be rejected, with a preference for rejecting read requests before rejecting push requests.
 
-## Configure Grafana Mimir ingester adaptive limiters
+## Configure Grafana Mimir adaptive limiters
 
 To enable Grafana Mimir ingester push and read adaptive limiters, set `-ingester.push-adaptive-limiter.enabled=true` and `-ingester.read-adaptive-limiter.enabled=true`. You can enable the push and read adaptive limiters independently. Enabling one of them does not require enabling the other one.
 
@@ -50,7 +48,7 @@ The amount of queueing that is allowed when a limiter is full is based on the in
 
 Rejection rates, which are based on recent limiter throughput statistics, are computed at `1s` intervals by default for all limiters. You can adjust this setting via `-ingester.rejection-prioritizer.calibration-interval`.
 
-## Grafana Mimir ingester adaptive limiter metrics
+## Grafana Mimir adaptive limiter metrics
 
 Grafana Mimir ingester adaptive limiters add the following metrics. These metrics aren't part of any API guarantee, and you can change them at any time:
 
