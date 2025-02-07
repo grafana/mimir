@@ -197,9 +197,6 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 
 	spanLog.DebugLog("msg", "instant query has been rewritten to spin-off subqueries", "rewritten", spinOffQuery, "regular_downstream_queries", mapperStats.DownstreamQueries(), "subqueries_spun_off", mapperStats.SpunOffSubqueries())
 
-	test := spinOffQuery.String()
-	fmt.Println(test)
-
 	// Update query stats.
 	queryStats := stats.FromContext(ctx)
 	queryStats.AddSpunOffSubqueries(uint32(mapperStats.SpunOffSubqueries()))
