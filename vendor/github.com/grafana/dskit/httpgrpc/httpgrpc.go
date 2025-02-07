@@ -15,6 +15,7 @@ import (
 	spb "github.com/gogo/googleapis/google/rpc"
 	"github.com/gogo/protobuf/types"
 	"github.com/gogo/status"
+	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/dskit/clusterutil"
@@ -60,11 +61,14 @@ func FromHTTPRequest(r *http.Request) (*HTTPRequest, error) {
 // FromHTTPRequestWithCluster converts an ordinary http.Request into an httpgrpc.HTTPRequest.
 // It's the same as FromHTTPRequest except that if cluster is non-empty, it has to be equal to the
 // middleware.ClusterHeader header (or an error is returned).
-func FromHTTPRequestWithCluster(r *http.Request, cluster string) (*HTTPRequest, error) {
+func FromHTTPRequestWithCluster(r *http.Request, cluster string, invalidClusters *prometheus.CounterVec) (*HTTPRequest, error) {
 	if cluster != "" {
 		if c := r.Header.Get(clusterutil.ClusterHeader); c != cluster {
+			if invalidClusters != nil {
+				invalidClusters.WithLabelValues("http", "FromHTTPRequestWithCluster", c).Inc()
+			}
 			return nil, fmt.Errorf(
-				"httpgrpc.FromHTTPRequest: %q header should be %q, but is %q",
+				"httpgrpc.FromHTTPRequestWithCluster: %q header should be %q, but is %q",
 				clusterutil.ClusterHeader, cluster, c,
 			)
 		}

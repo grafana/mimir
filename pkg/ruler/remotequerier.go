@@ -260,7 +260,12 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 	resp, err := q.sendRequest(ctx, &req, logger)
 	if err != nil {
 		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
-			level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
+			// TODO: Remove me after debugging.
+			var hdrs []string
+			for _, h := range req.Headers {
+				hdrs = append(hdrs, h.Key)
+			}
+			level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts, "middlewares", len(q.middlewares), "headers", strings.Join(hdrs, ","))
 		}
 		return promql.Vector{}, err
 	}

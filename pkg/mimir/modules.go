@@ -332,12 +332,14 @@ func (t *Mimir) initServer() (services.Service, error) {
 
 	// Mimir handles signals on its own.
 	DisableSignalHandling(&t.Cfg.Server)
-	serv, err := server.New(t.Cfg.Server)
+	serverMetrics := server.NewServerMetrics(t.Cfg.Server)
+	serv, err := server.NewWithMetrics(t.Cfg.Server, serverMetrics)
 	if err != nil {
 		return nil, err
 	}
 
 	t.Server = serv
+	t.ServerMetrics = serverMetrics
 
 	servicesToWaitFor := func() []services.Service {
 		svs := []services.Service(nil)
@@ -802,7 +804,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.LookBackDelta = t.Cfg.Querier.EngineConfig.LookbackDelta
 	t.Cfg.Frontend.FrontendV2.QueryStoreAfter = t.Cfg.Querier.QueryStoreAfter
 
-	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer, t.QueryFrontendCodec, t.Cfg.Server.Cluster)
+	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer, t.QueryFrontendCodec, t.Cfg.Server.Cluster, t.ServerMetrics)
 	if err != nil {
 		return nil, err
 	}
@@ -905,6 +907,8 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		}
 		middlewares := []ruler.Middleware{ruler.WithOrgIDMiddleware}
 		if t.Cfg.Server.Cluster != "" {
+			// TODO: Change log level to debug after debugging.
+			level.Info(util_log.Logger).Log("msg", "adding ruler cluster middleware", "cluster", t.Cfg.Server.Cluster)
 			middlewares = append(middlewares, ruler.WithClusterMiddleware(t.Cfg.Server.Cluster))
 		}
 		remoteQuerier := ruler.NewRemoteQuerier(queryFrontendClient, t.Cfg.Querier.EngineConfig.Timeout, t.Cfg.Ruler.QueryFrontend.MaxRetriesRate, t.Cfg.Ruler.QueryFrontend.QueryResultResponseFormat, t.Cfg.API.PrometheusHTTPPrefix, logger, middlewares...)
