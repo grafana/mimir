@@ -54,6 +54,17 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 					)`,
 			expectedSkippedReason: "no-subquery",
 		},
+		"subquery max with downstream join": {
+			query: `max_over_time(
+							rate(metric_counter[1m])
+						[2d:1m]
+					)
+					* on (group_1) group_left()
+					max by (group_1)(
+							rate(metric_counter[1m])
+					)`,
+			expectedSpunOffSubqueries: 1,
+		},
 		"subquery max": {
 			query: `max_over_time(
 							rate(metric_counter[1m])
@@ -132,6 +143,21 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 							rate(metric_counter[5m])
 						)[2d:]
 					)`,
+			expectedSpunOffSubqueries: 1,
+		},
+		"subquery max with offset shorter than step": {
+			query: `
+sum by (group_1) (
+      sum_over_time(
+        avg by (group_1) (metric_counter{group_2="1"})[1d:5m] offset 1m
+      )
+    *
+      avg by (group_1) (
+        avg_over_time(metric_counter{group_2="2"}[1d:5m] offset 1m)
+      )
+  *
+    0.083333
+)`,
 			expectedSpunOffSubqueries: 1,
 		},
 	}

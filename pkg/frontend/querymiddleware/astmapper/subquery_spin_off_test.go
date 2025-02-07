@@ -109,9 +109,9 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 		{
 			name:                      "ignore single selector subquery",
 			in:                        `sum(avg_over_time((foo > 1)[3d:1m]) * avg_over_time(foo[3d]))`,
-			out:                       `sum(__downstream_query__{__query__="avg_over_time((foo > 1)[3d:1m])"} * __downstream_query__{__query__="avg_over_time(foo[3d])"})`,
+			out:                       `__downstream_query__{__query__="sum(avg_over_time((foo > 1)[3d:1m]) * avg_over_time(foo[3d]))"}`,
 			expectedSubqueries:        0,
-			expectedDownstreamQueries: 2,
+			expectedDownstreamQueries: 1,
 		},
 		{
 			name: "subquery of aggregation",
@@ -233,6 +233,31 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 			out:                       `max_over_time(__subquery_spinoff__{__query__="deriv(rate(metric_counter[10m])[5m:1m])",__range__="72h0m0s",__step__="1m0s"}[3d])`,
 			expectedSubqueries:        1,
 			expectedDownstreamQueries: 0,
+		},
+		{
+			name: "map downstream query as top-level as possible",
+			in: `sum by (group_1) (
+      sum_over_time(
+        avg by (group_1) (metric_counter{group_2="1"})[1d:5m] offset 1m
+      )
+    *
+      avg by (group_1) (
+        avg_over_time(metric_counter{group_2="2"}[1d:5m] offset 1m)
+      )
+  *
+    0.083333
+)`,
+			out: `sum by (group_1) (
+      sum_over_time(
+        __subquery_spinoff__{__offset__="1m0s",__query__="avg by (group_1) (metric_counter{group_2=\"1\"})",__range__="24h0m0s",__step__="5m0s"}[1d] offset 1m
+      )
+    *
+	  __downstream_query__{__query__="avg by (group_1) (avg_over_time(metric_counter{group_2=\"2\"}[1d:5m] offset 1m))"}
+  *
+    0.083333
+)`,
+			expectedSubqueries:        1,
+			expectedDownstreamQueries: 1,
 		},
 	} {
 		tt := tt

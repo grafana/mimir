@@ -90,25 +90,11 @@ func (m *subquerySpinOffMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, f
 		// The last argument will typically contain the subquery in an aggregation function
 		// Examples: last_over_time(<subquery>[5m:]) or quantile_over_time(0.5, <subquery>[5m:])
 		if sq, ok := e.Args[lastArgIdx].(*parser.SubqueryExpr); ok {
-			// @ is not supported
-			if sq.StartOrEnd != 0 || sq.Timestamp != nil {
-				return downstreamQuery(expr)
-			}
-
-			// Filter out subqueries with ranges less than 1 hour as they are not worth spinning off.
-			if sq.Range < 1*time.Hour {
-				return downstreamQuery(expr)
-			}
-
-			selectorsCt := countSelectors(sq.Expr)
-
-			// Evaluate constants within the frontend engine
-			if selectorsCt == 0 {
+			canBeSpunOff, isConstant := subqueryCanBeSpunOff(*sq)
+			if isConstant {
 				return expr, false, nil
 			}
-
-			// Filter out subqueries that are just selectors, they are fast enough that they aren't worth spinning off.
-			if selectorsCt == 1 && !isComplexExpr(sq.Expr) {
+			if !canBeSpunOff {
 				return downstreamQuery(expr)
 			}
 
@@ -184,7 +170,8 @@ func isComplexExpr(expr parser.Node) bool {
 func hasSubqueryInChildren(expr parser.Node) bool {
 	switch e := expr.(type) {
 	case *parser.SubqueryExpr:
-		return true
+		canBeSpunOff, _ := subqueryCanBeSpunOff(*e)
+		return canBeSpunOff
 	default:
 		for _, child := range parser.Children(e) {
 			if hasSubqueryInChildren(child) {
@@ -193,6 +180,32 @@ func hasSubqueryInChildren(expr parser.Node) bool {
 		}
 		return false
 	}
+}
+
+func subqueryCanBeSpunOff(sq parser.SubqueryExpr) (spinoff, constant bool) {
+	// @ is not supported
+	if sq.StartOrEnd != 0 || sq.Timestamp != nil {
+		return false, false
+	}
+
+	// Filter out subqueries with ranges less than 1 hour as they are not worth spinning off.
+	if sq.Range < 1*time.Hour {
+		return false, false
+	}
+
+	selectorsCt := countSelectors(sq.Expr)
+
+	// Evaluate constants within the frontend engine
+	if selectorsCt == 0 {
+		return false, true
+	}
+
+	// Filter out subqueries that are just selectors, they are fast enough that they aren't worth spinning off.
+	if selectorsCt == 1 && !isComplexExpr(sq.Expr) {
+		return false, false
+	}
+
+	return true, false
 }
 
 func countSelectors(expr parser.Node) int {
