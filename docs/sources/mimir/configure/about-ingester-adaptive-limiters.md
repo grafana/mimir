@@ -40,7 +40,7 @@ When enabled, adaptive limiters come with some default configurations that work 
 
 When requests are processed by ingesters, their response times are first aggregated in the short window. A quantile from these is regularly taken once the window is full and added to the long window. By default, the minimum duration of the short window is `1s`, the minimum number of responses that must be observed is `50`, and the aggregated response time quantile that's taken is `.9`. The long window defaults to `60` measurements, which are smoothed over time. These values can be changed via `short-window-min-duration`, `short-window-max-duration`, `short-window-min-samples`, `sample-quantile`, and `long-window`.
 
-The inflight request limit has a default min and max range from `2` to `200`, and an initial value of `20`. These can be changed via `min-inflight-limit`, `max-inflight-limit`, and `initial-inflight-limit`. Additionally, the inflight limit will ever only increase to a multiple of the current inflight requests, which defaults to `5.0`. This can be changed via `max-limit-factor`.
+The inflight request limit has a default range of `2` to `200`, and an initial value of `20`. You can change these values via `min-inflight-limit`, `max-inflight-limit`, and `initial-inflight-limit`. Additionally, the inflight limit only increases to a multiple of the current inflight requests, which defaults to `5.0`. You can change this value via `max-limit-factor`.
 
 ### Additional configuration
 
