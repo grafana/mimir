@@ -4826,6 +4826,7 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 	tests := map[string]struct {
 		from     int64
 		to       int64
+		limit    int64
 		matchers []*client.LabelMatchers
 		expected []*mimirpb.Metric
 	}{
@@ -4916,6 +4917,33 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[4].lbls)},
 			},
 		},
+		"should respect requested limit": {
+			from:  math.MinInt64,
+			to:    math.MaxInt64,
+			limit: 1,
+			matchers: []*client.LabelMatchers{{
+				Matchers: []*client.LabelMatcher{
+					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
+				},
+			}},
+			expected: []*mimirpb.Metric{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
+			},
+		},
+		"should return all matching metrics when limit is higher than the result": {
+			from:  math.MinInt64,
+			to:    math.MaxInt64,
+			limit: 5,
+			matchers: []*client.LabelMatchers{{
+				Matchers: []*client.LabelMatcher{
+					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
+				},
+			}},
+			expected: []*mimirpb.Metric{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[1].lbls)},
+			},
+		},
 	}
 
 	registry := prometheus.NewRegistry()
@@ -4947,6 +4975,7 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 				StartTimestampMs: testData.from,
 				EndTimestampMs:   testData.to,
 				MatchersSet:      testData.matchers,
+				Limit:            testData.limit,
 			}
 
 			res, err := i.MetricsForLabelMatchers(ctx, req)

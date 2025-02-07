@@ -2415,6 +2415,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 	tests := map[string]struct {
 		shuffleShardSize  int
 		matchers          []*labels.Matcher
+		hints             *storage.SelectHints
 		maxSeriesPerQuery int
 		expectedResult    [][]mimirpb.LabelAdapter
 		expectedIngesters int
@@ -2424,6 +2425,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown"),
 			},
+			hints:             &storage.SelectHints{},
 			expectedResult:    nil,
 			expectedIngesters: numIngesters,
 		},
@@ -2431,6 +2433,18 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
+			hints: &storage.SelectHints{},
+			expectedResult: [][]mimirpb.LabelAdapter{
+				fixtures[0].lbls,
+				fixtures[1].lbls,
+			},
+			expectedIngesters: numIngesters,
+		},
+		"should filter metrics by matcher when no hints passed": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			hints: nil,
 			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[0].lbls,
 				fixtures[1].lbls,
@@ -2442,6 +2456,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 				mustNewMatcher(labels.MatchEqual, "status", "200"),
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
+			hints: &storage.SelectHints{},
 			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[0].lbls,
 			},
@@ -2451,6 +2466,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "fast_fingerprint_collision"),
 			},
+			hints: &storage.SelectHints{},
 			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[3].lbls,
 				fixtures[4].lbls,
@@ -2462,6 +2478,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
+			hints: &storage.SelectHints{},
 			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[0].lbls,
 				fixtures[1].lbls,
@@ -2472,8 +2489,33 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
+			hints:             &storage.SelectHints{},
 			maxSeriesPerQuery: 1,
 			expectedError:     validation.NewLimitError("the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-series-per-query, or contact your service administrator."),
+		},
+		"should error out if max series per query is reached before hint limit": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "test_.*"),
+			},
+			hints: &storage.SelectHints{
+				Limit: 2,
+			},
+			maxSeriesPerQuery: 1,
+			expectedError:     validation.NewLimitError("the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-series-per-query, or contact your service administrator."),
+		},
+		"should not return more metrics than hint limit": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			hints: &storage.SelectHints{
+				Limit: 1,
+			},
+			// For the case when the limit hint set the test checks that the returned metrics are in the subset of the expectedResult.
+			expectedResult: [][]mimirpb.LabelAdapter{
+				fixtures[0].lbls,
+				fixtures[1].lbls,
+			},
+			expectedIngesters: numIngesters,
 		},
 	}
 
@@ -2518,14 +2560,20 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					// Set up limiter
 					ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(testData.maxSeriesPerQuery, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
-					metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.matchers...)
+					metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.hints, testData.matchers...)
 					if testData.expectedError != nil {
 						require.ErrorIs(t, err, testData.expectedError)
 						return
 					}
-
 					require.NoError(t, err)
-					requireLabelAdaptersMatchLabels(t, testData.expectedResult, metrics)
+
+					if testData.hints == nil || testData.hints.Limit == 0 {
+						requireLabelAdaptersMatchLabels(t, testData.expectedResult, metrics)
+					} else {
+						// The order of ingester responses isn't guarantied. Thus, we can only test that the distributor's response is in the subset of expectedResult.
+						require.Len(t, metrics, testData.hints.Limit)
+						requireLabelAdaptersContainLabels(t, testData.expectedResult, metrics)
+					}
 
 					// Check how many ingesters have been queried.
 					if ingestStorageEnabled {
@@ -2707,6 +2755,23 @@ func requireLabelAdaptersMatchLabels(tb testing.TB, a [][]mimirpb.LabelAdapter, 
 	slices.SortFunc(bAsLabelAdapters, mimirpb.CompareLabelAdapters)
 
 	promtestutil.RequireEqual(tb, a, bAsLabelAdapters)
+}
+
+// Check that the LabelAdaptors contain the Labels. Assume LabelAdaptors are already sorted.
+func requireLabelAdaptersContainLabels(tb testing.TB, a [][]mimirpb.LabelAdapter, b []labels.Labels) {
+	tb.Helper()
+	if len(a) == 0 && len(b) == 0 {
+		return
+	}
+	bAsLabelAdapters := make([][]mimirpb.LabelAdapter, len(b))
+	for i, s := range b {
+		bAsLabelAdapters[i] = mimirpb.FromLabelsToLabelAdapters(s)
+	}
+	slices.SortFunc(bAsLabelAdapters, mimirpb.CompareLabelAdapters)
+
+	for _, bb := range bAsLabelAdapters {
+		require.Contains(tb, a, bb)
+	}
 }
 
 func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
@@ -6494,7 +6559,7 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 		return nil, errFail
 	}
 
-	multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
+	_, multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -6507,6 +6572,12 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 			}
 		}
 	}
+
+	// Always sort metrics by their labels to make testing simpler.
+	slices.SortFunc(response.Metric, func(m1, m2 *mimirpb.Metric) int {
+		return mimirpb.CompareLabelAdapters(m1.Labels, m2.Labels)
+	})
+
 	return &response, nil
 }
 

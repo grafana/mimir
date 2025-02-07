@@ -2743,13 +2743,13 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints
 
 // MetricsForLabelMatchers returns a list of series with samples timestamps between from and through, and series labels
 // matching the optional label matchers. The returned series are not sorted.
-func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
+func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, hints *storage.SelectHints, matchers ...*labels.Matcher) ([]labels.Labels, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := ingester_client.ToMetricsForLabelMatchersRequest(from, through, matchers)
+	req, err := ingester_client.ToMetricsForLabelMatchersRequest(from, through, hints, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -2771,8 +2771,15 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 
 	queryLimiter := mimir_limiter.QueryLimiterFromContextWithFallback(ctx)
 
-	result := make([]labels.Labels, 0, len(metrics))
+	resultCap := len(metrics)
+	if hints != nil && hints.Limit > 0 {
+		resultCap = min(resultCap, hints.Limit)
+	}
+	result := make([]labels.Labels, 0, resultCap)
 	for _, m := range metrics {
+		if len(result) >= resultCap {
+			break
+		}
 		if err := queryLimiter.AddSeries(m); err != nil {
 			return nil, err
 		}
