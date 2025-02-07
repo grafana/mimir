@@ -192,6 +192,19 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 		MaxGroups:     maxGroups,
 	}
 
+	// The file, rule_group and rule_name query parameters differ
+	// from Vanilla prometheus: file[], rule_group[], rule_name[]
+	// If they are provided in this format, use them instead.
+	if req.URL.Query().Has("rule_name[]") {
+		rulesReq.RuleName = req.URL.Query()["rule_name[]"]
+	}
+	if req.URL.Query().Has("rule_group[]") {
+		rulesReq.RuleGroup = req.URL.Query()["rule_group[]"]
+	}
+	if req.URL.Query().Has("file[]") {
+		rulesReq.File = req.URL.Query()["file[]"]
+	}
+
 	ruleTypeFilter := strings.ToLower(req.URL.Query().Get("type"))
 	if ruleTypeFilter != "" {
 		switch ruleTypeFilter {

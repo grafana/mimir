@@ -984,12 +984,17 @@ type pushStats struct {
 type ctxKey int
 
 var pushReqCtxKey ctxKey = 1
+var readReqCtxKey ctxKey = 2
 
 type pushRequestState struct {
 	requestSize     int64
 	requestDuration time.Duration
 	requestFinish   func(time.Duration, error)
 	pushErr         error
+}
+
+type readRequestState struct {
+	requestFinish func(err error)
 }
 
 func getPushRequestState(ctx context.Context) *pushRequestState {
@@ -999,13 +1004,27 @@ func getPushRequestState(ctx context.Context) *pushRequestState {
 	return nil
 }
 
-// StartPushRequest checks if ingester can start push request, and increments relevant counters.
-// If new push request cannot be started, errors convertible to gRPC status code are returned, and metrics are updated.
+func getReadRequestState(ctx context.Context) *readRequestState {
+	if st, ok := ctx.Value(readReqCtxKey).(*readRequestState); ok {
+		return st
+	}
+	return nil
+}
+
+// StartPushRequest implements pushReceiver and checks if ingester can start push request, incrementing relevant
+// counters. If new push request cannot be started, errors convertible to gRPC status code are returned, and metrics are
+// updated.
 func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context.Context, error) {
 	ctx, _, err := i.startPushRequest(ctx, reqSize)
 	return ctx, err
 }
 
+// PreparePushRequest implements pushReceiver.
+func (i *Ingester) PreparePushRequest(_ context.Context) (finishFn func(error), err error) {
+	return nil, nil
+}
+
+// FinishPushRequest implements pushReceiver.
 func (i *Ingester) FinishPushRequest(ctx context.Context) {
 	st := getPushRequestState(ctx)
 	if st == nil {
@@ -1645,13 +1664,43 @@ func (i *Ingester) pushSamplesToAppender(userID string, timeseries []mimirpb.Pre
 	return nil
 }
 
-func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
+// StartReadRequest implements ingesterReceiver and is called by a gRPC tap Handle when a request is first received to
+// determine if a request should be permitted. When permitted, StartReadRequest returns a context with a function that
+// should be called to finish the started read request once the request is completed. If it wasn't successful, the
+// causing error is returned and a nil context is returned.
+func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Context, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
+
+	if err := i.checkAvailableForRead(); err != nil {
+		return nil, err
+	}
+	if err := i.checkReadOverloaded(); err != nil {
+		return nil, err
+	}
+	finish, err := i.circuitBreaker.tryAcquireReadPermit()
 	if err != nil {
 		return nil, err
 	}
-	defer func() { finishReadRequest(err) }()
+	start := time.Now()
+	return context.WithValue(ctx, readReqCtxKey, &readRequestState{
+		requestFinish: func(err error) {
+			finish(time.Since(start), err)
+		},
+	}), nil
+}
+
+// PrepareReadRequest implements ingesterReceiver and is called by a gRPC interceptor when a request is in progress.
+// When successful, PrepareReadRequest returns a function that should be called once the request is completed.
+func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error), err error) {
+	// Propagate any error from the read request to the finish function embedded in the context
+	if st := getReadRequestState(ctx); st != nil {
+		return st.requestFinish, nil
+	}
+	return func(error) {}, nil
+}
+
+func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
+	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.QueryExemplars")
 	defer spanlog.Finish()
@@ -1711,13 +1760,8 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 
 func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (resp *client.LabelValuesResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { finishReadRequest(err) }()
 
-	labelName, startTimestampMs, endTimestampMs, matchers, err := client.FromLabelValuesRequest(req)
+	labelName, startTimestampMs, endTimestampMs, hints, matchers, err := client.FromLabelValuesRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1744,10 +1788,16 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 	}
 	defer q.Close()
 
-	hints := &storage.LabelHints{}
 	vals, _, err := q.LabelValues(ctx, labelName, hints, matchers...)
 	if err != nil {
 		return nil, err
+	}
+
+	// Besides we are passing the hints to q.LabelValues, we also limit the number of returned values here
+	// because LabelQuerier can resolve the labelValues using different instance and then joining the results,
+	// so we want to apply the limit at the end.
+	if hints != nil && hints.Limit > 0 && len(vals) > hints.Limit {
+		vals = vals[:hints.Limit]
 	}
 
 	// The label value strings are sometimes pointing to memory mapped file
@@ -1764,11 +1814,6 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 
 func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (resp *client.LabelNamesResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, i.logger, "Ingester.LabelNames")
 	defer spanlog.Finish()
@@ -1789,7 +1834,7 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 		return &client.LabelNamesResponse{}, nil
 	}
 
-	mint, maxt, matchers, err := client.FromLabelNamesRequest(req)
+	mint, maxt, hints, matchers, err := client.FromLabelNamesRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1803,10 +1848,16 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 	// Log the actual matchers passed down to TSDB. This can be useful for troubleshooting purposes.
 	spanlog.DebugLog("num_matchers", len(matchers), "matchers", util.LabelMatchersToString(matchers))
 
-	hints := &storage.LabelHints{}
 	names, _, err := q.LabelNames(ctx, hints, matchers...)
 	if err != nil {
 		return nil, err
+	}
+
+	// Besides we are passing the hints to q.LabelNames, we also limit the number of returned values here
+	// because LabelQuerier can resolve the labelNames using different instance and then joining the results,
+	// so we want to apply the limit at the end.
+	if hints != nil && hints.Limit > 0 && len(names) > hints.Limit {
+		names = names[:hints.Limit]
 	}
 
 	return &client.LabelNamesResponse{
@@ -1817,11 +1868,6 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 // MetricsForLabelMatchers implements IngesterServer.
 func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (resp *client.MetricsForLabelMatchersResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1893,11 +1939,6 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 
 func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) (resp *client.UserStatsResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1924,11 +1965,6 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 // because the purpose of this function is to show a snapshot of the live ingester's state.
 func (i *Ingester) AllUserStats(_ context.Context, req *client.UserStatsRequest) (resp *client.UsersStatsResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	i.tsdbsMtx.RLock()
 	defer i.tsdbsMtx.RUnlock()
@@ -1957,11 +1993,6 @@ const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, stream client.Ingester_LabelNamesAndValuesServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	userID, err := tenant.TenantID(stream.Context())
 	if err != nil {
@@ -2011,11 +2042,6 @@ const labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	userID, err := tenant.TenantID(srv.Context())
 	if err != nil {
@@ -2097,11 +2123,6 @@ const queryStreamBatchMessageSize = 1 * 1024 * 1024
 // QueryStream streams metrics from a TSDB. This implements the client.IngesterServer interface
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.QueryStream")
 	defer spanlog.Finish()
@@ -3827,33 +3848,6 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// startReadRequest tries to start a read request.
-// If it was successful, startReadRequest returns a function that should be
-// called to finish the started read request once the request is completed.
-// If it wasn't successful, the causing error is returned. In this case no
-// function is returned.
-func (i *Ingester) startReadRequest() (func(error), error) {
-	start := time.Now()
-	finish, err := i.circuitBreaker.tryAcquireReadPermit()
-	if err != nil {
-		return nil, err
-	}
-
-	finishReadRequest := func(err error) {
-		finish(time.Since(start), err)
-	}
-
-	if err = i.checkAvailableForRead(); err != nil {
-		finishReadRequest(err)
-		return nil, err
-	}
-	if err = i.checkReadOverloaded(); err != nil {
-		finishReadRequest(err)
-		return nil, err
-	}
-	return finishReadRequest, nil
-}
-
 // checkAvailableForRead checks whether the ingester is available for read requests,
 // and if it is not the case returns an unavailableError error.
 func (i *Ingester) checkAvailableForRead() error {
@@ -4025,11 +4019,6 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 // MetricsMetadata returns all the metrics metadata of a user.
 func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) (resp *client.MetricsMetadataResponse, err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return nil, err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {

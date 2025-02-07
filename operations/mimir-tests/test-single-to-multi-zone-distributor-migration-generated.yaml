@@ -923,7 +923,7 @@ spec:
       - effect: NoSchedule
         key: topology
         operator: Equal
-        value: multi-az
+        value: secondary-az
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:
@@ -1033,7 +1033,7 @@ spec:
       - effect: NoSchedule
         key: topology
         operator: Equal
-        value: multi-az
+        value: secondary-az
       topologySpreadConstraints:
       - labelSelector:
           matchLabels:

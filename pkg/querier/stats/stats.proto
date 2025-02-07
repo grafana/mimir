@@ -38,4 +38,6 @@ message Stats {
   google.protobuf.Duration encode_time = 10 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   // TotalSamples represents the total number of samples scanned while evaluating a query.
   uint64 samples_processed = 11;
+  // The number of subqueries that were spun off as actual range queries in order to execute the full query
+  uint32 spun_off_subqueries = 12;
 }

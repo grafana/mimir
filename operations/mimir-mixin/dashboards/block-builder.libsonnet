@@ -87,9 +87,9 @@ local filename = 'mimir-block-builder.json';
     .addRow(
       $.row('TSDB')
       .addPanel(
-        $.timeseriesPanel('Partition compactios / sec') +
+        $.timeseriesPanel('Partition compactions / sec') +
         $.panelDescription(
-          'Partition compactios / sec',
+          'Partition compactions / sec',
           'Per-second rate of compact and upload operattions for blocks of the processed partitions.'
         ) +
         $.queryPanel(

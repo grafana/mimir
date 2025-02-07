@@ -299,7 +299,7 @@ func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
 	require.NoError(t, err)
 
 	errUploadFailed := fmt.Errorf("upload failed")
-	_, err = builder.CompactAndUpload(context.Background(), func(_ context.Context, _, _ string, _ []string) error {
+	_, err = builder.CompactAndUpload(context.Background(), func(_ context.Context, _, _ string, _ []tsdb.BlockMeta) error {
 		return errUploadFailed
 	})
 	require.ErrorIs(t, err, errUploadFailed)
@@ -364,9 +364,9 @@ func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHis
 }
 
 func mockUploaderFunc(t *testing.T, destDir string) blockUploader {
-	return func(_ context.Context, _, dbDir string, blockIDs []string) error {
-		for _, bid := range blockIDs {
-			blockDir := path.Join(dbDir, bid)
+	return func(_ context.Context, _, dbDir string, metas []tsdb.BlockMeta) error {
+		for _, meta := range metas {
+			blockDir := path.Join(dbDir, meta.ULID.String())
 			err := os.Rename(blockDir, path.Join(destDir, path.Base(blockDir)))
 			require.NoError(t, err)
 		}

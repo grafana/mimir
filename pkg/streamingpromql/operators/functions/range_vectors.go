@@ -21,7 +21,7 @@ var CountOverTime = FunctionOverRangeVectorDefinition{
 	StepFunc:               countOverTime,
 }
 
-func countOverTime(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func countOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	fPointCount := step.Floats.Count()
 	hPointCount := step.Histograms.Count()
 
@@ -37,7 +37,7 @@ var LastOverTime = FunctionOverRangeVectorDefinition{
 	StepFunc: lastOverTime,
 }
 
-func lastOverTime(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func lastOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	lastFloat, floatAvailable := step.Floats.Last()
 	lastHistogram, histogramAvailable := step.Histograms.Last()
 
@@ -58,7 +58,7 @@ var PresentOverTime = FunctionOverRangeVectorDefinition{
 	StepFunc:               presentOverTime,
 }
 
-func presentOverTime(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func presentOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	if step.Floats.Any() || step.Histograms.Any() {
 		return 1, true, nil, nil
 	}
@@ -72,7 +72,7 @@ var MaxOverTime = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func maxOverTime(step *types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func maxOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	head, tail := step.Floats.UnsafePoints()
 
 	if len(head) == 0 && len(tail) == 0 {
@@ -107,7 +107,7 @@ var MinOverTime = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func minOverTime(step *types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func minOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	head, tail := step.Floats.UnsafePoints()
 
 	if len(head) == 0 && len(tail) == 0 {
@@ -142,7 +142,7 @@ var SumOverTime = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func sumOverTime(step *types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func sumOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	hHead, hTail := step.Histograms.UnsafePoints()
 
@@ -207,7 +207,7 @@ var AvgOverTime = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func avgOverTime(step *types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func avgOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	hHead, hTail := step.Histograms.UnsafePoints()
 
@@ -357,7 +357,7 @@ var Resets = FunctionOverRangeVectorDefinition{
 }
 
 func resetsChanges(isReset bool) RangeVectorStepFunction {
-	return func(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	return func(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints()
 		hHead, hTail := step.Histograms.UnsafePoints()
 
@@ -483,12 +483,11 @@ var Deriv = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func deriv(step *types.RangeVectorStepData, _ float64, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func deriv(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 
-	if len(fHead)+len(fTail) == 1 && step.Histograms.Any() {
+	if step.Floats.Any() && step.Histograms.Any() {
 		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
-		return 0, false, nil, nil
 	}
 
 	if (len(fHead) + len(fTail)) < 2 {
@@ -497,11 +496,31 @@ func deriv(step *types.RangeVectorStepData, _ float64, emitAnnotation types.Emit
 
 	slope, _ := linearRegression(fHead, fTail, fHead[0].T)
 
-	if step.Histograms.Any() {
+	return slope, true, nil, nil
+}
+
+var PredictLinear = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       predictLinear,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func predictLinear(step *types.RangeVectorStepData, _ float64, args []types.ScalarData, timeRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := step.Floats.UnsafePoints()
+
+	if step.Floats.Any() && step.Histograms.Any() {
 		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 	}
 
-	return slope, true, nil, nil
+	if (len(fHead) + len(fTail)) < 2 {
+		return 0, false, nil, nil
+	}
+
+	slope, intercept := linearRegression(fHead, fTail, step.StepT)
+	tArg := args[0]
+	duration := tArg.Samples[timeRange.PointIndex(step.StepT)].F
+
+	return slope*duration + intercept, true, nil, nil
 }
 
 func linearRegression(head, tail []promql.FPoint, interceptTime int64) (slope, intercept float64) {
@@ -565,7 +584,7 @@ var Idelta = FunctionOverRangeVectorDefinition{
 }
 
 func irateIdelta(isRate bool) RangeVectorStepFunction {
-	return func(step *types.RangeVectorStepData, _ float64, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	return func(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
 		// Histograms are ignored
 		fHead, fTail := step.Floats.UnsafePoints()
 

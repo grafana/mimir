@@ -966,11 +966,11 @@ groups:
                   # Add "metric" label.
                   + on(cluster, namespace, horizontalpodautoscaler) group_right
                     # Using `max by ()` so that series churn doesn't break the promQL join
-                    max by (cluster, namespace, horizontalpodautoscaler) (
+                    max by (cluster, namespace, horizontalpodautoscaler, metric) (
                       label_replace(kube_horizontalpodautoscaler_spec_target_metric*0, "metric", "$1", "metric_name", "(.+)")
                     )
                   > 0),
-                  "scaledObject", "$1", "horizontalpodautoscaler", "keda-hpa-(.*)"
+                  "scaledObject", "$1", "horizontalpodautoscaler", "keda-hpa-(?:mimir-)?(.*)"
                 )
             )
             # Alert only if the scaling metric exists and is > 0. If the KEDA ScaledObject is configured to scale down 0,
