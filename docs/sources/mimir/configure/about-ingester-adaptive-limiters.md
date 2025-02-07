@@ -42,7 +42,7 @@ When requests are processed by ingesters, their response times are first aggrega
 
 The inflight request limit has a default range of `2` to `200`, and an initial value of `20`. You can change these values via `min-inflight-limit`, `max-inflight-limit`, and `initial-inflight-limit`. Additionally, the inflight limit only increases to a multiple of the current inflight requests, which defaults to `5.0`. You can change this value via `max-limit-factor`.
 
-### Additional configuration
+### Additional configurations
 
 While response times are the primary mechanism for detecting overload, a secondary mechanism is tracking the correlation between inflight requests and throughput. The default size of this correlation window is `50` samples, which can be changed via `correlation-window`.
 
