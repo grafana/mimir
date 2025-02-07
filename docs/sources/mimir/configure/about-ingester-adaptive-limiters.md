@@ -14,7 +14,7 @@ Mimir's adaptive concurrency limiters automatically adapt concurrency limits bas
 
 Adaptive limiters detect overload by observing response times, inflight requests, and throughput.
 
-When recent response times increase significantly relative to the longer term trend, an adaptive limiter will temporarily decrease concurrency limits to avoid potential overload. Similarly, when increasing inflight requests correlate with flat or decreasing throughput and increasing response times, this is taken as a sign of overload and the concurrency limit is decreased.
+When recent response times increase significantly relative to the longer term trend, an adaptive limiter temporarily decreases concurrency limits to avoid potential overload. Similarly, when increasing inflight requests correlate with flat or decreasing throughput and increasing response times, this indicates overload and causes an adaptive limiter to decrease concurrency limits.
 
 ## How do adaptive limiters behave in practice?
 
