@@ -8,6 +8,7 @@ package compactor
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -164,6 +165,7 @@ func (c *BlocksCleaner) stopping(error) error {
 }
 
 func (c *BlocksCleaner) starting(ctx context.Context) error {
+	c.instrumentBucketIndexUpdate(ctx)
 	// Run an initial cleanup in starting state. (Note that the compactor no longer waits
 	// for the blocks cleaner to finish starting before it starts compactions.)
 	c.runCleanup(ctx, false)
@@ -205,6 +207,22 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
 	}
 }
 
+func (c *BlocksCleaner) instrumentBucketIndexUpdate(ctx context.Context) {
+	allUsers, _, err := c.refreshOwnedUsers(ctx)
+	if err != nil {
+		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
+		return
+	}
+	for _, userID := range allUsers {
+		idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, c.logger)
+		if err != nil {
+			level.Error(c.logger).Log("msg", "failed to read bucket index", "user", userID, "err", err)
+			return
+		}
+		c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
+	}
+}
+
 func (c *BlocksCleaner) instrumentStartedCleanupRun(logger log.Logger) {
 	level.Info(logger).Log("msg", "started blocks cleanup and maintenance")
 	c.runsStarted.Inc()
@@ -231,6 +249,10 @@ func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) ([]string, map[st
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to discover users from bucket")
 	}
+
+	rand.Shuffle(len(users), func(i, j int) {
+		users[i], users[j] = users[j], users[i]
+	})
 
 	isActive := util.StringsMap(users)
 	isDeleted := util.StringsMap(deleted)

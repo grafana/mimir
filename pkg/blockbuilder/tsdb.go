@@ -22,7 +22,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -78,7 +77,7 @@ func NewTSDBBuilder(logger log.Logger, dataDir string, blocksStorageCfg mimir_ts
 // lastBlockMax: max time of the block in the previous block building cycle.
 // blockMax: max time of the block in the current block building cycle. This blockMax is exclusive of the last sample by design in TSDB.
 // recordAlreadyProcessed: true if the record was processed in the previous cycle. (It gets processed again if some samples did not fit in the previous cycle.)
-func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax, blockMax int64, recordAlreadyProcessed bool) (_ bool, err error) {
+func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax, blockMax int64, recordAlreadyProcessed, processEverything bool) (_ bool, err error) {
 	userID := string(rec.Key)
 
 	req := mimirpb.PreallocWriteRequest{
@@ -133,12 +132,12 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
 		for _, s := range ts.Samples {
-			if s.TimestampMs >= blockMax {
+			if !processEverything && s.TimestampMs >= blockMax {
 				// We will process this sample in the next cycle.
 				allSamplesProcessed = false
 				continue
 			}
-			if recordAlreadyProcessed && s.TimestampMs < lastBlockMax {
+			if !processEverything && recordAlreadyProcessed && s.TimestampMs < lastBlockMax {
 				// This sample was already processed in the previous cycle.
 				continue
 			}
@@ -170,12 +169,12 @@ func (b *TSDBBuilder) Process(ctx context.Context, rec *kgo.Record, lastBlockMax
 		}
 
 		for _, h := range ts.Histograms {
-			if h.Timestamp >= blockMax {
+			if !processEverything && h.Timestamp >= blockMax {
 				// We will process this sample in the next cycle.
 				allSamplesProcessed = false
 				continue
 			}
-			if recordAlreadyProcessed && h.Timestamp < lastBlockMax {
+			if !processEverything && recordAlreadyProcessed && h.Timestamp < lastBlockMax {
 				// This sample was already processed in the previous cycle.
 				continue
 			}
@@ -280,22 +279,24 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 	}
 
 	db, err := tsdb.Open(udir, util_log.SlogFromGoKit(userLogger), nil, &tsdb.Options{
-		RetentionDuration:           0,
-		MinBlockDuration:            2 * time.Hour.Milliseconds(),
-		MaxBlockDuration:            2 * time.Hour.Milliseconds(),
-		NoLockfile:                  true,
-		StripeSize:                  b.blocksStorageCfg.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:   b.blocksStorageCfg.TSDB.HeadChunksWriteBufferSize,
-		HeadChunksWriteQueueSize:    b.blocksStorageCfg.TSDB.HeadChunksWriteQueueSize,
-		WALSegmentSize:              -1,                                                                             // No WAL
-		BlocksToDelete:              func([]*tsdb.Block) map[ulid.ULID]struct{} { return map[ulid.ULID]struct{}{} }, // Always noop
-		IsolationDisabled:           true,
-		EnableOverlappingCompaction: false,                                                // Always false since Mimir only uploads lvl 1 compacted blocks
-		OutOfOrderTimeWindow:        b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
-		OutOfOrderCapMax:            int64(b.blocksStorageCfg.TSDB.OutOfOrderCapacityMax),
-		EnableNativeHistograms:      b.limits.NativeHistogramsIngestionEnabled(userID),
-		SecondaryHashFunction:       nil, // TODO(codesome): May needed when applying limits. Used to determine the owned series by an ingesters
-		SeriesLifecycleCallback:     udb,
+		RetentionDuration:                    0,
+		MinBlockDuration:                     2 * time.Hour.Milliseconds(),
+		MaxBlockDuration:                     2 * time.Hour.Milliseconds(),
+		NoLockfile:                           true,
+		StripeSize:                           b.blocksStorageCfg.TSDB.StripeSize,
+		HeadChunksWriteBufferSize:            b.blocksStorageCfg.TSDB.HeadChunksWriteBufferSize,
+		HeadChunksWriteQueueSize:             b.blocksStorageCfg.TSDB.HeadChunksWriteQueueSize,
+		WALSegmentSize:                       -1,                                                                             // No WAL
+		BlocksToDelete:                       func([]*tsdb.Block) map[ulid.ULID]struct{} { return map[ulid.ULID]struct{}{} }, // Always noop
+		IsolationDisabled:                    true,
+		EnableOverlappingCompaction:          false,                                                // Always false since Mimir only uploads lvl 1 compacted blocks
+		OutOfOrderTimeWindow:                 b.limits.OutOfOrderTimeWindow(userID).Milliseconds(), // The unit must be same as our timestamps.
+		OutOfOrderCapMax:                     int64(b.blocksStorageCfg.TSDB.OutOfOrderCapacityMax),
+		EnableNativeHistograms:               b.limits.NativeHistogramsIngestionEnabled(userID),
+		SecondaryHashFunction:                nil, // TODO(codesome): May needed when applying limits. Used to determine the owned series by an ingesters
+		SeriesLifecycleCallback:              udb,
+		HeadPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(nil),
+		BlockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(nil),
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -309,15 +310,16 @@ func (b *TSDBBuilder) newTSDB(tenant tsdbTenant) (*userTSDB, error) {
 }
 
 // Function to upload the blocks.
-type blockUploader func(_ context.Context, tenantID, dbDir string, blockIDs []string) error
+type blockUploader func(_ context.Context, tenantID, dbDir string, metas []tsdb.BlockMeta) error
 
 // CompactAndUpload compacts the blocks of all the TSDBs and uploads them.
 // uploadBlocks is a function that uploads the blocks to the required storage.
 // All the DBs are closed and directories cleared irrespective of success or failure of this function.
-func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUploader) (_ int, err error) {
+func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUploader) (metas []tsdb.BlockMeta, err error) {
 	var (
-		closedDBsMu sync.Mutex
-		closedDBs   = make(map[*userTSDB]bool)
+		closedDBsMu, metasMu sync.Mutex
+
+		closedDBs = make(map[*userTSDB]bool)
 	)
 
 	b.tsdbsMu.Lock()
@@ -341,10 +343,8 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 	level.Info(b.logger).Log("msg", "compacting and uploading blocks", "num_tsdb", len(b.tsdbs))
 
 	if len(b.tsdbs) == 0 {
-		return 0, nil
+		return nil, nil
 	}
-
-	numBlocks := atomic.NewInt64(0)
 
 	eg, ctx := errgroup.WithContext(ctx)
 	if b.blocksStorageCfg.TSDB.ShipConcurrency > 0 {
@@ -369,12 +369,14 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 				return err
 			}
 
-			var blockIDs []string
 			dbDir := db.Dir()
+			var localMetas []tsdb.BlockMeta
 			for _, b := range db.Blocks() {
-				blockIDs = append(blockIDs, b.Meta().ULID.String())
+				localMetas = append(localMetas, b.Meta())
 			}
-			numBlocks.Add(int64(len(blockIDs)))
+			metasMu.Lock()
+			metas = append(metas, localMetas...)
+			metasMu.Unlock()
 
 			if err := db.Close(); err != nil {
 				return err
@@ -384,7 +386,7 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 			closedDBs[db] = true
 			closedDBsMu.Unlock()
 
-			if err := uploadBlocks(ctx, tenant.tenantID, dbDir, blockIDs); err != nil {
+			if err := uploadBlocks(ctx, tenant.tenantID, dbDir, localMetas); err != nil {
 				return err
 			}
 
@@ -393,7 +395,7 @@ func (b *TSDBBuilder) CompactAndUpload(ctx context.Context, uploadBlocks blockUp
 		})
 	}
 	err = eg.Wait()
-	return int(numBlocks.Load()), err
+	return metas, err
 }
 
 // Close closes all DBs and deletes their data directories.

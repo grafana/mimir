@@ -328,24 +328,25 @@ func TestIngester_StartReadRequest(t *testing.T) {
 			}
 			defer services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
 
-			finish, err := failingIng.startReadRequest()
+			ctx, err := failingIng.StartReadRequest(context.Background())
 			require.Equal(t, int64(tc.expectedAcquiredPermitCount), acquiredPermitCount.Load())
 
 			if err == nil {
 				require.Nil(t, tc.verifyErr)
-				require.NotNil(t, finish)
+				require.NotNil(t, ctx)
 
 				// Calling finish must release a potentially acquired permit
 				// and in that case record a success, and no failures.
 				expectedSuccessCount := acquiredPermitCount.Load()
-				finish(err)
-				require.Equal(t, int64(0), acquiredPermitCount.Load())
+				require.Equal(t, tc.expectedAcquiredPermitCount, int(acquiredPermitCount.Load()))
+				finishFn, _ := failingIng.PrepareReadRequest(ctx)
+				finishFn(nil)
 				require.Equal(t, expectedSuccessCount, recordedSuccessCount.Load())
 				require.Equal(t, int64(0), recordedFailureCount.Load())
 			} else {
 				require.NotNil(t, tc.verifyErr)
 				tc.verifyErr(err)
-				require.Nil(t, finish)
+				require.Nil(t, ctx)
 			}
 		})
 	}
@@ -4057,7 +4058,7 @@ func Test_Ingester_LabelNames(t *testing.T) {
 			labels.MustNewMatcher(labels.MatchNotEqual, "route", "get_user"),
 		}
 
-		req, err := client.ToLabelNamesRequest(0, model.Latest, matchers)
+		req, err := client.ToLabelNamesRequest(0, model.Latest, nil, matchers)
 		require.NoError(t, err)
 
 		// Get label names
@@ -4066,19 +4067,60 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		assert.ElementsMatch(t, expected, res.LabelNames)
 	})
 
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+	t.Run("without matchers, with limit", func(t *testing.T) {
+		expected := []string{"__name__", "route"}
 
-		_, err := i.LabelNames(ctx, &client.LabelNamesRequest{})
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
+		hints := &storage.LabelHints{Limit: 2}
+
+		req, err := client.ToLabelNamesRequest(0, model.Latest, hints, nil)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.LabelNames(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
+	})
+
+	t.Run("without matchers, with limit set to 0", func(t *testing.T) {
+		expected := []string{"__name__", "status", "route"}
+
+		hints := &storage.LabelHints{Limit: 0}
+
+		req, err := client.ToLabelNamesRequest(0, model.Latest, hints, nil)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.LabelNames(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
+	})
+
+	t.Run("without matchers, with limit set to same number of items returned", func(t *testing.T) {
+		expected := []string{"__name__", "status", "route"}
+
+		hints := &storage.LabelHints{Limit: 3}
+
+		req, err := client.ToLabelNamesRequest(0, model.Latest, hints, nil)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.LabelNames(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
+	})
+
+	t.Run("without matchers, with limit set to a higher number than the items returned", func(t *testing.T) {
+		expected := []string{"__name__", "status", "route"}
+
+		hints := &storage.LabelHints{Limit: 10}
+
+		req, err := client.ToLabelNamesRequest(0, model.Latest, hints, nil)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.LabelNames(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
 	})
 }
 
@@ -4130,19 +4172,24 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		assert.ElementsMatch(t, expectedValues, res.LabelValues)
 	}
 
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+	expectedLimit := map[int][]string{
+		0: {"test_1", "test_2"}, // no limit
+		1: {"test_1"},
+		2: {"test_1", "test_2"}, // limit equals to the number of results
+		4: {"test_1", "test_2"}, // limit greater than the number of results
+	}
+	t.Run("with limit", func(t *testing.T) {
+		for limit, expectedValues := range expectedLimit {
+			hints := &storage.LabelHints{Limit: limit}
 
-		_, err := i.LabelValues(ctx, &client.LabelValuesRequest{})
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
+			req, err := client.ToLabelValuesRequest("__name__", 0, model.Latest, hints, nil)
+			require.NoError(t, err)
+
+			// Get label names
+			res, err := i.LabelValues(ctx, req)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, expectedValues, res.LabelValues)
+		}
 	})
 }
 
@@ -4338,21 +4385,6 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 			assert.ElementsMatch(t, extractItemsWithSortedValues(s.SentResponses), tc.expected)
 		})
 	}
-
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
-
-		err := i.LabelNamesAndValues(&client.LabelNamesAndValuesRequest{}, nil)
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
-	})
 }
 
 func TestIngester_LabelValuesCardinality(t *testing.T) {
@@ -4458,21 +4490,6 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 			require.ElementsMatch(t, s.SentResponses[0].Items, tc.expectedItems)
 		})
 	}
-
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
-
-		err := i.LabelValuesCardinality(&client.LabelValuesCardinalityRequest{}, nil)
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
-	})
 }
 
 type series struct {
@@ -4937,21 +4954,6 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 			assert.ElementsMatch(t, testData.expected, res.Metric)
 		})
 	}
-
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
-
-		_, err := i.MetricsForLabelMatchers(ctx, &client.MetricsForLabelMatchersRequest{})
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
-	})
 }
 
 func Test_Ingester_MetricsForLabelMatchers_Deduplication(t *testing.T) {
@@ -5343,7 +5345,7 @@ func TestIngester_QueryStream(t *testing.T) {
 		})
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
-		err = i.QueryStream(&client.QueryRequest{}, nil)
+		_, err := i.StartReadRequest(context.Background())
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
@@ -5781,7 +5783,7 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 
 func TestIngester_QueryExemplars(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	ctx := user.InjectOrgID(context.Background(), userID)
+	user.InjectOrgID(context.Background(), userID)
 	registry := prometheus.NewRegistry()
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
 	require.NoError(t, err)
@@ -5793,21 +5795,6 @@ func TestIngester_QueryExemplars(t *testing.T) {
 	// Wait until it's healthy.
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
-	})
-
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
-
-		_, err := i.QueryExemplars(ctx, &client.ExemplarQueryRequest{})
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
 
@@ -7332,21 +7319,6 @@ func Test_Ingester_UserStats(t *testing.T) {
 	// Active series are considered according to the wall time during the push, not the sample timestamp.
 	// Therefore all three series are still active at this point.
 	assert.Equal(t, uint64(3), res.NumSeries)
-
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
-
-		_, err := i.UserStats(ctx, &client.UserStatsRequest{})
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
-	})
 }
 
 func Test_Ingester_AllUserStats(t *testing.T) {

@@ -44,6 +44,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/storage"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
@@ -1394,6 +1395,10 @@ func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize 
 	return ctx, err
 }
 
+func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error) {
+	return nil, nil
+}
+
 // startPushRequest does limits checks at the beginning of Push request in distributor.
 // This can be called from different places, even multiple times for the same request:
 //
@@ -1971,13 +1976,13 @@ func queryIngesterPartitionsRingZoneSorter(preferredZone string) ring.ZoneSorter
 
 // LabelValuesForLabelName returns the label values associated with the given labelName, among all series with samples
 // timestamp between from and to, and series labels matching the optional matchers.
-func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, matchers ...*labels.Matcher) ([]string, error) {
+func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to model.Time, labelName model.LabelName, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := ingester_client.ToLabelValuesRequest(labelName, from, to, matchers)
+	req, err := ingester_client.ToLabelValuesRequest(labelName, from, to, hints, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -2003,6 +2008,10 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 
 	// We need the values returned to be sorted.
 	slices.Sort(values)
+
+	if hints != nil && hints.Limit > 0 && len(values) > hints.Limit {
+		values = values[:hints.Limit]
+	}
 
 	return values, nil
 }
@@ -2693,13 +2702,13 @@ func maxFromZones[T ~float64 | ~uint64](seriesCountByZone map[string]T) (val T) 
 
 // LabelNames returns the names of all labels from series with samples timestamp between from and to, and matching
 // the input optional series label matchers. The returned label names are sorted.
-func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]string, error) {
+func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := ingester_client.ToLabelNamesRequest(from, to, matchers)
+	req, err := ingester_client.ToLabelNamesRequest(from, to, hints, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -2724,6 +2733,10 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 	}
 
 	slices.Sort(values)
+
+	if hints != nil && hints.Limit > 0 && len(values) > hints.Limit {
+		values = values[:hints.Limit]
+	}
 
 	return values, nil
 }

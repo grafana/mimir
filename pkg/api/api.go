@@ -257,7 +257,7 @@ func (a *API) RegisterRuntimeConfig(runtimeConfigHandler http.HandlerFunc, userL
 
 const PrometheusPushEndpoint = "/api/v1/push"
 const OTLPPushEndpoint = "/otlp/v1/metrics"
-const InfluxPushEndpoint = "/api/v1/influx/push"
+const InfluxPushEndpoint = "/api/v1/push/influx/write"
 
 // RegisterDistributor registers the endpoints associated with the distributor.
 func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distributor.Config, reg prometheus.Registerer, limits *validation.Overrides) {

@@ -166,14 +166,9 @@ func TestBlockBuilder_StartWithExistingCommit(t *testing.T) {
 	// Because there is a commit, on startup, block-builder must consume samples only after the commit.
 	expSamples := producedSamples[1+(len(producedSamples)/2):]
 
-	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
-	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	compareQuery(t,
-		db,
-		expSamples,
-		nil,
+	compareQueryWithDir(t,
+		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
+		expSamples, nil,
 		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 	)
 }
@@ -257,14 +252,9 @@ func TestBlockBuilder_StartWithExistingCommit_PullMode(t *testing.T) {
 	// Because there is a commit, on startup, block-builder must consume samples only after the commit.
 	expSamples := producedSamples[1+(len(producedSamples)/2):]
 
-	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
-	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	compareQuery(t,
-		db,
-		expSamples,
-		nil,
+	compareQueryWithDir(t,
+		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
+		expSamples, nil,
 		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 	)
 }
@@ -318,15 +308,10 @@ func TestBlockBuilder_StartWithLookbackOnNoCommit(t *testing.T) {
 		cortex_blockbuilder_consumer_lag_records{partition="1"} 0
 	`), "cortex_blockbuilder_consumer_lag_records"))
 
-	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
-	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	// There should be no samples in the tsdb.
-	compareQuery(t,
-		db,
-		nil,
-		nil,
+	compareQueryWithDir(t,
+		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
+		nil, nil,
 		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 	)
 }
@@ -394,15 +379,9 @@ func TestBlockBuilder_StartWithLookbackOnNoCommit_PullMode(t *testing.T) {
 		scheduler.completeJobCalls,
 	)
 
-	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
-	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	// There should be no samples in the tsdb.
-	compareQuery(t,
-		db,
-		nil,
-		nil,
+	compareQueryWithDir(t,
+		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
+		nil, nil,
 		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 	)
 }
@@ -470,14 +449,9 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection(t *testing.T) {
 		cortex_blockbuilder_consumer_lag_records{partition="1"} 1
 	`), "cortex_blockbuilder_consumer_lag_records"))
 
-	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
-	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	compareQuery(t,
-		db,
-		producedSamples,
-		nil,
+	compareQueryWithDir(t,
+		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
+		producedSamples, nil,
 		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 	)
 }
@@ -581,14 +555,9 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection_PullMode(t *testi
 		scheduler.completeJobCalls,
 	)
 
-	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
-	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	compareQuery(t,
-		db,
-		producedSamples,
-		nil,
+	compareQueryWithDir(t,
+		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
+		producedSamples, nil,
 		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 	)
 }
@@ -641,15 +610,9 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 	require.Eventually(t, func() bool { return kafkaCommits.Load() > 1 }, 5*time.Second, 100*time.Millisecond, "expected kafka commits")
 
 	for _, tenant := range tenants {
-		bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
-		db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
-		require.NoError(t, err)
-		t.Cleanup(func() { require.NoError(t, db.Close()) })
-
-		compareQuery(t,
-			db,
-			producedPerTenantSamples[tenant],
-			nil,
+		compareQueryWithDir(t,
+			path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant),
+			producedPerTenantSamples[tenant], nil,
 			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 		)
 	}
@@ -723,15 +686,9 @@ func TestBlockBuilder_WithMultipleTenants_PullMode(t *testing.T) {
 	)
 
 	for _, tenant := range tenants {
-		bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant)
-		db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
-		require.NoError(t, err)
-		t.Cleanup(func() { require.NoError(t, db.Close()) })
-
-		compareQuery(t,
-			db,
-			producedPerTenantSamples[tenant],
-			nil,
+		compareQueryWithDir(t,
+			path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant),
+			producedPerTenantSamples[tenant], nil,
 			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 		)
 	}
@@ -817,16 +774,9 @@ func TestBlockBuilder_WithNonMonotonicRecordTimestamps(t *testing.T) {
 	runTest := func(name string, end time.Time, expSamples []mimirpb.Sample) {
 		t.Run(name, func(t *testing.T) {
 			require.NoError(t, bb.nextConsumeCycle(ctx, end))
-
-			bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenantID)
-			db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
-			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, db.Close()) })
-
-			compareQuery(t,
-				db,
-				expSamples,
-				nil,
+			compareQueryWithDir(t,
+				path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenantID),
+				expSamples, nil,
 				labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 			)
 		})
@@ -889,14 +839,9 @@ func TestBlockBuilder_RetryOnTransientErrors(t *testing.T) {
 	// We expect at least several cycles because of how the pushed records were structured.
 	require.Eventually(t, func() bool { return kafkaCommits.Load() >= 1 }, 50*time.Second, 100*time.Millisecond, "expected kafka commits")
 
-	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
-	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	compareQuery(t,
-		db,
-		producedSamples,
-		nil,
+	compareQueryWithDir(t,
+		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
+		producedSamples, nil,
 		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 	)
 }
@@ -1180,16 +1125,133 @@ func TestPullMode(t *testing.T) {
 		scheduler.completeJobCalls,
 	)
 
-	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
-	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	compareQuery(t,
-		db,
-		expSamples,
-		nil,
+	compareQueryWithDir(t,
+		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
+		expSamples, nil,
 		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
 	)
+}
+
+func TestNoPartiallyConsumedRegions(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	kafkaCluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	kafkaClient := mustKafkaClient(t, kafkaAddr)
+	kafkaClient.AddConsumeTopics(testTopic)
+
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
+	cfg.NoPartiallyConsumedRegion = true
+	cfg.ConsumeIntervalBuffer = 5 * time.Minute
+
+	// Set up a hook to track commits from block-builder to kafka. Those indicate the end of a cycle.
+	kafkaCommits := atomic.NewInt32(0)
+	kafkaCluster.ControlKey(kmsg.OffsetCommit.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
+		kafkaCommits.Add(1)
+		return nil, nil, false
+	})
+
+	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
+	require.NoError(t, err)
+
+	require.NoError(t, bb.starting(ctx))
+	t.Cleanup(func() {
+		require.NoError(t, bb.stoppingStandaloneMode(nil))
+	})
+
+	// Producing some records
+	cycleEnd := time.Now().Truncate(cfg.ConsumeInterval).Add(10 * time.Minute)
+	var producedSamples []mimirpb.Sample
+	kafkaRecTime := cycleEnd.Truncate(cfg.ConsumeInterval).Add(-2 * time.Hour)
+	for kafkaRecTime.Before(cycleEnd) {
+		samples := produceSamples(ctx, t, kafkaClient, 0, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
+		producedSamples = append(producedSamples, samples...)
+
+		kafkaRecTime = kafkaRecTime.Add(time.Minute)
+	}
+	require.NotEmpty(t, producedSamples)
+
+	// Since there is no partial region, all the samples until the 5th minute is consumed.
+	// Since we are excluding 5 mins, there will be only 4 samples missing.
+	err = bb.nextConsumeCycle(ctx, cycleEnd.Add(-5*time.Minute))
+	require.NoError(t, err)
+	expSamples := producedSamples[:len(producedSamples)-4]
+
+	db, err := tsdb.Open(path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"), promslog.NewNopLogger(), nil, nil, nil)
+	require.NoError(t, err)
+	compareQuery(t,
+		db, expSamples, nil,
+		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+	)
+	require.NoError(t, db.Close())
+
+	lag, err := bb.getLagForPartition(ctx, 0)
+	require.NoError(t, err)
+	state := PartitionStateFromLag(bb.logger, lag, bb.fallbackOffsetMillis)
+	require.Equal(t, len(producedSamples)-4, int(state.Commit.At)) // Commit point is where to start next.
+	require.Equal(t, len(producedSamples)-5, int(state.LastSeenOffset))
+
+	// Consuming until end gets all the samples in the block.
+	err = bb.nextConsumeCycle(ctx, cycleEnd)
+	require.NoError(t, err)
+
+	compareQueryWithDir(t,
+		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
+		producedSamples, nil,
+		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+	)
+
+	lag, err = bb.getLagForPartition(ctx, 0)
+	require.NoError(t, err)
+	state = PartitionStateFromLag(bb.logger, lag, bb.fallbackOffsetMillis)
+	require.Equal(t, len(producedSamples), int(state.Commit.At)) // Commit point is where to start next.
+	require.Equal(t, len(producedSamples)-1, int(state.LastSeenOffset))
+}
+
+// This is a temporary test for quick iteration on the new way of consuming partition.
+// TODO: integrate it with other tests.
+func TestGetBlockCategoryCount(t *testing.T) {
+	evenHrBounary := time.UnixMilli(10 * time.Hour.Milliseconds())
+	oddHrBounary := time.UnixMilli(9 * time.Hour.Milliseconds())
+	cases := []struct {
+		sectionEndTime   time.Time
+		metas            []tsdb.BlockMeta
+		prev, curr, next int
+	}{
+		{
+			sectionEndTime: evenHrBounary,
+			metas: []tsdb.BlockMeta{
+				{MinTime: evenHrBounary.Add(-4 * time.Hour).UnixMilli(), MaxTime: evenHrBounary.Add(-2 * time.Hour).UnixMilli()},
+				{MinTime: evenHrBounary.Add(-2 * time.Hour).UnixMilli(), MaxTime: evenHrBounary.UnixMilli()},
+				{MinTime: evenHrBounary.UnixMilli(), MaxTime: evenHrBounary.Add(5 * time.Minute).UnixMilli()},
+			},
+			prev: 1, curr: 1, next: 1,
+		},
+		{
+			sectionEndTime: oddHrBounary,
+			metas: []tsdb.BlockMeta{
+				{MinTime: oddHrBounary.Add(-3 * time.Hour).UnixMilli(), MaxTime: oddHrBounary.Add(-1 * time.Hour).UnixMilli()},
+				{MinTime: oddHrBounary.Add(-1 * time.Hour).UnixMilli(), MaxTime: oddHrBounary.Add(time.Hour).UnixMilli()},
+				// Although this is after the sectionEndTime, it is still the same 2h block.
+				{MinTime: oddHrBounary.UnixMilli(), MaxTime: oddHrBounary.Add(time.Hour).UnixMilli()},
+				{MinTime: oddHrBounary.Add(time.Hour).UnixMilli(), MaxTime: oddHrBounary.Add(2 * time.Hour).UnixMilli()},
+			},
+			prev: 1, curr: 2, next: 1,
+		},
+	}
+	for i, c := range cases {
+		// Buffer to add to sectionEndTime.
+		for _, buffer := range []time.Duration{0, 5 * time.Minute, 10 * time.Minute, 15 * time.Minute} {
+			t.Run(fmt.Sprintf("%d,buffer=%s", i, buffer.String()), func(t *testing.T) {
+				prev, curr, next := getBlockCategoryCount(c.sectionEndTime.Add(buffer), c.metas)
+				require.Equal(t, c.prev, prev)
+				require.Equal(t, c.curr, curr)
+				require.Equal(t, c.next, next)
+			})
+		}
+	}
 }
 
 func blockBuilderPullModeConfig(t *testing.T, addr string) (Config, *validation.Overrides) {

@@ -39,10 +39,11 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 				require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
 			})
 
-			// Wait until it's healthy
-			test.Poll(t, 5*time.Second, 1, func() interface{} {
-				return i.lifecycler.HealthyInstancesCount()
-			})
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			// Tests require that we've joined the ring so ensure that here.
+			require.NoError(t, ring.WaitInstanceState(ctx, ingestersRing, cfg.IngesterRing.InstanceID, ring.ACTIVE))
 		}
 
 		return i, ingestersRing

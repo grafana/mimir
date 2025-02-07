@@ -966,11 +966,11 @@ groups:
                   # Add "metric" label.
                   + on(cluster, namespace, horizontalpodautoscaler) group_right
                     # Using `max by ()` so that series churn doesn't break the promQL join
-                    max by (cluster, namespace, horizontalpodautoscaler) (
+                    max by (cluster, namespace, horizontalpodautoscaler, metric) (
                       label_replace(kube_horizontalpodautoscaler_spec_target_metric*0, "metric", "$1", "metric_name", "(.+)")
                     )
                   > 0),
-                  "scaledObject", "$1", "horizontalpodautoscaler", "keda-hpa-(.*)"
+                  "scaledObject", "$1", "horizontalpodautoscaler", "keda-hpa-(?:mimir-)?(.*)"
                 )
             )
             # Alert only if the scaling metric exists and is > 0. If the KEDA ScaledObject is configured to scale down 0,
@@ -1155,27 +1155,35 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuildernocycleprocessing
           expr: |
             max by(cluster, namespace, instance) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[60m]))) == 0
-          for: 5m
+          for: 20m
           labels:
-            severity: warning
+            severity: critical
         - alert: MimirBlockBuilderLagging
           annotations:
-            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}%.
+            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderlagging
           expr: |
             max by(cluster, namespace, instance) (max_over_time(cortex_blockbuilder_consumer_lag_records[10m])) > 4e6
           for: 75m
           labels:
             severity: warning
+        - alert: MimirBlockBuilderLagging
+          annotations:
+            message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} reports partition lag of {{ printf "%.2f" $value }}.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderlagging
+          expr: |
+            max by(cluster, namespace, instance) (max_over_time(cortex_blockbuilder_consumer_lag_records[10m])) > 4e6
+          for: 140m
+          labels:
+            severity: critical
         - alert: MimirBlockBuilderCompactAndUploadFailed
           annotations:
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to compact and upload blocks.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuildercompactanduploadfailed
           expr: |
             sum by (cluster, namespace, instance) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1m])) > 0
-          for: 5m
           labels:
-            severity: warning
+            severity: critical
     - name: mimir_continuous_test
       rules:
         - alert: MimirContinuousTestNotRunningOnWrites

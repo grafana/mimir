@@ -18,6 +18,7 @@ import (
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -74,6 +75,7 @@ func newWithSchedulerClient(
 	limits *validation.Overrides,
 	schedulerClient schedulerpb.SchedulerClient,
 ) (*BlockBuilder, error) {
+
 	b := &BlockBuilder{
 		cfg:                 cfg,
 		logger:              logger,
@@ -484,7 +486,7 @@ func (b *BlockBuilder) consumePartitionSection(
 		return state, nil
 	}
 
-	var numBlocks int
+	var blockMetas []tsdb.BlockMeta
 	defer func(t time.Time, startState PartitionState) {
 		// No need to log or track time of the unfinished section. Just bail out.
 		if errors.Is(retErr, context.Canceled) {
@@ -502,7 +504,7 @@ func (b *BlockBuilder) consumePartitionSection(
 		level.Info(logger).Log("msg", "done consuming", "duration", dur,
 			"last_block_end", startState.LastBlockEnd, "curr_block_end", blockEnd,
 			"last_seen_offset", startState.LastSeenOffset, "curr_seen_offset", retState.LastSeenOffset,
-			"num_blocks", numBlocks)
+			"num_blocks", len(blockMetas))
 	}(time.Now(), state)
 
 	// We always rewind the partition's offset to the commit offset by reassigning the partition to the client (this triggers partition assignment).
@@ -557,7 +559,9 @@ consumerLoop:
 			}
 
 			recordAlreadyProcessed := rec.Offset <= state.LastSeenOffset
-			allSamplesProcessed, err := builder.Process(ctx, rec, state.LastBlockEnd.UnixMilli(), blockEnd.UnixMilli(), recordAlreadyProcessed)
+			allSamplesProcessed, err := builder.Process(
+				ctx, rec, state.LastBlockEnd.UnixMilli(), blockEnd.UnixMilli(),
+				recordAlreadyProcessed, b.cfg.NoPartiallyConsumedRegion)
 			if err != nil {
 				// All "non-terminal" errors are handled by the TSDBBuilder.
 				return state, fmt.Errorf("process record in partition %d at offset %d: %w", rec.Partition, rec.Offset, err)
@@ -603,10 +607,15 @@ consumerLoop:
 	}
 
 	var err error
-	numBlocks, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
+	blockMetas, err = builder.CompactAndUpload(ctx, b.uploadBlocks)
 	if err != nil {
 		return state, err
 	}
+
+	prev, curr, next := getBlockCategoryCount(sectionEndTime, blockMetas)
+	b.blockBuilderMetrics.blockCounts.WithLabelValues("previous").Add(float64(prev))
+	b.blockBuilderMetrics.blockCounts.WithLabelValues("current").Add(float64(curr))
+	b.blockBuilderMetrics.blockCounts.WithLabelValues("next").Add(float64(next))
 
 	// We should take the max of last seen offsets. If the partition was lagging due to some record not being processed
 	// because of a future sample, we might be coming back to the same consume cycle again.
@@ -634,6 +643,26 @@ consumerLoop:
 	}
 
 	return newState, nil
+}
+
+func getBlockCategoryCount(sectionEndTime time.Time, blockMetas []tsdb.BlockMeta) (prev, curr, next int) {
+	// Doing -30m will take care of ConsumeIntervalBuffer up to 30 mins.
+	// For sectionEndTime of 13:15, the 2-hour block will be 12:00-14:00.
+	// For sectionEndTime of 14:15, the 2-hour block will be 14:00-16:00.
+	currHour := sectionEndTime.Add(-30 * time.Minute).Truncate(2 * time.Hour).Hour()
+	for _, m := range blockMetas {
+		// The min and max time can be aligned to the 2hr mark. The MaxTime is exclusive of the last sample.
+		// So taking average of both will remove any edge cases.
+		hour := time.UnixMilli(m.MinTime/2 + m.MaxTime/2).Truncate(2 * time.Hour).Hour()
+		if hour < currHour {
+			prev++
+		} else if hour > currHour {
+			next++
+		} else {
+			curr++
+		}
+	}
+	return
 }
 
 type stateCommitter interface {
@@ -677,20 +706,17 @@ func (c *noOpCommitter) commitState(_ context.Context, _ *BlockBuilder, _ log.Lo
 
 var _ stateCommitter = &noOpCommitter{}
 
-func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string, blockIDs []string) error {
+func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string, metas []tsdb.BlockMeta) error {
 	buc := bucket.NewUserBucketClient(tenantID, b.bucket, b.limits)
-	for _, bid := range blockIDs {
-		blockDir := path.Join(dbDir, bid)
-		meta, err := block.ReadMetaFromDir(blockDir)
-		if err != nil {
-			return fmt.Errorf("read block meta for block %s (tenant %s): %w", bid, tenantID, err)
-		}
-
-		if meta.Stats.NumSamples == 0 {
+	for _, m := range metas {
+		if m.Stats.NumSamples == 0 {
 			// No need to upload empty block.
-			level.Info(b.logger).Log("msg", "skip uploading empty block", "tenant", tenantID, "block", bid)
+			level.Info(b.logger).Log("msg", "skip uploading empty block", "tenant", tenantID, "block", m.ULID.String())
 			return nil
 		}
+
+		meta := &block.Meta{BlockMeta: m}
+		blockDir := path.Join(dbDir, meta.ULID.String())
 
 		meta.Thanos.Source = block.BlockBuilderSource
 		meta.Thanos.SegmentFiles = block.GetSegmentFiles(blockDir)
@@ -710,11 +736,11 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 			if err == nil {
 				break
 			}
-			level.Warn(b.logger).Log("msg", "failed to upload block; will retry", "err", err, "block", bid, "tenant", tenantID)
+			level.Warn(b.logger).Log("msg", "failed to upload block; will retry", "err", err, "block", meta.ULID.String(), "tenant", tenantID)
 			boff.Wait()
 		}
 		if err := boff.ErrCause(); err != nil {
-			return fmt.Errorf("upload block %s (tenant %s): %w", bid, tenantID, err)
+			return fmt.Errorf("upload block %s (tenant %s): %w", meta.ULID.String(), tenantID, err)
 		}
 	}
 	return nil

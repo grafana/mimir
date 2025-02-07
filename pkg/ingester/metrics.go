@@ -12,6 +12,7 @@ import (
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/tsdb"
 	"go.uber.org/atomic"
 
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -522,6 +523,9 @@ type tsdbMetrics struct {
 	memSeriesCreatedTotal *prometheus.Desc
 	memSeriesRemovedTotal *prometheus.Desc
 
+	headPostingsForMatchersCacheMetrics  *tsdb.PostingsForMatchersCacheMetrics
+	blockPostingsForMatchersCacheMetrics *tsdb.PostingsForMatchersCacheMetrics
+
 	regs *dskit_metrics.TenantRegistries
 }
 
@@ -701,6 +705,9 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 			"cortex_ingester_memory_series_removed_total",
 			"The total number of series that were removed per user.",
 			[]string{"user"}, nil),
+
+		headPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_head_", r)),
+		blockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_block_", r)),
 	}
 
 	if r != nil {

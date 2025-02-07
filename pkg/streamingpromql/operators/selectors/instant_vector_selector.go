@@ -25,6 +25,7 @@ type InstantVectorSelector struct {
 	Selector                 *Selector
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	Stats                    *types.QueryStats
+	ReturnSampleTimestamps   bool // true if this operator is wrapped directly in the timestamp() function and so should return the underlying sample timestamps
 
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
@@ -116,8 +117,14 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 				}
 			}
 		}
+
 		if value.IsStaleNaN(f) || (h != nil && value.IsStaleNaN(h.Sum)) {
 			continue
+		}
+
+		if v.ReturnSampleTimestamps {
+			f = float64(t) / 1000
+			h = nil
 		}
 
 		// if (f, h) have been set by PeekPrev, we do not know if f is 0 because that's the actual value, or because

@@ -1402,7 +1402,7 @@ kind: StatefulSet
 metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
-    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-delayed-downscale: 13h
     grafana.com/rollout-mirror-replicas-from-resource-api-version: rollout-operator.grafana.com/v1
     grafana.com/rollout-mirror-replicas-from-resource-kind: ReplicaTemplate
@@ -1534,7 +1534,7 @@ kind: StatefulSet
 metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
-    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-delayed-downscale: 13h
     grafana.com/rollout-mirror-replicas-from-resource-api-version: rollout-operator.grafana.com/v1
     grafana.com/rollout-mirror-replicas-from-resource-kind: ReplicaTemplate
@@ -1667,7 +1667,7 @@ kind: StatefulSet
 metadata:
   annotations:
     grafana.com/prepare-downscale-http-path: ingester/prepare-shutdown
-    grafana.com/prepare-downscale-http-port: "80"
+    grafana.com/prepare-downscale-http-port: "8080"
     grafana.com/rollout-delayed-downscale: 13h
     grafana.com/rollout-mirror-replicas-from-resource-api-version: rollout-operator.grafana.com/v1
     grafana.com/rollout-mirror-replicas-from-resource-kind: ReplicaTemplate
