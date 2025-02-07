@@ -19,6 +19,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -391,6 +392,17 @@ func WithOrgIDMiddleware(ctx context.Context, req *httpgrpc.HTTPRequest) error {
 		Values: []string{orgID},
 	})
 	return nil
+}
+
+// WithClusterMiddleware returns a Middleware that injects a cluster header.
+func WithClusterMiddleware(cluster string) Middleware {
+	return func(ctx context.Context, req *httpgrpc.HTTPRequest) error {
+		req.Headers = append(req.Headers, &httpgrpc.Header{
+			Key:    textproto.CanonicalMIMEHeaderKey(clusterutil.ClusterHeader),
+			Values: []string{cluster},
+		})
+		return nil
+	}
 }
 
 func getHeader(headers []*httpgrpc.Header, name string) string {
