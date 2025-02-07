@@ -28,7 +28,7 @@ Since inflight limits are, at most, a multiple of the current inflight ingester 
 
 ## Request rejection
 
-Ingesters support separate adaptive limiters for push and read requests since these may be overloaded by different resources at different times. When ingesters are heavily loaded these limiters may be full, and when the load is sustained, queues may fill up as well. When this happens, requests may be rejected, with a preference for rejecting read requests being before push requests.
+Ingesters support separate adaptive limiters for push and read requests, since these requests may be overloaded by different resources at different times. When ingesters are heavily loaded, these limiters may be full, and when the load is sustained, queues might fill up as well. When this happens, requests may be rejected, with a preference for rejecting read requests before rejecting push requests.
 
 ## Configure Grafana Mimir ingester adaptive limiters
 
