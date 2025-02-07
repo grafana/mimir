@@ -2,6 +2,7 @@ package email
 
 import (
 	"context"
+	"io"
 	"net/url"
 	"os"
 	"path"
@@ -57,16 +58,19 @@ func (en *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 	}
 
 	// Extend alerts data with images, if available.
-	var embeddedFiles []string
+	embeddedContents := make([]receivers.EmbeddedContent, 0)
 	_ = images.WithStoredImages(ctx, en.log, en.images,
 		func(index int, image images.Image) error {
 			if len(image.URL) != 0 {
 				data.Alerts[index].ImageURL = image.URL
 			} else if len(image.Path) != 0 {
-				_, err := os.Stat(image.Path)
-				if err == nil {
-					data.Alerts[index].EmbeddedImage = filepath.Base(image.Path)
-					embeddedFiles = append(embeddedFiles, image.Path)
+				if b, err := readFile(image.Path); err == nil {
+					name := filepath.Base(image.Path)
+					data.Alerts[index].EmbeddedImage = name
+					embeddedContents = append(embeddedContents, receivers.EmbeddedContent{
+						Name:    name,
+						Content: b,
+					})
 				} else {
 					en.log.Warn("failed to get image file for email attachment", "file", image.Path, "error", err)
 				}
@@ -88,10 +92,10 @@ func (en *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 			"RuleUrl":           ruleURL,
 			"AlertPageUrl":      alertPageURL,
 		},
-		EmbeddedFiles: embeddedFiles,
-		To:            en.settings.Addresses,
-		SingleEmail:   en.settings.SingleEmail,
-		Template:      "ng_alert_notification",
+		EmbeddedContents: embeddedContents,
+		To:               en.settings.Addresses,
+		SingleEmail:      en.settings.SingleEmail,
+		Template:         "ng_alert_notification",
 	}
 
 	if tmplErr != nil {
@@ -107,4 +111,17 @@ func (en *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 
 func (en *Notifier) SendResolved() bool {
 	return !en.GetDisableResolveMessage()
+}
+
+func readFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		_ = f.Close()
+	}()
+
+	return io.ReadAll(f)
 }
