@@ -442,12 +442,13 @@ local filename = 'mimir-reads.json';
     .addRows(
       $.getObjectStoreRows('Blocks object store (querier accesses)', 'querier')
     )
-    .addRow(
+    .addRowIf(
+      $._config.show_reactive_limiter_panels,
       $.row('Instance Limits')
       .addPanel(
         $.timeseriesPanel('Ingester per %s blocked requests' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'sum by (%s) (cortex_ingester_adaptive_limiter_blocked_requests{%s, request_type="read"})'
+          'sum by (%s) (cortex_ingester_reactive_limiter_blocked_requests{%s, request_type="read"})'
           % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
         ) +
         { fieldConfig+: { defaults+: { unit: 'req' } } }
@@ -455,7 +456,7 @@ local filename = 'mimir-reads.json';
       .addPanel(
         $.timeseriesPanel('Ingester per %s inflight requests' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'sum by (%s) (cortex_ingester_adaptive_limiter_inflight_requests{%s, request_type="read"})'
+          'sum by (%s) (cortex_ingester_reactive_limiter_inflight_requests{%s, request_type="read"})'
           % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
         ) +
         { fieldConfig+: { defaults+: { unit: 'req' } } }
@@ -463,7 +464,7 @@ local filename = 'mimir-reads.json';
       .addPanel(
         $.timeseriesPanel('Ingester %s pod inflight request limit' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'sum by (%s) (cortex_ingester_adaptive_limiter_inflight_limit{%s, request_type="read"})'
+          'sum by (%s) (cortex_ingester_reactive_limiter_inflight_limit{%s, request_type="read"})'
           % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
         ) +
         { fieldConfig+: { defaults+: { unit: 'req' } } }
