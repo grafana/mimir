@@ -281,6 +281,89 @@ func TestLimitsMiddleware_MaxQueryLookback_InstantQuery(t *testing.T) {
 	}
 }
 
+func TestLimitsMiddleware_MaxFutureQueryWindow_RangeQueryAndRemoteRead(t *testing.T) {
+	now := time.Now()
+	maxFutureWindow := 7 * 24 * time.Hour
+	tests := []struct {
+		name            string
+		startTime       time.Time
+		endTime         time.Time
+		maxFutureWindow time.Duration
+		expectedEndTs   time.Time
+		expectedSkipped bool
+	}{
+		{
+			name:            "queries into past are not adjusted with max future window enabled",
+			startTime:       now.Add(-365 * 24 * time.Hour),
+			endTime:         now,
+			maxFutureWindow: maxFutureWindow,
+			expectedEndTs:   now,
+		},
+		{
+			name:            "queries exclusively past max future window are skipped",
+			startTime:       now.Add((7*24 + 1) * time.Hour),
+			endTime:         now.Add(8 * 24 * time.Hour),
+			maxFutureWindow: maxFutureWindow,
+			expectedSkipped: true,
+		},
+		{
+			name:            "queries partially into future are adjusted",
+			startTime:       now.Add(-24 * time.Hour),
+			endTime:         now.Add(8 * 24 * time.Hour),
+			maxFutureWindow: maxFutureWindow,
+			expectedEndTs:   now.Add(maxFutureWindow),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reqs := map[string]MetricsQueryRequest{
+				"range query": &PrometheusRangeQueryRequest{
+					start: util.TimeToMillis(tt.startTime),
+					end:   util.TimeToMillis(tt.endTime),
+				},
+				"remote read": &remoteReadQueryRequest{
+					path: remoteReadPathSuffix,
+					query: &prompb.Query{
+						StartTimestampMs: util.TimeToMillis(tt.startTime),
+						EndTimestampMs:   util.TimeToMillis(tt.endTime),
+					},
+				},
+			}
+
+			for reqType, req := range reqs {
+				t.Run(reqType, func(t *testing.T) {
+					limits := mockLimits{maxFutureQueryWindow: tt.maxFutureWindow}
+					middleware := newLimitsMiddleware(limits, log.NewNopLogger())
+
+					innerRes := newEmptyPrometheusResponse()
+					inner := &mockHandler{}
+					inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
+
+					ctx := user.InjectOrgID(context.Background(), "test")
+					outer := middleware.Wrap(inner)
+					res, err := outer.Do(ctx, req)
+					require.NoError(t, err)
+
+					if tt.expectedSkipped {
+						// We expect an empty response, but not the one returned by the inner handler
+						// which we expect has been skipped.
+						assert.NotSame(t, innerRes, res)
+						assert.Len(t, inner.Calls, 0)
+					} else {
+						// We expect the response returned by the inner handler.
+						assert.Same(t, innerRes, res)
+
+						// Assert on the time range of the request passed to the inner handler (5s delta).
+						delta := float64(5000)
+						require.Len(t, inner.Calls, 1)
+						assert.InDelta(t, util.TimeToMillis(tt.expectedEndTs), inner.Calls[0].Arguments.Get(1).(MetricsQueryRequest).GetEnd(), delta)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestLimitsMiddleware_MaxQueryExpressionSizeBytes(t *testing.T) {
 	now := time.Now()
 
@@ -517,6 +600,10 @@ func (m multiTenantMockLimits) MaxCacheFreshness(userID string) time.Duration {
 	return m.byTenant[userID].maxCacheFreshness
 }
 
+func (m multiTenantMockLimits) MaxFutureQueryWindow(userID string) time.Duration {
+	return m.byTenant[userID].maxFutureQueryWindow
+}
+
 func (m multiTenantMockLimits) QueryShardingTotalShards(userID string) int {
 	return m.byTenant[userID].totalShards
 }
@@ -618,6 +705,7 @@ type mockLimits struct {
 	maxQueryParallelism                  int
 	maxShardedQueries                    int
 	maxRegexpSizeBytes                   int
+	maxFutureQueryWindow                 time.Duration
 	splitInstantQueriesInterval          time.Duration
 	totalShards                          int
 	compactorShards                      int
@@ -665,6 +753,10 @@ func (m mockLimits) MaxQueryParallelism(string) int {
 
 func (m mockLimits) MaxCacheFreshness(string) time.Duration {
 	return m.maxCacheFreshness
+}
+
+func (m mockLimits) MaxFutureQueryWindow(string) time.Duration {
+	return m.maxFutureQueryWindow
 }
 
 func (m mockLimits) QueryShardingTotalShards(string) int {

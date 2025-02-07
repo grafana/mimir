@@ -125,46 +125,9 @@ local filename = 'mimir-reads.json';
       querySchedulerJobName=$._config.job_names.query_scheduler,
       querierJobName=$._config.job_names.querier,
       queryRoutesRegex=$.queries.read_http_routes_regex,
+      queryPathDescription='main query path (ie. excluding the ruler query path, if enabled)',
       showQueryCacheRow=true,
     ))
-    .addRow(
-      $.row('Ingester')
-      .addPanel(
-        $.timeseriesPanel('Requests / sec') +
-        $.qpsPanelNativeHistogram($.queries.ingester.requestsPerSecondMetric, $.queries.ingester.readRequestsPerSecondSelector)
-      )
-      .addPanel(
-        $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanelNativeHistogram($.queries.ingester.requestsPerSecondMetric, $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', $._config.ingester_read_path_routes_regex)])
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.perInstanceLatencyPanelNativeHistogram(
-          '0.99',
-          $.queries.ingester.requestsPerSecondMetric,
-          $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', $._config.ingester_read_path_routes_regex)],
-        ),
-      )
-    )
-    .addRow(
-      $.row('Store-gateway')
-      .addPanel(
-        $.timeseriesPanel('Requests / sec') +
-        $.qpsPanelNativeHistogram($.queries.store_gateway.requestsPerSecondMetric, $.queries.store_gateway.readRequestsPerSecondSelector)
-      )
-      .addPanel(
-        $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanelNativeHistogram($.queries.store_gateway.requestsPerSecondMetric, $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', $._config.store_gateway_read_path_routes_regex)])
-      )
-      .addPanel(
-        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.perInstanceLatencyPanelNativeHistogram(
-          '0.99',
-          $.queries.store_gateway.requestsPerSecondMetric,
-          $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', $._config.store_gateway_read_path_routes_regex)],
-        ),
-      )
-    )
     .addRowIf(
       $._config.gateway_enabled && $._config.autoscaling.gateway.enabled,
       $.cpuAndMemoryBasedAutoScalingRow('Gateway'),

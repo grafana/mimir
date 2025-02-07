@@ -4402,6 +4402,17 @@
         },
         {
           "kind": "field",
+          "name": "max_future_query_window",
+          "required": false,
+          "desc": "Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "query-frontend.max-future-query-window",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "cardinality_analysis_enabled",
           "required": false,
           "desc": "Enables endpoints used for cardinality analysis.",
