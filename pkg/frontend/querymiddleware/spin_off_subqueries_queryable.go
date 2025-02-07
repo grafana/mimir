@@ -67,7 +67,12 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 
 	switch name {
 	case astmapper.DownstreamQueryMetricName:
-		downstreamReq, err := q.req.WithQuery(astmapper.DownstreamQueryLabelName)
+		query, ok := values[astmapper.DownstreamQueryLabelName]
+		if !ok {
+			return storage.ErrSeriesSet(errors.New("missing required labels for downstream query"))
+		}
+
+		downstreamReq, err := q.req.WithQuery(query)
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
