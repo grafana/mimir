@@ -48,7 +48,7 @@ While response times are the primary mechanism for detecting overload, a seconda
 
 The amount of queueing that is allowed when a limiter is full is based on the inflight request limit. By default, requests begin to be rejected instead of queued when the queue reaches `2` times the inflight limit, and all requests are rejected when the queue reaches `3` times the inflight limit. You can configure these settings via `initial-rejection-factor` and `max-rejection-factor`.
 
-Rejection rates, which are based on recent limiter throughput statistics, are computed at `1s` intervals by default for all limiters. This can be adjusted via `-ingester.rejection-prioritizer.calibration-interval`.
+Rejection rates, which are based on recent limiter throughput statistics, are computed at `1s` intervals by default for all limiters. You can adjust this setting via `-ingester.rejection-prioritizer.calibration-interval`.
 
 ## Grafana Mimir ingester adaptive limiter metrics
 
