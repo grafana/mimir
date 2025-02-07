@@ -8,7 +8,7 @@ title: About Grafana Mimir ingester adaptive limiters
 
 # About Grafana Mimir ingester adaptive limiters
 
-Mimir's adaptive concurrency limiters can be used to guard against ingester overload, by automatically adapting concurreny limits based on indications of overload.
+Mimir's adaptive concurrency limiters automatically adapt concurrency limits based on indications of overload. You can use adaptive concurrency limiters to guard against ingester overload.
 
 ## How do adaptive limiters work?
 
