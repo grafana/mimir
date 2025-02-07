@@ -21,7 +21,7 @@ func TestPrioritizer_Calibrate(t *testing.T) {
 	limiter := NewPriorityLimiter(config, p, nil).(*priorityLimiter)
 
 	acquireBlocking := func() {
-		_, _ = limiter.AcquirePermit(context.Background(), PriorityLow)
+		go limiter.AcquirePermit(context.Background(), PriorityLow)
 	}
 	assertBlocked := func(blocked int) {
 		require.Eventually(t, func() bool {
@@ -31,22 +31,15 @@ func TestPrioritizer_Calibrate(t *testing.T) {
 
 	permit, err := limiter.AcquirePermit(context.Background(), PriorityLow)
 	require.NoError(t, err)
-	require.Equal(t, 1, int(limiter.inCount.Load()))
-	require.Equal(t, 1, int(limiter.outCount.Load()))
-	go acquireBlocking()
+	acquireBlocking()
 	assertBlocked(1)
-	go acquireBlocking()
+	acquireBlocking()
 	assertBlocked(2)
-	go acquireBlocking()
+	acquireBlocking()
 	assertBlocked(3)
-	go acquireBlocking()
+	acquireBlocking()
 	assertBlocked(4)
 	permit.Record()
-	require.Equal(t, 5, int(limiter.inCount.Load()))
-	// Wait for blocked permit to be acquired
-	require.Eventually(t, func() bool {
-		return limiter.outCount.Load() == 2
-	}, 300*time.Millisecond, 10*time.Millisecond)
 
 	p.Calibrate()
 	require.Equal(t, .5, limiter.RejectionRate())
@@ -83,7 +76,7 @@ func TestComputeRejectionRate(t *testing.T) {
 			expectedRate:       .5,
 		},
 		{
-			name:               "queue size equal to maxQueueSize",
+			name:               "queueSize equal to maxQueueSize",
 			queueSize:          100,
 			rejectionThreshold: 60,
 			maxQueueSize:       100,

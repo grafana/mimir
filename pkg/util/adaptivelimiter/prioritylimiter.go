@@ -7,7 +7,6 @@ import (
 	"math/rand"
 
 	"github.com/go-kit/log"
-	"go.uber.org/atomic"
 )
 
 type Priority int
@@ -63,9 +62,6 @@ func NewPriorityLimiter(config *Config, prioritizer Prioritizer, logger log.Logg
 type priorityLimiter struct {
 	*adaptiveLimiter
 	prioritizer Prioritizer
-
-	inCount  atomic.Uint32 // Requests received in current calibration period
-	outCount atomic.Uint32 // Requests permitted in current calibration period
 }
 
 func (l *priorityLimiter) AcquirePermit(ctx context.Context, priority Priority) (Permit, error) {
@@ -74,10 +70,6 @@ func (l *priorityLimiter) AcquirePermit(ctx context.Context, priority Priority) 
 	if granularPriority < l.prioritizer.RejectionThreshold() {
 		return nil, ErrExceeded
 	}
-
-	// Maintain queue stats
-	l.inCount.Add(1)
-	defer l.outCount.Add(1)
 
 	l.prioritizer.recordPriority(granularPriority)
 	return l.adaptiveLimiter.AcquirePermit(ctx)
@@ -91,11 +83,9 @@ func (l *priorityLimiter) RejectionRate() float64 {
 	return l.prioritizer.RejectionRate()
 }
 
-func (l *priorityLimiter) getAndResetStats() (in, out, limit, inflight, queued, rejectionThreshold, maxQueue int) {
-	in = int(l.inCount.Swap(0))
-	out = int(l.outCount.Swap(0))
+func (l *priorityLimiter) getAndResetStats() (limit, inflight, queued, rejectionThreshold, maxQueue int) {
 	limit = l.Limit()
 	rejectionThreshold = int(float64(limit) * l.config.InitialRejectionFactor)
 	maxQueue = int(float64(limit) * l.config.MaxRejectionFactor)
-	return in, out, limit, l.Inflight(), l.Blocked(), rejectionThreshold, maxQueue
+	return limit, l.Inflight(), l.Blocked(), rejectionThreshold, maxQueue
 }
