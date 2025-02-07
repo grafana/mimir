@@ -44,7 +44,7 @@ type PriorityLimiter interface {
 	Metrics
 
 	// AcquirePermit attempts to acquire a permit, potentially blocking up to maxExecutionTime.
-	// The request priority must be less than the current priority threshold for admission.
+	// The request priority must be greater than the current priority threshold for admission.
 	AcquirePermit(ctx context.Context, priority Priority) (Permit, error)
 
 	// CanAcquirePermit returns whether it's currently possible to acquire a permit for the priority.
