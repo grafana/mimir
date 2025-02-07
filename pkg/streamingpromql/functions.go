@@ -425,6 +425,34 @@ func TimestampFunctionOperatorFactory(args []types.Operator, memoryConsumptionTr
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker), nil
 }
 
+func SortOperatorFactory(descending bool) InstantVectorFunctionOperatorFactory {
+	functionName := "sort"
+
+	if descending {
+		functionName = "sort_desc"
+	}
+
+	return func(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+		if len(args) != 1 {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", functionName, len(args))
+		}
+
+		inner, ok := args[0].(types.InstantVectorOperator)
+		if !ok {
+			// Should be caught by the PromQL parser, but we check here for safety.
+			return nil, fmt.Errorf("expected an instant vector for 1st argument for %s, got %T", functionName, args[0])
+		}
+
+		if timeRange.StepCount != 1 {
+			// If this is a range query, sort / sort_desc have no effect, so we might as well just skip straight to the inner operator.
+			return inner, nil
+		}
+
+		return functions.NewSort(inner, descending, memoryConsumptionTracker, expressionPosition), nil
+	}
+}
+
 // These functions return an instant-vector.
 var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
 	// Please keep this list sorted alphabetically.
@@ -482,6 +510,8 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"sgn":                InstantVectorTransformationFunctionOperatorFactory("sgn", functions.Sgn),
 	"sin":                InstantVectorTransformationFunctionOperatorFactory("sin", functions.Sin),
 	"sinh":               InstantVectorTransformationFunctionOperatorFactory("sinh", functions.Sinh),
+	"sort":               SortOperatorFactory(false),
+	"sort_desc":          SortOperatorFactory(true),
 	"sqrt":               InstantVectorTransformationFunctionOperatorFactory("sqrt", functions.Sqrt),
 	"sum_over_time":      FunctionOverRangeVectorOperatorFactory("sum_over_time", functions.SumOverTime),
 	"tan":                InstantVectorTransformationFunctionOperatorFactory("tan", functions.Tan),

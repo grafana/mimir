@@ -1144,6 +1144,7 @@ func TestNoPartiallyConsumedRegions(t *testing.T) {
 
 	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 	cfg.NoPartiallyConsumedRegion = true
+	cfg.ConsumeIntervalBuffer = 5 * time.Minute
 
 	// Set up a hook to track commits from block-builder to kafka. Those indicate the end of a cycle.
 	kafkaCommits := atomic.NewInt32(0)
@@ -1154,9 +1155,6 @@ func TestNoPartiallyConsumedRegions(t *testing.T) {
 
 	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
 	require.NoError(t, err)
-
-	// NoPartiallyConsumedRegion changes the buffer to 5 mins.
-	require.Equal(t, 5*time.Minute, bb.cfg.ConsumeIntervalBuffer)
 
 	require.NoError(t, bb.starting(ctx))
 	t.Cleanup(func() {
@@ -1210,6 +1208,50 @@ func TestNoPartiallyConsumedRegions(t *testing.T) {
 	state = PartitionStateFromLag(bb.logger, lag, bb.fallbackOffsetMillis)
 	require.Equal(t, len(producedSamples), int(state.Commit.At)) // Commit point is where to start next.
 	require.Equal(t, len(producedSamples)-1, int(state.LastSeenOffset))
+}
+
+// This is a temporary test for quick iteration on the new way of consuming partition.
+// TODO: integrate it with other tests.
+func TestGetBlockCategoryCount(t *testing.T) {
+	evenHrBounary := time.UnixMilli(10 * time.Hour.Milliseconds())
+	oddHrBounary := time.UnixMilli(9 * time.Hour.Milliseconds())
+	cases := []struct {
+		sectionEndTime   time.Time
+		metas            []tsdb.BlockMeta
+		prev, curr, next int
+	}{
+		{
+			sectionEndTime: evenHrBounary,
+			metas: []tsdb.BlockMeta{
+				{MinTime: evenHrBounary.Add(-4 * time.Hour).UnixMilli(), MaxTime: evenHrBounary.Add(-2 * time.Hour).UnixMilli()},
+				{MinTime: evenHrBounary.Add(-2 * time.Hour).UnixMilli(), MaxTime: evenHrBounary.UnixMilli()},
+				{MinTime: evenHrBounary.UnixMilli(), MaxTime: evenHrBounary.Add(5 * time.Minute).UnixMilli()},
+			},
+			prev: 1, curr: 1, next: 1,
+		},
+		{
+			sectionEndTime: oddHrBounary,
+			metas: []tsdb.BlockMeta{
+				{MinTime: oddHrBounary.Add(-3 * time.Hour).UnixMilli(), MaxTime: oddHrBounary.Add(-1 * time.Hour).UnixMilli()},
+				{MinTime: oddHrBounary.Add(-1 * time.Hour).UnixMilli(), MaxTime: oddHrBounary.Add(time.Hour).UnixMilli()},
+				// Although this is after the sectionEndTime, it is still the same 2h block.
+				{MinTime: oddHrBounary.UnixMilli(), MaxTime: oddHrBounary.Add(time.Hour).UnixMilli()},
+				{MinTime: oddHrBounary.Add(time.Hour).UnixMilli(), MaxTime: oddHrBounary.Add(2 * time.Hour).UnixMilli()},
+			},
+			prev: 1, curr: 2, next: 1,
+		},
+	}
+	for i, c := range cases {
+		// Buffer to add to sectionEndTime.
+		for _, buffer := range []time.Duration{0, 5 * time.Minute, 10 * time.Minute, 15 * time.Minute} {
+			t.Run(fmt.Sprintf("%d,buffer=%s", i, buffer.String()), func(t *testing.T) {
+				prev, curr, next := getBlockCategoryCount(c.sectionEndTime.Add(buffer), c.metas)
+				require.Equal(t, c.prev, prev)
+				require.Equal(t, c.curr, curr)
+				require.Equal(t, c.next, next)
+			})
+		}
+	}
 }
 
 func blockBuilderPullModeConfig(t *testing.T, addr string) (Config, *validation.Overrides) {
