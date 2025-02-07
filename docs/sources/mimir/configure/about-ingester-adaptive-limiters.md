@@ -24,7 +24,7 @@ When ingester overload is detected, the limit gradually decreases to the concurr
 
 ## Request queueing
 
-Since inflight limits are, at most, a multiple of the current inflight ingester requests, some queueing of requests will occur when an ingester's adaptive limiter is full. This allows short bursts of requests to be tolerated while still keeping the number of inflight requests under control. The amount of blocking that is allowed is based on the `initial-rejection-factor` and `max-rejection-factor`, and requests will only queue when the limiter is full.
+Since inflight limits are, at most, a multiple of the current inflight ingester requests, some queueing of requests occurs when an ingester's adaptive limiter is full. This allows short bursts of requests to be tolerated while still keeping the number of inflight requests under control. The amount of blocking that is allowed is based on the `initial-rejection-factor` and `max-rejection-factor`, and requests only queue when the limiter is full.
 
 ## Request rejection
 
