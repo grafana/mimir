@@ -13,24 +13,42 @@ import (
 	"github.com/grafana/dskit/tracing"
 )
 
+// levelWrapper implements leveledLogger and log.Logger.
+type levelWrapper struct {
+	lvl        logLevel
+	log.Logger // Calls to Log() will fall through to here.
+}
+
+func wrap(original, logger log.Logger) log.Logger {
+	lvl := debugLevel // default if unknown
+	if x, ok := original.(leveledLogger); ok {
+		lvl = x.level()
+	}
+	return levelWrapper{lvl: lvl, Logger: logger}
+}
+
+func (w levelWrapper) level() logLevel {
+	return w.lvl
+}
+
 // WithUserID returns a Logger that has information about the current user in
 // its details.
 func WithUserID(userID string, l log.Logger) log.Logger {
 	// See note in WithContext.
-	return log.With(l, "user", userID)
+	return wrap(l, log.With(l, "user", userID))
 }
 
 // WithUserIDs returns a Logger that has information about the current user or
 // users (separated by "|") in its details.
 func WithUserIDs(userIDs []string, l log.Logger) log.Logger {
-	return log.With(l, "user", tenant.JoinTenantIDs(userIDs))
+	return wrap(l, log.With(l, "user", tenant.JoinTenantIDs(userIDs)))
 }
 
 // WithTraceID returns a Logger that has information about the traceID in
 // its details.
 func WithTraceID(traceID string, l log.Logger) log.Logger {
 	// See note in WithContext.
-	return log.With(l, "traceID", traceID)
+	return wrap(l, log.With(l, "traceID", traceID))
 }
 
 // WithContext returns a Logger that has information about the current user or users
@@ -60,5 +78,5 @@ func WithContext(ctx context.Context, l log.Logger) log.Logger {
 // WithSourceIPs returns a Logger that has information about the source IPs in
 // its details.
 func WithSourceIPs(sourceIPs string, l log.Logger) log.Logger {
-	return log.With(l, "sourceIPs", sourceIPs)
+	return wrap(l, log.With(l, "sourceIPs", sourceIPs))
 }
