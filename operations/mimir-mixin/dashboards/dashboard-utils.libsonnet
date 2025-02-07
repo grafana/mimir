@@ -1517,6 +1517,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     querySchedulerJobName,
     querierJobName,
     queryRoutesRegex,
+    queryPathDescription,
     rowTitlePrefix='',
     showQueryCacheRow=false,
   )::
@@ -1723,7 +1724,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $._config.job_names.ingester,
       $._config.ingester_read_path_routes_regex,
       $.queries.querier.ingesterClientRequestsPerSecondMetric,
+      std.asciiLower(rowTitlePrefix),
       querierJobName,
+      queryPathDescription,
     ) +
     $.ingesterStoreGatewayReadsDashboardsRows(
       'store-gateway',
@@ -1732,7 +1735,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $._config.job_names.store_gateway,
       $._config.store_gateway_read_path_routes_regex,
       $.queries.querier.storeGatewayClientRequestsPerSecondMetric,
+      std.asciiLower(rowTitlePrefix),
       querierJobName,
+      queryPathDescription,
     ),
 
   ingesterStoreGatewayReadsDashboardsRows(
@@ -1742,7 +1747,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ingesterStoreGatewayJobNames,
     ingesterStoreGatewayRoutesRegex,
     querierRequestsPerSecondMetric,
+    querierPrefix,
     querierJobNames,
+    queryPathDescription,
   ):: [
     local description = 'This panel shows %(ingesterStoreGatewayComponentName)s query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by %(ingesterStoreGatewayComponentName)ss.' % { ingesterStoreGatewayComponentName: ingesterStoreGatewayComponentName };
 
@@ -1767,7 +1774,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
     ),
 
-    local description = 'This panel shows %(ingesterStoreGatewayComponentName)s query requests from just this query path. The data shown is as reported by queriers.' % { ingesterStoreGatewayComponentName: ingesterStoreGatewayComponentName };
+    local description = 'This panel shows %(ingesterStoreGatewayComponentName)s query requests from just the %(queryPathDescription)s. The data shown is as reported by %(querierPrefix)squeriers.' % {
+      ingesterStoreGatewayComponentName: ingesterStoreGatewayComponentName,
+      queryPathDescription: queryPathDescription,
+      querierPrefix: querierPrefix,
+    };
     local selectors = $.jobSelector(querierJobNames) + [utils.selector.re('operation', ingesterStoreGatewayRoutesRegex)];
 
     $.row($.capitalize(ingesterStoreGatewayComponentName + ' - query requests from this query path only'))

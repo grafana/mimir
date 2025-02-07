@@ -125,6 +125,7 @@ local filename = 'mimir-reads.json';
       querySchedulerJobName=$._config.job_names.query_scheduler,
       querierJobName=$._config.job_names.querier,
       queryRoutesRegex=$.queries.read_http_routes_regex,
+      queryPathDescription='main query path (ie. not the ruler query path, if enabled)',
       showQueryCacheRow=true,
     ))
     .addRowIf(

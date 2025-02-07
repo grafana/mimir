@@ -1696,7 +1696,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
-                  "description": "### Requests / sec\nThis panel shows ingester query requests from just this query path. The data shown is as reported by queriers.\n",
+                  "description": "### Requests / sec\nThis panel shows ingester query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -1887,7 +1887,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Latency\nThis panel shows ingester query requests from just this query path. The data shown is as reported by queriers.\n",
+                  "description": "### Latency\nThis panel shows ingester query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -1967,7 +1967,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Per querier instance p99 latency\nThis panel shows ingester query requests from just this query path. The data shown is as reported by queriers.\n",
+                  "description": "### Per querier instance p99 latency\nThis panel shows ingester query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2378,7 +2378,7 @@
             "panels": [
                {
                   "datasource": "$datasource",
-                  "description": "### Requests / sec\nThis panel shows store-gateway query requests from just this query path. The data shown is as reported by queriers.\n",
+                  "description": "### Requests / sec\nThis panel shows store-gateway query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2569,7 +2569,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Latency\nThis panel shows store-gateway query requests from just this query path. The data shown is as reported by queriers.\n",
+                  "description": "### Latency\nThis panel shows store-gateway query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2649,7 +2649,7 @@
                },
                {
                   "datasource": "$datasource",
-                  "description": "### Per querier instance p99 latency\nThis panel shows store-gateway query requests from just this query path. The data shown is as reported by queriers.\n",
+                  "description": "### Per querier instance p99 latency\nThis panel shows store-gateway query requests from just the ruler query path. The data shown is as reported by ruler-queriers.\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
