@@ -20,7 +20,7 @@ When recent response times increase significantly relative to the longer term tr
 
 When an ingester is not overloaded, the concurrency limit will increase to some multiple of current inflight requests, based on the `max-limit-factor`. This provides headroom for bursts of requests without being too high to lower quickly if overload is detected.
 
-When ingester overload is detected, the limit will gradually decrease to the concurrent request processing capacity of whichever resource is overloaded, then will oscillate around that level so long as the overload continues.
+When ingester overload is detected, the limit gradually decreases to the concurrent request processing capacity of whichever resource is overloaded, then oscillates around that level, as long as the overload continues.
 
 ## Request queueing
 
