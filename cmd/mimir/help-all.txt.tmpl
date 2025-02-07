@@ -3103,6 +3103,8 @@ Usage of ./cmd/mimir/mimir:
     	Optionally define the server's cluster, and enable validation that requests are for the same cluster.
   -server.graceful-shutdown-timeout duration
     	Timeout for graceful shutdowns (default 30s)
+  -server.grpc-cluster-check-enabled
+    	Enable validation that gRPC requests are for the cluster configured via -server.cluster. Ignored if -server.cluster is not set.
   -server.grpc-conn-limit int
     	Maximum number of simultaneous grpc connections, <=0 to disable
   -server.grpc-listen-address string
@@ -3141,6 +3143,8 @@ Usage of ./cmd/mimir/mimir:
     	After having pinged for keepalive check, the duration after which an idle connection should be closed, Default: 20s (default 20s)
   -server.grpc.num-workers int
     	If non-zero, configures the amount of GRPC server workers used to serve the requests. (default 100)
+  -server.http-cluster-check-enabled
+    	Enable validation that HTTP requests are for the cluster configured via -server.cluster. Ignored if -server.cluster is not set.
   -server.http-conn-limit int
     	Maximum number of simultaneous http connections, <=0 to disable
   -server.http-idle-timeout duration

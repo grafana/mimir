@@ -558,6 +558,16 @@ The `server` block configures the HTTP and gRPC server of the launched service(s
 # CLI flag: -server.cluster
 [cluster: <string> | default = ""]
 
+# Enable validation that HTTP requests are for the cluster configured via
+# -server.cluster. Ignored if -server.cluster is not set.
+# CLI flag: -server.http-cluster-check-enabled
+[http_cluster_check_enabled: <boolean> | default = false]
+
+# Enable validation that gRPC requests are for the cluster configured via
+# -server.cluster. Ignored if -server.cluster is not set.
+# CLI flag: -server.grpc-cluster-check-enabled
+[grpc_cluster_check_enabled: <boolean> | default = false]
+
 # Comma-separated list of cipher suites to use. If blank, the default Go cipher
 # suites is used.
 # CLI flag: -server.tls-cipher-suites
@@ -1873,8 +1883,11 @@ The `ruler` block configures the ruler.
 [external_url: <url> | default = ]
 
 # Configures the gRPC client used to communicate between ruler instances.
-# The CLI flags prefix for this block configuration is: ruler.client
-[ruler_client: <grpc_client>]
+ruler_client:
+  # The grpc_client block configures the gRPC client used to communicate between
+  # two Mimir components.
+  # The CLI flags prefix for this block configuration is: ruler.client
+  [config: <grpc_client>]
 
 # (advanced) How frequently to evaluate rules
 # CLI flag: -ruler.evaluation-interval

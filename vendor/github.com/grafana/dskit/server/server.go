@@ -79,16 +79,18 @@ type Config struct {
 	// for details. A generally useful value is 1.1.
 	MetricsNativeHistogramFactor float64 `yaml:"-"`
 
-	HTTPListenNetwork    string `yaml:"http_listen_network"`
-	HTTPListenAddress    string `yaml:"http_listen_address"`
-	HTTPListenPort       int    `yaml:"http_listen_port"`
-	HTTPConnLimit        int    `yaml:"http_listen_conn_limit"`
-	GRPCListenNetwork    string `yaml:"grpc_listen_network"`
-	GRPCListenAddress    string `yaml:"grpc_listen_address"`
-	GRPCListenPort       int    `yaml:"grpc_listen_port"`
-	GRPCConnLimit        int    `yaml:"grpc_listen_conn_limit"`
-	ProxyProtocolEnabled bool   `yaml:"proxy_protocol_enabled"`
-	Cluster              string `yaml:"cluster"`
+	HTTPListenNetwork       string `yaml:"http_listen_network"`
+	HTTPListenAddress       string `yaml:"http_listen_address"`
+	HTTPListenPort          int    `yaml:"http_listen_port"`
+	HTTPConnLimit           int    `yaml:"http_listen_conn_limit"`
+	GRPCListenNetwork       string `yaml:"grpc_listen_network"`
+	GRPCListenAddress       string `yaml:"grpc_listen_address"`
+	GRPCListenPort          int    `yaml:"grpc_listen_port"`
+	GRPCConnLimit           int    `yaml:"grpc_listen_conn_limit"`
+	ProxyProtocolEnabled    bool   `yaml:"proxy_protocol_enabled"`
+	Cluster                 string `yaml:"cluster"`
+	HTTPClusterCheckEnabled bool   `yaml:"http_cluster_check_enabled"`
+	GRPCClusterCheckEnabled bool   `yaml:"grpc_cluster_check_enabled"`
 
 	CipherSuites  string    `yaml:"tls_cipher_suites"`
 	MinVersion    string    `yaml:"tls_min_version"`
@@ -218,6 +220,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.LogRequestAtInfoLevel, "server.log-request-at-info-level-enabled", false, "Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.")
 	f.BoolVar(&cfg.ProxyProtocolEnabled, "server.proxy-protocol-enabled", false, "Enables PROXY protocol.")
 	f.StringVar(&cfg.Cluster, "server.cluster", "", "Optionally define the server's cluster, and enable validation that requests are for the same cluster.")
+	f.BoolVar(&cfg.HTTPClusterCheckEnabled, "server.http-cluster-check-enabled", false, "Enable validation that HTTP requests are for the cluster configured via -server.cluster. Ignored if -server.cluster is not set.")
+	f.BoolVar(&cfg.GRPCClusterCheckEnabled, "server.grpc-cluster-check-enabled", false, "Enable validation that gRPC requests are for the cluster configured via -server.cluster. Ignored if -server.cluster is not set.")
 	f.DurationVar(&cfg.Throughput.LatencyCutoff, "server.throughput.latency-cutoff", 0, "Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.")
 	f.StringVar(&cfg.Throughput.Unit, "server.throughput.unit", "samples_processed", "Unit of the server throughput metric, for example 'processed_bytes' or 'samples_processed'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name.")
 }
@@ -401,7 +405,7 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		middleware.HTTPGRPCTracingInterceptor(router), // This must appear after the OpenTracingServerInterceptor.
 		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
 	}
-	if cfg.Cluster != "" {
+	if cfg.Cluster != "" && cfg.GRPCClusterCheckEnabled {
 		grpcMiddleware = append(grpcMiddleware, middleware.ClusterUnaryServerInterceptor(cfg.Cluster, metrics.InvalidClusters, logger))
 	}
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
@@ -561,7 +565,7 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 			RequestThroughput: metrics.RequestThroughput,
 		},
 	}
-	if cfg.Cluster != "" {
+	if cfg.Cluster != "" && cfg.HTTPClusterCheckEnabled {
 		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.Cluster, metrics.InvalidClusters, logger))
 	}
 	return append(httpMiddleware, cfg.HTTPMiddleware...), nil

@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/clusterutil"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/dskit/grpcutil"
@@ -13,18 +14,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
-)
-
-const (
-	MetadataClusterKey = "x-cluster"
 )
 
 // ClusterUnaryClientInterceptor propagates the given cluster info to gRPC metadata.
 func ClusterUnaryClientInterceptor(cluster string) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if cluster != "" {
-			ctx = metadata.AppendToOutgoingContext(ctx, MetadataClusterKey, cluster)
+			ctx = clusterutil.PutClusterIntoOutgoingContext(ctx, cluster)
 		}
 
 		return invoker(ctx, method, req, reply, cc, opts...)
@@ -39,7 +35,7 @@ func ClusterUnaryServerInterceptor(cluster string, invalidClusters *prometheus.C
 		if _, ok := info.Server.(healthpb.HealthServer); ok {
 			return handler(ctx, req)
 		}
-		reqCluster := getClusterFromIncomingContext(ctx, logger)
+		reqCluster := clusterutil.GetClusterFromIncomingContext(ctx, logger)
 		if cluster != reqCluster {
 			level.Warn(logger).Log("msg", "rejecting request intended for wrong cluster",
 				"cluster", cluster, "request_cluster", reqCluster, "method", info.FullMethod)
@@ -52,14 +48,4 @@ func ClusterUnaryServerInterceptor(cluster string, invalidClusters *prometheus.C
 		}
 		return handler(ctx, req)
 	}
-}
-
-func getClusterFromIncomingContext(ctx context.Context, logger log.Logger) string {
-	clusterIDs := metadata.ValueFromIncomingContext(ctx, MetadataClusterKey)
-	if len(clusterIDs) != 1 {
-		msg := fmt.Sprintf("gRPC metadata should contain exactly 1 value for key \"%s\", but the current set of values is %v. Returning an empty string.", MetadataClusterKey, clusterIDs)
-		level.Warn(logger).Log("msg", msg)
-		return ""
-	}
-	return clusterIDs[0]
 }

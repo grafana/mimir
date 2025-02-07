@@ -765,10 +765,14 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
   -server.cluster string
     	Optionally define the server's cluster, and enable validation that requests are for the same cluster.
+  -server.grpc-cluster-check-enabled
+    	Enable validation that gRPC requests are for the cluster configured via -server.cluster. Ignored if -server.cluster is not set.
   -server.grpc-listen-address string
     	gRPC server listen address.
   -server.grpc-listen-port int
     	gRPC server listen port. (default 9095)
+  -server.http-cluster-check-enabled
+    	Enable validation that HTTP requests are for the cluster configured via -server.cluster. Ignored if -server.cluster is not set.
   -server.http-listen-address string
     	HTTP server listen address.
   -server.http-listen-port int
