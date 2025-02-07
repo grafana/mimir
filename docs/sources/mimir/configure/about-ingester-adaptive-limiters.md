@@ -44,7 +44,7 @@ The inflight request limit has a default range of `2` to `200`, and an initial v
 
 ### Additional configurations
 
-While response times are the primary mechanism for detecting overload, a secondary mechanism is tracking the correlation between inflight requests and throughput. The default size of this correlation window is `50` samples, which can be changed via `correlation-window`.
+While response times are the primary mechanism for detecting overload, a secondary mechanism is tracking the correlation between inflight requests and throughput. The default size of this correlation window is `50` samples, which you can change via `correlation-window`.
 
 The amount of queueing that is allowed when a limiter is full is based on the inflight request limit. By default, requests will begin to be rejected instead of queued when the queue reaches `2` times the inflight limit, and all requests will be rejected when the queue reaches `3` times the inflight limit. These can be configured via `initial-rejection-factor` and `max-rejection-factor`.
 
