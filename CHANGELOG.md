@@ -63,6 +63,7 @@
 
 ### Mixin
 
+* [ENHANCEMENT] Dashboards: 'Writes' dashboard: show write requests broken down by request type. #10599
 * [BUGFIX] Dashboards: fix how we switch between classic and native histograms. #10018
 * [BUGFIX] Alerts: Ignore cache errors performing `delete` operations since these are expected to fail when keys don't exist. #10287
 * [BUGFIX] Dashboards: fix "Mimir / Rollout Progress" latency comparison when gateway is enabled. #10495
