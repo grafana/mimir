@@ -1176,12 +1176,9 @@ func TestPullMode(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "expected to complete two jobs")
 
 	require.EqualValues(t,
-		&callInfo{k: schedulerpb.JobKey{Id: "test-job-p0-0", Epoch: 220}, ci: &schedulerpb.CompletionInfo{
-			CommitOffset: 5,
-		}},
-		scheduler.completeJobCalls[0],
+		[]schedulerpb.JobKey{{Id: "test-job-p0-0", Epoch: 220}, {Id: "test-job-p1-0", Epoch: 233}},
+		scheduler.completeJobCalls,
 	)
-	//{k: schedulerpb.JobKey{Id: "test-job-p1-0", Epoch: 233}, ci: nil},
 
 	bucketDir := path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1")
 	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
@@ -1212,11 +1209,6 @@ func mustTimeParse(t *testing.T, layout, v string) time.Time {
 	return ts
 }
 
-type callInfo struct {
-	k  schedulerpb.JobKey
-	ci *schedulerpb.CompletionInfo
-}
-
 type mockSchedulerClient struct {
 	mu   sync.Mutex
 	jobs []struct {
@@ -1225,7 +1217,7 @@ type mockSchedulerClient struct {
 	}
 	runCalls         int
 	getJobCalls      int
-	completeJobCalls []*callInfo
+	completeJobCalls []schedulerpb.JobKey
 	closeCalls       int
 }
 
@@ -1259,11 +1251,11 @@ func (m *mockSchedulerClient) GetJob(ctx context.Context) (schedulerpb.JobKey, s
 	return schedulerpb.JobKey{}, schedulerpb.JobSpec{}, ctx.Err()
 }
 
-func (m *mockSchedulerClient) CompleteJob(key schedulerpb.JobKey, ci *schedulerpb.CompletionInfo) error {
+func (m *mockSchedulerClient) CompleteJob(key schedulerpb.JobKey) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.completeJobCalls = append(m.completeJobCalls, &callInfo{key, ci})
+	m.completeJobCalls = append(m.completeJobCalls, key)
 
 	// Do nothing.
 	return nil

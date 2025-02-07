@@ -222,7 +222,7 @@ func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
 			LastBlockEndTs: ps.LastBlockEnd,
 		}
 
-		if err := b.scheduler.CompleteJob(key, &ci); err != nil {
+		if err := b.scheduler.CompleteJob(key, ci); err != nil {
 			level.Error(b.logger).Log("msg", "failed to complete job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 		}
 
