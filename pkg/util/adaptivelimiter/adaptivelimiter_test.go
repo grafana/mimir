@@ -102,6 +102,7 @@ func TestAdaptiveLimiter_record(t *testing.T) {
 	createLimiter := func() (*adaptiveLimiter, time.Time) {
 		config := createLimiterConfig()
 		config.ShortWindowMaxDuration = time.Second
+		config.ShortWindowMinSamples = 1
 		limiter := newLimiter(config, log.NewNopLogger())
 		now := time.UnixMilli(0)
 		limiter.nextUpdateTime = now
