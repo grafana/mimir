@@ -66,11 +66,11 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/adaptivelimiter"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/tracing"
@@ -214,9 +214,9 @@ type Config struct {
 
 	PushCircuitBreaker   CircuitBreakerConfig                       `yaml:"push_circuit_breaker"`
 	ReadCircuitBreaker   CircuitBreakerConfig                       `yaml:"read_circuit_breaker"`
-	RejectionPrioritizer adaptivelimiter.RejectionPrioritizerConfig `yaml:"rejection_prioritizer"`
-	PushAdaptiveLimiter  adaptivelimiter.Config                     `yaml:"push_adaptive_limiter"`
-	ReadAdaptiveLimiter  adaptivelimiter.Config                     `yaml:"read_adaptive_limiter"`
+	RejectionPrioritizer reactivelimiter.RejectionPrioritizerConfig `yaml:"rejection_prioritizer"`
+	PushReactiveLimiter  reactivelimiter.Config                     `yaml:"push_reactive_limiter"`
+	ReadReactiveLimiter  reactivelimiter.Config                     `yaml:"read_reactive_limiter"`
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
@@ -236,8 +236,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.PushCircuitBreaker.RegisterFlagsWithPrefix("ingester.push-circuit-breaker.", f, circuitBreakerDefaultPushTimeout)
 	cfg.ReadCircuitBreaker.RegisterFlagsWithPrefix("ingester.read-circuit-breaker.", f, circuitBreakerDefaultReadTimeout)
 	cfg.RejectionPrioritizer.RegisterFlagsWithPrefix("ingester.rejection-prioritizer.", f)
-	cfg.PushAdaptiveLimiter.RegisterFlagsWithPrefix("ingester.push-adaptive-limiter.", f)
-	cfg.ReadAdaptiveLimiter.RegisterFlagsWithPrefix("ingester.read-adaptive-limiter.", f)
+	cfg.PushReactiveLimiter.RegisterFlagsWithPrefix("ingester.push-reactive-limiter.", f)
+	cfg.ReadReactiveLimiter.RegisterFlagsWithPrefix("ingester.read-reactive-limiter.", f)
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-tenant ingestion rates.")
@@ -356,7 +356,7 @@ type Ingester struct {
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 
 	circuitBreaker  ingesterCircuitBreaker
-	adaptiveLimiter *ingesterAdaptiveLimiter
+	reactiveLimiter *ingesterReactiveLimiter
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -405,7 +405,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
 	i.circuitBreaker = newIngesterCircuitBreaker(i.cfg.PushCircuitBreaker, i.cfg.ReadCircuitBreaker, logger, registerer)
 
-	i.adaptiveLimiter = newIngesterAdaptiveLimiter(&i.cfg.RejectionPrioritizer, &i.cfg.PushAdaptiveLimiter, &i.cfg.ReadAdaptiveLimiter, logger, registerer)
+	i.reactiveLimiter = newIngesterReactiveLimiter(&i.cfg.RejectionPrioritizer, &i.cfg.PushReactiveLimiter, &i.cfg.ReadReactiveLimiter, logger, registerer)
 
 	if registerer != nil {
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
@@ -633,8 +633,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
-	if i.adaptiveLimiter != nil {
-		servs = append(servs, i.adaptiveLimiter)
+	if i.reactiveLimiter != nil {
+		servs = append(servs, i.reactiveLimiter)
 	}
 
 	if i.ingestPartitionLifecycler != nil {
@@ -1038,12 +1038,12 @@ func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context
 func (i *Ingester) PreparePushRequest(ctx context.Context) (finishFn func(error), err error) {
 	defer func() { err = i.mapErrorToErrorWithStatus(err) }()
 
-	if i.adaptiveLimiter != nil && i.adaptiveLimiter.push != nil {
+	if i.reactiveLimiter != nil && i.reactiveLimiter.push != nil {
 		// Acquire a permit, blocking if needed
-		permit, err := i.adaptiveLimiter.push.AcquirePermit(ctx)
+		permit, err := i.reactiveLimiter.push.AcquirePermit(ctx)
 		if err != nil {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-			return nil, newAdaptiveLimiterExceededError(err)
+			return nil, newReactiveLimiterExceededError(err)
 		}
 		return func(err error) {
 			if errors.Is(err, context.Canceled) {
@@ -1101,9 +1101,9 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 	}
 	ctx = context.WithValue(ctx, pushReqCtxKey, st)
 
-	if i.adaptiveLimiter != nil && i.adaptiveLimiter.push != nil && !i.adaptiveLimiter.push.CanAcquirePermit() {
+	if i.reactiveLimiter != nil && i.reactiveLimiter.push != nil && !i.reactiveLimiter.push.CanAcquirePermit() {
 		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
-		return nil, false, newAdaptiveLimiterExceededError(adaptivelimiter.ErrExceeded)
+		return nil, false, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
 	}
 
 	inflight := i.inflightPushRequests.Inc()
@@ -1714,9 +1714,9 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
-	if i.adaptiveLimiter != nil && i.adaptiveLimiter.read != nil && !i.adaptiveLimiter.read.CanAcquirePermit() {
+	if i.reactiveLimiter != nil && i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
 		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
-		return nil, newAdaptiveLimiterExceededError(adaptivelimiter.ErrExceeded)
+		return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
 	}
 
 	finish, err := i.circuitBreaker.tryAcquireReadPermit()
@@ -1741,12 +1741,12 @@ func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error)
 		cbFinish = st.requestFinish
 	}
 
-	if i.adaptiveLimiter != nil && i.adaptiveLimiter.read != nil {
+	if i.reactiveLimiter != nil && i.reactiveLimiter.read != nil {
 		// Acquire a permit, blocking if needed
-		permit, err := i.adaptiveLimiter.read.AcquirePermit(ctx)
+		permit, err := i.reactiveLimiter.read.AcquirePermit(ctx)
 		if err != nil {
 			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
-			return nil, newAdaptiveLimiterExceededError(err)
+			return nil, newReactiveLimiterExceededError(err)
 		}
 		return func(err error) {
 			cbFinish(err)

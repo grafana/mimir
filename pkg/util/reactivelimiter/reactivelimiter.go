@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package adaptivelimiter
+package reactivelimiter
 
 import (
 	"context"
@@ -27,11 +27,11 @@ const (
 	smoothedSamples = 5
 )
 
-// Metrics provides info about the adaptive limiter.
+// Metrics provides info about the reactive limiter.
 //
 // This type is concurrency safe.
 type Metrics interface {
-	// Limit returns the concurrent execution limit, as calculated by the adaptive limiter.
+	// Limit returns the concurrent execution limit, as calculated by the reactive limiter.
 	Limit() int
 
 	// Inflight returns the current number of inflight executions.
@@ -77,7 +77,7 @@ type Config struct {
 }
 
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable adaptive limiting when making requests to ingesters")
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reactive limiting when making requests to ingesters")
 	f.DurationVar(&cfg.ShortWindowMinDuration, prefix+"short-window-min-duration", time.Second, "Minimum duration of the window that is used to determine the recent, short-term load on the system")
 	f.DurationVar(&cfg.ShortWindowMaxDuration, prefix+"short-window-max-duration", 30*time.Second, "Maximum duration of the window that is used to determine the recent, short-term load on the system")
 	f.UintVar(&cfg.ShortWindowMinSamples, prefix+"short-window-min-samples", 50, "Minimum number of samples that must be recorded in the window")
@@ -92,12 +92,12 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Float64Var(&cfg.MaxRejectionFactor, prefix+"max-rejection-factor", 3, "The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected")
 }
 
-func newLimiter(config *Config, logger log.Logger) *adaptiveLimiter {
+func newLimiter(config *Config, logger log.Logger) *reactiveLimiter {
 	config.alphaFunc = mimirmath.Log10Func(3)
 	config.betaFunc = mimirmath.Log10Func(6)
 	config.increaseFunc = mimirmath.Log10Func(1)
 	config.decreaseFunc = mimirmath.Log10Func(1)
-	return &adaptiveLimiter{
+	return &reactiveLimiter{
 		logger:                logger,
 		config:                config,
 		minLimit:              float64(config.MinInflightLimit),
@@ -148,7 +148,7 @@ func (td *tDigestSample) Reset() {
 	td.Size = 0
 }
 
-type adaptiveLimiter struct {
+type reactiveLimiter struct {
 	logger             log.Logger
 	config             *Config
 	minLimit, maxLimit float64
@@ -169,7 +169,7 @@ type adaptiveLimiter struct {
 	rttCorrelation        *mimirmath.CorrelationWindow // Tracks the correlation between concurrency and round trip times (RTT)
 }
 
-func (l *adaptiveLimiter) AcquirePermit(ctx context.Context) (Permit, error) {
+func (l *reactiveLimiter) AcquirePermit(ctx context.Context) (Permit, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -184,7 +184,7 @@ func (l *adaptiveLimiter) AcquirePermit(ctx context.Context) (Permit, error) {
 	}, nil
 }
 
-func (l *adaptiveLimiter) TryAcquirePermit() (Permit, bool) {
+func (l *reactiveLimiter) TryAcquirePermit() (Permit, bool) {
 	if !l.semaphore.TryAcquire() {
 		return nil, false
 	}
@@ -195,30 +195,30 @@ func (l *adaptiveLimiter) TryAcquirePermit() (Permit, bool) {
 	}, true
 }
 
-func (l *adaptiveLimiter) CanAcquirePermit() bool {
+func (l *reactiveLimiter) CanAcquirePermit() bool {
 	return !l.semaphore.IsFull()
 }
 
-func (l *adaptiveLimiter) Limit() int {
+func (l *reactiveLimiter) Limit() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return int(l.limit)
 }
 
-func (l *adaptiveLimiter) Inflight() int {
+func (l *reactiveLimiter) Inflight() int {
 	return l.semaphore.Used()
 }
 
-func (l *adaptiveLimiter) Blocked() int {
+func (l *reactiveLimiter) Blocked() int {
 	return l.semaphore.Waiters()
 }
 
-func (l *adaptiveLimiter) RejectionRate() float64 {
+func (l *reactiveLimiter) RejectionRate() float64 {
 	return 0
 }
 
 // Records the duration of a completed execution, updating the concurrency limit if the short shortRTT window is full.
-func (l *adaptiveLimiter) record(now time.Time, rtt time.Duration, inflight int, dropped bool) {
+func (l *reactiveLimiter) record(now time.Time, rtt time.Duration, inflight int, dropped bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if !dropped {
@@ -242,7 +242,7 @@ func (l *adaptiveLimiter) record(now time.Time, rtt time.Duration, inflight int,
 // updateLimit updates the concurrency limit based on the gradient between the shortRTT and historical longRTT.
 // A stability check prevents unnecessary decreases during steady state.
 // A correlation adjustment prevents upward drift during overload.
-func (l *adaptiveLimiter) updateLimit(shortRTT float64, inflight int) {
+func (l *reactiveLimiter) updateLimit(shortRTT float64, inflight int) {
 	// Update long term RTT and calculate the queue size
 	// This is the primary signal that we threshold off of to detect overload
 	longRTT := l.longRTT.Add(shortRTT)
@@ -326,7 +326,7 @@ func computeChange(queueSize, alpha, beta int, overloaded bool, throughputCorr, 
 	return hold, "queue"
 }
 
-func (l *adaptiveLimiter) logLimit(direction, reason string, limit float64, gradient float64, queueSize, inflight int, shortRTT, longRTT, rttCorr, throughput, throughputCorr, throughputCV float64) {
+func (l *reactiveLimiter) logLimit(direction, reason string, limit float64, gradient float64, queueSize, inflight int, shortRTT, longRTT, rttCorr, throughput, throughputCorr, throughputCV float64) {
 	level.Debug(l.logger).Log("msg", "limit update",
 		"direction", direction,
 		"reason", reason,
@@ -343,7 +343,7 @@ func (l *adaptiveLimiter) logLimit(direction, reason string, limit float64, grad
 }
 
 type recordingPermit struct {
-	limiter         *adaptiveLimiter
+	limiter         *reactiveLimiter
 	startTime       time.Time
 	currentInflight int
 }

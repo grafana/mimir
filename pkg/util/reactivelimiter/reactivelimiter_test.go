@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package adaptivelimiter
+package reactivelimiter
 
 import (
 	"context"
@@ -19,7 +19,7 @@ func createLimiterConfig() *Config {
 	return c
 }
 
-func TestAdaptiveLimiter(t *testing.T) {
+func TestReactiveLimiter(t *testing.T) {
 	t.Run("should initialize limit", func(t *testing.T) {
 		limiter := newLimiter(createLimiterConfig(), nil)
 		assert.Equal(t, 20, limiter.Limit())
@@ -41,7 +41,7 @@ func TestAdaptiveLimiter(t *testing.T) {
 	})
 }
 
-func TestAdaptiveLimiter_AcquirePermitAndRecord(t *testing.T) {
+func TestReactiveLimiter_AcquirePermitAndRecord(t *testing.T) {
 	config := createLimiterConfig()
 	config.InitialInflightLimit = 5
 	limiter := newLimiter(config, log.NewNopLogger())
@@ -53,7 +53,7 @@ func TestAdaptiveLimiter_AcquirePermitAndRecord(t *testing.T) {
 	assert.Equal(t, 0, limiter.Inflight())
 }
 
-func TestAdaptiveLimiter_TryAcquirePermitAndRecord(t *testing.T) {
+func TestReactiveLimiter_TryAcquirePermitAndRecord(t *testing.T) {
 	config := createLimiterConfig()
 	config.InitialInflightLimit = 1
 	limiter := newLimiter(config, log.NewNopLogger())
@@ -67,7 +67,7 @@ func TestAdaptiveLimiter_TryAcquirePermitAndRecord(t *testing.T) {
 	assert.Equal(t, 0, limiter.Inflight())
 }
 
-func TestAdaptiveLimiter_CanAcquirePermit(t *testing.T) {
+func TestReactiveLimiter_CanAcquirePermit(t *testing.T) {
 	config := createLimiterConfig()
 	config.InitialInflightLimit = 1
 	limiter := newLimiter(config, log.NewNopLogger())
@@ -81,7 +81,7 @@ func TestAdaptiveLimiter_CanAcquirePermit(t *testing.T) {
 }
 
 // Asserts that blocking requests are counted.
-func TestAdaptiveLimiter_Blocked(t *testing.T) {
+func TestReactiveLimiter_Blocked(t *testing.T) {
 	config := createLimiterConfig()
 	config.InitialInflightLimit = 1
 	limiter := newLimiter(config, log.NewNopLogger())
@@ -98,8 +98,8 @@ func TestAdaptiveLimiter_Blocked(t *testing.T) {
 	require.Equal(t, 0, limiter.Blocked())
 }
 
-func TestAdaptiveLimiter_record(t *testing.T) {
-	createLimiter := func() (*adaptiveLimiter, time.Time) {
+func TestReactiveLimiter_record(t *testing.T) {
+	createLimiter := func() (*reactiveLimiter, time.Time) {
 		config := createLimiterConfig()
 		config.ShortWindowMaxDuration = time.Second
 		config.ShortWindowMinSamples = 1
@@ -112,7 +112,7 @@ func TestAdaptiveLimiter_record(t *testing.T) {
 		return limiter, now
 	}
 
-	recordFn := func(limiter *adaptiveLimiter, startTime time.Time, rtt time.Duration, inflight int) time.Time {
+	recordFn := func(limiter *reactiveLimiter, startTime time.Time, rtt time.Duration, inflight int) time.Time {
 		// Simulate recording a sample after 2 seconds
 		now := startTime.Add(2 * time.Second)
 		require.NoError(t, limiter.semaphore.Acquire(context.Background()))

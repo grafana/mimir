@@ -1713,32 +1713,6 @@ Usage of ./cmd/mimir/mimir:
     	The prefix for the keys in the store. Should end with a /. (default "collectors/")
   -ingester.partition-ring.store string
     	Backend storage to use for the ring. Supported values are: consul, etcd, inmemory, memberlist, multi. (default "memberlist")
-  -ingester.push-adaptive-limiter.correlation-window uint
-    	[experimental] How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times (default 50)
-  -ingester.push-adaptive-limiter.enabled
-    	[experimental] Enable adaptive limiting when making requests to ingesters
-  -ingester.push-adaptive-limiter.initial-inflight-limit uint
-    	[experimental] Initial inflight requests limit (default 20)
-  -ingester.push-adaptive-limiter.initial-rejection-factor float
-    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start (default 2)
-  -ingester.push-adaptive-limiter.long-window uint
-    	[experimental] Short-term window measurements that are stored in an exponentially weighted moving average window, representing the long-term baseline inflight time (default 60)
-  -ingester.push-adaptive-limiter.max-inflight-limit uint
-    	[experimental] Maximum inflight requests limit (default 200)
-  -ingester.push-adaptive-limiter.max-limit-factor float
-    	[experimental] The maximum limit as a multiple of current inflight requests (default 5)
-  -ingester.push-adaptive-limiter.max-rejection-factor float
-    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
-  -ingester.push-adaptive-limiter.min-inflight-limit uint
-    	[experimental] Minimum inflight requests limit (default 2)
-  -ingester.push-adaptive-limiter.sample-quantile float
-    	[experimental] The quantile of recorded response times to consider when adjusting the concurrency limit (default 0.9)
-  -ingester.push-adaptive-limiter.short-window-max-duration duration
-    	[experimental] Maximum duration of the window that is used to determine the recent, short-term load on the system (default 30s)
-  -ingester.push-adaptive-limiter.short-window-min-duration duration
-    	[experimental] Minimum duration of the window that is used to determine the recent, short-term load on the system (default 1s)
-  -ingester.push-adaptive-limiter.short-window-min-samples uint
-    	[experimental] Minimum number of samples that must be recorded in the window (default 50)
   -ingester.push-circuit-breaker.cooldown-period duration
     	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
   -ingester.push-circuit-breaker.enabled
@@ -1753,34 +1727,34 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] The maximum duration of an ingester's request before it triggers a timeout. This configuration is used for circuit breakers only, and its timeouts aren't reported as errors. (default 2s)
   -ingester.push-circuit-breaker.thresholding-period duration
     	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
+  -ingester.push-reactive-limiter.correlation-window uint
+    	[experimental] How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times (default 50)
+  -ingester.push-reactive-limiter.enabled
+    	[experimental] Enable reactive limiting when making requests to ingesters
+  -ingester.push-reactive-limiter.initial-inflight-limit uint
+    	[experimental] Initial inflight requests limit (default 20)
+  -ingester.push-reactive-limiter.initial-rejection-factor float
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start (default 2)
+  -ingester.push-reactive-limiter.long-window uint
+    	[experimental] Short-term window measurements that are stored in an exponentially weighted moving average window, representing the long-term baseline inflight time (default 60)
+  -ingester.push-reactive-limiter.max-inflight-limit uint
+    	[experimental] Maximum inflight requests limit (default 200)
+  -ingester.push-reactive-limiter.max-limit-factor float
+    	[experimental] The maximum limit as a multiple of current inflight requests (default 5)
+  -ingester.push-reactive-limiter.max-rejection-factor float
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
+  -ingester.push-reactive-limiter.min-inflight-limit uint
+    	[experimental] Minimum inflight requests limit (default 2)
+  -ingester.push-reactive-limiter.sample-quantile float
+    	[experimental] The quantile of recorded response times to consider when adjusting the concurrency limit (default 0.9)
+  -ingester.push-reactive-limiter.short-window-max-duration duration
+    	[experimental] Maximum duration of the window that is used to determine the recent, short-term load on the system (default 30s)
+  -ingester.push-reactive-limiter.short-window-min-duration duration
+    	[experimental] Minimum duration of the window that is used to determine the recent, short-term load on the system (default 1s)
+  -ingester.push-reactive-limiter.short-window-min-samples uint
+    	[experimental] Minimum number of samples that must be recorded in the window (default 50)
   -ingester.rate-update-period duration
     	Period with which to update the per-tenant ingestion rates. (default 15s)
-  -ingester.read-adaptive-limiter.correlation-window uint
-    	[experimental] How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times (default 50)
-  -ingester.read-adaptive-limiter.enabled
-    	[experimental] Enable adaptive limiting when making requests to ingesters
-  -ingester.read-adaptive-limiter.initial-inflight-limit uint
-    	[experimental] Initial inflight requests limit (default 20)
-  -ingester.read-adaptive-limiter.initial-rejection-factor float
-    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start (default 2)
-  -ingester.read-adaptive-limiter.long-window uint
-    	[experimental] Short-term window measurements that are stored in an exponentially weighted moving average window, representing the long-term baseline inflight time (default 60)
-  -ingester.read-adaptive-limiter.max-inflight-limit uint
-    	[experimental] Maximum inflight requests limit (default 200)
-  -ingester.read-adaptive-limiter.max-limit-factor float
-    	[experimental] The maximum limit as a multiple of current inflight requests (default 5)
-  -ingester.read-adaptive-limiter.max-rejection-factor float
-    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
-  -ingester.read-adaptive-limiter.min-inflight-limit uint
-    	[experimental] Minimum inflight requests limit (default 2)
-  -ingester.read-adaptive-limiter.sample-quantile float
-    	[experimental] The quantile of recorded response times to consider when adjusting the concurrency limit (default 0.9)
-  -ingester.read-adaptive-limiter.short-window-max-duration duration
-    	[experimental] Maximum duration of the window that is used to determine the recent, short-term load on the system (default 30s)
-  -ingester.read-adaptive-limiter.short-window-min-duration duration
-    	[experimental] Minimum duration of the window that is used to determine the recent, short-term load on the system (default 1s)
-  -ingester.read-adaptive-limiter.short-window-min-samples uint
-    	[experimental] Minimum number of samples that must be recorded in the window (default 50)
   -ingester.read-circuit-breaker.cooldown-period duration
     	[experimental] How long the circuit breaker will stay in the open state before allowing some requests (default 10s)
   -ingester.read-circuit-breaker.enabled
@@ -1799,6 +1773,32 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
     	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
+  -ingester.read-reactive-limiter.correlation-window uint
+    	[experimental] How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times (default 50)
+  -ingester.read-reactive-limiter.enabled
+    	[experimental] Enable reactive limiting when making requests to ingesters
+  -ingester.read-reactive-limiter.initial-inflight-limit uint
+    	[experimental] Initial inflight requests limit (default 20)
+  -ingester.read-reactive-limiter.initial-rejection-factor float
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start (default 2)
+  -ingester.read-reactive-limiter.long-window uint
+    	[experimental] Short-term window measurements that are stored in an exponentially weighted moving average window, representing the long-term baseline inflight time (default 60)
+  -ingester.read-reactive-limiter.max-inflight-limit uint
+    	[experimental] Maximum inflight requests limit (default 200)
+  -ingester.read-reactive-limiter.max-limit-factor float
+    	[experimental] The maximum limit as a multiple of current inflight requests (default 5)
+  -ingester.read-reactive-limiter.max-rejection-factor float
+    	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
+  -ingester.read-reactive-limiter.min-inflight-limit uint
+    	[experimental] Minimum inflight requests limit (default 2)
+  -ingester.read-reactive-limiter.sample-quantile float
+    	[experimental] The quantile of recorded response times to consider when adjusting the concurrency limit (default 0.9)
+  -ingester.read-reactive-limiter.short-window-max-duration duration
+    	[experimental] Maximum duration of the window that is used to determine the recent, short-term load on the system (default 30s)
+  -ingester.read-reactive-limiter.short-window-min-duration duration
+    	[experimental] Minimum duration of the window that is used to determine the recent, short-term load on the system (default 1s)
+  -ingester.read-reactive-limiter.short-window-min-samples uint
+    	[experimental] Minimum number of samples that must be recorded in the window (default 50)
   -ingester.rejection-prioritizer.calibration-interval duration
     	[experimental] The interval at which the rejection threshold is calibrated (default 1s)
   -ingester.ring.consul.acl-token string

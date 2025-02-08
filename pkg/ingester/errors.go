@@ -498,19 +498,19 @@ func (e circuitBreakerOpenError) errorCause() mimirpb.ErrorCause {
 
 var _ ingesterError = circuitBreakerOpenError{}
 
-type adaptiveLimiterExceededError struct {
+type reactiveLimiterExceededError struct {
 	error
 }
 
-func newAdaptiveLimiterExceededError(err error) adaptiveLimiterExceededError {
-	return adaptiveLimiterExceededError{err}
+func newReactiveLimiterExceededError(err error) reactiveLimiterExceededError {
+	return reactiveLimiterExceededError{err}
 }
 
-func (e adaptiveLimiterExceededError) errorCause() mimirpb.ErrorCause {
+func (e reactiveLimiterExceededError) errorCause() mimirpb.ErrorCause {
 	return mimirpb.REQUEST_RATE_LIMITED
 }
 
-var _ ingesterError = adaptiveLimiterExceededError{}
+var _ ingesterError = reactiveLimiterExceededError{}
 
 type ingesterErrSamplers struct {
 	sampleTimestampTooOld             *log.Sampler

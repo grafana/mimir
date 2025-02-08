@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package adaptivelimiter
+package reactivelimiter
 
 import (
 	"context"
@@ -38,7 +38,7 @@ func randomGranularPriority(priority Priority) int {
 	return rand.Intn(r.upper-r.lower+1) + r.lower
 }
 
-// PriorityLimiter is an adaptive concurrency limiter that can prioritize request rejections via a Prioritizer.
+// PriorityLimiter is a reactive concurrency limiter that can prioritize request rejections via a Prioritizer.
 type PriorityLimiter interface {
 	Metrics
 
@@ -52,7 +52,7 @@ type PriorityLimiter interface {
 
 func NewPriorityLimiter(config *Config, prioritizer Prioritizer, logger log.Logger) PriorityLimiter {
 	limiter := &priorityLimiter{
-		adaptiveLimiter: newLimiter(config, logger),
+		reactiveLimiter: newLimiter(config, logger),
 		prioritizer:     prioritizer,
 	}
 	prioritizer.register(limiter)
@@ -60,7 +60,7 @@ func NewPriorityLimiter(config *Config, prioritizer Prioritizer, logger log.Logg
 }
 
 type priorityLimiter struct {
-	*adaptiveLimiter
+	*reactiveLimiter
 	prioritizer Prioritizer
 }
 
@@ -72,7 +72,7 @@ func (l *priorityLimiter) AcquirePermit(ctx context.Context, priority Priority) 
 	}
 
 	l.prioritizer.recordPriority(granularPriority)
-	return l.adaptiveLimiter.AcquirePermit(ctx)
+	return l.reactiveLimiter.AcquirePermit(ctx)
 }
 
 func (l *priorityLimiter) CanAcquirePermit(priority Priority) bool {
