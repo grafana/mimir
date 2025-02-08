@@ -425,7 +425,7 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 			)
 
 			ctx := user.InjectOrgID(context.Background(), "test")
-			spinoffRes, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
+			spinoffRes, err := spinoffMiddleware.Wrap(&slowDownstreamHandler{downstream}).Do(ctx, req)
 			require.Nil(t, err)
 
 			// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
@@ -453,6 +453,8 @@ cortex_frontend_subquery_spinoff_attempts_total 1
 cortex_frontend_subquery_spinoff_skipped_total{reason="mapping-failed"} 0
 cortex_frontend_subquery_spinoff_skipped_total{reason="no-subqueries"} %d
 cortex_frontend_subquery_spinoff_skipped_total{reason="parsing-failed"} 0
+cortex_frontend_subquery_spinoff_skipped_total{reason="query-failed"} 0
+cortex_frontend_subquery_spinoff_skipped_total{reason="slower-than-regular"} 0
 cortex_frontend_subquery_spinoff_skipped_total{reason="too-many-downstream-queries"} 0
 # HELP cortex_frontend_subquery_spinoff_successes_total Total number of queries the query-frontend successfully spun off subqueries from.
 # TYPE cortex_frontend_subquery_spinoff_successes_total counter
@@ -464,4 +466,13 @@ cortex_frontend_subquery_spinoff_successes_total %d
 				"cortex_frontend_spun_off_subqueries_total"))
 		})
 	}
+}
+
+type slowDownstreamHandler struct {
+	next MetricsQueryHandler
+}
+
+func (h *slowDownstreamHandler) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+	time.Sleep(1 * time.Second)
+	return h.next.Do(ctx, req)
 }
