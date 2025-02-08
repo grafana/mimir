@@ -311,7 +311,7 @@ func (s *spinOffSubqueriesMiddleware) runBestOutcome(ctx context.Context, req Me
 		return regularRes, nil
 	}
 
-	if spinOffTime != 0 && spinOffTime <= regularTime*time.Duration(s.speedMultipleThreshold) {
+	if spinOffTime != 0 && spinOffTime*time.Duration(s.speedMultipleThreshold) <= regularTime {
 		// The spun off query was faster than the regular query
 		level.Info(spanLog).Log("msg", "spun off query was faster than regular query, returning spun off query", "spun_off_time", spinOffTime, "regular_time", regularTime)
 		s.skipCache.SetWithTTL(req.GetQuery(), subquerySpinoffNotSkipped, 0, subquerySpinoffSkipCacheTTL)
