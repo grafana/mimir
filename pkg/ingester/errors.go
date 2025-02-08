@@ -589,36 +589,3 @@ func mapReadErrorToErrorWithStatus(err error) error {
 	}
 	return newErrorWithStatus(err, errCode)
 }
-
-// mapErrorToErrorWithStatus maps the given error to the corresponding error of type globalerror.ErrorWithStatus.
-func mapErrorToErrorWithStatus(err error) error {
-	var (
-		ingesterErr ingesterError
-		errCode     = codes.Internal
-		wrappedErr  = err
-	)
-	if errors.As(err, &ingesterErr) {
-		switch ingesterErr.errorCause() {
-		case mimirpb.BAD_DATA:
-			errCode = codes.InvalidArgument
-		case mimirpb.TENANT_LIMIT:
-			errCode = codes.FailedPrecondition
-		case mimirpb.SERVICE_UNAVAILABLE:
-			errCode = codes.Unavailable
-		case mimirpb.INSTANCE_LIMIT:
-			errCode = codes.Unavailable
-			wrappedErr = middleware.DoNotLogError{Err: err}
-		case mimirpb.TSDB_UNAVAILABLE:
-			errCode = codes.Internal
-		case mimirpb.METHOD_NOT_ALLOWED:
-			errCode = codes.Unimplemented
-		case mimirpb.REQUEST_RATE_LIMITED:
-			errCode = codes.Unavailable
-		case mimirpb.CIRCUIT_BREAKER_OPEN:
-			errCode = codes.Unavailable
-		case mimirpb.TOO_BUSY:
-			errCode = codes.ResourceExhausted
-		}
-	}
-	return newErrorWithStatus(wrappedErr, errCode)
-}

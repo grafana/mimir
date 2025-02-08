@@ -1036,8 +1036,6 @@ func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context
 
 // PreparePushRequest implements pushReceiver.
 func (i *Ingester) PreparePushRequest(ctx context.Context) (finishFn func(error), err error) {
-	defer func() { err = i.mapErrorToErrorWithStatus(err) }()
-
 	if i.reactiveLimiter != nil && i.reactiveLimiter.push != nil {
 		// Acquire a permit, blocking if needed
 		permit, err := i.reactiveLimiter.push.AcquirePermit(ctx)
@@ -1734,8 +1732,6 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 // PrepareReadRequest implements ingesterReceiver and is called by a gRPC interceptor when a request is in progress.
 // When successful, PrepareReadRequest returns a function that should be called once the request is completed.
 func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error), err error) {
-	defer func() { err = i.mapErrorToErrorWithStatus(err) }()
-
 	cbFinish := func(error) {}
 	if st := getReadRequestState(ctx); st != nil {
 		cbFinish = st.requestFinish
@@ -3974,18 +3970,6 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 		return nil, err
 	}
 	return &mimirpb.WriteResponse{}, err
-}
-
-func (i *Ingester) mapErrorToErrorWithStatus(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return err
-	}
-
-	return mapErrorToErrorWithStatus(err)
 }
 
 func (i *Ingester) mapReadErrorToErrorWithStatus(err error) error {
