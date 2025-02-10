@@ -136,7 +136,7 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 			reqs := []*http.Request{rangeHTTPReq, labelValuesHTTPReq}
 
 			for _, req := range reqs {
-				httpgrpcReq, err := httpgrpc.FromHTTPRequestWithCluster(req, "")
+				httpgrpcReq, err := httpgrpc.FromHTTPRequestWithCluster(req, "", nil)
 				require.NoError(t, err)
 
 				additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(
@@ -179,7 +179,7 @@ func TestExtractAdditionalQueueDimensions(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "tenant-0")
 
 			instantHTTPReq := makeInstantHTTPRequest(ctx, testData.time)
-			httpgrpcReq, err := httpgrpc.FromHTTPRequestWithCluster(instantHTTPReq, "")
+			httpgrpcReq, err := httpgrpc.FromHTTPRequestWithCluster(instantHTTPReq, "", nil)
 			require.NoError(t, err)
 
 			additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(
@@ -229,7 +229,7 @@ func TestQueryDecoding(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "tenant-0")
 
 			labelValuesHTTPReq := makeLabelValuesHTTPRequest(ctx, testData.start, testData.end)
-			httpgrpcReq, err := httpgrpc.FromHTTPRequestWithCluster(labelValuesHTTPReq, "")
+			httpgrpcReq, err := httpgrpc.FromHTTPRequestWithCluster(labelValuesHTTPReq, "", nil)
 			require.NoError(t, err)
 
 			additionalQueueDimensions, err := adapter.extractAdditionalQueueDimensions(

@@ -848,7 +848,7 @@ func TestInvalidCluster(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
-	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID, e2emimir.WithAddHeader(clusterutil.ClusterHeader, "distributor-cluster"))
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID, e2emimir.WithAddHeader(clusterutil.ClusterVerificationLabelHeader, "distributor-cluster"))
 	require.NoError(t, err)
 
 	res, err := client.Push(series)

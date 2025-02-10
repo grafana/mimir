@@ -12,30 +12,32 @@ import (
 )
 
 const (
-	// ClusterHeader is the name of the cluster identifying HTTP header.
-	ClusterHeader = "X-Cluster"
+	// ClusterVerificationLabelHeader is the name of the cluster verification label HTTP header.
+	ClusterVerificationLabelHeader = "X-Cluster"
 
-	// MetadataClusterKey is the key of the cluster gRPC metadata.
-	MetadataClusterKey = "x-cluster"
+	// MetadataClusterVerificationLabelKey is the key of the cluster verification label gRPC metadata.
+	MetadataClusterVerificationLabelKey = "x-cluster"
 )
 
 var (
-	ErrNoCluster               = errors.New("no cluster in context")
-	ErrDifferentClusterPresent = errors.New("different cluster already present in header")
+	ErrNoClusterVerificationLabel               = errors.New("no cluster verification label in context")
+	ErrDifferentClusterVerificationLabelPresent = errors.New("different cluster verification label already present in header")
 )
 
+type clusterContextKey string
+
 // PutClusterIntoOutgoingContext returns a new context with the provided value
-// for MetadataClusterKey merged with any existing metadata in the context.
+// for MetadataClusterVerificationLabelKey merged with any existing metadata in the context.
 func PutClusterIntoOutgoingContext(ctx context.Context, cluster string) context.Context {
-	return metadata.AppendToOutgoingContext(ctx, MetadataClusterKey, cluster)
+	return metadata.AppendToOutgoingContext(ctx, MetadataClusterVerificationLabelKey, cluster)
 }
 
 // GetClusterFromIncomingContext returns the metadata value corresponding to the metadata
-// key MetadataClusterKey from the incoming metadata if it exists.
+// key MetadataClusterVerificationLabelKey from the incoming metadata if it exists.
 func GetClusterFromIncomingContext(ctx context.Context, logger log.Logger) string {
-	clusterIDs := metadata.ValueFromIncomingContext(ctx, MetadataClusterKey)
+	clusterIDs := metadata.ValueFromIncomingContext(ctx, MetadataClusterVerificationLabelKey)
 	if len(clusterIDs) != 1 {
-		msg := fmt.Sprintf("gRPC metadata should contain exactly 1 value for key \"%s\", but the current set of values is %v. Returning an empty string.", MetadataClusterKey, clusterIDs)
+		msg := fmt.Sprintf("gRPC metadata should contain exactly 1 value for key %q, but the current set of values is %v. Returning an empty string.", MetadataClusterVerificationLabelKey, clusterIDs)
 		level.Warn(logger).Log("msg", msg)
 		return ""
 	}
@@ -44,14 +46,14 @@ func GetClusterFromIncomingContext(ctx context.Context, logger log.Logger) strin
 
 // InjectCluster returns a derived context containing the cluster.
 func InjectCluster(ctx context.Context, cluster string) context.Context {
-	return context.WithValue(ctx, interface{}(MetadataClusterKey), cluster)
+	return context.WithValue(ctx, clusterContextKey(MetadataClusterVerificationLabelKey), cluster)
 }
 
 // ExtractCluster gets the cluster from the context.
 func ExtractCluster(ctx context.Context) (string, error) {
-	userID, ok := ctx.Value(MetadataClusterKey).(string)
-	if !ok {
-		return "", ErrNoCluster
+	userID := ctx.Value(clusterContextKey(MetadataClusterVerificationLabelKey)).(string)
+	if userID == "" {
+		return "", ErrNoClusterVerificationLabel
 	}
 	return userID, nil
 }
@@ -62,10 +64,10 @@ func InjectClusterIntoHTTPRequest(ctx context.Context, r *http.Request) error {
 	if err != nil {
 		return err
 	}
-	existingID := r.Header.Get(ClusterHeader)
+	existingID := r.Header.Get(ClusterVerificationLabelHeader)
 	if existingID != "" && existingID != userID {
-		return ErrDifferentClusterPresent
+		return ErrDifferentClusterVerificationLabelPresent
 	}
-	r.Header.Set(ClusterHeader, userID)
+	r.Header.Set(ClusterVerificationLabelHeader, userID)
 	return nil
 }

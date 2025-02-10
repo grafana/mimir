@@ -213,7 +213,7 @@ func newIngesterPushError(stat *status.Status, ingesterID string) ingesterPushEr
 			errorCause = errorDetails.GetCause()
 		}
 		if errorDetails, ok := details[0].(*grpcutil.ErrorDetails); ok {
-			if errorDetails.Cause == grpcutil.WRONG_CLUSTER_NAME {
+			if errorDetails.Cause == grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL {
 				errorCause = mimirpb.BAD_DATA
 			}
 		}

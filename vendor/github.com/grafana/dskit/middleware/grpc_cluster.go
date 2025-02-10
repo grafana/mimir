@@ -6,14 +6,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/clusterutil"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-
-	"github.com/grafana/dskit/grpcutil"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/grafana/dskit/clusterutil"
+	"github.com/grafana/dskit/grpcutil"
 )
 
 // ClusterUnaryClientInterceptor propagates the given cluster info to gRPC metadata.
@@ -37,13 +36,14 @@ func ClusterUnaryServerInterceptor(cluster string, invalidClusters *prometheus.C
 		}
 		reqCluster := clusterutil.GetClusterFromIncomingContext(ctx, logger)
 		if cluster != reqCluster {
-			level.Warn(logger).Log("msg", "rejecting request intended for wrong cluster",
-				"cluster", cluster, "request_cluster", reqCluster, "method", info.FullMethod)
+			level.Warn(logger).Log("msg", "rejecting request with wrong cluster verification label",
+				"cluster_verification_label", cluster, "request_cluster_verification_label", reqCluster,
+				"method", info.FullMethod)
 			if invalidClusters != nil {
 				invalidClusters.WithLabelValues("grpc", info.FullMethod, reqCluster).Inc()
 			}
 			msg := fmt.Sprintf("request intended for cluster %q - this is cluster %q", reqCluster, cluster)
-			stat := grpcutil.Status(codes.FailedPrecondition, msg, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_NAME})
+			stat := grpcutil.Status(codes.FailedPrecondition, msg, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL})
 			return nil, stat.Err()
 		}
 		return handler(ctx, req)
