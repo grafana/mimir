@@ -81,7 +81,32 @@ func (m *subquerySpinOffMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, f
 		return selector, false, nil
 	}
 
+	defaultReturn := func() (parser.Expr, bool, error) {
+		// If there's no subquery in the children, we can abort early and pass the expression through to the downstream execution path.
+		if !hasSubqueryInChildren(expr) {
+			return downstreamQuery(expr)
+		}
+		return expr, false, nil
+	}
+
 	switch e := expr.(type) {
+	case *parser.AggregateExpr:
+		call, isCall := e.Expr.(*parser.Call)
+		if !isCall {
+			return defaultReturn()
+		}
+		if len(call.Args) == 0 {
+			return defaultReturn()
+		}
+		lastArgIdx := len(call.Args) - 1
+		if sq, ok := call.Args[lastArgIdx].(*parser.SubqueryExpr); ok {
+			// If we're dealing with a relatively simple subquery (no joins), leave it alone.
+			// It will probably be faster with query sharding.
+			if countSelectors(sq.Expr) == 1 {
+				return downstreamQuery(expr)
+			}
+		}
+		return defaultReturn()
 	case *parser.Call:
 		if len(e.Args) == 0 {
 			return expr, false, nil
@@ -136,11 +161,7 @@ func (m *subquerySpinOffMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, f
 
 		return downstreamQuery(expr)
 	default:
-		// If there's no subquery in the children, we can abort early and pass the expression through to the downstream execution path.
-		if !hasSubqueryInChildren(expr) {
-			return downstreamQuery(expr)
-		}
-		return expr, false, nil
+		return defaultReturn()
 	}
 }
 
