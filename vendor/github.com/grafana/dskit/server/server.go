@@ -90,7 +90,7 @@ type Config struct {
 	GRPCConnLimit                 int                    `yaml:"grpc_listen_conn_limit"`
 	ProxyProtocolEnabled          bool                   `yaml:"proxy_protocol_enabled"`
 	ClusterVerificationLabel      string                 `yaml:"cluster_verification_label"`
-	ClusterVerificationLabelCheck clusterCheckEnum       `yaml:"cluster_verification_label_check"`
+	ClusterVerificationLabelCheck ClusterCheckEnum       `yaml:"cluster_verification_label_check"`
 	AuxiliaryURLPaths             flagext.StringSliceCSV `yaml:"auxiliary_url_paths"`
 
 	CipherSuites  string    `yaml:"tls_cipher_suites"`

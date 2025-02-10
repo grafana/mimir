@@ -1156,6 +1156,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the exit from this function.
 	defer cleanUp()
+
 	start := time.Now()
 	// Only start/finish request here when the request comes NOT from grpc handlers (i.e., from ingest.Store).
 	// NOTE: request coming from grpc handler may end up calling start multiple times during its lifetime (e.g., when migrating to ingest storage).

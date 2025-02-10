@@ -677,7 +677,9 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initStoreQueryable() (services.Service, error) {
-	q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer, t.Cfg.Server.ClusterVerificationLabel)
+	q, err := querier.NewBlocksStoreQueryableFromConfig(
+		t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer, t.Cfg.Server.ClusterVerificationLabel,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
 	}
@@ -827,11 +829,12 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.ClusterVerificationLabel = t.Cfg.Server.ClusterVerificationLabel
+	t.Cfg.Frontend.CheckHTTPClusterVerificationLabel = t.Cfg.Server.ClusterVerificationLabelCheck.HTTPEnabled()
 	t.Cfg.Frontend.FrontendV2.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
 	t.Cfg.Frontend.FrontendV2.LookBackDelta = t.Cfg.Querier.EngineConfig.LookbackDelta
 	t.Cfg.Frontend.FrontendV2.QueryStoreAfter = t.Cfg.Querier.QueryStoreAfter
 
-	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer, t.QueryFrontendCodec, t.Cfg.Server.ClusterVerificationLabel, t.ServerMetrics)
+	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer, t.QueryFrontendCodec, t.ServerMetrics)
 	if err != nil {
 		return nil, err
 	}

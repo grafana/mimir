@@ -35,7 +35,8 @@ type CombinedFrontendConfig struct {
 
 	DownstreamURL string `yaml:"downstream_url" category:"advanced"`
 
-	ClusterVerificationLabel string `yaml:"-"`
+	ClusterVerificationLabel          string `yaml:"-"`
+	CheckHTTPClusterVerificationLabel bool   `yaml:"-"`
 }
 
 func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -64,7 +65,20 @@ func (cfg *CombinedFrontendConfig) Validate() error {
 // Returned RoundTripper can be wrapped in more round-tripper middlewares, and then eventually registered
 // into HTTP server using the Handler from this package. Returned RoundTripper is always non-nil
 // (if there are no errors), and it uses the returned frontend (if any).
-func InitFrontend(cfg CombinedFrontendConfig, v1Limits v1.Limits, v2Limits v2.Limits, grpcListenPort int, log log.Logger, reg prometheus.Registerer, codec querymiddleware.Codec, cluster string, serverMetrics *server.Metrics) (http.RoundTripper, *v1.Frontend, *v2.Frontend, error) {
+func InitFrontend(
+	cfg CombinedFrontendConfig,
+	v1Limits v1.Limits,
+	v2Limits v2.Limits,
+	grpcListenPort int,
+	log log.Logger,
+	reg prometheus.Registerer,
+	codec querymiddleware.Codec,
+	serverMetrics *server.Metrics,
+) (http.RoundTripper, *v1.Frontend, *v2.Frontend, error) {
+	checkCluster := cfg.ClusterVerificationLabel
+	if !cfg.CheckHTTPClusterVerificationLabel {
+		checkCluster = ""
+	}
 	switch {
 	case cfg.DownstreamURL != "":
 		// If the user has specified a downstream Prometheus, then we should use that.
@@ -86,8 +100,8 @@ func InitFrontend(cfg CombinedFrontendConfig, v1Limits v1.Limits, v2Limits v2.Li
 			cfg.FrontendV2.Port = grpcListenPort
 		}
 
-		fr, err := v2.NewFrontend(cfg.FrontendV2, v2Limits, log, reg, codec, cluster)
-		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr, cfg.ClusterVerificationLabel, serverMetrics), nil, fr, err
+		fr, err := v2.NewFrontend(cfg.FrontendV2, v2Limits, log, reg, codec, cfg.ClusterVerificationLabel)
+		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr, checkCluster, serverMetrics), nil, fr, err
 
 	default:
 		// No scheduler = use original frontend.
@@ -95,7 +109,7 @@ func InitFrontend(cfg CombinedFrontendConfig, v1Limits v1.Limits, v2Limits v2.Li
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr, cfg.ClusterVerificationLabel, serverMetrics), fr, nil, nil
+		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr, checkCluster, serverMetrics), fr, nil, nil
 	}
 }
 

@@ -212,10 +212,8 @@ func newIngesterPushError(stat *status.Status, ingesterID string) ingesterPushEr
 		if errorDetails, ok := details[0].(*mimirpb.ErrorDetails); ok {
 			errorCause = errorDetails.GetCause()
 		}
-		if errorDetails, ok := details[0].(*grpcutil.ErrorDetails); ok {
-			if errorDetails.Cause == grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL {
-				errorCause = mimirpb.BAD_DATA
-			}
+		if errorDetails, ok := details[0].(*grpcutil.ErrorDetails); ok && errorDetails.Cause == grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL {
+			errorCause = mimirpb.BAD_DATA
 		}
 	}
 	message := fmt.Sprintf("%s %s: %s", failedPushingToIngesterMessage, ingesterID, stat.Message())

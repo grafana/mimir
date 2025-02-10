@@ -5,13 +5,14 @@ import (
 	"strings"
 )
 
-type clusterCheckEnum string
+// ClusterCheckEnum is an enumeration of supported cluster verification label check modes.
+type ClusterCheckEnum string
 
-func (v *clusterCheckEnum) Alternatives() string {
+func (v *ClusterCheckEnum) Alternatives() string {
 	return "none,all,grpc,http"
 }
 
-func (v *clusterCheckEnum) HTTPEnabled() bool {
+func (v *ClusterCheckEnum) HTTPEnabled() bool {
 	switch v.String() {
 	case "all", "http":
 		return true
@@ -20,7 +21,7 @@ func (v *clusterCheckEnum) HTTPEnabled() bool {
 	}
 }
 
-func (v *clusterCheckEnum) GRPCEnabled() bool {
+func (v *ClusterCheckEnum) GRPCEnabled() bool {
 	switch v.String() {
 	case "all", "grpc":
 		return true
@@ -30,7 +31,7 @@ func (v *clusterCheckEnum) GRPCEnabled() bool {
 }
 
 // String implements flag.Value
-func (v *clusterCheckEnum) String() string {
+func (v *ClusterCheckEnum) String() string {
 	ret := string(*v)
 	if ret == "" {
 		// Default.
@@ -40,10 +41,10 @@ func (v *clusterCheckEnum) String() string {
 }
 
 // Set implements flag.Value
-func (v *clusterCheckEnum) Set(s string) error {
+func (v *ClusterCheckEnum) Set(s string) error {
 	switch strings.ToLower(s) {
 	case "none", "all", "grpc", "http":
-		*v = clusterCheckEnum(s)
+		*v = ClusterCheckEnum(s)
 	default:
 		return fmt.Errorf(`not one of none,all,grpc,http: %q`, s)
 	}
@@ -51,7 +52,7 @@ func (v *clusterCheckEnum) Set(s string) error {
 }
 
 // UnmarshalYAML implements yaml.Unmarshaler.
-func (v *clusterCheckEnum) UnmarshalYAML(unmarshal func(any) error) error {
+func (v *ClusterCheckEnum) UnmarshalYAML(unmarshal func(any) error) error {
 	var s string
 	if err := unmarshal(&s); err != nil {
 		return err
@@ -60,6 +61,6 @@ func (v *clusterCheckEnum) UnmarshalYAML(unmarshal func(any) error) error {
 }
 
 // MarshalYAML implements yaml.Marshaler.
-func (v *clusterCheckEnum) MarshalYAML() (any, error) {
+func (v *ClusterCheckEnum) MarshalYAML() (any, error) {
 	return v.String(), nil
 }
