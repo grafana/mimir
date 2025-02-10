@@ -1797,18 +1797,16 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 
 			_, err = c.Push(ctx, req)
 			if err != nil {
-				stat, ok := grpcutil.ErrorToStatus(err)
-				if ok {
+				stat, _ := grpcutil.ErrorToStatus(err)
+				if stat != nil {
 					details := stat.Details()
 					detailsAsString := make([]string, 0, len(details))
-					if len(details) != 0 {
-						for _, det := range details {
-							if errDetails, ok := det.(*mimirpb.ErrorDetails); ok {
-								detailsAsString = append(detailsAsString, errDetails.Cause.String())
-							}
-							if errDetails, ok := det.(*grpcutil.ErrorDetails); ok {
-								detailsAsString = append(detailsAsString, errDetails.Cause.String())
-							}
+					for _, det := range details {
+						if errDetails, ok := det.(*mimirpb.ErrorDetails); ok {
+							detailsAsString = append(detailsAsString, errDetails.Cause.String())
+						}
+						if errDetails, ok := det.(*grpcutil.ErrorDetails); ok {
+							detailsAsString = append(detailsAsString, errDetails.Cause.String())
 						}
 					}
 					dets := fmt.Sprintf("%v", detailsAsString)

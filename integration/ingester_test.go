@@ -786,7 +786,7 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 	require.Equalf(t, 0.0, cancelledQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
 }
 
-func TestInvalidCluster(t *testing.T) {
+func TestInvalidClusterVerificationLabel(t *testing.T) {
 	series := []prompb.TimeSeries{
 		{
 			Labels: []prompb.Label{
@@ -822,14 +822,14 @@ func TestInvalidCluster(t *testing.T) {
 	distributorFlags := mergeFlags(
 		flags,
 		map[string]string{
-			"-server.cluster": "distributor-cluster",
+			"-server.cluster-verification-label": "distributor-cluster",
 		},
 	)
 
 	ingesterFlags := mergeFlags(
 		flags,
 		map[string]string{
-			"-server.cluster": "ingester-cluster",
+			"-server.cluster-verification-label": "ingester-cluster",
 		},
 	)
 
