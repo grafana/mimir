@@ -48,7 +48,7 @@ spec:
       volumes:
       containers:
         - name: memcached
-          image: memcached:1.6.34-alpine
+          image: memcached:1.6.36-alpine
           imagePullPolicy: IfNotPresent
           resources:
             limits: null
