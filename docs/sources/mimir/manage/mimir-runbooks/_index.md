@@ -2171,7 +2171,7 @@ How it **works**:
 
 - The ingester has a per-instance limit on the number of in-flight read requests.
 - The limit applies to all in-flight read requests, across all tenants, and it protects the ingester from becoming overloaded in case of high traffic.
-- To configure the limit, set the `-ingester.read-adaptive-limiter` options.
+- To configure the limit, set the `-ingester.read-reactive-limiter` options.
 
 How to **fix** it:
 
