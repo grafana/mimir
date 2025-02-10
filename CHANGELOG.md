@@ -103,6 +103,8 @@
 
 ### Query-tee
 
+* [ENHANCEMENT] Allow skipping comparisons when preferred backend fails. Disabled by default, enable with `-proxy.compare-skip-preferred-backend-failures=true`. #10612
+
 ### Documentation
 
 * [CHANGE] Add production tips related to cache size, heavy multi-tenancy and latency spikes. #9978
