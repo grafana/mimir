@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -13,18 +14,29 @@ import (
 )
 
 // ClusterValidationMiddleware validates that requests are for the correct cluster.
-func ClusterValidationMiddleware(cluster string, invalidClusters *prometheus.CounterVec, logger log.Logger) Interface {
+func ClusterValidationMiddleware(cluster string, auxPaths []string, invalidClusters *prometheus.CounterVec, logger log.Logger) Interface {
+	var reB strings.Builder
+	// Allow for a potential path prefix being configured.
+	reB.WriteString(".*/(metrics|debug/pprof.*|ready")
+	for _, p := range auxPaths {
+		reB.WriteString("|" + regexp.QuoteMeta(p))
+	}
+	reB.WriteString(")")
+	reAuxPath := regexp.MustCompile(reB.String())
+	// TODO: Remove me.
+	// reAuxPath := regexp.MustCompile(".*/(metrics|debug/pprof.*|ready|backlog_replay_complete|admission/no-downscale|admission/prepare-downscale)")
+
 	return Func(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			reqCluster := r.Header.Get(clusterutil.ClusterHeader)
-			if !auxilliaryPath(r.URL.Path) && reqCluster != cluster {
-				level.Warn(logger).Log("msg", "rejecting request intended for wrong cluster",
-					"cluster", cluster, "request_cluster", reqCluster, "header", clusterutil.ClusterHeader,
-					"url", r.URL, "path", r.URL.Path)
+			reqCluster := r.Header.Get(clusterutil.ClusterVerificationLabelHeader)
+			if !reAuxPath.MatchString(r.URL.Path) && reqCluster != cluster {
+				level.Warn(logger).Log("msg", "rejecting request with wrong cluster verification label",
+					"cluster_verification_label", cluster, "request_cluster_verification_label", reqCluster,
+					"header", clusterutil.ClusterVerificationLabelHeader, "url", r.URL, "path", r.URL.Path)
 				if invalidClusters != nil {
 					invalidClusters.WithLabelValues("http", r.URL.Path, reqCluster).Inc()
 				}
-				http.Error(w, fmt.Sprintf("request intended for cluster %q - this is cluster %q", reqCluster, cluster),
+				http.Error(w, fmt.Sprintf("request has cluster verification label %q - it should be %q", reqCluster, cluster),
 					http.StatusBadRequest)
 				return
 			}
@@ -32,13 +44,4 @@ func ClusterValidationMiddleware(cluster string, invalidClusters *prometheus.Cou
 			next.ServeHTTP(w, r)
 		})
 	})
-}
-
-// Allow for a potential path prefix being configured.
-// TODO: Take /backlog_replay_complete out, and allow for it to be configured instead (it's part of a readiness probe).
-// TODO: Take /admission/* out, and allow for them to be configured instead (they're rollout operator k8s webhooks).
-var reAuxPath = regexp.MustCompile(".*/(metrics|debug/pprof.*|ready|backlog_replay_complete|admission/no-downscale|admission/prepare-downscale)")
-
-func auxilliaryPath(pth string) bool {
-	return reAuxPath.MatchString(pth)
 }

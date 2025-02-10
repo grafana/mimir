@@ -3213,12 +3213,14 @@ Usage of ./cmd/mimir/mimir:
     	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
   -runtime-config.reload-period duration
     	How often to check runtime config files. (default 10s)
-  -server.cluster string
-    	Optionally define the server's cluster, and enable validation that requests are for the same cluster.
+  -server.auxiliary-url-paths comma-separated-list-of-strings
+    	Optionally define auxiliary URL paths, that should not be validated wrt. cluster verification label.
+  -server.cluster-verification-label string
+    	Optionally define the server's cluster verification label, which are sent with requests.
+  -server.cluster-verification-label-check value
+    	Enable validation that HTTP and/or gRPC requests have the configured -server.cluster-verification-label. Ignored if the latter is not set. One of none,all,grpc,http.
   -server.graceful-shutdown-timeout duration
     	Timeout for graceful shutdowns (default 30s)
-  -server.grpc-cluster-check-enabled
-    	Enable validation that gRPC requests are for the cluster configured via -server.cluster. Ignored if -server.cluster is not set.
   -server.grpc-conn-limit int
     	Maximum number of simultaneous grpc connections, <=0 to disable
   -server.grpc-listen-address string
@@ -3257,8 +3259,6 @@ Usage of ./cmd/mimir/mimir:
     	After having pinged for keepalive check, the duration after which an idle connection should be closed, Default: 20s (default 20s)
   -server.grpc.num-workers int
     	If non-zero, configures the amount of GRPC server workers used to serve the requests. (default 100)
-  -server.http-cluster-check-enabled
-    	Enable validation that HTTP requests are for the cluster configured via -server.cluster. Ignored if -server.cluster is not set.
   -server.http-conn-limit int
     	Maximum number of simultaneous http connections, <=0 to disable
   -server.http-idle-timeout duration

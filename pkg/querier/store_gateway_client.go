@@ -38,7 +38,7 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 	})
 }
 
-func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, cluster string, logger log.Logger) (*storeGatewayClient, error) {
+func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, cluster string, _ log.Logger) (*storeGatewayClient, error) {
 	unary, stream := grpcclient.Instrument(requestDuration)
 	unary = append(unary, middleware.ClusterUnaryClientInterceptor(cluster))
 	opts, err := clientCfg.DialOption(unary, stream)

@@ -64,7 +64,7 @@ func ErrorToStatusCode(err error) codes.Code {
 
 func Status(errCode codes.Code, errMessage string, details ...proto.Message) *status.Status {
 	stat := status.New(errCode, errMessage)
-	if details != nil {
+	if len(details) > 0 {
 		statWithDetails, err := stat.WithDetails(details...)
 		if err == nil {
 			return statWithDetails

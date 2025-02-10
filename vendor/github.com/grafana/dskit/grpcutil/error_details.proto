@@ -6,7 +6,7 @@ option go_package = "grpcutil";
 
 enum ErrorCause {
   UNKNOWN_CAUSE = 0;
-  WRONG_CLUSTER_NAME = 1;
+  WRONG_CLUSTER_VERIFICATION_LABEL = 1;
 }
 
 message ErrorDetails {

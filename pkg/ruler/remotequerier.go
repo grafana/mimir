@@ -98,7 +98,7 @@ func (c *QueryFrontendConfig) Validate() error {
 }
 
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
-func DialQueryFrontend(cfg QueryFrontendConfig, cluster string, logger log.Logger) (httpgrpc.HTTPClient, error) {
+func DialQueryFrontend(cfg QueryFrontendConfig, cluster string, _ log.Logger) (httpgrpc.HTTPClient, error) {
 	opts, err := cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
 		middleware.ClientUserHeaderInterceptor,
@@ -403,9 +403,9 @@ func WithOrgIDMiddleware(ctx context.Context, req *httpgrpc.HTTPRequest) error {
 
 // WithClusterMiddleware returns a Middleware that injects a cluster header.
 func WithClusterMiddleware(cluster string) Middleware {
-	return func(ctx context.Context, req *httpgrpc.HTTPRequest) error {
+	return func(_ context.Context, req *httpgrpc.HTTPRequest) error {
 		req.Headers = append(req.Headers, &httpgrpc.Header{
-			Key:    textproto.CanonicalMIMEHeaderKey(clusterutil.ClusterHeader),
+			Key:    textproto.CanonicalMIMEHeaderKey(clusterutil.ClusterVerificationLabelHeader),
 			Values: []string{cluster},
 		})
 		return nil

@@ -46,7 +46,7 @@ func (b *buffer) Bytes() []byte {
 }
 
 func (a *grpcRoundTripperAdapter) RoundTrip(r *http.Request) (*http.Response, error) {
-	req, err := httpgrpc.FromHTTPRequestWithCluster(r, a.cluster, a.serverMetrics.InvalidClusters)
+	req, err := httpgrpc.FromHTTPRequestWithCluster(r, a.cluster, a.serverMetrics.InvalidClusterVerificationLabels)
 	if err != nil {
 		return nil, err
 	}
