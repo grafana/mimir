@@ -183,13 +183,13 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		}
 
 		if e.Param != nil {
-			param, err := q.convertToScalarOperator(e.Param, timeRange)
-			if err != nil {
-				return nil, err
-			}
-
 			switch e.Op {
 			case parser.TOPK, parser.BOTTOMK:
+				param, err := q.convertToScalarOperator(e.Param, timeRange)
+				if err != nil {
+					return nil, err
+				}
+
 				return aggregations.NewTopKBottomK(inner, param, timeRange, e.Grouping, e.Without, e.Op == parser.TOPK, q.memoryConsumptionTracker, q.annotations, e.PosRange), nil
 			default:
 				return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' aggregation with parameter", e.Op))
