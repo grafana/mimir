@@ -101,7 +101,7 @@
 
 ### Query-tee
 
-* [ENHANCEMENT] Allow setting a "skipped" result on comparisons when preferred backend fails #10612
+* [ENHANCEMENT] Allow setting a "skip" result on comparisons when preferred backend fails #10612
 
 ### Documentation
 
