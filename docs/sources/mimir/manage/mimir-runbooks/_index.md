@@ -614,7 +614,7 @@ How to **investigate**:
         - Find source blocks for the compaction job: search for `msg="compact blocks"` and a mention of the result block ID.
         - Mark the source blocks for no compaction (in this example the object storage backend is GCS):
           ```
-          ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Leading to out-of-order chunks when compacting with other blocks" <block-1> <block-2>...
+          ./tools/mark-blocks/mark-blocks -backend gcs -gcs.bucket-name <bucket> -mark-type no-compact -tenant <tenant-id> -details "Leading to out-of-order chunks when compacting with other blocks" -blocks "<block-1>,<block-2>..."
           ```
   - Result block exceeds symbol table maximum size:
     - **How to detect**: Search compactor logs for `symbol table size exceeds`.
@@ -629,7 +629,7 @@ How to **investigate**:
         Where the filenames are the block IDs: `01GZS91PMTAWAWAKRYQVNV1FPP` and `01GZSC5803FN1V1ZFY6Q8PWV1E`
       - Mark the source blocks for no compaction (in this example the object storage backend is GCS):
         ```
-        ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Result block exceeds symbol table maximum size" <block-1> <block-2>...
+        ./tools/mark-blocks/mark-blocks -backend gcs -gcs.bucket-name <bucket> -mark-type no-compact -tenant <tenant-id> -details "Result block exceeds symbol table maximum size" -blocks "<block-1>,<block-2>..."
         ```
     - Further reading: [Compaction algorithm]({{< relref "../../references/architecture/components/compactor#compaction-algorithm" >}}).
   - Compactor network disk unresponsive:
@@ -668,7 +668,7 @@ How to **fix** it:
 - The only long-term solution is to give the compactor more disk space, as it requires more space to fit the largest single job into its disk.
 - If the number of blocks that the compactor is failing to compact is not very significant and you want to skip compacting them and focus on more recent blocks instead, consider marking the affected blocks for no compaction:
   ```
-  ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "focus on newer blocks"
+  ./tools/mark-blocks/mark-blocks -backend gcs -gcs.bucket-name <bucket> -mark-type no-compact -tenant <tenant-id> -details "focus on newer blocks" -blocks "<block 1>,<block 2>..." 
   ```
 
 ### MimirCompactorSkippedUnhealthyBlocks

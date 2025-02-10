@@ -46,14 +46,14 @@ type config struct {
 func (cfg *config) registerFlags(f *flag.FlagSet) {
 	cfg.bucket.RegisterFlags(f)
 	f.StringVar(&cfg.tenantID, "tenant", "", "Tenant ID of the owner of the block. Required.")
-	f.StringVar(&cfg.markType, "mark-type", "", "Mark type to create, valid options: deletion, no-compact. Required.")
-	f.StringVar(&cfg.details, "details", "", "Details to include in a mark.")
-	f.Var(&cfg.blocks, "blocks", "Comma separated list of blocks. If non-empty, blocks-file is ignored.")
-	f.StringVar(&cfg.blocksFile, "blocks-file", "-", "File containing block IDs to mark. Defaults to standard input. Ignored if blocks is non-empty")
-	f.IntVar(&cfg.resumeIndex, "resume-index", 0, "The index of the block in blocks-file to resume from")
+	f.StringVar(&cfg.markType, "mark-type", "", "Mark type to create or remove, valid options: deletion, no-compact. Required.")
+	f.StringVar(&cfg.details, "details", "", "Details to include in an added mark.")
+	f.Var(&cfg.blocks, "blocks", "Comma separated list of block IDs. If non-empty, blocks-file is ignored.")
+	f.StringVar(&cfg.blocksFile, "blocks-file", "-", "File containing a block ID per-line. Defaults to standard input. Ignored if blocks is non-empty")
+	f.IntVar(&cfg.resumeIndex, "resume-index", 0, "The index of the block to resume from")
 	f.BoolVar(&cfg.remove, "remove", false, "If marks should be removed rather than uploaded.")
-	f.StringVar(&cfg.metaPresencePolicy, "meta-presence-policy", "require", "How to validate block meta.json files: \"none\", \"skip-block\", or \"require\".")
-	f.BoolVar(&cfg.dryRun, "dry-run", false, "Don't upload the markers generated, just print the intentions.")
+	f.StringVar(&cfg.metaPresencePolicy, "meta-presence-policy", "skip-block", "Policy on presence of block meta.json files: \"none\", \"skip-block\", or \"require\".")
+	f.BoolVar(&cfg.dryRun, "dry-run", false, "Log changes that would be made instead of actually making them.")
 	f.IntVar(&cfg.concurrency, "concurrency", 16, "How many markers to upload or remove concurrently.")
 }
 
@@ -65,7 +65,7 @@ func (cfg *config) validate() error {
 		return fmt.Errorf("-tenant is invalid: %w", err)
 	}
 	if cfg.markType == "" {
-		return errors.New("-mark is required")
+		return errors.New("-mark-type is required")
 	}
 	if cfg.blocksFile == "" && len(cfg.blocks) == 0 {
 		return errors.New("one of -blocks or -blocks-file must be specified")
@@ -84,6 +84,7 @@ func main() {
 	cfg.registerFlags(flag.CommandLine)
 
 	logger := log.NewLogfmtLogger(os.Stdout)
+	logger = log.With(logger, "time", log.DefaultTimestampUTC)
 
 	// Parse CLI arguments.
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
@@ -144,9 +145,9 @@ func main() {
 	if successUntil, err := forEachJobSuccessUntil(ctx, len(blocks), cfg.concurrency, f); err != nil {
 		// since indices were possibly based on a subslice, account for that as a starting point
 		// successUntil is known to be the first index that did not succeed
-		resumeFrom := cfg.resumeIndex + successUntil
+		resumeIndex := cfg.resumeIndex + successUntil
 
-		level.Error(logger).Log("msg", "encountered a failure", "err", err, "resumeFrom", resumeFrom)
+		level.Error(logger).Log("msg", "encountered a failure", "err", err, "resumeIndex", resumeIndex)
 		os.Exit(1)
 	}
 }
@@ -225,7 +226,7 @@ func addMarksFunc(
 			return err
 		}
 		if skip {
-			level.Info(logger).Log("msg", fmt.Sprintf("skipping block because its meta.json was not found: %s", block))
+			level.Info(logger).Log("msg", fmt.Sprintf("skipping block because its meta.json was not found: %s", blockStr))
 			return nil
 		}
 
@@ -320,7 +321,7 @@ func metaPresenceFunc(tenantID string, bkt objstore.Bucket, policy string) (meta
 				return false, err
 			}
 			if !exists {
-				return false, fmt.Errorf("block's metadata did not exist: %q", metaName)
+				return false, fmt.Errorf("block's metadata did not exist: %s", metaName)
 			}
 			return false, nil
 		}, nil
@@ -361,7 +362,7 @@ func readBlocks(r io.Reader) ([]ulid.ULID, error) {
 		line := scanner.Text()
 		u, err := ulid.Parse(line)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse a string=%s as a ULID", line)
+			return nil, fmt.Errorf("failed to parse a ULID from: %q", line)
 		}
 		blocks = append(blocks, u)
 	}

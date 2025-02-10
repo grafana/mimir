@@ -98,6 +98,7 @@
 ### Tools
 
 * [CHANGE] `copyblocks`: Remove /pprof endpoint. #10329
+* [CHANGE] `mark-blocks`: Replace `markblocks` with added features including removing markers and reading block identifiers from a file. #10597
 
 ## 2.15.0
 
