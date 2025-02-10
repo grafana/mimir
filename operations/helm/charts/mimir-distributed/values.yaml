@@ -4621,7 +4621,7 @@ federation_frontend:
   # -- Additional volumes for the federation-frontend pods
   extraVolumes: []
 
-  # -- Additional containers to be added to the graphite-metric-name-cache pod.
+  # -- Additional containers to be added to the federation-frontend pod.
   extraContainers: []
 
   # -- The name of the PriorityClass for federation-frontend pods
