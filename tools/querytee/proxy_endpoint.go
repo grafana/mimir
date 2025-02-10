@@ -34,6 +34,7 @@ type ProxyEndpoint struct {
 	comparator                        ResponsesComparator
 	slowResponseThreshold             time.Duration
 	secondaryBackendRequestProportion float64
+	skipPreferredBackendFailures      bool
 
 	// The preferred backend, if any.
 	preferredBackend ProxyBackendInterface
@@ -60,6 +61,11 @@ func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *Pr
 		secondaryBackendRequestProportion: secondaryBackendRequestProportion,
 		preferredBackend:                  preferredBackend,
 	}
+}
+
+func (p *ProxyEndpoint) WithSkipPreferredBackendFailures(skip bool) *ProxyEndpoint {
+	p.skipPreferredBackendFailures = skip
+	return p
 }
 
 func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -316,6 +322,10 @@ func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResp
 }
 
 func (p *ProxyEndpoint) compareResponses(expectedResponse, actualResponse *backendResponse, queryEvaluationTime time.Time) (ComparisonResult, error) {
+	if !expectedResponse.succeeded() && p.skipPreferredBackendFailures {
+		return ComparisonSkipped, fmt.Errorf("skipped comparison of response because the request to the preferred backend failed")
+	}
+
 	if expectedResponse.err != nil {
 		return ComparisonFailed, fmt.Errorf("skipped comparison of response because the request to the preferred backend failed: %w", expectedResponse.err)
 	}

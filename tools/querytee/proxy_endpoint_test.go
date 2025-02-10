@@ -255,6 +255,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 		comparatorError              error
 		expectedComparisonResult     ComparisonResult
 		expectedComparisonError      string
+		skipPreferredBackendFailures bool
 	}{
 		"responses are the same": {
 			preferredResponseStatusCode:  http.StatusOK,
@@ -298,6 +299,23 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			expectedComparisonError:      "skipped comparison of response because the response from the secondary backend contained an unexpected content type 'text/plain', expected 'application/json'",
 			expectedComparisonResult:     ComparisonSkipped,
 		},
+		"preferred backend failed but is set to skip": {
+			preferredResponseStatusCode:  http.StatusInternalServerError,
+			secondaryResponseStatusCode:  http.StatusOK,
+			preferredResponseContentType: "application/json",
+			secondaryResponseContentType: "application/json",
+			expectedComparisonResult:     ComparisonSkipped,
+			expectedComparisonError:      "skipped comparison of response because the request to the preferred backend failed",
+			skipPreferredBackendFailures: true,
+		},
+		"preferred backend failed, not set to skip": {
+			preferredResponseStatusCode:  http.StatusInternalServerError,
+			secondaryResponseStatusCode:  http.StatusOK,
+			preferredResponseContentType: "application/json",
+			secondaryResponseContentType: "application/json",
+			expectedComparisonResult:     ComparisonFailed,
+			expectedComparisonError:      "expected status code 500 (returned by preferred backend) but got 200 from secondary backend",
+		},
 	}
 
 	for name, scenario := range scenarios {
@@ -337,6 +355,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			}
 
 			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0)
+			endpoint = endpoint.WithSkipPreferredBackendFailures(scenario.skipPreferredBackendFailures)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
