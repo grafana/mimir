@@ -101,7 +101,7 @@
 
 ### Query-tee
 
-* [ENHANCEMENT] Allow setting a "skip" result on comparisons when preferred backend fails #10612
+* [ENHANCEMENT] Allow skipping comparisons when preferred backend fails. Disabled by default, enable with `-proxy.compare-skip-preferred-backend-failures=true`. #10612
 
 ### Documentation
 
