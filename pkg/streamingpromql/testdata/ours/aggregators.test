@@ -377,7 +377,7 @@ eval range from 0 to 30m step 6m topk(1.25, series)
 
 # Values that can't be represented as an int64 should return an error.
 eval_fail range from 0 to 30m step 6m topk(Inf, series)
-  expected_fail_message Scalar value +Inf overflows int64
+  expected_fail_regexp (S|s)calar value \+Inf overflows int64
 
 eval_fail range from 0 to 30m step 6m topk(NaN, series)
-  expected_fail_message Scalar value NaN overflows int64
+  expected_fail_regexp (S|s)calar value NaN overflows int64

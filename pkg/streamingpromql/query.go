@@ -172,17 +172,28 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 		if !q.engine.features.EnableAggregationOperations {
 			return nil, compat.NewNotSupportedError("aggregation operations")
 		}
+
 		if _, found := slices.BinarySearch(q.engine.disabledAggregationsItems, e.Op); found {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' aggregation disabled", e.Op.String()))
-		}
-
-		if e.Param != nil {
-			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' aggregation with parameter", e.Op))
 		}
 
 		inner, err := q.convertToInstantVectorOperator(e.Expr, timeRange)
 		if err != nil {
 			return nil, err
+		}
+
+		if e.Param != nil {
+			param, err := q.convertToScalarOperator(e.Param, timeRange)
+			if err != nil {
+				return nil, err
+			}
+
+			switch e.Op {
+			case parser.TOPK, parser.BOTTOMK:
+				return aggregations.NewTopKBottomK(inner, param, timeRange, e.Grouping, e.Without, e.Op == parser.TOPK, q.memoryConsumptionTracker, q.annotations, e.PosRange), nil
+			default:
+				return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' aggregation with parameter", e.Op))
+			}
 		}
 
 		return aggregations.NewAggregation(
