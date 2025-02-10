@@ -42,7 +42,7 @@ type ProxyEndpoint struct {
 	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration, secondaryBackendRequestProportion float64) *ProxyEndpoint {
+func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *ProxyMetrics, logger log.Logger, comparator ResponsesComparator, slowResponseThreshold time.Duration, secondaryBackendRequestProportion float64, skipPreferredBackendFailures bool) *ProxyEndpoint {
 	var preferredBackend ProxyBackendInterface
 	for _, backend := range backends {
 		if backend.Preferred() {
@@ -60,12 +60,8 @@ func NewProxyEndpoint(backends []ProxyBackendInterface, route Route, metrics *Pr
 		slowResponseThreshold:             slowResponseThreshold,
 		secondaryBackendRequestProportion: secondaryBackendRequestProportion,
 		preferredBackend:                  preferredBackend,
+		skipPreferredBackendFailures:      skipPreferredBackendFailures,
 	}
-}
-
-func (p *ProxyEndpoint) WithSkipPreferredBackendFailures(skip bool) *ProxyEndpoint {
-	p.skipPreferredBackendFailures = skip
-	return p
 }
 
 func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
