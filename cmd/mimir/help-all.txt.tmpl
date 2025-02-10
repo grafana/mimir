@@ -1194,7 +1194,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.max-compaction-time duration
     	Max time for starting compactions for a single tenant. After this time no new compactions for the tenant are started before next compaction cycle. This can help in multi-tenant environments to avoid single tenant using all compaction time, but also in single-tenant environments to force new discovery of blocks more often. 0 = disabled. (default 1h0m0s)
   -compactor.max-lookback duration
-    	[experimental] Blocks uploaded before the lookback will not be considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. The value 0s means all blocks will be considered regardless of their upload time.
+    	[experimental] Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.
   -compactor.max-opening-blocks-concurrency int
     	Number of goroutines opening blocks before compaction. (default 1)
   -compactor.meta-sync-concurrency int

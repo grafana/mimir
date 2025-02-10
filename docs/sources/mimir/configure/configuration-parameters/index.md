@@ -4817,10 +4817,10 @@ sharding_ring:
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 
-# (experimental) Blocks uploaded before the lookback will not be considered in
+# (experimental) Blocks uploaded before the lookback aren't considered in
 # compactor cycles. If set, this value should be larger than all values in
-# `-blocks-storage.tsdb.block-ranges-period`. The value 0s means all blocks will
-# be considered regardless of their upload time.
+# `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all
+# blocks are considered regardless of their upload time.
 # CLI flag: -compactor.max-lookback
 [max_lookback: <duration> | default = 0s]
 ```

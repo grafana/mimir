@@ -141,13 +141,12 @@ type MetadataFilter interface {
 // MetaFetcher is a struct that synchronizes filtered metadata of all block in the object storage with the local state.
 // Go-routine safe.
 type MetaFetcher struct {
-	logger             log.Logger
-	concurrency        int
-	bkt                objstore.InstrumentedBucketReader
-	metrics            *FetcherMetrics
-	filters            []MetadataFilter
-	maxLookback        time.Duration
-	blockUploadEnabled bool
+	logger      log.Logger
+	concurrency int
+	bkt         objstore.InstrumentedBucketReader
+	metrics     *FetcherMetrics
+	filters     []MetadataFilter
+	maxLookback time.Duration
 
 	// Optional local directory to cache meta.json files.
 	cacheDir string
