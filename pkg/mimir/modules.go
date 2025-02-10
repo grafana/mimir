@@ -598,6 +598,7 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	t.Cfg.Worker.MaxConcurrentRequests = t.Cfg.Querier.EngineConfig.MaxConcurrent
 	t.Cfg.Worker.QuerySchedulerDiscovery = t.Cfg.QueryScheduler.ServiceDiscovery
+	t.Cfg.Worker.ClusterVerificationLabel = t.Cfg.Server.ClusterVerificationLabel
 
 	// Create an internal HTTP handler that is configured with the Prometheus API routes and points
 	// to a Prometheus API struct instantiated with the Mimir Queryable.
@@ -649,12 +650,12 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		return nil, nil
 	}
 
-	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter, httpgrpc_server.WithReturn4XXErrors), util_log.Logger, t.Registerer, t.Cfg.Server.ClusterVerificationLabel)
+	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter, httpgrpc_server.WithReturn4XXErrors), util_log.Logger, t.Registerer)
 }
 
 func (t *Mimir) initStoreQueryable() (services.Service, error) {
 	q, err := querier.NewBlocksStoreQueryableFromConfig(
-		t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer, t.Cfg.Server.ClusterVerificationLabel,
+		t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Cfg.Server.ClusterVerificationLabel, t.Overrides, util_log.Logger, t.Registerer,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize block store queryable: %v", err)
@@ -735,7 +736,7 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // initQueryFrontendCodec initializes query frontend codec.
 // NOTE: Grafana Enterprise Metrics depends on this.
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
-	// Always pass through the cluster header.
+	// Always pass through the cluster verification label header.
 	propagateHeaders := append([]string{clusterutil.ClusterVerificationLabelHeader}, t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders...)
 	t.QueryFrontendCodec = querymiddleware.NewPrometheusCodec(t.Registerer, t.Cfg.Querier.EngineConfig.LookbackDelta, t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat, propagateHeaders)
 	return nil, nil
@@ -807,7 +808,16 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.Cfg.Frontend.FrontendV2.LookBackDelta = t.Cfg.Querier.EngineConfig.LookbackDelta
 	t.Cfg.Frontend.FrontendV2.QueryStoreAfter = t.Cfg.Querier.QueryStoreAfter
 
-	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, t.Registerer, t.QueryFrontendCodec, t.ServerMetrics)
+	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(
+		t.Cfg.Frontend,
+		t.Overrides,
+		t.Overrides,
+		t.Cfg.Server.GRPCListenPort,
+		util_log.Logger,
+		t.Registerer,
+		t.QueryFrontendCodec,
+		t.ServerMetrics,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -897,6 +907,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		return nil, nil
 	}
 
+	t.Cfg.Ruler.ClusterVerificationLabel = t.Cfg.Server.ClusterVerificationLabel
 	t.Cfg.Ruler.Ring.Common.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	var embeddedQueryable prom_storage.Queryable
@@ -910,8 +921,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		}
 		middlewares := []ruler.Middleware{ruler.WithOrgIDMiddleware}
 		if t.Cfg.Server.ClusterVerificationLabel != "" {
-			// TODO: Change log level to debug after debugging.
-			level.Info(util_log.Logger).Log("msg", "adding ruler cluster middleware", "cluster", t.Cfg.Server.ClusterVerificationLabel)
+			level.Debug(util_log.Logger).Log("msg", "adding ruler cluster verification label middleware", "cluster_verification_label", t.Cfg.Server.ClusterVerificationLabel)
 			middlewares = append(middlewares, ruler.WithClusterMiddleware(t.Cfg.Server.ClusterVerificationLabel))
 		}
 		remoteQuerier := ruler.NewRemoteQuerier(queryFrontendClient, t.Cfg.Querier.EngineConfig.Timeout, t.Cfg.Ruler.QueryFrontend.MaxRetriesRate, t.Cfg.Ruler.QueryFrontend.QueryResultResponseFormat, t.Cfg.API.PrometheusHTTPPrefix, logger, middlewares...)
@@ -997,7 +1007,14 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		return nil, err
 	}
 
-	t.Ruler, err = ruler.NewRuler(t.Cfg.Ruler, manager, t.Registerer, util_log.Logger, t.RulerStorage, t.Overrides, t.Cfg.Server.ClusterVerificationLabel)
+	t.Ruler, err = ruler.NewRuler(
+		t.Cfg.Ruler,
+		manager,
+		t.Registerer,
+		util_log.Logger,
+		t.RulerStorage,
+		t.Overrides,
+	)
 	if err != nil {
 		return
 	}
@@ -1111,8 +1128,9 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 
 func (t *Mimir) initQueryScheduler() (services.Service, error) {
 	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.ListenPort = t.Cfg.Server.GRPCListenPort
+	t.Cfg.QueryScheduler.ClusterVerificationLabel = t.Cfg.Server.ClusterVerificationLabel
 
-	s, err := scheduler.NewScheduler(t.Cfg.QueryScheduler, t.Overrides, util_log.Logger, t.Registerer, t.Cfg.Server.ClusterVerificationLabel)
+	s, err := scheduler.NewScheduler(t.Cfg.QueryScheduler, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "query-scheduler init")
 	}

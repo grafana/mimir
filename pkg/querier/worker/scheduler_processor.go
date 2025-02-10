@@ -52,14 +52,14 @@ const (
 var errQuerierQuerySchedulerProcessingLoopTerminated = cancellation.NewErrorf("querier query-scheduler processing loop terminated")
 var errQueryEvaluationFinished = cancellation.NewErrorf("query evaluation finished")
 
-func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer, cluster string) (*schedulerProcessor, []services.Service) {
+func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
 		log:              log,
 		handler:          handler,
 		streamResponse:   streamResponse,
 		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:        cfg.QuerierID,
-		cluster:          cluster,
+		cluster:          cfg.ClusterVerificationLabel,
 		grpcConfig:       cfg.QueryFrontendGRPCClientConfig,
 		streamingEnabled: cfg.ResponseStreamingEnabled,
 

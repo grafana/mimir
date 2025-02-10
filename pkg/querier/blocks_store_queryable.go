@@ -198,7 +198,7 @@ func NewBlocksStoreQueryable(
 	return q, nil
 }
 
-func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegateway.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer, cluster string) (*BlocksStoreQueryable, error) {
+func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegateway.Config, storageCfg mimir_tsdb.BlocksStorageConfig, cluster string, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (*BlocksStoreQueryable, error) {
 	var (
 		stores       BlocksStoreSet
 		bucketClient objstore.Bucket
@@ -254,7 +254,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		)
 	}
 
-	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, dynamicReplication, limits, querierCfg.StoreGatewayClient, logger, reg, cluster)
+	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, dynamicReplication, limits, querierCfg.StoreGatewayClient, cluster, logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create store set")
 	}

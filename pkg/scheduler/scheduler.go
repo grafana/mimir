@@ -104,6 +104,8 @@ type Config struct {
 
 	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
 	ServiceDiscovery schedulerdiscovery.Config `yaml:",inline"`
+
+	ClusterVerificationLabel string `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -120,14 +122,14 @@ func (cfg *Config) Validate() error {
 }
 
 // NewScheduler creates a new Scheduler.
-func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer, cluster string) (*Scheduler, error) {
+func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer prometheus.Registerer) (*Scheduler, error) {
 	var err error
 
 	s := &Scheduler{
 		cfg:     cfg,
 		log:     log,
 		limits:  limits,
-		cluster: cluster,
+		cluster: cfg.ClusterVerificationLabel,
 
 		schedulerInflightRequests: map[queue.RequestKey]*queue.SchedulerRequest{},
 		connectedFrontends:        map[string]*connectedFrontend{},
