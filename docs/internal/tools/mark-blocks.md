@@ -8,7 +8,7 @@ Two types of marks can be created, depending on the `-mark-type` flag provided:
 ## `deletion` mark
 
 When `-mark-type deletion` is provided, `mark-blocks` uploads a `DeletionMark` which tells the compactor that the block provided should be deleted.
-This is a **destructive operation** (although it won't happen immediately, the default delation delay is 12h, see `-compactor.deletion-delay` value), proceed with caution.
+This is a **destructive operation** (although it doesn't happen immediately, the default delation delay is 12h, see `-compactor.deletion-delay` value), proceed with caution.
 
 ### Example
 
