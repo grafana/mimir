@@ -260,12 +260,7 @@ func (q *RemoteQuerier) query(ctx context.Context, query string, ts time.Time, l
 	resp, err := q.sendRequest(ctx, &req, logger)
 	if err != nil {
 		if code := grpcutil.ErrorToStatusCode(err); code/100 != 4 {
-			// TODO: Remove me after debugging.
-			var hdrs []string
-			for _, h := range req.Headers {
-				hdrs = append(hdrs, h.Key)
-			}
-			level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts, "middlewares", len(q.middlewares), "headers", strings.Join(hdrs, ","))
+			level.Warn(logger).Log("msg", "failed to remotely evaluate query expression", "err", err, "qs", query, "tm", ts)
 		}
 		return promql.Vector{}, err
 	}
@@ -401,7 +396,7 @@ func WithOrgIDMiddleware(ctx context.Context, req *httpgrpc.HTTPRequest) error {
 	return nil
 }
 
-// WithClusterMiddleware returns a Middleware that injects a cluster header.
+// WithClusterMiddleware returns a Middleware that injects a cluster verification label header.
 func WithClusterMiddleware(cluster string) Middleware {
 	return func(_ context.Context, req *httpgrpc.HTTPRequest) error {
 		req.Headers = append(req.Headers, &httpgrpc.Header{

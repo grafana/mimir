@@ -23,7 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer, cluster string, logger log.Logger) client.PoolFactory {
+func newStoreGatewayClientFactory(clientCfg grpcclient.Config, cluster string, reg prometheus.Registerer) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:        "cortex_storegateway_client_request_duration_seconds",
 		Help:        "Time spent executing requests to the store-gateway.",
@@ -34,11 +34,11 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "store-gateway", util.GRPCProtocol)
 
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
-		return dialStoreGatewayClient(clientCfg, inst, requestDuration, cluster, logger)
+		return dialStoreGatewayClient(clientCfg, inst, requestDuration, cluster)
 	})
 }
 
-func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, cluster string, _ log.Logger) (*storeGatewayClient, error) {
+func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, cluster string) (*storeGatewayClient, error) {
 	unary, stream := grpcclient.Instrument(requestDuration)
 	unary = append(unary, middleware.ClusterUnaryClientInterceptor(cluster))
 	opts, err := clientCfg.DialOption(unary, stream)
@@ -77,7 +77,7 @@ func (c *storeGatewayClient) RemoteAddress() string {
 	return c.conn.Target()
 }
 
-func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig ClientConfig, logger log.Logger, reg prometheus.Registerer, cluster string) *client.Pool {
+func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig ClientConfig, cluster string, logger log.Logger, reg prometheus.Registerer) *client.Pool {
 	// We prefer sane defaults instead of exposing further config options.
 	clientCfg := grpcclient.Config{
 		MaxRecvMsgSize:      100 << 20,
@@ -101,7 +101,7 @@ func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConf
 		ConstLabels: map[string]string{"client": "querier"},
 	})
 
-	return client.NewPool("store-gateway", poolCfg, discovery, newStoreGatewayClientFactory(clientCfg, reg, cluster, logger), clientsCount, logger)
+	return client.NewPool("store-gateway", poolCfg, discovery, newStoreGatewayClientFactory(clientCfg, cluster, reg), clientsCount, logger)
 }
 
 type ClientConfig struct {
