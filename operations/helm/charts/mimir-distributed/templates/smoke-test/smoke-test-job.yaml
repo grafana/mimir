@@ -52,6 +52,10 @@ spec:
             {{- range $key, $value := .Values.smoke_test.extraArgs }}
             - -{{ $key }}={{ $value }}
             {{- end }}
+          {{- if .Values.smoke_test.resources }}
+          resources:
+            {{ toYaml .Values.smoke_test.resources | nindent 12 }}
+          {{- end }}
           volumeMounts:
             {{- if .Values.smoke_test.extraVolumeMounts }}
               {{ toYaml .Values.smoke_test.extraVolumeMounts | nindent 12 }}

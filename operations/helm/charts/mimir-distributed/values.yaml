@@ -4690,6 +4690,7 @@ smoke_test:
   extraEnvFrom: []
   annotations: {}
   initContainers: []
+  resources: {}
   # -- The name of the PriorityClass for smoke-test pods
   priorityClassName: null
 
