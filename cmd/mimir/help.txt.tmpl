@@ -741,6 +741,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of retries for failed queries per second. (default 170)
   -ruler.query-frontend.query-result-response-format string
     	Format to use when retrieving query results from query-frontends. Supported values: json, protobuf (default "protobuf")
+  -ruler.query-frontend.short-circuit-constant-queries
+    	Enable short-circuiting constant queries (without selectors), terminating them in the ruler.
   -ruler.recording-rules-evaluation-enabled
     	Controls whether recording rules evaluation is enabled. This configuration option can be used to forcefully disable recording rules evaluation on a per-tenant basis. (default true)
   -ruler.ring.consul.hostname string

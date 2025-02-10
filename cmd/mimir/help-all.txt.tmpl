@@ -3011,6 +3011,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of retries for failed queries per second. (default 170)
   -ruler.query-frontend.query-result-response-format string
     	Format to use when retrieving query results from query-frontends. Supported values: json, protobuf (default "protobuf")
+  -ruler.query-frontend.short-circuit-constant-queries
+    	Enable short-circuiting constant queries (without selectors), terminating them in the ruler.
   -ruler.query-stats-enabled
     	Report the wall time for ruler queries to complete as a per-tenant metric and as an info level log message.
   -ruler.recording-rules-evaluation-enabled

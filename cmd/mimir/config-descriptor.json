@@ -13398,6 +13398,16 @@
               "fieldDefaultValue": 170,
               "fieldFlag": "ruler.query-frontend.max-retries-rate",
               "fieldType": "float"
+            },
+            {
+              "kind": "field",
+              "name": "short_circuit_constant_queries",
+              "required": false,
+              "desc": "Enable short-circuiting constant queries (without selectors), terminating them in the ruler.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler.query-frontend.short-circuit-constant-queries",
+              "fieldType": "boolean"
             }
           ],
           "fieldValue": null,

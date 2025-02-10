@@ -64,7 +64,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 	t.Run("should issue a remote read request", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, false, "/prometheus", log.NewNopLogger())
 		_, err := q.Read(context.Background(), &prompb.Query{}, false)
 		require.NoError(t, err)
 
@@ -76,7 +76,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 	t.Run("should not inject the read consistency header if none is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, false, "/prometheus", log.NewNopLogger())
 		_, err := q.Read(context.Background(), &prompb.Query{}, false)
 		require.NoError(t, err)
 
@@ -86,7 +86,7 @@ func TestRemoteQuerier_Read(t *testing.T) {
 	t.Run("should inject the read consistency header if it is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, false, "/prometheus", log.NewNopLogger())
 
 		ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
 		_, err := q.Read(ctx, &prompb.Query{}, false)
@@ -101,7 +101,7 @@ func TestRemoteQuerier_ReadReqTimeout(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Second, 1, formatJSON, "/prometheus", log.NewNopLogger())
+	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Second, 1, formatJSON, false, "/prometheus", log.NewNopLogger())
 
 	_, err := q.Read(context.Background(), &prompb.Query{}, false)
 	require.Error(t, err)
@@ -139,7 +139,7 @@ func TestRemoteQuerier_Query(t *testing.T) {
 			t.Run(fmt.Sprintf("format = %s", format), func(t *testing.T) {
 				client, inReq := setup()
 
-				q := NewRemoteQuerier(client, time.Minute, 1, format, "/prometheus", log.NewNopLogger())
+				q := NewRemoteQuerier(client, time.Minute, 1, format, false, "/prometheus", log.NewNopLogger())
 				_, err := q.Query(context.Background(), "qs", tm)
 				require.NoError(t, err)
 
@@ -165,7 +165,7 @@ func TestRemoteQuerier_Query(t *testing.T) {
 	t.Run("should not inject the read consistency header if none is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, false, "/prometheus", log.NewNopLogger())
 		_, err := q.Query(context.Background(), "qs", tm)
 		require.NoError(t, err)
 
@@ -175,7 +175,7 @@ func TestRemoteQuerier_Query(t *testing.T) {
 	t.Run("should inject the read consistency header if it is defined in the context", func(t *testing.T) {
 		client, inReq := setup()
 
-		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, false, "/prometheus", log.NewNopLogger())
 
 		ctx := api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong)
 		_, err := q.Query(ctx, "qs", tm)
@@ -183,6 +183,30 @@ func TestRemoteQuerier_Query(t *testing.T) {
 
 		require.Equal(t, api.ReadConsistencyStrong, getHeader(inReq.Headers, api.ReadConsistencyHeader))
 	})
+
+	t.Run("should be able to short-circuit constant queries", func(t *testing.T) {
+		client, inReq := setup()
+
+		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, true, "/prometheus", log.NewNopLogger())
+		vec, err := q.Query(context.Background(), "vector(1 - 0.90)", tm)
+		require.NoError(t, err)
+		require.InEpsilon(t, 0.1, vec[0].F, 0.0001)
+		require.InEpsilon(t, float64(tm.UnixMilli()), vec[0].T, 1)
+		require.Len(t, vec, 1)
+
+		require.Empty(t, inReq)
+	})
+
+	t.Run("will not short-circuit non-constant queries", func(t *testing.T) {
+		client, inReq := setup()
+
+		q := NewRemoteQuerier(client, time.Minute, 1, formatJSON, true, "/prometheus", log.NewNopLogger())
+		_, err := q.Query(context.Background(), "foo", tm)
+		require.NoError(t, err)
+
+		require.NotEmpty(t, inReq)
+	})
+
 }
 
 func TestRemoteQuerier_QueryRetryOnFailure(t *testing.T) {
@@ -276,7 +300,7 @@ func TestRemoteQuerier_QueryRetryOnFailure(t *testing.T) {
 				}
 				return testCase.response, nil
 			}
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, false, "/prometheus", log.NewNopLogger())
 			require.Equal(t, int64(0), count.Load())
 			_, err := q.Query(ctx, "qs", time.Now())
 			if testCase.err == nil {
@@ -405,7 +429,7 @@ func TestRemoteQuerier_QueryJSONDecoding(t *testing.T) {
 					Body: []byte(scenario.body),
 				}, nil
 			}
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, false, "/prometheus", log.NewNopLogger())
 
 			tm := time.Unix(1649092025, 515834)
 			actual, err := q.Query(context.Background(), "qs", tm)
@@ -678,7 +702,7 @@ func TestRemoteQuerier_QueryProtobufDecoding(t *testing.T) {
 					Body: b,
 				}, nil
 			}
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatProtobuf, "/prometheus", log.NewNopLogger())
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatProtobuf, false, "/prometheus", log.NewNopLogger())
 
 			tm := time.Unix(1649092025, 515834)
 			actual, err := q.Query(context.Background(), "qs", tm)
@@ -701,7 +725,7 @@ func TestRemoteQuerier_QueryUnknownResponseContentType(t *testing.T) {
 			Body: []byte("some body content"),
 		}, nil
 	}
-	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, "/prometheus", log.NewNopLogger())
+	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, false, "/prometheus", log.NewNopLogger())
 
 	tm := time.Unix(1649092025, 515834)
 	_, err := q.Query(context.Background(), "qs", tm)
@@ -713,7 +737,7 @@ func TestRemoteQuerier_QueryReqTimeout(t *testing.T) {
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}
-	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Second, 1, formatJSON, "/prometheus", log.NewNopLogger())
+	q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Second, 1, formatJSON, false, "/prometheus", log.NewNopLogger())
 
 	tm := time.Unix(1649092025, 515834)
 	_, err := q.Query(context.Background(), "qs", tm)
@@ -771,7 +795,7 @@ func TestRemoteQuerier_StatusErrorResponses(t *testing.T) {
 				return testCase.resp, testCase.err
 			}
 			logger := newLoggerWithCounter()
-			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, "/prometheus", logger)
+			q := NewRemoteQuerier(mockHTTPGRPCClient(mockClientFn), time.Minute, 1, formatJSON, false, "/prometheus", logger)
 
 			tm := time.Unix(1649092025, 515834)
 

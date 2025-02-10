@@ -2148,6 +2148,11 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.max-retries-rate
   [max_retries_rate: <float> | default = 170]
 
+  # Enable short-circuiting constant queries (without selectors), terminating
+  # them in the ruler.
+  # CLI flag: -ruler.query-frontend.short-circuit-constant-queries
+  [short_circuit_constant_queries: <boolean> | default = false]
+
 tenant_federation:
   # Enable rule groups to query against multiple tenants. The tenant IDs
   # involved need to be in the rule group's 'source_tenants' field. If this flag
