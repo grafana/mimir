@@ -1,4 +1,4 @@
-# Mark Blocks
+# `mark-blocks`
 
 This program creates or removes markers for blocks.
 
@@ -19,7 +19,7 @@ Each supported object storage service also has an additional set of flags (see e
 
 ## Running
 
-Run `go build .` in this directory to build the program. Then, use an example below as a guide.
+Run `go build` in this directory to build the program. Then, use an example below as a guide.
 
 ### Example for Google Cloud Storage
 
