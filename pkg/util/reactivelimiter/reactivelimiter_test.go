@@ -53,33 +53,6 @@ func TestReactiveLimiter_AcquirePermitAndRecord(t *testing.T) {
 	assert.Equal(t, 0, limiter.Inflight())
 }
 
-func TestReactiveLimiter_TryAcquirePermitAndRecord(t *testing.T) {
-	config := createLimiterConfig()
-	config.InitialInflightLimit = 1
-	limiter := newLimiter(config, log.NewNopLogger())
-
-	permit, ok := limiter.TryAcquirePermit()
-	require.True(t, ok)
-	assert.Equal(t, 1, limiter.Inflight())
-	_, ok = limiter.TryAcquirePermit()
-	require.False(t, ok)
-	permit.Record()
-	assert.Equal(t, 0, limiter.Inflight())
-}
-
-func TestReactiveLimiter_CanAcquirePermit(t *testing.T) {
-	config := createLimiterConfig()
-	config.InitialInflightLimit = 1
-	limiter := newLimiter(config, log.NewNopLogger())
-
-	require.True(t, limiter.CanAcquirePermit())
-	permit, err := limiter.AcquirePermit(context.Background())
-	require.NoError(t, err)
-	require.False(t, limiter.CanAcquirePermit())
-	permit.Record()
-	require.True(t, limiter.CanAcquirePermit())
-}
-
 // Asserts that blocking requests are counted.
 func TestReactiveLimiter_Blocked(t *testing.T) {
 	config := createLimiterConfig()

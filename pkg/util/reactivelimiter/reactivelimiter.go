@@ -184,21 +184,6 @@ func (l *reactiveLimiter) AcquirePermit(ctx context.Context) (Permit, error) {
 	}, nil
 }
 
-func (l *reactiveLimiter) TryAcquirePermit() (Permit, bool) {
-	if !l.semaphore.TryAcquire() {
-		return nil, false
-	}
-	return &recordingPermit{
-		limiter:         l,
-		startTime:       time.Now(),
-		currentInflight: l.semaphore.Used(),
-	}, true
-}
-
-func (l *reactiveLimiter) CanAcquirePermit() bool {
-	return !l.semaphore.IsFull()
-}
-
 func (l *reactiveLimiter) Limit() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
