@@ -42,6 +42,9 @@ type TopKBottomK struct {
 
 	annotations                            *annotations.Annotations
 	haveEmittedIgnoredHistogramsAnnotation bool
+
+	// Reuse the same heap instance to allow us to avoid allocating a new one every time.
+	heap topKBottomKHeap
 }
 
 var _ types.InstantVectorOperator = &TopKBottomK{}
@@ -66,6 +69,14 @@ func NewTopKBottomK(
 
 	slices.Sort(grouping)
 
+	var h topKBottomKHeap
+
+	if isTopK {
+		h = &topKHeap{}
+	} else {
+		h = &bottomKHeap{}
+	}
+
 	return &TopKBottomK{
 		Inner:                    inner,
 		Param:                    param,
@@ -77,6 +88,7 @@ func NewTopKBottomK(
 
 		expressionPosition: expressionPosition,
 		annotations:        annotations,
+		heap:               h,
 	}
 }
 
@@ -121,7 +133,7 @@ func (t *TopKBottomK) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 
 	// Sort the series in the order we'll return them.
 	// It's important that we use a stable sort here, so that the order we receive series (and therefore accumulate series into their groups)
-	// matches the order we'll return those series them in.
+	// matches the order we'll return those series in.
 	sort.Stable(topKBottomKOutputSorter{
 		metadata:       innerSeries,
 		seriesToGroups: slices.Clone(t.remainingInnerSeriesToGroup), // We don't want to reorder remainingInnerSeriesToGroup, but we need to keep it in sync with the list of output series during sorting.
@@ -327,14 +339,6 @@ func (t *TopKBottomK) accumulateIntoGroup(data types.InstantVectorSeriesData, g 
 			}
 		}
 
-		var h heap.Interface
-
-		if t.IsTopK {
-			h = topKHeap{timestampIndex, g}
-		} else {
-			h = bottomKHeap{timestampIndex, g}
-		}
-
 		populateSeriesSlices := func() error {
 			lastPointIndex := t.TimeRange.PointIndex(data.Floats[len(data.Floats)-1].T)
 			sliceLength := int(lastPointIndex + 1)
@@ -395,7 +399,8 @@ func (t *TopKBottomK) accumulateIntoGroup(data types.InstantVectorSeriesData, g 
 			}
 
 			g.seriesForTimestamps[timestampIndex][0] = groupSeriesIndex
-			heap.Fix(h, 0)
+			t.heap.Reset(g, timestampIndex)
+			heap.Fix(t.heap, 0)
 
 			currentWorstSeries.pointCount--
 
@@ -416,7 +421,8 @@ func (t *TopKBottomK) accumulateIntoGroup(data types.InstantVectorSeriesData, g 
 				return err
 			}
 
-			heap.Push(h, groupSeriesIndex)
+			t.heap.Reset(g, timestampIndex)
+			heap.Push(t.heap, groupSeriesIndex)
 		}
 	}
 
@@ -452,6 +458,11 @@ func (g *topKBottomKGroup) seriesRead() int {
 	return len(g.series)
 }
 
+type topKBottomKHeap interface {
+	heap.Interface
+	Reset(group *topKBottomKGroup, timestampIndex int64)
+}
+
 type topKBottomKSeries struct {
 	pointCount        int       // Number of points that will be returned (should equal the number of true elements in shouldReturnPoint)
 	shouldReturnPoint []bool    // One entry per timestamp, true means the value should be returned
@@ -463,11 +474,16 @@ type topKHeap struct {
 	group          *topKBottomKGroup
 }
 
-func (h topKHeap) Len() int {
+func (h *topKHeap) Reset(group *topKBottomKGroup, timestampIndex int64) {
+	h.group = group
+	h.timestampIndex = timestampIndex
+}
+
+func (h *topKHeap) Len() int {
 	return len(h.group.seriesForTimestamps[h.timestampIndex])
 }
 
-func (h topKHeap) Less(i, j int) bool {
+func (h *topKHeap) Less(i, j int) bool {
 	iSeries := h.group.seriesForTimestamps[h.timestampIndex][i]
 	jSeries := h.group.seriesForTimestamps[h.timestampIndex][j]
 
@@ -485,15 +501,15 @@ func (h topKHeap) Less(i, j int) bool {
 	return iValue < jValue
 }
 
-func (h topKHeap) Swap(i, j int) {
+func (h *topKHeap) Swap(i, j int) {
 	h.group.seriesForTimestamps[h.timestampIndex][i], h.group.seriesForTimestamps[h.timestampIndex][j] = h.group.seriesForTimestamps[h.timestampIndex][j], h.group.seriesForTimestamps[h.timestampIndex][i]
 }
 
-func (h topKHeap) Push(x any) {
+func (h *topKHeap) Push(x any) {
 	h.group.seriesForTimestamps[h.timestampIndex] = append(h.group.seriesForTimestamps[h.timestampIndex], x.(int))
 }
 
-func (h topKHeap) Pop() any {
+func (h *topKHeap) Pop() any {
 	panic("not supported")
 }
 
@@ -502,11 +518,16 @@ type bottomKHeap struct {
 	group          *topKBottomKGroup
 }
 
-func (h bottomKHeap) Len() int {
+func (h *bottomKHeap) Reset(group *topKBottomKGroup, timestampIndex int64) {
+	h.group = group
+	h.timestampIndex = timestampIndex
+}
+
+func (h *bottomKHeap) Len() int {
 	return len(h.group.seriesForTimestamps[h.timestampIndex])
 }
 
-func (h bottomKHeap) Less(i, j int) bool {
+func (h *bottomKHeap) Less(i, j int) bool {
 	iSeries := h.group.seriesForTimestamps[h.timestampIndex][i]
 	jSeries := h.group.seriesForTimestamps[h.timestampIndex][j]
 
@@ -524,14 +545,14 @@ func (h bottomKHeap) Less(i, j int) bool {
 	return iValue > jValue
 }
 
-func (h bottomKHeap) Swap(i, j int) {
+func (h *bottomKHeap) Swap(i, j int) {
 	h.group.seriesForTimestamps[h.timestampIndex][i], h.group.seriesForTimestamps[h.timestampIndex][j] = h.group.seriesForTimestamps[h.timestampIndex][j], h.group.seriesForTimestamps[h.timestampIndex][i]
 }
 
-func (h bottomKHeap) Push(x any) {
+func (h *bottomKHeap) Push(x any) {
 	h.group.seriesForTimestamps[h.timestampIndex] = append(h.group.seriesForTimestamps[h.timestampIndex], x.(int))
 }
 
-func (h bottomKHeap) Pop() any {
+func (h *bottomKHeap) Pop() any {
 	panic("not supported")
 }
