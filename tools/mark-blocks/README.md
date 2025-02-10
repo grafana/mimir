@@ -19,7 +19,7 @@ Each supported object storage service also has an additional set of flags (see e
 
 ## Running
 
-Running `go build .` in this directory builds the program. Then use an example below as a guide.
+Run `go build .` in this directory to build the program. Then, use an example below as a guide.
 
 ### Example for Google Cloud Storage
 
