@@ -1,4 +1,4 @@
-# Mark blocks tool
+# mark-blocks
 
 `mark-blocks` is a tool that assists in uploading or removing block markers to a specified backend.
 Marks are uploaded to both the block folder and the global marks folder for the provided tenant.
