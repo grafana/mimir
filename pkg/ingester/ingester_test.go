@@ -8433,6 +8433,7 @@ func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.
 		# TYPE cortex_ingester_instance_rejected_requests_total counter
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 1
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests_bytes"} 0
+        cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_read_requests"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_ingestion_rate"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0
@@ -8532,6 +8533,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 		# TYPE cortex_ingester_instance_rejected_requests_total counter
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests_bytes"} 3
+        cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_read_requests"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_ingestion_rate"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0
