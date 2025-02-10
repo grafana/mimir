@@ -261,6 +261,9 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "topk(5, a_X)",
 		},
+		{
+			Expr: "topk by (le) (5, h_X)",
+		},
 		// Combinations.
 		{
 			Expr: "rate(a_X[1m]) + rate(b_X[1m])",
