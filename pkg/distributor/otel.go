@@ -291,7 +291,7 @@ func newOTLPParser(
 		level.Debug(spanLogger).Log(
 			"msg", "OTLP to Prometheus conversion complete",
 			"metric_count", metricCount,
-			"metric_dropped", metricsDropped,
+			"metrics_dropped", metricsDropped,
 			"sample_count", sampleCount,
 			"histogram_count", histogramCount,
 			"exemplar_count", exemplarCount,
@@ -473,9 +473,7 @@ func (c *otlpMimirConverter) ToTimeseries(ctx context.Context, md pmetric.Metric
 	}
 
 	_, c.err = c.converter.FromMetrics(ctx, md, settings, utillog.SlogFromGoKit(logger))
-
-	mimirTS := c.converter.TimeSeries()
-	return mimirTS
+	return c.converter.TimeSeries()
 }
 
 func (c *otlpMimirConverter) DroppedTotal() int {
