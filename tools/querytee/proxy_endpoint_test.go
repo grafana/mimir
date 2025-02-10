@@ -115,7 +115,7 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 		testData := testData
 
 		t.Run(testName, func(t *testing.T) {
-			endpoint := NewProxyEndpoint(testData.backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0)
+			endpoint := NewProxyEndpoint(testData.backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0, false)
 
 			// Send the responses from a dedicated goroutine.
 			resCh := make(chan *backendResponse)
@@ -160,7 +160,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 		NewProxyBackend("backend-1", backendURL1, time.Second, true, false, defaultBackendConfig()),
 		NewProxyBackend("backend-2", backendURL2, time.Second, false, false, defaultBackendConfig()),
 	}
-	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0)
+	endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(nil), log.NewNopLogger(), nil, 0, 1.0, false)
 
 	for _, tc := range []struct {
 		name    string
@@ -255,6 +255,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 		comparatorError              error
 		expectedComparisonResult     ComparisonResult
 		expectedComparisonError      string
+		skipPreferredBackendFailures bool
 	}{
 		"responses are the same": {
 			preferredResponseStatusCode:  http.StatusOK,
@@ -298,6 +299,23 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 			expectedComparisonError:      "skipped comparison of response because the response from the secondary backend contained an unexpected content type 'text/plain', expected 'application/json'",
 			expectedComparisonResult:     ComparisonSkipped,
 		},
+		"preferred backend failed but is set to skip": {
+			preferredResponseStatusCode:  http.StatusInternalServerError,
+			secondaryResponseStatusCode:  http.StatusOK,
+			preferredResponseContentType: "application/json",
+			secondaryResponseContentType: "application/json",
+			expectedComparisonResult:     ComparisonSkipped,
+			expectedComparisonError:      "skipped comparison of response because the request to the preferred backend failed",
+			skipPreferredBackendFailures: true,
+		},
+		"preferred backend failed, not set to skip": {
+			preferredResponseStatusCode:  http.StatusInternalServerError,
+			secondaryResponseStatusCode:  http.StatusOK,
+			preferredResponseContentType: "application/json",
+			secondaryResponseContentType: "application/json",
+			expectedComparisonResult:     ComparisonFailed,
+			expectedComparisonError:      "expected status code 500 (returned by preferred backend) but got 200 from secondary backend",
+		},
 	}
 
 	for name, scenario := range scenarios {
@@ -336,7 +354,7 @@ func Test_ProxyEndpoint_Comparison(t *testing.T) {
 				comparisonError:  scenario.comparatorError,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0, scenario.skipPreferredBackendFailures)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -438,7 +456,7 @@ func Test_ProxyEndpoint_LogSlowQueries(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold, 1.0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, scenario.slowResponseThreshold, 1.0, false)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -507,7 +525,7 @@ func Test_ProxyEndpoint_RelativeDurationMetric(t *testing.T) {
 				comparisonResult: ComparisonSuccess,
 			}
 
-			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0)
+			endpoint := NewProxyEndpoint(backends, testRoute, NewProxyMetrics(reg), logger, comparator, 0, 1.0, false)
 
 			resp := httptest.NewRecorder()
 			req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
@@ -842,7 +860,7 @@ func TestProxyEndpoint_BackendSelection(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			proxyEndpoint := NewProxyEndpoint(testCase.backends, Route{}, nil, nil, nil, 0, testCase.secondaryBackendRequestProportion)
+			proxyEndpoint := NewProxyEndpoint(testCase.backends, Route{}, nil, nil, nil, 0, testCase.secondaryBackendRequestProportion, false)
 			preferredOnlySelectionCount := 0
 
 			for i := 0; i < runCount; i++ {
