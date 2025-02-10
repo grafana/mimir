@@ -9,8 +9,11 @@ import (
 var log10Values []int
 
 func init() {
-	for i := 0; i < 1000; i++ {
-		log10Values = append(log10Values, int(max(1, float64(int(math.Log10(float64(i)))))))
+	for i := 0; i < 100; i++ {
+		log10Values = append(log10Values, 1)
+	}
+	for i := 100; i < 1000; i++ {
+		log10Values = append(log10Values, 2)
 	}
 }
 
