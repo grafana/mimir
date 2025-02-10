@@ -101,6 +101,8 @@
 
 ### Query-tee
 
+* [ENHANCEMENT] Allow setting a "skipped" result on comparisons when preferred backend fails #10612
+
 ### Documentation
 
 * [CHANGE] Add production tips related to cache size, heavy multi-tenancy and latency spikes. #9978
