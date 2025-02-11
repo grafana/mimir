@@ -8,6 +8,7 @@ package functions
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -24,7 +25,6 @@ type Absent struct {
 	innerExpr                parser.Expr
 	inner                    types.InstantVectorOperator
 	expressionPosition       posrange.PositionRange
-	absentCount              int
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 }
 
@@ -43,43 +43,67 @@ func NewAbsent(inner types.InstantVectorOperator, innerExpr parser.Expr, timeRan
 
 func (s *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	innerMetadata, err := s.inner.SeriesMetadata(ctx)
+	fmt.Printf("Absent SeriesMetadata: %v exp: %v\n", innerMetadata, s.expressionPosition)
 	if err != nil {
 		return nil, err
 	}
-
 	defer types.PutSeriesMetadataSlice(innerMetadata)
 
-	if innerMetadata == nil {
-		s.absentCount++
-	}
-
-	metadata := types.GetSeriesMetadataSlice(s.absentCount)
-	for range s.absentCount {
+	metadata := types.GetSeriesMetadataSlice(1)
+	if len(innerMetadata) == 0 {
 		metadata = append(metadata, types.SeriesMetadata{
 			Labels: createLabelsForAbsentFunction(s.innerExpr),
 		})
+	} else {
+		// Copy all inner metadata - we might need to output values for any series
+		// that exists but has no values at particular timestamps
+		for _, _ = range innerMetadata {
+			metadata = append(metadata, types.SeriesMetadata{
+				Labels: createLabelsForAbsentFunction(s.innerExpr),
+			})
+		}
 	}
+
 	return metadata, nil
 }
 
 func (s *Absent) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	output := types.InstantVectorSeriesData{}
 	var err error
-	output.Floats, err = types.FPointSlicePool.Get(s.absentCount, s.memoryConsumptionTracker)
+	output.Floats, err = types.FPointSlicePool.Get(s.timeRange.StepCount, s.memoryConsumptionTracker)
+	// defer types.FPointSlicePool.Put(output.Floats, s.memoryConsumptionTracker)
+
 	if err != nil {
 		return output, err
 	}
 
-	for range s.absentCount {
-		innerResult, err := s.inner.NextSeries(ctx)
-		types.PutInstantVectorSeriesData(innerResult, s.memoryConsumptionTracker)
+	series, err := s.inner.NextSeries(ctx)
+	fmt.Printf("Absent NextSeries: %v exp: %v\n", series, s.expressionPosition)
+	defer types.PutInstantVectorSeriesData(series, s.memoryConsumptionTracker)
 
-		if err != nil && errors.Is(err, types.EOS) {
-			output.Floats = append(output.Floats, promql.FPoint{T: s.timeRange.StartT + s.timeRange.IntervalMilliseconds, F: 1})
-		} else {
-			return types.InstantVectorSeriesData{}, nil
+	if err != nil && errors.Is(err, types.EOS) {
+		for step := range s.timeRange.StepCount {
+			t := s.timeRange.IndexTime(int64(step))
+			output.Floats = append(output.Floats, promql.FPoint{T: t, F: 1})
+		}
+	} else {
+		for step := range s.timeRange.StepCount {
+			t := s.timeRange.IndexTime(int64(step))
+			hasSample := false
+
+			for _, sample := range series.Floats {
+				if sample.T == t {
+					hasSample = true
+					break
+				}
+			}
+
+			if !hasSample {
+				output.Floats = append(output.Floats, promql.FPoint{T: t, F: 1})
+			}
 		}
 	}
+
 	return output, nil
 }
 
