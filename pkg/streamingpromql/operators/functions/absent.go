@@ -55,9 +55,7 @@ func (s *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 			Labels: createLabelsForAbsentFunction(s.innerExpr),
 		})
 	} else {
-		// Copy all inner metadata - we might need to output values for any series
-		// that exists but has no values at particular timestamps
-		for _, _ = range innerMetadata {
+		for range innerMetadata {
 			metadata = append(metadata, types.SeriesMetadata{
 				Labels: createLabelsForAbsentFunction(s.innerExpr),
 			})
