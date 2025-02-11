@@ -549,11 +549,18 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 {{- end -}}
 
 {{- define "mimir.remoteWriteUrl.inCluster" -}}
+{{- if or (eq (include "mimir.gateway.isEnabled" . ) "true") .Values.nginx.enabled -}}
 {{ include "mimir.gatewayUrl" . }}/api/v1/push
+{{- else -}}
+http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}/api/v1/push
 {{- end -}}
 
 {{- define "mimir.remoteReadUrl.inCluster" -}}
+{{ include "mimir.gatewayUrl" . }}
+{{- if or (eq (include "mimir.gateway.isEnabled" . ) "true") .Values.nginx.enabled -}}
 {{ include "mimir.gatewayUrl" . }}{{ include "mimir.prometheusHttpPrefix" . }}
+{{- else -}}
+http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}{{ include "mimir.prometheusHttpPrefix" . }}
 {{- end -}}
 
 {{/*
