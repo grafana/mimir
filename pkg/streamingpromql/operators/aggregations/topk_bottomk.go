@@ -309,7 +309,13 @@ func (t *TopKBottomK) accumulateIntoGroup(data types.InstantVectorSeriesData, g 
 	groupSeriesIndex := g.seriesRead()
 
 	if g.seriesForTimestamps == nil {
-		g.seriesForTimestamps = make([][]int, t.TimeRange.StepCount)
+		var err error
+		g.seriesForTimestamps, err = intSliceSlicePool.Get(t.TimeRange.StepCount, t.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+
+		g.seriesForTimestamps = g.seriesForTimestamps[:t.TimeRange.StepCount]
 	}
 
 	if g.series == nil {
@@ -442,6 +448,7 @@ func (t *TopKBottomK) returnGroupToPool(g *topKBottomKGroup) {
 		types.IntSlicePool.Put(ts, t.MemoryConsumptionTracker)
 	}
 
+	intSliceSlicePool.Put(g.seriesForTimestamps, t.MemoryConsumptionTracker)
 	topKBottomKSeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
 }
 
@@ -490,6 +497,15 @@ var topKBottomKSeriesSlicePool = types.NewLimitingBucketedPool(
 		return make([]topKBottomKSeries, 0, size)
 	}),
 	uint64(unsafe.Sizeof(topKBottomKSeries{})),
+	true,
+	nil,
+)
+
+var intSliceSlicePool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(types.MaxExpectedPointsPerSeries, func(size int) [][]int {
+		return make([][]int, 0, size)
+	}),
+	uint64(unsafe.Sizeof([][]int{})),
 	true,
 	nil,
 )
