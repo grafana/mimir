@@ -136,6 +136,11 @@ func (m *subquerySpinOffMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, f
 
 		return downstreamQuery(expr)
 	default:
+		// If we encounter a parallelizable expression, we can pass it through to the downstream execution path.
+		// Querysharding is proven to be fast enough that we don't need to spin off subqueries.
+		if CanParallelize(expr, m.logger) {
+			return downstreamQuery(expr)
+		}
 		// If there's no subquery in the children, we can abort early and pass the expression through to the downstream execution path.
 		if !hasSubqueryInChildren(expr) {
 			return downstreamQuery(expr)
