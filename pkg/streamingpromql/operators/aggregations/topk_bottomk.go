@@ -400,7 +400,12 @@ func (t *TopKBottomK) accumulateIntoGroup(data types.InstantVectorSeriesData, g 
 
 			g.seriesForTimestamps[timestampIndex][0] = groupSeriesIndex
 			t.heap.Reset(g, timestampIndex)
-			heap.Fix(t.heap, 0)
+
+			if limit != 1 {
+				// We only need to bother to fix the heap if there's more than one element.
+				// This optimises for the common case of topk(1, xxx) or bottomk(1, xxx).
+				heap.Fix(t.heap, 0)
+			}
 
 			currentWorstSeries.pointCount--
 
