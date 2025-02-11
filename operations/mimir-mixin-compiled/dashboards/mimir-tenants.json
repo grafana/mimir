@@ -2298,6 +2298,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Number of Queries Queued - query-scheduler\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -2406,6 +2407,7 @@
                },
                {
                   "datasource": "$datasource",
+                  "description": "### Number of Queries Queued - ruler-query-scheduler\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
