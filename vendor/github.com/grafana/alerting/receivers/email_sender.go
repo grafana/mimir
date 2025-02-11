@@ -7,6 +7,7 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"io"
 	"net"
 	"net/mail"
 	"strconv"
@@ -62,13 +63,14 @@ func NewEmailSenderFactory(cfg EmailSenderConfig) func(Metadata) (EmailSender, e
 
 // Message representats an email message.
 type Message struct {
-	To            []string
-	From          string
-	Subject       string
-	Body          map[string]string
-	EmbeddedFiles []string
-	ReplyTo       []string
-	SingleEmail   bool
+	To               []string
+	From             string
+	Subject          string
+	Body             map[string]string
+	EmbeddedFiles    []string
+	EmbeddedContents []EmbeddedContent
+	ReplyTo          []string
+	SingleEmail      bool
 }
 
 // SendEmail implements the EmailSender interface.
@@ -117,13 +119,14 @@ func (s *defaultEmailSender) buildEmailMessage(cmd *SendEmailSettings) (*Message
 
 	addr := mail.Address{Name: s.cfg.FromName, Address: s.cfg.FromAddress}
 	return &Message{
-		To:            cmd.To,
-		From:          addr.String(),
-		Subject:       subject,
-		Body:          body,
-		EmbeddedFiles: cmd.EmbeddedFiles,
-		ReplyTo:       cmd.ReplyTo,
-		SingleEmail:   cmd.SingleEmail,
+		To:               cmd.To,
+		From:             addr.String(),
+		Subject:          subject,
+		Body:             body,
+		EmbeddedFiles:    cmd.EmbeddedFiles,
+		EmbeddedContents: cmd.EmbeddedContents,
+		ReplyTo:          cmd.ReplyTo,
+		SingleEmail:      cmd.SingleEmail,
 	}, nil
 }
 
@@ -216,6 +219,13 @@ func (s *defaultEmailSender) buildEmail(msg *Message) *gomail.Message {
 	// Add embedded files.
 	for _, file := range msg.EmbeddedFiles {
 		m.Embed(file)
+	}
+
+	for _, file := range msg.EmbeddedContents {
+		m.Embed(file.Name, gomail.SetCopyFunc(func(writer io.Writer) error {
+			_, err := writer.Write(file.Content)
+			return err
+		}))
 	}
 
 	// Add reply-to addresses to the email message.
