@@ -1886,7 +1886,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	}
 
 	// Parse the request
-	hists, matchersSet, err := client.FromMetricsForLabelMatchersRequest(req)
+	hints, matchersSet, err := client.FromMetricsForLabelMatchersRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1910,7 +1910,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 		hints := &storage.SelectHints{
 			Start: mint,
 			End:   maxt,
-			Limit: hists.Limit,
+			Limit: hints.Limit,
 			Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
 		}
 
@@ -1933,7 +1933,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 		// Besides we are passing the hints to q.Select, we also limit the number of returned series here,
 		// to account for cases when series were resolved via different instances and joined into a single seriesSet,
 		// which are not limited by the MergeSeriesSet.
-		if hists.Limit > 0 && len(result.Metric) >= hists.Limit {
+		if hints.Limit > 0 && len(result.Metric) >= hints.Limit {
 			break
 		}
 
