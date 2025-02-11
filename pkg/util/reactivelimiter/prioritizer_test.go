@@ -21,7 +21,7 @@ func TestPrioritizer_Calibrate(t *testing.T) {
 	limiter := NewPriorityLimiter(config, p, nil).(*priorityLimiter)
 
 	acquireBlocking := func() {
-		go limiter.AcquirePermit(context.Background(), PriorityLow)
+		_, _ = limiter.AcquirePermit(context.Background(), PriorityLow)
 	}
 	assertBlocked := func(blocked int) {
 		require.Eventually(t, func() bool {
@@ -31,13 +31,13 @@ func TestPrioritizer_Calibrate(t *testing.T) {
 
 	permit, err := limiter.AcquirePermit(context.Background(), PriorityLow)
 	require.NoError(t, err)
-	acquireBlocking()
+	go acquireBlocking()
 	assertBlocked(1)
-	acquireBlocking()
+	go acquireBlocking()
 	assertBlocked(2)
-	acquireBlocking()
+	go acquireBlocking()
 	assertBlocked(3)
-	acquireBlocking()
+	go acquireBlocking()
 	assertBlocked(4)
 	permit.Record()
 
