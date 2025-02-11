@@ -12,6 +12,7 @@ import (
 	"math"
 	"slices"
 	"sort"
+	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 type TopKBottomK struct {
@@ -212,10 +214,7 @@ func (t *TopKBottomK) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	t.seriesIndexInCurrentGroup++
 
 	if t.seriesIndexInCurrentGroup >= t.currentGroup.totalSeries {
-		for _, ts := range t.currentGroup.seriesForTimestamps {
-			types.IntSlicePool.Put(ts, t.MemoryConsumptionTracker)
-		}
-
+		t.returnGroupToPool(t.currentGroup)
 		t.currentGroup = nil
 		t.seriesIndexInCurrentGroup = 0
 	}
@@ -314,7 +313,11 @@ func (t *TopKBottomK) accumulateIntoGroup(data types.InstantVectorSeriesData, g 
 	}
 
 	if g.series == nil {
-		g.series = make([]topKBottomKSeries, 0, g.totalSeries)
+		var err error
+		g.series, err = topKBottomKSeriesSlicePool.Get(g.totalSeries, t.MemoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
 	}
 
 	g.series = g.series[:groupSeriesIndex+1]
@@ -434,6 +437,14 @@ func (t *TopKBottomK) accumulateIntoGroup(data types.InstantVectorSeriesData, g 
 	return nil
 }
 
+func (t *TopKBottomK) returnGroupToPool(g *topKBottomKGroup) {
+	for _, ts := range g.seriesForTimestamps {
+		types.IntSlicePool.Put(ts, t.MemoryConsumptionTracker)
+	}
+
+	topKBottomKSeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
+}
+
 func (t *TopKBottomK) returnSeriesToPool(series topKBottomKSeries) {
 	types.BoolSlicePool.Put(series.shouldReturnPoint, t.MemoryConsumptionTracker)
 	types.Float64SlicePool.Put(series.values, t.MemoryConsumptionTracker)
@@ -473,6 +484,15 @@ type topKBottomKSeries struct {
 	shouldReturnPoint []bool    // One entry per timestamp, true means the value should be returned
 	values            []float64 // One entry per timestamp with value for that timestamp (entry only guaranteed to be populated if value at that timestamp might be returned)
 }
+
+var topKBottomKSeriesSlicePool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []topKBottomKSeries {
+		return make([]topKBottomKSeries, 0, size)
+	}),
+	uint64(unsafe.Sizeof(topKBottomKSeries{})),
+	true,
+	nil,
+)
 
 type topKHeap struct {
 	timestampIndex int64
