@@ -259,6 +259,13 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 			expectedSubqueries:        1,
 			expectedDownstreamQueries: 1,
 		},
+		{
+			name:                      "prioritize query sharding",
+			in:                        "sum by (group_1) (avg_over_time(rate(hello{}[3d])[1d:1m]))",
+			out:                       `__downstream_query__{__query__="sum by (group_1) (avg_over_time(rate(hello[3d])[1d:1m]))"}`,
+			expectedSubqueries:        0,
+			expectedDownstreamQueries: 1,
+		},
 	} {
 		tt := tt
 

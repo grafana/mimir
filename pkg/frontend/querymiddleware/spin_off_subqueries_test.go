@@ -86,40 +86,40 @@ func TestSubquerySpinOff_Correctness(t *testing.T) {
 					)`,
 			expectedSpunOffSubqueries: 1,
 		},
-		"sum of subquery min": {
-			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[2d:2m]))`,
+		"subquery min 2": {
+			query:                     `min_over_time((changes(metric_counter[5m]))[2d:2m])`,
 			expectedSpunOffSubqueries: 1,
 		},
-		"sum of subquery min with small offset": {
-			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[1d:1m] offset 20s))`,
+		"subquery min with small offset": {
+			query:                     `min_over_time((changes(metric_counter[5m]))[1d:1m] offset 20s)`,
 			expectedSpunOffSubqueries: 1,
 		},
-		"sum of subquery min with offset": {
-			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[1d:1m] offset 1d))`,
+		"subquery min with offset": {
+			query:                     `min_over_time((changes(metric_counter[5m]))[1d:1m] offset 1d)`,
 			expectedSpunOffSubqueries: 1,
 		},
-		"sum of subquery min: offset query time -10m": {
-			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[2d:2m]))`,
+		"subquery min: offset query time -10m": {
+			query:                     `min_over_time((changes(metric_counter[5m]))[2d:2m])`,
 			expectedSpunOffSubqueries: 1,
 			offsetQueryTime:           -10 * time.Minute,
 		},
-		"sum of subquery min: offset query time +10m": {
-			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[2d:2m]))`,
+		"subquery min: offset query time +10m": {
+			query:                     `min_over_time((changes(metric_counter[5m]))[2d:2m])`,
 			expectedSpunOffSubqueries: 1,
 			offsetQueryTime:           10 * time.Minute,
 		},
-		"sum of subquery min: offset query time -33s": {
-			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[2d:2m]))`,
+		"subquery min: offset query time -33s": {
+			query:                     `min_over_time((changes(metric_counter[5m]))[2d:2m])`,
 			expectedSpunOffSubqueries: 1,
 			offsetQueryTime:           -33 * time.Second,
 		},
-		"sum of subquery min: offset query time +33s": {
-			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[2d:2m]))`,
+		"subquery min: offset query time +33s": {
+			query:                     `min_over_time((changes(metric_counter[5m]))[2d:2m])`,
 			expectedSpunOffSubqueries: 1,
 			offsetQueryTime:           33 * time.Second,
 		},
-		"sum of subquery min: offset query time +1h": {
-			query:                     `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[2d:2m]))`,
+		"subquery min: offset query time +1h": {
+			query:                     `min_over_time((changes(metric_counter[5m]))[2d:2m])`,
 			expectedSpunOffSubqueries: 1,
 			offsetQueryTime:           1 * time.Hour,
 		},
