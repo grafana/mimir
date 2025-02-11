@@ -42,6 +42,9 @@ func (v *ClusterCheckEnum) String() string {
 
 // Set implements flag.Value
 func (v *ClusterCheckEnum) Set(s string) error {
+	if s == "" {
+		s = "none"
+	}
 	switch strings.ToLower(s) {
 	case "none", "all", "grpc", "http":
 		*v = ClusterCheckEnum(s)

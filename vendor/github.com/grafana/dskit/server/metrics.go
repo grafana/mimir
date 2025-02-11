@@ -97,6 +97,6 @@ func NewServerMetrics(cfg Config) *Metrics {
 			Name:        "request_invalid_cluster_verification_labels_total",
 			Help:        "Number of requests with invalid cluster verification label.",
 			ConstLabels: nil,
-		}, []string{"protocol", "method", "request_cluster"}),
+		}, []string{"protocol", "method", "request_label"}),
 	}
 }
