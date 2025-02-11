@@ -2761,25 +2761,26 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		return nil, err
 	}
 
+	metricsLimit := math.MaxInt
+	if hints != nil && hints.Limit > 0 {
+		metricsLimit = hints.Limit
+	}
 	metrics := map[uint64]labels.Labels{}
+respsLoop:
 	for _, resp := range resps {
 		ms := ingester_client.FromMetricsForLabelMatchersResponse(resp)
 		for _, m := range ms {
+			if len(metrics) >= metricsLimit {
+				break respsLoop
+			}
 			metrics[labels.StableHash(m)] = m
 		}
 	}
 
 	queryLimiter := mimir_limiter.QueryLimiterFromContextWithFallback(ctx)
 
-	resultCap := len(metrics)
-	if hints != nil && hints.Limit > 0 {
-		resultCap = min(resultCap, hints.Limit)
-	}
-	result := make([]labels.Labels, 0, resultCap)
+	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		if len(result) >= resultCap {
-			break
-		}
 		if err := queryLimiter.AddSeries(m); err != nil {
 			return nil, err
 		}
