@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package aggregations
+package topkbottomk
 
 import (
 	"container/heap"
@@ -14,21 +14,21 @@ import (
 	"sort"
 	"unsafe"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
-type TopKBottomK struct {
+type RangeQuery struct {
 	Inner                    types.InstantVectorOperator
 	Param                    types.ScalarOperator
 	TimeRange                types.QueryTimeRange
-	Grouping                 []string // If this is a 'without' aggregation, NewTopKBottomK will ensure that this slice contains __name__.
+	Grouping                 []string // If this is a 'without' aggregation, New will ensure that this slice contains __name__.
 	Without                  bool
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	IsTopK                   bool // If false, this is operator is for bottomk().
@@ -49,52 +49,9 @@ type TopKBottomK struct {
 	heap topKBottomKHeap
 }
 
-var _ types.InstantVectorOperator = &TopKBottomK{}
+var _ types.InstantVectorOperator = &RangeQuery{}
 
-func NewTopKBottomK(
-	inner types.InstantVectorOperator,
-	param types.ScalarOperator,
-	timeRange types.QueryTimeRange,
-	grouping []string,
-	without bool,
-	isTopK bool,
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
-	annotations *annotations.Annotations,
-	expressionPosition posrange.PositionRange,
-) *TopKBottomK {
-	if without {
-		labelsToDrop := make([]string, 0, len(grouping)+1)
-		labelsToDrop = append(labelsToDrop, labels.MetricName)
-		labelsToDrop = append(labelsToDrop, grouping...)
-		grouping = labelsToDrop
-	}
-
-	slices.Sort(grouping)
-
-	var h topKBottomKHeap
-
-	if isTopK {
-		h = &topKHeap{}
-	} else {
-		h = &bottomKHeap{}
-	}
-
-	return &TopKBottomK{
-		Inner:                    inner,
-		Param:                    param,
-		TimeRange:                timeRange,
-		Grouping:                 grouping,
-		Without:                  without,
-		MemoryConsumptionTracker: memoryConsumptionTracker,
-		IsTopK:                   isTopK,
-
-		expressionPosition: expressionPosition,
-		annotations:        annotations,
-		heap:               h,
-	}
-}
-
-func (t *TopKBottomK) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+func (t *RangeQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	if err := t.loadLimit(ctx); err != nil {
 		return nil, err
 	}
@@ -144,7 +101,7 @@ func (t *TopKBottomK) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	return innerSeries, nil
 }
 
-func (t *TopKBottomK) loadLimit(ctx context.Context) error {
+func (t *RangeQuery) loadLimit(ctx context.Context) error {
 	paramValues, err := t.Param.GetValues(ctx)
 	if err != nil {
 		return err
@@ -176,8 +133,8 @@ func convertibleToInt64(v float64) bool {
 	return v <= math.MaxInt64 && v >= math.MinInt64
 }
 
-func (t *TopKBottomK) groupLabelsBytesFunc() seriesToGroupLabelsBytesFunc {
-	return groupLabelsBytesFunc(t.Grouping, t.Without)
+func (t *RangeQuery) groupLabelsBytesFunc() aggregations.SeriesToGroupLabelsBytesFunc {
+	return aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
 }
 
 type topKBottomKOutputSorter struct {
@@ -198,7 +155,7 @@ func (s topKBottomKOutputSorter) Swap(i, j int) {
 	s.metadata[i], s.metadata[j] = s.metadata[j], s.metadata[i]
 }
 
-func (t *TopKBottomK) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (t *RangeQuery) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if err := t.ensureCurrentGroupPopulated(ctx); err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -222,7 +179,7 @@ func (t *TopKBottomK) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	return data, nil
 }
 
-func (t *TopKBottomK) ensureCurrentGroupPopulated(ctx context.Context) error {
+func (t *RangeQuery) ensureCurrentGroupPopulated(ctx context.Context) error {
 	if t.currentGroup != nil {
 		return nil
 	}
@@ -243,7 +200,7 @@ func (t *TopKBottomK) ensureCurrentGroupPopulated(ctx context.Context) error {
 	return nil
 }
 
-func (t *TopKBottomK) constructOutputSeries(series topKBottomKSeries) (types.InstantVectorSeriesData, error) {
+func (t *RangeQuery) constructOutputSeries(series topKBottomKSeries) (types.InstantVectorSeriesData, error) {
 	data := types.InstantVectorSeriesData{}
 
 	if series.pointCount == 0 {
@@ -267,7 +224,7 @@ func (t *TopKBottomK) constructOutputSeries(series topKBottomKSeries) (types.Ins
 	return data, nil
 }
 
-func (t *TopKBottomK) readNextSeries(ctx context.Context) error {
+func (t *RangeQuery) readNextSeries(ctx context.Context) error {
 	nextSeries, err := t.Inner.NextSeries(ctx)
 	if err != nil {
 		return err
@@ -291,7 +248,7 @@ func (t *TopKBottomK) readNextSeries(ctx context.Context) error {
 	return nil
 }
 
-func (t *TopKBottomK) emitIgnoredHistogramsAnnotation() {
+func (t *RangeQuery) emitIgnoredHistogramsAnnotation() {
 	if t.haveEmittedIgnoredHistogramsAnnotation {
 		return
 	}
@@ -305,7 +262,7 @@ func (t *TopKBottomK) emitIgnoredHistogramsAnnotation() {
 	t.haveEmittedIgnoredHistogramsAnnotation = true
 }
 
-func (t *TopKBottomK) accumulateIntoGroup(data types.InstantVectorSeriesData, g *topKBottomKGroup) error {
+func (t *RangeQuery) accumulateIntoGroup(data types.InstantVectorSeriesData, g *topKBottomKGroup) error {
 	groupSeriesIndex := g.seriesRead()
 
 	if g.seriesForTimestamps == nil {
@@ -443,7 +400,7 @@ func (t *TopKBottomK) accumulateIntoGroup(data types.InstantVectorSeriesData, g 
 	return nil
 }
 
-func (t *TopKBottomK) returnGroupToPool(g *topKBottomKGroup) {
+func (t *RangeQuery) returnGroupToPool(g *topKBottomKGroup) {
 	for _, ts := range g.seriesForTimestamps {
 		types.IntSlicePool.Put(ts, t.MemoryConsumptionTracker)
 	}
@@ -452,16 +409,16 @@ func (t *TopKBottomK) returnGroupToPool(g *topKBottomKGroup) {
 	topKBottomKSeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
 }
 
-func (t *TopKBottomK) returnSeriesToPool(series topKBottomKSeries) {
+func (t *RangeQuery) returnSeriesToPool(series topKBottomKSeries) {
 	types.BoolSlicePool.Put(series.shouldReturnPoint, t.MemoryConsumptionTracker)
 	types.Float64SlicePool.Put(series.values, t.MemoryConsumptionTracker)
 }
 
-func (t *TopKBottomK) ExpressionPosition() posrange.PositionRange {
+func (t *RangeQuery) ExpressionPosition() posrange.PositionRange {
 	return t.expressionPosition
 }
 
-func (t *TopKBottomK) Close() {
+func (t *RangeQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
 

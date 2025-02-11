@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package aggregations
+package topkbottomk
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func TestTopKBottomK_GroupingAndSorting(t *testing.T) {
+func TestTopKBottomKRangeQuery_GroupingAndSorting(t *testing.T) {
 	testCases := map[string]struct {
 		inputSeries []labels.Labels
 		grouping    []string
@@ -302,7 +302,7 @@ func TestTopKBottomK_GroupingAndSorting(t *testing.T) {
 			timeRange := types.NewRangeQueryTimeRange(timestamp.Time(0), timestamp.Time(0).Add(2*time.Minute), time.Minute)
 			memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 
-			o := NewTopKBottomK(
+			o := New(
 				&operators.TestOperator{Series: testCase.inputSeries},
 				&scalars.ScalarConstant{Value: 2, TimeRange: timeRange, MemoryConsumptionTracker: memoryConsumptionTracker},
 				timeRange,

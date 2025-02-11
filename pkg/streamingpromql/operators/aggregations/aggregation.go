@@ -171,8 +171,8 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	return seriesMetadata, nil
 }
 
-func (a *Aggregation) groupLabelsBytesFunc() seriesToGroupLabelsBytesFunc {
-	return groupLabelsBytesFunc(a.Grouping, a.Without)
+func (a *Aggregation) groupLabelsBytesFunc() SeriesToGroupLabelsBytesFunc {
+	return GroupLabelsBytesFunc(a.Grouping, a.Without)
 }
 
 // seriesToGroupLabelsFunc is a function that returns the output group labels for the given input series.

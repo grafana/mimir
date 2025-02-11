@@ -63,7 +63,7 @@ func GetAggregationItemType(aggregation string) (parser.ItemType, bool) {
 	return item, ok
 }
 
-// seriesToGroupLabelsBytesFunc is a function that computes a string-like representation of the output group labels for the given input series.
+// SeriesToGroupLabelsBytesFunc is a function that computes a string-like representation of the output group labels for the given input series.
 //
 // It returns a byte slice rather than a string to make it possible to avoid unnecessarily allocating a string.
 //
@@ -81,9 +81,9 @@ func GetAggregationItemType(aggregation string) (parser.ItemType, bool) {
 // Furthermore, labels.Labels.String() doesn't allow us to reuse the buffer used when producing the string or to return a byte slice,
 // whereas this method does.
 // This saves us allocating a new buffer and string for every single input series, which has a noticeable performance impact.
-type seriesToGroupLabelsBytesFunc func(labels.Labels) []byte
+type SeriesToGroupLabelsBytesFunc func(labels.Labels) []byte
 
-func groupLabelsBytesFunc(grouping []string, without bool) seriesToGroupLabelsBytesFunc {
+func GroupLabelsBytesFunc(grouping []string, without bool) SeriesToGroupLabelsBytesFunc {
 	switch {
 	case without:
 		// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
