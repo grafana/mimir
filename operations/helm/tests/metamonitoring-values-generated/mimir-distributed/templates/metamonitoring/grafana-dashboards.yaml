@@ -11256,6 +11256,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
+                      "description": "### Queue duration\n<p>\nThe query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\nIf the query-scheduler is deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -11414,6 +11415,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Queue length\n<p>\nThe query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\nIf the query-scheduler is deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -11462,6 +11464,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Queue length\n<p>\nThe query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\nIf the query-scheduler is deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -11523,6 +11526,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
+                      "description": "### Queue duration\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -11602,6 +11606,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Queue length\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -11650,6 +11655,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Queue length\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -18650,7 +18656,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Requests / sec\n<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### Requests / sec\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -18835,7 +18841,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency (Time in Queue)\n<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### Latency (Time in Queue)\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -18915,7 +18921,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### Queue length\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -18978,7 +18984,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -19028,7 +19034,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -19078,7 +19084,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -19140,7 +19146,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
+                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -26123,7 +26129,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### Requests / sec\n<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### Requests / sec\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -26308,7 +26314,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Latency (Time in Queue)\n<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### Latency (Time in Queue)\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -26388,7 +26394,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Queue length\n<p>\n  The query scheduler is an optional service that moves\n  the internal queue from the query-frontend into a\n  separate component.\n  If this service is not deployed,\n  these panels will show \"No data.\"\n</p>\n\n",
+                      "description": "### Queue length\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -26451,7 +26457,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                      "description": "### 99th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -26501,7 +26507,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                      "description": "### 50th Percentile Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -26551,7 +26557,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
-                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p>\n\n",
+                      "description": "### Average Latency by Expected Query Component\n<p>\n  The query-scheduler creates subqueues\n  broken out by which query components (ingester, store-gateway, or both)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which have not had an expected query component determined are labeled 'unknown'.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -26613,7 +26619,7 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
-                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p>\n\n",
+                      "description": "### 99th Percentile Inflight Requests by Query Component vs. Total Connected Queriers\n<p>\n  The query-scheduler tracks query requests inflight\n  between the scheduler and the connected queriers,\n  broken out by which query component (ingester, store-gateway)\n  the querier is expected to fetch data from to service the query.\n</p><p>\n  Queries which require data from both ingesters and store-gateways\n  are counted in each category, so the sum of the two categories\n  may exceed the true total number of queries inflight.\n</p><p>\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -37240,6 +37246,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Number of Queries Queued - query-scheduler\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -37348,6 +37355,7 @@ data:
                    },
                    {
                       "datasource": "$datasource",
+                      "description": "### Number of Queries Queued - ruler-query-scheduler\n<p>\n  The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.\n  If the query-scheduler is not deployed, these panels will show \"No data.\"\n</p>\n\n",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
