@@ -395,7 +395,7 @@ func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver 
 		}
 		result.ThreemaConfigs = append(result.ThreemaConfigs, newNotifierConfig(receiver, cfg))
 	case "victorops":
-		cfg, err := victorops.NewConfig(receiver.Settings)
+		cfg, err := victorops.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
