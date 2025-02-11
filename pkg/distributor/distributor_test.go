@@ -2570,7 +2570,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					if testData.hints == nil || testData.hints.Limit == 0 {
 						requireLabelAdaptersMatchLabels(t, testData.expectedResult, metrics)
 					} else {
-						// The order of ingester responses isn't guarantied. Thus, we can only test that the distributor's response is in the subset of expectedResult.
+						// The order of ingester responses isn't guaranteed. Thus, we can only test that the distributor's response is in the subset of expectedResult.
 						require.Len(t, metrics, testData.hints.Limit)
 						requireLabelAdaptersContainLabels(t, testData.expectedResult, metrics)
 					}
