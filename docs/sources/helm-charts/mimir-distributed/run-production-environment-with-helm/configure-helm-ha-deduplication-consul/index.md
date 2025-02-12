@@ -24,6 +24,8 @@ For conceptual information about how Mimir deduplicates incoming HA samples, ref
 
 You also need to configure HA for Prometheus or Grafana Agent. Lastly, you need a key-value store such as Consul KV.
 
+{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
+
 ## Configure Prometheus or Grafana Agent to send HA external labels
 
 Configure the Prometheus or Grafana Agent HA setup by setting the labels named `cluster` and `__replica__`,
