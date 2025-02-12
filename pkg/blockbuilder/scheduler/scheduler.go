@@ -256,11 +256,10 @@ func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 // advanceCommittedOffset advances the committed offset for the given topic/partition.
 // It is a no-op if the new offset is not greater than the current committed offset.
 // Assumes the lock is held.
-func (s *BlockBuilderScheduler) advanceCommittedOffset(topic string, partition int32, newOffset int64, metadata string) {
+func (s *BlockBuilderScheduler) advanceCommittedOffset(topic string, partition int32, newOffset int64) {
 	if o, ok := s.committed.Lookup(topic, partition); ok {
 		if newOffset > o.At {
 			o.At = newOffset
-			o.Metadata = metadata
 			s.committed[topic][partition] = o
 		}
 	} else {
@@ -268,12 +267,11 @@ func (s *BlockBuilderScheduler) advanceCommittedOffset(topic string, partition i
 			Topic:     topic,
 			Partition: partition,
 			At:        newOffset,
-			Metadata:  metadata,
 		})
 	}
 }
 
-// AssignJob returns an assigned job for the given workerID.
+// AssignJob assigns and returns a job, if one is available.
 func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *schedulerpb.AssignJobRequest) (*schedulerpb.AssignJobResponse, error) {
 	key, spec, err := s.assignJob(req.WorkerId)
 	if err != nil {
@@ -289,7 +287,7 @@ func (s *BlockBuilderScheduler) AssignJob(_ context.Context, req *schedulerpb.As
 	}, err
 }
 
-// assignJob returns an assigned job for the given workerID.
+// assignJob returns an assigned job for the given workerID, if one is available.
 func (s *BlockBuilderScheduler) assignJob(workerID string) (jobKey, schedulerpb.JobSpec, error) {
 	s.mu.Lock()
 	doneObserving := s.observationComplete
@@ -347,10 +345,8 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 			}
 		}
 
-		// TODO: More information to pass from block-builder here:
-		// - the true commit offset
-		// - metadata blob
-		s.advanceCommittedOffset(j.Topic, j.Partition, j.EndOffset, "{}")
+		// ??? Is EndOffset inclusive? Do we need to commit EndOffset+1?
+		s.advanceCommittedOffset(j.Topic, j.Partition, j.EndOffset)
 		logger.Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
@@ -393,7 +389,7 @@ func (s *BlockBuilderScheduler) finalizeObservations() {
 	for _, rj := range s.observations {
 		if rj.complete {
 			// Completed.
-			s.advanceCommittedOffset(rj.spec.Topic, rj.spec.Partition, rj.spec.EndOffset, "{}")
+			s.advanceCommittedOffset(rj.spec.Topic, rj.spec.Partition, rj.spec.EndOffset)
 		} else {
 			// An in-progress job.
 			// These don't affect offsets, they just get added to the job queue.
