@@ -88,6 +88,8 @@
   * `_config.multi_zone_schedule_toleration` (default)
   * `_config.multi_zone_distributor_schedule_toleration` (distributor's override)
   * `_config.multi_zone_etcd_schedule_toleration` (etcd's override)
+* [CHANGE] Ring: relaxed the hash ring heartbeat timeout for store-gateways: #TBD
+  * `-store-gateway.sharding-ring.heartbeat-timeout` set to `10m`
 * [ENHANCEMENT] Enforce `persistentVolumeClaimRetentionPolicy` `Retain` policy on partition ingesters during migration to experimental ingest storage. #10395
 * [ENHANCEMENT] Allow to not configure `topologySpreadConstraints` by setting the following configuration options to a negative value: #10540
   * `distributor_topology_spread_max_skew`
