@@ -118,18 +118,25 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 		t.heap.Reset(g)
 
 		lastOutputSeriesIndexForGroup := firstOutputSeriesIndexForNextGroup + len(g.series) - 1
-		nextOutputSeriesIndex := lastOutputSeriesIndexForGroup
+		nextOutputSeriesIndex := lastOutputSeriesIndexForGroup - g.nanCount
 		firstOutputSeriesIndexForNextGroup += len(g.series)
 
+		// Pop returns the next lowest value (topk) or next highest value (bottomk), but we want to return values
+		// in descending order for topk / ascending order for bottomk. The only exception is NaN values, which
+		// should always be last, regardless of the sort order.
 		for len(g.series) > 0 {
 			next := heap.Pop(t.heap).(instantQuerySeries)
 
-			// Pop returns the next lowest value (topk) or next highest value (bottomk), but we want to return values
-			// in descending order for topk / ascending order for bottomk. The only exception is NaN values, which
-			// should always be last.
-			outputSeries[nextOutputSeriesIndex] = next.metadata
-			t.values[nextOutputSeriesIndex] = next.value
-			nextOutputSeriesIndex--
+			if math.IsNaN(next.value) {
+				idx := lastOutputSeriesIndexForGroup - g.nanCount + 1
+				outputSeries[idx] = next.metadata
+				t.values[idx] = next.value
+				g.nanCount--
+			} else {
+				outputSeries[nextOutputSeriesIndex] = next.metadata
+				t.values[nextOutputSeriesIndex] = next.value
+				nextOutputSeriesIndex--
+			}
 		}
 	}
 
@@ -188,6 +195,10 @@ func (t *InstantQuery) accumulateValue(metadata types.SeriesMetadata, value floa
 		t.heap.Reset(g)
 		heap.Push(t.heap, instantQuerySeries{metadata, value})
 
+		if math.IsNaN(value) {
+			g.nanCount++
+		}
+
 		return true
 	}
 
@@ -215,6 +226,10 @@ func (t *InstantQuery) accumulateValue(metadata types.SeriesMetadata, value floa
 		// This optimises for the common case of topk(1, xxx) or bottomk(1, xxx).
 		t.heap.Reset(g)
 		heap.Fix(t.heap, 0)
+	}
+
+	if math.IsNaN(currentWorstValue) {
+		g.nanCount--
 	}
 
 	return false
@@ -255,10 +270,10 @@ func (t *InstantQuery) Close() {
 }
 
 type instantQueryGroup struct {
-	seriesCount int
+	seriesCount int // Total number of series that contribute to this group.
+	nanCount    int // Total number of output series (ie. in the heap below) whose value is NaN.
 
-	// Min-/max-heap for the current 'best' values we've seen (highest for topk / lowest for bottomk)
-	series []instantQuerySeries
+	series []instantQuerySeries // Min-/max-heap for the current 'best' values we've seen (highest for topk / lowest for bottomk)
 }
 
 type instantQuerySeries struct {
