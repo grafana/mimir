@@ -190,6 +190,7 @@ The following features are currently experimental:
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
+  - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
 - Read-write deployment mode
 - API endpoints:
   - `/api/v1/user_limits`
