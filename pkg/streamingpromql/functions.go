@@ -513,6 +513,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"sort":               SortOperatorFactory(false),
 	"sort_desc":          SortOperatorFactory(true),
 	"sqrt":               InstantVectorTransformationFunctionOperatorFactory("sqrt", functions.Sqrt),
+	"stddev_over_time":   FunctionOverRangeVectorOperatorFactory("stddev_over_time", functions.StddevOverTime),
 	"sum_over_time":      FunctionOverRangeVectorOperatorFactory("sum_over_time", functions.SumOverTime),
 	"tan":                InstantVectorTransformationFunctionOperatorFactory("tan", functions.Tan),
 	"tanh":               InstantVectorTransformationFunctionOperatorFactory("tanh", functions.Tanh),

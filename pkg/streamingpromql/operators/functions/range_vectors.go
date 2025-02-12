@@ -634,3 +634,41 @@ func irateIdelta(isRate bool) RangeVectorStepFunction {
 		return resultValue, true, nil, nil
 	}
 }
+
+var StddevOverTime = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       stddevOverTime,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func stddevOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	head, tail := step.Floats.UnsafePoints()
+
+	if len(head) == 0 && len(tail) == 0 {
+		return 0, false, nil, nil
+	}
+
+	if step.Histograms.Any() {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
+	}
+
+	count := 0.0
+	mean := 0.0
+	meanC := 0.0
+	deviation := 0.0
+	deviationC := 0.0
+
+	accumulate := func(points []promql.FPoint) {
+		for _, p := range points {
+			count++
+			delta := p.F - (mean + meanC)
+			mean, meanC = floats.KahanSumInc(delta/count, mean, meanC)
+			deviation, deviationC = floats.KahanSumInc(delta*(p.F-(mean+meanC)), deviation, deviationC)
+		}
+	}
+
+	accumulate(head)
+	accumulate(tail)
+
+	return math.Sqrt((deviation + deviationC) / count), true, nil, nil
+}
