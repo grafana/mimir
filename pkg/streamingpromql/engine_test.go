@@ -50,9 +50,8 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		`count_values("foo", metric{})`:         "'count_values' aggregation with parameter",
-		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
-		"quantile(0.95, metric{})":              "'quantile' aggregation with parameter",
+		`count_values("foo", metric{})`: "'count_values' aggregation with parameter",
+		"quantile(0.95, metric{})":      "'quantile' aggregation with parameter",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -2284,6 +2283,49 @@ func TestAnnotations(t *testing.T) {
 			expectedInfoAnnotations: []string{
 				`PromQL info: ignored histogram in bottomk aggregation (1:1)`,
 			},
+		},
+
+		"quantile_over_time() with negative quantile": {
+			data: `metric 0 1 2 3`,
+			expr: `quantile_over_time(-1, metric[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: quantile value should be between 0 and 1, got -1 (1:20)`,
+			},
+		},
+		"quantile_over_time() with 0 quantile": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(0, some_metric[1m1s])`,
+		},
+		"quantile_over_time() with quantile between 0 and 1": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(0.5, some_metric[1m1s])`,
+		},
+		"quantile_over_time() with 1 quantile": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(1, some_metric[1m1s])`,
+		},
+		"quantile_over_time() with quantile greater than 1": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(1.2, some_metric[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: quantile value should be between 0 and 1, got 1.2 (1:20)`,
+			},
+		},
+		"quantile_over_time() over series with only floats": {
+			data: `some_metric 1 2`,
+			expr: `quantile_over_time(0.2, some_metric[1m1s])`,
+		},
+		"quantile_over_time() over series with only histograms": {
+			data: `some_metric {{count:1}} {{count:2}}`,
+			expr: `quantile_over_time(0.2, some_metric[1m1s])`,
+		},
+		"quantile_over_time() over series with both floats and histograms": {
+			data: `some_metric 1 {{count:2}}`,
+			expr: `quantile_over_time(0.2, some_metric[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:20)`,
+			},
+			skipComparisonWithPrometheusReason: "Prometheus' engine emits the wrong annotation, see https://github.com/prometheus/prometheus/pull/16018",
 		},
 
 		"multiple annotations from different operators": {

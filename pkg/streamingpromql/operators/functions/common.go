@@ -75,6 +75,7 @@ type RangeVectorStepFunction func(
 	scalarArgsData []types.ScalarData,
 	timeRange types.QueryTimeRange,
 	emitAnnotation types.EmitAnnotationFunc,
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 ) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
 
 // RangeVectorSeriesValidationFunction is a function that is called after a series is completed for a function over a range vector.
@@ -115,6 +116,10 @@ type FunctionOverRangeVectorDefinition struct {
 
 	// NeedsSeriesNamesForAnnotations indicates that this function uses the names of input series when emitting annotations.
 	NeedsSeriesNamesForAnnotations bool
+
+	// UseFirstArgumentPositionForAnnotations indicates that annotations emitted by this function should use the position of the
+	// first argument, not the position of the inner expression.
+	UseFirstArgumentPositionForAnnotations bool
 }
 
 type SeriesMetadataFunctionDefinition struct {
