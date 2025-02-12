@@ -188,6 +188,35 @@ func PredictLinearFactory(args []types.Operator, memoryConsumptionTracker *limit
 	return o, nil
 }
 
+func QuantileOverTimeFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.InstantVectorOperator, error) {
+	f := functions.QuantileOverTime
+
+	if len(args) != 2 {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected exactly 2 arguments for quantile_over_time, got %v", len(args))
+	}
+
+	arg, ok := args[0].(types.ScalarOperator)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected first argument for quantile_over_time to be a scalar, got %T", args[1])
+	}
+
+	inner, ok := args[1].(types.RangeVectorOperator)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected second argument for quantile_over_time to be a range vector, got %T", args[0])
+	}
+
+	var o types.InstantVectorOperator = functions.NewFunctionOverRangeVector(inner, []types.ScalarOperator{arg}, memoryConsumptionTracker, f, annotations, expressionPosition, timeRange)
+
+	if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
+		o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
+	}
+
+	return o, nil
+}
+
 func scalarToInstantVectorOperatorFactory(args []types.Operator, _ *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, _ types.QueryTimeRange) (types.InstantVectorOperator, error) {
 	if len(args) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
@@ -503,6 +532,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"month":              TimeTransformationFunctionOperatorFactory("month", functions.Month),
 	"predict_linear":     PredictLinearFactory,
 	"present_over_time":  FunctionOverRangeVectorOperatorFactory("present_over_time", functions.PresentOverTime),
+	"quantile_over_time": QuantileOverTimeFactory,
 	"rad":                InstantVectorTransformationFunctionOperatorFactory("rad", functions.Rad),
 	"rate":               FunctionOverRangeVectorOperatorFactory("rate", functions.Rate),
 	"resets":             FunctionOverRangeVectorOperatorFactory("resets", functions.Resets),
