@@ -366,6 +366,15 @@ eval range from 0 to 30m step 6m topk(-1, series)
 eval range from 0 to 30m step 6m topk(0.9, series)
   # Should return nothing.
 
+eval instant at 0 topk(0, series)
+  # Should return nothing.
+
+eval instant at 0 topk(-1, series)
+  # Should return nothing.
+
+eval instant at 0 topk(0.9, series)
+  # Should return nothing.
+
 # Fractional values are rounded down.
 eval range from 0 to 30m step 6m topk(1.6, series)
   series{env="prod", instance="1"} _ 4 _  20 _ _
@@ -375,9 +384,21 @@ eval range from 0 to 30m step 6m topk(1.25, series)
   series{env="prod", instance="1"} _ 4 _  20 _ _
   series{env="prod", instance="2"} 2 _ 10 _  _ 1
 
+eval instant at 0 topk(1.6, series)
+  series{env="prod", instance="2"} 2
+
+eval instant at 0 topk(1.25, series)
+  series{env="prod", instance="2"} 2
+
 # Values that can't be represented as an int64 should return an error.
 eval_fail range from 0 to 30m step 6m topk(Inf, series)
   expected_fail_regexp (S|s)calar value \+Inf overflows int64
 
 eval_fail range from 0 to 30m step 6m topk(NaN, series)
+  expected_fail_regexp (S|s)calar value NaN overflows int64
+
+eval_fail instant at 0 topk(Inf, series)
+  expected_fail_regexp (S|s)calar value \+Inf overflows int64
+
+eval_fail instant at 0 topk(NaN, series)
   expected_fail_regexp (S|s)calar value NaN overflows int64

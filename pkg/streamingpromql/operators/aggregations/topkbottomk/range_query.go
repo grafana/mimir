@@ -24,6 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
+// RangeQuery implements topk() and bottomk() for range queries.
 type RangeQuery struct {
 	Inner                    types.InstantVectorOperator
 	Param                    types.ScalarOperator
@@ -36,17 +37,17 @@ type RangeQuery struct {
 	expressionPosition posrange.PositionRange
 	limit              []int64 // Maximum number of values to return at each time step for each group
 
-	remainingInnerSeriesToGroup []*topKBottomKGroup // One entry per series produced by Inner, value is the group for that series
-	remainingGroups             []*topKBottomKGroup // One entry per group, in the order we want to return them
+	remainingInnerSeriesToGroup []*rangeQueryGroup // One entry per series produced by Inner, value is the group for that series
+	remainingGroups             []*rangeQueryGroup // One entry per group, in the order we want to return them
 
-	currentGroup              *topKBottomKGroup
+	currentGroup              *rangeQueryGroup
 	seriesIndexInCurrentGroup int
 
 	annotations                            *annotations.Annotations
 	haveEmittedIgnoredHistogramsAnnotation bool
 
 	// Reuse the same heap instance to allow us to avoid allocating a new one every time.
-	heap topKBottomKHeap
+	heap *rangeQueryHeap
 }
 
 var _ types.InstantVectorOperator = &RangeQuery{}
@@ -61,16 +62,16 @@ func (t *RangeQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata
 		return nil, err
 	}
 
-	groups := map[string]*topKBottomKGroup{}
+	groups := map[string]*rangeQueryGroup{}
 	groupLabelsBytesFunc := t.groupLabelsBytesFunc()
-	t.remainingInnerSeriesToGroup = make([]*topKBottomKGroup, 0, len(innerSeries))
+	t.remainingInnerSeriesToGroup = make([]*rangeQueryGroup, 0, len(innerSeries))
 
 	for seriesIdx, series := range innerSeries {
 		groupLabelsString := groupLabelsBytesFunc(series.Labels)
 		g, groupExists := groups[string(groupLabelsString)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
 
 		if !groupExists {
-			g = &topKBottomKGroup{}
+			g = &rangeQueryGroup{}
 			groups[string(groupLabelsString)] = g
 		}
 
@@ -79,14 +80,14 @@ func (t *RangeQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata
 		t.remainingInnerSeriesToGroup = append(t.remainingInnerSeriesToGroup, g)
 	}
 
-	t.remainingGroups = make([]*topKBottomKGroup, 0, len(groups))
+	t.remainingGroups = make([]*rangeQueryGroup, 0, len(groups))
 
 	for _, g := range groups {
 		t.remainingGroups = append(t.remainingGroups, g)
 	}
 
 	// Sort the groups in the order we'll return them.
-	slices.SortFunc(t.remainingGroups, func(a, b *topKBottomKGroup) int {
+	slices.SortFunc(t.remainingGroups, func(a, b *rangeQueryGroup) int {
 		return a.lastSeriesIndex - b.lastSeriesIndex
 	})
 
@@ -129,17 +130,13 @@ func (t *RangeQuery) loadLimit(ctx context.Context) error {
 	return nil
 }
 
-func convertibleToInt64(v float64) bool {
-	return v <= math.MaxInt64 && v >= math.MinInt64
-}
-
 func (t *RangeQuery) groupLabelsBytesFunc() aggregations.SeriesToGroupLabelsBytesFunc {
 	return aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
 }
 
 type topKBottomKOutputSorter struct {
 	metadata       []types.SeriesMetadata
-	seriesToGroups []*topKBottomKGroup
+	seriesToGroups []*rangeQueryGroup
 }
 
 func (s topKBottomKOutputSorter) Len() int {
@@ -262,7 +259,7 @@ func (t *RangeQuery) emitIgnoredHistogramsAnnotation() {
 	t.haveEmittedIgnoredHistogramsAnnotation = true
 }
 
-func (t *RangeQuery) accumulateIntoGroup(data types.InstantVectorSeriesData, g *topKBottomKGroup) error {
+func (t *RangeQuery) accumulateIntoGroup(data types.InstantVectorSeriesData, g *rangeQueryGroup) error {
 	groupSeriesIndex := g.seriesRead()
 
 	if g.seriesForTimestamps == nil {
@@ -365,11 +362,11 @@ func (t *RangeQuery) accumulateIntoGroup(data types.InstantVectorSeriesData, g *
 			}
 
 			g.seriesForTimestamps[timestampIndex][0] = groupSeriesIndex
-			t.heap.Reset(g, timestampIndex)
 
 			if limit != 1 {
 				// We only need to bother to fix the heap if there's more than one element.
 				// This optimises for the common case of topk(1, xxx) or bottomk(1, xxx).
+				t.heap.Reset(g, timestampIndex)
 				heap.Fix(t.heap, 0)
 			}
 
@@ -400,7 +397,7 @@ func (t *RangeQuery) accumulateIntoGroup(data types.InstantVectorSeriesData, g *
 	return nil
 }
 
-func (t *RangeQuery) returnGroupToPool(g *topKBottomKGroup) {
+func (t *RangeQuery) returnGroupToPool(g *rangeQueryGroup) {
 	for _, ts := range g.seriesForTimestamps {
 		types.IntSlicePool.Put(ts, t.MemoryConsumptionTracker)
 	}
@@ -425,7 +422,7 @@ func (t *RangeQuery) Close() {
 	types.Int64SlicePool.Put(t.limit, t.MemoryConsumptionTracker)
 }
 
-type topKBottomKGroup struct {
+type rangeQueryGroup struct {
 	lastSeriesIndex int // The index (from the inner operator) of the last series that will contribute to this group
 	totalSeries     int // The total number of series that will contribute to this group
 
@@ -434,13 +431,8 @@ type topKBottomKGroup struct {
 	seriesForTimestamps [][]int // One entry per timestamp, each entry contains a slice of the series indices (from `series` above) used as a min-/max-heap for the current 'best' values seen (highest for topk / lowest for bottomk)
 }
 
-func (g *topKBottomKGroup) seriesRead() int {
+func (g *rangeQueryGroup) seriesRead() int {
 	return len(g.series)
-}
-
-type topKBottomKHeap interface {
-	heap.Interface
-	Reset(group *topKBottomKGroup, timestampIndex int64)
 }
 
 type topKBottomKSeries struct {
@@ -467,90 +459,39 @@ var intSliceSlicePool = types.NewLimitingBucketedPool(
 	nil,
 )
 
-type topKHeap struct {
+type rangeQueryHeap struct {
 	timestampIndex int64
-	group          *topKBottomKGroup
+	group          *rangeQueryGroup
+	less           func(i, j float64) bool
 }
 
-func (h *topKHeap) Reset(group *topKBottomKGroup, timestampIndex int64) {
+func (h *rangeQueryHeap) Reset(group *rangeQueryGroup, timestampIndex int64) {
 	h.group = group
 	h.timestampIndex = timestampIndex
 }
 
-func (h *topKHeap) Len() int {
+func (h *rangeQueryHeap) Len() int {
 	return len(h.group.seriesForTimestamps[h.timestampIndex])
 }
 
-func (h *topKHeap) Less(i, j int) bool {
+func (h *rangeQueryHeap) Less(i, j int) bool {
 	iSeries := h.group.seriesForTimestamps[h.timestampIndex][i]
 	jSeries := h.group.seriesForTimestamps[h.timestampIndex][j]
 
 	iValue := h.group.series[iSeries].values[h.timestampIndex]
 	jValue := h.group.series[jSeries].values[h.timestampIndex]
 
-	if math.IsNaN(iValue) {
-		return true
-	}
-
-	if math.IsNaN(jValue) {
-		return false
-	}
-
-	return iValue < jValue
+	return h.less(iValue, jValue)
 }
 
-func (h *topKHeap) Swap(i, j int) {
+func (h *rangeQueryHeap) Swap(i, j int) {
 	h.group.seriesForTimestamps[h.timestampIndex][i], h.group.seriesForTimestamps[h.timestampIndex][j] = h.group.seriesForTimestamps[h.timestampIndex][j], h.group.seriesForTimestamps[h.timestampIndex][i]
 }
 
-func (h *topKHeap) Push(x any) {
+func (h *rangeQueryHeap) Push(x any) {
 	h.group.seriesForTimestamps[h.timestampIndex] = append(h.group.seriesForTimestamps[h.timestampIndex], x.(int))
 }
 
-func (h *topKHeap) Pop() any {
-	panic("not supported")
-}
-
-type bottomKHeap struct {
-	timestampIndex int64
-	group          *topKBottomKGroup
-}
-
-func (h *bottomKHeap) Reset(group *topKBottomKGroup, timestampIndex int64) {
-	h.group = group
-	h.timestampIndex = timestampIndex
-}
-
-func (h *bottomKHeap) Len() int {
-	return len(h.group.seriesForTimestamps[h.timestampIndex])
-}
-
-func (h *bottomKHeap) Less(i, j int) bool {
-	iSeries := h.group.seriesForTimestamps[h.timestampIndex][i]
-	jSeries := h.group.seriesForTimestamps[h.timestampIndex][j]
-
-	iValue := h.group.series[iSeries].values[h.timestampIndex]
-	jValue := h.group.series[jSeries].values[h.timestampIndex]
-
-	if math.IsNaN(iValue) {
-		return false
-	}
-
-	if math.IsNaN(jValue) {
-		return true
-	}
-
-	return iValue > jValue
-}
-
-func (h *bottomKHeap) Swap(i, j int) {
-	h.group.seriesForTimestamps[h.timestampIndex][i], h.group.seriesForTimestamps[h.timestampIndex][j] = h.group.seriesForTimestamps[h.timestampIndex][j], h.group.seriesForTimestamps[h.timestampIndex][i]
-}
-
-func (h *bottomKHeap) Push(x any) {
-	h.group.seriesForTimestamps[h.timestampIndex] = append(h.group.seriesForTimestamps[h.timestampIndex], x.(int))
-}
-
-func (h *bottomKHeap) Pop() any {
+func (h *rangeQueryHeap) Pop() any {
 	panic("not supported")
 }
