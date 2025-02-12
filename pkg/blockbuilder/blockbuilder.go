@@ -260,7 +260,7 @@ func (b *BlockBuilder) runningStandaloneMode(ctx context.Context) error {
 		return err
 	}
 
-	cycleEndTime, waitDur := nextCycleEnd(time.Now(), b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
+	cycleEndTime, waitDur := nextCycleEnd(cycleEndTime, b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
 	for {
 		select {
 		case <-time.After(waitDur):
