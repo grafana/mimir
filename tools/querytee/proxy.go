@@ -52,6 +52,8 @@ type ProxyConfig struct {
 	AddMissingTimeParamToInstantQueries bool
 	SecondaryBackendsRequestProportion  float64
 	SkipPreferredBackendFailures        bool
+
+	QueryStatsStreamerConfig *queryStatsStreamerConfig
 }
 
 type BackendConfig struct {
@@ -98,6 +100,7 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.PassThroughNonRegisteredRoutes, "proxy.passthrough-non-registered-routes", false, "Passthrough requests for non-registered routes to preferred backend.")
 	f.BoolVar(&cfg.AddMissingTimeParamToInstantQueries, "proxy.add-missing-time-parameter-to-instant-queries", true, "Add a 'time' parameter to proxied instant query requests if they do not have one.")
 	f.Float64Var(&cfg.SecondaryBackendsRequestProportion, "proxy.secondary-backends-request-proportion", 1.0, "Proportion of requests to send to secondary backends. Must be between 0 and 1 (inclusive), and if not 1, then -backend.preferred must be set.")
+	cfg.QueryStatsStreamerConfig = RegisterQueryStatsStreamerFlags(f)
 }
 
 type Route struct {
@@ -332,6 +335,15 @@ func (p *Proxy) Start() error {
 	}()
 
 	level.Info(p.logger).Log("msg", "The proxy is up and running.", "httpPort", p.cfg.ServerHTTPServicePort, "grpcPort", p.cfg.ServerGRPCServicePort)
+
+	// Start the query stats streamer
+	if p.cfg.QueryStatsStreamerConfig != nil {
+		streamer := newQueryStatsStreamer(p.cfg.QueryStatsStreamerConfig, p.logger, p.registerer, p.server.HTTPListenAddr().String())
+		if err := streamer.Run(); err != nil {
+			level.Error(p.logger).Log("msg", "Failed to start query stats streamer", "err", err)
+		}
+	}
+
 	return nil
 }
 

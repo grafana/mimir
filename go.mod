@@ -61,6 +61,7 @@ require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/aws/aws-sdk-go v1.55.6
 	github.com/dennwc/varint v1.0.0
+	github.com/go-logfmt/logfmt v0.6.0
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/google/go-cmp v0.6.0
 	github.com/google/go-github/v57 v57.0.0
@@ -92,6 +93,9 @@ require (
 	golang.org/x/term v0.28.0
 	google.golang.org/api v0.213.0
 	google.golang.org/protobuf v1.36.5
+	k8s.io/api v0.31.3
+	k8s.io/apimachinery v0.31.3
+	k8s.io/client-go v0.31.3
 	sigs.k8s.io/kustomize/kyaml v0.18.1
 )
 
@@ -110,6 +114,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.26.5 // indirect
 	github.com/bboreham/go-loser v0.0.0-20230920113527-fcc2c21820a3 // indirect
 	github.com/ebitengine/purego v0.8.1 // indirect
+	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
+	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
@@ -118,6 +124,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
 	github.com/golang/glog v1.2.4 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
+	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.8 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7 // indirect
@@ -138,17 +145,19 @@ require (
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.58.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.30.0 // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
+	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/mail.v2 v2.3.1 // indirect
 	gopkg.in/telebot.v3 v3.2.1 // indirect
-	k8s.io/apimachinery v0.31.3 // indirect
-	k8s.io/client-go v0.31.3 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
+	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
+	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 )
 
 require (
@@ -190,7 +199,6 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/go-errors/errors v1.4.2 // indirect
-	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.22.2 // indirect
