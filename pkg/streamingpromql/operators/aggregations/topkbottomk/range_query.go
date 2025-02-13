@@ -35,7 +35,7 @@ type RangeQuery struct {
 	IsTopK                   bool // If false, this is operator is for bottomk().
 
 	expressionPosition posrange.PositionRange
-	limit              []int64 // Maximum number of values to return at each time step for each group
+	k                  []int64 // Maximum number of values to return at each time step for each group
 
 	remainingInnerSeriesToGroup []*rangeQueryGroup // One entry per series produced by Inner, value is the group for that series
 	remainingGroups             []*rangeQueryGroup // One entry per group, in the order we want to return them
@@ -53,7 +53,7 @@ type RangeQuery struct {
 var _ types.InstantVectorOperator = &RangeQuery{}
 
 func (t *RangeQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	if err := t.loadLimit(ctx); err != nil {
+	if err := t.getK(ctx); err != nil {
 		return nil, err
 	}
 
@@ -110,7 +110,7 @@ func (t *RangeQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata
 	return innerSeries, nil
 }
 
-func (t *RangeQuery) loadLimit(ctx context.Context) error {
+func (t *RangeQuery) getK(ctx context.Context) error {
 	paramValues, err := t.Param.GetValues(ctx)
 	if err != nil {
 		return err
@@ -118,12 +118,12 @@ func (t *RangeQuery) loadLimit(ctx context.Context) error {
 
 	defer types.FPointSlicePool.Put(paramValues.Samples, t.MemoryConsumptionTracker)
 
-	t.limit, err = types.Int64SlicePool.Get(t.TimeRange.StepCount, t.MemoryConsumptionTracker)
+	t.k, err = types.Int64SlicePool.Get(t.TimeRange.StepCount, t.MemoryConsumptionTracker)
 	if err != nil {
 		return err
 	}
 
-	t.limit = t.limit[:t.TimeRange.StepCount]
+	t.k = t.k[:t.TimeRange.StepCount]
 
 	for stepIdx := range t.TimeRange.StepCount {
 		v := paramValues.Samples[stepIdx].F
@@ -132,7 +132,7 @@ func (t *RangeQuery) loadLimit(ctx context.Context) error {
 			return fmt.Errorf("scalar value %v overflows int64", v)
 		}
 
-		t.limit[stepIdx] = max(int64(v), 0) // Ignore any negative values.
+		t.k[stepIdx] = max(int64(v), 0) // Ignore any negative values.
 	}
 
 	return nil
@@ -289,7 +289,7 @@ func (t *RangeQuery) accumulateIntoGroup(data types.InstantVectorSeriesData, g *
 
 	for _, p := range data.Floats {
 		timestampIndex := t.TimeRange.PointIndex(p.T)
-		limit := t.limit[timestampIndex]
+		limit := t.k[timestampIndex]
 
 		if limit == 0 {
 			continue
@@ -423,7 +423,7 @@ func (t *RangeQuery) Close() {
 	t.Inner.Close()
 	t.Param.Close()
 
-	types.Int64SlicePool.Put(t.limit, t.MemoryConsumptionTracker)
+	types.Int64SlicePool.Put(t.k, t.MemoryConsumptionTracker)
 }
 
 type rangeQueryGroup struct {

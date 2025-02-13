@@ -31,7 +31,7 @@ type InstantQuery struct {
 	IsTopK                   bool // If false, this is operator is for bottomk().
 
 	expressionPosition posrange.PositionRange
-	limit              int64 // Maximum number of values to return for each group.
+	k                  int64 // Maximum number of values to return for each group.
 
 	values          []float64
 	nextSeriesIndex int
@@ -46,11 +46,11 @@ type InstantQuery struct {
 var _ types.InstantVectorOperator = &InstantQuery{}
 
 func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	if err := t.loadLimit(ctx); err != nil {
+	if err := t.getK(ctx); err != nil {
 		return nil, err
 	}
 
-	if t.limit == 0 {
+	if t.k == 0 {
 		// We can't return any series, so stop now.
 		return nil, nil
 	}
@@ -149,7 +149,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 	return outputSeries, nil
 }
 
-func (t *InstantQuery) loadLimit(ctx context.Context) error {
+func (t *InstantQuery) getK(ctx context.Context) error {
 	paramValues, err := t.Param.GetValues(ctx)
 	if err != nil {
 		return err
@@ -163,7 +163,7 @@ func (t *InstantQuery) loadLimit(ctx context.Context) error {
 		return fmt.Errorf("scalar value %v overflows int64", v)
 	}
 
-	t.limit = max(int64(v), 0) // Ignore any negative values.
+	t.k = max(int64(v), 0) // Ignore any negative values.
 
 	return nil
 }
@@ -184,12 +184,12 @@ func (t *InstantQuery) emitIgnoredHistogramsAnnotation() {
 
 // Returns true if accumulating this value means that the group will return an additional series.
 func (t *InstantQuery) accumulateValue(metadata types.SeriesMetadata, value float64, g *instantQueryGroup) bool {
-	if int64(len(g.series)) < t.limit {
+	if int64(len(g.series)) < t.k {
 		// We don't have a full set of values for this group yet. Add this series to the list.
 
 		if g.series == nil {
 			// This is the first time we've seen a series for this group, create the list of values.
-			maximumPossibleSeries := min(t.limit, int64(g.seriesCount))
+			maximumPossibleSeries := min(t.k, int64(g.seriesCount))
 
 			g.series = make([]instantQuerySeries, 0, maximumPossibleSeries) // TODO: pool this?
 		}
@@ -223,7 +223,7 @@ func (t *InstantQuery) accumulateValue(metadata types.SeriesMetadata, value floa
 	g.series[0].metadata = metadata
 	g.series[0].value = value
 
-	if t.limit != 1 {
+	if t.k != 1 {
 		// We only need to bother to fix the heap if there's more than one element.
 		// This optimises for the common case of topk(1, xxx) or bottomk(1, xxx).
 		t.heap.Reset(g)
