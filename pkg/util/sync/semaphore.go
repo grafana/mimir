@@ -101,7 +101,8 @@ func (s *DynamicSemaphore) SetSize(size int) {
 	s.size = size
 }
 
-// Wake a blocked waiter and acquires a permit.
+// Wakes a blocked waiter and acquires a permit.
+// Requires s.mu to be locked before calling.
 func (s *DynamicSemaphore) wakeAndAcquire(waiterElem *list.Element) {
 	s.used++
 	s.waiters.Remove(waiterElem)
