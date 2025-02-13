@@ -80,6 +80,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 	expressions := map[string]string{
 		// Please keep this list sorted alphabetically.
 		"abs":                `abs({__name__=~"float.*"})`,
+		"absent":             `absent({__name__=~"float.*"})`,
 		"acos":               `acos({__name__=~"float.*"})`,
 		"acosh":              `acosh({__name__=~"float.*"})`,
 		"asin":               `asin({__name__=~"float.*"})`,
