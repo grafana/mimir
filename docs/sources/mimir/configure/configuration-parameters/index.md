@@ -4959,6 +4959,11 @@ dynamic_replication:
   # CLI flag: -store-gateway.dynamic-replication.max-time-threshold
   [max_time_threshold: <duration> | default = 25h]
 
+  # (experimental) Multiple of the default replication factor that should be
+  # used for recent blocks. Minimum value is 2
+  # CLI flag: -store-gateway.dynamic-replication.multiple
+  [multiple: <int> | default = 2]
+
 # (advanced) Comma separated list of tenants that can be loaded by the
 # store-gateway. If specified, only blocks for these tenants will be loaded by
 # the store-gateway, otherwise all tenants can be loaded. Subject to sharding.

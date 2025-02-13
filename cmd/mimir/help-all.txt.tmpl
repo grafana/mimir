@@ -3203,6 +3203,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Use a higher number of replicas for recent blocks. Useful to spread query load more evenly at the cost of slightly higher disk usage.
   -store-gateway.dynamic-replication.max-time-threshold duration
     	[experimental] Threshold of the most recent sample in a block used to determine it is eligible for higher than default replication. If a block has samples within this amount of time, it is considered recent and will be owned by more replicas. (default 25h0m0s)
+  -store-gateway.dynamic-replication.multiple int
+    	[experimental] Multiple of the default replication factor that should be used for recent blocks. Minimum value is 2 (default 2)
   -store-gateway.enabled-tenants comma-separated-list-of-strings
     	Comma separated list of tenants that can be loaded by the store-gateway. If specified, only blocks for these tenants will be loaded by the store-gateway, otherwise all tenants can be loaded. Subject to sharding.
   -store-gateway.sharding-ring.auto-forget-enabled
