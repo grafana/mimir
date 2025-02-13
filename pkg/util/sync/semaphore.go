@@ -81,10 +81,8 @@ func (s *DynamicSemaphore) Release() {
 	s.used--
 
 	// If we have waiters and capacity, wake up the next waiter
-	if waiter := s.waiters.Front(); waiter != nil && s.used < s.size {
-		s.waiters.Remove(waiter)
-		s.used++
-		close(waiter.Value.(chan struct{}))
+	if s.used < s.size && s.waiters.Len() > 0 {
+		s.wakeAndAcquire(s.waiters.Front())
 	}
 }
 
@@ -96,14 +94,18 @@ func (s *DynamicSemaphore) SetSize(size int) {
 	// If capacity increased, wake up waiters that can now acquire
 	if size > s.size {
 		for s.used < size && s.waiters.Len() > 0 {
-			s.used++
-			next := s.waiters.Front()
-			s.waiters.Remove(next)
-			close(next.Value.(chan struct{}))
+			s.wakeAndAcquire(s.waiters.Front())
 		}
 	}
 
 	s.size = size
+}
+
+// Wake a blocked waiter and acquires a permit.
+func (s *DynamicSemaphore) wakeAndAcquire(waiterElem *list.Element) {
+	s.used++
+	s.waiters.Remove(waiterElem)
+	close(waiterElem.Value.(chan struct{}))
 }
 
 func (s *DynamicSemaphore) IsFull() bool {

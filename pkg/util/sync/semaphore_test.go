@@ -4,6 +4,7 @@ package sync
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ func TestDynamicSemaphore_Acquire(t *testing.T) {
 		}()
 
 		waitForWaiters(t, s, 1)
+		require.Equal(t, 1, s.Waiters())
 		s.Release()
 		require.Equal(t, 1, s.Used())
 		require.Equal(t, 0, s.Waiters())
@@ -36,6 +38,8 @@ func TestDynamicSemaphore_Acquire(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		require.ErrorIs(t, s.Acquire(ctx), context.Canceled)
+		require.Equal(t, 1, s.Used())
+		require.Equal(t, 0, s.Waiters())
 	})
 }
 
@@ -84,11 +88,15 @@ func TestDynamicSemaphore_SetSize(t *testing.T) {
 		s := NewDynamicSemaphore(1)
 		require.NoError(t, s.Acquire(context.Background()))
 
+		wg := sync.WaitGroup{}
+		wg.Add(2)
 		go func() {
 			_ = s.Acquire(context.Background())
+			wg.Done()
 		}()
 		go func() {
 			_ = s.Acquire(context.Background())
+			wg.Done()
 		}()
 
 		waitForWaiters(t, s, 2)
@@ -96,6 +104,7 @@ func TestDynamicSemaphore_SetSize(t *testing.T) {
 		// Increase size which should release waiters
 		s.SetSize(3)
 		assert.Equal(t, 0, s.Waiters())
+		wg.Wait()
 	})
 
 	t.Run("should block acquires when setting smaller size", func(t *testing.T) {
@@ -115,6 +124,8 @@ func TestDynamicSemaphore_SetSize(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		defer cancel()
 		require.Error(t, s.Acquire(ctx))
+		require.Equal(t, 1, s.Used())
+		require.Equal(t, 0, s.Waiters())
 	})
 }
 
@@ -160,11 +171,15 @@ func TestDynamicSemaphore_Waiters(t *testing.T) {
 	s := NewDynamicSemaphore(1)
 	require.NoError(t, s.Acquire(context.Background()))
 
+	wg := sync.WaitGroup{}
+	wg.Add(2)
 	go func() {
 		_ = s.Acquire(context.Background())
+		wg.Done()
 	}()
 	go func() {
 		_ = s.Acquire(context.Background())
+		wg.Done()
 	}()
 
 	waitForWaiters(t, s, 2)
@@ -172,6 +187,7 @@ func TestDynamicSemaphore_Waiters(t *testing.T) {
 	require.Equal(t, 1, s.Waiters())
 	s.Release()
 	require.Equal(t, 0, s.Waiters())
+	wg.Wait()
 }
 
 func waitForWaiters(t *testing.T, s *DynamicSemaphore, expected int) {
