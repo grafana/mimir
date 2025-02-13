@@ -201,7 +201,7 @@ func (t *RangeQuery) ensureCurrentGroupPopulated(ctx context.Context) error {
 	return nil
 }
 
-func (t *RangeQuery) constructOutputSeries(series topKBottomKSeries) (types.InstantVectorSeriesData, error) {
+func (t *RangeQuery) constructOutputSeries(series rangeQuerySeries) (types.InstantVectorSeriesData, error) {
 	data := types.InstantVectorSeriesData{}
 
 	if series.pointCount == 0 {
@@ -278,7 +278,7 @@ func (t *RangeQuery) accumulateIntoGroup(data types.InstantVectorSeriesData, g *
 
 	if g.series == nil {
 		var err error
-		g.series, err = topKBottomKSeriesSlicePool.Get(g.totalSeries, t.MemoryConsumptionTracker)
+		g.series, err = rangeQuerySeriesSlicePool.Get(g.totalSeries, t.MemoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
@@ -407,10 +407,10 @@ func (t *RangeQuery) returnGroupToPool(g *rangeQueryGroup) {
 	}
 
 	intSliceSlicePool.Put(g.seriesForTimestamps, t.MemoryConsumptionTracker)
-	topKBottomKSeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
+	rangeQuerySeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
 }
 
-func (t *RangeQuery) returnSeriesToPool(series topKBottomKSeries) {
+func (t *RangeQuery) returnSeriesToPool(series rangeQuerySeries) {
 	types.BoolSlicePool.Put(series.shouldReturnPoint, t.MemoryConsumptionTracker)
 	types.Float64SlicePool.Put(series.values, t.MemoryConsumptionTracker)
 }
@@ -430,7 +430,7 @@ type rangeQueryGroup struct {
 	lastSeriesIndex int // The index (from the inner operator) of the last series that will contribute to this group
 	totalSeries     int // The total number of series that will contribute to this group
 
-	series []topKBottomKSeries
+	series []rangeQuerySeries
 
 	seriesForTimestamps [][]int // One entry per timestamp, each entry contains a slice of the series indices (from `series` above) used as a min-/max-heap for the current 'best' values seen (highest for topk / lowest for bottomk)
 }
@@ -439,17 +439,17 @@ func (g *rangeQueryGroup) seriesRead() int {
 	return len(g.series)
 }
 
-type topKBottomKSeries struct {
+type rangeQuerySeries struct {
 	pointCount        int       // Number of points that will be returned (should equal the number of true elements in shouldReturnPoint)
 	shouldReturnPoint []bool    // One entry per timestamp, true means the value should be returned
 	values            []float64 // One entry per timestamp with value for that timestamp (entry only guaranteed to be populated if value at that timestamp might be returned)
 }
 
-var topKBottomKSeriesSlicePool = types.NewLimitingBucketedPool(
-	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []topKBottomKSeries {
-		return make([]topKBottomKSeries, 0, size)
+var rangeQuerySeriesSlicePool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []rangeQuerySeries {
+		return make([]rangeQuerySeries, 0, size)
 	}),
-	uint64(unsafe.Sizeof(topKBottomKSeries{})),
+	uint64(unsafe.Sizeof(rangeQuerySeries{})),
 	true,
 	nil,
 )
