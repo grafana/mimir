@@ -107,7 +107,7 @@ data:
     store_gateway:
       sharding_ring:
         heartbeat_period: 1m
-        heartbeat_timeout: 4m
+        heartbeat_timeout: 10m
         kvstore:
           prefix: multi-zone/
         tokens_file_path: /data/tokens
