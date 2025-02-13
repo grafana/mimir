@@ -79,9 +79,9 @@ func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataF
 	return SingleInputVectorFunctionOperatorFactory(name, f)
 }
 
-func AbsentFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange, innerExpressions parser.Expressions) (types.InstantVectorOperator, error) {
+func AbsentFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange, argExpressions parser.Expressions) (types.InstantVectorOperator, error) {
 	functionName := "absent"
-	if len(args) != 1 && len(innerExpressions) != 1 {
+	if len(args) != 1 && len(argExpressions) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", functionName, len(args))
 	}
@@ -91,7 +91,7 @@ func AbsentFunctionOperatorFactory(args []types.Operator, memoryConsumptionTrack
 		return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", functionName, args[0])
 	}
 
-	var o types.InstantVectorOperator = functions.NewAbsent(inner, innerExpressions[0], timeRange, expressionPosition, memoryConsumptionTracker)
+	var o types.InstantVectorOperator = functions.NewAbsent(inner, argExpressions[0], timeRange, expressionPosition, memoryConsumptionTracker)
 
 	return o, nil
 }
