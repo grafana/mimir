@@ -84,25 +84,23 @@ func GetAggregationItemType(aggregation string) (parser.ItemType, bool) {
 type SeriesToGroupLabelsBytesFunc func(labels.Labels) []byte
 
 func GroupLabelsBytesFunc(grouping []string, without bool) SeriesToGroupLabelsBytesFunc {
-	switch {
-	case without:
-		// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
-		b := make([]byte, 0, 1024)
-		return func(l labels.Labels) []byte {
-			b = l.BytesWithoutLabels(b, grouping...) // NewAggregation and NewTopKBottomK will add __name__ to Grouping for 'without' aggregations, so no need to add it here.
-			return b
-		}
-
-	case len(grouping) == 0:
+	if len(grouping) == 0 {
 		return groupToSingleSeriesLabelsBytesFunc
+	}
 
-	default:
-		// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
-		b := make([]byte, 0, 1024)
+	// Why 1024 bytes? It's what labels.Labels.String() uses as a buffer size, so we use that as a sensible starting point too.
+	b := make([]byte, 0, 1024)
+	if without {
 		return func(l labels.Labels) []byte {
-			b = l.BytesWithLabels(b, grouping...)
+			// NewAggregation and NewTopKBottomK will add __name__ to Grouping for 'without' aggregations, so no need to add it here.
+			b = l.BytesWithoutLabels(b, grouping...)
 			return b
 		}
+	}
+
+	return func(l labels.Labels) []byte {
+		b = l.BytesWithLabels(b, grouping...)
+		return b
 	}
 }
 
