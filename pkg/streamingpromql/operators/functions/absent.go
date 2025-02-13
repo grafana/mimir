@@ -97,8 +97,8 @@ func (s *Absent) ExpressionPosition() posrange.PositionRange {
 	return s.expressionPosition
 }
 
-func (s *Absent) Close() {
-	s.inner.Close()
+func (a *Absent) Close() {
+	a.inner.Close()
 }
 
 // createLabelsForAbsentFunction returns the labels that are uniquely and exactly matched
