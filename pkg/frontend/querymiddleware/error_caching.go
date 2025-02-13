@@ -195,8 +195,10 @@ func (e *errorCachingHandler) isCacheable(apiErr *apierror.APIError) (bool, stri
 }
 
 func addWithExemplar(ctx context.Context, counter prometheus.Counter, val float64) {
-	// TODO: Add this to dskit as instrument.AddWithExemplar just like instrument.ObserveWithExemplar
 	if traceID, traceOK := tracing.ExtractSampledTraceID(ctx); traceOK {
 		counter.(prometheus.ExemplarAdder).AddWithExemplar(val, prometheus.Labels{"trace_id": traceID, "traceID": traceID})
+	} else {
+		// If there is no trace ID, just add to the counter.
+		counter.Add(val)
 	}
 }
