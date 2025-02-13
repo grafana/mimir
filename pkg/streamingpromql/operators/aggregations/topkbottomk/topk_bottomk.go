@@ -29,10 +29,7 @@ func New(
 	expressionPosition posrange.PositionRange,
 ) types.InstantVectorOperator {
 	if without {
-		labelsToDrop := make([]string, 0, len(grouping)+1)
-		labelsToDrop = append(labelsToDrop, labels.MetricName)
-		labelsToDrop = append(labelsToDrop, grouping...)
-		grouping = labelsToDrop
+		grouping = append(grouping, labels.MetricName)
 	}
 
 	slices.Sort(grouping)
