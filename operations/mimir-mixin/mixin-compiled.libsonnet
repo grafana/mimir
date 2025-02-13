@@ -13,5 +13,6 @@
         enabled: true,
       },
     },
+    gem_enabled: true,
   },
 }

@@ -1200,6 +1200,22 @@ groups:
             sum by (cluster, namespace, pod) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1m])) > 0
           labels:
             severity: critical
+    - name: gem_alerts
+      rules:
+        - alert: MimirFederationFrontendRemoteClusterErrors
+          annotations:
+            message: Upstream clusters are returning more than 1%% errors over 15 minutes.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirfederationfrontendremoteclustererrors
+          expr: |
+            100 * (
+              sum(rate(cortex_federation_frontend_cluster_remote_latency_seconds_count{status="server_error"}[1m]))
+              /
+              sum(rate(cortex_federation_frontend_cluster_remote_latency_seconds_count[1m]))
+            ) > 1
+          for: 15m
+          labels:
+            service: federation-frontend
+            severity: critical
     - name: mimir_continuous_test
       rules:
         - alert: MimirContinuousTestNotRunningOnWrites

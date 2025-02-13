@@ -7,5 +7,6 @@
     (import 'alerts/compactor.libsonnet') +
     (import 'alerts/autoscaling.libsonnet') +
     (if $._config.ingest_storage_enabled then import 'alerts/ingest-storage.libsonnet' else {}) +
+    (if $._config.gem_enabled then import 'alerts/gem.libsonnet' else {}) +
     (import 'alerts/continuous-test.libsonnet'),
 }

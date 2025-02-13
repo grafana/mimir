@@ -1477,6 +1477,16 @@ How to **investigate** and **fix** it:
 
   - After the resizing process finishes, revert this change.
 
+### MimirFederationFrontendRemoteClusterErrors
+
+This alert fires when the GEM component federation-frontend is experiencing errors from remote clusters.
+
+How to **investigate**:
+
+- Check the federation frontend logs to find more details about the error.
+- Check if there are alerts firing for the downstream clusters.
+- Check the federation frontend configuration to ensure it's correctly configured to talk to the downstream clusters.
+
 ## Mimir ingest storage (experimental)
 
 This section contains runbooks for alerts related to experimental Mimir ingest storage.

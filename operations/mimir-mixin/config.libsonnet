@@ -6,6 +6,9 @@
     // The product name used when building dashboards.
     product: 'Mimir',
 
+    // Enable GEM alerts.
+    gem_enabled: false,
+
     // The prefix including product name used when building dashboards.
     dashboard_prefix: '%(product)s / ' % $._config.product,
     // Controls tooltip and hover highlight behavior across different panels
