@@ -21,7 +21,7 @@ import (
 // Absent is an operator that implements the absent() function.
 type Absent struct {
 	timeRange                types.QueryTimeRange
-	innerExpr                parser.Expr
+	argExpressions           parser.Expr
 	inner                    types.InstantVectorOperator
 	expressionPosition       posrange.PositionRange
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
@@ -34,7 +34,7 @@ func NewAbsent(inner types.InstantVectorOperator, innerExpr parser.Expr, timeRan
 	return &Absent{
 		timeRange:                timeRange,
 		inner:                    inner,
-		innerExpr:                innerExpr,
+		argExpressions:           innerExpr,
 		expressionPosition:       expressionPosition,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
@@ -49,7 +49,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 
 	metadata := types.GetSeriesMetadataSlice(1)
 	metadata = append(metadata, types.SeriesMetadata{
-		Labels: createLabelsForAbsentFunction(a.innerExpr),
+		Labels: createLabelsForAbsentFunction(a.argExpressions),
 	})
 
 	return metadata, nil
