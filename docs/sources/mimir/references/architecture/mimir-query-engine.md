@@ -15,7 +15,7 @@ engine for queries that use unsupported features.
 
 ## How to enable MQE
 
-MQE is experimental and disabled by default. It can be enabled by setting the 
+MQE is experimental and disabled by default. It can be enabled by setting the
 `-querier.query-engine=mimir` CLI flag on queriers, or setting the equivalent YAML
 configuration file option.
 
