@@ -63,7 +63,7 @@ func (t *RangeQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata
 	}
 
 	groups := map[string]*rangeQueryGroup{}
-	groupLabelsBytesFunc := t.groupLabelsBytesFunc()
+	groupLabelsBytesFunc := aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
 	t.remainingInnerSeriesToGroup = make([]*rangeQueryGroup, 0, len(innerSeries))
 
 	for seriesIdx, series := range innerSeries {
@@ -128,10 +128,6 @@ func (t *RangeQuery) loadLimit(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (t *RangeQuery) groupLabelsBytesFunc() aggregations.SeriesToGroupLabelsBytesFunc {
-	return aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
 }
 
 type topKBottomKOutputSorter struct {

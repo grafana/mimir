@@ -62,7 +62,7 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 
 	defer types.PutSeriesMetadataSlice(innerSeries)
 
-	groupLabelsBytesFunc := t.groupLabelsBytesFunc()
+	groupLabelsBytesFunc := aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
 	groups := map[string]*instantQueryGroup{}
 	seriesToGroups := make([]*instantQueryGroup, 0, len(innerSeries))
 
@@ -163,10 +163,6 @@ func (t *InstantQuery) loadLimit(ctx context.Context) error {
 	t.limit = max(int64(v), 0) // Ignore any negative values.
 
 	return nil
-}
-
-func (t *InstantQuery) groupLabelsBytesFunc() aggregations.SeriesToGroupLabelsBytesFunc {
-	return aggregations.GroupLabelsBytesFunc(t.Grouping, t.Without)
 }
 
 func (t *InstantQuery) emitIgnoredHistogramsAnnotation() {

@@ -105,3 +105,5 @@ func GroupLabelsBytesFunc(grouping []string, without bool) SeriesToGroupLabelsBy
 		}
 	}
 }
+
+var groupToSingleSeriesLabelsBytesFunc = func(_ labels.Labels) []byte { return nil }

@@ -200,7 +200,6 @@ func (a *Aggregation) groupLabelsFunc() seriesToGroupLabelsFunc {
 	}
 }
 
-var groupToSingleSeriesLabelsBytesFunc = func(_ labels.Labels) []byte { return nil }
 var groupToSingleSeriesLabelsFunc = func(_ labels.Labels) labels.Labels { return labels.EmptyLabels() }
 
 func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
