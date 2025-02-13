@@ -6,7 +6,7 @@ weight: 100
 ---
 
 The Mimir query engine (MQE) is an experimental alternative to Prometheus' query engine.
-It is used in [queriers](components/querier.md) to evaluate PromQL queries.
+It is used in [queriers]({{< relref "./components/querier" >}}) to evaluate PromQL queries.
 
 MQE produces equivalent results to Prometheus' engine, generally uses less memory and CPU
 than Prometheus' engine, and evaluates queries at least as fast, if not faster.
@@ -40,7 +40,7 @@ querier, or cause it to exhaust all available memory and crash.
 
 While evaluating a query, MQE estimates the memory consumed by the query, such as memory used
 for the final result and any intermediate calculations, and aborts the query with an
-[`err-mimir-max-estimated-memory-consumption-per-query`](../../manage/mimir-runbooks/_index.md#err-mimir-max-estimated-memory-consumption-per-query)
+[`err-mimir-max-estimated-memory-consumption-per-query`]({{< relref "../../manage/mimir-runbooks#err-mimir-max-estimated-memory-consumption-per-query" >}})
 error if the estimate exceeds the configured limit.
 
 The estimate is based on the memory consumed by samples currently held in memory for query
