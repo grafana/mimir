@@ -498,7 +498,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 	})
 
 	t.Run("should not return block metas just exceeding lookback threshold", func(t *testing.T) {
-		// the timestamp embeded in ULID is precice to 1ms. We verify that truncating time to 6B won't cause
+		// the timestamp embedded in ULID is precice to 1ms. We verify that truncating time to 6B won't cause
 		// fetcher to accept blocks slightly older (~1s) than the lookback
 		maxLookbackThreshold, err := time.ParseDuration("15s")
 		require.NoError(t, err)
