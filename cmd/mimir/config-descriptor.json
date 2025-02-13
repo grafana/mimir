@@ -11725,6 +11725,17 @@
               "fieldFlag": "store-gateway.dynamic-replication.max-time-threshold",
               "fieldType": "duration",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "multiple",
+              "required": false,
+              "desc": "Multiple of the default replication factor that should be used for recent blocks. Minimum value is 2",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "store-gateway.dynamic-replication.multiple",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

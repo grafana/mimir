@@ -15,7 +15,18 @@ func TestMaxTimeExpandedReplication(t *testing.T) {
 	// Round "now" to the nearest millisecond since we are using millisecond precision
 	// for min/max times for the blocks.
 	now := time.Now().Round(time.Millisecond)
-	replication := NewMaxTimeDynamicReplication(25*time.Hour, 45*time.Minute)
+	cfg := Config{
+		DynamicReplication: DynamicReplicationConfig{
+			Enabled:          true,
+			MaxTimeThreshold: 25 * time.Hour,
+			Multiple:         2,
+		},
+		ShardingRing: RingConfig{
+			ReplicationFactor: 3,
+		},
+	}
+
+	replication := NewMaxTimeDynamicReplication(cfg, 45*time.Minute)
 	replication.now = func() time.Time { return now }
 
 	type testCase struct {
@@ -69,11 +80,14 @@ func TestMaxTimeExpandedReplication(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			canSync := replication.EligibleForSync(&tc.block)
-			canQuery := replication.EligibleForQuerying(&tc.block)
+			canSync, rfSync := replication.EligibleForSync(&tc.block)
+			canQuery, rfQuery := replication.EligibleForQuerying(&tc.block)
 
 			require.Equal(t, tc.expectedSync, canSync, "expected to be able/not-able to sync block %+v using %+v", tc.block, replication)
+			require.Equal(t, 6, rfSync, "expected dynamic replication factor of 6")
+
 			require.Equal(t, tc.expectedQuery, canQuery, "expected to be able/not-able to query block %+v using %+v", tc.block, replication)
+			require.Equal(t, 6, rfQuery, "expected dynamic replication factor of 6")
 		})
 	}
 }
