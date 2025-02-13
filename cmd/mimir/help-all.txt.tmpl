@@ -1317,6 +1317,8 @@ Usage of ./cmd/mimir/mimir:
     	Rate limit when watching key or prefix in Consul, in requests per second. 0 disables the rate limit. (default 1)
   -distributor.ha-tracker.enable
     	Enable the distributors HA tracker so that it can accept samples from Prometheus HA replicas gracefully (requires labels).
+  -distributor.ha-tracker.enable-elected-replica-metric
+    	Enable the elected_replica_status metric, which shows the current elected replica. It is disabled by default due to the possible high cardinality of the metric.
   -distributor.ha-tracker.enable-for-all-users
     	Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.
   -distributor.ha-tracker.etcd.dial-timeout duration
