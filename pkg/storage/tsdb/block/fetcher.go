@@ -319,12 +319,14 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 	)
 
 	level.Debug(f.logger).Log("msg", "fetching meta data", "concurrency", f.concurrency, "max-lookback", f.maxLookback)
+
+	// The first 6 bytes of a ULID are sortable as a function of time. When maxLookback is set, we construct a ULID that
+	// represents the beginning of the lookback period, compare all discovered block ULIDs against this
+	// ULID, and skip processing on blocks that have IDs less than
 	var minAllowedBlockID ulid.ULID
-	if f.maxLookback.Milliseconds() > 0 {
+	if f.maxLookback > 0 {
 		var err error
-		minAllowedBlockID, err = ulid.New(
-			uint64(time.Now().Add(-f.maxLookback).UnixMilli()), nil,
-		)
+		minAllowedBlockID, err = ulid.New(ulid.Timestamp(time.Now().Add(-f.maxLookback)), nil)
 		if err != nil {
 			return nil, err
 		}
@@ -392,7 +394,7 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 			}
 
 			// skip any blocks older than the fetcher's max lookback.
-			if id.Compare(minAllowedBlockID) == -1 {
+			if f.maxLookback > 0 && id.Compare(minAllowedBlockID) == -1 {
 				resp.exceededLookbackCount++
 				return nil
 			}

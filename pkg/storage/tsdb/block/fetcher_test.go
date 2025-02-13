@@ -417,20 +417,8 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 
 	// Simulate a block uploaded before than MetaFetchers' maximum lookback period by creating a new block,
 	// renaming the blockDir to an older ULID, and uploading meta.json w. the older ULID.
-	block4ID, block4Dir := createTestBlock(t)
-	olderULID, err := ulid.New(uint64(time.Now().Add(-336*time.Hour).UnixMilli()), nil)
-	require.NoError(t, err)
-	olderULIDDir := strings.ReplaceAll(block4Dir, block4ID.String(), olderULID.String())
-	err = os.Rename(block4Dir, olderULIDDir)
-	require.NoError(t, err)
-	meta := &Meta{
-		BlockMeta: tsdb.BlockMeta{
-			ULID:       olderULID,
-			Compaction: tsdb.BlockMetaCompaction{Level: 5, Sources: generateULIDs(10)},
-			Version:    1,
-		},
-	}
-	require.NoError(t, Upload(ctx, logger, bkt, olderULIDDir, meta))
+	now := time.Now()
+	twoWeekOldBlockID := generateBlockUploadedAtTimestamp(t, bkt, logger, now.Add(-336*time.Hour))
 
 	t.Run("should return all block metas when max lookback is unset", func(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
@@ -442,7 +430,7 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 		require.Len(t, actualMetas, 3)
 		require.Contains(t, actualMetas, block1ID)
 		require.Contains(t, actualMetas, block2ID)
-		require.Contains(t, actualMetas, olderULID)
+		require.Contains(t, actualMetas, twoWeekOldBlockID)
 
 		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP blocks_meta_sync_failures_total Total blocks metadata synchronization failures
@@ -509,6 +497,24 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 		`), "blocks_meta_syncs_total", "blocks_meta_sync_failures_total", "blocks_meta_synced"))
 	})
 
+	t.Run("should not return block metas just exceeding lookback threshold", func(t *testing.T) {
+		// the timestamp embeded in ULID is precice to 1ms. We verify that truncating time to 6B won't cause
+		// fetcher to accept blocks slightly older (~1s) than the lookback
+		maxLookbackThreshold, err := time.ParseDuration("15s")
+		require.NoError(t, err)
+
+		reg := prometheus.NewPedanticRegistry()
+		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, nil, maxLookbackThreshold)
+		require.NoError(t, err)
+
+		now := time.Now()
+		block1ID := generateBlockUploadedAtTimestamp(t, bkt, logger, now.Add(-15*time.Second))
+
+		actualMetas, _, actualErr := f.Fetch(ctx)
+		require.NoError(t, actualErr)
+		require.NotContains(t, actualMetas, block1ID)
+	})
+
 	t.Run("should return all block metas when fetcher lookback is set long", func(t *testing.T) {
 
 		maxLookbackThreshold, err := time.ParseDuration("1000h")
@@ -519,8 +525,9 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 
 		actualMetas, _, actualErr := f.Fetch(ctx)
 		require.NoError(t, actualErr)
-		require.Len(t, actualMetas, 3)
-		require.Contains(t, actualMetas, olderULID)
+		require.Contains(t, actualMetas, block1ID)
+		require.Contains(t, actualMetas, block2ID)
+		require.Contains(t, actualMetas, twoWeekOldBlockID)
 	})
 
 	t.Run("should return no block metas when fetcher lookback is set short", func(t *testing.T) {
@@ -535,6 +542,22 @@ func TestMetaFetcher_Fetch_ShouldReturnDiscoveredBlocksWithinCompactorLookback(t
 		actualMetas, _, actualErr := f.Fetch(ctx)
 		require.NoError(t, actualErr)
 		require.Len(t, actualMetas, 0)
+	})
+
+	t.Run("should return block metas with ulid greater than current time ulid", func(t *testing.T) {
+		maxLookbackThreshold, err := time.ParseDuration("0ms")
+		require.NoError(t, err)
+
+		reg := prometheus.NewPedanticRegistry()
+		f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), fetcherDir, reg, nil, nil, maxLookbackThreshold)
+		require.NoError(t, err)
+
+		now := time.Now()
+		futureID := generateBlockUploadedAtTimestamp(t, bkt, logger, now.Add(30*time.Second))
+
+		actualMetas, _, actualErr := f.Fetch(ctx)
+		require.NoError(t, actualErr)
+		require.Contains(t, actualMetas, futureID)
 	})
 
 }
@@ -609,4 +632,22 @@ func generateULIDs(count int) []ulid.ULID {
 		result = append(result, ulid.MustNew(ulid.Now(), crypto_rand.Reader))
 	}
 	return result
+}
+
+func generateBlockUploadedAtTimestamp(t *testing.T, bkt objstore.Bucket, l log.Logger, ts time.Time) ulid.ULID {
+	blockID, blockDir := createTestBlock(t)
+	fixedTimeULID, err := ulid.New(ulid.Timestamp(ts), nil)
+	require.NoError(t, err)
+	fixedTimeULIDDir := strings.ReplaceAll(blockDir, blockID.String(), fixedTimeULID.String())
+	err = os.Rename(blockDir, fixedTimeULIDDir)
+	require.NoError(t, err)
+	meta := &Meta{
+		BlockMeta: tsdb.BlockMeta{
+			ULID:       fixedTimeULID,
+			Compaction: tsdb.BlockMetaCompaction{Level: 5, Sources: generateULIDs(10)},
+			Version:    1,
+		},
+	}
+	require.NoError(t, Upload(context.Background(), l, bkt, fixedTimeULIDDir, meta))
+	return fixedTimeULID
 }
