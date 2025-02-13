@@ -509,3 +509,60 @@ eval_fail instant at 0 topk(Inf, series)
 
 eval_fail instant at 0 topk(NaN, series)
   expected_fail_regexp (S|s)calar value NaN overflows int64
+
+clear
+
+# Test topk/bottomk with Inf, -Inf and NaN values.
+load 6m
+  series{case="Inf"}   Inf  Inf
+  series{case="-Inf"}  -Inf -Inf
+  series{case="NaN"}   NaN  NaN
+  series{case="1"}     1    1
+
+eval_ordered instant at 0m topk(4, series)
+  series{case="Inf"}   Inf
+  series{case="1"}     1
+  series{case="-Inf"}  -Inf
+  series{case="NaN"}   NaN
+
+eval_ordered instant at 0m bottomk(4, series)
+  series{case="-Inf"}  -Inf
+  series{case="1"}     1
+  series{case="Inf"}   Inf
+  series{case="NaN"}   NaN
+
+eval range from 0 to 12m step 6m topk(4, series)
+  series{case="Inf"}   Inf  Inf
+  series{case="1"}     1    1
+  series{case="-Inf"}  -Inf -Inf
+  series{case="NaN"}   NaN  NaN
+
+eval range from 0 to 12m step 6m topk(3, series)
+  series{case="Inf"}   Inf  Inf
+  series{case="1"}     1    1
+  series{case="-Inf"}  -Inf -Inf
+
+eval range from 0 to 12m step 6m topk(2, series)
+  series{case="Inf"}   Inf  Inf
+  series{case="1"}     1    1
+
+eval range from 0 to 12m step 6m topk(1, series)
+  series{case="Inf"}   Inf  Inf
+
+eval range from 0 to 12m step 6m bottomk(4, series)
+  series{case="-Inf"}  -Inf -Inf
+  series{case="1"}     1    1
+  series{case="Inf"}   Inf  Inf
+  series{case="NaN"}   NaN  NaN
+
+eval range from 0 to 12m step 6m bottomk(3, series)
+  series{case="-Inf"}  -Inf -Inf
+  series{case="1"}     1    1
+  series{case="Inf"}   Inf  Inf
+
+eval range from 0 to 12m step 6m bottomk(2, series)
+  series{case="-Inf"}  -Inf -Inf
+  series{case="1"}     1    1
+
+eval range from 0 to 12m step 6m bottomk(1, series)
+  series{case="-Inf"}  -Inf -Inf
