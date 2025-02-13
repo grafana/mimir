@@ -95,8 +95,16 @@ func (t *RangeQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata
 	// It's important that we use a stable sort here, so that the order we receive series (and therefore accumulate series into their groups)
 	// matches the order we'll return those series in.
 	sort.Stable(topKBottomKOutputSorter{
-		metadata:       innerSeries,
-		seriesToGroups: slices.Clone(t.remainingInnerSeriesToGroup), // We don't want to reorder remainingInnerSeriesToGroup, but we need to keep it in sync with the list of output series during sorting.
+		metadata: innerSeries,
+
+		// Why do we clone this?
+		// We need to know which series belongs to which group, so that we can sort the series in the order groups will be completed.
+		// The easiest way to do this is to maintain a slice where each element contains the group for the corresponding labels in `metadata`
+		// above, and swap elements in `seriesToGroups` as we swap them in `metadata` during sorting.
+		// However, we don't want to modify remainingInnerSeriesToGroup, as we need to keep it in the same order as the input series so we can
+		// know which input series maps to which output group when reading series data later on.
+		// So we make a copy for use only during sorting.
+		seriesToGroups: slices.Clone(t.remainingInnerSeriesToGroup),
 	})
 
 	return innerSeries, nil

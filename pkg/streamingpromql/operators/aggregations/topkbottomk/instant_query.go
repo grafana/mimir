@@ -66,6 +66,9 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 	groups := map[string]*instantQueryGroup{}
 	seriesToGroups := make([]*instantQueryGroup, 0, len(innerSeries))
 
+	// Go through each series and find / create its group, and keep track of how many series contribute to each group.
+	// We do this separately to the loop below so that we know the number of series in each group when we allocate
+	// each group's `series` slice - this allows us to avoid allocating a huge slice if the group only has a few series.
 	for _, series := range innerSeries {
 		groupLabelsString := groupLabelsBytesFunc(series.Labels)
 		g, groupExists := groups[string(groupLabelsString)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
@@ -154,7 +157,7 @@ func (t *InstantQuery) loadLimit(ctx context.Context) error {
 
 	defer types.FPointSlicePool.Put(paramValues.Samples, t.MemoryConsumptionTracker)
 
-	v := paramValues.Samples[0].F
+	v := paramValues.Samples[0].F // There will always be exactly one value for an instant query: scalars always produce values at every step.
 
 	if !convertibleToInt64(v) {
 		return fmt.Errorf("scalar value %v overflows int64", v)
@@ -201,7 +204,7 @@ func (t *InstantQuery) accumulateValue(metadata types.SeriesMetadata, value floa
 		return true
 	}
 
-	// Already have a full set of values for this timestamp, see if the one from this series is better than the current worst.
+	// Already have a full set of values for this group, see if the one from this series is better than the current worst.
 	// (ie. larger for topk / smaller for bottomk)
 
 	currentWorstValue := g.series[0].value
