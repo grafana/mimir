@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"unsafe"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -18,6 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 // InstantQuery implements topk() and bottomk() for range queries.
@@ -103,7 +105,9 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 			continue
 		}
 
-		if t.accumulateValue(series, data.Floats[0].F, g) {
+		if addedAdditionalSeriesToOutput, err := t.accumulateValue(series, data.Floats[0].F, g); err != nil {
+			return nil, err
+		} else if addedAdditionalSeriesToOutput {
 			outputSeriesCount++
 		}
 
@@ -144,6 +148,8 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 				nextOutputSeriesIndex--
 			}
 		}
+
+		instantQuerySeriesSlicePool.Put(g.series, t.MemoryConsumptionTracker)
 	}
 
 	return outputSeries, nil
@@ -183,7 +189,7 @@ func (t *InstantQuery) emitIgnoredHistogramsAnnotation() {
 }
 
 // Returns true if accumulating this value means that the group will return an additional series.
-func (t *InstantQuery) accumulateValue(metadata types.SeriesMetadata, value float64, g *instantQueryGroup) bool {
+func (t *InstantQuery) accumulateValue(metadata types.SeriesMetadata, value float64, g *instantQueryGroup) (bool, error) {
 	if int64(len(g.series)) < t.k {
 		// We don't have a full set of values for this group yet. Add this series to the list.
 
@@ -191,7 +197,11 @@ func (t *InstantQuery) accumulateValue(metadata types.SeriesMetadata, value floa
 			// This is the first time we've seen a series for this group, create the list of values.
 			maximumPossibleSeries := min(t.k, int64(g.seriesCount))
 
-			g.series = make([]instantQuerySeries, 0, maximumPossibleSeries) // TODO: pool this?
+			var err error
+			g.series, err = instantQuerySeriesSlicePool.Get(int(maximumPossibleSeries), t.MemoryConsumptionTracker)
+			if err != nil {
+				return false, err
+			}
 		}
 
 		t.heap.Reset(g)
@@ -201,7 +211,7 @@ func (t *InstantQuery) accumulateValue(metadata types.SeriesMetadata, value floa
 			g.nanCount++
 		}
 
-		return true
+		return true, nil
 	}
 
 	// Already have a full set of values for this group, see if the one from this series is better than the current worst.
@@ -211,13 +221,13 @@ func (t *InstantQuery) accumulateValue(metadata types.SeriesMetadata, value floa
 
 	if math.IsNaN(value) {
 		// A NaN is never better than any existing value.
-		return false
+		return false, nil
 	} else if t.IsTopK && value <= currentWorstValue && !math.IsNaN(currentWorstValue) {
 		// Value is not larger than the nth biggest value we've already seen. Continue.
-		return false
+		return false, nil
 	} else if !t.IsTopK && value >= currentWorstValue && !math.IsNaN(currentWorstValue) {
 		// Value is not smaller than the nth smallest value we've already seen. Continue.
-		return false
+		return false, nil
 	}
 
 	g.series[0].metadata = metadata
@@ -234,7 +244,7 @@ func (t *InstantQuery) accumulateValue(metadata types.SeriesMetadata, value floa
 		g.nanCount--
 	}
 
-	return false
+	return false, nil
 }
 
 func (t *InstantQuery) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {
@@ -282,6 +292,15 @@ type instantQuerySeries struct {
 	metadata types.SeriesMetadata
 	value    float64
 }
+
+var instantQuerySeriesSlicePool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(types.MaxExpectedSeriesPerResult, func(size int) []instantQuerySeries {
+		return make([]instantQuerySeries, 0, size)
+	}),
+	uint64(unsafe.Sizeof(instantQuerySeries{})),
+	true,
+	nil,
+)
 
 type instantQueryHeap struct {
 	group *instantQueryGroup
