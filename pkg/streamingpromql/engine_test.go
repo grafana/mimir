@@ -50,10 +50,9 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"topk(5, metric{})":                "'topk' aggregation with parameter",
-		`count_values("foo", metric{})`:    "'count_values' aggregation with parameter",
-		"mad_over_time(0.4, metric{}[5m])": "'mad_over_time' function",
-		"quantile(0.95, metric{})":         "'quantile' aggregation with parameter",
+		"topk(5, metric{})":             "'topk' aggregation with parameter",
+		`count_values("foo", metric{})`: "'count_values' aggregation with parameter",
+		"quantile(0.95, metric{})":      "'quantile' aggregation with parameter",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
