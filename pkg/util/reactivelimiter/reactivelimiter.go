@@ -102,7 +102,7 @@ func newLimiter(config *Config, logger log.Logger) *reactiveLimiter {
 		config:                config,
 		minLimit:              float64(config.MinInflightLimit),
 		maxLimit:              float64(config.MaxInflightLimit),
-		semaphore:             mimirsync.NewDynamicSemaphore(int64(config.InitialInflightLimit)),
+		semaphore:             mimirsync.NewDynamicSemaphore(int(config.InitialInflightLimit)),
 		limit:                 float64(config.InitialInflightLimit),
 		shortRTT:              &tDigestSample{TDigest: tdigest.NewWithCompression(100)},
 		longRTT:               mimirmath.NewEwma(config.LongWindow, warmupSamples),
@@ -284,7 +284,7 @@ func (l *reactiveLimiter) updateLimit(shortRTT float64, inflight int) {
 
 	l.logLimit(direction, reason, newLimit, gradient, queueSize, inflight, shortRTT, longRTT, rttCorr, throughput, throughputCorr, throughputCV)
 
-	l.semaphore.SetSize(int64(newLimit))
+	l.semaphore.SetSize(int(newLimit))
 	l.limit = newLimit
 }
 
