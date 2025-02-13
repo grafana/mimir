@@ -851,6 +851,16 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "enable_elected_replica_metric",
+              "required": false,
+              "desc": "Enable the elected_replica_status metric, which shows the current elected replica. It is disabled by default due to the possible high cardinality of the metric.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "distributor.ha-tracker.enable-elected-replica-metric",
+              "fieldType": "boolean"
+            },
+            {
               "kind": "block",
               "name": "kvstore",
               "required": false,

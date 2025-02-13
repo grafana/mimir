@@ -816,6 +816,12 @@ ha_tracker:
   # CLI flag: -distributor.ha-tracker.failover-timeout
   [ha_tracker_failover_timeout: <duration> | default = 30s]
 
+  # Enable the elected_replica_status metric, which shows the current elected
+  # replica. It is disabled by default due to the possible high cardinality of
+  # the metric.
+  # CLI flag: -distributor.ha-tracker.enable-elected-replica-metric
+  [enable_elected_replica_metric: <boolean> | default = false]
+
   # Backend storage to use for the ring. Note that memberlist support is
   # experimental.
   kvstore:
