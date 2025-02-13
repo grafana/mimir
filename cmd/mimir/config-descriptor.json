@@ -3653,6 +3653,333 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "rejection_prioritizer",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "calibration_interval",
+              "required": false,
+              "desc": "The interval at which the rejection threshold is calibrated",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingester.rejection-prioritizer.calibration-interval",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "push_reactive_limiter",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable reactive limiting when making requests to ingesters",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.push-reactive-limiter.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "short_window_min_duration",
+              "required": false,
+              "desc": "Minimum duration of the window that is used to determine the recent, short-term load on the system",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingester.push-reactive-limiter.short-window-min-duration",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "short_window_max_duration",
+              "required": false,
+              "desc": "Maximum duration of the window that is used to determine the recent, short-term load on the system",
+              "fieldValue": null,
+              "fieldDefaultValue": 30000000000,
+              "fieldFlag": "ingester.push-reactive-limiter.short-window-max-duration",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "short_window_min_samples",
+              "required": false,
+              "desc": "Minimum number of samples that must be recorded in the window",
+              "fieldValue": null,
+              "fieldDefaultValue": 50,
+              "fieldFlag": "ingester.push-reactive-limiter.short-window-min-samples",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "long_window",
+              "required": false,
+              "desc": "Short-term window measurements that are stored in an exponentially weighted moving average window, representing the long-term baseline inflight time",
+              "fieldValue": null,
+              "fieldDefaultValue": 60,
+              "fieldFlag": "ingester.push-reactive-limiter.long-window",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "sample_quantile",
+              "required": false,
+              "desc": "The quantile of recorded response times to consider when adjusting the concurrency limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.9,
+              "fieldFlag": "ingester.push-reactive-limiter.sample-quantile",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "min_inflight_limit",
+              "required": false,
+              "desc": "Minimum inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "ingester.push-reactive-limiter.min-inflight-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_inflight_limit",
+              "required": false,
+              "desc": "Maximum inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 200,
+              "fieldFlag": "ingester.push-reactive-limiter.max-inflight-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_inflight_limit",
+              "required": false,
+              "desc": "Initial inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "ingester.push-reactive-limiter.initial-inflight-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_limit_factor",
+              "required": false,
+              "desc": "The maximum limit as a multiple of current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 5,
+              "fieldFlag": "ingester.push-reactive-limiter.max-limit-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "correlation_window",
+              "required": false,
+              "desc": "How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times",
+              "fieldValue": null,
+              "fieldDefaultValue": 50,
+              "fieldFlag": "ingester.push-reactive-limiter.correlation-window",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_rejection_factor",
+              "required": false,
+              "desc": "The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "ingester.push-reactive-limiter.initial-rejection-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_rejection_factor",
+              "required": false,
+              "desc": "The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected",
+              "fieldValue": null,
+              "fieldDefaultValue": 3,
+              "fieldFlag": "ingester.push-reactive-limiter.max-rejection-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "read_reactive_limiter",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable reactive limiting when making requests to ingesters",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingester.read-reactive-limiter.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "short_window_min_duration",
+              "required": false,
+              "desc": "Minimum duration of the window that is used to determine the recent, short-term load on the system",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000000000,
+              "fieldFlag": "ingester.read-reactive-limiter.short-window-min-duration",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "short_window_max_duration",
+              "required": false,
+              "desc": "Maximum duration of the window that is used to determine the recent, short-term load on the system",
+              "fieldValue": null,
+              "fieldDefaultValue": 30000000000,
+              "fieldFlag": "ingester.read-reactive-limiter.short-window-max-duration",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "short_window_min_samples",
+              "required": false,
+              "desc": "Minimum number of samples that must be recorded in the window",
+              "fieldValue": null,
+              "fieldDefaultValue": 50,
+              "fieldFlag": "ingester.read-reactive-limiter.short-window-min-samples",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "long_window",
+              "required": false,
+              "desc": "Short-term window measurements that are stored in an exponentially weighted moving average window, representing the long-term baseline inflight time",
+              "fieldValue": null,
+              "fieldDefaultValue": 60,
+              "fieldFlag": "ingester.read-reactive-limiter.long-window",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "sample_quantile",
+              "required": false,
+              "desc": "The quantile of recorded response times to consider when adjusting the concurrency limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 0.9,
+              "fieldFlag": "ingester.read-reactive-limiter.sample-quantile",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "min_inflight_limit",
+              "required": false,
+              "desc": "Minimum inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "ingester.read-reactive-limiter.min-inflight-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_inflight_limit",
+              "required": false,
+              "desc": "Maximum inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 200,
+              "fieldFlag": "ingester.read-reactive-limiter.max-inflight-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_inflight_limit",
+              "required": false,
+              "desc": "Initial inflight requests limit",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "ingester.read-reactive-limiter.initial-inflight-limit",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_limit_factor",
+              "required": false,
+              "desc": "The maximum limit as a multiple of current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 5,
+              "fieldFlag": "ingester.read-reactive-limiter.max-limit-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "correlation_window",
+              "required": false,
+              "desc": "How many recent limit and inflight time measurements are stored to detect whether increases in limits correlate with increases in inflight times",
+              "fieldValue": null,
+              "fieldDefaultValue": 50,
+              "fieldFlag": "ingester.read-reactive-limiter.correlation-window",
+              "fieldType": "int",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "initial_rejection_factor",
+              "required": false,
+              "desc": "The number of allowed queued requests, as a multiple of current inflight requests, after which rejections start",
+              "fieldValue": null,
+              "fieldDefaultValue": 2,
+              "fieldFlag": "ingester.read-reactive-limiter.initial-rejection-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_rejection_factor",
+              "required": false,
+              "desc": "The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected",
+              "fieldValue": null,
+              "fieldDefaultValue": 3,
+              "fieldFlag": "ingester.read-reactive-limiter.max-rejection-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
