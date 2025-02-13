@@ -151,6 +151,9 @@ type HATrackerConfig struct {
 	// more than this duration
 	FailoverTimeout time.Duration `yaml:"ha_tracker_failover_timeout" category:"advanced"`
 
+	// This is a potentially high cardinality metric, so it is disabled by default.
+	EnableElectedReplicaMetric bool `yaml:"enable_elected_replica_metric"`
+
 	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the ring. Note that memberlist support is experimental."`
 }
 
@@ -160,6 +163,7 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.UpdateTimeout, "distributor.ha-tracker.update-timeout", 15*time.Second, "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.")
 	f.DurationVar(&cfg.UpdateTimeoutJitterMax, "distributor.ha-tracker.update-timeout-jitter-max", 5*time.Second, "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.")
 	f.DurationVar(&cfg.FailoverTimeout, "distributor.ha-tracker.failover-timeout", 30*time.Second, "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout")
+	f.BoolVar(&cfg.EnableElectedReplicaMetric, "distributor.ha-tracker.enable-elected-replica-metric", false, "Enable the elected_replica_status metric, which shows the current elected replica. It is disabled by default due to the possible high cardinality of the metric.")
 
 	// We want the ability to use different instances for the ring and
 	// for HA cluster tracking. We also customize the default keys prefix, in
@@ -200,6 +204,7 @@ type defaultHaTracker struct {
 	electedLock sync.RWMutex                         // protects clusters maps
 	clusters    map[string]map[string]*haClusterInfo // Known clusters with elected replicas per user. First key = user, second key = cluster name.
 
+	electedReplicaStatus          *prometheus.CounterVec
 	electedReplicaChanges         *prometheus.CounterVec
 	electedReplicaTimestamp       *prometheus.GaugeVec
 	lastElectionTimestamp         *prometheus.GaugeVec
@@ -236,6 +241,10 @@ func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		limits:              limits,
 		clusters:            map[string]map[string]*haClusterInfo{},
 
+		electedReplicaStatus: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ha_tracker_elected_replica_status",
+			Help: "The current elected replica for a user ID/cluster.",
+		}, []string{"user", "cluster", "replica"}),
 		electedReplicaChanges: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ha_tracker_elected_replica_changes_total",
 			Help: "The total number of times the elected replica has changed for a user ID/cluster.",
@@ -382,6 +391,7 @@ func (h *defaultHaTracker) processKVStoreEntry(key string, replica *ReplicaDesc)
 }
 
 func (h *defaultHaTracker) cleanupDeletedReplica(user string, cluster string) {
+	h.electedReplicaStatus.DeletePartialMatch(prometheus.Labels{"user": user, "cluster": cluster})
 	h.electedReplicaChanges.DeleteLabelValues(user, cluster)
 	h.electedReplicaTimestamp.DeleteLabelValues(user, cluster)
 	h.lastElectionTimestamp.DeleteLabelValues(user, cluster)
@@ -592,6 +602,10 @@ func (h *defaultHaTracker) updateCache(userID, cluster string, desc *ReplicaDesc
 		h.clusters[userID][cluster] = entry
 	}
 	if desc.Replica != entry.elected.Replica {
+		if h.cfg.EnableElectedReplicaMetric {
+			h.electedReplicaStatus.DeletePartialMatch(prometheus.Labels{"user": userID, "cluster": cluster})
+			h.electedReplicaStatus.WithLabelValues(userID, cluster, desc.Replica).Inc()
+		}
 		h.electedReplicaChanges.WithLabelValues(userID, cluster).Inc()
 		h.lastElectionTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ElectedAt / 1000))
 		h.totalReelections.WithLabelValues(userID, cluster).Set(float64(desc.ElectedChanges))
@@ -681,6 +695,7 @@ func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapt
 func (h *defaultHaTracker) cleanupHATrackerMetricsForUser(userID string) {
 	filter := prometheus.Labels{"user": userID}
 
+	h.electedReplicaStatus.DeletePartialMatch(filter)
 	h.electedReplicaChanges.DeletePartialMatch(filter)
 	h.electedReplicaTimestamp.DeletePartialMatch(filter)
 	h.lastElectionTimestamp.DeletePartialMatch(filter)
