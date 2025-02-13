@@ -19,6 +19,7 @@ type aggregatedSyncerMetrics struct {
 	metaSync                  prometheus.Counter
 	metaSyncFailures          prometheus.Counter
 	metaSyncDuration          *dskit_metrics.HistogramDataCollector // was prometheus.Histogram before
+	metaBlocksSynced          *prometheus.GaugeVec
 	garbageCollections        prometheus.Counter
 	garbageCollectionFailures prometheus.Counter
 	garbageCollectionDuration *dskit_metrics.HistogramDataCollector // was prometheus.Histogram before
@@ -41,6 +42,11 @@ func newAggregatedSyncerMetrics(reg prometheus.Registerer) *aggregatedSyncerMetr
 		"cortex_compactor_meta_sync_duration_seconds",
 		"Duration of the blocks metadata synchronization in seconds.",
 		nil, nil))
+
+	m.metaBlocksSynced = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Name: "cortex_compactor_meta_blocks_synced",
+		Help: "Number of block metadata synced",
+	}, []string{"state"})
 
 	m.garbageCollections = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_compactor_garbage_collection_total",
@@ -82,6 +88,15 @@ func (m *aggregatedSyncerMetrics) gatherThanosSyncerMetrics(reg *prometheus.Regi
 	m.metaSync.Add(mfm.SumCounters("blocks_meta_syncs_total"))
 	m.metaSyncFailures.Add(mfm.SumCounters("blocks_meta_sync_failures_total"))
 	m.metaSyncDuration.Add(mfm.SumHistograms("blocks_meta_sync_duration_seconds"))
+
+	for _, met := range mfm["blocks_meta_synced"].GetMetric() {
+		v := met.GetGauge().GetValue()
+		ls := []string{}
+		for _, lp := range met.GetLabel() {
+			ls = append(ls, lp.GetValue())
+		}
+		m.metaBlocksSynced.WithLabelValues(ls...).Add(v)
+	}
 
 	m.garbageCollections.Add(mfm.SumCounters("thanos_compact_garbage_collection_total"))
 	m.garbageCollectionFailures.Add(mfm.SumCounters("thanos_compact_garbage_collection_failures_total"))
