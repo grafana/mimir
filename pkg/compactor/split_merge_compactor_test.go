@@ -660,6 +660,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				reg,
 				nil,
 				nil,
+				0,
 			)
 			require.NoError(t, err)
 			metas, partials, err := fetcher.FetchWithoutMarkedForDeletion(ctx)
@@ -752,6 +753,7 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 		reg,
 		nil,
 		nil,
+		0,
 	)
 	require.NoError(t, err)
 	metas, partials, err := fetcher.FetchWithoutMarkedForDeletion(ctx)

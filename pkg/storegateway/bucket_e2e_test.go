@@ -195,7 +195,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 		maxTime:         maxTime,
 	}
 
-	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), cfg.tempDir, nil, []block.MetadataFilter{}, nil)
+	metaFetcher, err := block.NewMetaFetcher(s.logger, 20, objstore.WithNoopInstr(bkt), cfg.tempDir, nil, []block.MetadataFilter{}, nil, 0)
 	assert.NoError(t, err)
 
 	// Have our options in the beginning so tests can override logger and index cache if they need to

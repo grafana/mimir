@@ -11513,6 +11513,17 @@
           "fieldFlag": "compactor.compaction-jobs-order",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "max_lookback",
+          "required": false,
+          "desc": "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.max-lookback",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
