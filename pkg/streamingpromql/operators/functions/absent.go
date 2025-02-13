@@ -93,8 +93,8 @@ func (a *Absent) NextSeries(ctx context.Context) (types.InstantVectorSeriesData,
 	return output, nil
 }
 
-func (s *Absent) ExpressionPosition() posrange.PositionRange {
-	return s.expressionPosition
+func (a *Absent) ExpressionPosition() posrange.PositionRange {
+	return a.expressionPosition
 }
 
 func (a *Absent) Close() {
