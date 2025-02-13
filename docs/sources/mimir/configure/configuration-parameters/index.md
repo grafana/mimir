@@ -3602,11 +3602,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) List of http requests to block.
 [blocked_requests: <blocked_requests_config...> | default = ]
 
-# Mutate incoming queries to align their start and end with their step to
-# improve result caching.
-# CLI flag: -query-frontend.align-queries-with-step
-[align_queries_with_step: <boolean> | default = false]
-
 # (experimental) Enable certain experimental PromQL functions, which are subject
 # to being changed or removed at any time, on a per-tenant basis. Defaults to
 # empty which means all experimental functions are disabled. Set to 'all' to
