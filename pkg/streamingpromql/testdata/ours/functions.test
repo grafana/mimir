@@ -997,3 +997,12 @@ eval instant at 1m quantile_over_time(0.5, metric[1m1s])
   {case="-Inf at start"} -Inf
   {case="-Inf at end"} -Inf
   {case="all -Inf"} -Inf
+
+clear
+
+load 1m
+  quantile _ 0.2 0.5 0.3
+  metric   1 4   9   16
+
+eval range from 1m to 3m step 1m quantile_over_time(scalar(quantile), metric[1m1s])
+  {} 1.6 6.5 11.1
