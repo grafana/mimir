@@ -62,6 +62,7 @@ func TestSlogFromGoKit(t *testing.T) {
 
 	t.Run("enabled for the right slog levels when go-kit level not configured", func(t *testing.T) {
 		mLogger := &mockLogger{}
+		mLogger.On("Log", "test", mock.AnythingOfType("*log.privateLevelDetector")).Return(nil) // Probing call from SlogFromGoKit.
 		slogger := SlogFromGoKit(mLogger)
 
 		for _, sl := range slogLevels {
@@ -71,6 +72,7 @@ func TestSlogFromGoKit(t *testing.T) {
 
 	t.Run("wraps go-kit logger", func(*testing.T) {
 		mLogger := &mockLogger{}
+		mLogger.On("Log", "test", mock.AnythingOfType("*log.privateLevelDetector")).Return(nil) // Probing call from SlogFromGoKit.
 		slogger := SlogFromGoKit(mLogger)
 
 		for _, l := range levels {
