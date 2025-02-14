@@ -355,9 +355,13 @@ func (t *RangeQuery) accumulateIntoGroup(data types.InstantVectorSeriesData, g *
 				continue
 			} else if t.IsTopK && p.F <= currentWorstValue && !math.IsNaN(currentWorstValue) {
 				// Value is not larger than the nth biggest value we've already seen. Continue.
+				// We don't care if this value is the same as the one we've already seen: we can pick
+				// either, there are no guarantees about which series is selected when they have the
+				// same value.
 				continue
 			} else if !t.IsTopK && p.F >= currentWorstValue && !math.IsNaN(currentWorstValue) {
 				// Value is not smaller than the nth smallest value we've already seen. Continue.
+				// Same comment about equal values above applies here as well.
 				continue
 			}
 

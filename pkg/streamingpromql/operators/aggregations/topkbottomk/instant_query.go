@@ -70,7 +70,8 @@ func (t *InstantQuery) SeriesMetadata(ctx context.Context) ([]types.SeriesMetada
 
 	// Go through each series and find / create its group, and keep track of how many series contribute to each group.
 	// We do this separately to the loop below so that we know the number of series in each group when we allocate
-	// each group's `series` slice - this allows us to avoid allocating a huge slice if the group only has a few series.
+	// each group's `series` slice inside accumulateValue - this allows us to avoid allocating a huge slice if the
+	// group only has a few series and `k` is large.
 	for _, series := range innerSeries {
 		groupLabelsString := groupLabelsBytesFunc(series.Labels)
 		g, groupExists := groups[string(groupLabelsString)] // Important: don't extract the string(...) call here - passing it directly allows us to avoid allocating it.
@@ -224,9 +225,13 @@ func (t *InstantQuery) accumulateValue(metadata types.SeriesMetadata, value floa
 		return false, nil
 	} else if t.IsTopK && value <= currentWorstValue && !math.IsNaN(currentWorstValue) {
 		// Value is not larger than the nth biggest value we've already seen. Continue.
+		// We don't care if this value is the same as the one we've already seen: we can pick
+		// either, there are no guarantees about which series is selected when they have the
+		// same value.
 		return false, nil
 	} else if !t.IsTopK && value >= currentWorstValue && !math.IsNaN(currentWorstValue) {
 		// Value is not smaller than the nth smallest value we've already seen. Continue.
+		// Same comment about equal values above applies here as well.
 		return false, nil
 	}
 
