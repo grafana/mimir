@@ -158,10 +158,11 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	opts, mqeOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
+	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
 
-	// Experimental functions can only be enabled globally, and not on a per-engine basis.
-	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
+	// Experimental functions are always enabled globally for all engines. Access to them
+	// is controlled by an experimental functions middleware that reads per-tenant settings.
+	parser.EnableExperimentalFunctions = true
 
 	var eng promql.QueryEngine
 
