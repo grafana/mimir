@@ -3,6 +3,7 @@
 package client
 
 import (
+	"github.com/grafana/dskit/middleware"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -22,10 +23,6 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Buckets: prometheus.ExponentialBuckets(0.001, 4, 8),
 		}, []string{"operation", "status_code"}),
 
-		invalidClusterVerificationLabels: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name:        "cortex_ingester_client_request_invalid_cluster_verification_labels_total",
-			Help:        "Number of requests with invalid cluster verification label.",
-			ConstLabels: nil,
-		}, []string{"protocol", "method", "request_cluster_label", "failing_component"}),
+		invalidClusterVerificationLabels: middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_ingester_client"),
 	}
 }

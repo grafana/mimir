@@ -73,11 +73,7 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 			Buckets: prometheus.ExponentialBuckets(0.001, 4, 6),
 		}, []string{"operation", "status_code"}),
 
-		invalidClusterValidation: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name:        "cortex_querier_query_frontend_client_request_invalid_cluster_verification_labels_total",
-			Help:        "Number of requests with invalid cluster verification label.",
-			ConstLabels: nil,
-		}, []string{"protocol", "method", "request_cluster_label", "failing_component"}),
+		invalidClusterValidation: middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_querier_query_frontend_client"),
 	}
 
 	frontendClientsGauge := promauto.With(reg).NewGauge(prometheus.GaugeOpts{

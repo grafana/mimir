@@ -164,11 +164,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		},
 		[]string{"query_component"},
 	)
-	s.invalidClusterValidation = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
-		Name:        "cortex_query_scheduler_frontend_client_request_invalid_cluster_verification_labels_total",
-		Help:        "Number of requests with invalid cluster verification label.",
-		ConstLabels: nil,
-	}, []string{"protocol", "method", "request_cluster_label", "failing_component"})
+	s.invalidClusterValidation = middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(registerer, "cortex_query_scheduler_frontend_client")
 
 	s.requestQueue, err = queue.NewRequestQueue(
 		s.log,
