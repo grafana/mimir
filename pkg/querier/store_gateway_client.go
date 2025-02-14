@@ -23,7 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-func newStoreGatewayClientFactory(clientCfg grpcclient.Config, cluster string, reg prometheus.Registerer) client.PoolFactory {
+func newStoreGatewayClientFactory(clientCfg grpcclient.Config, cluster string, reg prometheus.Registerer, logger log.Logger) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:        "cortex_storegateway_client_request_duration_seconds",
 		Help:        "Time spent executing requests to the store-gateway.",
@@ -31,16 +31,20 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, cluster string, r
 		ConstLabels: prometheus.Labels{"client": "querier"},
 	}, []string{"operation", "status_code"})
 
-	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "store-gateway", util.GRPCProtocol)
+	invalidClusterValidation := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name:        "storegateway_client_request_invalid_cluster_verification_labels_total",
+		Help:        "Number of requests with invalid cluster verification label.",
+		ConstLabels: nil,
+	}, []string{"protocol", "method", "request_cluster_label", "failing_component"})
 
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
-		return dialStoreGatewayClient(clientCfg, inst, requestDuration, cluster)
+		return dialStoreGatewayClient(clientCfg, inst, requestDuration, invalidClusterValidation, cluster, logger)
 	})
 }
 
-func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, cluster string) (*storeGatewayClient, error) {
+func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, cluster string, logger log.Logger) (*storeGatewayClient, error) {
 	unary, stream := grpcclient.Instrument(requestDuration)
-	unary = append(unary, middleware.ClusterUnaryClientInterceptor(cluster))
+	unary = append(unary, middleware.ClusterUnaryClientInterceptor(cluster, invalidClusterValidation, logger))
 	opts, err := clientCfg.DialOption(unary, stream)
 	if err != nil {
 		return nil, err
@@ -101,7 +105,7 @@ func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConf
 		ConstLabels: map[string]string{"client": "querier"},
 	})
 
-	return client.NewPool("store-gateway", poolCfg, discovery, newStoreGatewayClientFactory(clientCfg, cluster, reg), clientsCount, logger)
+	return client.NewPool("store-gateway", poolCfg, discovery, newStoreGatewayClientFactory(clientCfg, cluster, reg, logger), clientsCount, logger)
 }
 
 type ClientConfig struct {

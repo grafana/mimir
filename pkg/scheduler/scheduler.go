@@ -86,6 +86,7 @@ type Scheduler struct {
 	connectedFrontendClients prometheus.GaugeFunc
 	queueDuration            *prometheus.HistogramVec
 	inflightRequests         prometheus.Summary
+	invalidClusterValidation *prometheus.CounterVec
 	cluster                  string
 }
 
@@ -163,7 +164,11 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		},
 		[]string{"query_component"},
 	)
-	s.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(registerer, "query-scheduler", util.GRPCProtocol)
+	s.invalidClusterValidation = promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+		Name:        "cortex_query_scheduler_frontend_client_request_invalid_cluster_verification_labels_total",
+		Help:        "Number of requests with invalid cluster verification label.",
+		ConstLabels: nil,
+	}, []string{"protocol", "method", "request_cluster_label", "failing_component"})
 
 	s.requestQueue, err = queue.NewRequestQueue(
 		s.log,
@@ -568,7 +573,7 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.Sched
 	opts, err := s.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
 		middleware.ClientUserHeaderInterceptor,
-		middleware.ClusterUnaryClientInterceptor(s.cluster)},
+		middleware.ClusterUnaryClientInterceptor(s.cluster, s.invalidClusterValidation, s.log)},
 		nil)
 	if err != nil {
 		level.Warn(s.log).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)

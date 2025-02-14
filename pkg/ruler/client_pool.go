@@ -54,26 +54,30 @@ func newRulerClientPool(clientCfg grpcclient.Config, cluster string, logger log.
 	})
 
 	return &rulerClientsPool{
-		client.NewPool("ruler", poolCfg, nil, newRulerClientFactory(clientCfg, cluster, reg), clientsCount, logger),
+		client.NewPool("ruler", poolCfg, nil, newRulerClientFactory(clientCfg, cluster, reg, logger), clientsCount, logger),
 	}
 }
 
-func newRulerClientFactory(clientCfg grpcclient.Config, cluster string, reg prometheus.Registerer) client.PoolFactory {
+func newRulerClientFactory(clientCfg grpcclient.Config, cluster string, reg prometheus.Registerer, logger log.Logger) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "cortex_ruler_client_request_duration_seconds",
 		Help:    "Time spent executing requests to the ruler.",
 		Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
 	}, []string{"operation", "status_code"})
-	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ruler", util.GRPCProtocol)
+	invalidClusterValidation := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name:        "cortex_ruler_client_request_invalid_cluster_verification_labels_total",
+		Help:        "Number of requests with invalid cluster verification label.",
+		ConstLabels: nil,
+	}, []string{"protocol", "method", "request_cluster_label", "failing_component"})
 
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
-		return dialRulerClient(clientCfg, cluster, inst, requestDuration)
+		return dialRulerClient(clientCfg, cluster, inst, requestDuration, invalidClusterValidation, logger)
 	})
 }
 
-func dialRulerClient(clientCfg grpcclient.Config, cluster string, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec) (*rulerExtendedClient, error) {
+func dialRulerClient(clientCfg grpcclient.Config, cluster string, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*rulerExtendedClient, error) {
 	unary, stream := grpcclient.Instrument(requestDuration)
-	unary = append(unary, middleware.ClusterUnaryClientInterceptor(cluster))
+	unary = append(unary, middleware.ClusterUnaryClientInterceptor(cluster, invalidClusterValidation, logger))
 	opts, err := clientCfg.DialOption(unary, stream)
 	if err != nil {
 		return nil, err

@@ -60,7 +60,12 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 		Help: "Total number of blocks produced for specific block ranges (next, current, previous).",
 	}, []string{"block_time"})
 
-	m.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "block-builder", util.GRPCProtocol)
+	m.invalidClusterValidation = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name:        "cortex_blockbuilder_scheduler_client_request_invalid_cluster_verification_labels_total",
+		Help:        "Number of requests with invalid cluster verification label.",
+		ConstLabels: nil,
+	}, []string{"protocol", "method", "request_cluster_label", "failing_component"})
+
 	return m
 }
 
