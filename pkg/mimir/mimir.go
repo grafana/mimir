@@ -817,6 +817,12 @@ func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
 	rules := []collectors.GoRuntimeMetricsRule{
 		// Enable the mutex wait time metric.
 		{Matcher: goregexp.MustCompile(`^/sync/mutex/wait/total:seconds$`)},
+		// Enable the GC total CPU time metric.
+		{Matcher: goregexp.MustCompile(`^/cpu/classes/gc/total:cpu-seconds$`)},
+		// Enable the total available CPU time metric.
+		{Matcher: goregexp.MustCompile(`^/cpu/classes/total:cpu-seconds$`)},
+		// Enable the total idle CPU time metric.
+		{Matcher: goregexp.MustCompile(`^/cpu/classes/idle:cpu-seconds$`)},
 	}
 
 	if cfg.EnableGoRuntimeMetrics {
