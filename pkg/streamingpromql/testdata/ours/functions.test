@@ -1113,10 +1113,6 @@ eval range from 0s to 66m step 6m absent(series{case="-"})
 eval range from 0s to 66m step 6m absent(series{case="0"})
   # expected no result
 
-eval range from 0s to 66m step 6m series{case=~"(a|b)"}
-  series{case="a"} _ 1 _ 1 _ 1 _ 1 _ 1
-  series{case="b"} _ _ 2 _ 2 _ 2 _ 2 _ 2
-
 eval range from 0s to 66m step 6m absent(series{case=~"(a|b)"})
 	{} 1 _ _ _ _ _ _ _ _ _ _ 1
 
