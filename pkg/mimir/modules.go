@@ -915,7 +915,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 	if t.Cfg.Ruler.QueryFrontend.Address != "" {
 		logger := util_log.Logger
-		queryFrontendClient, err := ruler.DialQueryFrontend(t.Cfg.Ruler.QueryFrontend, t.Cfg.Server.ClusterVerificationLabel, logger)
+		queryFrontendClient, err := ruler.DialQueryFrontend(t.Cfg.Ruler.QueryFrontend, t.Cfg.Server.ClusterVerificationLabel, t.Registerer, logger)
 		if err != nil {
 			return nil, err
 		}
@@ -1166,6 +1166,7 @@ func (t *Mimir) initUsageStats() (services.Service, error) {
 func (t *Mimir) initBlockBuilder() (_ services.Service, err error) {
 	t.Cfg.BlockBuilder.Kafka = t.Cfg.IngestStorage.KafkaConfig
 	t.Cfg.BlockBuilder.BlocksStorage = t.Cfg.BlocksStorage
+	t.Cfg.BlockBuilder.SchedulerConfig.Cluster = t.Cfg.Server.ClusterVerificationLabel
 	t.BlockBuilder, err = blockbuilder.New(t.Cfg.BlockBuilder, util_log.Logger, t.Registerer, t.Overrides)
 	if err != nil {
 		return nil, errors.Wrap(err, "block-builder init")

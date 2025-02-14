@@ -2920,6 +2920,8 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # do).
 # CLI flag: -querier.response-streaming-enabled
 [response_streaming_enabled: <boolean> | default = false]
+
+[clusterverificationlabel: <string> | default = ""]
 ```
 
 ### etcd

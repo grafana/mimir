@@ -6172,6 +6172,15 @@
           "fieldFlag": "querier.response-streaming-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "clusterverificationlabel",
+          "required": false,
+          "desc": "",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldType": "string"
         }
       ],
       "fieldValue": null,

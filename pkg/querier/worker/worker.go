@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
@@ -168,10 +169,10 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		return nil, errors.New("no query-scheduler or query-frontend address")
 	}
 
-	return newQuerierWorkerWithProcessor(grpcCfg, cfg, log, processor, factory, servs)
+	return newQuerierWorkerWithProcessor(grpcCfg, cfg, log, processor, factory, servs, reg)
 }
 
-func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, cfg Config, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service) (*querierWorker, error) {
+func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, cfg Config, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service, reg prometheus.Registerer) (*querierWorker, error) {
 	f := &querierWorker{
 		grpcClientConfig:      grpcCfg,
 		maxConcurrentRequests: cfg.MaxConcurrentRequests,
@@ -180,6 +181,11 @@ func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, cfg Config, log lo
 		managers:              map[string]*processorManager{},
 		instances:             map[string]servicediscovery.Instance{},
 		processor:             processor,
+		invalidClusterValidation: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name:        "storegateway_client_request_invalid_cluster_verification_labels_total",
+			Help:        "Number of requests with invalid cluster verification label.",
+			ConstLabels: nil,
+		}, []string{"protocol", "method", "request_cluster_label", "failing_component"}),
 	}
 
 	// There's no service discovery in some tests.
@@ -400,7 +406,7 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 
 func (w *querierWorker) connect(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	opts, err := w.grpcClientConfig.DialOption([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(w.cluster)}, nil)
+	opts, err := w.grpcClientConfig.DialOption([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(w.cluster, w.invalidClusterValidation, w.log)}, nil)
 	if err != nil {
 		return nil, err
 	}
