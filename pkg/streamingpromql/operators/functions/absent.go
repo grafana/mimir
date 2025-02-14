@@ -25,6 +25,8 @@ type Absent struct {
 	inner                    types.InstantVectorOperator
 	expressionPosition       posrange.PositionRange
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	// TODO: use bool slice from pool
+	presence map[int64]bool
 }
 
 var _ types.InstantVectorOperator = &Absent{}
@@ -47,10 +49,37 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 	}
 	defer types.PutSeriesMetadataSlice(innerMetadata)
 
+	if a.presence == nil {
+		a.presence = make(map[int64]bool)
+	}
+
 	metadata := types.GetSeriesMetadataSlice(1)
 	metadata = append(metadata, types.SeriesMetadata{
 		Labels: createLabelsForAbsentFunction(a.argExpressions),
 	})
+
+	for range innerMetadata {
+		series, err := a.inner.NextSeries(ctx)
+		if err != nil && errors.Is(err, types.EOS) {
+			return metadata, err
+		}
+		defer types.PutInstantVectorSeriesData(series, a.memoryConsumptionTracker)
+
+		for step := range a.timeRange.StepCount {
+			t := a.timeRange.IndexTime(int64(step))
+			for _, s := range series.Floats {
+				if t == s.T {
+					a.presence[t] = true
+				}
+			}
+			for _, s := range series.Histograms {
+				if t == s.T {
+					a.presence[t] = true
+				}
+			}
+		}
+
+	}
 
 	return metadata, nil
 }
@@ -64,30 +93,10 @@ func (a *Absent) NextSeries(ctx context.Context) (types.InstantVectorSeriesData,
 		return output, err
 	}
 
-	series, err := a.inner.NextSeries(ctx)
-	defer types.PutInstantVectorSeriesData(series, a.memoryConsumptionTracker)
-
 	for step := range a.timeRange.StepCount {
 		t := a.timeRange.IndexTime(int64(step))
-		if err != nil && errors.Is(err, types.EOS) {
+		if !a.presence[t] {
 			output.Floats = append(output.Floats, promql.FPoint{T: t, F: 1})
-		} else {
-			found := false
-			for _, s := range series.Floats {
-				if t == s.T {
-					found = true
-					break
-				}
-			}
-			for _, s := range series.Histograms {
-				if t == s.T {
-					found = true
-					break
-				}
-			}
-			if !found {
-				output.Floats = append(output.Floats, promql.FPoint{T: t, F: 1})
-			}
 		}
 	}
 	return output, nil
