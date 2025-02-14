@@ -25,8 +25,7 @@ type Absent struct {
 	inner                    types.InstantVectorOperator
 	expressionPosition       posrange.PositionRange
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
-	// TODO: use bool slice from pool
-	presence map[int64]bool
+	presence                 []bool
 }
 
 var _ types.InstantVectorOperator = &Absent{}
@@ -50,7 +49,15 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 	defer types.PutSeriesMetadataSlice(innerMetadata)
 
 	if a.presence == nil {
-		a.presence = make(map[int64]bool)
+		a.presence, err = types.BoolSlicePool.Get(a.timeRange.StepCount, a.memoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+
+		// Initialize presence slice
+		for range a.timeRange.StepCount {
+			a.presence = append(a.presence, false)
+		}
 	}
 
 	metadata := types.GetSeriesMetadataSlice(1)
@@ -69,12 +76,12 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 			t := a.timeRange.IndexTime(int64(step))
 			for _, s := range series.Floats {
 				if t == s.T {
-					a.presence[t] = true
+					a.presence[step] = true
 				}
 			}
 			for _, s := range series.Histograms {
 				if t == s.T {
-					a.presence[t] = true
+					a.presence[step] = true
 				}
 			}
 		}
@@ -95,7 +102,7 @@ func (a *Absent) NextSeries(_ context.Context) (types.InstantVectorSeriesData, e
 
 	for step := range a.timeRange.StepCount {
 		t := a.timeRange.IndexTime(int64(step))
-		if !a.presence[t] {
+		if !a.presence[step] {
 			output.Floats = append(output.Floats, promql.FPoint{T: t, F: 1})
 		}
 	}
@@ -108,6 +115,7 @@ func (a *Absent) ExpressionPosition() posrange.PositionRange {
 
 func (a *Absent) Close() {
 	a.inner.Close()
+	types.BoolSlicePool.Put(a.presence, a.memoryConsumptionTracker)
 }
 
 // createLabelsForAbsentFunction returns the labels that are uniquely and exactly matched
