@@ -16,6 +16,7 @@
 * [CHANGE] Ruler: Add `user` and `reason` labels to `cortex_ruler_write_requests_failed_total` and `cortex_ruler_queries_failed_total`; add `user` to
     `cortex_ruler_write_requests_total` and `cortex_ruler_queries_total` metrics. #10536
 * [FEATURE] Distributor: Add experimental Influx handler. #10153
+* [FEATURE] Helm: Add support for `.service.extraPorts` on all components. #10659
 * [ENHANCEMENT] Compactor: Expose `cortex_bucket_index_last_successful_update_timestamp_seconds` for all tenants assigned to the compactor before starting the block cleanup job. #10569
 * [ENHANCEMENT] Query Frontend: Return server-side `samples_processed` statistics. #10103
 * [ENHANCEMENT] Distributor: OTLP receiver now converts also metric metadata. See also https://github.com/prometheus/prometheus/pull/15416. #10168
@@ -70,7 +71,6 @@
 * [BUGFIX] Distributor: Fix panics in `DurationWithJitter` util functions when computed variance is zero. #10507
 * [BUGFIX] Ingester: Fixed a race condition in the `PostingsForMatchers` cache that may have infrequently returned expired cached postings. #10500
 * [BUGFIX] Distributor: Report partially converted OTLP requests with status 400 Bad Request. #10588
-* [FEATURE] Helm: Add support for `.service.extraPorts` on all components. #10659
 
 ### Mixin
 
