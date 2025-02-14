@@ -1,6 +1,3 @@
-server:
-  cluster: development
-
 multitenancy_enabled: false
 
 distributor:
