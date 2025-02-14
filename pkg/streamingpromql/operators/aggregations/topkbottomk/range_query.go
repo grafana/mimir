@@ -309,39 +309,15 @@ func (t *RangeQuery) accumulateIntoGroup(data types.InstantVectorSeriesData, g *
 			}
 		}
 
-		populateSeriesSlices := func() error {
-			lastPointIndex := t.TimeRange.PointIndex(data.Floats[len(data.Floats)-1].T)
-			sliceLength := int(lastPointIndex + 1)
-
-			var err error
-			thisSeries.shouldReturnPoint, err = types.BoolSlicePool.Get(sliceLength, t.MemoryConsumptionTracker)
-			if err != nil {
-				return err
-			}
-
-			thisSeries.shouldReturnPoint = thisSeries.shouldReturnPoint[:sliceLength]
-
-			thisSeries.values, err = types.Float64SlicePool.Get(sliceLength, t.MemoryConsumptionTracker)
-			if err != nil {
-				return err
-			}
-
-			thisSeries.values = thisSeries.values[:sliceLength]
-
-			return nil
-		}
-
 		recordUsedPoint := func() error {
-			thisSeries.pointCount++
 
 			if thisSeries.shouldReturnPoint == nil {
-				if err := populateSeriesSlices(); err != nil {
+				if err := thisSeries.populateSlices(data, t.TimeRange, t.MemoryConsumptionTracker); err != nil {
 					return err
 				}
 			}
 
-			thisSeries.shouldReturnPoint[timestampIndex] = true
-			thisSeries.values[timestampIndex] = p.F
+			thisSeries.recordUsedPoint(timestampIndex, p.F)
 
 			return nil
 		}
@@ -450,6 +426,34 @@ type rangeQuerySeries struct {
 	pointCount        int       // Number of points that will be returned (should equal the number of true elements in shouldReturnPoint)
 	shouldReturnPoint []bool    // One entry per timestamp, true means the value should be returned
 	values            []float64 // One entry per timestamp with value for that timestamp (entry only guaranteed to be populated if value at that timestamp might be returned)
+}
+
+func (s *rangeQuerySeries) populateSlices(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) error {
+	lastPointIndex := timeRange.PointIndex(data.Floats[len(data.Floats)-1].T)
+	sliceLength := int(lastPointIndex + 1)
+
+	var err error
+	s.shouldReturnPoint, err = types.BoolSlicePool.Get(sliceLength, memoryConsumptionTracker)
+	if err != nil {
+		return err
+	}
+
+	s.shouldReturnPoint = s.shouldReturnPoint[:sliceLength]
+
+	s.values, err = types.Float64SlicePool.Get(sliceLength, memoryConsumptionTracker)
+	if err != nil {
+		return err
+	}
+
+	s.values = s.values[:sliceLength]
+
+	return nil
+}
+
+func (s *rangeQuerySeries) recordUsedPoint(timestampIndex int64, value float64) {
+	s.pointCount++
+	s.shouldReturnPoint[timestampIndex] = true
+	s.values[timestampIndex] = value
 }
 
 var rangeQuerySeriesSlicePool = types.NewLimitingBucketedPool(
