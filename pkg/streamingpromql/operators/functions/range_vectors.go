@@ -637,76 +637,52 @@ func irateIdelta(isRate bool) RangeVectorStepFunction {
 
 var StddevOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction:         DropSeriesName,
-	StepFunc:                       stddevOverTime,
+	StepFunc:                       stddevStdvarOverTime(true),
 	NeedsSeriesNamesForAnnotations: true,
-}
-
-func stddevOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	head, tail := step.Floats.UnsafePoints()
-
-	if len(head) == 0 && len(tail) == 0 {
-		return 0, false, nil, nil
-	}
-
-	if step.Histograms.Any() {
-		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
-	}
-
-	count := 0.0
-	mean := 0.0
-	meanC := 0.0
-	deviation := 0.0
-	deviationC := 0.0
-
-	accumulate := func(points []promql.FPoint) {
-		for _, p := range points {
-			count++
-			delta := p.F - (mean + meanC)
-			mean, meanC = floats.KahanSumInc(delta/count, mean, meanC)
-			deviation, deviationC = floats.KahanSumInc(delta*(p.F-(mean+meanC)), deviation, deviationC)
-		}
-	}
-
-	accumulate(head)
-	accumulate(tail)
-
-	return math.Sqrt((deviation + deviationC) / count), true, nil, nil
 }
 
 var StdvarOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction:         DropSeriesName,
-	StepFunc:                       stdvarOverTime,
+	StepFunc:                       stddevStdvarOverTime(false),
 	NeedsSeriesNamesForAnnotations: true,
 }
 
-func stdvarOverTime(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
-	head, tail := step.Floats.UnsafePoints()
+func stddevStdvarOverTime(isStdDev bool) RangeVectorStepFunction {
+	return func(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+		head, tail := step.Floats.UnsafePoints()
 
-	if len(head) == 0 && len(tail) == 0 {
-		return 0, false, nil, nil
-	}
-
-	if step.Histograms.Any() {
-		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
-	}
-
-	count := 0.0
-	mean := 0.0
-	meanC := 0.0
-	deviation := 0.0
-	deviationC := 0.0
-
-	accumulate := func(points []promql.FPoint) {
-		for _, p := range points {
-			count++
-			delta := p.F - (mean + meanC)
-			mean, meanC = floats.KahanSumInc(delta/count, mean, meanC)
-			deviation, deviationC = floats.KahanSumInc(delta*(p.F-(mean+meanC)), deviation, deviationC)
+		if len(head) == 0 && len(tail) == 0 {
+			return 0, false, nil, nil
 		}
+
+		if step.Histograms.Any() {
+			emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
+		}
+
+		count := 0.0
+		mean := 0.0
+		meanC := 0.0
+		deviation := 0.0
+		deviationC := 0.0
+
+		accumulate := func(points []promql.FPoint) {
+			for _, p := range points {
+				count++
+				delta := p.F - (mean + meanC)
+				mean, meanC = floats.KahanSumInc(delta/count, mean, meanC)
+				deviation, deviationC = floats.KahanSumInc(delta*(p.F-(mean+meanC)), deviation, deviationC)
+			}
+		}
+
+		accumulate(head)
+		accumulate(tail)
+
+		result := (deviation + deviationC) / count
+
+		if isStdDev {
+			result = math.Sqrt(result)
+		}
+
+		return result, true, nil, nil
 	}
-
-	accumulate(head)
-	accumulate(tail)
-
-	return (deviation + deviationC) / count, true, nil, nil
 }
