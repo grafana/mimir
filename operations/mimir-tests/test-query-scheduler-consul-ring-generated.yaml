@@ -1008,7 +1008,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local.:8500
-        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=consul
@@ -1261,7 +1261,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local.:8500
-        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=consul
@@ -1865,7 +1865,7 @@ spec:
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local.:8500
         - -store-gateway.sharding-ring.heartbeat-period=1m
-        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=consul

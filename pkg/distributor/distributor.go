@@ -2743,13 +2743,13 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, hints
 
 // MetricsForLabelMatchers returns a list of series with samples timestamps between from and through, and series labels
 // matching the optional label matchers. The returned series are not sorted.
-func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
+func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, hints *storage.SelectHints, matchers ...*labels.Matcher) ([]labels.Labels, error) {
 	replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := ingester_client.ToMetricsForLabelMatchersRequest(from, through, matchers)
+	req, err := ingester_client.ToMetricsForLabelMatchersRequest(from, through, hints, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -2761,10 +2761,18 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		return nil, err
 	}
 
+	metricsLimit := math.MaxInt
+	if hints != nil && hints.Limit > 0 {
+		metricsLimit = hints.Limit
+	}
 	metrics := map[uint64]labels.Labels{}
+respsLoop:
 	for _, resp := range resps {
 		ms := ingester_client.FromMetricsForLabelMatchersResponse(resp)
 		for _, m := range ms {
+			if len(metrics) >= metricsLimit {
+				break respsLoop
+			}
 			metrics[labels.StableHash(m)] = m
 		}
 	}

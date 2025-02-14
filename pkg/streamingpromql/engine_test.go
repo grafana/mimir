@@ -50,7 +50,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"topk(5, metric{})":             "'topk' aggregation with parameter",
 		`count_values("foo", metric{})`: "'count_values' aggregation with parameter",
 		"quantile(0.95, metric{})":      "'quantile' aggregation with parameter",
 	}
@@ -2248,6 +2247,44 @@ func TestAnnotations(t *testing.T) {
 			},
 		},
 
+		"topk() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric{type="float"})`,
+		},
+		"topk() with only histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in topk aggregation (1:1)`,
+			},
+		},
+		"topk() with both floats and histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in topk aggregation (1:1)`,
+			},
+		},
+
+		"bottomk() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric{type="float"})`,
+		},
+		"bottomk() with only histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in bottomk aggregation (1:1)`,
+			},
+		},
+		"bottomk() with both floats and histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in bottomk aggregation (1:1)`,
+			},
+    },
+
 		"quantile_over_time() with negative quantile": {
 			data: `metric 0 1 2 3`,
 			expr: `quantile_over_time(-1, metric[1m1s])`,
@@ -2289,7 +2326,7 @@ func TestAnnotations(t *testing.T) {
 				`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:20)`,
 			},
 			skipComparisonWithPrometheusReason: "Prometheus' engine emits the wrong annotation, see https://github.com/prometheus/prometheus/pull/16018",
-		},
+    },
 
 		"multiple annotations from different operators": {
 			data: `

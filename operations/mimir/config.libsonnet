@@ -230,9 +230,14 @@
       'store-gateway.sharding-ring.prefix': '',
       'store-gateway.sharding-ring.replication-factor': $._config.store_gateway_replication_factor,
 
-      // Relax pressure on KV store when running at scale.
-      // When changing this, please remember to also change the hearbeat period defined in store_gateway_args.
-      'store-gateway.sharding-ring.heartbeat-timeout': '4m',
+      // We keep store-gateways in the ring during rolling updates. If a rolling update takes longer than
+      // the heartbeat period, the store-gateway will get detected as unhealthy by other replicas and they
+      // will start synching blocks owned by the restarting instances too. This could potentially cause
+      // issues to other store-gateways (e.g. hit disk capacity).
+      //
+      // We don't want blocks to be resharded in case of a slow rollout, so we set a relatively high
+      // heartbeat timeout for the store-gateway ring.
+      'store-gateway.sharding-ring.heartbeat-timeout': '10m',
     },
 
     // Querier component config (shared between the ruler and querier).

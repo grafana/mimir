@@ -713,6 +713,10 @@
     // not used (default), then rejected requests are already counted as failures.
     show_rejected_requests_on_writes_dashboard: false,
 
+    // When ingester reactive limiters are enabled (using -ingester.push-reactive-limiter.enabled=true and -ingester.read-reactive-limiter.enabled=true), additional
+    // metrics related to inflight requests and rejections can be shown on the Writes and Reads dashboards.
+    show_reactive_limiter_panels: false,
+
     // Show panels that use queries for gRPC-based ingestion (distributor -> ingester)
     show_grpc_ingestion_panels: true,
 

@@ -327,3 +327,254 @@ eval range from 0m to 1m step 1m group(series)
   {} _ 1
 
 clear
+
+# topk and bottomk
+load 6m
+  series{env="prod", instance="1"} 1 4 9  20 _ _
+  series{env="prod", instance="2"} 2 3 10 _  _ 1
+  series{env="prod", instance="3"} 0 0 8  _  _ _
+
+eval range from 0 to 30m step 6m topk(2, series)
+  series{env="prod", instance="1"} 1 4 9  20 _ _
+  series{env="prod", instance="2"} 2 3 10 _  _ 1
+
+eval range from 0 to 30m step 6m topk(3, series)
+  series{env="prod", instance="1"} 1 4 9  20 _ _
+  series{env="prod", instance="2"} 2 3 10 _  _ 1
+  series{env="prod", instance="3"} 0 0 8  _  _ _
+
+eval range from 0 to 30m step 6m topk(200, series)
+  series{env="prod", instance="1"} 1 4 9  20 _ _
+  series{env="prod", instance="2"} 2 3 10 _  _ 1
+  series{env="prod", instance="3"} 0 0 8  _  _ _
+
+eval range from 0 to 30m step 6m topk(1, series)
+  series{env="prod", instance="1"} _ 4 _  20 _ _
+  series{env="prod", instance="2"} 2 _ 10 _  _ 1
+
+eval range from 0 to 30m step 6m bottomk(1, series{instance=~"(1|2)"})
+  series{env="prod", instance="1"} 1 _ 9 20 _ _
+  series{env="prod", instance="2"} _ 3 _ _  _ 1
+
+# Repeat the test cases above as instant queries at each timestep to ensure there
+# are no issues with the instant query implementation.
+eval_ordered instant at 0 topk(2, series)
+  series{env="prod", instance="2"} 2
+  series{env="prod", instance="1"} 1
+
+eval_ordered instant at 6m topk(2, series)
+  series{env="prod", instance="1"} 4
+  series{env="prod", instance="2"} 3
+
+eval_ordered instant at 12m topk(2, series)
+  series{env="prod", instance="2"} 10
+  series{env="prod", instance="1"} 9
+
+eval_ordered instant at 18m topk(2, series)
+  series{env="prod", instance="1"} 20
+
+eval_ordered instant at 24m topk(2, series)
+  # Should return no results.
+
+eval_ordered instant at 30m topk(2, series)
+  series{env="prod", instance="2"} 1
+
+eval_ordered instant at 0 topk(3, series)
+  series{env="prod", instance="2"} 2
+  series{env="prod", instance="1"} 1
+  series{env="prod", instance="3"} 0
+
+eval_ordered instant at 6m topk(3, series)
+  series{env="prod", instance="1"} 4
+  series{env="prod", instance="2"} 3
+  series{env="prod", instance="3"} 0
+
+eval_ordered instant at 12m topk(3, series)
+  series{env="prod", instance="2"} 10
+  series{env="prod", instance="1"} 9
+  series{env="prod", instance="3"} 8
+
+eval_ordered instant at 18m topk(3, series)
+  series{env="prod", instance="1"} 20
+
+eval_ordered instant at 24m topk(3, series)
+  # Should return no results.
+
+eval_ordered instant at 30m topk(3, series)
+  series{env="prod", instance="2"} 1
+
+eval_ordered instant at 0 topk(200, series)
+  series{env="prod", instance="2"} 2
+  series{env="prod", instance="1"} 1
+  series{env="prod", instance="3"} 0
+
+eval_ordered instant at 6m topk(200, series)
+  series{env="prod", instance="1"} 4
+  series{env="prod", instance="2"} 3
+  series{env="prod", instance="3"} 0
+
+eval_ordered instant at 12m topk(200, series)
+  series{env="prod", instance="2"} 10
+  series{env="prod", instance="1"} 9
+  series{env="prod", instance="3"} 8
+
+eval_ordered instant at 18m topk(200, series)
+  series{env="prod", instance="1"} 20
+
+eval_ordered instant at 24m topk(200, series)
+  # Should return no results.
+
+eval_ordered instant at 30m topk(200, series)
+  series{env="prod", instance="2"} 1
+
+eval instant at 0 topk(1, series)
+  series{env="prod", instance="2"} 2
+
+eval instant at 6m topk(1, series)
+  series{env="prod", instance="1"} 4
+
+eval instant at 12m topk(1, series)
+  series{env="prod", instance="2"} 10
+
+eval instant at 18m topk(1, series)
+  series{env="prod", instance="1"} 20
+
+eval instant at 24m topk(1, series)
+  # Should return no results.
+
+eval instant at 30m topk(1, series)
+  series{env="prod", instance="2"} 1
+
+eval instant at 0 bottomk(1, series{instance=~"(1|2)"})
+  series{env="prod", instance="1"} 1
+
+eval instant at 6m bottomk(1, series{instance=~"(1|2)"})
+  series{env="prod", instance="2"} 3
+
+eval instant at 12m bottomk(1, series{instance=~"(1|2)"})
+  series{env="prod", instance="1"} 9
+
+eval instant at 18m bottomk(1, series{instance=~"(1|2)"})
+  series{env="prod", instance="1"} 20
+
+eval instant at 24m bottomk(1, series{instance=~"(1|2)"})
+  # Should return no results.
+
+eval instant at 30m bottomk(1, series{instance=~"(1|2)"})
+  series{env="prod", instance="2"} 1
+
+# Values less than 1 return nothing.
+eval range from 0 to 30m step 6m topk(0, series)
+  # Should return nothing.
+
+eval range from 0 to 30m step 6m topk(-1, series)
+  # Should return nothing.
+
+eval range from 0 to 30m step 6m topk(0.9, series)
+  # Should return nothing.
+
+eval instant at 0 topk(0, series)
+  # Should return nothing.
+
+eval instant at 0 topk(-1, series)
+  # Should return nothing.
+
+eval instant at 0 topk(0.9, series)
+  # Should return nothing.
+
+# Fractional values are rounded down.
+eval range from 0 to 30m step 6m topk(1.6, series)
+  series{env="prod", instance="1"} _ 4 _  20 _ _
+  series{env="prod", instance="2"} 2 _ 10 _  _ 1
+
+eval range from 0 to 30m step 6m topk(1.25, series)
+  series{env="prod", instance="1"} _ 4 _  20 _ _
+  series{env="prod", instance="2"} 2 _ 10 _  _ 1
+
+eval instant at 0 topk(1.6, series)
+  series{env="prod", instance="2"} 2
+
+eval instant at 0 topk(1.25, series)
+  series{env="prod", instance="2"} 2
+
+# Values that can't be represented as an int64 should return an error.
+eval_fail range from 0 to 30m step 6m topk(Inf, series)
+  expected_fail_regexp (Scalar value \+Inf overflows int64|scalar parameter \+Inf for topk overflows int64)
+
+eval_fail range from 0 to 30m step 6m topk(NaN, series)
+  expected_fail_regexp (Scalar value NaN overflows int64|scalar parameter NaN for topk overflows int64)
+
+eval_fail instant at 0 topk(Inf, series)
+  expected_fail_regexp (Scalar value \+Inf overflows int64|scalar parameter \+Inf for topk overflows int64)
+
+eval_fail instant at 0 topk(NaN, series)
+  expected_fail_regexp (Scalar value NaN overflows int64|scalar parameter NaN for topk overflows int64)
+
+eval_fail range from 0 to 30m step 6m bottomk(Inf, series)
+  expected_fail_regexp (Scalar value \+Inf overflows int64|scalar parameter \+Inf for bottomk overflows int64)
+
+eval_fail range from 0 to 30m step 6m bottomk(NaN, series)
+  expected_fail_regexp (Scalar value NaN overflows int64|scalar parameter NaN for bottomk overflows int64)
+
+eval_fail instant at 0 bottomk(Inf, series)
+  expected_fail_regexp (Scalar value \+Inf overflows int64|scalar parameter \+Inf for bottomk overflows int64)
+
+eval_fail instant at 0 bottomk(NaN, series)
+  expected_fail_regexp (Scalar value NaN overflows int64|scalar parameter NaN for bottomk overflows int64)
+
+clear
+
+# Test topk/bottomk with Inf, -Inf and NaN values.
+load 6m
+  series{case="Inf"}   Inf  Inf
+  series{case="-Inf"}  -Inf -Inf
+  series{case="NaN"}   NaN  NaN
+  series{case="1"}     1    1
+
+eval_ordered instant at 0m topk(4, series)
+  series{case="Inf"}   Inf
+  series{case="1"}     1
+  series{case="-Inf"}  -Inf
+  series{case="NaN"}   NaN
+
+eval_ordered instant at 0m bottomk(4, series)
+  series{case="-Inf"}  -Inf
+  series{case="1"}     1
+  series{case="Inf"}   Inf
+  series{case="NaN"}   NaN
+
+eval range from 0 to 12m step 6m topk(4, series)
+  series{case="Inf"}   Inf  Inf
+  series{case="1"}     1    1
+  series{case="-Inf"}  -Inf -Inf
+  series{case="NaN"}   NaN  NaN
+
+eval range from 0 to 12m step 6m topk(3, series)
+  series{case="Inf"}   Inf  Inf
+  series{case="1"}     1    1
+  series{case="-Inf"}  -Inf -Inf
+
+eval range from 0 to 12m step 6m topk(2, series)
+  series{case="Inf"}   Inf  Inf
+  series{case="1"}     1    1
+
+eval range from 0 to 12m step 6m topk(1, series)
+  series{case="Inf"}   Inf  Inf
+
+eval range from 0 to 12m step 6m bottomk(4, series)
+  series{case="-Inf"}  -Inf -Inf
+  series{case="1"}     1    1
+  series{case="Inf"}   Inf  Inf
+  series{case="NaN"}   NaN  NaN
+
+eval range from 0 to 12m step 6m bottomk(3, series)
+  series{case="-Inf"}  -Inf -Inf
+  series{case="1"}     1    1
+  series{case="Inf"}   Inf  Inf
+
+eval range from 0 to 12m step 6m bottomk(2, series)
+  series{case="-Inf"}  -Inf -Inf
+  series{case="1"}     1    1
+
+eval range from 0 to 12m step 6m bottomk(1, series)
+  series{case="-Inf"}  -Inf -Inf

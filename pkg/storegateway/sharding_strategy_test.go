@@ -57,18 +57,18 @@ func TestShuffleShardingStrategy(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		replicationFactor   int
-		expandedReplication DynamicReplication
-		limits              ShardingLimits
-		setupRing           func(*ring.Desc)
-		prevLoadedBlocks    map[string]map[ulid.ULID]struct{}
-		expectedUsers       []usersExpectation
-		expectedBlocks      []blocksExpectation
+		replicationFactor  int
+		dynamicReplication bool
+		limits             ShardingLimits
+		setupRing          func(*ring.Desc)
+		prevLoadedBlocks   map[string]map[ulid.ULID]struct{}
+		expectedUsers      []usersExpectation
+		expectedBlocks     []blocksExpectation
 	}{
 		"one ACTIVE instance in the ring with RF = 1 and SS = 1": {
-			replicationFactor:   1,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 1},
+			replicationFactor:  1,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 1},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{0}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
@@ -82,9 +82,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 		},
 		"one ACTIVE instance in the ring with RF = 2 and SS = 1 (should still sync blocks on the only available instance)": {
-			replicationFactor:   1,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 1},
+			replicationFactor:  1,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 1},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{0}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
@@ -98,9 +98,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 		},
 		"one ACTIVE instance in the ring with RF = 2 and SS = 2 (should still sync blocks on the only available instance)": {
-			replicationFactor:   1,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 2},
+			replicationFactor:  1,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{0}, ring.ACTIVE, registeredAt, false, time.Time{})
 			},
@@ -114,9 +114,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 		},
 		"two ACTIVE instances in the ring with RF = 1 and SS = 1 (should sync blocks on 1 instance because of the shard size)": {
-			replicationFactor:   1,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 1},
+			replicationFactor:  1,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 1},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
@@ -131,9 +131,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 		},
 		"two ACTIVE instances in the ring with RF = 1 and SS = 2 (should sync blocks on 2 instances because of the shard size)": {
-			replicationFactor:   1,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 2},
+			replicationFactor:  1,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
@@ -148,9 +148,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 		},
 		"two ACTIVE instances in the ring with RF = 2 and SS = 1 (should sync blocks on 1 instance because of the shard size)": {
-			replicationFactor:   2,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 1},
+			replicationFactor:  2,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 1},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
@@ -165,9 +165,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 		},
 		"two ACTIVE instances in the ring with RF = 2 and SS = 2 (should sync all blocks on 2 instances)": {
-			replicationFactor:   2,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 2},
+			replicationFactor:  2,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
@@ -182,9 +182,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 		},
 		"multiple ACTIVE instances in the ring with RF = 2 and SS = 3": {
-			replicationFactor:   2,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 3},
+			replicationFactor:  2,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 3},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
@@ -201,10 +201,10 @@ func TestShuffleShardingStrategy(t *testing.T) {
 				{instanceID: "instance-3", instanceAddr: "127.0.0.3", blocks: []ulid.ULID{block4 /* replicated: */, block3}},
 			},
 		},
-		"multiple ACTIVE instances in the ring with RF = 1 and SS = 3 and ER = true": {
-			replicationFactor:   1,
-			expandedReplication: NewMaxTimeDynamicReplication(25*time.Hour, 45*time.Minute),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 3},
+		"multiple ACTIVE instances in the ring with RF = 1 and SS = 3 and DR = true": {
+			replicationFactor:  1,
+			dynamicReplication: true,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 3},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
@@ -217,14 +217,14 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 			expectedBlocks: []blocksExpectation{
 				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block3 /* extended replication: */, block4}},
-				{instanceID: "instance-2", instanceAddr: "127.0.0.2", blocks: []ulid.ULID{block2 /* extended replication: */, block4}},
+				{instanceID: "instance-2", instanceAddr: "127.0.0.2", blocks: []ulid.ULID{block2}},
 				{instanceID: "instance-3", instanceAddr: "127.0.0.3", blocks: []ulid.ULID{block4}},
 			},
 		},
 		"one unhealthy instance in the ring with RF = 1, SS = 3 and NO previously loaded blocks": {
-			replicationFactor:   1,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 3},
+			replicationFactor:  1,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 3},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
@@ -249,9 +249,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 		},
 		"one unhealthy instance in the ring with RF = 2, SS = 3 and NO previously loaded blocks": {
-			replicationFactor:   2,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 3},
+			replicationFactor:  2,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 3},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
@@ -275,9 +275,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 		},
 		"one unhealthy instance in the ring with RF = 2, SS = 2 and NO previously loaded blocks": {
-			replicationFactor:   2,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 2},
+			replicationFactor:  2,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
@@ -301,9 +301,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 		},
 		"one unhealthy instance in the ring with RF = 2, SS = 2 and some previously loaded blocks": {
-			replicationFactor:   2,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 2},
+			replicationFactor:  2,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
@@ -330,9 +330,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 		},
 		"LEAVING instance in the ring should continue to keep its shard blocks and they should NOT be replicated to another instance": {
-			replicationFactor:   1,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 2},
+			replicationFactor:  1,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
@@ -350,9 +350,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 		},
 		"JOINING instance in the ring should get its shard blocks and they should not be replicated to another instance": {
-			replicationFactor:   1,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 2},
+			replicationFactor:  1,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
@@ -370,9 +370,9 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			},
 		},
 		"SS = 0 disables shuffle sharding": {
-			replicationFactor:   1,
-			expandedReplication: NewNopDynamicReplication(),
-			limits:              &shardingLimitsMock{storeGatewayTenantShardSize: 0},
+			replicationFactor:  1,
+			dynamicReplication: false,
+			limits:             &shardingLimitsMock{storeGatewayTenantShardSize: 0},
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
 				r.AddIngester("instance-2", "127.0.0.2", "", []uint32{block2Hash + 1, block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{})
@@ -396,6 +396,19 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			ctx := context.Background()
 			store, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+			// Initialize dynamic replication if enabled
+			var dynamicReplication DynamicReplication = NewNopDynamicReplication()
+			if testData.dynamicReplication {
+				dynamicReplication = NewMaxTimeDynamicReplication(Config{
+					ShardingRing: RingConfig{ReplicationFactor: testData.replicationFactor},
+					DynamicReplication: DynamicReplicationConfig{
+						Enabled:          true,
+						MaxTimeThreshold: 25 * time.Hour,
+						Multiple:         2,
+					},
+				}, 45*time.Minute)
+			}
 
 			// Initialize the ring state.
 			require.NoError(t, store.CAS(ctx, "test", func(interface{}) (interface{}, bool, error) {
@@ -422,7 +435,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 
 			// Assert on filter users.
 			for _, expected := range testData.expectedUsers {
-				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, testData.expandedReplication, testData.limits, log.NewNopLogger())
+				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, dynamicReplication, testData.limits, log.NewNopLogger())
 				actualUsers, err := filter.FilterUsers(ctx, []string{userID})
 				assert.Equal(t, expected.err, err)
 				assert.Equal(t, expected.users, actualUsers)
@@ -430,7 +443,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 
 			// Assert on filter blocks.
 			for _, expected := range testData.expectedBlocks {
-				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, testData.expandedReplication, testData.limits, log.NewNopLogger())
+				filter := NewShuffleShardingStrategy(r, expected.instanceID, expected.instanceAddr, dynamicReplication, testData.limits, log.NewNopLogger())
 				synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{}, []string{"state"})
 				synced.WithLabelValues(shardExcludedMeta).Set(0)
 

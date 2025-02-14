@@ -66,13 +66,19 @@ const (
 	// Synced label values.
 	labelExcludedMeta = "label-excluded"
 	timeExcludedMeta  = "time-excluded"
-	duplicateMeta     = "duplicate"
+
+	// DuplicateMeta is the label for blocks that are contained in other compacted blocks.
+	DuplicateMeta = "duplicate"
+
 	// Blocks that are marked for deletion can be loaded as well. This is done to make sure that we load blocks that are meant to be deleted,
 	// but don't have a replacement block yet.
 	MarkedForDeletionMeta = "marked-for-deletion"
 
 	// MarkedForNoCompactionMeta is label for blocks which are loaded but also marked for no compaction. This label is also counted in `loaded` label metric.
 	MarkedForNoCompactionMeta = "marked-for-no-compact"
+
+	// LookbackExcludedMeta is label for blocks which are not loaded because their ULID pre-dates the fetcher's configured lookback period
+	LookbackExcludedMeta = "lookback-excluded"
 )
 
 func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) *FetcherMetrics {
@@ -109,9 +115,10 @@ func NewFetcherMetrics(reg prometheus.Registerer, syncedExtraLabels [][]string) 
 			{FailedMeta},
 			{labelExcludedMeta},
 			{timeExcludedMeta},
-			{duplicateMeta},
+			{DuplicateMeta},
 			{MarkedForDeletionMeta},
 			{MarkedForNoCompactionMeta},
+			{LookbackExcludedMeta},
 		}, syncedExtraLabels...)...,
 	)
 	return &m
@@ -139,6 +146,7 @@ type MetaFetcher struct {
 	bkt         objstore.InstrumentedBucketReader
 	metrics     *FetcherMetrics
 	filters     []MetadataFilter
+	maxLookback time.Duration
 
 	// Optional local directory to cache meta.json files.
 	cacheDir string
@@ -152,7 +160,7 @@ type MetaFetcher struct {
 }
 
 // NewMetaFetcher returns a MetaFetcher.
-func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter, metaCache *MetaCache) (*MetaFetcher, error) {
+func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.InstrumentedBucketReader, dir string, reg prometheus.Registerer, filters []MetadataFilter, metaCache *MetaCache, lookback time.Duration) (*MetaFetcher, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -174,6 +182,7 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 		metrics:     NewFetcherMetrics(reg, nil),
 		filters:     filters,
 		metaCache:   metaCache,
+		maxLookback: lookback,
 	}, nil
 }
 
@@ -295,6 +304,7 @@ type response struct {
 	noMetasCount           float64
 	corruptedMetasCount    float64
 	markedForDeletionCount float64
+	exceededLookbackCount  float64
 }
 
 func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool) (interface{}, error) {
@@ -307,7 +317,20 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 		ch  = make(chan ulid.ULID, f.concurrency)
 		mtx sync.Mutex
 	)
-	level.Debug(f.logger).Log("msg", "fetching meta data", "concurrency", f.concurrency)
+
+	level.Debug(f.logger).Log("msg", "fetching meta data", "concurrency", f.concurrency, "max-lookback", f.maxLookback)
+
+	// The first 6 bytes of a ULID are sortable as a function of time. When maxLookback is set, we construct a ULID that
+	// represents the beginning of the lookback period, compare all discovered block ULIDs against this
+	// ULID, and skip processing on blocks that have IDs less than
+	var minAllowedBlockID ulid.ULID
+	if f.maxLookback > 0 {
+		var err error
+		minAllowedBlockID, err = ulid.New(ulid.Timestamp(time.Now().Add(-f.maxLookback)), nil)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// Get the list of blocks marked for deletion so that we'll exclude them (if required).
 	var markedForDeletion map[ulid.ULID]struct{}
@@ -367,6 +390,12 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 			// If requested, skip any block marked for deletion.
 			if _, marked := markedForDeletion[id]; excludeMarkedForDeletion && marked {
 				resp.markedForDeletionCount++
+				return nil
+			}
+
+			// skip any blocks older than the fetcher's max lookback.
+			if f.maxLookback > 0 && id.Compare(minAllowedBlockID) == -1 {
+				resp.exceededLookbackCount++
 				return nil
 			}
 
@@ -479,6 +508,7 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) 
 	f.metrics.Synced.WithLabelValues(FailedMeta).Set(float64(len(resp.metaErrs)))
 	f.metrics.Synced.WithLabelValues(NoMeta).Set(resp.noMetasCount)
 	f.metrics.Synced.WithLabelValues(CorruptedMeta).Set(resp.corruptedMetasCount)
+	f.metrics.Synced.WithLabelValues(LookbackExcludedMeta).Set(resp.exceededLookbackCount)
 	if excludeMarkedForDeletion {
 		f.metrics.Synced.WithLabelValues(MarkedForDeletionMeta).Set(resp.markedForDeletionCount)
 	}

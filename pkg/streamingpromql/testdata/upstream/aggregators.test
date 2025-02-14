@@ -281,135 +281,110 @@ load 5m
 	http_requests_histogram{job="api-server", instance="3", group="production"}	{{schema:0 sum:20 count:20}}x11
 	foo 3+0x10
 
-# Unsupported by streaming engine.
-# eval_ordered instant at 50m topk(3, http_requests)
-# 	http_requests{group="canary", instance="1", job="app-server"} 800
-# 	http_requests{group="canary", instance="0", job="app-server"} 700
-# 	http_requests{group="production", instance="1", job="app-server"} 600
+eval_ordered instant at 50m topk(3, http_requests)
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="production", instance="1", job="app-server"} 600
 
-# Unsupported by streaming engine.
-# eval_ordered instant at 50m topk((3), (http_requests))
-# 	http_requests{group="canary", instance="1", job="app-server"} 800
-# 	http_requests{group="canary", instance="0", job="app-server"} 700
-# 	http_requests{group="production", instance="1", job="app-server"} 600
+eval_ordered instant at 50m topk((3), (http_requests))
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="production", instance="1", job="app-server"} 600
 
-# Unsupported by streaming engine.
-# eval_ordered instant at 50m topk(5, http_requests{group="canary",job="app-server"})
-# 	http_requests{group="canary", instance="1", job="app-server"} 800
-# 	http_requests{group="canary", instance="0", job="app-server"} 700
+eval_ordered instant at 50m topk(5, http_requests{group="canary",job="app-server"})
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="canary", instance="0", job="app-server"} 700
 
-# Unsupported by streaming engine.
-# eval_ordered instant at 50m bottomk(3, http_requests)
-# 	http_requests{group="production", instance="0", job="api-server"} 100
-# 	http_requests{group="production", instance="1", job="api-server"} 200
-# 	http_requests{group="canary", instance="0", job="api-server"} 300
+eval_ordered instant at 50m bottomk(3, http_requests)
+	http_requests{group="production", instance="0", job="api-server"} 100
+	http_requests{group="production", instance="1", job="api-server"} 200
+	http_requests{group="canary", instance="0", job="api-server"} 300
 
-# Unsupported by streaming engine.
-# eval_ordered instant at 50m bottomk(5, http_requests{group="canary",job="app-server"})
-# 	http_requests{group="canary", instance="0", job="app-server"} 700
-# 	http_requests{group="canary", instance="1", job="app-server"} 800
+eval_ordered instant at 50m bottomk(5, http_requests{group="canary",job="app-server"})
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="canary", instance="1", job="app-server"} 800
 
-# Unsupported by streaming engine.
-# eval instant at 50m topk by (group) (1, http_requests)
-#   http_requests{group="production", instance="1", job="app-server"} 600
-#   http_requests{group="canary", instance="1", job="app-server"} 800
+eval instant at 50m topk by (group) (1, http_requests)
+  http_requests{group="production", instance="1", job="app-server"} 600
+  http_requests{group="canary", instance="1", job="app-server"} 800
 
-# Unsupported by streaming engine.
-# eval instant at 50m bottomk by (group) (2, http_requests)
-#   http_requests{group="canary", instance="0", job="api-server"} 300
-#   http_requests{group="canary", instance="1", job="api-server"} 400
-#   http_requests{group="production", instance="0", job="api-server"} 100
-#   http_requests{group="production", instance="1", job="api-server"} 200
+eval instant at 50m bottomk by (group) (2, http_requests)
+  http_requests{group="canary", instance="0", job="api-server"} 300
+  http_requests{group="canary", instance="1", job="api-server"} 400
+  http_requests{group="production", instance="0", job="api-server"} 100
+  http_requests{group="production", instance="1", job="api-server"} 200
 
-# Unsupported by streaming engine.
-# eval_ordered instant at 50m bottomk by (group) (2, http_requests{group="production"})
-#   http_requests{group="production", instance="0", job="api-server"} 100
-#   http_requests{group="production", instance="1", job="api-server"} 200
+eval_ordered instant at 50m bottomk by (group) (2, http_requests{group="production"})
+  http_requests{group="production", instance="0", job="api-server"} 100
+  http_requests{group="production", instance="1", job="api-server"} 200
 
 # Test NaN is sorted away from the top/bottom.
-# Unsupported by streaming engine.
-# eval_ordered instant at 50m topk(3, http_requests{job="api-server",group="production"})
-# 	http_requests{job="api-server", instance="1", group="production"}	200
-# 	http_requests{job="api-server", instance="0", group="production"}	100
-# 	http_requests{job="api-server", instance="2", group="production"}	NaN
+eval_ordered instant at 50m topk(3, http_requests{job="api-server",group="production"})
+	http_requests{job="api-server", instance="1", group="production"}	200
+	http_requests{job="api-server", instance="0", group="production"}	100
+	http_requests{job="api-server", instance="2", group="production"}	NaN
 
-# Unsupported by streaming engine.
-# eval_ordered instant at 50m bottomk(3, http_requests{job="api-server",group="production"})
-# 	http_requests{job="api-server", instance="0", group="production"}	100
-# 	http_requests{job="api-server", instance="1", group="production"}	200
-# 	http_requests{job="api-server", instance="2", group="production"}	NaN
+eval_ordered instant at 50m bottomk(3, http_requests{job="api-server",group="production"})
+	http_requests{job="api-server", instance="0", group="production"}	100
+	http_requests{job="api-server", instance="1", group="production"}	200
+	http_requests{job="api-server", instance="2", group="production"}	NaN
 
 # Test topk and bottomk allocate min(k, input_vector) for results vector
-# Unsupported by streaming engine.
-# eval_ordered instant at 50m bottomk(9999999999, http_requests{job="app-server",group="canary"})
-# 	http_requests{group="canary", instance="0", job="app-server"} 700
-# 	http_requests{group="canary", instance="1", job="app-server"} 800
+eval_ordered instant at 50m bottomk(9999999999, http_requests{job="app-server",group="canary"})
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="canary", instance="1", job="app-server"} 800
 
-# Unsupported by streaming engine.
-# eval_ordered instant at 50m topk(9999999999, http_requests{job="api-server",group="production"})
-# 	http_requests{job="api-server", instance="1", group="production"}	200
-# 	http_requests{job="api-server", instance="0", group="production"}	100
-# 	http_requests{job="api-server", instance="2", group="production"}	NaN
+eval_ordered instant at 50m topk(9999999999, http_requests{job="api-server",group="production"})
+	http_requests{job="api-server", instance="1", group="production"}	200
+	http_requests{job="api-server", instance="0", group="production"}	100
+	http_requests{job="api-server", instance="2", group="production"}	NaN
 
 # Bug #5276.
-# Unsupported by streaming engine.
-# eval_ordered instant at 50m topk(scalar(foo), http_requests)
-# 	http_requests{group="canary", instance="1", job="app-server"} 800
-# 	http_requests{group="canary", instance="0", job="app-server"} 700
-# 	http_requests{group="production", instance="1", job="app-server"} 600
+eval_ordered instant at 50m topk(scalar(foo), http_requests)
+	http_requests{group="canary", instance="1", job="app-server"} 800
+	http_requests{group="canary", instance="0", job="app-server"} 700
+	http_requests{group="production", instance="1", job="app-server"} 600
 
 # Tests for histogram: should ignore histograms.
-# Unsupported by streaming engine.
-# eval_info instant at 50m topk(100, http_requests_histogram)
-#     #empty
+eval_info instant at 50m topk(100, http_requests_histogram)
+    #empty
 
-# Unsupported by streaming engine.
-# eval_info range from 0 to 50m step 5m topk(100, http_requests_histogram)
-#     #empty
+eval_info range from 0 to 50m step 5m topk(100, http_requests_histogram)
+    #empty
 
-# Unsupported by streaming engine.
-# eval_info instant at 50m topk(1, {__name__=~"http_requests(_histogram)?"})
-#     {__name__="http_requests", group="canary", instance="1", job="app-server"} 800
+eval_info instant at 50m topk(1, {__name__=~"http_requests(_histogram)?"})
+    {__name__="http_requests", group="canary", instance="1", job="app-server"} 800
 
-# Unsupported by streaming engine.
-# eval_info instant at 50m count(topk(1000, {__name__=~"http_requests(_histogram)?"}))
-#     {} 9
+eval_info instant at 50m count(topk(1000, {__name__=~"http_requests(_histogram)?"}))
+    {} 9
 
-# Unsupported by streaming engine.
-# eval_info range from 0 to 50m step 5m count(topk(1000, {__name__=~"http_requests(_histogram)?"}))
-#     {} 9x10
+eval_info range from 0 to 50m step 5m count(topk(1000, {__name__=~"http_requests(_histogram)?"}))
+    {} 9x10
 
-# Unsupported by streaming engine.
-# eval_info instant at 50m topk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
-#     {__name__="http_requests", group="canary", instance="0", job="app-server"} 700
-#     {__name__="http_requests", group="canary", instance="1", job="app-server"} 800
-#     {__name__="http_requests", group="production", instance="2", job="api-server"} NaN
+eval_info instant at 50m topk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
+    {__name__="http_requests", group="canary", instance="0", job="app-server"} 700
+    {__name__="http_requests", group="canary", instance="1", job="app-server"} 800
+    {__name__="http_requests", group="production", instance="2", job="api-server"} NaN
 
-# Unsupported by streaming engine.
-# eval_info instant at 50m bottomk(100, http_requests_histogram)
-#     #empty
+eval_info instant at 50m bottomk(100, http_requests_histogram)
+    #empty
 
-# Unsupported by streaming engine.
-# eval_info range from 0 to 50m step 5m bottomk(100, http_requests_histogram)
-#     #empty
+eval_info range from 0 to 50m step 5m bottomk(100, http_requests_histogram)
+    #empty
 
-# Unsupported by streaming engine.
-# eval_info instant at 50m bottomk(1, {__name__=~"http_requests(_histogram)?"})
-#     {__name__="http_requests", group="production", instance="0", job="api-server"} 100
+eval_info instant at 50m bottomk(1, {__name__=~"http_requests(_histogram)?"})
+    {__name__="http_requests", group="production", instance="0", job="api-server"} 100
 
-# Unsupported by streaming engine.
-# eval_info instant at 50m count(bottomk(1000, {__name__=~"http_requests(_histogram)?"}))
-#     {} 9
+eval_info instant at 50m count(bottomk(1000, {__name__=~"http_requests(_histogram)?"}))
+    {} 9
 
-# Unsupported by streaming engine.
-# eval_info range from 0 to 50m step 5m count(bottomk(1000, {__name__=~"http_requests(_histogram)?"}))
-#     {} 9x10
+eval_info range from 0 to 50m step 5m count(bottomk(1000, {__name__=~"http_requests(_histogram)?"}))
+    {} 9x10
 
-# Unsupported by streaming engine.
-# eval_info instant at 50m bottomk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
-#     {__name__="http_requests", group="production", instance="0", job="api-server"} 100
-#     {__name__="http_requests", group="production", instance="1", job="api-server"} 200
-#     {__name__="http_requests", group="production", instance="2", job="api-server"} NaN
+eval_info instant at 50m bottomk by (instance) (1, {__name__=~"http_requests(_histogram)?"})
+    {__name__="http_requests", group="production", instance="0", job="api-server"} 100
+    {__name__="http_requests", group="production", instance="1", job="api-server"} 200
+    {__name__="http_requests", group="production", instance="2", job="api-server"} NaN
 
 clear
 

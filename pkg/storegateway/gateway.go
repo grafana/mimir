@@ -182,7 +182,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 	var dynamicReplication DynamicReplication = NewNopDynamicReplication()
 	if gatewayCfg.DynamicReplication.Enabled {
 		dynamicReplication = NewMaxTimeDynamicReplication(
-			gatewayCfg.DynamicReplication.MaxTimeThreshold,
+			gatewayCfg,
 			// Keep syncing blocks to store-gateways for a grace period (3 times the sync interval) to
 			// ensure they are not unloaded while they are still being queried.
 			mimir_tsdb.NewBlockDiscoveryDelayMultiplier*storageCfg.BucketStore.SyncInterval,

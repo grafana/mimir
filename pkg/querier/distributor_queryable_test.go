@@ -88,7 +88,7 @@ func TestDistributorQuerier_Select_ShouldHonorQueryIngestersWithin(t *testing.T)
 			distributor := &mockDistributor{}
 			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
-			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
+			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
 			const tenantID = "test"
 			ctx := user.InjectOrgID(context.Background(), tenantID)
@@ -859,8 +859,8 @@ func (m *mockDistributor) LabelNames(ctx context.Context, from, to model.Time, h
 	args := m.Called(ctx, from, to, hints, matchers)
 	return args.Get(0).([]string), args.Error(1)
 }
-func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]labels.Labels, error) {
-	args := m.Called(ctx, from, to, matchers)
+func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to model.Time, hints *storage.SelectHints, matchers ...*labels.Matcher) ([]labels.Labels, error) {
+	args := m.Called(ctx, from, to, hints, matchers)
 	return args.Get(0).([]labels.Labels), args.Error(1)
 }
 
