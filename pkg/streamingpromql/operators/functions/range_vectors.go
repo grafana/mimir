@@ -701,7 +701,7 @@ func quantileOverTime(step *types.RangeVectorStepData, _ float64, args []types.S
 		return 0, false, nil, nil
 	}
 
-	if step.Floats.Any() && step.Histograms.Any() {
+	if step.Histograms.Any() {
 		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 	}
 
