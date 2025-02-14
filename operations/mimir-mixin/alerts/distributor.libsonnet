@@ -18,7 +18,7 @@
             ) * 100) > 10
 
             # Alert only for namespaces with Mimir clusters.
-            and (count by (cluster, namespace) (mimir_build_info) > 0)
+            and (count by (%(alert_aggregation_labels)s) (mimir_build_info) > 0)
           ||| % $._config {
             range_interval: $.alertRangeInterval(5),
           },
