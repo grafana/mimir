@@ -971,7 +971,7 @@ groups:
       rules:
         - alert: MimirDistributorGcUsesTooMuchCpu
           annotations:
-            message: Mimir Distributors in {{ $labels.cluster }}/{{ $labels.namespace }} GC CPU utilization is too high.
+            message: Mimir distributors in {{ $labels.cluster }}/{{ $labels.namespace }} GC CPU utilization is too high.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirdistributorgcusestoomuchcpu
           expr: |
             (quantile by (cluster, namespace) (0.9, sum by (cluster, namespace, pod) (rate(go_cpu_classes_gc_total_cpu_seconds_total{container="distributor"}[5m]))

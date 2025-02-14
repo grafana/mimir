@@ -26,7 +26,7 @@
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s Distributors in %(alert_aggregation_variables)s GC CPU utilization is too high.' % $._config,
+            message: '%(product)s distributors in %(alert_aggregation_variables)s GC CPU utilization is too high.' % $._config,
           },
         },
       ],
