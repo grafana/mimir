@@ -316,7 +316,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matc
 }
 
 // Select implements storage.Querier interface.
-// The bool passed is ignored because the series is always sorted.
+// The bool passed is ignored because the series are always sorted.
 func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "querier.Select")
 	defer spanLog.Span.Finish()
@@ -341,8 +341,14 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	}
 	now := time.Now()
 
-	level.Debug(spanLog).Log("hint.func", sp.Func, "start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
-		util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
+	level.Debug(spanLog).Log(
+		"hint.func", sp.Func,
+		"start", util.TimeFromMillis(sp.Start).UTC().String(),
+		"end", util.TimeFromMillis(sp.End).UTC().String(),
+		"limit", sp.Limit,
+		"step", sp.Step,
+		"matchers", util.MatchersStringer(matchers),
+	)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
