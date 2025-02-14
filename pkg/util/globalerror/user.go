@@ -48,6 +48,7 @@ const (
 	IngesterMaxInMemorySeries            ID = "ingester-max-series"
 	IngesterMaxInflightPushRequests      ID = "ingester-max-inflight-push-requests"
 	IngesterMaxInflightPushRequestsBytes ID = "ingester-max-inflight-push-requests-bytes"
+	IngesterMaxInflightReadRequests      ID = "ingester-max-inflight-read-requests"
 
 	ExemplarLabelsMissing    ID = "exemplar-labels-missing"
 	ExemplarLabelsTooLong    ID = "exemplar-labels-too-long"

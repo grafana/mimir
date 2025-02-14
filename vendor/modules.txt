@@ -798,6 +798,9 @@ github.com/inconshreveable/mousetrap
 github.com/influxdata/influxdb/v2/kit/io
 github.com/influxdata/influxdb/v2/models
 github.com/influxdata/influxdb/v2/pkg/escape
+# github.com/influxdata/tdigest v0.0.2-0.20210216194612-fc98d27c9e8b
+## explicit; go 1.13
+github.com/influxdata/tdigest
 # github.com/jessevdk/go-flags v1.5.0
 ## explicit; go 1.15
 github.com/jessevdk/go-flags
