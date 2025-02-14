@@ -2754,6 +2754,12 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		return nil, err
 	}
 
+	resultLimit := math.MaxInt
+	if hints != nil && hints.Limit > 0 {
+		resultLimit = hints.Limit
+		req.Limit = int64(adjustRequestLimitForReplicationSets(ctx, d, replicationSets, resultLimit))
+	}
+
 	resps, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.MetricsForLabelMatchersResponse, error) {
 		return client.MetricsForLabelMatchers(ctx, req)
 	})
@@ -2761,16 +2767,12 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		return nil, err
 	}
 
-	metricsLimit := math.MaxInt
-	if hints != nil && hints.Limit > 0 {
-		metricsLimit = hints.Limit
-	}
 	metrics := map[uint64]labels.Labels{}
 respsLoop:
 	for _, resp := range resps {
 		ms := ingester_client.FromMetricsForLabelMatchersResponse(resp)
 		for _, m := range ms {
-			if len(metrics) >= metricsLimit {
+			if len(metrics) >= resultLimit {
 				break respsLoop
 			}
 			metrics[labels.StableHash(m)] = m
@@ -2787,6 +2789,41 @@ respsLoop:
 		result = append(result, m)
 	}
 	return result, nil
+}
+
+// adjustRequestLimitForReplicationSets recalculated the limit with respect to replication sets.
+// The returned value is the approximation, a query to an individual instance in the replication sets needs to be limited with.
+func adjustRequestLimitForReplicationSets(ctx context.Context, d *Distributor, replicationSets []ring.ReplicationSet, limit int) int {
+	if limit == 0 {
+		return limit
+	}
+
+	var shardSize int
+	if d.cfg.IngestStorageConfig.Enabled {
+		// When ingest storage is enabled, each partition, represented by one replication set is owned by only one ingester.
+		// So we use the number of replication sets to count the number of shards.
+		shardSize = len(replicationSets)
+	} else if len(replicationSets) == 1 {
+		// We expect to always have exactly 1 replication set when ingest storage is disabled.
+		// In classic Mimir the total number of shards (ingestion-tenant-shard-size) is the number of ingesters in the shard across all zones.
+		shardSize = len(replicationSets[0].Instances) / d.ingestersRing.ReplicationFactor()
+	}
+	if shardSize == 0 || limit <= shardSize {
+		return limit
+	}
+
+	// Always round the adjusted limit up so the approximation overcounted, rather undercounted.
+	newLimit := int(math.Ceil(float64(limit) / float64(shardSize)))
+
+	spanLog := spanlogger.FromContext(ctx, d.log)
+	spanLog.DebugLog(
+		"msg", "the limit of query is adjusted to account for sharding",
+		"original", limit,
+		"updated", newLimit,
+		"shard_size (before replication)", shardSize,
+	)
+
+	return newLimit
 }
 
 // MetricsMetadata returns the metrics metadata based on the provided req.
