@@ -42,6 +42,12 @@ func NewRequestInvalidClusterVerficationLabelsTotalCounter(reg prometheus.Regist
 func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.CounterVec, logger log.Logger) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if cluster == "" {
+			if logger != nil {
+				level.Warn(logger).Log("msg", "no cluster provided", "method", method)
+			}
+			if invalidCluster != nil {
+				invalidCluster.WithLabelValues("grpc", method, cluster, failureClient).Inc()
+			}
 			return errNoClusterProvided
 		}
 
@@ -63,7 +69,7 @@ func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.Co
 		// but it is different from the expected one, we increase the metrics, and return an error.
 		msg := fmt.Sprintf("wrong cluster verification label in the incoming context: %s, expected: %s", reqCluster, cluster)
 		if logger != nil {
-			level.Warn(logger).Log("msg", msg, "clusterVerificationLabel", cluster, "requestClusterVerificationLabel", reqCluster)
+			level.Warn(logger).Log("msg", msg, "method", method, "clusterVerificationLabel", cluster, "requestClusterVerificationLabel", reqCluster)
 		}
 		if invalidCluster != nil {
 			invalidCluster.WithLabelValues("grpc", method, cluster, failureClient).Inc()
@@ -83,7 +89,7 @@ func handleError(err error, cluster string, method string, invalidCluster *prome
 				if errDetails.GetCause() == grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL {
 					msg := fmt.Sprintf("request rejected by the server: %s", stat.Message())
 					if logger != nil {
-						level.Warn(logger).Log("msg", msg, "cluster", cluster, "method", method)
+						level.Warn(logger).Log("msg", msg, "method", method, "clusterVerificationLabel", cluster)
 					}
 					if invalidCluster != nil {
 						invalidCluster.WithLabelValues("grpc", method, cluster, failureServer).Inc()
@@ -122,10 +128,10 @@ func ClusterUnaryServerInterceptor(cluster string, invalidClusters *prometheus.C
 		case err == nil && cluster == reqCluster:
 			return handler(ctx, req)
 		case err == nil && cluster != reqCluster:
-			msgs = []any{"msg", "rejecting request with wrong cluster verification label", "clusterVerificationLabel", cluster, "requestClusterVerificationLabel", reqCluster, "method", info.FullMethod}
+			msgs = []any{"msg", "rejecting request with wrong cluster verification label", "method", info.FullMethod, "clusterVerificationLabel", cluster, "requestClusterVerificationLabel", reqCluster}
 			errMsg = fmt.Sprintf("server from cluster %q rejected request intended for cluster %q", cluster, reqCluster)
 		case errors.Is(err, clusterutil.ErrNoClusterVerificationLabel):
-			msgs = []any{"msg", "rejecting request with no cluster verification label", "clusterVerificationLabel", cluster, "method", info.FullMethod}
+			msgs = []any{"msg", "rejecting request with no cluster verification label", "method", info.FullMethod, "clusterVerificationLabel", cluster}
 			errMsg = fmt.Sprintf("server from cluster %q rejected request with no cluster verification label", cluster)
 		default:
 			return nil, err
