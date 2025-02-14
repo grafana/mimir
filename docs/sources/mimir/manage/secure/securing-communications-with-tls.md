@@ -26,6 +26,8 @@ You can change the duration by adjusting the `-days` option in the command.
 You should replace certificates more regularly.
 {{< /admonition >}}
 
+The certificates need to have both server authentication and client authentication set in the extended key usage field.
+
 The following script generates self-signed certificates for the cluster.
 The script generates private keys `client.key`, `server.key` and certificates `client.crt`, `server.crt` for both the client and server.
 The script generates the CA cert as `root.crt`.
