@@ -166,7 +166,7 @@ How to **fix** it:
 ### MimirDistributorGcUsesTooMuchCpu
 
 This alert fires when distributors spend too much CPU time on garbage collection.
-This should be a symptom of GOMEMLIMIT being set too low, so GC gets triggered too frequently.
+This is a symptom of setting GOMEMLIMIT too low, so GC is triggered too frequently.
 
 How to **fix** it:
 
