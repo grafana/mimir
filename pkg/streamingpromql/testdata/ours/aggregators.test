@@ -499,16 +499,28 @@ eval instant at 0 topk(1.25, series)
 
 # Values that can't be represented as an int64 should return an error.
 eval_fail range from 0 to 30m step 6m topk(Inf, series)
-  expected_fail_regexp (S|s)calar value \+Inf overflows int64
+  expected_fail_regexp (Scalar value \+Inf overflows int64|scalar parameter \+Inf for topk overflows int64)
 
 eval_fail range from 0 to 30m step 6m topk(NaN, series)
-  expected_fail_regexp (S|s)calar value NaN overflows int64
+  expected_fail_regexp (Scalar value NaN overflows int64|scalar parameter NaN for topk overflows int64)
 
 eval_fail instant at 0 topk(Inf, series)
-  expected_fail_regexp (S|s)calar value \+Inf overflows int64
+  expected_fail_regexp (Scalar value \+Inf overflows int64|scalar parameter \+Inf for topk overflows int64)
 
 eval_fail instant at 0 topk(NaN, series)
-  expected_fail_regexp (S|s)calar value NaN overflows int64
+  expected_fail_regexp (Scalar value NaN overflows int64|scalar parameter NaN for topk overflows int64)
+
+eval_fail range from 0 to 30m step 6m bottomk(Inf, series)
+  expected_fail_regexp (Scalar value \+Inf overflows int64|scalar parameter \+Inf for bottomk overflows int64)
+
+eval_fail range from 0 to 30m step 6m bottomk(NaN, series)
+  expected_fail_regexp (Scalar value NaN overflows int64|scalar parameter NaN for bottomk overflows int64)
+
+eval_fail instant at 0 bottomk(Inf, series)
+  expected_fail_regexp (Scalar value \+Inf overflows int64|scalar parameter \+Inf for bottomk overflows int64)
+
+eval_fail instant at 0 bottomk(NaN, series)
+  expected_fail_regexp (Scalar value NaN overflows int64|scalar parameter NaN for bottomk overflows int64)
 
 clear
 

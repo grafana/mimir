@@ -129,13 +129,21 @@ func (t *RangeQuery) getK(ctx context.Context) error {
 		v := paramValues.Samples[stepIdx].F
 
 		if !convertibleToInt64(v) {
-			return fmt.Errorf("scalar value %v overflows int64", v)
+			return fmt.Errorf("scalar parameter %v for %v overflows int64", v, t.functionName())
 		}
 
 		t.k[stepIdx] = max(int64(v), 0) // Ignore any negative values.
 	}
 
 	return nil
+}
+
+func (t *RangeQuery) functionName() string {
+	if t.IsTopK {
+		return "topk"
+	}
+
+	return "bottomk"
 }
 
 type topKBottomKOutputSorter struct {
@@ -254,12 +262,7 @@ func (t *RangeQuery) emitIgnoredHistogramsAnnotation() {
 		return
 	}
 
-	if t.IsTopK {
-		t.annotations.Add(annotations.NewHistogramIgnoredInAggregationInfo("topk", t.expressionPosition))
-	} else {
-		t.annotations.Add(annotations.NewHistogramIgnoredInAggregationInfo("bottomk", t.expressionPosition))
-	}
-
+	t.annotations.Add(annotations.NewHistogramIgnoredInAggregationInfo(t.functionName(), t.expressionPosition))
 	t.haveEmittedIgnoredHistogramsAnnotation = true
 }
 

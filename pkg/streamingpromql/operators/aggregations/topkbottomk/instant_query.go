@@ -167,7 +167,7 @@ func (t *InstantQuery) getK(ctx context.Context) error {
 	v := paramValues.Samples[0].F // There will always be exactly one value for an instant query: scalars always produce values at every step.
 
 	if !convertibleToInt64(v) {
-		return fmt.Errorf("scalar value %v overflows int64", v)
+		return fmt.Errorf("scalar parameter %v for %v overflows int64", v, t.functionName())
 	}
 
 	t.k = max(int64(v), 0) // Ignore any negative values.
@@ -175,17 +175,20 @@ func (t *InstantQuery) getK(ctx context.Context) error {
 	return nil
 }
 
+func (t *InstantQuery) functionName() string {
+	if t.IsTopK {
+		return "topk"
+	}
+
+	return "bottomk"
+}
+
 func (t *InstantQuery) emitIgnoredHistogramsAnnotation() {
 	if t.haveEmittedIgnoredHistogramsAnnotation {
 		return
 	}
 
-	if t.IsTopK {
-		t.annotations.Add(annotations.NewHistogramIgnoredInAggregationInfo("topk", t.expressionPosition))
-	} else {
-		t.annotations.Add(annotations.NewHistogramIgnoredInAggregationInfo("bottomk", t.expressionPosition))
-	}
-
+	t.annotations.Add(annotations.NewHistogramIgnoredInAggregationInfo(t.functionName(), t.expressionPosition))
 	t.haveEmittedIgnoredHistogramsAnnotation = true
 }
 
