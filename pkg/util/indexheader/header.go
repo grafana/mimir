@@ -13,7 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 
-	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
+	streamindex "github.com/grafana/mimir/pkg/util/indexheader/index"
 )
 
 const (

@@ -29,6 +29,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/providers/filesystem"
+	"github.com/grafana/mimir/pkg/util/indexheader"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -393,6 +395,12 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		c.metrics.compactionBlocksVerificationFailed.Inc()
 	}
 
+	fsbkt, err := filesystem.NewBucket(subDir)
+	if err != nil {
+		// TODO: Handle
+		// return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
+	}
+
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
 	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
@@ -430,6 +438,21 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil); err != nil {
 			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
 		}
+
+		_, err = indexheader.NewStreamBinaryReader(
+			ctx,
+			jobLogger,
+			fsbkt,
+			bdir,
+			blockToUpload.ulid,
+			mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+			indexheader.NewStreamBinaryReaderMetrics(nil),
+			indexheader.Config{MaxIdleFileHandles: 1},
+		)
+		if err != nil {
+			level.Warn(jobLogger).Log("msg", "failed to...", "block", "uhh", "err", err)
+		}
+
 
 		elapsed := time.Since(begin)
 		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", blockToUpload.ulid, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(newLabels))

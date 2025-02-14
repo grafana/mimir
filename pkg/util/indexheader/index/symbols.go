@@ -16,8 +16,8 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 
-	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader/indexheaderpb"
+	streamencoding "github.com/grafana/mimir/pkg/util/indexheader/encoding"
+	"github.com/grafana/mimir/pkg/util/indexheader/indexheaderpb"
 )
 
 // The table gets initialized with sync.Once but may still cause a race

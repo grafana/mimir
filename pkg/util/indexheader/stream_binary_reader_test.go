@@ -17,7 +17,7 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
+	streamindex "github.com/grafana/mimir/pkg/util/indexheader/index"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 

@@ -18,7 +18,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
 
-	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
+	streamencoding "github.com/grafana/mimir/pkg/util/indexheader/encoding"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 

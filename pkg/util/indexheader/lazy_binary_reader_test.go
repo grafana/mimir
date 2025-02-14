@@ -29,7 +29,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
+	streamindex "github.com/grafana/mimir/pkg/util/indexheader/index"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 

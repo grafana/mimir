@@ -33,8 +33,8 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
+	"github.com/grafana/mimir/pkg/util/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/util/indexheader/index"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"

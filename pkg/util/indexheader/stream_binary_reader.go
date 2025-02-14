@@ -25,9 +25,9 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
-	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader/indexheaderpb"
+	streamencoding "github.com/grafana/mimir/pkg/util/indexheader/encoding"
+	streamindex "github.com/grafana/mimir/pkg/util/indexheader/index"
+	"github.com/grafana/mimir/pkg/util/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/util/atomicfs"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )

@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 
-	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
+	streamindex "github.com/grafana/mimir/pkg/util/indexheader/index"
 )
 
 func TestBigEndianPostingsCount(t *testing.T) {

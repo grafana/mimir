@@ -19,8 +19,8 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
+	"github.com/grafana/mimir/pkg/util/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/util/indexheader/index"
 )
 
 // rawPostingGroup keeps posting keys for single matcher. It is raw because there is no guarantee
