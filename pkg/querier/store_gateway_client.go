@@ -31,11 +31,7 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, cluster string, r
 		ConstLabels: prometheus.Labels{"client": "querier"},
 	}, []string{"operation", "status_code"})
 
-	invalidClusterValidation := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name:        "storegateway_client_request_invalid_cluster_verification_labels_total",
-		Help:        "Number of requests with invalid cluster verification label.",
-		ConstLabels: nil,
-	}, []string{"protocol", "method", "request_cluster_label", "failing_component"})
+	invalidClusterValidation := middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "storegateway_client")
 
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
 		return dialStoreGatewayClient(clientCfg, inst, requestDuration, invalidClusterValidation, cluster, logger)

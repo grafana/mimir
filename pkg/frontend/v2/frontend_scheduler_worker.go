@@ -89,11 +89,7 @@ func newFrontendSchedulerWorkers(
 			// track 1ms latency too and removing any bucket bigger than 1s.
 			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
 		}, []string{schedulerAddressLabel}),
-		invalidClusterValidation: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name:        "cortex_query_frontend_query_scheduler_client_request_invalid_cluster_verification_labels_total",
-			Help:        "Number of requests with invalid cluster verification label.",
-			ConstLabels: nil,
-		}, []string{"protocol", "method", "request_cluster_label", "failing_component"}),
+		invalidClusterValidation: middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_query_frontend_query_scheduler_client"),
 	}
 
 	var err error

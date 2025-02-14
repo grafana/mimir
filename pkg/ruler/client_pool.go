@@ -64,11 +64,7 @@ func newRulerClientFactory(clientCfg grpcclient.Config, cluster string, reg prom
 		Help:    "Time spent executing requests to the ruler.",
 		Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
 	}, []string{"operation", "status_code"})
-	invalidClusterValidation := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name:        "cortex_ruler_client_request_invalid_cluster_verification_labels_total",
-		Help:        "Number of requests with invalid cluster verification label.",
-		ConstLabels: nil,
-	}, []string{"protocol", "method", "request_cluster_label", "failing_component"})
+	invalidClusterValidation := middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_ruler_client")
 
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
 		return dialRulerClient(clientCfg, cluster, inst, requestDuration, invalidClusterValidation, logger)

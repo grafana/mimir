@@ -29,7 +29,6 @@ import (
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -100,11 +99,7 @@ func (c *QueryFrontendConfig) Validate() error {
 
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
 func DialQueryFrontend(cfg QueryFrontendConfig, cluster string, reg prometheus.Registerer, logger log.Logger) (httpgrpc.HTTPClient, error) {
-	invalidClusterValidation := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name:        "query_frontend_client_request_invalid_cluster_verification_labels_total",
-		Help:        "Number of requests with invalid cluster verification label.",
-		ConstLabels: nil,
-	}, []string{"protocol", "method", "request_cluster_label", "failing_component"})
+	invalidClusterValidation := middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_query_frontend_client")
 
 	opts, err := cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),

@@ -3,6 +3,7 @@
 package blockbuilder
 
 import (
+	"github.com/grafana/dskit/middleware"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -60,11 +61,7 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 		Help: "Total number of blocks produced for specific block ranges (next, current, previous).",
 	}, []string{"block_time"})
 
-	m.invalidClusterValidation = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name:        "cortex_blockbuilder_scheduler_client_request_invalid_cluster_verification_labels_total",
-		Help:        "Number of requests with invalid cluster verification label.",
-		ConstLabels: nil,
-	}, []string{"protocol", "method", "request_cluster_label", "failing_component"})
+	m.invalidClusterValidation = middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_blockbuilder_scheduler_client")
 
 	return m
 }

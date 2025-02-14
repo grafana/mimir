@@ -8,6 +8,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -17,13 +18,25 @@ import (
 )
 
 const (
-	failureClient = "client"
-	failureServer = "server"
+	failureClient         = "client"
+	failureServer         = "server"
+	protocolLabel         = "protocol"
+	methodLabel           = "method"
+	requestClusterLabel   = "request_cluster_label"
+	failingComponentLabel = "failing_component"
 )
 
 var (
 	errNoClusterProvided = grpcutil.Status(codes.InvalidArgument, "no cluster provided").Err()
 )
+
+func NewRequestInvalidClusterVerficationLabelsTotalCounter(reg prometheus.Registerer, prefix string) *prometheus.CounterVec {
+	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name:        fmt.Sprintf("%s_request_invalid_cluster_verification_labels_total", prefix),
+		Help:        "Number of requests with invalid cluster verification label.",
+		ConstLabels: nil,
+	}, []string{protocolLabel, methodLabel, requestClusterLabel, failingComponentLabel})
+}
 
 // ClusterUnaryClientInterceptor propagates the given cluster info to gRPC metadata.
 func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.CounterVec, logger log.Logger) grpc.UnaryClientInterceptor {

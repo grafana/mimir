@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
@@ -174,18 +173,14 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 
 func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, cfg Config, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service, reg prometheus.Registerer) (*querierWorker, error) {
 	f := &querierWorker{
-		grpcClientConfig:      grpcCfg,
-		maxConcurrentRequests: cfg.MaxConcurrentRequests,
-		cluster:               cfg.ClusterVerificationLabel,
-		log:                   log,
-		managers:              map[string]*processorManager{},
-		instances:             map[string]servicediscovery.Instance{},
-		processor:             processor,
-		invalidClusterValidation: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name:        "storegateway_client_request_invalid_cluster_verification_labels_total",
-			Help:        "Number of requests with invalid cluster verification label.",
-			ConstLabels: nil,
-		}, []string{"protocol", "method", "request_cluster_label", "failing_component"}),
+		grpcClientConfig:         grpcCfg,
+		maxConcurrentRequests:    cfg.MaxConcurrentRequests,
+		cluster:                  cfg.ClusterVerificationLabel,
+		log:                      log,
+		managers:                 map[string]*processorManager{},
+		instances:                map[string]servicediscovery.Instance{},
+		processor:                processor,
+		invalidClusterValidation: middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_worker_client"),
 	}
 
 	// There's no service discovery in some tests.
