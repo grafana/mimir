@@ -334,10 +334,10 @@ func TestOffsetMovement(t *testing.T) {
 	requireOffset(t, sched.committed, "ingest", 1, 6000, "ingest/1 is complete, so offset should be advanced")
 	require.NoError(t, sched.updateJob(key, "w0", true, spec))
 	requireOffset(t, sched.committed, "ingest", 1, 6000, "ingest/1 is complete, so offset should be advanced")
-	sched.advanceCommittedOffset("ingest", 1, 2000, "{}")
+	sched.advanceCommittedOffset("ingest", 1, 2000)
 	requireOffset(t, sched.committed, "ingest", 1, 6000, "committed offsets cannot rewind")
 
-	sched.advanceCommittedOffset("ingest", 2, 6222, "{}")
+	sched.advanceCommittedOffset("ingest", 2, 6222)
 	requireOffset(t, sched.committed, "ingest", 2, 6222, "should create knowledge of partition 2")
 }
 
@@ -368,7 +368,7 @@ func TestKafkaFlush(t *testing.T) {
 		3: 0,
 	})
 
-	sched.advanceCommittedOffset("ingest", 1, 2000, "{}")
+	sched.advanceCommittedOffset("ingest", 1, 2000)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		0: 0,
 		1: 2000,
@@ -377,7 +377,7 @@ func TestKafkaFlush(t *testing.T) {
 	})
 
 	// Introducing a partition that wasn't initially present should work.
-	sched.advanceCommittedOffset("ingest", 4, 65535, "{}")
+	sched.advanceCommittedOffset("ingest", 4, 65535)
 	flushAndRequireOffsets("ingest", map[int32]int64{
 		0: 0,
 		1: 2000,
