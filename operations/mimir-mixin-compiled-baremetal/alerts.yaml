@@ -953,6 +953,27 @@ groups:
           for: 30m
           labels:
             severity: critical
+    - name: mimir_distributor_alerts
+      rules:
+        - alert: MimirDistributorGcUsesTooMuchCpu
+          annotations:
+            message: Mimir distributors in {{ $labels.cluster }}/{{ $labels.namespace }} GC CPU utilization is too high.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirdistributorgcusestoomuchcpu
+          expr: |
+            (quantile by (cluster, namespace) (0.9, sum by (cluster, namespace, instance) (rate(go_cpu_classes_gc_total_cpu_seconds_total{container="distributor"}[5m]))
+              /
+              (
+                sum by (cluster, namespace, instance) (rate(go_cpu_classes_total_cpu_seconds_total{container="distributor"}[5m]))
+                -
+                sum by (cluster, namespace, instance) (rate(go_cpu_classes_idle_cpu_seconds_total{container="distributor"}[5m]))
+              )
+            ) * 100) > 10
+
+            # Alert only for namespaces with Mimir clusters.
+            and (count by (cluster, namespace) (mimir_build_info) > 0)
+          for: 10m
+          labels:
+            severity: warning
     - name: mimir_autoscaling
       rules:
         - alert: MimirAutoscalerNotActive
