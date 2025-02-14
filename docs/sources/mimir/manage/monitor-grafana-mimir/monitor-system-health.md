@@ -1,10 +1,11 @@
 ---
 aliases:
   - /docs/mimir/latest/operators-guide/monitoring-grafana-mimir/collecting-metrics-and-logs/
+  - /docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/monitor-system-health/
 description: Learn how to collect metrics and logs from Grafana Mimir or GEM itself.
 menuTitle: Monitor system health
 title: Monitor the health of your system
-weight: 60
+weight: 5
 ---
 
 # Monitor the health of your system
@@ -99,6 +100,8 @@ However, if you prefer not to use it or you already have an existing Grafana Age
              labelSelectors:
                app.kubernetes.io/name: kube-state-metrics
    ```
+
+For more information about using using the Helm chart to configure Grafana Mimir, refer to [Run Grafana Mimir in production using the Helm chart](https://grafana.com/docs/helm-charts/mimir-distributed/latest/run-production-environment-with-helm/).
 
 ### Send metrics back into Mimir or GEM
 

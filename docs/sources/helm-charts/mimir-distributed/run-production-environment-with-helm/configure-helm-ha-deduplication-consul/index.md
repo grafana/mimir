@@ -24,6 +24,8 @@ For conceptual information about how Mimir deduplicates incoming HA samples, ref
 
 You also need to configure HA for Prometheus or Grafana Agent. Lastly, you need a key-value store such as Consul KV.
 
+{{< docs/shared source="alloy" lookup="agent-deprecation.md" version="next" >}}
+
 ## Configure Prometheus or Grafana Agent to send HA external labels
 
 Configure the Prometheus or Grafana Agent HA setup by setting the labels named `cluster` and `__replica__`,
@@ -149,7 +151,7 @@ If the table is empty, it means there is something wrong with the configuration.
 
 ### Distributor metrics
 
-If you have set up [metamonitoring]({{< relref "../monitor-system-health.md" >}}) or if you
+If you have set up [metamonitoring](https://grafana.com/docs/mimir/latest/manage/monitor-grafana-mimir/monitor-system-health/) or if you
 run GEM with built-in system monitoring,
 Mimir [distributor](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/)
 exposes some metrics related to HA deduplication. The relevant metrics are those with `cortex_ha_tracker_` prefix.
