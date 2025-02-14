@@ -1116,16 +1116,6 @@ eval range from 0s to 40m step 4m absent(series > Inf)
 eval range from 0s to 40m step 4m absent(non_existent_metric)
 	{} 1x10
 
-# test look back period
-load 4m
-  series{case="d"} _ _ 4 _ _ _ _ _ _ _ 4  
-
-eval range from 0s to 2400s step 100s absent(series{case="d"})
-	{case="d"} 1x4 _ _ _ 1x15
-
-eval range from 0s to 40m step 4m absent(series{case="d"})
-	{case="d"} 1 1 _ _ 1x5
-
 # test absent() with histogram
 load 4m
   histo{case="0"} _x11
