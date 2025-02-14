@@ -1074,7 +1074,7 @@ eval range from 1m to 3m step 1m quantile_over_time(scalar(quantile), metric[1m1
 clear
 
 # absent() tests
-load 4m
+load 6m
   series{case="-"} _x11
   series{case="0a"} _x11
   series{case="0b"} _x11
@@ -1117,26 +1117,26 @@ eval range from 0s to 40m step 4m absent(non_existent_metric)
 	{} 1x10
 
 # test absent() with histogram
-load 4m
+load 6m
   histo{case="0"} _x11
   histo{case="a"} _ {{schema:0 sum:1 count:1}}x10
 
 eval instant at 0m absent(histo)
   {} 1
 
-eval instant at 4m absent(histo)
+eval instant at 6m absent(histo)
   # expected no result
 
 eval range from 0s to 40m step 4m absent(histo)
-	{} 1
+	{} 1 1
 
 eval range from 0s to 40m step 4m absent(histo{case="0"})
 	{case="0"} 1x10
 
 eval range from 0s to 40m step 4m absent(histo{case="a"})
-	{case="a"} 1
+	{case="a"} 1 1
 
 eval range from 0s to 40m step 4m absent(histo{case=~"(0|a)"})
-	{} 1
+	{} 1 1
 
 clear
