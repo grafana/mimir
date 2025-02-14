@@ -29,6 +29,9 @@ spec:
     - port: {{ $clusterPort }}
       protocol: TCP
       name: cluster
+    {{- if .Values.alertmanager.service.extraPorts }}
+    {{- toYaml .Values.alertmanager.service.extraPorts | nindent 4 }}
+    {{- end }}
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "alertmanager" "memberlist" true) | nindent 4 }}
 {{- end -}}

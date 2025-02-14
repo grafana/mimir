@@ -24,6 +24,9 @@ spec:
       protocol: TCP
       name: grpc
       targetPort: grpc
+    {{- if .Values.ingester.service.extraPorts }}
+    {{- toYaml .Values.ingester.service.extraPorts | nindent 4 }}
+    {{- end }}
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ingester" "memberlist" true) | nindent 4 }}
 {{- end }}

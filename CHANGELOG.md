@@ -70,6 +70,7 @@
 * [BUGFIX] Distributor: Fix panics in `DurationWithJitter` util functions when computed variance is zero. #10507
 * [BUGFIX] Ingester: Fixed a race condition in the `PostingsForMatchers` cache that may have infrequently returned expired cached postings. #10500
 * [BUGFIX] Distributor: Report partially converted OTLP requests with status 400 Bad Request. #10588
+* [FEATURE] Helm: Add support for `.service.extraPorts` on all components. #10659
 
 ### Mixin
 

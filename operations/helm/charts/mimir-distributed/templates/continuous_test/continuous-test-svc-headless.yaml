@@ -20,6 +20,9 @@ spec:
       protocol: TCP
       name: http-metrics
       targetPort: http-metrics
+    {{- if .Values.continuous_test.service.extraPorts }}
+    {{- toYaml .Values.continuous_test.service.extraPorts | nindent 4 }}
+    {{- end }}
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "continuous-test") | nindent 4 }}
 {{- end -}}

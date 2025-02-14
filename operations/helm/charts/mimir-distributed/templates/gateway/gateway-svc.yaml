@@ -36,6 +36,9 @@ spec:
       name: legacy-http-metrics
       targetPort: http-metrics
     {{- end }}
+    {{- if .Values.gateway.service.extraPorts }}
+    {{- toYaml .Values.gateway.service.extraPorts | nindent 4 }}
+    {{- end }}
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" $ "component" "gateway") | nindent 4 }}
 {{- end -}}
