@@ -11,7 +11,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
-jobs: 
+jobs:
   prepare:
     if: github.event.pull_request.user.login == 'renovate[bot]'
     runs-on: ubuntu-latest
@@ -31,30 +31,49 @@ jobs:
     container:
       image: ${{ needs.prepare.outputs.build_image }}
     steps:
+      # Retrieve GitHub App Credentials from Vault
+      - name: Retrieve GitHub App Credentials from Vault
+        id: get-secrets
+        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
+        with:
+          vault_instance: dev
+          repo_secrets: |
+            APP_ID=mimir-github-bot:app_id
+            PRIVATE_KEY=mimir-github-bot:private_key
+
+      # Generate GitHub App Token
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ steps.get-secrets.outputs.APP_ID }}
+          private-key: ${{ steps.get-secrets.outputs.PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Run Git Config
         run: |
           git config --global --add safe.directory '*'
           git config --global user.email "${{ github.event.pull_request.user.login }}@users.noreply.github.com"
           git config --global user.name "${{ github.event.pull_request.user.login }}"
-  
+
       - name: Install the gh cli
         uses: ksivamuthu/actions-setup-gh-cli@v2
 
       - name: Checkout Pull Request Branch
         run: gh pr checkout ${{ github.event.pull_request.number }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Run make targets
         id: update
         run: |
           make BUILD_IN_CONTAINER=false doc build-helm-tests
-      
+
       - name: Check Updates
         id: check_updates
         run: |

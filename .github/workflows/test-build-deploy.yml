@@ -112,8 +112,28 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
+
+      # Retrieve GitHub App Credentials from Vault for mimir-github-bot
+      - name: Retrieve GitHub App Credentials from Vault
+        id: get-secrets
+        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
+        with:
+          repo_secrets: |
+            APP_ID=mimir-github-bot:app_id
+            PRIVATE_KEY=mimir-github-bot:private_key
+
+      # Generate GitHub App Token for PR approval and auto-merge
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ steps.get-secrets.outputs.APP_ID }}
+          private-key: ${{ steps.get-secrets.outputs.PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - name: Run doc-validator tool (mimir)
         run: >
           doc-validator
@@ -127,7 +147,8 @@ jobs:
           --name=doc-validator
           --reporter=github-pr-review
         env:
-          REVIEWDOG_GITHUB_API_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          REVIEWDOG_GITHUB_API_TOKEN: "${{ steps.app-token.outputs.token }}"
+
       - name: Run doc-validator tool (helm-charts)
         run: >
           doc-validator
@@ -140,7 +161,7 @@ jobs:
           --name=doc-validator
           --reporter=github-pr-review
         env:
-          REVIEWDOG_GITHUB_API_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          REVIEWDOG_GITHUB_API_TOKEN: "${{ steps.app-token.outputs.token }}"
 
   lint-jsonnet:
     runs-on: ubuntu-latest

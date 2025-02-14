@@ -26,10 +26,28 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # Retrieve GitHub App Credentials from Vault
+      - name: Retrieve GitHub App Credentials from Vault
+        id: get-secrets
+        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
+        with:
+          repo_secrets: |
+            APP_ID=mimir-github-bot:app_id
+            PRIVATE_KEY=mimir-github-bot:private_key
+
+      # Generate GitHub App Token
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ steps.get-secrets.outputs.APP_ID }}
+          private-key: ${{ steps.get-secrets.outputs.PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - name: Checkout Pull Request Branch
         run: gh pr checkout ${{ github.event.pull_request.number }}
         env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v3
@@ -76,7 +94,7 @@ jobs:
 
       - name: Add Comment to the PR
         id: notification
-        run: | 
+        run: |
           if [ ${{ steps.check_build.outputs.build }} == 'true' ]; then
            gh pr comment $PR_NUMBER --body "**Building new version of mimir-build-image**. After image is built and pushed to Docker Hub, \
            a new commit will automatically be added to this PR with new image version \`$IMAGE:$TAG\`. This can take up to 1 hour."
@@ -86,7 +104,7 @@ jobs:
           fi
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           TAG: ${{ steps.compute_hash.outputs.tag }}
           IMAGE: ${{ steps.prepare.outputs.image }}
 
@@ -126,6 +144,6 @@ jobs:
             git push origin HEAD
           fi
         env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           TAG: ${{ steps.compute_hash.outputs.tag }}
           MAIN_TAG: ${{ steps.prepare.outputs.main_image_tag }}
