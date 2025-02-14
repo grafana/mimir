@@ -1098,6 +1098,12 @@ eval instant at 0m series{case="a"}
 eval instant at 8m series{case="a"}
   series{case="a"} 1
 
+eval instant at 0m series{case=~"(a|b)"}
+  # expected no result
+
+eval instant at 8m series{case=~"(a|b)"}
+  # expected no result
+
 eval range from 0s to 40m step 4m absent(series)
   # expected no result
 
@@ -1106,6 +1112,9 @@ eval range from 0s to 40m step 4m absent(series{case="-"})
 
 eval range from 0s to 40m step 4m absent(series{case="0"})
   # expected no result
+
+eval range from 0s to 40m step 4m absent(series{case=~"(a|b)"})
+	{} 1x10
 
 eval range from 0s to 40m step 4m absent(series{case=~"(0a|0b)"})
 	{} 1x10
