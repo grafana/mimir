@@ -1090,10 +1090,10 @@ eval instant at 0m absent(series > Inf)
 	{} 1
 
 eval instant at 0m absent(series{case="-"})
-  # expected no result
+  {case="-"} 1
 
 eval instant at 0m absent(series{case="a"})
-  # expected no result
+  {case="a"} 1
 
 eval instant at 8m absent(series{case="a"})
   # expected no result
