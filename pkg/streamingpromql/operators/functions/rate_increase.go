@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -37,7 +38,7 @@ var Delta = FunctionOverRangeVectorDefinition{
 
 // isRate is true for `rate` function, or false for `instant` function
 func rate(isRate bool) RangeVectorStepFunction {
-	return func(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+	return func(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 		fHead, fTail := step.Floats.UnsafePoints()
 		fCount := len(fHead) + len(fTail)
 
@@ -279,7 +280,7 @@ func rateSeriesValidator() RangeVectorSeriesValidationFunction {
 	}
 }
 
-func delta(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc) (float64, bool, *histogram.FloatHistogram, error) {
+func delta(step *types.RangeVectorStepData, rangeSeconds float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
 	fCount := len(fHead) + len(fTail)
 
