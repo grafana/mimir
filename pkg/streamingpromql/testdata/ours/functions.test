@@ -940,3 +940,33 @@ eval range from 0 to 4m step 1m sort_desc(test_metric)
   test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}}
   test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}}
   test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}}
+
+clear
+
+# Test stddev_over_time and stdvar_over_time.
+load 1m
+  metric{case="floats"} 1 2
+  metric{case="NaN at end"} 1 NaN
+  metric{case="NaN at start"} NaN 2
+  metric{case="all NaN"} NaN NaN
+  metric{case="Inf at start"} 1 Inf
+  metric{case="Inf at end"} Inf 2
+  metric{case="all Inf"} Inf Inf
+
+eval instant at 1m stddev_over_time(metric[1m1s])
+  {case="floats"} 0.5
+  {case="NaN at end"} NaN
+  {case="NaN at start"} NaN
+  {case="all NaN"} NaN
+  {case="Inf at start"} NaN
+  {case="Inf at end"} NaN
+  {case="all Inf"} NaN
+
+eval instant at 1m stdvar_over_time(metric[1m1s])
+  {case="floats"} 0.25
+  {case="NaN at end"} NaN
+  {case="NaN at start"} NaN
+  {case="all NaN"} NaN
+  {case="Inf at start"} NaN
+  {case="Inf at end"} NaN
+  {case="all Inf"} NaN
