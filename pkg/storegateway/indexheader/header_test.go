@@ -48,8 +48,7 @@ var implementations = []struct {
 			readerFactory := func() (Reader, error) {
 				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			}
-
-			br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+			br, err := NewLazyBinaryReader(ctx, log.NewNopLogger(), readerFactory, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
