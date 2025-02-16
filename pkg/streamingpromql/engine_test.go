@@ -2305,6 +2305,24 @@ func TestAnnotations(t *testing.T) {
 		},
 	}
 
+	for _, f := range []string{"min_over_time", "max_over_time", "stddev_over_time", "stdvar_over_time"} {
+		testCases[fmt.Sprintf("%v() over series with only floats", f)] = annotationTestCase{
+			data: `some_metric 1 2`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+		}
+		testCases[fmt.Sprintf("%v() over series with only histograms", f)] = annotationTestCase{
+			data: `some_metric {{count:1}} {{count:2}}`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+		}
+		testCases[fmt.Sprintf("%v() over series with both floats and histograms", f)] = annotationTestCase{
+			data: `some_metric 1 {{count:2}}`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+			expectedInfoAnnotations: []string{
+				fmt.Sprintf(`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:%v)`, len(f)+2),
+			},
+		}
+	}
+
 	runAnnotationTests(t, testCases)
 }
 
@@ -2960,7 +2978,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta", "delta", "deriv"} {
+		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta", "delta", "deriv", "stddev_over_time", "stdvar_over_time"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[45s])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[1m])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[2m15s]))`, function, labelRegex))
