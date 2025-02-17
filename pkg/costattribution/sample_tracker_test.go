@@ -30,7 +30,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 		expectedMetrics := `
 	# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
 	# TYPE cortex_distributor_received_attributed_samples_total counter
-	cortex_distributor_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 3
+	cortex_distributor_received_attributed_samples_total{attributed_platform="foo",tenant="user4",tracker="cost-attribution"} 3
 	`
 		assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
@@ -43,8 +43,8 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 		expectedMetrics := `
 	# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
 	# TYPE cortex_distributor_received_attributed_samples_total counter
-	cortex_distributor_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 6
-	cortex_distributor_received_attributed_samples_total{platform="bar",tenant="user4",tracker="cost-attribution"} 5
+	cortex_distributor_received_attributed_samples_total{attributed_platform="foo",tenant="user4",tracker="cost-attribution"} 6
+	cortex_distributor_received_attributed_samples_total{attributed_platform="bar",tenant="user4",tracker="cost-attribution"} 5
 	`
 		assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
@@ -58,8 +58,8 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 		expectedMetrics := `
 	# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
 	# TYPE cortex_distributor_received_attributed_samples_total counter
-	cortex_distributor_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 14
-	cortex_distributor_received_attributed_samples_total{platform="bar",tenant="user4",tracker="cost-attribution"} 5
+	cortex_distributor_received_attributed_samples_total{attributed_platform="foo",tenant="user4",tracker="cost-attribution"} 14
+	cortex_distributor_received_attributed_samples_total{attributed_platform="bar",tenant="user4",tracker="cost-attribution"} 5
 	`
 		assert.NoError(t, testutil.GatherAndCompare(tManager.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
@@ -148,11 +148,10 @@ func TestSampleTracker_Concurrency(t *testing.T) {
 	expectedMetrics := `
 	# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
     # TYPE cortex_discarded_attributed_samples_total counter
-    cortex_discarded_attributed_samples_total{reason="__overflow__",team="__overflow__",tenant="user1",tracker="cost-attribution"} 95
+    cortex_discarded_attributed_samples_total{attributed_team="__overflow__",reason="__overflow__",tenant="user1",tracker="cost-attribution"} 95
     # HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
     # TYPE cortex_distributor_received_attributed_samples_total counter
-	cortex_distributor_received_attributed_samples_total{team="__overflow__",tenant="user1",tracker="cost-attribution"} 95
-
+	cortex_distributor_received_attributed_samples_total{attributed_team="__overflow__",tenant="user1",tracker="cost-attribution"} 95
 `
 	assert.NoError(t, testutil.GatherAndCompare(m.reg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total", "cortex_discarded_attributed_samples_total"))
 }
