@@ -15,6 +15,9 @@ metadata:
     chart: {{ template "minio.chart" . }}
     release: {{ .Release.Name }}
     heritage: {{ .Release.Service }}
+    {{- if .Values.global.commonLabels }}
+    {{- include "mimir.commonLabels" (dict "ctx" . ) | nindent 4 -}}
+    {{- end }}
 {{- with .Values.minio.makeBucketJob.annotations }}
   annotations:
 {{ toYaml . | indent 4 }}
