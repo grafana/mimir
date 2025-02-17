@@ -93,6 +93,8 @@ data:
     ruler:
       alertmanager_url: dnssrvnoa+http://_http-metrics._tcp.keda-autoscaling-values-mimir-alertmanager-headless.citestns.svc.cluster.local./alertmanager
       enable_api: true
+      query_frontend:
+        address: dns:///keda-autoscaling-values-mimir-ruler-query-frontend.citestns.svc:9095
       rule_path: /data
     ruler_storage:
       backend: s3

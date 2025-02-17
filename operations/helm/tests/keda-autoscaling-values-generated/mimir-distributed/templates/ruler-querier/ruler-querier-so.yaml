@@ -1,0 +1,53 @@
+---
+# Source: mimir-distributed/templates/ruler-querier/ruler-querier-so.yaml
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: keda-autoscaling-values-mimir-ruler-querier
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: keda-autoscaling-values
+    app.kubernetes.io/component: ruler-querier
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 10
+          stabilizationWindowSeconds: 600
+        scaleUp:
+          policies:
+          - periodSeconds: 120
+            type: Percent
+            value: 50
+          - periodSeconds: 120
+            type: Pods
+            value: 15
+          stabilizationWindowSeconds: 60
+  maxReplicaCount: 10
+  minReplicaCount: 1
+  pollingInterval: 10
+  scaleTargetRef:
+    name: keda-autoscaling-values-mimir-ruler-querier
+    apiVersion: apps/v1
+    kind: Deployment
+  triggers:
+  - metadata:
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="citestns",quantile="0.5"}[1m]))
+      serverAddress: http://keda-autoscaling-values-mimir-nginx.citestns.svc:80/prometheus 
+      threshold: "13"
+    name: cortex_querier_hpa_default
+    type: prometheus
+  - metadata:
+      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="ruler-querier",namespace="citestns"}[1m]))
+      serverAddress: http://keda-autoscaling-values-mimir-nginx.citestns.svc:80/prometheus 
+      threshold: "13"
+    name: cortex_querier_hpa_default_requests_duration
+    type: prometheus
