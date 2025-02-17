@@ -345,7 +345,7 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 		"hint.func", sp.Func,
 		"start", util.TimeFromMillis(sp.Start).UTC().String(),
 		"end", util.TimeFromMillis(sp.End).UTC().String(),
-		"limit", sp.Limit,
+		"limit", sp.Limit, // Note that Prometheus does +1 to the original request's limit to emit a warning in the response (ref "toHintLimit" in web/api/v1/api.go).
 		"step", sp.Step,
 		"matchers", util.MatchersStringer(matchers),
 	)
