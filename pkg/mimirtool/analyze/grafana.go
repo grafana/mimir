@@ -60,8 +60,8 @@ func ParseMetricsInBoard(mig *MetricsInGrafana, board minisdk.Board) {
 	// Iterate through all the panels and collect metrics
 	for _, panel := range board.Panels {
 		parseErrors = append(parseErrors, metricsFromPanel(*panel, metrics)...)
-		if panel.RowPanel != nil {
-			for _, subPanel := range panel.RowPanel.Panels {
+		if panel.SubPanels != nil {
+			for _, subPanel := range panel.SubPanels {
 				parseErrors = append(parseErrors, metricsFromPanel(subPanel, metrics)...)
 			}
 		}
@@ -158,7 +158,7 @@ func metricsFromTemplating(templating minisdk.Templating, metrics map[string]str
 
 func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error {
 	if !panel.SupportsTargets() {
-		return []error{fmt.Errorf("unsupported panel type: %q", panel.CommonPanel.Type)}
+		return []error{fmt.Errorf("unsupported panel type: %q", panel.Type)}
 	}
 
 	targets := panel.GetTargets()

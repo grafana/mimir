@@ -12,6 +12,306 @@
    "links": [ ],
    "panels": [
       {
+         "datasource": {
+            "default": false,
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "id": 31,
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "bar_chart_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
+         "title": "Bar chart panel",
+         "type": "barchart"
+      },
+      {
+         "datasource": {
+            "default": false,
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "id": 32,
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "pie_chart_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
+         "title": "Pie chart panel",
+         "type": "piechart"
+      },
+      {
+         "datasource": {
+            "default": false,
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "id": 8,
+         "pluginVersion": "11.2.6",
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "state_timeline_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
+         "title": "State timeline panel",
+         "type": "state-timeline"
+      },
+      {
+         "datasource": {
+            "default": false,
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "id": 10,
+         "pluginVersion": "11.2.6",
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "status_history_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
+         "title": "Status history panel",
+         "type": "status-history"
+      },
+      {
+         "datasource": {
+            "default": false,
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "id": 35,
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "histogram_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
+         "title": "Histogram panel",
+         "type": "histogram"
+      },
+      {
+         "datasource": {
+            "default": false,
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "id": 17,
+         "pluginVersion": "11.2.6",
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "candlestick_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
+         "title": "Candlestick panel",
+         "type": "candlestick"
+      },
+      {
+         "datasource": {
+            "default": false,
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "id": 37,
+         "pluginVersion": "11.2.6",
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "canvas_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
+         "title": "Canvas panel",
+         "type": "canvas"
+      },
+      {
+         "datasource": {
+            "default": false,
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 34
+         },
+         "id": 38,
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "flame_graph_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
+         "title": "Flame graph panel",
+         "type": "flamegraph"
+      },
+      {
+         "datasource": {
+            "default": false,
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "id": 39,
+         "pluginVersion": "11.2.6",
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "geomap_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
+         "title": "Geomap panel",
+         "type": "geomap"
+      },
+      {
+         "datasource": {
+            "default": false,
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "id": 40,
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "node_graph_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
+         "title": "Node graph panel",
+         "type": "nodeGraph"
+      },
+      {
+         "datasource": {
+            "default": false,
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "id": 41,
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "trend_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
+         "title": "Trend panel",
+         "type": "trend"
+      },
+      {
+         "datasource": {
+            "default": false,
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "id": 42,
+         "pluginVersion": "11.2.6",
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "xy_chart_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
+         "title": "XY chart panel",
+         "type": "xychart"
+      },
+      {
          "content": "The SLO (service level objective) and other metrics displayed on this dashboard are for informational purposes only.",
          "datasource": null,
          "description": "The SLO (service level objective) and other metrics displayed on this dashboard are for informational purposes only.",
@@ -24,6 +324,20 @@
          "id": 2,
          "mode": "markdown",
          "span": 12,
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "text_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
          "title": "Notice",
          "type": "text"
       },
