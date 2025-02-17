@@ -2757,7 +2757,14 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 	resultLimit := math.MaxInt
 	if hints != nil && hints.Limit > 0 {
 		resultLimit = hints.Limit
-		req.Limit = int64(adjustRequestLimitForReplicationSets(ctx, d, replicationSets, resultLimit))
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		// Adjust the limit passed to the downstream ingester with respect to how series are sharded inside the ring.
+		req.Limit = int64(d.adjustQueryRequestLimit(ctx, userID, resultLimit))
 	}
 
 	resps, err := forReplicationSets(ctx, d, replicationSets, func(ctx context.Context, client ingester_client.IngesterClient) (*ingester_client.MetricsForLabelMatchersResponse, error) {
@@ -2791,28 +2798,35 @@ respsLoop:
 	return result, nil
 }
 
-// adjustRequestLimitForReplicationSets recalculated the limit with respect to replication sets.
-// The returned value is the approximation, a query to an individual instance in the replication sets needs to be limited with.
-func adjustRequestLimitForReplicationSets(ctx context.Context, d *Distributor, replicationSets []ring.ReplicationSet, limit int) int {
+// adjustQueryRequestLimit recalculated the query request limit.
+// The returned value is the approximation, the query to an individual shard needs to be limited with.
+func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string, limit int) int {
 	if limit == 0 {
 		return limit
 	}
 
 	var shardSize int
 	if d.cfg.IngestStorageConfig.Enabled {
-		// When ingest storage is enabled, each partition, represented by one replication set is owned by only one ingester.
-		// So we use the number of replication sets to count the number of shards.
-		shardSize = len(replicationSets)
-	} else if len(replicationSets) == 1 {
-		// We expect to always have exactly 1 replication set when ingest storage is disabled.
-		// In classic Mimir the total number of shards (ingestion-tenant-shard-size) is the number of ingesters in the shard across all zones.
-		shardSize = len(replicationSets[0].Instances) / d.ingestersRing.ReplicationFactor()
+		// Get the number of active partitions in the ring. Here the ShuffleShardSize handles cases when a tenant has 0 or negative
+		// number of shards, or more shards than the number of active partitions in the ring.
+		shardSize = d.partitionsRing.PartitionRing().ShuffleShardSize(d.limits.IngestionPartitionsTenantShardSize(userID))
+	} else {
+		tenantShardSize := d.limits.IngestionTenantShardSize(userID)
+
+		// The ShuffleShard filters out read-only instances, leaving us with the number of active ingesters.
+		subring := d.ingestersRing.ShuffleShard(userID, tenantShardSize)
+		ingestionShardSize := subring.InstancesWithTokensCount()
+		if tenantShardSize > 0 {
+			ingestionShardSize = min(tenantShardSize, ingestionShardSize)
+		}
+		// In classic Mimir the ingestion shard size is the number of ingesters in the shard across all zones.
+		shardSize = int(float64(ingestionShardSize) / float64(subring.ReplicationFactor()))
 	}
 	if shardSize == 0 || limit <= shardSize {
 		return limit
 	}
 
-	// Always round the adjusted limit up so the approximation overcounted, rather undercounted.
+	// Always round the adjusted limit up so the approximation over-counted, rather under-counted.
 	newLimit := int(math.Ceil(float64(limit) / float64(shardSize)))
 
 	spanLog := spanlogger.FromContext(ctx, d.log)
