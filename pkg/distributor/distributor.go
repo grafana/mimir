@@ -2763,7 +2763,7 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 			return nil, err
 		}
 
-		// Adjust the limit passed to the downstream ingester with respect to how series are sharded inside the ring.
+		// Adjust the limit passed with the downstream request to ingesters with respect to how series are sharded.
 		req.Limit = int64(d.adjustQueryRequestLimit(ctx, userID, resultLimit))
 	}
 
@@ -2799,7 +2799,7 @@ respsLoop:
 }
 
 // adjustQueryRequestLimit recalculated the query request limit.
-// The returned value is the approximation, the query to an individual shard needs to be limited with.
+// The returned value is the approximation, a query to an individual shard needs to be limited with.
 func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string, limit int) int {
 	if limit == 0 {
 		return limit

@@ -6559,7 +6559,7 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 		return nil, errFail
 	}
 
-	_, multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
+	hints, multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -6578,6 +6578,9 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 		return mimirpb.CompareLabelAdapters(m1.Labels, m2.Labels)
 	})
 
+	if hints != nil && hints.Limit > 0 && len(response.Metric) > hints.Limit {
+		response.Metric = response.Metric[:hints.Limit]
+	}
 	return &response, nil
 }
 
