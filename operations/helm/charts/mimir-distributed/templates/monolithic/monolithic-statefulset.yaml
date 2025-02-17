@@ -1,6 +1,5 @@
-{{- if eq .Values.deploymentMode "microservices" }}
-{{- if and .Values.ingester.enabled (not .Values.federation_frontend.disableOtherComponents) }}
-{{- $args := dict "ctx" . "component" "ingester" "memberlist" true -}}
+{{- if and (eq .Values.deploymentMode "monolithic") (not .Values.federation_frontend.disableOtherComponents) }}
+{{- $args := dict "ctx" . "component" "monolithic" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
 {{- with $ -}}
@@ -15,12 +14,12 @@ metadata:
     {{- include "mimir.componentAnnotations" $args | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  podManagementPolicy: {{ .Values.ingester.podManagementPolicy }}
+  podManagementPolicy: {{ .Values.monolithic.podManagementPolicy }}
   replicas: {{ $rolloutZone.replicas }}
-  {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.ingester.persistentVolume.enableRetentionPolicy)  }}
+  {{- if and (semverCompare ">= 1.23-0" (include "mimir.kubeVersion" .)) (.Values.monolithic.persistentVolume.enableRetentionPolicy)  }}
   persistentVolumeClaimRetentionPolicy:
-    whenDeleted: {{ .Values.ingester.persistentVolume.whenDeleted }}
-    whenScaled: {{ .Values.ingester.persistentVolume.whenScaled }}
+    whenDeleted: {{ .Values.monolithic.persistentVolume.whenDeleted }}
+    whenScaled: {{ .Values.monolithic.persistentVolume.whenScaled }}
   {{- end }}
   selector:
     matchLabels:
@@ -29,11 +28,11 @@ spec:
     {{- if $zoneName }}
     type: OnDelete
     {{- else }}
-    {{- toYaml .Values.ingester.statefulStrategy | nindent 4 }}
+    {{- toYaml .Values.monolithic.statefulStrategy | nindent 4 }}
     {{- end }}
-  serviceName: {{ template "mimir.fullname" . }}-ingester{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
-  {{- if .Values.ingester.persistentVolume.enabled }}
-  {{- with .Values.ingester.persistentVolume }}
+  serviceName: {{ template "mimir.fullname" . }}-monolithic{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
+  {{- if .Values.monolithic.persistentVolume.enabled }}
+  {{- with .Values.monolithic.persistentVolume }}
   volumeClaimTemplates:
     - apiVersion: v1
       kind: PersistentVolumeClaim
@@ -67,16 +66,16 @@ spec:
         {{- include "mimir.podAnnotations" $args | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
-      {{- with .Values.ingester.schedulerName }}
+      {{- with .Values.monolithic.schedulerName }}
       schedulerName: {{ . | quote }}
       {{- end }}
       serviceAccountName: {{ template "mimir.serviceAccountName" . }}
-      {{- if .Values.ingester.priorityClassName }}
-      priorityClassName: {{ .Values.ingester.priorityClassName }}
+      {{- if .Values.monolithic.priorityClassName }}
+      priorityClassName: {{ .Values.monolithic.priorityClassName }}
       {{- end }}
       securityContext:
         {{- include "mimir.lib.podSecurityContext" $args | nindent 8 }}
-      {{- with .Values.ingester.initContainers }}
+      {{- with .Values.monolithic.initContainers }}
       initContainers:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -94,12 +93,12 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "ingester") | nindent 6 }}
-      {{- with .Values.ingester.tolerations }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "monolithic") | nindent 6 }}
+      {{- with .Values.monolithic.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      terminationGracePeriodSeconds: {{ .Values.ingester.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{ .Values.monolithic.terminationGracePeriodSeconds }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
@@ -111,12 +110,12 @@ spec:
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
-        {{- if not .Values.ingester.persistentVolume.enabled }}
+        {{- if not .Values.monolithic.persistentVolume.enabled }}
         - name: storage
           emptyDir: {}
         {{- end }}
-        {{- if .Values.ingester.extraVolumes }}
-        {{ toYaml .Values.ingester.extraVolumes | nindent 8 }}
+        {{- if .Values.monolithic.extraVolumes }}
+        {{ toYaml .Values.monolithic.extraVolumes | nindent 8 }}
         {{- end }}
         {{- if .Values.global.extraVolumes }}
         {{ toYaml .Values.global.extraVolumes | nindent 8 }}
@@ -124,32 +123,45 @@ spec:
         - name: active-queries
           emptyDir: {}
       containers:
-        {{- if .Values.ingester.extraContainers }}
-        {{ toYaml .Values.ingester.extraContainers | nindent 8 }}
+        {{- if .Values.monolithic.extraContainers }}
+        {{ toYaml .Values.monolithic.extraContainers | nindent 8 }}
         {{- end }}
-        - name: ingester
-          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "ingester") }}
+        - name: monolithic
+          image: "{{ include "mimir.imageReference" (dict "ctx" . "component" "monolithic") }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
-            - "-target=ingester"
+            - "-target=all"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- if $zoneName }}
             - "-ingester.ring.instance-availability-zone={{ $zoneName }}"
+            - "-store-gateway.sharding-ring.instance-availability-zone={{ $zoneName }}"
             {{- else }}
             - "-ingester.ring.instance-availability-zone=zone-default"
-            {{- if .Values.ingester.zoneAwareReplication.migration.enabled }}
+            {{- if .Values.monolithic.zoneAwareReplication.migration.enabled }}
             - "-blocks-storage.tsdb.flush-blocks-on-shutdown=true"
             - "-ingester.ring.unregister-on-shutdown=true"
+            - "-store-gateway.sharding-ring.prefix=collectors/"
+            - "-store-gateway.sharding-ring.zone-awareness-enabled=false"
             {{- end }}
             - "-server.grpc-max-concurrent-streams=500"
             {{- end }}
-            {{- range $key, $value := .Values.ingester.extraArgs }}
+            - "-server.grpc.keepalive.max-connection-age=60s"
+            - "-server.grpc.keepalive.max-connection-age-grace=5m"
+            - "-server.grpc.keepalive.max-connection-idle=1m"
+            {{- if .Values.monolithic.compression.enabled }}
+            - "-query-frontend.grpc-client-config.grpc-compression={{ .Values.monolithic.compression.algorithm }}"
+            - "-query-scheduler.grpc-client-config.grpc-compression={{ .Values.monolithic.compression.algorithm }}"
+            - "-ruler.client.grpc-compression={{ .Values.monolithic.compression.algorithm }}"
+            - "-ruler.query-frontend.grpc-client-config.grpc-compression={{ .Values.monolithic.compression.algorithm }}"
+            - "-ingester.client.grpc-compression={{ .Values.monolithic.compression.algorithm }}"
+            {{- end }}
+            {{- range $key, $value := .Values.monolithic.extraArgs }}
             - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
-            {{- if .Values.ingester.extraVolumeMounts }}
-            {{ toYaml .Values.ingester.extraVolumeMounts | nindent 12}}
+            {{- if .Values.monolithic.extraVolumeMounts }}
+            {{ toYaml .Values.monolithic.extraVolumeMounts | nindent 12}}
             {{- end }}
             {{- if .Values.global.extraVolumeMounts }}
             {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
@@ -160,8 +172,8 @@ spec:
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage
               mountPath: "/data"
-              {{- if .Values.ingester.persistentVolume.subPath }}
-              subPath: {{ .Values.ingester.persistentVolume.subPath }}
+              {{- if .Values.monolithic.persistentVolume.subPath }}
+              subPath: {{ .Values.monolithic.persistentVolume.subPath }}
               {{- end }}
             {{- if .Values.enterprise.enabled }}
             - name: license
@@ -180,17 +192,17 @@ spec:
               containerPort: {{ include "mimir.memberlistBindPort" . }}
               protocol: TCP
           livenessProbe:
-            {{- toYaml .Values.ingester.livenessProbe | nindent 12 }}
+            {{- toYaml .Values.monolithic.livenessProbe | nindent 12 }}
           readinessProbe:
-            {{- toYaml .Values.ingester.readinessProbe | nindent 12 }}
+            {{- toYaml .Values.monolithic.readinessProbe | nindent 12 }}
           resources:
-            {{- toYaml .Values.ingester.resources | nindent 12 }}
+            {{- toYaml .Values.monolithic.resources | nindent 12 }}
           securityContext:
-            {{- toYaml .Values.ingester.containerSecurityContext | nindent 12 }}
-          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.ingester }}
-          {{- if or .Values.global.extraEnv .Values.ingester.env $jaeger_queue_size }}
+            {{- toYaml .Values.monolithic.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.monolithic }}
+          {{- if or .Values.global.extraEnv .Values.monolithic.env $jaeger_queue_size }}
           env:
-            {{- $cpu_request := dig "requests" "cpu" nil .Values.ingester.resources }}
+            {{- $cpu_request := dig "requests" "cpu" nil .Values.monolithic.resources }}
             {{- if $cpu_request }}
               {{- $cpu_request_between_3_and_6 := include "mimir.parseCPU" (dict "value" $cpu_request) | float64 | min 6 | max 3 }}
             {{/* copy logic from operations/mimir/ingester.libsonnet */}}
@@ -200,7 +212,7 @@ spec:
             {{- with .Values.global.extraEnv }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- with .Values.ingester.env }}
+            {{- with .Values.monolithic.env }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- if $jaeger_queue_size }}
@@ -208,17 +220,16 @@ spec:
               value: {{$jaeger_queue_size | toString | toYaml }}
             {{- end }}
           {{- end }}
-          {{- if or .Values.global.extraEnvFrom .Values.ingester.extraEnvFrom }}
+          {{- if or .Values.global.extraEnvFrom .Values.monolithic.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- with .Values.ingester.extraEnvFrom }}
+            {{- with .Values.monolithic.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
 ---
-{{ end }}
 {{ end }}
 {{ end }}
 {{ end }}

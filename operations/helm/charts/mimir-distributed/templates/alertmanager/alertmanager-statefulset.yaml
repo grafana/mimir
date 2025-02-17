@@ -1,3 +1,4 @@
+{{- if has .Values.deploymentMode (list "microservices" "monolithic")}}
 {{- if and .Values.alertmanager.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 {{- if .Values.alertmanager.statefulSet.enabled -}}
 {{- $args := dict "ctx" . "component" "alertmanager" "memberlist" true -}}
@@ -228,6 +229,7 @@ spec:
           {{- end }}
 
 ---
+{{ end }}
 {{ end }}
 {{ end }}
 {{ end }}

@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if not .Values.enterprise.enabled -}}
 {{- if .Values.nginx.autoscaling.enabled }}
 {{- if eq (include "mimir.hpa.version" .) "autoscaling/v2beta1" }}
@@ -31,3 +32,4 @@ spec:
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{- end }}
