@@ -86,6 +86,8 @@ type Scheduler struct {
 	connectedFrontendClients prometheus.GaugeFunc
 	queueDuration            *prometheus.HistogramVec
 	inflightRequests         prometheus.Summary
+	invalidClusterValidation *prometheus.CounterVec
+	cluster                  string
 }
 
 type connectedFrontend struct {
@@ -103,6 +105,8 @@ type Config struct {
 
 	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
 	ServiceDiscovery schedulerdiscovery.Config `yaml:",inline"`
+
+	ClusterVerificationLabel string `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -123,9 +127,10 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 	var err error
 
 	s := &Scheduler{
-		cfg:    cfg,
-		log:    log,
-		limits: limits,
+		cfg:     cfg,
+		log:     log,
+		limits:  limits,
+		cluster: cfg.ClusterVerificationLabel,
 
 		schedulerInflightRequests: map[queue.RequestKey]*queue.SchedulerRequest{},
 		connectedFrontends:        map[string]*connectedFrontend{},
@@ -159,6 +164,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		},
 		[]string{"query_component"},
 	)
+	s.invalidClusterValidation = middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(registerer, "cortex_query_scheduler_frontend_client")
 
 	s.requestQueue, err = queue.NewRequestQueue(
 		s.log,
@@ -562,7 +568,8 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.SchedulerRequest, requestErr error) {
 	opts, err := s.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
-		middleware.ClientUserHeaderInterceptor},
+		middleware.ClientUserHeaderInterceptor,
+		middleware.ClusterUnaryClientInterceptor(s.cluster, s.invalidClusterValidation, s.log)},
 		nil)
 	if err != nil {
 		level.Warn(s.log).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)

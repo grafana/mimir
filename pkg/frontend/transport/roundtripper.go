@@ -13,6 +13,8 @@ import (
 	"strconv"
 
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/server"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // GrpcRoundTripper is similar to http.RoundTripper, but works with HTTP requests converted to protobuf messages.
@@ -20,13 +22,19 @@ type GrpcRoundTripper interface {
 	RoundTripGRPC(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error)
 }
 
-func AdaptGrpcRoundTripperToHTTPRoundTripper(r GrpcRoundTripper) http.RoundTripper {
-	return &grpcRoundTripperAdapter{roundTripper: r}
+func AdaptGrpcRoundTripperToHTTPRoundTripper(r GrpcRoundTripper, cluster string, serverMetrics *server.Metrics) http.RoundTripper {
+	return &grpcRoundTripperAdapter{
+		roundTripper:  r,
+		cluster:       cluster,
+		serverMetrics: serverMetrics,
+	}
 }
 
 // This adapter wraps GrpcRoundTripper and converted it into http.RoundTripper
 type grpcRoundTripperAdapter struct {
-	roundTripper GrpcRoundTripper
+	roundTripper  GrpcRoundTripper
+	cluster       string
+	serverMetrics *server.Metrics
 }
 
 type buffer struct {
@@ -39,7 +47,11 @@ func (b *buffer) Bytes() []byte {
 }
 
 func (a *grpcRoundTripperAdapter) RoundTrip(r *http.Request) (*http.Response, error) {
-	req, err := httpgrpc.FromHTTPRequest(r)
+	var metric *prometheus.CounterVec
+	if a.serverMetrics != nil {
+		metric = a.serverMetrics.InvalidClusterVerificationLabels
+	}
+	req, err := httpgrpc.FromHTTPRequestWithCluster(r, a.cluster, metric)
 	if err != nil {
 		return nil, err
 	}

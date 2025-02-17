@@ -3,6 +3,7 @@
 package blockbuilder
 
 import (
+	"github.com/grafana/dskit/middleware"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -13,6 +14,7 @@ type blockBuilderMetrics struct {
 	fetchErrors              *prometheus.CounterVec
 	consumerLagRecords       *prometheus.GaugeVec
 	blockCounts              *prometheus.CounterVec
+	invalidClusterValidation *prometheus.CounterVec
 }
 
 func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
@@ -48,6 +50,8 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 		Name: "cortex_blockbuilder_blocks_produced_total",
 		Help: "Total number of blocks produced for specific block ranges (next, current, previous).",
 	}, []string{"block_time"})
+
+	m.invalidClusterValidation = middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_blockbuilder_scheduler_client")
 
 	return m
 }
