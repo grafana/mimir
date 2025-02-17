@@ -18,15 +18,15 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOp []types.StringOperator) SeriesMetadataFunction {
+func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps []types.StringOperator) SeriesMetadataFunction {
 	return func(seriesMetadata []types.SeriesMetadata, _ *limiting.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
 		dst := dstLabelOp.GetValue()
 		if !model.LabelName(dst).IsValid() {
 			return nil, fmt.Errorf("invalid destination label name in label_join(): %s", dst)
 		}
 		separator := separatorOp.GetValue()
-		srcLabels := make([]string, len(srcLabelOp))
-		for i, op := range srcLabelOp {
+		srcLabels := make([]string, len(srcLabelOps))
+		for i, op := range srcLabelOps {
 			src := op.GetValue()
 			if !model.LabelName(src).IsValid() {
 				return nil, fmt.Errorf("invalid source label name in label_join(): %s", dst)
@@ -35,19 +35,22 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOp [
 		}
 
 		lb := labels.NewBuilder(labels.EmptyLabels())
-		labelValues := make([]string, 0, len(srcLabels))
 
+		var sb strings.Builder
 		for i := range seriesMetadata {
-			labelValues = labelValues[:0]
+			sb.Reset()
 
-			for _, srcLabel := range srcLabels {
+			for j, srcLabel := range srcLabels {
+				if j > 0 {
+					sb.WriteString(separator)
+				}
 				// Get returns an empty string for missing labels, so this is safe and gives the desired output
 				// where a series may be missing a source label.
-				labelValues = append(labelValues, seriesMetadata[i].Labels.Get(srcLabel))
+				sb.WriteString(seriesMetadata[i].Labels.Get(srcLabel))
 			}
 
 			lb.Reset(seriesMetadata[i].Labels)
-			lb.Set(dst, strings.Join(labelValues, separator))
+			lb.Set(dst, sb.String())
 			seriesMetadata[i].Labels = lb.Labels()
 		}
 
