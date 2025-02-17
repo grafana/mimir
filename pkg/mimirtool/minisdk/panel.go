@@ -89,17 +89,43 @@ type (
 	GaugePanel struct {
 		Targets []Target `json:"targets,omitempty"`
 	}
-	CustomPanel map[string]interface{}
+	CustomPanel struct {
+		Targets []Target `json:"targets,omitempty"`
+	}
 )
 
-// for an any panel
+// Target describes an expression with which the Panel fetches data from a data source.
+// A Panel may have zero, one or multiple targets.
+// Not all Panel types support targets. For example, a text Panel cannot have any targets.
+// Panel types that do support target are not guaranteed to have any. For example, a gauge Panel can be created without
+// any configured queries. In this case, the Panel will have no targets.
 type Target struct {
 	Datasource *DatasourceRef `json:"datasource,omitempty"`
 	Expr       string         `json:"expr,omitempty"`
 }
 
-// GetTargets is iterate over all panel targets. It just returns nil if
-// no targets defined for panel of concrete type.
+// SupportsTargets returns true if the Panel type supports targets.
+// The fact that a Panel type supports targets does not guarantee that the Panel has any; it is valid for a Panel to
+// have no targets, even if it supports them.
+func (p *Panel) SupportsTargets() bool {
+	switch p.OfType {
+	case
+		GraphType,
+		TableType,
+		SinglestatType,
+		StatType,
+		BarGaugeType,
+		HeatmapType,
+		TimeseriesType,
+		GaugeType,
+		CustomType:
+		return true
+	default:
+		return false
+	}
+}
+
+// GetTargets for the Panel. GetTargets returns nil if the Panel has no targets.
 func (p *Panel) GetTargets() *[]Target {
 	switch p.OfType {
 	case GraphType:
@@ -118,6 +144,8 @@ func (p *Panel) GetTargets() *[]Target {
 		return &p.TimeseriesPanel.Targets
 	case GaugeType:
 		return &p.GaugePanel.Targets
+	case CustomType:
+		return &p.CustomPanel.Targets
 	default:
 		return nil
 	}
@@ -125,7 +153,6 @@ func (p *Panel) GetTargets() *[]Target {
 
 type probePanel struct {
 	CommonPanel
-	//	json.RawMessage
 }
 
 func (p *Panel) UnmarshalJSON(b []byte) (err error) {
@@ -203,7 +230,7 @@ func (p *Panel) UnmarshalJSON(b []byte) (err error) {
 			p.GaugePanel = &gauge
 		}
 	default:
-		var custom = make(CustomPanel)
+		var custom CustomPanel
 		p.OfType = CustomType
 		if err = json.Unmarshal(b, &custom); err == nil {
 			p.CustomPanel = &custom

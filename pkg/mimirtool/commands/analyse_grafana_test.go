@@ -23,6 +23,8 @@ var dashboardMetrics = []string{
 	"code_resource:apiserver_request_total:rate5m",
 	"go_goroutines",
 	"kube_pod_info",
+	"my_lovely_metric",
+	"polystat_panel_metric",
 	"process_cpu_seconds_total",
 	"process_resident_memory_bytes",
 	"workqueue_adds_total",
@@ -70,19 +72,4 @@ func BenchmarkParseMetricsInBoard(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		analyze.ParseMetricsInBoard(output, board)
 	}
-}
-
-func TestParseMetricsInBoardWithTimeseriesPanel(t *testing.T) {
-	var board minisdk.Board
-	output := &analyze.MetricsInGrafana{}
-	output.OverallMetrics = make(map[string]struct{})
-
-	buf, err := loadFile("testdata/timeseries.json")
-	require.NoError(t, err)
-
-	err = json.Unmarshal(buf, &board)
-	require.NoError(t, err)
-
-	analyze.ParseMetricsInBoard(output, board)
-	assert.Equal(t, []string{"my_lovely_metric"}, output.Dashboards[0].Metrics)
 }

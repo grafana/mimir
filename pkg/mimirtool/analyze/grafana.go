@@ -6,7 +6,6 @@
 package analyze
 
 import (
-	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -157,48 +156,14 @@ func metricsFromTemplating(templating minisdk.Templating, metrics map[string]str
 	return parseErrors
 }
 
-// Workaround to support Grafana "timeseries" panel. This should
-// be implemented in grafana/tools-sdk, and removed from here.
-func getCustomPanelTargets(panel minisdk.Panel) *[]minisdk.Target {
-	if panel.CommonPanel.Type != "timeseries" {
-		return nil
-	}
-
-	// Heavy handed approach to re-marshal the panel and parse it again
-	// so that we can extract the 'targets' field in the right format.
-
-	bytes, err := json.Marshal(panel.CustomPanel)
-	if err != nil {
-		log.Debugln("msg", "panel re-marshalling error", "err", err)
-		return nil
-	}
-
-	type panelType struct {
-		Targets []minisdk.Target `json:"targets,omitempty"`
-	}
-
-	var parsedPanel panelType
-	err = json.Unmarshal(bytes, &parsedPanel)
-	if err != nil {
-		log.Debugln("msg", "panel parsing error", "err", err)
-		return nil
-	}
-
-	return &parsedPanel.Targets
-}
-
 func metricsFromPanel(panel minisdk.Panel, metrics map[string]struct{}) []error {
-	var parseErrors []error
+	if !panel.SupportsTargets() {
+		return []error{fmt.Errorf("unsupported panel type: %q", panel.CommonPanel.Type)}
+	}
 
 	targets := panel.GetTargets()
-	if targets == nil {
-		targets = getCustomPanelTargets(panel)
-		if targets == nil {
-			parseErrors = append(parseErrors, fmt.Errorf("unsupported panel type: %q", panel.CommonPanel.Type))
-			return parseErrors
-		}
-	}
 
+	var parseErrors []error
 	for _, target := range *targets {
 		// Prometheus has this set.
 		if target.Expr == "" {

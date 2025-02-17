@@ -26,6 +26,58 @@
          "span": 12,
          "title": "Notice",
          "type": "text"
+      },
+      {
+         "datasource": "$datasource",
+         "gridPos": {
+            "h": 9,
+            "w": 12,
+            "x": 0,
+            "y": 0
+         },
+         "id": 3,
+         "targets": [
+            {
+               "exemplar": true,
+               "expr": "1+2+3+count(my_lovely_metric)",
+               "interval": "",
+               "legendFormat": "",
+               "refId": "A"
+            }
+         ],
+         "title": "Timeseries panel title",
+         "type": "timeseries"
+      },
+      {
+         "datasource": {
+            "default": false,
+            "type": "prometheus",
+            "uid": "prometheus"
+         },
+         "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 80
+         },
+         "id": 4,
+         "pluginVersion": "2.1.14",
+         "targets": [
+            {
+               "datasource": {
+                  "type": "prometheus",
+                  "uid": "prometheus"
+               },
+               "editorMode": "code",
+               "expr": "polystat_panel_metric{}",
+               "instant": false,
+               "legendFormat": "__auto",
+               "range": true,
+               "refId": "A"
+            }
+         ],
+         "title": "Polystat",
+         "type": "grafana-polystat-panel"
       }
    ],
    "refresh": "10s",
