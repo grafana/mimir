@@ -205,9 +205,9 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "label_replace(a_X, 'l2', '$1', 'l', '(.*)')",
 		},
-		//{
-		//	Expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
-		//},
+		{
+			Expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
+		},
 		{
 			Expr:             "sort(a_X)",
 			InstantQueryOnly: true,
