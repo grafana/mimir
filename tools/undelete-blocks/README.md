@@ -1,4 +1,4 @@
-# Undelete Blocks
+# `undelete-blocks`
 
 This program is a disaster recovery tool that can restore deleted Mimir blocks in object storage.
 
@@ -68,7 +68,7 @@ Files not listed within the `meta.json` of a block are not restored if they were
 
 ## Running
 
-Running `go build .` in this directory builds the program. Then use an example below as a guide.
+Run `go build` in this directory to build the program. Then, use an example below as a guide.
 
 ### Example for Google Cloud Storage
 

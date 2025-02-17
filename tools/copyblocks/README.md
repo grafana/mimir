@@ -1,4 +1,4 @@
-# Copyblocks
+# `copyblocks`
 
 This program can copy Mimir blocks between two buckets.
 
@@ -18,7 +18,7 @@ The currently supported services are Amazon Simple Storage Service (S3 and S3-co
 
 ## Running
 
-Running `go build` in this directory builds the program. Then use an example below as a guide.
+Run `go build` in this directory to build the program. Then, use an example below as a guide.
 
 ### Example for Google Cloud Storage
 

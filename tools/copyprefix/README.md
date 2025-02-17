@@ -1,4 +1,4 @@
-# Copyprefix
+# `copyprefix`
 
 This program copies objects by prefix between two buckets. If your infrastructure is largely on a single object storage service their respective CLI tool may be more convenient to use.
 
@@ -15,7 +15,7 @@ The currently supported services are Amazon Simple Storage Service (S3 and S3-co
 
 ## Running
 
-Running `go build` in this directory builds the program. Then use an example below as a guide.
+Run `go build` in this directory to build the program. Then, use an example below as a guide.
 
 ### Example for Google Cloud Storage
 
