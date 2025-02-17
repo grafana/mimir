@@ -27,7 +27,7 @@ const (
 )
 
 var (
-	errNoClusterProvided = grpcutil.Status(codes.InvalidArgument, "no cluster provided").Err()
+	errNoClusterProvided = grpcutil.Status(codes.Internal, "no cluster provided").Err()
 )
 
 func NewRequestInvalidClusterVerficationLabelsTotalCounter(reg prometheus.Registerer, prefix string) *prometheus.CounterVec {
@@ -74,7 +74,7 @@ func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.Co
 		if invalidCluster != nil {
 			invalidCluster.WithLabelValues("grpc", method, cluster, failureClient).Inc()
 		}
-		return grpcutil.Status(codes.InvalidArgument, msg).Err()
+		return grpcutil.Status(codes.Internal, msg).Err()
 	}
 }
 
@@ -94,7 +94,7 @@ func handleError(err error, cluster string, method string, invalidCluster *prome
 					if invalidCluster != nil {
 						invalidCluster.WithLabelValues("grpc", method, cluster, failureServer).Inc()
 					}
-					return grpcutil.Status(codes.InvalidArgument, msg).Err()
+					return grpcutil.Status(codes.Internal, msg).Err()
 				}
 			}
 		}
