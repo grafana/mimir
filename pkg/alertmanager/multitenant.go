@@ -85,6 +85,7 @@ type MultitenantAlertmanagerConfig struct {
 
 	GrafanaAlertmanagerCompatibilityEnabled bool   `yaml:"grafana_alertmanager_compatibility_enabled" category:"experimental"`
 	GrafanaAlertmanagerTenantSuffix         string `yaml:"grafana_alertmanager_conditionally_skip_tenant_suffix" category:"experimental"`
+	StrictInitializationMode                bool   `yaml:"strict_initialization_mode" category:"experimental"`
 
 	MaxConcurrentGetRequestsPerTenant int `yaml:"max_concurrent_get_requests_per_tenant" category:"advanced"`
 
@@ -129,6 +130,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.BoolVar(&cfg.EnableAPI, "alertmanager.enable-api", true, "Enable the alertmanager config API.")
 	f.BoolVar(&cfg.GrafanaAlertmanagerCompatibilityEnabled, "alertmanager.grafana-alertmanager-compatibility-enabled", false, "Enable routes to support the migration and operation of the Grafana Alertmanager.")
 	f.StringVar(&cfg.GrafanaAlertmanagerTenantSuffix, "alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix", "", "Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration.")
+	f.BoolVar(&cfg.StrictInitializationMode, "alertmanager.strict-initialization-mode", false, "Skip starting the Alertmanager for tenants without a non-default, non-empty configuration.")
 	f.IntVar(&cfg.MaxConcurrentGetRequestsPerTenant, "alertmanager.max-concurrent-get-requests-per-tenant", 0, "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.")
 
 	f.BoolVar(&cfg.EnableStateCleanup, "alertmanager.enable-state-cleanup", true, "Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration.")
@@ -677,7 +679,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 		}
 
 		if !startAM {
-			level.Debug(am.logger).Log("msg", "not initializing alertmanager for grafana tenant without a promoted, non-default configuration", "user", user)
+			level.Debug(am.logger).Log("msg", "not initializing alertmanager for tenant", "user", user)
 			amInitSkipped[user] = struct{}{}
 			continue
 		}
@@ -723,20 +725,27 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 // computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
 // It returns the final configuration and a bool indicating whether the Alertmanager should be started for the tenant.
 func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
+	isGrafanaCfgUsable := cfgs.Grafana.Promoted && !cfgs.Grafana.Default
+	isMimirCfgUsable := cfgs.Mimir.RawConfig != "" && cfgs.Mimir.RawConfig != am.fallbackConfig
+	if am.cfg.StrictInitializationMode && !isGrafanaCfgUsable && !isMimirCfgUsable {
+		// Skip starting the Alertmanager if we have no usable configurations.
+		return amConfig{}, false, nil
+	}
+
 	cfg := amConfig{
 		AlertConfigDesc: cfgs.Mimir,
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 
 	// If the Grafana configuration is either default, not promoted, or empty, use the Mimir configuration.
-	if !cfgs.Grafana.Promoted || cfgs.Grafana.Default || cfgs.Grafana.RawConfig == "" {
+	if !isGrafanaCfgUsable || cfgs.Grafana.RawConfig == "" {
 		level.Debug(am.logger).Log("msg", "using mimir config", "user", cfgs.Mimir.User)
 		isGrafanaTenant := am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(cfgs.Mimir.User, am.cfg.GrafanaAlertmanagerTenantSuffix)
 		return cfg, !isGrafanaTenant, nil
 	}
 
 	// If the Mimir configuration is either default or empty, use the Grafana configuration.
-	if cfgs.Mimir.RawConfig == am.fallbackConfig || cfgs.Mimir.RawConfig == "" {
+	if !isMimirCfgUsable {
 		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", cfgs.Mimir.User)
 		cfg, err := createUsableGrafanaConfig(cfgs.Grafana, am.fallbackConfig)
 		return cfg, true, err
