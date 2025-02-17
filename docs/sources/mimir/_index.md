@@ -63,3 +63,5 @@ Grafana Mimir enables users to ingest Prometheus or OpenTelemetry metrics, run q
 ## Explore
 
 {{< card-grid key="cards" type="simple" >}}
+
+Test
