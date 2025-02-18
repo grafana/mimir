@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"golang.org/x/time/rate"
@@ -70,6 +71,10 @@ type QueryFrontendConfig struct {
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 
 	MaxRetriesRate float64 `yaml:"max_retries_rate"`
+
+	// ShortCircuitConstantQueries enables short-circuiting of constant queries.
+	// If enabled, constant queries are evaluated locally and not sent to the query-frontend.
+	ShortCircuitConstantQueries bool `yaml:"short_circuit_constant_queries"`
 }
 
 func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
@@ -84,6 +89,7 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&c.QueryResultResponseFormat, "ruler.query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from query-frontends. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.Float64Var(&c.MaxRetriesRate, "ruler.query-frontend.max-retries-rate", 170, "Maximum number of retries for failed queries per second.")
+	f.BoolVar(&c.ShortCircuitConstantQueries, "ruler.query-frontend.short-circuit-constant-queries", false, "Enable short-circuiting constant queries (without selectors), terminating them in the ruler.")
 }
 
 func (c *QueryFrontendConfig) Validate() error {
@@ -126,6 +132,8 @@ type RemoteQuerier struct {
 	logger                             log.Logger
 	preferredQueryResultResponseFormat string
 	decoders                           map[string]decoder
+	shortCircuitConstantQueries        bool
+	engine                             *promql.Engine
 }
 
 var jsonDecoderInstance = jsonDecoder{}
@@ -137,11 +145,12 @@ func NewRemoteQuerier(
 	timeout time.Duration,
 	maxRetryRate float64, // maxRetryRate is the maximum number of retries for failed queries per second.
 	preferredQueryResultResponseFormat string,
+	shortCircuitConstantQueries bool,
 	prometheusHTTPPrefix string,
 	logger log.Logger,
 	middlewares ...Middleware,
 ) *RemoteQuerier {
-	return &RemoteQuerier{
+	q := &RemoteQuerier{
 		client:                             client,
 		timeout:                            timeout,
 		retryLimiter:                       rate.NewLimiter(rate.Limit(maxRetryRate), 1),
@@ -153,7 +162,17 @@ func NewRemoteQuerier(
 			jsonDecoderInstance.ContentType():     jsonDecoderInstance,
 			protobufDecoderInstance.ContentType(): protobufDecoderInstance,
 		},
+		shortCircuitConstantQueries: shortCircuitConstantQueries,
 	}
+
+	if shortCircuitConstantQueries {
+		q.engine = promql.NewEngine(promql.EngineOpts{
+			MaxSamples: 1e6,
+			Timeout:    5 * time.Second,
+		})
+	}
+
+	return q
 }
 
 // Read satisfies Prometheus remote.ReadClient.
@@ -236,10 +255,40 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSerie
 	return remote.FromQueryResult(sortSeries, res), nil
 }
 
+func hasSelector(expr parser.Node) bool {
+	switch e := expr.(type) {
+	case *parser.VectorSelector, *parser.MatrixSelector:
+		return true
+	default:
+		for _, child := range parser.Children(e) {
+			if hasSelector(child) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
 // Query performs a query for the given time.
 func (q *RemoteQuerier) Query(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
 	logger, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Query")
 	defer logger.Span.Finish()
+
+	if q.shortCircuitConstantQueries {
+		parsed, err := parser.ParseExpr(qs)
+		if err != nil {
+			return promql.Vector{}, err
+		}
+		if !hasSelector(parsed) {
+			level.Debug(logger).Log("msg", "short-circuiting constant query evaluation", "qs", qs, "tm", t)
+			query, err := q.engine.NewInstantQuery(ctx, &remote.Storage{}, &promql.PrometheusQueryOpts{}, qs, t)
+			if err != nil {
+				return promql.Vector{}, err
+			}
+			res := query.Exec(ctx)
+			return res.Vector()
+		}
+	}
 
 	return q.query(ctx, qs, t, logger)
 }
