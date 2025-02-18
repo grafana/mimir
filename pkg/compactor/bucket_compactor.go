@@ -395,10 +395,12 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		c.metrics.compactionBlocksVerificationFailed.Inc()
 	}
 
+	// We create a bucket backed by the local compaction directory so that we can
+	var uploadSparseHeaders = true
 	fsbkt, err := filesystem.NewBucket(subDir)
 	if err != nil {
-		uploadSpaceHeaders = false
-		level.Warn(jobLogger).Log("msg", "failed to create local bucket, skipping sparse header upload", "err", err)
+		uploadSparseHeaders = false
+		level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
 	}
 
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
@@ -407,7 +409,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 		uploadedBlocks.Inc()
 
-		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
+		blockID := blockToUpload.ulid.String()
+		bdir := filepath.Join(subDir, blockID)
 
 		// When splitting is enabled, we need to inject the shard ID as an external label.
 		newLabels := job.Labels().Map()
@@ -439,8 +442,10 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
 		}
 
-		if uploadSpaceHeaders {
-			// NewStreamBinaryReader reads a block's index writes the block's index-header and sparse-index-header files to disk
+		if uploadSparseHeaders {
+			// NewStreamBinaryReader reads a block's index and writes index-header and sparse-index-header
+			// files to disk. Discard the reader, only needs to be initialized without error for
+			// these files to be written.
 			if _, err := indexheader.NewStreamBinaryReader(
 				ctx,
 				jobLogger,
@@ -449,21 +454,17 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 				blockToUpload.ulid,
 				mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 				indexheader.NewStreamBinaryReaderMetrics(nil),
-				indexheader.Config{MaxIdleFileHandles: 1},
+				indexheader.Config{},
 			); err != nil {
-				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockToUpload.ulid.String(), "err", err)
+				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockID, "err", err)
 				return nil
 			}
 
-			err := objstore.UploadFile(
-				ctx,
-				jobLogger,
-				c.bkt,
-				path.Join(bdir, block.SparseIndexHeaderFilename),
-				path.Join(blockToUpload.ulid.String(), block.SparseIndexHeaderFilename),
-			)
-			if err != nil {
-				level.Warn(jobLogger).Log("msg", "failed to upload sparse index headers", "block", blockToUpload.ulid.String(), "err", err)
+			// upload local sparse-index-header to object storage
+			src := path.Join(bdir, block.SparseIndexHeaderFilename)
+			dst := path.Join(blockID, block.SparseIndexHeaderFilename)
+			if err := objstore.UploadFile(ctx, jobLogger, c.bkt, src, dst); err != nil {
+				level.Warn(jobLogger).Log("msg", "failed to upload sparse index headers", "block", blockID, "err", err)
 				return nil
 			}
 		}

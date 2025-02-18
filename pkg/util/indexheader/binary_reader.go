@@ -94,8 +94,8 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 		return errors.Wrap(err, "add index meta")
 	}
 
-	// Copying symbols and posting offsets into the encbuffer both require a range query against the provider.
-	// We make these calls in parallel and then syncronize before writing to buf
+	// Copying symbols and posting offsets into the encbuffer both require a range request against
+	// the objstore provider. We make these calls in parallel and then syncronize before writing to buf
 	var g errgroup.Group
 	var sym, tbl io.ReadCloser
 	var symerr, tblerr error
