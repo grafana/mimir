@@ -424,21 +424,21 @@ func BenchmarkBinaryWrite(t *testing.B) {
 func BenchmarkBinaryWrite_DelayedBucket(t *testing.B) {
 
 	tests := []struct {
-		low, high time.Duration
+		delay time.Duration
 	}{
-		{0, 10},
-		{0, 20},
-		{0, 50},
-		{10, 20},
+		{1 * time.Millisecond},
+		{5 * time.Millisecond},
+		{10 * time.Millisecond},
+		{20 * time.Millisecond},
 	}
 
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("Between_%d_%d_ms_delay", test.low, test.high), func(t *testing.B) {
+		t.Run(fmt.Sprintf("max_delay_%d_ns", test.delay), func(t *testing.B) {
 			ctx := context.Background()
 			tmpDir := t.TempDir()
 			bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 			require.NoError(t, err)
-			delaybkt := bucket.NewDelayedBucketClient(bkt, test.low, test.high)
+			delaybkt := bucket.NewDelayedBucketClient(bkt, 0, test.delay)
 			defer func() { require.NoError(t, delaybkt.Close()) }()
 
 			m := prepareIndexV2Block(t, tmpDir, delaybkt)
