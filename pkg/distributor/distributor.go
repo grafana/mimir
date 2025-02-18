@@ -374,7 +374,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	clientMetrics := ingester_client.NewMetrics(reg)
 	if cfg.IngesterClientFactory == nil {
 		cfg.IngesterClientFactory = ring_client.PoolInstFunc(func(inst ring.InstanceDesc) (ring_client.PoolClient, error) {
-			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics)
+			return ingester_client.MakeIngesterClient(inst, clientConfig, clientMetrics, nil)
 		})
 	}
 
@@ -1787,7 +1787,30 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 			ctx = grpcutil.AppendMessageSizeToOutgoingContext(ctx, req) // Let ingester know the size of the message, without needing to read the message first.
 
 			_, err = c.Push(ctx, req)
+			if err != nil {
+				stat, _ := grpcutil.ErrorToStatus(err)
+				if stat != nil {
+					details := stat.Details()
+					detailsAsString := make([]string, 0, len(details))
+					for _, det := range details {
+						if errDetails, ok := det.(*mimirpb.ErrorDetails); ok {
+							detailsAsString = append(detailsAsString, errDetails.Cause.String())
+						}
+						if errDetails, ok := det.(*grpcutil.ErrorDetails); ok {
+							detailsAsString = append(detailsAsString, errDetails.Cause.String())
+						}
+					}
+					dets := fmt.Sprintf("%v", detailsAsString)
+					level.Info(d.log).Log("msg", "error is convertible to status", "code", stat.Code(), "errMessage", stat.Message(), "details", dets)
+				} else {
+					level.Info(d.log).Log("msg", "error is not convertible to status", "err", err)
+				}
+			}
 			err = wrapIngesterPushError(err, ingester.Id)
+			var ingesterPushErr ingesterPushError
+			if errors.As(err, &ingesterPushErr) {
+				level.Info(d.log).Log("msg", "error is an ingesterPushError", "cause", ingesterPushErr.Cause().String(), "errorMessage", ingesterPushErr.Error())
+			}
 			err = wrapDeadlineExceededPushError(err)
 
 			return err

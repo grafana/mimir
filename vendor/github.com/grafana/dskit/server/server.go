@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	httpgrpc_server "github.com/grafana/dskit/httpgrpc/server"
 	"github.com/grafana/dskit/log"
@@ -79,15 +80,18 @@ type Config struct {
 	// for details. A generally useful value is 1.1.
 	MetricsNativeHistogramFactor float64 `yaml:"-"`
 
-	HTTPListenNetwork    string `yaml:"http_listen_network"`
-	HTTPListenAddress    string `yaml:"http_listen_address"`
-	HTTPListenPort       int    `yaml:"http_listen_port"`
-	HTTPConnLimit        int    `yaml:"http_listen_conn_limit"`
-	GRPCListenNetwork    string `yaml:"grpc_listen_network"`
-	GRPCListenAddress    string `yaml:"grpc_listen_address"`
-	GRPCListenPort       int    `yaml:"grpc_listen_port"`
-	GRPCConnLimit        int    `yaml:"grpc_listen_conn_limit"`
-	ProxyProtocolEnabled bool   `yaml:"proxy_protocol_enabled"`
+	HTTPListenNetwork             string                 `yaml:"http_listen_network"`
+	HTTPListenAddress             string                 `yaml:"http_listen_address"`
+	HTTPListenPort                int                    `yaml:"http_listen_port"`
+	HTTPConnLimit                 int                    `yaml:"http_listen_conn_limit"`
+	GRPCListenNetwork             string                 `yaml:"grpc_listen_network"`
+	GRPCListenAddress             string                 `yaml:"grpc_listen_address"`
+	GRPCListenPort                int                    `yaml:"grpc_listen_port"`
+	GRPCConnLimit                 int                    `yaml:"grpc_listen_conn_limit"`
+	ProxyProtocolEnabled          bool                   `yaml:"proxy_protocol_enabled"`
+	ClusterVerificationLabel      string                 `yaml:"cluster_verification_label"`
+	ClusterVerificationLabelCheck ClusterCheckEnum       `yaml:"cluster_verification_label_check"`
+	AuxiliaryURLPaths             flagext.StringSliceCSV `yaml:"auxiliary_url_paths"`
 
 	CipherSuites  string    `yaml:"tls_cipher_suites"`
 	MinVersion    string    `yaml:"tls_min_version"`
@@ -184,7 +188,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.GRPCListenAddress, "server.grpc-listen-address", "", "gRPC server listen address.")
 	f.IntVar(&cfg.GRPCListenPort, "server.grpc-listen-port", 9095, "gRPC server listen port.")
 	f.IntVar(&cfg.GRPCConnLimit, "server.grpc-conn-limit", 0, "Maximum number of simultaneous grpc connections, <=0 to disable")
-	f.BoolVar(&cfg.RegisterInstrumentation, "server.register-instrumentation", true, "Register the intrumentation handlers (/metrics etc).")
+	f.BoolVar(&cfg.RegisterInstrumentation, "server.register-instrumentation", true, "Register the instrumentation handlers (/metrics etc).")
 	f.BoolVar(&cfg.ReportGRPCCodesInInstrumentationLabel, "server.report-grpc-codes-in-instrumentation-label-enabled", false, "If set to true, gRPC statuses will be reported in instrumentation labels with their string representations. Otherwise, they will be reported as \"error\".")
 	f.DurationVar(&cfg.ServerGracefulShutdownTimeout, "server.graceful-shutdown-timeout", 30*time.Second, "Timeout for graceful shutdowns")
 	f.DurationVar(&cfg.HTTPServerReadTimeout, "server.http-read-timeout", 30*time.Second, "Read timeout for entire HTTP request, including headers and body.")
@@ -216,6 +220,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.LogRequestExcludeHeadersList, "server.log-request-headers-exclude-list", "", "Comma separated list of headers to exclude from loggin. Only used if server.log-request-headers is true.")
 	f.BoolVar(&cfg.LogRequestAtInfoLevel, "server.log-request-at-info-level-enabled", false, "Optionally log requests at info level instead of debug level. Applies to request headers as well if server.log-request-headers is enabled.")
 	f.BoolVar(&cfg.ProxyProtocolEnabled, "server.proxy-protocol-enabled", false, "Enables PROXY protocol.")
+	f.StringVar(&cfg.ClusterVerificationLabel, "server.cluster-verification-label", "", "Optionally define the server's cluster verification label, which are sent with requests.")
+	f.Var(&cfg.ClusterVerificationLabelCheck, "server.cluster-verification-label-check", "Enable validation that HTTP and/or gRPC requests have the configured -server.cluster-verification-label. Ignored if the latter is not set. One of "+cfg.ClusterVerificationLabelCheck.Alternatives()+".")
+	f.Var(&cfg.AuxiliaryURLPaths, "server.auxiliary-url-paths", "Optionally define auxiliary URL paths, that should not be validated wrt. cluster verification label.")
 	f.DurationVar(&cfg.Throughput.LatencyCutoff, "server.throughput.latency-cutoff", 0, "Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.")
 	f.StringVar(&cfg.Throughput.Unit, "server.throughput.unit", "samples_processed", "Unit of the server throughput metric, for example 'processed_bytes' or 'samples_processed'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name.")
 }
@@ -399,6 +406,9 @@ func newServer(cfg Config, metrics *Metrics) (*Server, error) {
 		middleware.HTTPGRPCTracingInterceptor(router), // This must appear after the OpenTracingServerInterceptor.
 		middleware.UnaryServerInstrumentInterceptor(metrics.RequestDuration, grpcInstrumentationOptions...),
 	}
+	if cfg.ClusterVerificationLabel != "" && cfg.ClusterVerificationLabelCheck.GRPCEnabled() {
+		grpcMiddleware = append(grpcMiddleware, middleware.ClusterUnaryServerInterceptor(cfg.ClusterVerificationLabel, metrics.InvalidClusterVerificationLabels, logger))
+	}
 	grpcMiddleware = append(grpcMiddleware, cfg.GRPCMiddleware...)
 
 	grpcStreamMiddleware := []grpc.StreamServerInterceptor{
@@ -528,10 +538,14 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		logSourceIPs = nil
 	}
 
+	if cfg.DoNotAddDefaultHTTPMiddleware {
+		return cfg.HTTPMiddleware, nil
+	}
+
 	defaultLogMiddleware := middleware.NewLogMiddleware(logger, cfg.LogRequestHeaders, cfg.LogRequestAtInfoLevel, logSourceIPs, strings.Split(cfg.LogRequestExcludeHeadersList, ","))
 	defaultLogMiddleware.DisableRequestSuccessLog = cfg.DisableRequestSuccessLog
 
-	defaultHTTPMiddleware := []middleware.Interface{
+	httpMiddleware := []middleware.Interface{
 		middleware.RouteInjector{
 			RouteMatcher: router,
 		},
@@ -552,14 +566,10 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 			RequestThroughput: metrics.RequestThroughput,
 		},
 	}
-	var httpMiddleware []middleware.Interface
-	if cfg.DoNotAddDefaultHTTPMiddleware {
-		httpMiddleware = cfg.HTTPMiddleware
-	} else {
-		httpMiddleware = append(defaultHTTPMiddleware, cfg.HTTPMiddleware...)
+	if cfg.ClusterVerificationLabel != "" && cfg.ClusterVerificationLabelCheck.HTTPEnabled() {
+		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.ClusterVerificationLabel, cfg.AuxiliaryURLPaths, metrics.InvalidClusterVerificationLabels, logger))
 	}
-
-	return httpMiddleware, nil
+	return append(httpMiddleware, cfg.HTTPMiddleware...), nil
 }
 
 // Run the server; blocks until SIGTERM (if signal handling is enabled), an error is received, or Stop() is called.
@@ -618,6 +628,11 @@ func handleGRPCError(err error, errChan chan error) {
 	case errChan <- err:
 	default:
 	}
+}
+
+// Cluster returns the configured server cluster verification label.
+func (s *Server) ClusterVerificationLabel() string {
+	return s.cfg.ClusterVerificationLabel
 }
 
 // HTTPListenAddr exposes `net.Addr` that `Server` is listening to for HTTP connections.

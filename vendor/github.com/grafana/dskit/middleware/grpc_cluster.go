@@ -6,48 +6,140 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/status"
+	"github.com/grafana/dskit/clusterutil"
+	"github.com/grafana/dskit/grpcutil"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/metadata"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 const (
-	MetadataClusterKey = "x-cluster"
+	failureClient         = "client"
+	failureServer         = "server"
+	protocolLabel         = "protocol"
+	methodLabel           = "method"
+	requestClusterLabel   = "request_cluster_label"
+	failingComponentLabel = "failing_component"
 )
 
+var (
+	errNoClusterProvided = grpcutil.Status(codes.Internal, "no cluster provided").Err()
+)
+
+func NewRequestInvalidClusterVerficationLabelsTotalCounter(reg prometheus.Registerer, prefix string) *prometheus.CounterVec {
+	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name:        fmt.Sprintf("%s_request_invalid_cluster_verification_labels_total", prefix),
+		Help:        "Number of requests with invalid cluster verification label.",
+		ConstLabels: nil,
+	}, []string{protocolLabel, methodLabel, requestClusterLabel, failingComponentLabel})
+}
+
 // ClusterUnaryClientInterceptor propagates the given cluster info to gRPC metadata.
-func ClusterUnaryClientInterceptor(cluster string) grpc.UnaryClientInterceptor {
+func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.CounterVec, logger log.Logger) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		if cluster != "" {
-			ctx = metadata.AppendToOutgoingContext(ctx, MetadataClusterKey, cluster)
+		// We skip the gRPC health check.
+		if method == healthpb.Health_Check_FullMethodName {
+			return invoker(ctx, method, req, reply, cc, opts...)
 		}
 
-		return invoker(ctx, method, req, reply, cc, opts...)
+		if cluster == "" {
+			if logger != nil {
+				level.Warn(logger).Log("msg", "no cluster provided", "method", method)
+			}
+			if invalidCluster != nil {
+				invalidCluster.WithLabelValues("grpc", method, cluster, failureClient).Inc()
+			}
+			return errNoClusterProvided
+		}
+
+		reqCluster, err := clusterutil.GetClusterFromIncomingContext(ctx, logger)
+		switch {
+		case (err == nil && reqCluster == cluster) || errors.Is(err, clusterutil.ErrNoClusterVerificationLabel):
+			// The incoming context either contains no cluster verification label,
+			// or it already contains one which is equal to the expected one, which
+			// is the cluster parameter.
+			// In both cases we propagate the latter to the outgoing context.
+			ctx = clusterutil.PutClusterIntoOutgoingContext(ctx, cluster)
+			return handleError(invoker(ctx, method, req, reply, cc, opts...), cluster, method, invalidCluster, logger)
+		case err == nil && reqCluster != cluster:
+			return grpcutil.Status(codes.Internal, fmt.Sprintf("wrong cluster verification label in the incoming context: %q, expected: %q", reqCluster, cluster)).Err()
+		default:
+			return err
+		}
 	}
+}
+
+func handleError(err error, cluster string, method string, invalidCluster *prometheus.CounterVec, logger log.Logger) error {
+	if err == nil {
+		return nil
+	}
+	if stat, ok := grpcutil.ErrorToStatus(err); ok {
+		details := stat.Details()
+		if len(details) == 1 {
+			if errDetails, ok := details[0].(*grpcutil.ErrorDetails); ok {
+				if errDetails.GetCause() == grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL {
+					msg := fmt.Sprintf("request rejected by the server: %s", stat.Message())
+					if logger != nil {
+						level.Warn(logger).Log("msg", msg, "method", method, "clusterVerificationLabel", cluster)
+					}
+					if invalidCluster != nil {
+						invalidCluster.WithLabelValues("grpc", method, cluster, failureServer).Inc()
+					}
+					return grpcutil.Status(codes.Internal, msg).Err()
+				}
+			}
+		}
+	}
+	return err
+
 }
 
 // ClusterUnaryServerInterceptor checks if the incoming gRPC metadata contains any cluster information and if so,
 // checks if the latter corresponds to the given cluster. If it is the case, the request is further propagated.
-// Otherwise, an error is returned.
-func ClusterUnaryServerInterceptor(cluster string, logger log.Logger) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		reqCluster := getClusterFromIncomingContext(ctx, logger)
-		if cluster != reqCluster {
-			msg := fmt.Sprintf("request intended for cluster %q - this is cluster %q", reqCluster, cluster)
-			level.Warn(logger).Log("msg", msg)
-			return nil, status.Error(codes.FailedPrecondition, msg)
+// Otherwise, an error is returned. In that case, non-nil invalidClusters counter is increased.
+func ClusterUnaryServerInterceptor(cluster string, invalidClusters *prometheus.CounterVec, logger log.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		// We skip the gRPC health check.
+		if _, ok := info.Server.(healthpb.HealthServer); ok {
+			return handler(ctx, req)
 		}
-		return handler(ctx, req)
-	}
-}
 
-func getClusterFromIncomingContext(ctx context.Context, logger log.Logger) string {
-	clusterIDs := metadata.ValueFromIncomingContext(ctx, MetadataClusterKey)
-	if len(clusterIDs) != 1 {
-		msg := fmt.Sprintf("gRPC metadata should contain exactly 1 value for key \"%s\", but the current set of values is %v. Returning an empty string.", MetadataClusterKey, clusterIDs)
-		level.Warn(logger).Log("msg", msg)
-		return ""
+		if cluster == "" {
+			if logger != nil {
+				level.Warn(logger).Log("msg", "no cluster verification label sent to the interceptor", "method", info.FullMethod)
+			}
+			return nil, errNoClusterProvided
+		}
+
+		reqCluster, err := clusterutil.GetClusterFromIncomingContext(ctx, logger)
+		var (
+			msgs   []any
+			errMsg string
+		)
+		switch {
+		case err == nil && cluster == reqCluster:
+			return handler(ctx, req)
+		case err == nil && cluster != reqCluster:
+			msgs = []any{"msg", "rejecting request with wrong cluster verification label", "method", info.FullMethod, "clusterVerificationLabel", cluster, "requestClusterVerificationLabel", reqCluster}
+			errMsg = fmt.Sprintf("server from cluster %q rejected request intended for cluster %q", cluster, reqCluster)
+		case errors.Is(err, clusterutil.ErrNoClusterVerificationLabel):
+			msgs = []any{"msg", "rejecting request with no cluster verification label", "method", info.FullMethod, "clusterVerificationLabel", cluster}
+			errMsg = fmt.Sprintf("server from cluster %q rejected request with no cluster verification label", cluster)
+		default:
+			return nil, err
+		}
+
+		if logger != nil {
+			level.Warn(logger).Log(msgs...)
+		}
+		if invalidClusters != nil {
+			invalidClusters.WithLabelValues("grpc", info.FullMethod, reqCluster).Inc()
+		}
+
+		stat := grpcutil.Status(codes.FailedPrecondition, errMsg, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL})
+		return nil, stat.Err()
 	}
-	return clusterIDs[0]
 }

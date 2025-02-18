@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -46,6 +47,7 @@ type frontendSchedulerWorkers struct {
 	cfg             Config
 	log             log.Logger
 	frontendAddress string
+	cluster         string
 
 	// Channel with requests that should be forwarded to the scheduler.
 	requestsCh         <-chan *frontendRequest
@@ -58,7 +60,8 @@ type frontendSchedulerWorkers struct {
 	// Set to nil when stop is called... no more workers are created afterwards.
 	workers map[string]*frontendSchedulerWorker
 
-	enqueueDuration *prometheus.HistogramVec
+	enqueueDuration          *prometheus.HistogramVec
+	invalidClusterValidation *prometheus.CounterVec
 }
 
 func newFrontendSchedulerWorkers(
@@ -68,11 +71,13 @@ func newFrontendSchedulerWorkers(
 	toSchedulerAdapter frontendToSchedulerAdapter,
 	log log.Logger,
 	reg prometheus.Registerer,
+	cluster string,
 ) (*frontendSchedulerWorkers, error) {
 	f := &frontendSchedulerWorkers{
 		cfg:                       cfg,
 		log:                       log,
 		frontendAddress:           frontendAddress,
+		cluster:                   cluster,
 		requestsCh:                requestsCh,
 		toSchedulerAdapter:        toSchedulerAdapter,
 		workers:                   map[string]*frontendSchedulerWorker{},
@@ -84,6 +89,7 @@ func newFrontendSchedulerWorkers(
 			// track 1ms latency too and removing any bucket bigger than 1s.
 			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
 		}, []string{schedulerAddressLabel}),
+		invalidClusterValidation: middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_query_frontend_query_scheduler_client"),
 	}
 
 	var err error
@@ -219,7 +225,7 @@ func (f *frontendSchedulerWorkers) getWorkersCount() int {
 
 func (f *frontendSchedulerWorkers) connectToScheduler(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	opts, err := f.cfg.GRPCClientConfig.DialOption(nil, nil)
+	opts, err := f.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(f.cluster, f.invalidClusterValidation, f.log)}, nil)
 	if err != nil {
 		return nil, err
 	}

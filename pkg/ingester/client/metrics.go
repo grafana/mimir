@@ -3,12 +3,14 @@
 package client
 
 import (
+	"github.com/grafana/dskit/middleware"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 type Metrics struct {
-	requestDuration *prometheus.HistogramVec
+	requestDuration                  *prometheus.HistogramVec
+	invalidClusterVerificationLabels *prometheus.CounterVec
 }
 
 func NewMetrics(reg prometheus.Registerer) *Metrics {
@@ -18,5 +20,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Help:    "Time spent doing Ingester requests.",
 			Buckets: prometheus.ExponentialBuckets(0.001, 4, 8),
 		}, []string{"operation", "status_code"}),
+
+		invalidClusterVerificationLabels: middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_ingester_client"),
 	}
 }
