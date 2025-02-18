@@ -426,10 +426,9 @@ func BenchmarkBinaryWrite_DelayedBucket(t *testing.B) {
 	tests := []struct {
 		delay time.Duration
 	}{
-		{1 * time.Millisecond},
-		{5 * time.Millisecond},
 		{10 * time.Millisecond},
 		{20 * time.Millisecond},
+		{50 * time.Millisecond},
 	}
 
 	for _, test := range tests {

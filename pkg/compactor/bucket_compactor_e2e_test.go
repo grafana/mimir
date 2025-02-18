@@ -374,6 +374,21 @@ func TestGroupCompactE2E(t *testing.T) {
 			return nil
 		}))
 
+		// expect the blocks that are compacted have sparse-index-headers in object storage
+		require.NoError(t, bkt.Iter(ctx, "", func(n string) error {
+			id, ok := block.IsBlockDir(n)
+			if !ok {
+				return nil
+			}
+
+			if _, ok := others[id.String()]; ok {
+				p := path.Join(id.String(), block.SparseIndexHeaderFilename)
+				exists, _ := bkt.Exists(ctx, p)
+				assert.True(t, exists, "expected sparse index headers not found %s", p)
+			}
+			return nil
+		}))
+
 		for id, found := range nonCompactedExpected {
 			assert.True(t, found, "not found expected block %s", id.String())
 		}

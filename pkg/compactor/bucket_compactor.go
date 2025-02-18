@@ -395,13 +395,10 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		c.metrics.compactionBlocksVerificationFailed.Inc()
 	}
 
-	var uploadSpaceHeaders = true // TODO: replace with flag...
-	if uploadSpaceHeaders {
-		fsbkt, err := filesystem.NewBucket(subDir)
-		if err != nil {
-			uploadSpaceHeaders = false
-			level.Warn(jobLogger).Log("msg", "failed to create local bucket, skipping sparse header upload", "err", err)
-		}
+	fsbkt, err := filesystem.NewBucket(subDir)
+	if err != nil {
+		uploadSpaceHeaders = false
+		level.Warn(jobLogger).Log("msg", "failed to create local bucket, skipping sparse header upload", "err", err)
 	}
 
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
@@ -443,19 +440,31 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		if uploadSpaceHeaders {
+			// NewStreamBinaryReader reads a block's index writes the block's index-header and sparse-index-header files to disk
 			if _, err := indexheader.NewStreamBinaryReader(
 				ctx,
 				jobLogger,
 				fsbkt,
-				bdir,
+				subDir,
 				blockToUpload.ulid,
 				mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 				indexheader.NewStreamBinaryReaderMetrics(nil),
 				indexheader.Config{MaxIdleFileHandles: 1},
 			); err != nil {
-				// updating sparse index headers is lower priority than uploading the new block, continue job warning logged
-				// and increment partial failure metric.
 				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockToUpload.ulid.String(), "err", err)
+				return nil
+			}
+
+			err := objstore.UploadFile(
+				ctx,
+				jobLogger,
+				c.bkt,
+				path.Join(bdir, block.SparseIndexHeaderFilename),
+				path.Join(blockToUpload.ulid.String(), block.SparseIndexHeaderFilename),
+			)
+			if err != nil {
+				level.Warn(jobLogger).Log("msg", "failed to upload sparse index headers", "block", blockToUpload.ulid.String(), "err", err)
+				return nil
 			}
 		}
 
