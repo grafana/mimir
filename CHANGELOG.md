@@ -113,6 +113,9 @@
 
 * [BUGFIX] Fix issue where `MIMIR_HTTP_PREFIX` environment variable was ignored and the value from `MIMIR_MIMIR_HTTP_PREFIX` was used instead. #10207
 * [ENHANCEMENT] Unify mimirtool authentication options and add extra-headers support for commands that depend on MimirClient. #10178
+* [ENHANCEMENT] `mimirtool grafana analyze` now supports custom panels. #10669
+* [ENHANCEMENT] `mimirtool grafana analyze` now supports bar chart, pie chart, state timeline, status history,
+  histogram, candlestick, canvas, flame graph, geomap, node graph, trend, and XY chart panels. #10669
 
 ### Mimir Continuous Test
 
