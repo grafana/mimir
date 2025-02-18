@@ -285,6 +285,7 @@ func NewQuerierHandler(
 		remoteWriteEnabled,
 		nil,
 		otlpEnabled,
+		false,
 		true,
 		0,
 	)
