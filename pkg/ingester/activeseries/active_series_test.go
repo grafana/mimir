@@ -277,7 +277,7 @@ func testCostAttributionUpdateSeries(t *testing.T, c *ActiveSeries, reg *prometh
 	expectedMetrics := `
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
-    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+    cortex_ingester_attributed_active_series{attributed_a="1",tenant="user5",tracker="cost-attribution"} 1
 	`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
 
@@ -287,8 +287,8 @@ func testCostAttributionUpdateSeries(t *testing.T, c *ActiveSeries, reg *prometh
 	expectedMetrics = `
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
-    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
-	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 1
+    cortex_ingester_attributed_active_series{attributed_a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{attributed_a="2",tenant="user5",tracker="cost-attribution"} 1
 	`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
 
@@ -298,9 +298,9 @@ func testCostAttributionUpdateSeries(t *testing.T, c *ActiveSeries, reg *prometh
 	expectedMetrics = `
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
-    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
-	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 1
-	cortex_ingester_attributed_active_series{a="3",tenant="user5",tracker="cost-attribution"} 1
+    cortex_ingester_attributed_active_series{attributed_a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{attributed_a="2",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{attributed_a="3",tenant="user5",tracker="cost-attribution"} 1
 	`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
 
@@ -311,9 +311,9 @@ func testCostAttributionUpdateSeries(t *testing.T, c *ActiveSeries, reg *prometh
 	expectedMetrics = `
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
-    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
-	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 2
-	cortex_ingester_attributed_active_series{a="3",tenant="user5",tracker="cost-attribution"} 1
+    cortex_ingester_attributed_active_series{attributed_a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{attributed_a="2",tenant="user5",tracker="cost-attribution"} 2
+	cortex_ingester_attributed_active_series{attributed_a="3",tenant="user5",tracker="cost-attribution"} 1
 	`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
 
@@ -323,10 +323,10 @@ func testCostAttributionUpdateSeries(t *testing.T, c *ActiveSeries, reg *prometh
 	expectedMetrics = `
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
-    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
-	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 2
-	cortex_ingester_attributed_active_series{a="3",tenant="user5",tracker="cost-attribution"} 1
-	cortex_ingester_attributed_active_series{a="4",tenant="user5",tracker="cost-attribution"} 1
+    cortex_ingester_attributed_active_series{attributed_a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{attributed_a="2",tenant="user5",tracker="cost-attribution"} 2
+	cortex_ingester_attributed_active_series{attributed_a="3",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{attributed_a="4",tenant="user5",tracker="cost-attribution"} 1
 	`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
 
@@ -336,11 +336,11 @@ func testCostAttributionUpdateSeries(t *testing.T, c *ActiveSeries, reg *prometh
 	expectedMetrics = `
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
-    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
-	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 2
-	cortex_ingester_attributed_active_series{a="3",tenant="user5",tracker="cost-attribution"} 1
-	cortex_ingester_attributed_active_series{a="4",tenant="user5",tracker="cost-attribution"} 1
-	cortex_ingester_attributed_active_series{a="5",tenant="user5",tracker="cost-attribution"} 1
+    cortex_ingester_attributed_active_series{attributed_a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{attributed_a="2",tenant="user5",tracker="cost-attribution"} 2
+	cortex_ingester_attributed_active_series{attributed_a="3",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{attributed_a="4",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{attributed_a="5",tenant="user5",tracker="cost-attribution"} 1
 	`
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
 

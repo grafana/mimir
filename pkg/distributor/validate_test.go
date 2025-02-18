@@ -266,14 +266,14 @@ func TestValidateLabels(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(careg, strings.NewReader(`
 	# HELP cortex_discarded_attributed_samples_total The total number of samples that were discarded per attribution.
 	# TYPE cortex_discarded_attributed_samples_total counter
-	cortex_discarded_attributed_samples_total{reason="label_invalid",team="a",tenant="testUser",tracker="cost-attribution"} 1
-	cortex_discarded_attributed_samples_total{reason="label_name_too_long",team="biz",tenant="testUser",tracker="cost-attribution"} 1
-	cortex_discarded_attributed_samples_total{reason="label_value_invalid",team="plof",tenant="testUser",tracker="cost-attribution"} 1
-	cortex_discarded_attributed_samples_total{reason="label_value_too_long",team="biz",tenant="testUser",tracker="cost-attribution"} 1
-    cortex_discarded_attributed_samples_total{reason="max_label_names_per_info_series",team="a",tenant="testUser",tracker="cost-attribution"} 1
-    cortex_discarded_attributed_samples_total{reason="max_label_names_per_series",team="plof",tenant="testUser",tracker="cost-attribution"} 1
-    cortex_discarded_attributed_samples_total{reason="metric_name_invalid",team="a",tenant="testUser",tracker="cost-attribution"} 2
-    cortex_discarded_attributed_samples_total{reason="missing_metric_name",team="a",tenant="testUser",tracker="cost-attribution"} 1
+	cortex_discarded_attributed_samples_total{attributed_team="a",reason="label_invalid",tenant="testUser",tracker="cost-attribution"} 1
+	cortex_discarded_attributed_samples_total{attributed_team="biz",reason="label_name_too_long",tenant="testUser",tracker="cost-attribution"} 1
+	cortex_discarded_attributed_samples_total{attributed_team="plof",reason="label_value_invalid",tenant="testUser",tracker="cost-attribution"} 1
+	cortex_discarded_attributed_samples_total{attributed_team="biz",reason="label_value_too_long",tenant="testUser",tracker="cost-attribution"} 1
+    cortex_discarded_attributed_samples_total{attributed_team="a",reason="max_label_names_per_info_series",tenant="testUser",tracker="cost-attribution"} 1
+    cortex_discarded_attributed_samples_total{attributed_team="plof",reason="max_label_names_per_series",tenant="testUser",tracker="cost-attribution"} 1
+    cortex_discarded_attributed_samples_total{attributed_team="a",reason="metric_name_invalid",tenant="testUser",tracker="cost-attribution"} 2
+    cortex_discarded_attributed_samples_total{attributed_team="a",reason="missing_metric_name",tenant="testUser",tracker="cost-attribution"} 1
 `), "cortex_discarded_attributed_samples_total"))
 
 	s.deleteUserMetrics(userID)
