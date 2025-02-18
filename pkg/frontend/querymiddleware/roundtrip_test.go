@@ -89,7 +89,6 @@ func TestTripperware_RangeQuery(t *testing.T) {
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
-		true,
 		nil,
 		nil,
 	)
@@ -142,7 +141,6 @@ func TestTripperware_InstantQuery(t *testing.T) {
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
-		true,
 		nil,
 		nil,
 	)
@@ -474,7 +472,6 @@ func TestTripperware_Metrics(t *testing.T) {
 					MaxSamples: 1000,
 					Timeout:    time.Minute,
 				},
-				true,
 				nil,
 				reg,
 			)
@@ -540,7 +537,6 @@ func TestTripperware_BlockedRequests(t *testing.T) {
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
-		true,
 		nil,
 		nil,
 	)
@@ -593,14 +589,12 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
 	cfg.PrunedQueries = true
-	cfg.BlockPromQLExperimentalFunctions = true
 	cfg.SpinOffInstantSubqueriesToURL = "http://localhost"
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)
 	require.NotZero(t, cfg.ShardedQueries)
 	require.NotZero(t, cfg.PrunedQueries)
-	require.NotZero(t, cfg.BlockPromQLExperimentalFunctions)
 	require.NotZero(t, cfg.SplitQueriesByInterval)
 	require.NotZero(t, cfg.MaxRetries)
 
@@ -834,7 +828,6 @@ func TestTripperware_RemoteRead(t *testing.T) {
 					MaxSamples: 1000,
 					Timeout:    time.Minute,
 				},
-				true,
 				nil,
 				reg,
 			)
@@ -969,7 +962,6 @@ func TestTripperware_ShouldSupportReadConsistencyOffsetsInjection(t *testing.T) 
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
-		true,
 		map[string]*ingest.TopicOffsetsReader{querierapi.ReadConsistencyOffsetsHeader: offsetsReader},
 		nil,
 	)
