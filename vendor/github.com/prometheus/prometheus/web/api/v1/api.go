@@ -259,7 +259,7 @@ func NewAPI(
 	statsRenderer StatsRenderer,
 	rwEnabled bool,
 	acceptRemoteWriteProtoMsgs []config.RemoteWriteProtoMsg,
-	otlpEnabled bool,
+	otlpEnabled, otlpDeltaToCumulative bool,
 	ctZeroIngestionEnabled bool,
 	validIntervalCTZeroIngestion time.Duration,
 ) *API {
@@ -308,7 +308,7 @@ func NewAPI(
 		a.remoteWriteHandler = remote.NewWriteHandler(logger, registerer, ap, acceptRemoteWriteProtoMsgs, ctZeroIngestionEnabled)
 	}
 	if otlpEnabled {
-		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, ap, configFunc, ctZeroIngestionEnabled, validIntervalCTZeroIngestion)
+		a.otlpWriteHandler = remote.NewOTLPWriteHandler(logger, registerer, ap, configFunc, ctZeroIngestionEnabled, validIntervalCTZeroIngestion, remote.OTLPOptions{ConvertDelta: otlpDeltaToCumulative})
 	}
 
 	return a
