@@ -7,6 +7,8 @@ package indexheader
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -18,6 +20,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
 // ReaderPoolMetrics holds metrics tracked by ReaderPool.
@@ -85,12 +89,33 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	var reader Reader
 	var err error
 
+	brr := (bucketRangeReader)(bkt)
+	if cfg.MinDownloadThroughput > 0 {
+		brr = bucketRangeReaderWithEnforcedThroughput(bkt, cfg.MinDownloadThroughput)
+	}
+
 	readerFactory = func() (Reader, error) {
-		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
+		return NewStreamBinaryReader(ctx, logger, brr, dir, id, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
 	}
 
 	if p.lazyReaderEnabled {
-		reader, err = NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
+		binPath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
+		// If the index-header doesn't exist we should recreate it.
+		if _, err := os.Stat(binPath); err != nil {
+			if !os.IsNotExist(err) {
+				return nil, errors.Wrap(err, "read index header")
+			}
+
+			level.Debug(logger).Log("msg", "the index-header doesn't exist on disk; recreating", "path", binPath)
+
+			start := time.Now()
+			if err := WriteBinary(ctx, brr, id, binPath); err != nil {
+				return nil, errors.Wrap(err, "write index header")
+			}
+
+			level.Debug(logger).Log("msg", "built index-header file", "path", binPath, "elapsed", time.Since(start))
+		}
+		reader, err = NewLazyBinaryReader(ctx, logger, readerFactory, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
 	} else {
 		reader, err = readerFactory()
 	}
