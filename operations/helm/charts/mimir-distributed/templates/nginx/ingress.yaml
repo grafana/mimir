@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if not .Values.enterprise.enabled -}}
 {{- if .Values.nginx.enabled -}}
 {{- if .Values.nginx.ingress.enabled -}}
@@ -46,3 +47,4 @@ spec:
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{- end }}
