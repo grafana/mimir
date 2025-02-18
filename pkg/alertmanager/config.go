@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
+	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -18,7 +20,7 @@ import (
 // createUsableGrafanaConfig creates an amConfig from a GrafanaAlertConfigDesc.
 // If provided, it assigns the global section from the Mimir config to the Grafana config.
 // The SMTP and HTTP settings in this section can be used to configure Grafana receivers.
-func createUsableGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, rawMimirConfig string) (amConfig, error) {
+func (am *MultitenantAlertmanager) createUsableGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, rawMimirConfig string) (amConfig, error) {
 	externalURL, err := url.Parse(gCfg.ExternalUrl)
 	if err != nil {
 		return amConfig{}, err
@@ -36,6 +38,24 @@ func createUsableGrafanaConfig(gCfg alertspb.GrafanaAlertConfigDesc, rawMimirCon
 		}
 		amCfg.AlertmanagerConfig.Config.Global = cfg.Config.Global
 	}
+
+	// Check for duplicate receiver names.
+	nameToReceiver := make(map[string]*definition.PostableApiReceiver)
+	for _, receiver := range amCfg.AlertmanagerConfig.Receivers {
+		if existing, ok := nameToReceiver[receiver.Name]; ok {
+			itypes := make([]string, 0, len(existing.GrafanaManagedReceivers))
+			for _, i := range existing.GrafanaManagedReceivers {
+				itypes = append(itypes, i.Type)
+			}
+			level.Debug(am.logger).Log("msg", "receiver with same name is defined multiple times. Only the last one will be used", "receiver_name", receiver.Name, "overwritten_integrations", strings.Join(itypes, ","))
+		}
+		nameToReceiver[receiver.Name] = receiver
+	}
+	rcvs := make([]*definition.PostableApiReceiver, 0, len(nameToReceiver))
+	for _, rcv := range nameToReceiver {
+		rcvs = append(rcvs, rcv)
+	}
+	amCfg.AlertmanagerConfig.Receivers = rcvs
 
 	rawCfg, err := json.Marshal(amCfg.AlertmanagerConfig)
 	if err != nil {
