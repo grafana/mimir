@@ -167,8 +167,9 @@ func isCardinalitySimilar(actualCardinality, estimatedCardinality uint64) bool {
 // estimates at the bucket boundary, an offset is added based on the hash of the
 // query string.
 func generateCardinalityEstimationCacheKey(userID string, r MetricsQueryRequest, bucketSize time.Duration) string {
+	query := r.GetQuery()
 	hasher := fnv.New64a()
-	_, _ = hasher.Write([]byte(r.GetQuery()))
+	_, _ = hasher.Write([]byte(query))
 
 	// This assumes that `bucketSize` is positive.
 	offset := hasher.Sum64() % uint64(bucketSize.Milliseconds())
@@ -176,5 +177,5 @@ func generateCardinalityEstimationCacheKey(userID string, r MetricsQueryRequest,
 	rangeBucket := (r.GetEnd() - r.GetStart()) / bucketSize.Milliseconds()
 
 	// Prefix key with `QS` (short for "query statistics").
-	return fmt.Sprintf("QS:%s:%s:%d:%d", userID, cacheHashKey(r.GetQuery()), startBucket, rangeBucket)
+	return fmt.Sprintf("QS:%s:%s:%d:%d", userID, cacheHashKey(query), startBucket, rangeBucket)
 }

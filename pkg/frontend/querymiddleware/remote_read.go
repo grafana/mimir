@@ -282,6 +282,11 @@ func (r *remoteReadQueryRequest) GetQuery() string {
 	return r.promQuery
 }
 
+func (r *remoteReadQueryRequest) GetQueryExpr() parser.Expr {
+	// TODO: Explain this
+	return nil
+}
+
 func (r *remoteReadQueryRequest) GetHeaders() []*PrometheusHeader {
 	return nil
 }
