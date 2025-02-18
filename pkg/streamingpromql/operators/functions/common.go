@@ -119,6 +119,7 @@ type FunctionOverRangeVectorDefinition struct {
 
 	// UseFirstArgumentPositionForAnnotations indicates that annotations emitted by this function should use the position of the
 	// first argument, not the position of the inner expression.
+	// FIXME: we might need something more flexible in the future (eg. to accommodate other argument positions), but this is good enough for now.
 	UseFirstArgumentPositionForAnnotations bool
 }
 
