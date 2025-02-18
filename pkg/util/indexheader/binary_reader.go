@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -98,30 +99,31 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 	// the objstore provider. We make these calls in parallel and then syncronize before writing to buf
 	var g errgroup.Group
 	var sym, tbl io.ReadCloser
-	var symerr, tblerr error
 	g.Go(func() (err error) {
-		sym, symerr = ir.bkt.GetRange(ir.ctx, ir.path, int64(ir.toc.Symbols), int64(ir.toc.Series-ir.toc.Symbols))
-		if symerr != nil {
+		sym, err = ir.bkt.GetRange(ir.ctx, ir.path, int64(ir.toc.Symbols), int64(ir.toc.Series-ir.toc.Symbols))
+		if err != nil {
 			return errors.Wrapf(err, "get symbols from object storage of %s", ir.path)
 		}
 		return
 	})
 
 	g.Go(func() (err error) {
-		tbl, tblerr = ir.bkt.GetRange(ir.ctx, ir.path, int64(ir.toc.PostingsTable), int64(ir.size-ir.toc.PostingsTable))
-		if tblerr != nil {
+		tbl, err = ir.bkt.GetRange(ir.ctx, ir.path, int64(ir.toc.PostingsTable), int64(ir.size-ir.toc.PostingsTable))
+		if err != nil {
 			return errors.Wrapf(err, "get posting offset table from object storage of %s", ir.path)
 		}
 		return
 	})
 
+	merr := multierror.MultiError{}
 	defer func() {
-		runutil.CloseWithErrCapture(&symerr, sym, "close symbol reader")
-		runutil.CloseWithErrCapture(&tblerr, tbl, "close posting offsets reader")
+		merr.Add(errors.Wrapf(sym.Close(), "close symbol reader"))
+		merr.Add(errors.Wrapf(tbl.Close(), "close posting offsets reader"))
 	}()
 
 	if err := g.Wait(); err != nil {
-		return err
+		merr.Add(err)
+		return merr.Err()
 	}
 
 	if _, err := io.CopyBuffer(bw.SymbolsWriter(), sym, buf); err != nil {

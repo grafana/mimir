@@ -444,8 +444,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 		if uploadSparseHeaders {
 			// NewStreamBinaryReader reads a block's index and writes index-header and sparse-index-header
-			// files to disk. Discard the reader, only needs to be initialized without error for
-			// these files to be written.
+			// files to disk. Discard the reader, only needs to be initialized without error.
 			if _, err := indexheader.NewStreamBinaryReader(
 				ctx,
 				jobLogger,

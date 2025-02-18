@@ -374,7 +374,7 @@ func TestGroupCompactE2E(t *testing.T) {
 			return nil
 		}))
 
-		// expect the blocks that are compacted have sparse-index-headers in object storage
+		// expect the blocks that are compacted to have sparse-index-headers in object storage.
 		require.NoError(t, bkt.Iter(ctx, "", func(n string) error {
 			id, ok := block.IsBlockDir(n)
 			if !ok {
