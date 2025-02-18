@@ -25,6 +25,9 @@ spec:
       protocol: TCP
       name: grpc
       targetPort: grpc
+    {{- if .Values.admin_api.service.extraPorts }}
+    {{- toYaml .Values.admin_api.service.extraPorts | nindent 4 }}
+    {{- end }}
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "admin-api" "memberlist" true) | nindent 4 }}
 {{- end -}}

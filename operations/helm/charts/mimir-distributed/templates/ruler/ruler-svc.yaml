@@ -21,6 +21,9 @@ spec:
       protocol: TCP
       name: http-metrics
       targetPort: http-metrics
+    {{- if .Values.ruler.service.extraPorts }}
+    {{- toYaml .Values.ruler.service.extraPorts | nindent 4 }}
+    {{- end }}
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 4 }}
 {{- end -}}

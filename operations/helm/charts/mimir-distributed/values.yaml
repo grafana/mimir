@@ -577,6 +577,11 @@ alertmanager:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
+    # - port: 11811
+    #   protocol: TCP
+    #   name: reverse-proxy
+    #   targetPort: 11811
 
   # -- Optionally set the scheduler for pods of the alertmanager
   schedulerName: ""
@@ -861,6 +866,7 @@ distributor:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -964,6 +970,7 @@ ingester:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   # -- Optionally set the scheduler for pods of the ingester
   schedulerName: ""
@@ -1197,6 +1204,7 @@ overrides_exporter:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   strategy:
     type: RollingUpdate
@@ -1311,6 +1319,7 @@ ruler:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   # -- Dedicated service account for ruler pods.
   # If not set, the default service account defined at the begining of this file will be used.
@@ -1448,6 +1457,7 @@ ruler_querier:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -1564,6 +1574,7 @@ ruler_query_frontend:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -1657,6 +1668,7 @@ ruler_query_scheduler:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -1794,6 +1806,7 @@ querier:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -1912,6 +1925,7 @@ query_frontend:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -2006,6 +2020,7 @@ query_scheduler:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   resources:
     requests:
@@ -2105,6 +2120,7 @@ store_gateway:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   # -- Optionally set the scheduler for pods of the store-gateway
   schedulerName: ""
@@ -2328,6 +2344,7 @@ compactor:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   # -- Optionally set the scheduler for pods of the compactor
   schedulerName: ""
@@ -2601,6 +2618,7 @@ chunks-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 index-cache:
   # -- Specifies whether memcached based index-cache should be enabled
@@ -2701,6 +2719,7 @@ index-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 metadata-cache:
   # -- Specifies whether memcached based metadata-cache should be enabled
@@ -2801,6 +2820,7 @@ metadata-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 results-cache:
   # -- Specifies whether memcached based results-cache should be enabled
@@ -2901,6 +2921,7 @@ results-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 # -- Setting for the Grafana Rollout Operator https://github.com/grafana/helm-charts/tree/main/charts/rollout-operator
 rollout_operator:
@@ -3070,6 +3091,7 @@ nginx:
     labels: {}
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
+    extraPorts: []
   # Ingress configuration
   ingress:
     # -- Specifies whether an ingress for the nginx should be created
@@ -3479,6 +3501,7 @@ gateway:
     nameOverride: ""
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
+    extraPorts: []
 
   ingress:
     enabled: false
@@ -4109,6 +4132,7 @@ admin_api:
     # -- https://kubernetes.io/docs/concepts/services-networking/service-traffic-policy/
     internalTrafficPolicy: Cluster
     type: ClusterIP
+    extraPorts: []
 
   initContainers: []
 
@@ -4260,6 +4284,7 @@ admin-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 graphite:
   # -- If true, enables graphite querier and graphite write proxy functionality.
@@ -4285,6 +4310,7 @@ graphite:
     service:
       annotations: {}
       labels: {}
+      extraPorts: []
 
     # -- Resources for graphite-querier pods
     resources:
@@ -4366,6 +4392,7 @@ graphite:
     service:
       annotations: {}
       labels: {}
+      extraPorts: []
 
     # -- Resources for graphite-write-proxy pods
     resources:
@@ -4506,6 +4533,7 @@ gr-aggr-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 # Graphite's metric name cache. If you want to know more about it please check
 # https://grafana.com/docs/enterprise-metrics/latest/graphite/graphite_querier/#metric-name-cache
@@ -4571,6 +4599,7 @@ gr-metricname-cache:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
 
 federation_frontend:
   # -- Specifies whether the federation-frontend should be enabled
@@ -4662,6 +4691,8 @@ federation_frontend:
     annotations: {}
     # -- Additional labels for the federation-frontend service
     labels: {}
+    extraPorts: []
+
   # -- Pod Disruption Budget configuration
   podDisruptionBudget:
     maxUnavailable: 1
@@ -4778,6 +4809,7 @@ continuous_test:
   service:
     annotations: {}
     labels: {}
+    extraPorts: []
   # -- Upgrade strategy for the continuous test Deployment
   strategy:
     type: RollingUpdate

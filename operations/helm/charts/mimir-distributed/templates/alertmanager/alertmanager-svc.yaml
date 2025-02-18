@@ -34,6 +34,9 @@ spec:
       protocol: TCP
       name: grpc
       targetPort: grpc
+    {{- if .Values.alertmanager.service.extraPorts }}
+    {{- toYaml .Values.alertmanager.service.extraPorts | nindent 4 }}
+    {{- end }}
   selector:
     {{- include "mimir.selectorLabels" $args | nindent 4 }}
 
