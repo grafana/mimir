@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/gate"
@@ -25,6 +26,7 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -416,6 +418,36 @@ func BenchmarkBinaryWrite(t *testing.B) {
 	t.ResetTimer()
 	for i := 0; i < t.N; i++ {
 		require.NoError(t, WriteBinary(ctx, bkt, m.ULID, fn))
+	}
+}
+
+func BenchmarkBinaryWrite_DelayedBucket(t *testing.B) {
+
+	tests := []struct {
+		low, high time.Duration
+	}{
+		{0, 10},
+		{0, 20},
+		{0, 50},
+		{10, 20},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("Between_%d_%d_ms_delay", test.low, test.high), func(t *testing.B) {
+			ctx := context.Background()
+			tmpDir := t.TempDir()
+			bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+			require.NoError(t, err)
+			delaybkt := bucket.NewDelayedBucketClient(bkt, test.low, test.high)
+			defer func() { require.NoError(t, delaybkt.Close()) }()
+
+			m := prepareIndexV2Block(t, tmpDir, delaybkt)
+			fn := filepath.Join(tmpDir, m.ULID.String(), block.IndexHeaderFilename)
+			t.ResetTimer()
+			for i := 0; i < t.N; i++ {
+				require.NoError(t, WriteBinary(ctx, delaybkt, m.ULID, fn))
+			}
+		})
 	}
 }
 

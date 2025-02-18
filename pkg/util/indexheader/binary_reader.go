@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"golang.org/x/sync/errgroup"
 	"hash"
 	"hash/crc32"
 	"io"
@@ -93,16 +94,46 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 		return errors.Wrap(err, "add index meta")
 	}
 
-	if err := ir.CopySymbols(bw.SymbolsWriter(), buf); err != nil {
+	// Copying symbols and posting offsets into the encbuffer both require a range query against the provider.
+	// We make these calls in parallel and then syncronize before writing to buf
+	var g errgroup.Group
+	var sym, tbl io.ReadCloser
+	var symerr, tblerr error
+	g.Go(func() (err error) {
+		sym, symerr = ir.bkt.GetRange(ir.ctx, ir.path, int64(ir.toc.Symbols), int64(ir.toc.Series-ir.toc.Symbols))
+		if symerr != nil {
+			return errors.Wrapf(err, "get symbols from object storage of %s", ir.path)
+		}
+		return
+	})
+
+	g.Go(func() (err error) {
+		tbl, tblerr = ir.bkt.GetRange(ir.ctx, ir.path, int64(ir.toc.PostingsTable), int64(ir.size-ir.toc.PostingsTable))
+		if tblerr != nil {
+			return errors.Wrapf(err, "get posting offset table from object storage of %s", ir.path)
+		}
+		return
+	})
+
+	defer func() {
+		runutil.CloseWithErrCapture(&symerr, sym, "close symbol reader")
+		runutil.CloseWithErrCapture(&tblerr, tbl, "close posting offsets reader")
+	}()
+
+	if err := g.Wait(); err != nil {
 		return err
+	}
+
+	if _, err := io.CopyBuffer(bw.SymbolsWriter(), sym, buf); err != nil {
+		return errors.Wrap(err, "copy posting offsets")
 	}
 
 	if err := bw.f.Flush(); err != nil {
 		return errors.Wrap(err, "flush")
 	}
 
-	if err := ir.CopyPostingsOffsets(bw.PostingOffsetsWriter(), buf); err != nil {
-		return err
+	if _, err := io.CopyBuffer(bw.PostingOffsetsWriter(), tbl, buf); err != nil {
+		return errors.Wrap(err, "copy posting offsets")
 	}
 
 	if err := bw.f.Flush(); err != nil {

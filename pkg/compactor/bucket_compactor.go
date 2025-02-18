@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
+	"github.com/grafana/mimir/pkg/util/indexheader"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -30,7 +31,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
-	"github.com/grafana/mimir/pkg/util/indexheader"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -395,10 +395,13 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		c.metrics.compactionBlocksVerificationFailed.Inc()
 	}
 
-	fsbkt, err := filesystem.NewBucket(subDir)
-	if err != nil {
-		// TODO: Handle
-		// return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
+	var uploadSpaceHeaders = true // TODO: replace with flag...
+	if uploadSpaceHeaders {
+		fsbkt, err := filesystem.NewBucket(subDir)
+		if err != nil {
+			uploadSpaceHeaders = false
+			level.Warn(jobLogger).Log("msg", "failed to create local bucket, skipping sparse header upload", "err", err)
+		}
 	}
 
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
@@ -439,20 +442,22 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
 		}
 
-		_, err = indexheader.NewStreamBinaryReader(
-			ctx,
-			jobLogger,
-			fsbkt,
-			bdir,
-			blockToUpload.ulid,
-			mimir_tsdb.DefaultPostingOffsetInMemorySampling,
-			indexheader.NewStreamBinaryReaderMetrics(nil),
-			indexheader.Config{MaxIdleFileHandles: 1},
-		)
-		if err != nil {
-			level.Warn(jobLogger).Log("msg", "failed to...", "block", "uhh", "err", err)
+		if uploadSpaceHeaders {
+			if _, err := indexheader.NewStreamBinaryReader(
+				ctx,
+				jobLogger,
+				fsbkt,
+				bdir,
+				blockToUpload.ulid,
+				mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+				indexheader.NewStreamBinaryReaderMetrics(nil),
+				indexheader.Config{MaxIdleFileHandles: 1},
+			); err != nil {
+				// updating sparse index headers is lower priority than uploading the new block, continue job warning logged
+				// and increment partial failure metric.
+				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockToUpload.ulid.String(), "err", err)
+			}
 		}
-
 
 		elapsed := time.Since(begin)
 		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", blockToUpload.ulid, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(newLabels))

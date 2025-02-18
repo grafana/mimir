@@ -25,10 +25,10 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/atomicfs"
 	streamencoding "github.com/grafana/mimir/pkg/util/indexheader/encoding"
 	streamindex "github.com/grafana/mimir/pkg/util/indexheader/index"
 	"github.com/grafana/mimir/pkg/util/indexheader/indexheaderpb"
-	"github.com/grafana/mimir/pkg/util/atomicfs"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
