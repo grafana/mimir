@@ -309,76 +309,77 @@ func (t *RangeQuery) accumulateIntoGroup(data types.InstantVectorSeriesData, g *
 			}
 		}
 
-		recordUsedPoint := func() error {
+		if err := t.accumulatePointIntoGroup(g, timestampIndex, p.F, limit, thisSeries, groupSeriesIndex, data); err != nil {
+			return err
+		}
+	}
 
-			if thisSeries.shouldReturnPoint == nil {
-				if err := thisSeries.populateSlices(data, t.TimeRange, t.MemoryConsumptionTracker); err != nil {
-					return err
-				}
-			}
+	return nil
+}
 
-			thisSeries.recordUsedPoint(timestampIndex, p.F)
-
-			return nil
+func (t *RangeQuery) accumulatePointIntoGroup(g *rangeQueryGroup, timestampIndex int64, f float64, limit int64, series *rangeQuerySeries, groupSeriesIndex int, seriesData types.InstantVectorSeriesData) error {
+	if len(g.seriesForTimestamps[timestampIndex]) != int(limit) {
+		// We don't have a full set of values for this timestamp. Add this series to the list.
+		if err := series.ensureSlicesPopulated(seriesData, t.TimeRange, t.MemoryConsumptionTracker); err != nil {
+			return err
 		}
 
-		if len(g.seriesForTimestamps[timestampIndex]) == int(limit) {
-			// Already have a full set of values for this timestamp, see if the one from this series is better than the current worst.
-			// (ie. larger for topk / smaller for bottomk)
-			currentWorstSeriesIndex := g.seriesForTimestamps[timestampIndex][0]
-			currentWorstSeries := &g.series[currentWorstSeriesIndex]
-			currentWorstValue := currentWorstSeries.values[timestampIndex]
+		series.recordUsedPoint(timestampIndex, f)
 
-			if math.IsNaN(p.F) {
-				// A NaN is never better than any existing value.
-				continue
-			} else if t.IsTopK && p.F <= currentWorstValue && !math.IsNaN(currentWorstValue) {
-				// Value is not larger than the nth biggest value we've already seen. Continue.
-				// We don't care if this value is the same as the one we've already seen: we can pick
-				// either, there are no guarantees about which series is selected when they have the
-				// same value.
-				continue
-			} else if !t.IsTopK && p.F >= currentWorstValue && !math.IsNaN(currentWorstValue) {
-				// Value is not smaller than the nth smallest value we've already seen. Continue.
-				// Same comment about equal values above applies here as well.
-				continue
-			}
+		t.heap.Reset(g, timestampIndex)
+		heap.Push(t.heap, groupSeriesIndex)
 
-			if err := recordUsedPoint(); err != nil {
-				return err
-			}
+		return nil
+	}
 
-			g.seriesForTimestamps[timestampIndex][0] = groupSeriesIndex
+	// We already have a full set of values for this timestamp, see if the one from this series is better than the current worst.
+	// (ie. larger for topk / smaller for bottomk)
+	currentWorstSeriesIndex := g.seriesForTimestamps[timestampIndex][0]
+	currentWorstSeries := &g.series[currentWorstSeriesIndex]
+	currentWorstValue := currentWorstSeries.values[timestampIndex]
 
-			if limit != 1 {
-				// We only need to bother to fix the heap if there's more than one element.
-				// This optimises for the common case of topk(1, xxx) or bottomk(1, xxx).
-				t.heap.Reset(g, timestampIndex)
-				heap.Fix(t.heap, 0)
-			}
+	if math.IsNaN(f) {
+		// A NaN is never better than any existing value.
+		return nil
+	} else if t.IsTopK && f <= currentWorstValue && !math.IsNaN(currentWorstValue) {
+		// Value is not larger than the nth biggest value we've already seen. Continue.
+		// We don't care if this value is the same as the one we've already seen: we can pick
+		// either, there are no guarantees about which series is selected when they have the
+		// same value.
+		return nil
+	} else if !t.IsTopK && f >= currentWorstValue && !math.IsNaN(currentWorstValue) {
+		// Value is not smaller than the nth smallest value we've already seen. Continue.
+		// Same comment about equal values above applies here as well.
+		return nil
+	}
 
-			currentWorstSeries.pointCount--
+	// The value from this series is better than the current worst. Record it and update the heap to match.
+	if err := series.ensureSlicesPopulated(seriesData, t.TimeRange, t.MemoryConsumptionTracker); err != nil {
+		return err
+	}
 
-			if currentWorstSeries.pointCount == 0 {
-				// We just replaced the last possible point the previous worst series could return.
-				// Return its slices to the pool.
-				t.returnSeriesToPool(*currentWorstSeries)
+	series.recordUsedPoint(timestampIndex, f)
+	g.seriesForTimestamps[timestampIndex][0] = groupSeriesIndex
 
-				// Make sure we can't return the slices to the pool a second time when we emit this series later.
-				currentWorstSeries.shouldReturnPoint = nil
-				currentWorstSeries.values = nil
-			} else {
-				currentWorstSeries.shouldReturnPoint[timestampIndex] = false
-			}
-		} else {
-			// We don't have a full set of values for this timestamp. Add this series to the list.
-			if err := recordUsedPoint(); err != nil {
-				return err
-			}
+	if limit != 1 {
+		// We only need to bother to fix the heap if there's more than one element.
+		// This optimises for the common case of topk(1, xxx) or bottomk(1, xxx).
+		t.heap.Reset(g, timestampIndex)
+		heap.Fix(t.heap, 0)
+	}
 
-			t.heap.Reset(g, timestampIndex)
-			heap.Push(t.heap, groupSeriesIndex)
-		}
+	currentWorstSeries.pointCount--
+
+	if currentWorstSeries.pointCount == 0 {
+		// We just replaced the last possible point the previous worst series could return.
+		// Return its slices to the pool.
+		t.returnSeriesToPool(*currentWorstSeries)
+
+		// Make sure we can't return the slices to the pool a second time when we emit this series later.
+		currentWorstSeries.shouldReturnPoint = nil
+		currentWorstSeries.values = nil
+	} else {
+		currentWorstSeries.shouldReturnPoint[timestampIndex] = false
 	}
 
 	return nil
@@ -428,7 +429,12 @@ type rangeQuerySeries struct {
 	values            []float64 // One entry per timestamp with value for that timestamp (entry only guaranteed to be populated if value at that timestamp might be returned)
 }
 
-func (s *rangeQuerySeries) populateSlices(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) error {
+func (s *rangeQuerySeries) ensureSlicesPopulated(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) error {
+	if s.shouldReturnPoint != nil {
+		// Slices are already populated, nothing to do.
+		return nil
+	}
+
 	lastPointIndex := timeRange.PointIndex(data.Floats[len(data.Floats)-1].T)
 	sliceLength := int(lastPointIndex + 1)
 
