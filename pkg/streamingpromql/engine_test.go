@@ -50,7 +50,6 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"topk(5, metric{})":                     "'topk' aggregation with parameter",
 		`count_values("foo", metric{})`:         "'count_values' aggregation with parameter",
 		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
 		"quantile(0.95, metric{})":              "'quantile' aggregation with parameter",
@@ -2249,6 +2248,44 @@ func TestAnnotations(t *testing.T) {
 			},
 		},
 
+		"topk() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric{type="float"})`,
+		},
+		"topk() with only histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in topk aggregation (1:1)`,
+			},
+		},
+		"topk() with both floats and histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in topk aggregation (1:1)`,
+			},
+		},
+
+		"bottomk() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric{type="float"})`,
+		},
+		"bottomk() with only histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in bottomk aggregation (1:1)`,
+			},
+		},
+		"bottomk() with both floats and histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in bottomk aggregation (1:1)`,
+			},
+		},
+
 		"multiple annotations from different operators": {
 			data: `
 				mixed_metric_count       10 {{schema:0 sum:1 count:1 buckets:[1]}}
@@ -2266,6 +2303,24 @@ func TestAnnotations(t *testing.T) {
 				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "other_float_metric" (1:105)`,
 			},
 		},
+	}
+
+	for _, f := range []string{"min_over_time", "max_over_time", "stddev_over_time", "stdvar_over_time"} {
+		testCases[fmt.Sprintf("%v() over series with only floats", f)] = annotationTestCase{
+			data: `some_metric 1 2`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+		}
+		testCases[fmt.Sprintf("%v() over series with only histograms", f)] = annotationTestCase{
+			data: `some_metric {{count:1}} {{count:2}}`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+		}
+		testCases[fmt.Sprintf("%v() over series with both floats and histograms", f)] = annotationTestCase{
+			data: `some_metric 1 {{count:2}}`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+			expectedInfoAnnotations: []string{
+				fmt.Sprintf(`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:%v)`, len(f)+2),
+			},
+		}
 	}
 
 	runAnnotationTests(t, testCases)
@@ -2923,7 +2978,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta", "delta", "deriv"} {
+		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta", "delta", "deriv", "stddev_over_time", "stdvar_over_time"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[45s])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[1m])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[2m15s]))`, function, labelRegex))

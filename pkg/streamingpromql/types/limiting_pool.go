@@ -26,6 +26,7 @@ const (
 	VectorSampleSize     = uint64(unsafe.Sizeof(promql.Sample{})) // This assumes each sample is a float sample, not a histogram.
 	Float64Size          = uint64(unsafe.Sizeof(float64(0)))
 	IntSize              = uint64(unsafe.Sizeof(int(0)))
+	Int64Size            = uint64(unsafe.Sizeof(int64(0)))
 	BoolSize             = uint64(unsafe.Sizeof(false))
 	HistogramPointerSize = uint64(unsafe.Sizeof((*histogram.FloatHistogram)(nil)))
 )
@@ -79,6 +80,15 @@ var (
 			return make([]int, 0, size)
 		}),
 		IntSize,
+		true,
+		nil,
+	)
+
+	Int64SlicePool = NewLimitingBucketedPool(
+		pool.NewBucketedPool(MaxExpectedPointsPerSeries, func(size int) []int64 {
+			return make([]int64, 0, size)
+		}),
+		Int64Size,
 		true,
 		nil,
 	)

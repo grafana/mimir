@@ -53,6 +53,10 @@
 * [ENHANCEMENT] Ingester: Add reactive concurrency limiters to protect push and read operations from overload. #10574
 * [ENHANCEMENT] Compactor: Add experimental `-compactor.max-lookback` option to limit blocks considered in each compaction cycle. Blocks uploaded prior to the lookback period aren't processed. This option helps reduce CPU utilization in tenants with large block metadata files that are processed before each compaction. #10585
 * [ENHANCEMENT] Distributor: Optionally expose the current HA replica for each tenant in the `cortex_ha_tracker_elected_replica_status` metric. This is enabled with the `-distributor.ha-tracker.enable-elected-replica-metric=true` flag. #10644
+* [ENHANCEMENT] Enable three Go runtime metrics: #10641
+  * `go_cpu_classes_gc_total_cpu_seconds_total`
+  * `go_cpu_classes_total_cpu_seconds_total`
+  * `go_cpu_classes_idle_cpu_seconds_total`
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 * [BUGFIX] Querier: fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #10154
 * [BUGFIX] Query-frontend and querier: show warning/info annotations in some cases where they were missing (if a lazy querier was used). #10277
@@ -79,6 +83,7 @@
 * [ENHANCEMENT] Dashboards: add ingester and store-gateway panels showing only requests from the respective dashboard's query path to the 'Reads' and 'Remote ruler reads' dashboards. For example, the 'Remote ruler reads' dashboard now has panels showing the ingester query request rate from ruler-queriers. #10598
 * [ENHANCEMENT] Dashboards: 'Writes' dashboard: show write requests broken down by request type. #10599
 * [ENHANCEMENT] Dashboards: clarify when query-frontend and query-scheduler dashboard panels are expected to show no data. #10624
+* [ENHANCEMENT] Alerts: Add warning alert `DistributorGcUsesTooMuchCpu`. #10641
 * [BUGFIX] Dashboards: fix how we switch between classic and native histograms. #10018
 * [BUGFIX] Alerts: Ignore cache errors performing `delete` operations since these are expected to fail when keys don't exist. #10287
 * [BUGFIX] Dashboards: fix "Mimir / Rollout Progress" latency comparison when gateway is enabled. #10495
@@ -250,6 +255,7 @@
 * [ENHANCEMENT] Dashboards: Include block compaction level on queried blocks in 'Mimir / Queries' dashboard. #9706
 * [ENHANCEMENT] Alerts: add `MimirIngesterMissedRecordsFromKafka` to detect gaps in consumed records in the ingester when using the experimental Kafka-based storage. #9921 #9972
 * [ENHANCEMENT] Dashboards: Add more panels to 'Mimir / Writes' for concurrent ingestion and fetching when using ingest storage. #10021
+* [ENHANCEMENT] Dashboards: Include CPU and memory resources in 'Mimir / Ruler' dashboard. #10656
 * [BUGFIX] Dashboards: Fix autoscaling metrics joins when series churn. #9412 #9450 #9432
 * [BUGFIX] Alerts: Fix autoscaling metrics joins in `MimirAutoscalerNotActive` when series churn. #9412
 * [BUGFIX] Alerts: Exclude failed cache "add" operations from alerting since failures are expected in normal operation. #9658

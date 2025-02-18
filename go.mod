@@ -22,7 +22,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250131191929-eab36484cec2
+	github.com/grafana/dskit v0.0.0-20250213152722-e83d24ebed15
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.11
@@ -49,8 +49,8 @@ require (
 	golang.org/x/crypto v0.32.0
 	golang.org/x/net v0.33.0
 	golang.org/x/sync v0.10.0
-	golang.org/x/time v0.8.0
-	google.golang.org/grpc v1.69.0
+	golang.org/x/time v0.9.0
+	google.golang.org/grpc v1.69.4
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -91,7 +91,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.33.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/term v0.28.0
-	google.golang.org/api v0.213.0
+	google.golang.org/api v0.216.0
 	google.golang.org/protobuf v1.36.5
 	sigs.k8s.io/kustomize/kyaml v0.18.1
 )
@@ -133,7 +133,7 @@ require (
 	github.com/mitchellh/reflectwalk v1.0.0 // indirect
 	github.com/pires/go-proxyproto v0.7.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
-	github.com/prometheus/sigv4 v0.1.0 // indirect
+	github.com/prometheus/sigv4 v0.1.1 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
@@ -210,7 +210,7 @@ require (
 	github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad // indirect
 	github.com/google/s2a-go v0.1.8 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
-	github.com/googleapis/gax-go/v2 v2.14.0 // indirect
+	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
 	github.com/grafana/gomemcache v0.0.0-20241016125027-0a5bcc5aef40
 	github.com/hashicorp/consul/api v1.30.0 // indirect
@@ -277,7 +277,7 @@ require (
 	go.uber.org/zap v1.21.0 // indirect
 	golang.org/x/exp v0.0.0-20241215155358-4a5509556b9e // indirect
 	golang.org/x/mod v0.22.0 // indirect
-	golang.org/x/oauth2 v0.24.0 // indirect
+	golang.org/x/oauth2 v0.25.0 // indirect
 	golang.org/x/sys v0.29.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/tools v0.28.0 // indirect
@@ -289,7 +289,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20250128175949-8d210000df3a
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20250213232748-fc5e721e8cc1
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
