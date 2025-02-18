@@ -40,7 +40,7 @@ func (am *MultitenantAlertmanager) createUsableGrafanaConfig(gCfg alertspb.Grafa
 	}
 
 	// Check for duplicate receiver names.
-	nameToReceiver := make(map[string]*definition.PostableApiReceiver)
+	nameToReceiver := make(map[string]*definition.PostableApiReceiver, len(amCfg.AlertmanagerConfig.Receivers))
 	for _, receiver := range amCfg.AlertmanagerConfig.Receivers {
 		if existing, ok := nameToReceiver[receiver.Name]; ok {
 			itypes := make([]string, 0, len(existing.GrafanaManagedReceivers))
