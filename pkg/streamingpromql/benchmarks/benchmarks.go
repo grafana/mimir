@@ -127,6 +127,9 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum_over_time(nh_X[1m])",
 		},
+		{
+			Expr: "quantile_over_time(0.3, a_X[1m])",
+		},
 		//{
 		//	Expr: "absent_over_time(a_X[1d])",
 		//},
