@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -41,6 +42,14 @@ const (
 	// DebugMetas is a directory for debug meta files that happen in the past. Useful for debugging.
 	DebugMetas = "debug/metas"
 )
+
+type ErrMarkerExists struct {
+	message string
+}
+
+func (e ErrMarkerExists) Error() string {
+	return e.message
+}
 
 // Download downloads a directory meant to be a block directory. If any one of the files
 // has a hash calculated in the meta file and it matches with what is in the destination path then
@@ -335,7 +344,7 @@ func GetMetaAttributes(ctx context.Context, meta *Meta, bucketReader objstore.Bu
 	return attrs, nil
 }
 
-// MarkForNoCompact creates a file which marks block to be not compacted.
+// MarkForNoCompact creates a file which marks block to be not compacted. It would return ErrMarkerExists when no-compact marker already exists.
 func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucket, id ulid.ULID, reason NoCompactReason, details string, markedForNoCompact prometheus.Counter) error {
 	m := path.Join(id.String(), NoCompactMarkFilename)
 	noCompactMarkExists, err := bkt.Exists(ctx, m)
@@ -343,14 +352,13 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 		return errors.Wrapf(err, "check exists %s in bucket", m)
 	}
 	if noCompactMarkExists {
-		level.Warn(logger).Log("msg", "requested to mark for no compaction, but file already exists; this should not happen; investigate", "err", errors.Errorf("file %s already exists in bucket", m))
-		return nil
+		return ErrMarkerExists{
+			message: fmt.Sprintf("requested to mark for no compaction, but file %s already exists in bucket", m)}
 	}
 
 	noCompactMark, err := json.Marshal(NoCompactMark{
-		ID:      id,
-		Version: NoCompactMarkVersion1,
-
+		ID:            id,
+		Version:       NoCompactMarkVersion1,
 		NoCompactTime: time.Now().Unix(),
 		Reason:        reason,
 		Details:       details,
@@ -362,7 +370,9 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 	if err := bkt.Upload(ctx, m, bytes.NewBuffer(noCompactMark)); err != nil {
 		return errors.Wrapf(err, "upload file %s to bucket", m)
 	}
-	markedForNoCompact.Inc()
+	if markedForNoCompact != nil {
+		markedForNoCompact.Inc()
+	}
 	level.Info(logger).Log("msg", "block has been marked for no compaction", "block", id)
 	return nil
 }
