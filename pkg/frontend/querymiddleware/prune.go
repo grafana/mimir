@@ -9,7 +9,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/promql/parser"
 
-	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -31,23 +30,25 @@ func newPruneMiddleware(logger log.Logger) MetricsQueryMiddleware {
 }
 
 func (p *pruneMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
-	log := spanlogger.FromContext(ctx, p.logger)
+	spanLogger := spanlogger.FromContext(ctx, p.logger)
 
-	prunedQuery, success, err := p.pruneQuery(ctx, r.GetQuery())
+	originalExpr := r.GetQueryExpr()
+	originalQuery := originalExpr.String()
+
+	prunedExpr, success, err := p.pruneQuery(ctx, originalExpr, originalQuery)
 	if err != nil {
-		level.Warn(log).Log("msg", "failed to prune the input query, falling back to the original query", "query", r.GetQuery(), "err", err)
+		level.Warn(spanLogger).Log("msg", "failed to prune the input query, falling back to the original query", "query", originalQuery, "err", err)
 
 		return p.next.Do(ctx, r)
 	}
 
 	if !success {
-		level.Debug(log).Log("msg", "query pruning had no effect", "query", r.GetQuery())
+		spanLogger.DebugLog("msg", "query pruning had no effect", "query", originalQuery)
 		return p.next.Do(ctx, r)
 	}
 
-	level.Debug(log).Log("msg", "query has been rewritten by pruning", "original", r.GetQuery(), "rewritten", prunedQuery)
-
-	updatedReq, err := r.WithQuery(prunedQuery)
+	spanLogger.DebugLog("msg", "query has been rewritten by pruning", "original", originalQuery, "rewritten", prunedExpr)
+	updatedReq, err := r.WithExpr(prunedExpr)
 	if err != nil {
 		return nil, err
 	}
@@ -55,20 +56,13 @@ func (p *pruneMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 	return p.next.Do(ctx, updatedReq)
 }
 
-func (p *pruneMiddleware) pruneQuery(ctx context.Context, query string) (string, bool, error) {
-	// Parse the query.
-	expr, err := parser.ParseExpr(query)
-	if err != nil {
-		return "", false, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
-	}
-	origQueryString := expr.String()
-
+func (p *pruneMiddleware) pruneQuery(ctx context.Context, queryExpr parser.Expr, queryString string) (parser.Expr, bool, error) {
 	mapper := astmapper.NewQueryPruner(ctx, p.logger)
-	prunedQuery, err := mapper.Map(expr)
+	prunedQuery, err := mapper.Map(queryExpr)
 	if err != nil {
-		return "", false, err
+		return nil, false, err
 	}
 	prunedQueryString := prunedQuery.String()
 
-	return prunedQueryString, origQueryString != prunedQueryString, nil
+	return prunedQuery, queryString != prunedQueryString, nil
 }

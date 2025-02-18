@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql/parser"
 
-	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -53,8 +52,10 @@ func (c *prom2RangeCompatHandler) Do(ctx context.Context, r MetricsQueryRequest)
 		return c.next.Do(ctx, r)
 	}
 
-	origQuery := r.GetQuery()
-	rewritten, err := c.rewrite(ctx, origQuery)
+	origExpr := r.GetQueryExpr()
+	origQuery := origExpr.String()
+
+	rewritten, err := c.rewrite(ctx, origExpr)
 	if err != nil {
 		return c.next.Do(ctx, r)
 	}
@@ -75,12 +76,7 @@ func (c *prom2RangeCompatHandler) Do(ctx context.Context, r MetricsQueryRequest)
 	return c.next.Do(ctx, r)
 }
 
-func (c *prom2RangeCompatHandler) rewrite(ctx context.Context, query string) (parser.Expr, error) {
-	expr, err := parser.ParseExpr(query)
-	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
-	}
-
+func (c *prom2RangeCompatHandler) rewrite(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
 	mapper := astmapper.NewProm2RangeCompat(ctx)
 	rewritten, err := mapper.Map(expr)
 	if err != nil {
