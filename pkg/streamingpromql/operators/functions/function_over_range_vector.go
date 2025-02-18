@@ -144,7 +144,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		f, hasFloat, h, err := m.Func.StepFunc(step, m.rangeSeconds, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc)
+		f, hasFloat, h, err := m.Func.StepFunc(step, m.rangeSeconds, m.scalarArgsData, m.timeRange, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -179,7 +179,13 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 
 func (m *FunctionOverRangeVector) emitAnnotation(generator types.AnnotationGenerator) {
 	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex)
-	m.Annotations.Add(generator(metricName, m.Inner.ExpressionPosition()))
+	pos := m.Inner.ExpressionPosition()
+
+	if m.Func.UseFirstArgumentPositionForAnnotations {
+		pos = m.ScalarArgs[0].ExpressionPosition()
+	}
+
+	m.Annotations.Add(generator(metricName, pos))
 }
 
 func (m *FunctionOverRangeVector) Close() {
