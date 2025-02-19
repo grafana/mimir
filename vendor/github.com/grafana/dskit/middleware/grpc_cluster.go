@@ -124,13 +124,13 @@ func getClusterFromIncomingContext(ctx context.Context, method string, expectedC
 		if reqCluster == expectedCluster {
 			return nil, nil
 		}
-		return []any{"msg", "rejecting request with wrong cluster verification label", "method", method, "clusterVerificationLabel", expectedCluster, "requestClusterVerificationLabel", reqCluster}, fmt.Errorf("rejected request with wrong cluster verification label %q", reqCluster)
+		return []any{"msg", "rejecting request with wrong cluster verification label", "method", method, "clusterVerificationLabel", expectedCluster, "requestClusterVerificationLabel", reqCluster}, fmt.Errorf("rejected request with wrong cluster verification label %q - it should be %q", reqCluster, expectedCluster)
 	}
 	if errors.Is(err, clusterutil.ErrNoClusterVerificationLabel) {
 		if !failOnEmpty {
 			return nil, nil
 		}
-		return []any{"msg", "rejecting request with no cluster verification label", "method", method, "clusterVerificationLabel", expectedCluster}, fmt.Errorf("rejected request with empty cluster verification label")
+		return []any{"msg", "rejecting request with no cluster verification label", "method", method, "clusterVerificationLabel", expectedCluster}, fmt.Errorf("rejected request with empty cluster verification label - it should be %q", expectedCluster)
 	}
 	return []any{"msg", "rejecting request due to an error during cluster verification label extraction", "method", method, "clusterVerificationLabel", expectedCluster, "err", err}, fmt.Errorf("rejected request: %w", err)
 }
