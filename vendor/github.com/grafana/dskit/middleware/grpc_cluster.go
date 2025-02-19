@@ -46,29 +46,25 @@ func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.Co
 		}
 
 		if cluster == "" {
-			if logger != nil {
-				level.Warn(logger).Log("msg", "no cluster provided", "method", method)
-			}
-			if invalidCluster != nil {
-				invalidCluster.WithLabelValues("grpc", method, cluster, failureClient).Inc()
-			}
+			level.Warn(logger).Log("msg", "no cluster provided", "method", method)
+			invalidCluster.WithLabelValues("grpc", method, cluster, failureClient).Inc()
 			return errNoClusterProvided
 		}
 
-		reqCluster, err := clusterutil.GetClusterFromIncomingContext(ctx, logger)
-		switch {
-		case (err == nil && reqCluster == cluster) || errors.Is(err, clusterutil.ErrNoClusterVerificationLabel):
-			// The incoming context either contains no cluster verification label,
-			// or it already contains one which is equal to the expected one, which
-			// is the cluster parameter.
-			// In both cases we propagate the latter to the outgoing context.
-			ctx = clusterutil.PutClusterIntoOutgoingContext(ctx, cluster)
-			return handleError(invoker(ctx, method, req, reply, cc, opts...), cluster, method, invalidCluster, logger)
-		case err == nil && reqCluster != cluster:
-			return grpcutil.Status(codes.Internal, fmt.Sprintf("wrong cluster verification label in the incoming context: %q, expected: %q", reqCluster, cluster)).Err()
-		default:
-			return err
+		msgs, err := getClusterFromIncomingContext(ctx, method, cluster, false)
+		if err != nil {
+			if msgs != nil {
+				level.Warn(logger).Log(msgs)
+			}
+			invalidCluster.WithLabelValues("grpc", method, cluster, failureClient).Inc()
+			return grpcutil.Status(codes.Internal, err.Error()).Err()
 		}
+		// The incoming context either contains no cluster verification label,
+		// or it already contains one which is equal to the expected one, which
+		// is the cluster parameter.
+		// In both cases we propagate the latter to the outgoing context.
+		ctx = clusterutil.PutClusterIntoOutgoingContext(ctx, cluster)
+		return handleError(invoker(ctx, method, req, reply, cc, opts...), cluster, method, invalidCluster, logger)
 	}
 }
 
@@ -82,12 +78,8 @@ func handleError(err error, cluster string, method string, invalidCluster *prome
 			if errDetails, ok := details[0].(*grpcutil.ErrorDetails); ok {
 				if errDetails.GetCause() == grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL {
 					msg := fmt.Sprintf("request rejected by the server: %s", stat.Message())
-					if logger != nil {
-						level.Warn(logger).Log("msg", msg, "method", method, "clusterVerificationLabel", cluster)
-					}
-					if invalidCluster != nil {
-						invalidCluster.WithLabelValues("grpc", method, cluster, failureServer).Inc()
-					}
+					level.Warn(logger).Log("msg", msg, "method", method, "clusterVerificationLabel", cluster)
+					invalidCluster.WithLabelValues("grpc", method, cluster, failureServer).Inc()
 					return grpcutil.Status(codes.Internal, msg).Err()
 				}
 			}
@@ -100,7 +92,7 @@ func handleError(err error, cluster string, method string, invalidCluster *prome
 // ClusterUnaryServerInterceptor checks if the incoming gRPC metadata contains any cluster information and if so,
 // checks if the latter corresponds to the given cluster. If it is the case, the request is further propagated.
 // Otherwise, an error is returned. In that case, non-nil invalidClusters counter is increased.
-func ClusterUnaryServerInterceptor(cluster string, invalidClusters *prometheus.CounterVec, logger log.Logger) grpc.UnaryServerInterceptor {
+func ClusterUnaryServerInterceptor(cluster string, logger log.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		// We skip the gRPC health check.
 		if _, ok := info.Server.(healthpb.HealthServer); ok {
@@ -114,32 +106,31 @@ func ClusterUnaryServerInterceptor(cluster string, invalidClusters *prometheus.C
 			return nil, errNoClusterProvided
 		}
 
-		reqCluster, err := clusterutil.GetClusterFromIncomingContext(ctx, logger)
-		var (
-			msgs   []any
-			errMsg string
-		)
-		switch {
-		case err == nil && cluster == reqCluster:
+		msgs, err := getClusterFromIncomingContext(ctx, info.FullMethod, cluster, true)
+		if err == nil {
 			return handler(ctx, req)
-		case err == nil && cluster != reqCluster:
-			msgs = []any{"msg", "rejecting request with wrong cluster verification label", "method", info.FullMethod, "clusterVerificationLabel", cluster, "requestClusterVerificationLabel", reqCluster}
-			errMsg = fmt.Sprintf("server from cluster %q rejected request intended for cluster %q", cluster, reqCluster)
-		case errors.Is(err, clusterutil.ErrNoClusterVerificationLabel):
-			msgs = []any{"msg", "rejecting request with no cluster verification label", "method", info.FullMethod, "clusterVerificationLabel", cluster}
-			errMsg = fmt.Sprintf("server from cluster %q rejected request with no cluster verification label", cluster)
-		default:
-			return nil, err
 		}
-
-		if logger != nil {
+		if msgs != nil {
 			level.Warn(logger).Log(msgs...)
 		}
-		if invalidClusters != nil {
-			invalidClusters.WithLabelValues("grpc", info.FullMethod, reqCluster).Inc()
-		}
-
-		stat := grpcutil.Status(codes.FailedPrecondition, errMsg, &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL})
+		stat := grpcutil.Status(codes.FailedPrecondition, err.Error(), &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL})
 		return nil, stat.Err()
 	}
+}
+
+func getClusterFromIncomingContext(ctx context.Context, method string, expectedCluster string, failOnEmpty bool) ([]any, error) {
+	reqCluster, err := clusterutil.GetClusterFromIncomingContext(ctx)
+	if err == nil {
+		if reqCluster == expectedCluster {
+			return nil, nil
+		}
+		return []any{"msg", "rejecting request with wrong cluster verification label", "method", method, "clusterVerificationLabel", expectedCluster, "requestClusterVerificationLabel", reqCluster}, fmt.Errorf("rejected request with wrong cluster verification label %q", reqCluster)
+	}
+	if errors.Is(err, clusterutil.ErrNoClusterVerificationLabel) {
+		if !failOnEmpty {
+			return nil, nil
+		}
+		return []any{"msg", "rejecting request with no cluster verification label", "method", method, "clusterVerificationLabel", expectedCluster}, fmt.Errorf("rejected request with empty cluster verification label")
+	}
+	return []any{"msg", "rejecting request due to an error during cluster verification label extraction", "method", method, "clusterVerificationLabel", expectedCluster, "err", err}, fmt.Errorf("rejected request: %w", err)
 }
