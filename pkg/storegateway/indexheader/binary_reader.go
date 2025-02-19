@@ -9,7 +9,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
-	"golang.org/x/sync/errgroup"
 	"hash"
 	"hash/crc32"
 	"io"
@@ -25,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
