@@ -800,7 +800,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{1}, activeMatching)
 
-	c.ReloadMatchers(asm, currentTime)
+	c.ReloadMatchersAndTrackers(asm, nil, currentTime)
 	valid = c.Purge(currentTime, nil)
 	assert.False(t, valid)
 
@@ -815,7 +815,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 	assert.Equal(t, []int{2}, activeMatching)
 
 	asmWithLessMatchers := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{}))
-	c.ReloadMatchers(asmWithLessMatchers, currentTime)
+	c.ReloadMatchersAndTrackers(asmWithLessMatchers, nil, currentTime)
 
 	// Adding timeout time to make Purge results valid.
 	currentTime = currentTime.Add(DefaultTimeout)
@@ -830,7 +830,7 @@ func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
 		"a": `{a="3"}`,
 		"b": `{a="4"}`,
 	}))
-	c.ReloadMatchers(asmWithMoreMatchers, currentTime)
+	c.ReloadMatchersAndTrackers(asmWithMoreMatchers, nil, currentTime)
 
 	// Adding timeout time to make Purge results valid.
 	currentTime = currentTime.Add(DefaultTimeout)
@@ -869,7 +869,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 		"foo": `{a=~.+}`,
 	}))
 
-	c.ReloadMatchers(asm, currentTime)
+	c.ReloadMatchersAndTrackers(asm, nil, currentTime)
 	c.purge(time.Time{}, nil)
 	// Adding timeout time to make Purge results valid.
 	currentTime = currentTime.Add(DefaultTimeout)
@@ -908,7 +908,7 @@ func TestActiveSeries_ReloadSeriesMatchers_SameSizeNewLabels(t *testing.T) {
 		"bar": `{b=~.+}`,
 	}))
 
-	c.ReloadMatchers(asm, currentTime)
+	c.ReloadMatchersAndTrackers(asm, nil, currentTime)
 	c.purge(time.Time{}, nil)
 	// Adding timeout time to make Purge results valid.
 	currentTime = currentTime.Add(DefaultTimeout)

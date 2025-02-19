@@ -114,7 +114,7 @@ func (c *ActiveSeries) ConfigDiffers(ctCfg asmodel.CustomTrackersConfig, caCfg *
 	return ctCfg.String() != c.matchers.Config().String() || caCfg != c.cat
 }
 
-func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
+func (c *ActiveSeries) ReloadMatchersAndTrackers(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, now time.Time) {
 	c.configMutex.Lock()
 	defer c.configMutex.Unlock()
 
@@ -122,6 +122,7 @@ func (c *ActiveSeries) ReloadMatchers(asm *asmodel.Matchers, now time.Time) {
 		c.stripes[i].reinitialize(asm, &c.deleted, c.cat)
 	}
 	c.matchers = asm
+	c.cat = cat
 	c.lastConfigUpdate = now
 }
 
