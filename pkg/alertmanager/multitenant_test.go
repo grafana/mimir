@@ -2511,6 +2511,11 @@ func TestComputeConfig(t *testing.T) {
 	cfg2.GrafanaAlertmanagerTenantSuffix = "-grafana"
 	amWithSuffix := setupSingleMultitenantAlertmanager(t, cfg2, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg2)
 
+	tenantReceivingRequests := "receiving-1-grafana"
+	amWithSuffix.receivingRequests[tenantReceivingRequests] = time.Now().Unix()
+	tenantReceivingRequestsExpired := "receiving-2-grafana"
+	amWithSuffix.receivingRequests[tenantReceivingRequestsExpired] = time.Now().Add(-time.Hour).Unix()
+
 	var grafanaCfg GrafanaAlertmanagerConfig
 	require.NoError(t, json.Unmarshal([]byte(grafanaConfig), &grafanaCfg))
 
@@ -2550,6 +2555,36 @@ func TestComputeConfig(t *testing.T) {
 			expURL: mimirExternalURL,
 		},
 		{
+			name: "no grafana configuration, receiving alerts",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+			},
+			expStartAM: true,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequests,
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "no grafana configuration, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: simpleConfigOne,
+				},
+			},
+			expStartAM: false,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequestsExpired,
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
 			name: "empty grafana configuration",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
@@ -2573,6 +2608,52 @@ func TestComputeConfig(t *testing.T) {
 			expURL: mimirExternalURL,
 		},
 		{
+			name: "empty grafana configuration, receiving alerts",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          tenantReceivingRequests,
+					RawConfig:     "",
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expStartAM: true,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequests,
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "empty grafana configuration, idle tenant",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          tenantReceivingRequestsExpired,
+					RawConfig:     "",
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expStartAM: false,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequestsExpired,
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
 			name: "grafana configuration is not promoted",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
@@ -2590,6 +2671,50 @@ func TestComputeConfig(t *testing.T) {
 			expStartAM: false,
 			expCfg: alertspb.AlertConfigDesc{
 				User:      "user-grafana",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "grafana configuration is not promoted, receiving alerts",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          tenantReceivingRequests,
+					RawConfig:     grafanaConfig,
+					Promoted:      false,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expStartAM: true,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequests,
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "grafana configuration is not promoted, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          tenantReceivingRequestsExpired,
+					RawConfig:     grafanaConfig,
+					Promoted:      false,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expStartAM: false,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequestsExpired,
 				RawConfig: simpleConfigOne,
 			},
 			expURL: mimirExternalURL,
@@ -2618,6 +2743,52 @@ func TestComputeConfig(t *testing.T) {
 			expURL: mimirExternalURL,
 		},
 		{
+			name: "grafana configuration is default, receiving alerts",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          tenantReceivingRequests,
+					RawConfig:     grafanaConfig,
+					Default:       true,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expStartAM: true,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequests,
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
+			name: "grafana configuration is default, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          tenantReceivingRequestsExpired,
+					RawConfig:     grafanaConfig,
+					Default:       true,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header": "test-value"},
+				},
+			},
+			expStartAM: false,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequestsExpired,
+				RawConfig: simpleConfigOne,
+			},
+			expURL: mimirExternalURL,
+		},
+		{
 			name: "empty mimir configuration",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
@@ -2636,6 +2807,56 @@ func TestComputeConfig(t *testing.T) {
 			expStartAM: true,
 			expCfg: alertspb.AlertConfigDesc{
 				User:      "user-grafana",
+				RawConfig: string(combinedCfg),
+				Templates: []*alertspb.TemplateDesc{},
+			},
+			expURL:     grafanaExternalURL,
+			expHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+		},
+		{
+			name: "empty mimir configuration, receiving alerts",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: "",
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          tenantReceivingRequests,
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+				},
+			},
+			expStartAM: true,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequests,
+				RawConfig: string(combinedCfg),
+				Templates: []*alertspb.TemplateDesc{},
+			},
+			expURL:     grafanaExternalURL,
+			expHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+		},
+		{
+			name: "empty mimir configuration, idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequestsExpired,
+					RawConfig: "",
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          tenantReceivingRequestsExpired,
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+				},
+			},
+			expStartAM: true,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequestsExpired,
 				RawConfig: string(combinedCfg),
 				Templates: []*alertspb.TemplateDesc{},
 			},
@@ -2687,6 +2908,54 @@ func TestComputeConfig(t *testing.T) {
 			expStartAM: true,
 			expCfg: alertspb.AlertConfigDesc{
 				User:      "user-grafana",
+				RawConfig: simpleConfigOne,
+			},
+			expURL: am.cfg.ExternalURL.String(),
+		},
+		{
+			// TODO: change once merging configs is implemented.
+			name: "both mimir and grafana configurations (merging not implemented), receiving alerts",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          tenantReceivingRequests,
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+				},
+			},
+			expStartAM: true,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequests,
+				RawConfig: simpleConfigOne,
+			},
+			expURL: am.cfg.ExternalURL.String(),
+		},
+		{
+			// TODO: change once merging configs is implemented.
+			name: "both mimir and grafana configurations (merging not implemented), idle Alertmanager",
+			cfg: alertspb.AlertConfigDescs{
+				Mimir: alertspb.AlertConfigDesc{
+					User:      tenantReceivingRequests,
+					RawConfig: simpleConfigOne,
+				},
+				Grafana: alertspb.GrafanaAlertConfigDesc{
+					User:          tenantReceivingRequests,
+					RawConfig:     grafanaConfig,
+					Default:       false,
+					Promoted:      true,
+					ExternalUrl:   grafanaExternalURL,
+					StaticHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
+				},
+			},
+			expStartAM: true,
+			expCfg: alertspb.AlertConfigDesc{
+				User:      tenantReceivingRequests,
 				RawConfig: simpleConfigOne,
 			},
 			expURL: am.cfg.ExternalURL.String(),

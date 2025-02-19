@@ -83,8 +83,9 @@ type MultitenantAlertmanagerConfig struct {
 
 	EnableAPI bool `yaml:"enable_api" category:"advanced"`
 
-	GrafanaAlertmanagerCompatibilityEnabled bool   `yaml:"grafana_alertmanager_compatibility_enabled" category:"experimental"`
-	GrafanaAlertmanagerTenantSuffix         string `yaml:"grafana_alertmanager_conditionally_skip_tenant_suffix" category:"experimental"`
+	GrafanaAlertmanagerCompatibilityEnabled bool          `yaml:"grafana_alertmanager_compatibility_enabled" category:"experimental"`
+	GrafanaAlertmanagerTenantSuffix         string        `yaml:"grafana_alertmanager_conditionally_skip_tenant_suffix" category:"experimental"`
+	GrafanaAlertmanagerIdleGracePeriod      time.Duration `yaml:"grafana_alertmanager_idle_grace_period" category:"experimental"`
 
 	MaxConcurrentGetRequestsPerTenant int `yaml:"max_concurrent_get_requests_per_tenant" category:"advanced"`
 
@@ -111,7 +112,8 @@ type MultitenantAlertmanagerConfig struct {
 }
 
 const (
-	defaultPeerTimeout = 15 * time.Second
+	defaultPeerTimeout                    = 15 * time.Second
+	defaultGrafanaAlertmanagerGracePeriod = 5 * time.Minute
 )
 
 // RegisterFlags adds the features required to config this to the given FlagSet.
@@ -128,7 +130,8 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 
 	f.BoolVar(&cfg.EnableAPI, "alertmanager.enable-api", true, "Enable the alertmanager config API.")
 	f.BoolVar(&cfg.GrafanaAlertmanagerCompatibilityEnabled, "alertmanager.grafana-alertmanager-compatibility-enabled", false, "Enable routes to support the migration and operation of the Grafana Alertmanager.")
-	f.StringVar(&cfg.GrafanaAlertmanagerTenantSuffix, "alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix", "", "Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration.")
+	f.StringVar(&cfg.GrafanaAlertmanagerTenantSuffix, "alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix", "", "Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration or they are receiving alerts.")
+	f.DurationVar(&cfg.GrafanaAlertmanagerIdleGracePeriod, "alertmanager.grafana-alertmanager-grace-period", defaultGrafanaAlertmanagerGracePeriod, "Duration to wait before shutting down an idle Alertmanager for a tenant that matches grafana-alertmanager-conditionally-skip-tenant-suffix and is using an unpromoted or default configuration.")
 	f.IntVar(&cfg.MaxConcurrentGetRequestsPerTenant, "alertmanager.max-concurrent-get-requests-per-tenant", 0, "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.")
 
 	f.BoolVar(&cfg.EnableStateCleanup, "alertmanager.enable-state-cleanup", true, "Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration.")
@@ -324,6 +327,10 @@ type MultitenantAlertmanager struct {
 	tenantsDiscovered prometheus.Gauge
 	syncTotal         *prometheus.CounterVec
 	syncFailures      *prometheus.CounterVec
+
+	// Record the last time we received a request for a given Grafana tenant.
+	// We can shut down an idle Alertmanager after the grace period elapses.
+	receivingRequests map[string]int64
 }
 
 // NewMultitenantAlertmanager creates a new MultitenantAlertmanager.
@@ -390,6 +397,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		fallbackConfig:      string(fallbackConfig),
 		cfgs:                map[string]alertspb.AlertConfigDesc{},
 		alertmanagers:       map[string]*Alertmanager{},
+		receivingRequests:   map[string]int64{},
 		alertmanagerMetrics: newAlertmanagerMetrics(logger),
 		multitenantMetrics:  newMultitenantAlertmanagerMetrics(registerer),
 		store:               store,
@@ -727,12 +735,33 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		AlertConfigDesc: cfgs.Mimir,
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
+	strictInit := am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(cfgs.Mimir.User, am.cfg.GrafanaAlertmanagerTenantSuffix)
 
-	// If the Grafana configuration is either default, not promoted, or empty, use the Mimir configuration.
+	// A Grafana configuration is considered usable if it's promoted, non-default, and not empty.
 	if !cfgs.Grafana.Promoted || cfgs.Grafana.Default || cfgs.Grafana.RawConfig == "" {
-		level.Debug(am.logger).Log("msg", "using mimir config", "user", cfgs.Mimir.User)
-		isGrafanaTenant := am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(cfgs.Mimir.User, am.cfg.GrafanaAlertmanagerTenantSuffix)
-		return cfg, !isGrafanaTenant, nil
+		if !strictInit {
+			return cfg, true, nil
+		}
+
+		// If the tenant ID matches the configured Grafana suffix, only run the Alertmanager if it's receiving alerts.
+		am.alertmanagersMtx.Lock()
+		defer am.alertmanagersMtx.Unlock()
+		createdAt, ok := am.receivingRequests[cfgs.Mimir.User]
+		if !ok || time.Since(time.Unix(createdAt, 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod {
+			// Use the zero-value to indicate that we've skipped the tenant.
+			am.receivingRequests[cfgs.Mimir.User] = time.Time{}.Unix()
+			return cfg, false, nil
+		}
+
+		level.Debug(am.logger).Log("msg", "user has no usable config but is receiving alerts, keeping Alertmanager active", "user", cfgs.Mimir.User)
+		return cfg, true, nil
+	}
+
+	// If the Alertmanager was previously skipped but now has a usable configuration, remove it from the skipped list.
+	if strictInit {
+		am.alertmanagersMtx.Lock()
+		delete(am.receivingRequests, cfgs.Mimir.User)
+		am.alertmanagersMtx.Unlock()
 	}
 
 	// If the Mimir configuration is either default or empty, use the Grafana configuration.
@@ -933,7 +962,6 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		Limits:                            am.limits,
 		Features:                          am.features,
 		GrafanaAlertmanagerCompatibility:  am.cfg.GrafanaAlertmanagerCompatibilityEnabled,
-		GrafanaAlertmanagerTenantSuffix:   am.cfg.GrafanaAlertmanagerTenantSuffix,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
@@ -1002,8 +1030,36 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 
 	if ok {
 		userAM.mux.ServeHTTP(w, req)
+
+		am.alertmanagersMtx.Lock()
+		defer am.alertmanagersMtx.Unlock()
+		if _, ok := am.receivingRequests[userID]; ok {
+			// Update the last time the user received alerts.
+			level.Debug(am.logger).Log("msg", "updating last alert reception time", "user", userID)
+			am.receivingRequests[userID] = time.Now().Unix()
+		}
 		return
 	}
+
+	// If the Alertmanager initialization was previously skipped, start the Alertmanager.
+	am.alertmanagersMtx.Lock()
+	ts, ok := am.receivingRequests[userID]
+	if ok && time.Unix(ts, 0).IsZero() {
+		am.receivingRequests[userID] = time.Now().Unix()
+		am.alertmanagersMtx.Unlock()
+
+		userAM, err = am.startAlertmanager(req.Context(), userID)
+		if err != nil {
+			level.Error(am.logger).Log("msg", "unable to initialize the Alertmanager", "user", userID, "err", err)
+			http.Error(w, "Failed to initialize the Alertmanager", http.StatusInternalServerError)
+			return
+		}
+
+		level.Debug(am.logger).Log("msg", "alerts received, Alertmanager initialized", "user", userID)
+		userAM.mux.ServeHTTP(w, req)
+		return
+	}
+	am.alertmanagersMtx.Unlock()
 
 	if am.fallbackConfig != "" {
 		userAM, err = am.alertmanagerFromFallbackConfig(req.Context(), userID)
@@ -1023,6 +1079,52 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 
 	level.Info(am.logger).Log("msg", "the Alertmanager has no configuration and no fallback specified", "user", userID)
 	http.Error(w, "the Alertmanager is not configured", http.StatusPreconditionFailed)
+}
+
+func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID string) (*Alertmanager, error) {
+	if !am.isUserOwned(userID) {
+		return nil, errors.Wrap(errNotUploadingFallback, "user not owned by this instance")
+	}
+
+	cfg, err := am.store.GetAlertConfig(ctx, userID)
+	if err != nil {
+		if !errors.Is(err, alertspb.ErrNotFound) {
+			return nil, errors.Wrap(err, "failed to check for existing configuration")
+		}
+
+		// Upload an empty config so that the Alertmanager is not de-activated in the next poll.
+		level.Warn(am.logger).Log("msg", "no configuration exists for user; uploading fallback configuration", "user", userID)
+		cfgDesc := alertspb.ToProto("", nil, userID)
+		err = am.store.SetAlertConfig(ctx, cfgDesc)
+		if err != nil {
+			return nil, err
+		}
+
+		// Calling setConfig with an empty configuration will use the fallback config.
+		amConfig := amConfig{
+			AlertConfigDesc: cfgDesc,
+			tmplExternalURL: am.cfg.ExternalURL.URL,
+		}
+		err = am.setConfig(amConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		am.alertmanagersMtx.Lock()
+		defer am.alertmanagersMtx.Unlock()
+		return am.alertmanagers[userID], nil
+	}
+
+	amConfig := amConfig{
+		AlertConfigDesc: cfg,
+		tmplExternalURL: am.cfg.ExternalURL.URL,
+	}
+	if err := am.setConfig(amConfig); err != nil {
+		return nil, err
+	}
+	am.alertmanagersMtx.Lock()
+	defer am.alertmanagersMtx.Unlock()
+	return am.alertmanagers[userID], nil
 }
 
 func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Context, userID string) (*Alertmanager, error) {
