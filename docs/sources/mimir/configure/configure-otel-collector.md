@@ -111,7 +111,7 @@ service:
 
 OpenTelemetry metrics use resource attributes to describe the set of characteristics associated with a given resource, or entity producing telemetry data. For example, a host resource might have multiple attributes, including an ID, and image, and a type.
 
-To optimize the storage of and ability to query this data, Mimir automatically assigns the following OTel resource attributes as labels, with with periods (`.`) replaced by underscores (`_`):
+To optimize the storage of and ability to query this data, Mimir automatically assigns the following OTel resource attributes as labels at the time of ingestion, with periods (`.`) replaced by underscores (`_`):
 
 - `service.instance.id`
 - `service.name`
@@ -132,10 +132,14 @@ To optimize the storage of and ability to query this data, Mimir automatically a
 - `k8s.replicaset.name`
 - `k8s.statefulset.name`
 
-All the rest.
+{{< admonition type="note" >}}
+Some of these labels are mutually exclusive.
+{{< /admonition >}}
 
-How to update.
+To update this list, 
 If you are using Grafana Cloud, contact support to configure this setting.
+
+Mimir stores additional OTel resource attributes in a separate series called `target_info`, which you can query using a join query or the Prometheus `info()` function. Refer to [Functions](https://prometheus.io/docs/prometheus/latest/querying/functions/) in the Prometheus documentation for more information.
 
 To learn more about OpenTelemetry resource attributes, refer to link.
 
