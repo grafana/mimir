@@ -107,6 +107,38 @@ service:
       exporters: [..., prometheusremotewrite]
 ```
 
+## Work with default OpenTelemetry labels
+
+OpenTelemetry metrics use resource attributes to describe the set of characteristics associated with a given resource, or entity producing telemetry data. For example, a host resource might have multiple attributes, including an ID, and image, and a type.
+
+To optimize the storage of and ability to query this data, Mimir automatically assigns the following OTel resource attributes as labels, with with periods (`.`) replaced by underscores (`_`):
+
+- `service.instance.id`
+- `service.name`
+- `service.namespace`
+- `service.version`
+- `cloud.availability_zone`
+- `cloud region`
+- `container.name`
+- `deployment.environment.name`
+- `k8s.cluster.name`
+- `k8s.container.name`
+- `k8s.cronjob.name`
+- `k8s.daemonset.name`
+- `k8s.deployment.name`
+- `k8s.job.name`
+- `k8s.namespace.name`
+- `k8s.pod.name`
+- `k8s.replicaset.name`
+- `k8s.statefulset.name`
+
+All the rest.
+
+How to update.
+If you are using Grafana Cloud, contact support to configure this setting.
+
+To learn more about OpenTelemetry resource attributes, refer to link.
+
 ## Format considerations
 
 We follow the official [OTLP Metric points to Prometheus](https://opentelemetry.io/docs/reference/specification/compatibility/prometheus_and_openmetrics/#otlp-metric-points-to-prometheus) specification.
