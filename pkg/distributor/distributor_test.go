@@ -2626,9 +2626,18 @@ func TestDistributor_MetricsForLabelMatchers_adjustPushDownLimit(t *testing.T) {
 			hints: &storage.SelectHints{
 				Limit: 50,
 			},
-			expectedLimit: 25, // the limit is divided between two shards (ingest_shard_size=6; RF=3)
+			expectedLimit: 25, // the pushed-down limit is divided between two shards (ingest_shard_size=6; RF=3)
 		},
 		"should adjust push-down limit if ingest-storage is enabled": {
+			setupFunc: func(testConfig *prepConfig) {
+				testConfig.ingestStorageEnabled = true
+			},
+			hints: &storage.SelectHints{
+				Limit: 50,
+			},
+			expectedLimit: 5, // the pushed-down limit is divided by the number of ingesters
+		},
+		"should adjust push-down limit if ingest-storage is enabled and partition shard size is set": {
 			setupFunc: func(testConfig *prepConfig) {
 				testConfig.ingestStorageEnabled = true
 				testConfig.limits = prepareDefaultLimits()
@@ -2637,7 +2646,7 @@ func TestDistributor_MetricsForLabelMatchers_adjustPushDownLimit(t *testing.T) {
 			hints: &storage.SelectHints{
 				Limit: 50,
 			},
-			expectedLimit: 17,
+			expectedLimit: 17, // the pushed-down limit is divided by number of partitions (ingest_shard_size=3)
 		},
 	}
 
