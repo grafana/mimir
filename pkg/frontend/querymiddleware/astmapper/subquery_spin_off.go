@@ -26,17 +26,19 @@ const (
 type subquerySpinOffMapper struct {
 	ctx             context.Context
 	defaultStepFunc func(rangeMillis int64) int64
+	minRange        time.Duration
 
 	logger log.Logger
 	stats  *SubquerySpinOffMapperStats
 }
 
 // NewSubquerySpinOffMapper creates a new instant query mapper.
-func NewSubquerySpinOffMapper(ctx context.Context, defaultStepFunc func(rangeMillis int64) int64, logger log.Logger, stats *SubquerySpinOffMapperStats) ASTMapper {
+func NewSubquerySpinOffMapper(ctx context.Context, defaultStepFunc func(rangeMillis int64) int64, minRange time.Duration, logger log.Logger, stats *SubquerySpinOffMapperStats) ASTMapper {
 	queryMapper := NewASTExprMapper(
 		&subquerySpinOffMapper{
 			ctx:             ctx,
 			defaultStepFunc: defaultStepFunc,
+			minRange:        minRange,
 			logger:          logger,
 			stats:           stats,
 		},
@@ -90,7 +92,7 @@ func (m *subquerySpinOffMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, f
 		// The last argument will typically contain the subquery in an aggregation function
 		// Examples: last_over_time(<subquery>[5m:]) or quantile_over_time(0.5, <subquery>[5m:])
 		if sq, ok := e.Args[lastArgIdx].(*parser.SubqueryExpr); ok {
-			canBeSpunOff, isConstant := subqueryCanBeSpunOff(*sq)
+			canBeSpunOff, isConstant := m.subqueryCanBeSpunOff(*sq)
 			if isConstant {
 				return expr, false, nil
 			}
@@ -142,7 +144,7 @@ func (m *subquerySpinOffMapper) MapExpr(expr parser.Expr) (mapped parser.Expr, f
 			return downstreamQuery(expr)
 		}
 		// If there's no subquery in the children, we can abort early and pass the expression through to the downstream execution path.
-		if !hasSubqueryInChildren(expr) {
+		if !m.hasSubqueryInChildren(expr) {
 			return downstreamQuery(expr)
 		}
 		return expr, false, nil
@@ -172,14 +174,14 @@ func isComplexExpr(expr parser.Node) bool {
 	}
 }
 
-func hasSubqueryInChildren(expr parser.Node) bool {
+func (m *subquerySpinOffMapper) hasSubqueryInChildren(expr parser.Node) bool {
 	switch e := expr.(type) {
 	case *parser.SubqueryExpr:
-		canBeSpunOff, _ := subqueryCanBeSpunOff(*e)
+		canBeSpunOff, _ := m.subqueryCanBeSpunOff(*e)
 		return canBeSpunOff
 	default:
 		for _, child := range parser.Children(e) {
-			if hasSubqueryInChildren(child) {
+			if m.hasSubqueryInChildren(child) {
 				return true
 			}
 		}
@@ -187,14 +189,14 @@ func hasSubqueryInChildren(expr parser.Node) bool {
 	}
 }
 
-func subqueryCanBeSpunOff(sq parser.SubqueryExpr) (spinoff, constant bool) {
+func (m *subquerySpinOffMapper) subqueryCanBeSpunOff(sq parser.SubqueryExpr) (spinoff, constant bool) {
 	// @ is not supported
 	if sq.StartOrEnd != 0 || sq.Timestamp != nil {
 		return false, false
 	}
 
-	// Filter out subqueries with ranges less than 1 hour as they are not worth spinning off.
-	if sq.Range < 1*time.Hour {
+	// Filter out subqueries with ranges less than the configured minimum range.
+	if sq.Range < m.minRange {
 		return false, false
 	}
 

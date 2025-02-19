@@ -193,8 +193,11 @@ type Limits struct {
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
 	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions" category:"experimental"`
 	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
-	InstantQueriesWithSubquerySpinOff      []string               `yaml:"instant_queries_with_subquery_spin_off" json:"instant_queries_with_subquery_spin_off" doc:"nocli|description=List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance." category:"experimental"`
 	MaxFutureQueryWindow                   model.Duration         `yaml:"max_future_query_window" json:"max_future_query_window" category:"experimental"`
+
+	// Subquery Spin-off
+	InstantSubquerySpinOffEnabledRegexp    []string       `yaml:"instant_subquery_spin_off_enabled_regexp" json:"instant_subquery_spin_off_enabled_regexp" doc:"nocli|description=List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance." category:"experimental"`
+	InstantSubquerySpinOffMinRangeDuration model.Duration `yaml:"instant_subquery_spin_off_min_range_duration" json:"instant_subquery_spin_off_min_range_duration" category:"experimental"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
@@ -398,6 +401,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
 	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
 	f.Var(&l.MaxFutureQueryWindow, maxFutureQueryWindowFlag, "Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.")
+	_ = l.InstantSubquerySpinOffMinRangeDuration.Set("12h")
+	f.Var(&l.InstantSubquerySpinOffMinRangeDuration, "query-frontend.instant-subquery-spin-off.min-range-duration", "Minimum range duration of subqueries for subquery spin-off to be enabled.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -1237,8 +1242,12 @@ func (o *Overrides) IngestionPartitionsTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionPartitionsTenantShardSize
 }
 
-func (o *Overrides) InstantQueriesWithSubquerySpinOff(userID string) []string {
-	return o.getOverridesForUser(userID).InstantQueriesWithSubquerySpinOff
+func (o *Overrides) InstantSubquerySpinOffEnabledRegexp(userID string) []string {
+	return o.getOverridesForUser(userID).InstantSubquerySpinOffEnabledRegexp
+}
+
+func (o *Overrides) InstantSubquerySpinOffMinRangeDuration(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).InstantSubquerySpinOffMinRangeDuration)
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {

@@ -117,9 +117,12 @@ type Limits interface {
 	// IngestStorageReadConsistency returns the default read consistency for the tenant.
 	IngestStorageReadConsistency(userID string) string
 
-	// InstantQueriesWithSubquerySpinOff returns a list of regexp patterns of instant queries that can be optimized by spinning off range queries.
+	// InstantSubquerySpinOffEnabledRegexp returns a list of regexp patterns of instant queries that can be optimized by spinning off range queries.
 	// If the list is empty, the feature is disabled.
-	InstantQueriesWithSubquerySpinOff(userID string) []string
+	InstantSubquerySpinOffEnabledRegexp(userID string) []string
+
+	// InstantSubquerySpinOffMinRangeDuration returns the minimum range duration for subquery spin-off. Defaults to 12h.
+	InstantSubquerySpinOffMinRangeDuration(userID string) time.Duration
 
 	// MaxFutureQueryWindow returns the maximum duration into the future a query can be executed for the tenant.
 	MaxFutureQueryWindow(userID string) time.Duration

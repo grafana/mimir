@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -41,6 +42,7 @@ type spinOffSubqueriesMiddleware struct {
 	rangeHandler    MetricsQueryHandler
 	engine          *promql.Engine
 	defaultStepFunc func(int64) int64
+	enableByDefault bool
 
 	metrics spinOffSubqueriesMetrics
 }
@@ -98,6 +100,7 @@ func newSpinOffSubqueriesMiddleware(
 	rangeHandler MetricsQueryHandler,
 	registerer prometheus.Registerer,
 	defaultStepFunc func(int64) int64,
+	enableByDefault bool,
 ) MetricsQueryMiddleware {
 	metrics := newSpinOffSubqueriesMetrics(registerer)
 
@@ -110,6 +113,7 @@ func newSpinOffSubqueriesMiddleware(
 			rangeHandler:    rangeHandler,
 			metrics:         metrics,
 			defaultStepFunc: defaultStepFunc,
+			enableByDefault: enableByDefault,
 		}
 	})
 }
@@ -121,36 +125,12 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "spinOffSubqueriesMiddleware.Do")
 	defer spanLog.Span.Finish()
 
-	// For now, the feature is completely opt-in
-	// So we check that the given query is allowed to be spun off
-	tenantIDs, err := tenant.TenantIDs(ctx)
+	enabled, minDuration, err := s.subquerySpinOffIsEnabled(ctx, req)
 	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
+		return nil, err
 	}
-
-	matched := false
-	for _, tenantID := range tenantIDs {
-		patterns := s.limits.InstantQueriesWithSubquerySpinOff(tenantID)
-
-		for _, pattern := range patterns {
-			matcher, err := labels.NewFastRegexMatcher(pattern)
-			if err != nil {
-				return nil, apierror.New(apierror.TypeBadData, err.Error())
-			}
-
-			if matcher.MatchString(req.GetQuery()) {
-				matched = true
-				break
-			}
-		}
-
-		if matched {
-			break
-		}
-	}
-
-	if !matched {
-		spanLog.DebugLog("msg", "expression did not match any configured subquery spin-off patterns, so subquery spin-off is disabled for this query")
+	if !enabled {
+		spanLog.DebugLog("enabledByDefault", s.enableByDefault, "msg", "subquery spin-off is not enabled for this query, falling back to try executing without spin-off")
 		return s.next.Do(ctx, req)
 	}
 
@@ -160,7 +140,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	mapperStats := astmapper.NewSubquerySpinOffMapperStats()
 	mapperCtx, cancel := context.WithTimeout(ctx, shardingTimeout)
 	defer cancel()
-	mapper := astmapper.NewSubquerySpinOffMapper(mapperCtx, s.defaultStepFunc, spanLog, mapperStats)
+	mapper := astmapper.NewSubquerySpinOffMapper(mapperCtx, s.defaultStepFunc, minDuration, spanLog, mapperStats)
 
 	expr, err := parser.ParseExpr(req.GetQuery())
 	if err != nil {
@@ -253,6 +233,41 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		Warnings: warn,
 		Infos:    info,
 	}, nil
+}
+
+func (s *spinOffSubqueriesMiddleware) subquerySpinOffIsEnabled(ctx context.Context, req MetricsQueryRequest) (bool, time.Duration, error) {
+	var minDuration time.Duration
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return false, minDuration, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	var patterns []string
+	for _, tenantID := range tenantIDs {
+		patterns = append(patterns, s.limits.InstantSubquerySpinOffEnabledRegexp(tenantID)...)
+		if s.limits.InstantSubquerySpinOffMinRangeDuration(tenantID) > minDuration {
+			minDuration = s.limits.InstantSubquerySpinOffMinRangeDuration(tenantID)
+		}
+	}
+
+	if len(patterns) == 0 {
+		return s.enableByDefault, minDuration, nil
+	}
+
+	matched := false
+	for _, pattern := range patterns {
+		matcher, err := labels.NewFastRegexMatcher(pattern)
+		if err != nil {
+			return false, 0, apierror.New(apierror.TypeBadData, err.Error())
+		}
+
+		if matcher.MatchString(req.GetQuery()) {
+			matched = true
+			break
+		}
+	}
+
+	return matched, minDuration, nil
 }
 
 // spinOffQueryHandler is a query handler that takes a request and sends it to a remote endpoint.

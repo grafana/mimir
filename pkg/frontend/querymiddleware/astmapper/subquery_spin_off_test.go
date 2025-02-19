@@ -16,6 +16,7 @@ import (
 func TestSubquerySpinOffMapper(t *testing.T) {
 	for _, tt := range []struct {
 		name                      string
+		minRange                  time.Duration // Default to 1 hour
 		in                        string
 		out                       string
 		expectedSubqueries        int
@@ -60,6 +61,14 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 			name:                      "range too short",
 			in:                        `avg_over_time((foo * bar)[30m:1m])`,
 			out:                       `__downstream_query__{__query__="avg_over_time((foo * bar)[30m:1m])"}`,
+			expectedSubqueries:        0,
+			expectedDownstreamQueries: 1,
+		},
+		{
+			name:                      "range too short with configured min range",
+			minRange:                  5 * 24 * time.Hour,
+			in:                        `avg_over_time((foo * bar)[3d:5m])`,
+			out:                       `__downstream_query__{__query__="avg_over_time((foo * bar)[3d:5m])"}`,
 			expectedSubqueries:        0,
 			expectedDownstreamQueries: 1,
 		},
@@ -271,7 +280,11 @@ func TestSubquerySpinOffMapper(t *testing.T) {
 
 		t.Run(tt.name, func(t *testing.T) {
 			stats := NewSubquerySpinOffMapperStats()
-			mapper := NewSubquerySpinOffMapper(context.Background(), defaultStepFunc, log.NewNopLogger(), stats)
+			minRange := tt.minRange
+			if minRange == 0 {
+				minRange = 1 * time.Hour
+			}
+			mapper := NewSubquerySpinOffMapper(context.Background(), defaultStepFunc, minRange, log.NewNopLogger(), stats)
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
 			out, err := parser.ParseExpr(tt.out)

@@ -692,41 +692,46 @@ func (m multiTenantMockLimits) BlockedRequests(userID string) []*validation.Bloc
 	return m.byTenant[userID].blockedRequests
 }
 
-func (m multiTenantMockLimits) InstantQueriesWithSubquerySpinOff(userID string) []string {
-	return m.byTenant[userID].instantQueriesWithSubquerySpinOff
+func (m multiTenantMockLimits) InstantSubquerySpinOffEnabledRegexp(userID string) []string {
+	return m.byTenant[userID].instantSubquerySpinOffEnabledRegexp
+}
+
+func (m multiTenantMockLimits) InstantSubquerySpinOffMinRangeDuration(userID string) time.Duration {
+	return m.byTenant[userID].InstantSubquerySpinOffMinRangeDuration(userID)
 }
 
 type mockLimits struct {
-	maxQueryLookback                     time.Duration
-	maxQueryLength                       time.Duration
-	maxTotalQueryLength                  time.Duration
-	maxQueryExpressionSizeBytes          int
-	maxCacheFreshness                    time.Duration
-	maxQueryParallelism                  int
-	maxShardedQueries                    int
-	maxRegexpSizeBytes                   int
-	maxFutureQueryWindow                 time.Duration
-	splitInstantQueriesInterval          time.Duration
-	totalShards                          int
-	compactorShards                      int
-	compactorBlocksRetentionPeriod       time.Duration
-	outOfOrderTimeWindow                 time.Duration
-	creationGracePeriod                  time.Duration
-	nativeHistogramsIngestionEnabled     bool
-	resultsCacheTTL                      time.Duration
-	resultsCacheOutOfOrderWindowTTL      time.Duration
-	resultsCacheTTLForCardinalityQuery   time.Duration
-	resultsCacheTTLForLabelsQuery        time.Duration
-	resultsCacheTTLForErrors             time.Duration
-	resultsCacheForUnalignedQueryEnabled bool
-	enabledPromQLExperimentalFunctions   []string
-	prom2RangeCompat                     bool
-	blockedQueries                       []*validation.BlockedQuery
-	blockedRequests                      []*validation.BlockedRequest
-	alignQueriesWithStep                 bool
-	queryIngestersWithin                 time.Duration
-	ingestStorageReadConsistency         string
-	instantQueriesWithSubquerySpinOff    []string
+	maxQueryLookback                       time.Duration
+	maxQueryLength                         time.Duration
+	maxTotalQueryLength                    time.Duration
+	maxQueryExpressionSizeBytes            int
+	maxCacheFreshness                      time.Duration
+	maxQueryParallelism                    int
+	maxShardedQueries                      int
+	maxRegexpSizeBytes                     int
+	maxFutureQueryWindow                   time.Duration
+	splitInstantQueriesInterval            time.Duration
+	totalShards                            int
+	compactorShards                        int
+	compactorBlocksRetentionPeriod         time.Duration
+	outOfOrderTimeWindow                   time.Duration
+	creationGracePeriod                    time.Duration
+	nativeHistogramsIngestionEnabled       bool
+	resultsCacheTTL                        time.Duration
+	resultsCacheOutOfOrderWindowTTL        time.Duration
+	resultsCacheTTLForCardinalityQuery     time.Duration
+	resultsCacheTTLForLabelsQuery          time.Duration
+	resultsCacheTTLForErrors               time.Duration
+	resultsCacheForUnalignedQueryEnabled   bool
+	enabledPromQLExperimentalFunctions     []string
+	prom2RangeCompat                       bool
+	blockedQueries                         []*validation.BlockedQuery
+	blockedRequests                        []*validation.BlockedRequest
+	alignQueriesWithStep                   bool
+	queryIngestersWithin                   time.Duration
+	ingestStorageReadConsistency           string
+	instantSubquerySpinOffEnabledRegexp    []string
+	instantSubquerySpinOffMinRangeDuration time.Duration
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -847,8 +852,15 @@ func (m mockLimits) BlockedRequests(string) []*validation.BlockedRequest {
 	return m.blockedRequests
 }
 
-func (m mockLimits) InstantQueriesWithSubquerySpinOff(string) []string {
-	return m.instantQueriesWithSubquerySpinOff
+func (m mockLimits) InstantSubquerySpinOffEnabledRegexp(string) []string {
+	return m.instantSubquerySpinOffEnabledRegexp
+}
+
+func (m mockLimits) InstantSubquerySpinOffMinRangeDuration(string) time.Duration {
+	if m.instantSubquerySpinOffMinRangeDuration == 0 {
+		return 12 * time.Hour // Flag default.
+	}
+	return m.instantSubquerySpinOffMinRangeDuration
 }
 
 type mockHandler struct {

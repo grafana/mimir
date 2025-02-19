@@ -1560,6 +1560,32 @@ user1:
 	}, blockedRequests[1])
 }
 
+func TestInstantSubquerySpinOffDefaults(t *testing.T) {
+	inputYAML := `
+user1:
+  instant_subquery_spin_off_min_range_duration: 4h
+  instant_subquery_spin_off_enabled_regexp:
+    - ".*"
+user2:
+  instant_subquery_spin_off_enabled_regexp: 
+    - "123"
+`
+	overrides := map[string]*Limits{}
+	err := yaml.Unmarshal([]byte(inputYAML), &overrides)
+	require.NoError(t, err)
+	tl := NewMockTenantLimits(overrides)
+	ov, err := NewOverrides(getDefaultLimits(), tl)
+	require.NoError(t, err)
+
+	require.Equal(t, 4*time.Hour, ov.InstantSubquerySpinOffMinRangeDuration("user1"))
+	require.Equal(t, 12*time.Hour, ov.InstantSubquerySpinOffMinRangeDuration("user2"))
+	require.Equal(t, 12*time.Hour, ov.InstantSubquerySpinOffMinRangeDuration("user3"))
+
+	require.Equal(t, []string{".*"}, ov.InstantSubquerySpinOffEnabledRegexp("user1"))
+	require.Equal(t, []string{"123"}, ov.InstantSubquerySpinOffEnabledRegexp("user2"))
+	require.Empty(t, ov.InstantSubquerySpinOffEnabledRegexp("user3"))
+}
+
 func getDefaultLimits() Limits {
 	limits := Limits{}
 	flagext.DefaultValues(&limits)

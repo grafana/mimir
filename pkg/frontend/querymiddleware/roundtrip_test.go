@@ -594,7 +594,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg.ShardedQueries = true
 	cfg.PrunedQueries = true
 	cfg.BlockPromQLExperimentalFunctions = true
-	cfg.SpinOffInstantSubqueriesToURL = "http://localhost"
+	cfg.InstantSubquerySpinOffURL = "http://localhost"
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)
