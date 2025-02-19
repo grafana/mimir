@@ -2811,14 +2811,10 @@ func (d *Distributor) adjustQueryRequestLimit(ctx context.Context, userID string
 		// number of shards, or more shards than the number of active partitions in the ring.
 		shardSize = d.partitionsRing.PartitionRing().ShuffleShardSize(d.limits.IngestionPartitionsTenantShardSize(userID))
 	} else {
-		tenantShardSize := d.limits.IngestionTenantShardSize(userID)
-
 		// The ShuffleShard filters out read-only instances, leaving us with the number of active ingesters.
-		subring := d.ingestersRing.ShuffleShard(userID, tenantShardSize)
+		// Note, this can be costly to compute if the ring's caching is not enabled.
+		subring := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 		ingestionShardSize := subring.InstancesWithTokensCount()
-		if tenantShardSize > 0 {
-			ingestionShardSize = min(tenantShardSize, ingestionShardSize)
-		}
 		// In classic Mimir the ingestion shard size is the number of ingesters in the shard across all zones.
 		shardSize = int(float64(ingestionShardSize) / float64(subring.ReplicationFactor()))
 	}
