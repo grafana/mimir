@@ -24,11 +24,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 
+	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/atomicfs"
-	streamencoding "github.com/grafana/mimir/pkg/util/indexheader/encoding"
-	streamindex "github.com/grafana/mimir/pkg/util/indexheader/index"
-	"github.com/grafana/mimir/pkg/util/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -69,6 +69,8 @@ type StreamBinaryReader struct {
 	indexVersion int
 }
 
+// dmwilson - TODO: add config option for no check
+//
 // NewStreamBinaryReader loads or builds new index-header if not present on disk.
 func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, metrics *StreamBinaryReaderMetrics, cfg Config) (*StreamBinaryReader, error) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, logger, "indexheader.NewStreamBinaryReader")

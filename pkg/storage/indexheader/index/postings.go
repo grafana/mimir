@@ -17,8 +17,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 
-	streamencoding "github.com/grafana/mimir/pkg/util/indexheader/encoding"
-	"github.com/grafana/mimir/pkg/util/indexheader/indexheaderpb"
+	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 )
 
 const (

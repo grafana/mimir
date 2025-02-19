@@ -121,6 +121,7 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 		merr.Add(errors.Wrapf(tbl.Close(), "close posting offsets reader"))
 	}()
 
+	// wait until both GetRange requets have completed before writing bytes
 	if err := g.Wait(); err != nil {
 		merr.Add(err)
 		return merr.Err()

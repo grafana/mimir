@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
-	"github.com/grafana/mimir/pkg/util/indexheader"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"

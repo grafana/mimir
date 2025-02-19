@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	streamindex "github.com/grafana/mimir/pkg/util/indexheader/index"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 

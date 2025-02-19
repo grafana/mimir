@@ -20,7 +20,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/util/indexheader"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 )
 
 const (
