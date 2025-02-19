@@ -117,8 +117,12 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 
 	merr := multierror.MultiError{}
 	defer func() {
-		merr.Add(errors.Wrapf(sym.Close(), "close symbol reader"))
-		merr.Add(errors.Wrapf(tbl.Close(), "close posting offsets reader"))
+		if sym != nil {
+			merr.Add(errors.Wrapf(sym.Close(), "close symbol reader"))
+		}
+		if tbl != nil {
+			merr.Add(errors.Wrapf(tbl.Close(), "close posting offsets reader"))
+		}
 	}()
 
 	// wait until both GetRange requets have completed before writing bytes
