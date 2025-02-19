@@ -9,7 +9,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
-	"golang.org/x/sync/errgroup"
 	"hash"
 	"hash/crc32"
 	"io"
@@ -17,7 +16,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -95,48 +93,16 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 		return errors.Wrap(err, "add index meta")
 	}
 
-	// Copying symbols and posting offsets into the encbuffer both require a range request against
-	// the objstore provider. We make these calls in parallel and then syncronize before writing to buf
-	var g errgroup.Group
-	var sym, tbl io.ReadCloser
-	g.Go(func() (err error) {
-		sym, err = ir.bkt.GetRange(ir.ctx, ir.path, int64(ir.toc.Symbols), int64(ir.toc.Series-ir.toc.Symbols))
-		if err != nil {
-			return errors.Wrapf(err, "get symbols from object storage of %s", ir.path)
-		}
-		return
-	})
-
-	g.Go(func() (err error) {
-		tbl, err = ir.bkt.GetRange(ir.ctx, ir.path, int64(ir.toc.PostingsTable), int64(ir.size-ir.toc.PostingsTable))
-		if err != nil {
-			return errors.Wrapf(err, "get posting offset table from object storage of %s", ir.path)
-		}
-		return
-	})
-
-	merr := multierror.MultiError{}
-	defer func() {
-		merr.Add(errors.Wrapf(sym.Close(), "close symbol reader"))
-		merr.Add(errors.Wrapf(tbl.Close(), "close posting offsets reader"))
-	}()
-
-	// wait until both GetRange requets have completed before writing bytes
-	if err := g.Wait(); err != nil {
-		merr.Add(err)
-		return merr.Err()
-	}
-
-	if _, err := io.CopyBuffer(bw.SymbolsWriter(), sym, buf); err != nil {
-		return errors.Wrap(err, "copy posting offsets")
+	if err := ir.CopySymbols(bw.SymbolsWriter(), buf); err != nil {
+		return err
 	}
 
 	if err := bw.f.Flush(); err != nil {
 		return errors.Wrap(err, "flush")
 	}
 
-	if _, err := io.CopyBuffer(bw.PostingOffsetsWriter(), tbl, buf); err != nil {
-		return errors.Wrap(err, "copy posting offsets")
+	if err := ir.CopyPostingsOffsets(bw.PostingOffsetsWriter(), buf); err != nil {
+		return err
 	}
 
 	if err := bw.f.Flush(); err != nil {

@@ -421,35 +421,6 @@ func BenchmarkBinaryWrite(t *testing.B) {
 	}
 }
 
-func BenchmarkBinaryWrite_DelayedBucket(t *testing.B) {
-
-	tests := []struct {
-		delay time.Duration
-	}{
-		{10 * time.Millisecond},
-		{20 * time.Millisecond},
-		{50 * time.Millisecond},
-	}
-
-	for _, test := range tests {
-		t.Run(fmt.Sprintf("max_delay_%d_ns", test.delay), func(t *testing.B) {
-			ctx := context.Background()
-			tmpDir := t.TempDir()
-			bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-			require.NoError(t, err)
-			delaybkt := bucket.NewDelayedBucketClient(bkt, 0, test.delay)
-			defer func() { require.NoError(t, delaybkt.Close()) }()
-
-			m := prepareIndexV2Block(t, tmpDir, delaybkt)
-			fn := filepath.Join(tmpDir, m.ULID.String(), block.IndexHeaderFilename)
-			t.ResetTimer()
-			for i := 0; i < t.N; i++ {
-				require.NoError(t, WriteBinary(ctx, delaybkt, m.ULID, fn))
-			}
-		})
-	}
-}
-
 func getSymbolTable(b index.ByteSlice) (map[uint32]string, error) {
 	version := int(b.Range(4, 5)[0])
 
