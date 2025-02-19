@@ -19,6 +19,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
+	"github.com/grafana/mimir/pkg/util"
+
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -32,7 +34,7 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, cluster string, r
 		ConstLabels: prometheus.Labels{"client": "querier"},
 	}, []string{"operation", "status_code"})
 
-	invalidClusterValidation := middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "storegateway_client")
+	invalidClusterValidation := util.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "store-gateway", util.GRPCProtocol)
 
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
 		return dialStoreGatewayClient(clientCfg, inst, requestDuration, invalidClusterValidation, cluster, logger)

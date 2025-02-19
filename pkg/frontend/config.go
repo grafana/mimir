@@ -100,7 +100,7 @@ func InitFrontend(
 			cfg.FrontendV2.Port = grpcListenPort
 		}
 
-		fr, err := v2.NewFrontend(cfg.FrontendV2, v2Limits, log, reg, codec, cfg.ClusterVerificationLabel)
+		fr, err := v2.NewFrontend(cfg.FrontendV2, v2Limits, log, reg, codec, checkCluster)
 		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr, checkCluster, serverMetrics), nil, fr, err
 
 	default:

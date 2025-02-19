@@ -3,7 +3,6 @@
 package client
 
 import (
-	"github.com/grafana/dskit/middleware"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -23,6 +22,6 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Buckets: prometheus.ExponentialBuckets(0.001, 4, 8),
 		}, []string{"operation", "status_code"}),
 
-		invalidClusterVerificationLabels: middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_ingester_client"),
+		invalidClusterVerificationLabels: util.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "ingester", util.GRPCProtocol),
 	}
 }
