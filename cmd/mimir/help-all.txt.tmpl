@@ -2339,12 +2339,12 @@ Usage of ./cmd/mimir/mimir:
     	List of network interface names to look up when finding the instance IP address. This address is sent to query-scheduler and querier, which uses it to send the query response back to query-frontend. (default [<private network interfaces>])
   -query-frontend.instance-port int
     	Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).
-  -query-frontend.instant-subquery-spin-off.enable-by-default
-    	[experimental] If set, subqueries in instant queries are spun off as range queries by default. This parameter also requires you to set `-query-frontend.instant-subquery-spin-off.url=<url>`.
+  -query-frontend.instant-subquery-spin-off.enabled
+    	[experimental] Enable subquery spin-off for instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.
   -query-frontend.instant-subquery-spin-off.min-range-duration duration
     	[experimental] Minimum range duration of subqueries for subquery spin-off to be enabled. (default 12h)
   -query-frontend.instant-subquery-spin-off.url string
-    	[experimental] If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to enable the feature with `-query-frontend.instant-subquery-spin-off.enable-by-default` or by setting `instant_subquery_spin_off_enabled_regexp` for the tenant.
+    	[experimental] If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to enable the feature with `-query-frontend.instant-subquery-spin-off.enabled` or the `instant_subquery_spin_off_enabled` per-tenant override.
   -query-frontend.log-queries-longer-than duration
     	Log queries that are slower than the specified duration. Set to 0 to disable. Set to < 0 to enable on all queries.
   -query-frontend.log-query-request-headers comma-separated-list-of-strings

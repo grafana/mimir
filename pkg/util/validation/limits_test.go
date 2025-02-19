@@ -1563,12 +1563,16 @@ user1:
 func TestInstantSubquerySpinOffDefaults(t *testing.T) {
 	inputYAML := `
 user1:
-  instant_subquery_spin_off_min_range_duration: 4h
+  instant_subquery_spin_off_enabled: true
   instant_subquery_spin_off_enabled_regexp:
     - ".*"
+  instant_subquery_spin_off_min_range_duration: 4h
 user2:
+  instant_subquery_spin_off_enabled: true
   instant_subquery_spin_off_enabled_regexp: 
     - "123"
+user3:
+  instant_subquery_spin_off_enabled: true
 `
 	overrides := map[string]*Limits{}
 	err := yaml.Unmarshal([]byte(inputYAML), &overrides)
@@ -1584,6 +1588,11 @@ user2:
 	require.Equal(t, []string{".*"}, ov.InstantSubquerySpinOffEnabledRegexp("user1"))
 	require.Equal(t, []string{"123"}, ov.InstantSubquerySpinOffEnabledRegexp("user2"))
 	require.Empty(t, ov.InstantSubquerySpinOffEnabledRegexp("user3"))
+
+	require.True(t, ov.InstantSubquerySpinOffEnabled("user1"))
+	require.True(t, ov.InstantSubquerySpinOffEnabled("user2"))
+	require.True(t, ov.InstantSubquerySpinOffEnabled("user3"))
+	require.False(t, ov.InstantSubquerySpinOffEnabled("user4"))
 }
 
 func getDefaultLimits() Limits {

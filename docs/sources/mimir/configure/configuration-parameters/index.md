@@ -1865,15 +1865,9 @@ results_cache:
 [use_active_series_decoder: <boolean> | default = false]
 
 # (experimental) If set, subqueries in instant queries are spun off as range
-# queries by default. This parameter also requires you to set
-# `-query-frontend.instant-subquery-spin-off.url=<url>`.
-# CLI flag: -query-frontend.instant-subquery-spin-off.enable-by-default
-[instant_subquery_spin_off_enabled_by_default: <boolean> | default = false]
-
-# (experimental) If set, subqueries in instant queries are spun off as range
 # queries and sent to the given URL. This parameter also requires you to enable
-# the feature with `-query-frontend.instant-subquery-spin-off.enable-by-default`
-# or by setting `instant_subquery_spin_off_enabled_regexp` for the tenant.
+# the feature with `-query-frontend.instant-subquery-spin-off.enabled` or the
+# `instant_subquery_spin_off_enabled` per-tenant override.
 # CLI flag: -query-frontend.instant-subquery-spin-off.url
 [instant_subquery_spin_off_url: <string> | default = ""]
 
@@ -3767,9 +3761,14 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.max-future-query-window
 [max_future_query_window: <duration> | default = 0s]
 
+# (experimental) Enable subquery spin-off for instant queries. Subqueries within
+# those instant queries will be spun off as range queries to optimize their
+# performance.
+# CLI flag: -query-frontend.instant-subquery-spin-off.enabled
+[instant_subquery_spin_off_enabled: <boolean> | default = false]
+
 # (experimental) List of regular expression patterns matching instant queries.
-# Subqueries within those instant queries will be spun off as range queries to
-# optimize their performance.
+# If this is set, only those queries will be considered for subquery spin off.
 [instant_subquery_spin_off_enabled_regexp: <list of strings> | default = ]
 
 # (experimental) Minimum range duration of subqueries for subquery spin-off to

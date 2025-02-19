@@ -69,10 +69,7 @@ type Config struct {
 	TargetSeriesPerShard             uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 	ShardActiveSeriesQueries         bool          `yaml:"shard_active_series_queries" category:"experimental"`
 	UseActiveSeriesDecoder           bool          `yaml:"use_active_series_decoder" category:"experimental"`
-
-	// Subquery Spin-off feature
-	InstantSubquerySpinOffDefaultEnable bool   `yaml:"instant_subquery_spin_off_enabled_by_default" category:"experimental"`
-	InstantSubquerySpinOffURL           string `yaml:"instant_subquery_spin_off_url" category:"experimental"`
+	InstantSubquerySpinOffURL        string        `yaml:"instant_subquery_spin_off_url" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -105,8 +102,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
-	f.BoolVar(&cfg.InstantSubquerySpinOffDefaultEnable, "query-frontend.instant-subquery-spin-off.enable-by-default", false, "If set, subqueries in instant queries are spun off as range queries by default. This parameter also requires you to set `-query-frontend.instant-subquery-spin-off.url=<url>`.")
-	f.StringVar(&cfg.InstantSubquerySpinOffURL, "query-frontend.instant-subquery-spin-off.url", "", "If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to enable the feature with `-query-frontend.instant-subquery-spin-off.enable-by-default` or by setting `instant_subquery_spin_off_enabled_regexp` for the tenant.")
+	f.StringVar(&cfg.InstantSubquerySpinOffURL, "query-frontend.instant-subquery-spin-off.url", "", "If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to enable the feature with `-query-frontend.instant-subquery-spin-off.enabled` or the `instant_subquery_spin_off_enabled` per-tenant override.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -399,7 +395,7 @@ func newQueryMiddlewares(
 			queryInstantMiddleware = append(
 				queryInstantMiddleware,
 				newInstrumentMiddleware("spin_off_subqueries", metrics),
-				newSpinOffSubqueriesMiddleware(limits, log, engine, spinOffQueryHandler, registerer, defaultStepFunc, cfg.InstantSubquerySpinOffDefaultEnable),
+				newSpinOffSubqueriesMiddleware(limits, log, engine, spinOffQueryHandler, registerer, defaultStepFunc),
 			)
 		}
 	}

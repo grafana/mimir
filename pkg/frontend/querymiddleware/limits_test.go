@@ -692,6 +692,10 @@ func (m multiTenantMockLimits) BlockedRequests(userID string) []*validation.Bloc
 	return m.byTenant[userID].blockedRequests
 }
 
+func (m multiTenantMockLimits) InstantSubquerySpinOffEnabled(userID string) bool {
+	return m.byTenant[userID].instantSubquerySpinOffEnabled
+}
+
 func (m multiTenantMockLimits) InstantSubquerySpinOffEnabledRegexp(userID string) []string {
 	return m.byTenant[userID].instantSubquerySpinOffEnabledRegexp
 }
@@ -730,6 +734,7 @@ type mockLimits struct {
 	alignQueriesWithStep                   bool
 	queryIngestersWithin                   time.Duration
 	ingestStorageReadConsistency           string
+	instantSubquerySpinOffEnabled          bool
 	instantSubquerySpinOffEnabledRegexp    []string
 	instantSubquerySpinOffMinRangeDuration time.Duration
 }
@@ -850,6 +855,10 @@ func (m mockLimits) IngestStorageReadConsistency(string) string {
 
 func (m mockLimits) BlockedRequests(string) []*validation.BlockedRequest {
 	return m.blockedRequests
+}
+
+func (m mockLimits) InstantSubquerySpinOffEnabled(string) bool {
+	return m.instantSubquerySpinOffEnabled
 }
 
 func (m mockLimits) InstantSubquerySpinOffEnabledRegexp(string) []string {

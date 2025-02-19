@@ -207,7 +207,7 @@ func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.
 	downstreamErr := errors.Errorf("some err")
 	downstream := mockHandlerWith(nil, downstreamErr)
 
-	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{instantSubquerySpinOffEnabledRegexp: []string{".*"}}, log.NewNopLogger(), newEngine(), downstream, nil, defaultStepFunc, false)
+	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{instantSubquerySpinOffEnabledRegexp: []string{".*"}}, log.NewNopLogger(), newEngine(), downstream, nil, defaultStepFunc)
 
 	// Run the query with subquery spin-off middleware wrapping the downstream one.
 	// We expect to get the downstream error.
@@ -221,75 +221,80 @@ func TestSubquerySpinOff_IsEnabledForTenant(t *testing.T) {
 	t.Parallel()
 
 	tc := []struct {
-		name                         string
-		enabledByDefault             bool
-		enabledQueryPatternsByTenant map[string][]string
-		query                        string
-		currentTenant                string
-		expectedEnabled              bool
-		expectedErr                  error
+		name                  string
+		multiTenantMockLimits *multiTenantMockLimits
+		query                 string
+		currentTenant         string
+		expectedEnabled       bool
+		expectedErr           error
 	}{
 		{
-			name:                         "enabled by default",
-			enabledByDefault:             true,
-			enabledQueryPatternsByTenant: map[string][]string{},
-			query:                        "max_over_time(rate(metric_counter[1m])[5m:1m])",
-			currentTenant:                "test",
-			expectedEnabled:              true,
+			name: "enabled",
+			multiTenantMockLimits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
+				"test": {
+					instantSubquerySpinOffEnabled: true,
+				},
+			}},
+			query:           "max_over_time(rate(metric_counter[1m])[5m:1m])",
+			currentTenant:   "test",
+			expectedEnabled: true,
 		},
 		{
-			name:                         "disabled by default",
-			enabledByDefault:             false,
-			enabledQueryPatternsByTenant: map[string][]string{},
-			query:                        "max_over_time(rate(metric_counter[1m])[5m:1m])",
-			currentTenant:                "test",
-			expectedEnabled:              false,
+			name:                  "disabled",
+			multiTenantMockLimits: &multiTenantMockLimits{},
+			query:                 "max_over_time(rate(metric_counter[1m])[5m:1m])",
+			currentTenant:         "test",
+			expectedEnabled:       false,
 		},
 		{
-			name:             "enabled by default, not enabled for tenant",
-			enabledByDefault: true,
-			enabledQueryPatternsByTenant: map[string][]string{
-				"test": {"max_over_time(.*)"},
-			},
-			query:           "min_over_time(rate(metric_counter[1m])[5m:1m])",
+			name: "matched by regexp",
+			multiTenantMockLimits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
+				"test": {
+					instantSubquerySpinOffEnabled: true,
+					instantSubquerySpinOffEnabledRegexp: []string{
+						"max_over_time(.*)",
+					},
+				},
+			}},
+			query:           "max_over_time(rate(metric_counter[1m])[5m:1m])",
+			currentTenant:   "test",
+			expectedEnabled: true,
+		},
+		{
+			name: "not matched by regexp",
+			multiTenantMockLimits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
+				"test": {
+					instantSubquerySpinOffEnabled: true,
+					instantSubquerySpinOffEnabledRegexp: []string{
+						"min_over_time(.*)",
+					},
+				},
+			}},
+			query:           "max_over_time(rate(metric_counter[1m])[5m:1m])",
 			currentTenant:   "test",
 			expectedEnabled: false,
 		},
 		{
-			name:             "disabled by default, enabled for tenant",
-			enabledByDefault: false,
-			enabledQueryPatternsByTenant: map[string][]string{
-				"test": {"max_over_time(.*)"},
-			},
-			query:           "max_over_time(rate(metric_counter[1m])[5m:1m])",
-			currentTenant:   "test",
-			expectedEnabled: true,
-		},
-		{
-			name:             "enabled by default, enabled for tenant",
-			enabledByDefault: true,
-			enabledQueryPatternsByTenant: map[string][]string{
-				"test": {"max_over_time(.*)"},
-			},
-			query:           "max_over_time(rate(metric_counter[1m])[5m:1m])",
-			currentTenant:   "test",
-			expectedEnabled: true,
-		},
-		{
-			name:             "enabled for other tenant",
-			enabledByDefault: false,
-			enabledQueryPatternsByTenant: map[string][]string{
-				"other": {"max_over_time(.*)"},
-			},
+			name: "enabled for other tenant",
+			multiTenantMockLimits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
+				"other": {
+					instantSubquerySpinOffEnabled: true,
+				},
+			}},
 			query:           "max_over_time(rate(metric_counter[1m])[5m:1m])",
 			currentTenant:   "test",
 			expectedEnabled: false,
 		},
 		{
 			name: "invalid regexp",
-			enabledQueryPatternsByTenant: map[string][]string{
-				"test": {"["},
-			},
+			multiTenantMockLimits: &multiTenantMockLimits{byTenant: map[string]mockLimits{
+				"test": {
+					instantSubquerySpinOffEnabled: true,
+					instantSubquerySpinOffEnabledRegexp: []string{
+						"[",
+					},
+				},
+			}},
 			query:           "max_over_time(rate(metric_counter[1m])[5m:1m])",
 			currentTenant:   "test",
 			expectedErr:     apierror.New(apierror.TypeBadData, "error parsing regexp: missing closing ]: `[`"),
@@ -301,12 +306,7 @@ func TestSubquerySpinOff_IsEnabledForTenant(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			multiTenantLimits := &multiTenantMockLimits{byTenant: map[string]mockLimits{}}
-			for tenant, queryPatterns := range tt.enabledQueryPatternsByTenant {
-				multiTenantLimits.byTenant[tenant] = mockLimits{instantSubquerySpinOffEnabledRegexp: queryPatterns}
-			}
-
-			spinoffMiddleware := newSpinOffSubqueriesMiddleware(multiTenantLimits, log.NewNopLogger(), newEngine(), nil, nil, defaultStepFunc, tt.enabledByDefault)
+			spinoffMiddleware := newSpinOffSubqueriesMiddleware(tt.multiTenantMockLimits, log.NewNopLogger(), newEngine(), nil, nil, defaultStepFunc)
 
 			req := NewPrometheusInstantQueryRequest("/query", []*PrometheusHeader{}, util.TimeToMillis(time.Now()), 5*time.Minute, parseQuery(t, tt.query), Options{}, nil)
 			ctx := user.InjectOrgID(context.Background(), tt.currentTenant)
@@ -525,6 +525,7 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 			reg := prometheus.NewPedanticRegistry()
 			spinoffMiddleware := newSpinOffSubqueriesMiddleware(
 				mockLimits{
+					instantSubquerySpinOffEnabled:          true,
 					instantSubquerySpinOffEnabledRegexp:    []string{".*"},
 					instantSubquerySpinOffMinRangeDuration: 1 * time.Hour,
 				},
@@ -533,7 +534,6 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 				downstream,
 				reg,
 				defaultStepFunc,
-				false,
 			)
 
 			ctx := user.InjectOrgID(context.Background(), "test")

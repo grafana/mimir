@@ -4730,9 +4730,20 @@
         },
         {
           "kind": "field",
+          "name": "instant_subquery_spin_off_enabled",
+          "required": false,
+          "desc": "Enable subquery spin-off for instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.instant-subquery-spin-off.enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "instant_subquery_spin_off_enabled_regexp",
           "required": false,
-          "desc": "List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.",
+          "desc": "List of regular expression patterns matching instant queries. If this is set, only those queries will be considered for subquery spin off.",
           "fieldValue": null,
           "fieldDefaultValue": [],
           "fieldType": "list of strings",
@@ -6968,20 +6979,9 @@
         },
         {
           "kind": "field",
-          "name": "instant_subquery_spin_off_enabled_by_default",
-          "required": false,
-          "desc": "If set, subqueries in instant queries are spun off as range queries by default. This parameter also requires you to set `-query-frontend.instant-subquery-spin-off.url=\u003curl\u003e`.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.instant-subquery-spin-off.enable-by-default",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "instant_subquery_spin_off_url",
           "required": false,
-          "desc": "If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to enable the feature with `-query-frontend.instant-subquery-spin-off.enable-by-default` or by setting `instant_subquery_spin_off_enabled_regexp` for the tenant.",
+          "desc": "If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to enable the feature with `-query-frontend.instant-subquery-spin-off.enabled` or the `instant_subquery_spin_off_enabled` per-tenant override.",
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "query-frontend.instant-subquery-spin-off.url",

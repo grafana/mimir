@@ -196,7 +196,8 @@ type Limits struct {
 	MaxFutureQueryWindow                   model.Duration         `yaml:"max_future_query_window" json:"max_future_query_window" category:"experimental"`
 
 	// Subquery Spin-off
-	InstantSubquerySpinOffEnabledRegexp    []string       `yaml:"instant_subquery_spin_off_enabled_regexp" json:"instant_subquery_spin_off_enabled_regexp" doc:"nocli|description=List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance." category:"experimental"`
+	InstantSubquerySpinOffEnabled          bool           `yaml:"instant_subquery_spin_off_enabled" json:"instant_subquery_spin_off_enabled" category:"experimental"`
+	InstantSubquerySpinOffEnabledRegexp    []string       `yaml:"instant_subquery_spin_off_enabled_regexp" json:"instant_subquery_spin_off_enabled_regexp" doc:"nocli|description=List of regular expression patterns matching instant queries. If this is set, only those queries will be considered for subquery spin off." category:"experimental"`
 	InstantSubquerySpinOffMinRangeDuration model.Duration `yaml:"instant_subquery_spin_off_min_range_duration" json:"instant_subquery_spin_off_min_range_duration" category:"experimental"`
 
 	// Cardinality
@@ -401,6 +402,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
 	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
 	f.Var(&l.MaxFutureQueryWindow, maxFutureQueryWindowFlag, "Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.")
+	f.BoolVar(&l.InstantSubquerySpinOffEnabled, "query-frontend.instant-subquery-spin-off.enabled", false, "Enable subquery spin-off for instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.")
 	_ = l.InstantSubquerySpinOffMinRangeDuration.Set("12h")
 	f.Var(&l.InstantSubquerySpinOffMinRangeDuration, "query-frontend.instant-subquery-spin-off.min-range-duration", "Minimum range duration of subqueries for subquery spin-off to be enabled.")
 
@@ -1240,6 +1242,10 @@ func (o *Overrides) IngestStorageReadConsistency(userID string) string {
 
 func (o *Overrides) IngestionPartitionsTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionPartitionsTenantShardSize
+}
+
+func (o *Overrides) InstantSubquerySpinOffEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).InstantSubquerySpinOffEnabled
 }
 
 func (o *Overrides) InstantSubquerySpinOffEnabledRegexp(userID string) []string {

@@ -42,7 +42,6 @@ type spinOffSubqueriesMiddleware struct {
 	rangeHandler    MetricsQueryHandler
 	engine          *promql.Engine
 	defaultStepFunc func(int64) int64
-	enableByDefault bool
 
 	metrics spinOffSubqueriesMetrics
 }
@@ -100,7 +99,6 @@ func newSpinOffSubqueriesMiddleware(
 	rangeHandler MetricsQueryHandler,
 	registerer prometheus.Registerer,
 	defaultStepFunc func(int64) int64,
-	enableByDefault bool,
 ) MetricsQueryMiddleware {
 	metrics := newSpinOffSubqueriesMetrics(registerer)
 
@@ -113,7 +111,6 @@ func newSpinOffSubqueriesMiddleware(
 			rangeHandler:    rangeHandler,
 			metrics:         metrics,
 			defaultStepFunc: defaultStepFunc,
-			enableByDefault: enableByDefault,
 		}
 	})
 }
@@ -130,7 +127,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		return nil, err
 	}
 	if !enabled {
-		spanLog.DebugLog("enabledByDefault", s.enableByDefault, "msg", "subquery spin-off is not enabled for this query, falling back to try executing without spin-off")
+		spanLog.DebugLog("msg", "subquery spin-off is not enabled for this query, falling back to try executing without spin-off")
 		return s.next.Do(ctx, req)
 	}
 
@@ -244,14 +241,19 @@ func (s *spinOffSubqueriesMiddleware) subquerySpinOffIsEnabled(ctx context.Conte
 
 	var patterns []string
 	for _, tenantID := range tenantIDs {
+		if !s.limits.InstantSubquerySpinOffEnabled(tenantID) {
+			return false, minDuration, nil
+		}
+
 		patterns = append(patterns, s.limits.InstantSubquerySpinOffEnabledRegexp(tenantID)...)
 		if s.limits.InstantSubquerySpinOffMinRangeDuration(tenantID) > minDuration {
 			minDuration = s.limits.InstantSubquerySpinOffMinRangeDuration(tenantID)
 		}
 	}
 
+	// If no patterns are set, we allow all queries to be spun off.
 	if len(patterns) == 0 {
-		return s.enableByDefault, minDuration, nil
+		return true, minDuration, nil
 	}
 
 	matched := false
