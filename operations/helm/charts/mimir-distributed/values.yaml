@@ -3154,6 +3154,8 @@ nginx:
     httpSnippet: ""
     # -- Allows to set a custom resolver
     resolver: null
+    # -- Enable GRPC(http2) on nginx
+    grpcEnabled: false
     # -- Config file contents for Nginx. Passed through the `tpl` function to allow templating
     # @default -- See values.yaml
     file: |
@@ -3216,6 +3218,10 @@ nginx:
         server {
           listen 8080;
           listen [::]:8080;
+
+          {{- if .Values.nginx.nginxConfig.grpcEnabled }}
+          http2 on;
+          {{- end }}
 
           {{- if .Values.nginx.basicAuth.enabled }}
           auth_basic           "Mimir";
@@ -3302,6 +3308,13 @@ nginx:
             proxy_pass      http://$compactor:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
           }
 
+          {{- if .Values.nginx.nginxConfig.grpcEnabled }}
+          # Grpc endpoint for metrics
+          location /opentelemetry.proto.collector.metrics.v1.MetricsService {
+            set $distributor {{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+            grpc_pass grpc://$distributor:9095;
+          }
+          {{- end }}
           {{- with .Values.nginx.nginxConfig.serverSnippet }}
           {{ . | nindent 4 }}
           {{- end }}
@@ -3576,6 +3589,8 @@ gateway:
       resolver: null
       # -- Configures whether or not NGINX bind IPv6
       enableIPv6: true
+      # -- Enables the grpc endpoints
+      grpcEnabled: false
       # -- Config file contents for Nginx. Passed through the `tpl` function to allow templating.
       file: |
         worker_processes  5;  ## Default: 1
@@ -3638,6 +3653,10 @@ gateway:
             listen {{ include "mimir.serverHttpListenPort" . }};
             {{- if .Values.gateway.nginx.config.enableIPv6 }}
             listen [::]:{{ include "mimir.serverHttpListenPort" . }};
+            {{- end }}
+
+            {{- if .Values.gateway.nginx.config.grpcEnabled }}
+            http2 on;
             {{- end }}
 
             {{- if .Values.gateway.nginx.config.clientMaxBodySize }}
@@ -3733,6 +3752,14 @@ gateway:
               set $compactor {{ template "mimir.fullname" . }}-compactor.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
               proxy_pass      http://$compactor:{{ include "mimir.serverHttpListenPort" . }}$request_uri;
             }
+
+            {{- if .Values.gateway.nginx.config.grpcEnabled }}
+            # Grpc endpoint for metrics
+            location /opentelemetry.proto.collector.metrics.v1.MetricsService {
+              set $distributor {{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }};
+              grpc_pass grpc://$distributor:9095;
+            }
+            {{- end }}
 
             {{- with .Values.gateway.nginx.config.serverSnippet }}
             {{ . | nindent 4 }}

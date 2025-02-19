@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Add support for grpc in NGINX. #10695
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [CHANGE] Ring: relaxed the hash ring heartbeat timeout for store-gateways: #10634
   * `-store-gateway.sharding-ring.heartbeat-timeout` set to `10m`
