@@ -49,13 +49,13 @@ local filename = 'federation-frontend.json';
     .addRow(
       $.row('Resource usage')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', $._config.job_names.federation_frontend),
+        $.containerCPUUsagePanelByComponent('federation_frontend'),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', $._config.job_names.federation_frontend),
+        $.containerMemoryWorkingSetPanelByComponent('federation_frontend'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.federation_frontend),
+        $.containerGoHeapInUsePanelByComponent('federation_frontend'),
       )
     )
     .addRow(
