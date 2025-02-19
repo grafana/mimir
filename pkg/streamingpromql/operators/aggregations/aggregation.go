@@ -26,6 +26,7 @@ import (
 
 type Aggregation struct {
 	Inner                    types.InstantVectorOperator
+	Param                    types.ScalarOperator
 	TimeRange                types.QueryTimeRange
 	Grouping                 []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
 	Without                  bool
@@ -45,10 +46,13 @@ type Aggregation struct {
 	remainingGroups             []*group // One entry per group, in the order we want to return them
 
 	haveEmittedMixedFloatsAndHistogramsWarning bool
+
+	paramData types.ScalarData
 }
 
 func NewAggregation(
 	inner types.InstantVectorOperator,
+	param types.ScalarOperator,
 	timeRange types.QueryTimeRange,
 	grouping []string,
 	without bool,
@@ -70,6 +74,7 @@ func NewAggregation(
 
 	a := &Aggregation{
 		Inner:                    inner,
+		Param:                    param,
 		TimeRange:                timeRange,
 		Grouping:                 grouping,
 		Without:                  without,
@@ -113,6 +118,15 @@ func (a *Aggregation) ExpressionPosition() posrange.PositionRange {
 }
 
 func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	// Pre-process any Scalar params
+	var err error
+	if a.Param != nil {
+		a.paramData, err = a.Param.GetValues(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Fetch the source series
 	innerSeries, err := a.Inner.SeriesMetadata(ctx)
 	if err != nil {
@@ -218,7 +232,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
-	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.TimeRange, a.MemoryConsumptionTracker)
+	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.paramData, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationParam)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -248,7 +262,7 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		if err := thisSeriesGroup.aggregation.AccumulateSeries(s, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationFunc); err != nil {
+		if err := thisSeriesGroup.aggregation.AccumulateSeries(s, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationFunc, thisSeriesGroup.remainingSeriesCount); err != nil {
 			return err
 		}
 		thisSeriesGroup.remainingSeriesCount--
@@ -263,7 +277,17 @@ func (a *Aggregation) emitAnnotation(generator types.AnnotationGenerator) {
 	a.Annotations.Add(generator(metricName, a.Inner.ExpressionPosition()))
 }
 
+func (a *Aggregation) emitAnnotationParam(param float64, generator types.AnnotationParamGenerator) {
+	a.Annotations.Add(generator(param, a.Param.ExpressionPosition()))
+}
+
 func (a *Aggregation) Close() {
+	if len(a.paramData.Samples) > 0 {
+		types.FPointSlicePool.Put(a.paramData.Samples, a.MemoryConsumptionTracker)
+	}
+	if a.Param != nil {
+		a.Param.Close()
+	}
 	a.Inner.Close()
 }
 
