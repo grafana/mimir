@@ -1,12 +1,11 @@
 {{/*
-Convert labels to string like: key1=value1, key2=value2, ...
+Convert a dictionary of labels into a PromQL label selector string.: key1=value1, key2=value2, ...
 Example:
-    customLabelFilter:
-      cluster: "my-cluster-name"
+    cluster: "my-cluster-name"
 becomes:
     cluster="my-cluster-name"
 */}}
-{{- define "customLabelFilter" -}}
+{{- define "toPromQLLabelSelector" -}}
   {{- if . }}
     {{- $labels := "" }}
     {{- range $key, $value := . }}

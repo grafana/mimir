@@ -25,34 +25,40 @@ spec:
     kind: Deployment
   triggers:
   - metadata:
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5"{{- if .Values.kedaAutoscaling.customLabelFilter }}, {{ include "customLabelFilter" .Values.kedaAutoscaling.customLabelFilter }}{{- end }}}[1m]))
+      {{- if .Values.kedaAutoscaling.authentication.enabled }}
+      authModes: "{{ .Values.kedaAutoscaling.authentication.authModes }}"
+      {{- end }}
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="ruler-query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5",{{ include "toPromQLLabelSelector" .Values.kedaAutoscaling.toPromQLLabelSelector }}}[1m]))
       serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}
       threshold: {{ .Values.ruler_querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}
-      ignoreNullValues: {{ .Values.kedaAutoscaling.ignoreNullValues }}
-      unsafeSsl: {{ .Values.kedaAutoscaling.ignoreNullValues }}
+      ignoreNullValues: "{{ .Values.kedaAutoscaling.ignoreNullValues }}"
+      unsafeSsl: "{{ .Values.kedaAutoscaling.unsafeSsl }}"
     name: cortex_querier_hpa_default
     type: prometheus
     {{- if .Values.kedaAutoscaling.authentication.enabled }}
     authenticationRef:
-      name: {{ include "mimir.resourceName" (dict "ctx" .) }}
+        name: "keda-triggger-auth"
     {{- end }}
   - metadata:
-      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="ruler-querier",namespace="{{ .Release.Namespace }}"{{- if .Values.kedaAutoscaling.customLabelFilter }}, {{ include "customLabelFilter" .Values.kedaAutoscaling.customLabelFilter }}{{- end }}}[1m]))
+      {{- if .Values.kedaAutoscaling.authentication.enabled }}
+      authModes: "{{ .Values.kedaAutoscaling.authentication.authModes }}"
+      {{- end }}
+      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="ruler-querier",namespace="{{ .Release.Namespace }}",{{ include "toPromQLLabelSelector" .Values.kedaAutoscaling.toPromQLLabelSelector }}}[1m]))
       serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}
       threshold: {{ .Values.ruler_querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}
       customHeaders: {{ (include "mimir.lib.mapToCSVString" (dict "map" .Values.kedaAutoscaling.customHeaders)) | quote }}
       {{- end }}
-      ignoreNullValues: {{ .Values.kedaAutoscaling.ignoreNullValues }}
-      unsafeSsl: {{ .Values.kedaAutoscaling.unsafeSsl }}
+      ignoreNullValues: "{{ .Values.kedaAutoscaling.ignoreNullValues }}"
+      unsafeSsl: "{{ .Values.kedaAutoscaling.unsafeSsl }}"
     name: cortex_querier_hpa_default_requests_duration
     type: prometheus
     {{- if .Values.kedaAutoscaling.authentication.enabled }}
     authenticationRef:
-      name: {{ include "mimir.resourceName" (dict "ctx" .) }}
+        name: "keda-triggger-auth"
     {{- end }}
 {{- end }}
 {{- end }}
