@@ -42,7 +42,7 @@ services:
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-    image: grafana/grafana:11.5.0
+    image: grafana/grafana:11.5.1
     ports:
       - 3000:3000
     volumes:
@@ -122,7 +122,7 @@ services:
       - .data-mimir-2:/data:delegated
 
   otel-remote-write:
-    image: otel/opentelemetry-collector-contrib:0.116.1
+    image: otel/opentelemetry-collector-contrib:0.119.0
     profiles:
       - otel-collector-remote-write
     volumes:
@@ -137,7 +137,7 @@ services:
       - 55679:55679 # zpages extension
 
   otel-otlp:
-    image: otel/opentelemetry-collector-contrib:0.116.1
+    image: otel/opentelemetry-collector-contrib:0.119.0
     profiles:
       - otel-collector-otlp-push
     volumes:

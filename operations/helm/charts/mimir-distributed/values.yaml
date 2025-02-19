@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r328-4ad7c7d
+  tag: r330-61dfefa
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -405,7 +405,7 @@ mimir:
     store_gateway:
       sharding_ring:
         heartbeat_period: 1m
-        heartbeat_timeout: 4m
+        heartbeat_timeout: 10m
         wait_stability_min_duration: 1m
         {{- if .Values.store_gateway.zoneAwareReplication.enabled }}
         kvstore:
@@ -2454,7 +2454,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.34-alpine
+    tag: 1.6.36-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -4053,7 +4053,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r328-410d20a9
+    tag: r330-648cb08a
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -4621,7 +4621,7 @@ federation_frontend:
   # -- Additional volumes for the federation-frontend pods
   extraVolumes: []
 
-  # -- Additional containers to be added to the graphite-metric-name-cache pod.
+  # -- Additional containers to be added to the federation-frontend pod.
   extraContainers: []
 
   # -- The name of the PriorityClass for federation-frontend pods
@@ -4690,6 +4690,7 @@ smoke_test:
   extraEnvFrom: []
   annotations: {}
   initContainers: []
+  resources: {}
   # -- The name of the PriorityClass for smoke-test pods
   priorityClassName: null
 

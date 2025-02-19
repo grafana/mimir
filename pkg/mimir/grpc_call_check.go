@@ -112,11 +112,19 @@ func (g *grpcInflightMethodLimiter) RPCCallProcessing(ctx context.Context, _ str
 		switch rpcCall {
 		case rpcCallIngesterPush:
 			if ing := g.getIngester(); ing != nil {
-				return ing.PreparePushRequest(ctx)
+				fn, err := ing.PreparePushRequest(ctx)
+				if err != nil {
+					return nil, status.Error(codes.Unavailable, err.Error())
+				}
+				return fn, nil
 			}
 		case rpcCallIngesterRead:
 			if ing := g.getIngester(); ing != nil {
-				return ing.PrepareReadRequest(ctx)
+				fn, err := ing.PrepareReadRequest(ctx)
+				if err != nil {
+					return nil, status.Error(codes.Unavailable, err.Error())
+				}
+				return fn, nil
 			}
 		}
 	}

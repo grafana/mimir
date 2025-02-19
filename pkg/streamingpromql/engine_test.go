@@ -50,10 +50,8 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"topk(5, metric{})":                     "'topk' aggregation with parameter",
-		`count_values("foo", metric{})`:         "'count_values' aggregation with parameter",
-		"quantile_over_time(0.4, metric{}[5m])": "'quantile_over_time' function",
-		"quantile(0.95, metric{})":              "'quantile' aggregation with parameter",
+		`count_values("foo", metric{})`: "'count_values' aggregation with parameter",
+		"quantile(0.95, metric{})":      "'quantile' aggregation with parameter",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -2249,6 +2247,87 @@ func TestAnnotations(t *testing.T) {
 			},
 		},
 
+		"topk() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric{type="float"})`,
+		},
+		"topk() with only histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in topk aggregation (1:1)`,
+			},
+		},
+		"topk() with both floats and histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in topk aggregation (1:1)`,
+			},
+		},
+
+		"bottomk() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric{type="float"})`,
+		},
+		"bottomk() with only histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in bottomk aggregation (1:1)`,
+			},
+		},
+		"bottomk() with both floats and histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in bottomk aggregation (1:1)`,
+			},
+		},
+
+		"quantile_over_time() with negative quantile": {
+			data: `metric 0 1 2 3`,
+			expr: `quantile_over_time(-1, metric[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: quantile value should be between 0 and 1, got -1 (1:20)`,
+			},
+		},
+		"quantile_over_time() with 0 quantile": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(0, some_metric[1m1s])`,
+		},
+		"quantile_over_time() with quantile between 0 and 1": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(0.5, some_metric[1m1s])`,
+		},
+		"quantile_over_time() with 1 quantile": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(1, some_metric[1m1s])`,
+		},
+		"quantile_over_time() with quantile greater than 1": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(1.2, some_metric[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: quantile value should be between 0 and 1, got 1.2 (1:20)`,
+			},
+		},
+		"quantile_over_time() over series with only floats": {
+			data: `some_metric 1 2`,
+			expr: `quantile_over_time(0.2, some_metric[1m1s])`,
+		},
+		"quantile_over_time() over series with only histograms": {
+			data: `some_metric {{count:1}} {{count:2}}`,
+			expr: `quantile_over_time(0.2, some_metric[1m1s])`,
+		},
+		"quantile_over_time() over series with both floats and histograms": {
+			data: `some_metric 1 {{count:2}}`,
+			expr: `quantile_over_time(0.2, some_metric[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:20)`,
+			},
+			skipComparisonWithPrometheusReason: "Prometheus' engine emits the wrong annotation, see https://github.com/prometheus/prometheus/pull/16018",
+		},
+
 		"multiple annotations from different operators": {
 			data: `
 				mixed_metric_count       10 {{schema:0 sum:1 count:1 buckets:[1]}}
@@ -2266,6 +2345,24 @@ func TestAnnotations(t *testing.T) {
 				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "other_float_metric" (1:105)`,
 			},
 		},
+	}
+
+	for _, f := range []string{"min_over_time", "max_over_time", "stddev_over_time", "stdvar_over_time"} {
+		testCases[fmt.Sprintf("%v() over series with only floats", f)] = annotationTestCase{
+			data: `some_metric 1 2`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+		}
+		testCases[fmt.Sprintf("%v() over series with only histograms", f)] = annotationTestCase{
+			data: `some_metric {{count:1}} {{count:2}}`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+		}
+		testCases[fmt.Sprintf("%v() over series with both floats and histograms", f)] = annotationTestCase{
+			data: `some_metric 1 {{count:2}}`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+			expectedInfoAnnotations: []string{
+				fmt.Sprintf(`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:%v)`, len(f)+2),
+			},
+		}
 	}
 
 	runAnnotationTests(t, testCases)
@@ -2767,20 +2864,20 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 		t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 		for _, expr := range expressions {
-			testName := fmt.Sprintf("Expr: %s, Start: %d, End: %d, Interval: %s", expr, start.Unix(), end.Unix(), tr.interval)
-			t.Run(testName, func(t *testing.T) {
-				q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
-				require.NoError(t, err)
-				defer q.Close()
-				prometheusResults := q.Exec(context.Background())
+			// We run so many combinations that calling t.Run() for each of them has a noticeable performance impact.
+			// So we instead just log the test case before we run it.
+			t.Logf("Expr: %s, Start: %d, End: %d, Interval: %s", expr, start.Unix(), end.Unix(), tr.interval)
+			q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
+			require.NoError(t, err)
+			defer q.Close()
+			prometheusResults := q.Exec(context.Background())
 
-				q, err = mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
-				require.NoError(t, err)
-				defer q.Close()
-				mimirResults := q.Exec(context.Background())
+			q, err = mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
+			require.NoError(t, err)
+			defer q.Close()
+			mimirResults := q.Exec(context.Background())
 
-				testutils.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
-			})
+			testutils.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
 		}
 	}
 }
@@ -2792,10 +2889,8 @@ func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
-	// Generate combinations of 2, 3, and 4 labels. (e.g., "a,b", "e,f", "c,d,e", "a,b,c,d", "c,d,e,f" etc)
+	// Generate combinations of 2 labels. (e.g., "a,b", "e,f" etc)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 4)...)
 
 	expressions := []string{}
 
@@ -2914,23 +3009,21 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
-	// Generate combinations of 2, 3, and 4 labels. (e.g., "a,b", "e,f", "c,d,e", "a,b,c,d", "c,d,e,f" etc)
+	// Generate combinations of 2 labels. (e.g., "a,b", "e,f" etc)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 4)...)
 
 	expressions := []string{}
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta", "delta", "deriv"} {
+		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "irate", "idelta", "delta", "deriv", "stddev_over_time", "stdvar_over_time"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[45s])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[1m])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[2m15s]))`, function, labelRegex))
-			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[5m]))`, function, labelRegex))
 		}
 
 		expressions = append(expressions, fmt.Sprintf(`predict_linear(series{label=~"(%s)"}[1m], 30)`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`quantile_over_time(scalar(series{label="i"}), series{label=~"(%s)"}[1m])`, labelRegex))
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)

@@ -404,5 +404,42 @@ local filename = 'mimir-reads.json';
     // Object store metrics for the querier.
     .addRows(
       $.getObjectStoreRows('Blocks object store (querier accesses)', 'querier')
+    )
+    .addRowIf(
+      $._config.show_reactive_limiter_panels,
+      $.row('Instance Limits')
+      .addPanel(
+        $.timeseriesPanel('Ingester per %s blocked requests' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'sum by (%s) (cortex_ingester_reactive_limiter_blocked_requests{%s, request_type="read"})'
+          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'req' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Ingester per %s inflight requests' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'sum by (%s) (cortex_ingester_reactive_limiter_inflight_requests{%s, request_type="read"})'
+          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'req' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Ingester %s pod inflight request limit' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
+          'sum by (%s) (cortex_ingester_reactive_limiter_inflight_limit{%s, request_type="read"})'
+          % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], '',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'req' } } }
+      )
+      .addPanel(
+        $.timeseriesPanel('Rejected ingester requests') +
+        $.queryPanel(
+          'sum by (reason) (rate(cortex_ingester_instance_rejected_requests_total{%s, reason="ingester_max_inflight_read_requests"}[$__rate_interval]))'
+          % $.jobMatcher($._config.job_names.ingester),
+          '{{reason}}',
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } }
+      ),
     ),
 }

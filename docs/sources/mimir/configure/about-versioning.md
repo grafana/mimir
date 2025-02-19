@@ -69,6 +69,8 @@ The following features are currently experimental:
     - `-compactor.no-blocks-file-cleanup-enabled`
   - In-memory cache for parsed meta.json files:
     - `-compactor.in-memory-tenant-meta-cache-size`
+  - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
+    - `-compactor.max-lookback`
 - Ruler
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
   - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
@@ -167,13 +169,41 @@ The following features are currently experimental:
     - `-ingester.read-circuit-breaker.cooldown-period`
     - `-ingester.read-circuit-breaker.initial-delay`
     - `-ingester.read-circuit-breaker.request-timeout`
+  - Reactive concurrency limiters
+    - `-ingester.push-reactive-limiter.enabled`
+    - `-ingester.push-reactive-limiter.short-window-min-duration`
+    - `-ingester.push-reactive-limiter.short-window-max-duration`
+    - `-ingester.push-reactive-limiter.short-window-min-samples`
+    - `-ingester.push-reactive-limiter.long-window`
+    - `-ingester.push-reactive-limiter.sample-quantile`
+    - `-ingester.push-reactive-limiter.min-inflight-limit`
+    - `-ingester.push-reactive-limiter.max-inflight-limit`
+    - `-ingester.push-reactivereactive-limiter.initial-inflight-limit`
+    - `-ingester.push-reactive-limiter.max-limit-factor`
+    - `-ingester.push-reactive-limiter.correlation-window`
+    - `-ingester.push-reactive-limiter.initial-rejection-factor`
+    - `-ingester.push-reactive-limiter.max-rejection-factor`
+    - `-ingester.read-reactive-limiter.enabled`
+    - `-ingester.read-reactive-limiter.short-window-min-duration`
+    - `-ingester.read-reactive-limiter.short-window-max-duration`
+    - `-ingester.read-reactive-limiter.short-window-min-samples`
+    - `-ingester.read-reactive-limiter.long-window`
+    - `-ingester.read-reactive-limiter.sample-quantile`
+    - `-ingester.read-reactive-limiter.min-inflight-limit`
+    - `-ingester.read-reactive-limiter.max-inflight-limit`
+    - `-ingester.read-reactive-limiter.initial-inflight-limit`
+    - `-ingester.read-reactive-limiter.max-limit-factor`
+    - `-ingester.read-reactive-limiter.correlation-window`
+    - `-ingester.read-reactive-limiter.initial-rejection-factor`
+    - `-ingester.read-reactive-limiter.max-rejection-factor`
+    - `-ingester.rejection-prioritizer.calibration-interval`
 - Querier
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
-  - Mimir query engine (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
+  - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
 - Query-frontend
@@ -184,10 +214,13 @@ The following features are currently experimental:
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
   - Caching of non-transient error responses (`-query-frontend.cache-errors`, `-query-frontend.results-cache-ttl-for-errors`)
+  - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
+  - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.spin-off-instant-subqueries-to-url` and the `instant_queries_with_subquery_spin_off` per-tenant limit)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
+  - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
 - Read-write deployment mode
 - API endpoints:
   - `/api/v1/user_limits`

@@ -30,9 +30,13 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
+* [CHANGE] Ring: relaxed the hash ring heartbeat timeout for store-gateways: #10634
+  * `-store-gateway.sharding-ring.heartbeat-timeout` set to `10m`
 * [ENHANCEMENT] Minio: update subchart to v5.4.0. #10346
 * [ENHANCEMENT] Individual mimir components can override their container images via the *.image values. The component's image definitions always override the values set in global `image` or `enterprise.image`. #10340
 * [ENHANCEMENT] Alertmanager, compactor, ingester, and store-gateway StatefulSets can configure their PVC template name via the corresponding *.persistentVolume.name values. #10376
+* [ENHANCEMENT] Set resources for smoke-test job. #10608
+* [BUGFIX] Create proper in-cluster remote URLs when gateway and nginx are disabled. #10625
 * [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
 
 ## 5.6.0

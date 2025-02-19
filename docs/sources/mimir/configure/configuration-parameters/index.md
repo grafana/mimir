@@ -816,6 +816,12 @@ ha_tracker:
   # CLI flag: -distributor.ha-tracker.failover-timeout
   [ha_tracker_failover_timeout: <duration> | default = 30s]
 
+  # Enable the elected_replica_status metric, which shows the current elected
+  # replica. It is disabled by default due to the possible high cardinality of
+  # the metric.
+  # CLI flag: -distributor.ha-tracker.enable-elected-replica-metric
+  [enable_elected_replica_metric: <boolean> | default = false]
+
   # Backend storage to use for the ring. Note that memberlist support is
   # experimental.
   kvstore:
@@ -1350,6 +1356,135 @@ read_circuit_breaker:
   # and its timeouts aren't reported as errors.
   # CLI flag: -ingester.read-circuit-breaker.request-timeout
   [request_timeout: <duration> | default = 30s]
+
+rejection_prioritizer:
+  # (experimental) The interval at which the rejection threshold is calibrated
+  # CLI flag: -ingester.rejection-prioritizer.calibration-interval
+  [calibration_interval: <duration> | default = 1s]
+
+push_reactive_limiter:
+  # (experimental) Enable reactive limiting when making requests to ingesters
+  # CLI flag: -ingester.push-reactive-limiter.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Minimum duration of the window that is used to determine the
+  # recent, short-term load on the system
+  # CLI flag: -ingester.push-reactive-limiter.short-window-min-duration
+  [short_window_min_duration: <duration> | default = 1s]
+
+  # (experimental) Maximum duration of the window that is used to determine the
+  # recent, short-term load on the system
+  # CLI flag: -ingester.push-reactive-limiter.short-window-max-duration
+  [short_window_max_duration: <duration> | default = 30s]
+
+  # (experimental) Minimum number of samples that must be recorded in the window
+  # CLI flag: -ingester.push-reactive-limiter.short-window-min-samples
+  [short_window_min_samples: <int> | default = 50]
+
+  # (experimental) Short-term window measurements that are stored in an
+  # exponentially weighted moving average window, representing the long-term
+  # baseline inflight time
+  # CLI flag: -ingester.push-reactive-limiter.long-window
+  [long_window: <int> | default = 60]
+
+  # (experimental) The quantile of recorded response times to consider when
+  # adjusting the concurrency limit
+  # CLI flag: -ingester.push-reactive-limiter.sample-quantile
+  [sample_quantile: <float> | default = 0.9]
+
+  # (experimental) Minimum inflight requests limit
+  # CLI flag: -ingester.push-reactive-limiter.min-inflight-limit
+  [min_inflight_limit: <int> | default = 2]
+
+  # (experimental) Maximum inflight requests limit
+  # CLI flag: -ingester.push-reactive-limiter.max-inflight-limit
+  [max_inflight_limit: <int> | default = 200]
+
+  # (experimental) Initial inflight requests limit
+  # CLI flag: -ingester.push-reactive-limiter.initial-inflight-limit
+  [initial_inflight_limit: <int> | default = 20]
+
+  # (experimental) The maximum limit as a multiple of current inflight requests
+  # CLI flag: -ingester.push-reactive-limiter.max-limit-factor
+  [max_limit_factor: <float> | default = 5]
+
+  # (experimental) How many recent limit and inflight time measurements are
+  # stored to detect whether increases in limits correlate with increases in
+  # inflight times
+  # CLI flag: -ingester.push-reactive-limiter.correlation-window
+  [correlation_window: <int> | default = 50]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which rejections start
+  # CLI flag: -ingester.push-reactive-limiter.initial-rejection-factor
+  [initial_rejection_factor: <float> | default = 2]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which all requests are rejected
+  # CLI flag: -ingester.push-reactive-limiter.max-rejection-factor
+  [max_rejection_factor: <float> | default = 3]
+
+read_reactive_limiter:
+  # (experimental) Enable reactive limiting when making requests to ingesters
+  # CLI flag: -ingester.read-reactive-limiter.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Minimum duration of the window that is used to determine the
+  # recent, short-term load on the system
+  # CLI flag: -ingester.read-reactive-limiter.short-window-min-duration
+  [short_window_min_duration: <duration> | default = 1s]
+
+  # (experimental) Maximum duration of the window that is used to determine the
+  # recent, short-term load on the system
+  # CLI flag: -ingester.read-reactive-limiter.short-window-max-duration
+  [short_window_max_duration: <duration> | default = 30s]
+
+  # (experimental) Minimum number of samples that must be recorded in the window
+  # CLI flag: -ingester.read-reactive-limiter.short-window-min-samples
+  [short_window_min_samples: <int> | default = 50]
+
+  # (experimental) Short-term window measurements that are stored in an
+  # exponentially weighted moving average window, representing the long-term
+  # baseline inflight time
+  # CLI flag: -ingester.read-reactive-limiter.long-window
+  [long_window: <int> | default = 60]
+
+  # (experimental) The quantile of recorded response times to consider when
+  # adjusting the concurrency limit
+  # CLI flag: -ingester.read-reactive-limiter.sample-quantile
+  [sample_quantile: <float> | default = 0.9]
+
+  # (experimental) Minimum inflight requests limit
+  # CLI flag: -ingester.read-reactive-limiter.min-inflight-limit
+  [min_inflight_limit: <int> | default = 2]
+
+  # (experimental) Maximum inflight requests limit
+  # CLI flag: -ingester.read-reactive-limiter.max-inflight-limit
+  [max_inflight_limit: <int> | default = 200]
+
+  # (experimental) Initial inflight requests limit
+  # CLI flag: -ingester.read-reactive-limiter.initial-inflight-limit
+  [initial_inflight_limit: <int> | default = 20]
+
+  # (experimental) The maximum limit as a multiple of current inflight requests
+  # CLI flag: -ingester.read-reactive-limiter.max-limit-factor
+  [max_limit_factor: <float> | default = 5]
+
+  # (experimental) How many recent limit and inflight time measurements are
+  # stored to detect whether increases in limits correlate with increases in
+  # inflight times
+  # CLI flag: -ingester.read-reactive-limiter.correlation-window
+  [correlation_window: <int> | default = 50]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which rejections start
+  # CLI flag: -ingester.read-reactive-limiter.initial-rejection-factor
+  [initial_rejection_factor: <float> | default = 2]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which all requests are rejected
+  # CLI flag: -ingester.read-reactive-limiter.max-rejection-factor
+  [max_rejection_factor: <float> | default = 3]
 ```
 
 ### querier
@@ -4816,6 +4951,13 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
+
+# (experimental) Blocks uploaded before the lookback aren't considered in
+# compactor cycles. If set, this value should be larger than all values in
+# `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all
+# blocks are considered regardless of their upload time.
+# CLI flag: -compactor.max-lookback
+[max_lookback: <duration> | default = 0s]
 ```
 
 ### store_gateway
@@ -4958,6 +5100,11 @@ dynamic_replication:
   # owned by more replicas.
   # CLI flag: -store-gateway.dynamic-replication.max-time-threshold
   [max_time_threshold: <duration> | default = 25h]
+
+  # (experimental) Multiple of the default replication factor that should be
+  # used for recent blocks. Minimum value is 2
+  # CLI flag: -store-gateway.dynamic-replication.multiple
+  [multiple: <int> | default = 2]
 
 # (advanced) Comma separated list of tenants that can be loaded by the
 # store-gateway. If specified, only blocks for these tenants will be loaded by

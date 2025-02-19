@@ -126,6 +126,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"month":              `month({__name__=~"float.*"})`,
 		"predict_linear":     `predict_linear({__name__=~"float.*"}[1m], 30)`,
 		"present_over_time":  `present_over_time({__name__=~"float.*"}[1m])`,
+		"quantile_over_time": `quantile_over_time(0.5, {__name__=~"float.*"}[1m])`,
 		"rad":                `rad({__name__=~"float.*"})`,
 		"rate":               `rate({__name__=~"float.*"}[1m])`,
 		"resets":             `resets({__name__=~"float.*"}[1m])`,
@@ -136,6 +137,8 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"sort":               `<skip>`, // sort() and sort_desc() don't drop the metric name, so this test doesn't apply.
 		"sort_desc":          `<skip>`, // sort() and sort_desc() don't drop the metric name, so this test doesn't apply.
 		"sqrt":               `sqrt({__name__=~"float.*"})`,
+		"stddev_over_time":   `stddev_over_time({__name__=~"float.*"}[1m])`,
+		"stdvar_over_time":   `stdvar_over_time({__name__=~"float.*"}[1m])`,
 		"sum_over_time":      `sum_over_time({__name__=~"float.*"}[1m])`,
 		"tan":                `tan({__name__=~"float.*"})`,
 		"tanh":               `tanh({__name__=~"float.*"})`,

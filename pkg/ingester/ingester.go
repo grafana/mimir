@@ -70,6 +70,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/reactivelimiter"
 	"github.com/grafana/mimir/pkg/util/shutdownmarker"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/tracing"
@@ -134,6 +135,7 @@ var (
 	reasonIngesterMaxInMemorySeries            = globalerror.IngesterMaxInMemorySeries.LabelValue()
 	reasonIngesterMaxInflightPushRequests      = globalerror.IngesterMaxInflightPushRequests.LabelValue()
 	reasonIngesterMaxInflightPushRequestsBytes = globalerror.IngesterMaxInflightPushRequestsBytes.LabelValue()
+	reasonIngesterMaxInflightReadRequests      = globalerror.IngesterMaxInflightReadRequests.LabelValue()
 )
 
 // Usage-stats expvars. Initialized as package-global in order to avoid race conditions and panics
@@ -210,8 +212,11 @@ type Config struct {
 	UpdateIngesterOwnedSeries       bool          `yaml:"track_ingester_owned_series" category:"experimental"`
 	OwnedSeriesUpdateInterval       time.Duration `yaml:"owned_series_update_interval" category:"experimental"`
 
-	PushCircuitBreaker CircuitBreakerConfig `yaml:"push_circuit_breaker"`
-	ReadCircuitBreaker CircuitBreakerConfig `yaml:"read_circuit_breaker"`
+	PushCircuitBreaker   CircuitBreakerConfig                       `yaml:"push_circuit_breaker"`
+	ReadCircuitBreaker   CircuitBreakerConfig                       `yaml:"read_circuit_breaker"`
+	RejectionPrioritizer reactivelimiter.RejectionPrioritizerConfig `yaml:"rejection_prioritizer"`
+	PushReactiveLimiter  reactivelimiter.Config                     `yaml:"push_reactive_limiter"`
+	ReadReactiveLimiter  reactivelimiter.Config                     `yaml:"read_reactive_limiter"`
 
 	PushGrpcMethodEnabled bool `yaml:"push_grpc_method_enabled" category:"experimental" doc:"hidden"`
 
@@ -230,6 +235,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	cfg.ActiveSeriesMetrics.RegisterFlags(f)
 	cfg.PushCircuitBreaker.RegisterFlagsWithPrefix("ingester.push-circuit-breaker.", f, circuitBreakerDefaultPushTimeout)
 	cfg.ReadCircuitBreaker.RegisterFlagsWithPrefix("ingester.read-circuit-breaker.", f, circuitBreakerDefaultReadTimeout)
+	cfg.RejectionPrioritizer.RegisterFlagsWithPrefix("ingester.rejection-prioritizer.", f)
+	cfg.PushReactiveLimiter.RegisterFlagsWithPrefix("ingester.push-reactive-limiter.", f)
+	cfg.ReadReactiveLimiter.RegisterFlagsWithPrefix("ingester.read-reactive-limiter.", f)
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 	f.DurationVar(&cfg.RateUpdatePeriod, "ingester.rate-update-period", 15*time.Second, "Period with which to update the per-tenant ingestion rates.")
@@ -347,7 +355,8 @@ type Ingester struct {
 	ingestPartitionID         int32
 	ingestPartitionLifecycler *ring.PartitionInstanceLifecycler
 
-	circuitBreaker ingesterCircuitBreaker
+	circuitBreaker  ingesterCircuitBreaker
+	reactiveLimiter *ingesterReactiveLimiter
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
@@ -395,6 +404,8 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.costAttributionMgr = costAttributionMgr
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
 	i.circuitBreaker = newIngesterCircuitBreaker(i.cfg.PushCircuitBreaker, i.cfg.ReadCircuitBreaker, logger, registerer)
+
+	i.reactiveLimiter = newIngesterReactiveLimiter(&i.cfg.RejectionPrioritizer, &i.cfg.PushReactiveLimiter, &i.cfg.ReadReactiveLimiter, logger, registerer)
 
 	if registerer != nil {
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
@@ -620,6 +631,10 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 
 	if i.utilizationBasedLimiter != nil {
 		servs = append(servs, i.utilizationBasedLimiter)
+	}
+
+	if i.reactiveLimiter != nil {
+		servs = append(servs, i.reactiveLimiter)
 	}
 
 	if i.ingestPartitionLifecycler != nil {
@@ -1020,7 +1035,22 @@ func (i *Ingester) StartPushRequest(ctx context.Context, reqSize int64) (context
 }
 
 // PreparePushRequest implements pushReceiver.
-func (i *Ingester) PreparePushRequest(_ context.Context) (finishFn func(error), err error) {
+func (i *Ingester) PreparePushRequest(ctx context.Context) (finishFn func(error), err error) {
+	if i.reactiveLimiter != nil && i.reactiveLimiter.push != nil {
+		// Acquire a permit, blocking if needed
+		permit, err := i.reactiveLimiter.push.AcquirePermit(ctx)
+		if err != nil {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
+			return nil, newReactiveLimiterExceededError(err)
+		}
+		return func(err error) {
+			if errors.Is(err, context.Canceled) {
+				permit.Drop()
+			} else {
+				permit.Record()
+			}
+		}, nil
+	}
 	return nil, nil
 }
 
@@ -1068,6 +1098,11 @@ func (i *Ingester) startPushRequest(ctx context.Context, reqSize int64) (context
 		requestFinish: finish,
 	}
 	ctx = context.WithValue(ctx, pushReqCtxKey, st)
+
+	if i.reactiveLimiter != nil && i.reactiveLimiter.push != nil && !i.reactiveLimiter.push.CanAcquirePermit() {
+		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests).Inc()
+		return nil, false, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+	}
 
 	inflight := i.inflightPushRequests.Inc()
 	inflightBytes := int64(0)
@@ -1677,6 +1712,11 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 	if err := i.checkReadOverloaded(); err != nil {
 		return nil, err
 	}
+	if i.reactiveLimiter != nil && i.reactiveLimiter.read != nil && !i.reactiveLimiter.read.CanAcquirePermit() {
+		i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
+		return nil, newReactiveLimiterExceededError(reactivelimiter.ErrExceeded)
+	}
+
 	finish, err := i.circuitBreaker.tryAcquireReadPermit()
 	if err != nil {
 		return nil, err
@@ -1692,11 +1732,29 @@ func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Cont
 // PrepareReadRequest implements ingesterReceiver and is called by a gRPC interceptor when a request is in progress.
 // When successful, PrepareReadRequest returns a function that should be called once the request is completed.
 func (i *Ingester) PrepareReadRequest(ctx context.Context) (finishFn func(error), err error) {
-	// Propagate any error from the read request to the finish function embedded in the context
+	cbFinish := func(error) {}
 	if st := getReadRequestState(ctx); st != nil {
-		return st.requestFinish, nil
+		cbFinish = st.requestFinish
 	}
-	return func(error) {}, nil
+
+	if i.reactiveLimiter != nil && i.reactiveLimiter.read != nil {
+		// Acquire a permit, blocking if needed
+		permit, err := i.reactiveLimiter.read.AcquirePermit(ctx)
+		if err != nil {
+			i.metrics.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests).Inc()
+			return nil, newReactiveLimiterExceededError(err)
+		}
+		return func(err error) {
+			cbFinish(err)
+			if errors.Is(err, context.Canceled) {
+				permit.Drop()
+			} else {
+				permit.Record()
+			}
+		}, nil
+	}
+
+	return cbFinish, nil
 }
 
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (resp *client.ExemplarQueryResponse, err error) {
@@ -1886,7 +1944,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	}
 
 	// Parse the request
-	matchersSet, err := client.FromMetricsForLabelMatchersRequest(req)
+	hints, matchersSet, err := client.FromMetricsForLabelMatchersRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1910,6 +1968,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 		hints := &storage.SelectHints{
 			Start: mint,
 			End:   maxt,
+			Limit: hints.Limit,
 			Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
 		}
 
@@ -1927,6 +1986,13 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 		// Interrupt if the context has been canceled.
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+
+		// Besides we are passing the hints to q.Select, we also limit the number of returned series here,
+		// to account for cases when series were resolved via different instances and joined into a single seriesSet,
+		// which are not limited by the MergeSeriesSet.
+		if hints.Limit > 0 && len(result.Metric) >= hints.Limit {
+			break
 		}
 
 		result.Metric = append(result.Metric, &mimirpb.Metric{

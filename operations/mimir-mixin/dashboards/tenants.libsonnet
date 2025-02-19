@@ -742,6 +742,7 @@ local filename = 'mimir-tenants.json';
       .addPanel(
         local title = 'Number of Queries Queued - query-scheduler';
         $.timeseriesPanel(title) +
+        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.queryPanel(
           [
             'sum(cortex_query_scheduler_queue_length{%(job)s, user="$user"})'
@@ -767,6 +768,7 @@ local filename = 'mimir-tenants.json';
       .addPanel(
         local title = 'Number of Queries Queued - ruler-query-scheduler';
         $.timeseriesPanel(title) +
+        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.queryPanel(
           [
             'sum(cortex_query_scheduler_queue_length{%(job)s, user="$user"})'

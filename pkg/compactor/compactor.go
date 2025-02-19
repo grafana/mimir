@@ -118,7 +118,8 @@ type Config struct {
 	// Compactors sharding.
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 
-	CompactionJobsOrder string `yaml:"compaction_jobs_order" category:"advanced"`
+	CompactionJobsOrder string        `yaml:"compaction_jobs_order" category:"advanced"`
+	MaxLookback         time.Duration `yaml:"max_lookback" category:"experimental"`
 
 	// No need to add options to customize the retry backoff,
 	// given the defaults should be fine, but allow to override
@@ -156,6 +157,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
 	f.DurationVar(&cfg.TenantCleanupDelay, "compactor.tenant-cleanup-delay", 6*time.Hour, "For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant.")
 	f.BoolVar(&cfg.NoBlocksFileCleanupEnabled, "compactor.no-blocks-file-cleanup-enabled", false, "If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.")
+	f.DurationVar(&cfg.MaxLookback, "compactor.max-lookback", 0*time.Second, "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.")
+
 	// compactor concurrency options
 	f.IntVar(&cfg.MaxOpeningBlocksConcurrency, "compactor.max-opening-blocks-concurrency", 1, "Number of goroutines opening blocks before compaction.")
 	f.IntVar(&cfg.MaxClosingBlocksConcurrency, "compactor.max-closing-blocks-concurrency", 1, "Max number of blocks that can be closed concurrently during split compaction. Note that closing a newly compacted block uses a lot of memory for writing the index.")
@@ -783,6 +786,13 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		}
 	}
 
+	// Disable maxLookback (set to 0s) when block upload is enabled, block upload enabled implies there will be blocks
+	// beyond the lookback period, we don't want the compactor to skip these
+	var maxLookback = c.compactorCfg.MaxLookback
+	if c.cfgProvider.CompactorBlockUploadEnabled(userID) {
+		maxLookback = 0
+	}
+
 	fetcher, err := block.NewMetaFetcher(
 		userLogger,
 		c.compactorCfg.MetaSyncConcurrency,
@@ -791,6 +801,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		reg,
 		fetcherFilters,
 		metaCache,
+		maxLookback,
 	)
 	if err != nil {
 		return err

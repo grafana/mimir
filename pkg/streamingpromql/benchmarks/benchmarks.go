@@ -127,6 +127,9 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum_over_time(nh_X[1m])",
 		},
+		{
+			Expr: "quantile_over_time(0.3, a_X[1m])",
+		},
 		//{
 		//	Expr: "absent_over_time(a_X[1d])",
 		//},
@@ -259,12 +262,15 @@ func TestCases(metricSizes []int) []BenchCase {
 		//	Expr: "count_values('value', h_X)",
 		//  Steps: 100,
 		//},
-		//{
-		//	Expr: "topk(1, a_X)",
-		//},
-		//{
-		//	Expr: "topk(5, a_X)",
-		//},
+		{
+			Expr: "topk(1, a_X)",
+		},
+		{
+			Expr: "topk(5, a_X)",
+		},
+		{
+			Expr: "topk by (le) (5, h_X)",
+		},
 		// Combinations.
 		{
 			Expr: "rate(a_X[1m]) + rate(b_X[1m])",

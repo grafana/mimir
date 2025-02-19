@@ -163,6 +163,15 @@ How to **fix** it:
 1. Ensure shuffle-sharding is enabled in the Mimir cluster
 1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
 
+### MimirDistributorGcUsesTooMuchCpu
+
+This alert fires when distributors spend too much CPU time on garbage collection.
+This is a symptom of setting GOMEMLIMIT too low, so GC is triggered too frequently.
+
+How to **fix** it:
+
+1. Ensure that distributor horizontal pod auto-scaling works properly, so that distributors are scaled out horizontally in response to CPU pressure.
+
 ### MimirDistributorReachingInflightPushRequestLimit
 
 This alert fires when the `cortex_distributor_inflight_push_requests` per distributor instance limit is enabled and the actual number of in-flight push requests is approaching the set limit. Once the limit is reached, push requests to the distributor will fail (5xx) for new requests, while existing in-flight push requests will continue to succeed.
@@ -2161,6 +2170,21 @@ How to **fix** it:
 
 - Increase the limit by setting the `-ingester.instance-limits.max-inflight-push-requests-bytes` option (or `max_inflight_push_requests_bytes` in the runtime config), if possible.
 - Check the write requests latency through the `Mimir / Writes` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight write requests).
+- Consider scaling out the ingesters.
+
+### err-mimir-ingester-max-inflight-read-requests
+
+This error occurs when an ingester rejects a read request because the maximum in-flight requests limit has been reached.
+
+How it **works**:
+
+- The ingester has a per-instance limit on the number of in-flight read requests.
+- The limit applies to all in-flight read requests, across all tenants, and it protects the ingester from becoming overloaded in case of high traffic.
+- To configure the limit, set the `-ingester.read-reactive-limiter` options.
+
+How to **fix** it:
+
+- Check the read requests latency through the `Mimir / Reads` dashboard and come back to investigate the root cause of high latency (the higher the latency, the higher the number of in-flight read requests).
 - Consider scaling out the ingesters.
 
 ### err-mimir-max-series-per-user

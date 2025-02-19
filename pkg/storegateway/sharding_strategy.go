@@ -113,14 +113,13 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 	}
 
 	r := GetShuffleShardingSubring(s.r, userID, s.limits)
-	replicationOption := ring.WithReplicationFactor(r.InstancesCount())
 	bufDescs, bufHosts, bufZones := ring.MakeBuffersForGet()
 	bufOption := ring.WithBuffers(bufDescs, bufHosts, bufZones)
 
 	for blockID := range metas {
 		ringOpts := []ring.Option{bufOption}
-		if s.dynamicReplication.EligibleForSync(metas[blockID]) {
-			ringOpts = append(ringOpts, replicationOption)
+		if eligible, replicationFactor := s.dynamicReplication.EligibleForSync(metas[blockID]); eligible {
+			ringOpts = append(ringOpts, ring.WithReplicationFactor(replicationFactor))
 		}
 
 		// Check if the block is owned by the store-gateway

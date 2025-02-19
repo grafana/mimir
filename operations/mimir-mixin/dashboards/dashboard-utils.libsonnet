@@ -1535,32 +1535,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.query_frontend.requestsPerSecondMetric, $.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)])
       ),
-      local description = |||
-        <p>
-          The query scheduler is an optional service that moves
-          the internal queue from the query-frontend into a
-          separate component.
-          If this service is not deployed,
-          these panels will show "No data."
-        </p>
-      |||;
       $.row($.capitalize(rowTitlePrefix + 'query-scheduler'))
       .addPanel(
         local title = 'Requests / sec';
         $.timeseriesPanel(title) +
-        $.panelDescription(title, description) +
+        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher(querySchedulerJobName))
       )
       .addPanel(
         local title = 'Latency (Time in Queue)';
         $.timeseriesPanel(title) +
-        $.panelDescription(title, description) +
+        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher(querySchedulerJobName))
       )
       .addPanel(
         local title = 'Queue length';
         $.timeseriesPanel(title) +
-        $.panelDescription(title, description) +
+        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.hiddenLegendQueryPanel(
           'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher(querySchedulerJobName)],
           'Queue length'
@@ -1575,11 +1566,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
       local description = |||
         <p>
-          The query scheduler creates subqueues
+          The query-scheduler creates subqueues
           broken out by which query components (ingester, store-gateway, or both)
           the querier is expected to fetch data from to service the query.
-
+        </p><p>
           Queries which have not had an expected query component determined are labeled 'unknown'.
+        </p><p>
+          If the query-scheduler is not deployed, these panels will show "No data."
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_queue_duration_seconds';
@@ -1636,14 +1629,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
       local description = |||
         <p>
-          The query scheduler tracks query requests inflight
+          The query-scheduler tracks query requests inflight
           between the scheduler and the connected queriers,
           broken out by which query component (ingester, store-gateway)
           the querier is expected to fetch data from to service the query.
-
+        </p><p>
           Queries which require data from both ingesters and store-gateways
           are counted in each category, so the sum of the two categories
           may exceed the true total number of queries inflight.
+        </p><p>
+          If the query-scheduler is not deployed, these panels will show "No data."
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_querier_inflight_requests';
@@ -2064,4 +2059,26 @@ local utils = import 'mixin-utils/utils.libsonnet';
         for target in queryPanel.targets
       ],
     },
+
+  local querySchedulerDescription = 'The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.',
+
+  onlyRelevantIfQuerySchedulerEnabled(title):: $.panelDescription(
+    title,
+    |||
+      <p>
+        %s
+        If the query-scheduler is not deployed, these panels will show "No data."
+      </p>
+    ||| % querySchedulerDescription
+  ),
+
+  onlyRelevantIfQuerySchedulerDisabled(title):: $.panelDescription(
+    title,
+    |||
+      <p>
+      %s
+      If the query-scheduler is deployed, these panels will show "No data."
+      </p>
+    ||| % querySchedulerDescription
+  ),
 }

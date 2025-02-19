@@ -452,7 +452,8 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulertoomanyfailedpushes
             expr: |
               100 * (
-              sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_failed_total[1m]))
+              # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
+              sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_failed_total{reason=~"(error|^$)"}[1m]))
                 /
               sum by (cluster, namespace, pod) (rate(cortex_ruler_write_requests_total[1m]))
               ) > 1
@@ -466,7 +467,8 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrulertoomanyfailedqueries
             expr: |
               100 * (
-              sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_failed_total[1m]))
+              # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
+              sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_failed_total{reason=~"(error|^$)"}[1m]))
                 /
               sum by (cluster, namespace, pod) (rate(cortex_ruler_queries_total[1m]))
               ) > 1
@@ -977,6 +979,27 @@ spec:
             for: 30m
             labels:
               severity: critical
+      - name: mimir_distributor_alerts
+        rules:
+          - alert: MimirDistributorGcUsesTooMuchCpu
+            annotations:
+              message: Mimir distributors in {{ $labels.cluster }}/{{ $labels.namespace }} GC CPU utilization is too high.
+              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirdistributorgcusestoomuchcpu
+            expr: |
+              (quantile by (cluster, namespace) (0.9, sum by (cluster, namespace, pod) (rate(go_cpu_classes_gc_total_cpu_seconds_total{container="distributor"}[5m]))
+                /
+                (
+                  sum by (cluster, namespace, pod) (rate(go_cpu_classes_total_cpu_seconds_total{container="distributor"}[5m]))
+                  -
+                  sum by (cluster, namespace, pod) (rate(go_cpu_classes_idle_cpu_seconds_total{container="distributor"}[5m]))
+                )
+              ) * 100) > 10
+  
+              # Alert only for namespaces with Mimir clusters.
+              and (count by (cluster, namespace) (mimir_build_info) > 0)
+            for: 10m
+            labels:
+              severity: warning
       - name: mimir_autoscaling
         rules:
           - alert: MimirAutoscalerNotActive

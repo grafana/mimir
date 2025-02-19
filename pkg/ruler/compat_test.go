@@ -59,7 +59,12 @@ func (p *fakePusher) Push(_ context.Context, r *mimirpb.WriteRequest) (*mimirpb.
 
 func TestPusherAppendable(t *testing.T) {
 	pusher := &fakePusher{}
-	pa := NewPusherAppendable(pusher, "user-1", promauto.With(nil).NewCounter(prometheus.CounterOpts{}), promauto.With(nil).NewCounter(prometheus.CounterOpts{}))
+	pa := NewPusherAppendable(
+		pusher,
+		"user-1",
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user", "reason"}),
+	)
 
 	type sample struct {
 		series         string
@@ -218,28 +223,31 @@ func TestPusherAppendable(t *testing.T) {
 
 func TestPusherErrors(t *testing.T) {
 	for name, tc := range map[string]struct {
-		returnedError    error
-		expectedWrites   int
-		expectedFailures int
+		returnedError         error
+		expectedWrites        int
+		expectedFailures      int
+		expectedFailureReason string // default to "error"
 	}{
 		"no error": {
 			expectedWrites:   1,
 			expectedFailures: 0,
 		},
-		"a 400 HTTPgRPC error is not reported as failure": {
-			returnedError:    httpgrpc.Errorf(http.StatusBadRequest, "test error"),
-			expectedWrites:   1,
-			expectedFailures: 0,
+		"a 400 HTTPgRPC error is reported as client failure": {
+			returnedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
+			expectedWrites:        1,
+			expectedFailures:      1,
+			expectedFailureReason: failureReasonClientError,
 		},
 		"a 500 HTTPgRPC error is reported as failure": {
 			returnedError:    httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
 			expectedWrites:   1,
 			expectedFailures: 1,
 		},
-		"a BAD_DATA push error is not reported as failure": {
-			returnedError:    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.BAD_DATA).Err(),
-			expectedWrites:   1,
-			expectedFailures: 0,
+		"a BAD_DATA push error is reported as client failure": {
+			returnedError:         mustStatusWithDetails(codes.FailedPrecondition, mimirpb.BAD_DATA).Err(),
+			expectedWrites:        1,
+			expectedFailures:      1,
+			expectedFailureReason: failureReasonClientError,
 		},
 		"a METHOD_NOT_ALLOWED push error is reported as failure": {
 			returnedError:    mustStatusWithDetails(codes.Unimplemented, mimirpb.METHOD_NOT_ALLOWED).Err(),
@@ -262,8 +270,8 @@ func TestPusherErrors(t *testing.T) {
 
 			pusher := &fakePusher{err: tc.returnedError, response: &mimirpb.WriteResponse{}}
 
-			writes := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+			writes := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
+			failures := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user", "reason"})
 			pa := NewPusherAppendable(pusher, "user-1", writes, failures)
 
 			lbls, err := parser.ParseMetric("foo_bar")
@@ -275,8 +283,13 @@ func TestPusherErrors(t *testing.T) {
 
 			require.Equal(t, tc.returnedError, a.Commit())
 
-			require.Equal(t, tc.expectedWrites, int(testutil.ToFloat64(writes)))
-			require.Equal(t, tc.expectedFailures, int(testutil.ToFloat64(failures)))
+			require.Equal(t, tc.expectedWrites, int(testutil.ToFloat64(writes.WithLabelValues("user-1"))))
+
+			expectedFailureReason := tc.expectedFailureReason
+			if expectedFailureReason == "" {
+				expectedFailureReason = failureReasonServerError
+			}
+			require.Equal(t, tc.expectedFailures, int(testutil.ToFloat64(failures.WithLabelValues("user-1", expectedFailureReason))))
 		})
 	}
 }
@@ -331,6 +344,7 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 		expectedError         error
 		expectedQueries       int
 		expectedFailedQueries int
+		expectedFailedReason  string // default "error"
 		remoteQuerier         bool
 	}
 	// Add special cases to test first.
@@ -339,10 +353,10 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 			returnedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
 			expectedError:         httpgrpc.Errorf(http.StatusBadRequest, "test error"),
 			expectedQueries:       1,
-			expectedFailedQueries: 0, // 400 errors not reported as failures.
+			expectedFailedQueries: 1,
+			expectedFailedReason:  failureReasonClientError, // 400 errors coming from remote querier are reported as their own reason.
 			remoteQuerier:         true,
 		},
-
 		"httpgrpc 500 error": {
 			returnedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
 			expectedError:         httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
@@ -350,7 +364,6 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 			expectedFailedQueries: 1, // 500 errors are failures
 			remoteQuerier:         true,
 		},
-
 		"unknown but non-queryable error from remote": {
 			returnedError:         errors.New("test error"),
 			expectedError:         errors.New("test error"),
@@ -379,19 +392,24 @@ func TestMetricsQueryFuncErrors(t *testing.T) {
 	}
 	for name, tc := range allCases {
 		t.Run(name, func(t *testing.T) {
-			queries := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-			failures := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
+			queries := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"})
+			failures := promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user", "reason"})
 
 			mockFunc := func(context.Context, string, time.Time) (promql.Vector, error) {
 				return promql.Vector{}, tc.returnedError
 			}
-			qf := MetricsQueryFunc(mockFunc, queries, failures, tc.remoteQuerier)
+			qf := MetricsQueryFunc(mockFunc, "user-1", queries, failures, tc.remoteQuerier)
 
 			_, err := qf(context.Background(), "test", time.Now())
 			require.Equal(t, tc.expectedError, err)
 
-			require.Equal(t, tc.expectedQueries, int(testutil.ToFloat64(queries)))
-			require.Equal(t, tc.expectedFailedQueries, int(testutil.ToFloat64(failures)))
+			require.Equal(t, tc.expectedQueries, int(testutil.ToFloat64(queries.WithLabelValues("user-1"))))
+
+			expectedFailedReason := tc.expectedFailedReason
+			if expectedFailedReason == "" {
+				expectedFailedReason = failureReasonServerError
+			}
+			require.Equal(t, tc.expectedFailedQueries, int(testutil.ToFloat64(failures.WithLabelValues("user-1", expectedFailedReason))))
 		})
 	}
 }
