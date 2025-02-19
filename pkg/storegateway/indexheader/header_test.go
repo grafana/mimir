@@ -404,7 +404,7 @@ func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, bl
 	return tests, id, tmpDir
 }
 
-func BenchmarkBinaryWrite(t *testing.B) {
+func BenchmarkWriteBinary(t *testing.B) {
 	ctx := context.Background()
 
 	tmpDir := t.TempDir()
@@ -421,7 +421,7 @@ func BenchmarkBinaryWrite(t *testing.B) {
 	}
 }
 
-func BenchmarkBinaryWrite_DelayedBucket(t *testing.B) {
+func BenchmarkWriteBinary_DelayedBucket(t *testing.B) {
 
 	tests := []struct {
 		delay time.Duration
