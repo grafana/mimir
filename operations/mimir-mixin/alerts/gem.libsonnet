@@ -4,7 +4,7 @@
       name: 'gem_alerts',
       rules: [
         {
-          alert: $.alertName('FederationFrontendRemoteClusterErrors'),
+          alert: 'GEMFederationFrontendRemoteClusterErrors', // We do not use the alertName function here because this alert only makes sense in the context of GEM.
           expr: |||
             100 * (
               sum by (remote_cluster) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_count{status="server_error"}[%(range_interval)s]))
