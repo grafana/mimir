@@ -103,7 +103,6 @@
       read: ['query-frontend.*', 'querier.*', 'ruler-query-frontend.*', 'ruler-querier.*', 'mimir-read.*'],
       backend: ['ruler', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter', 'mimir-backend.*'],
 
-      // Add federation frontend job name
       federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
     },
 
