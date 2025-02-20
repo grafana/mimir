@@ -734,3 +734,10 @@ mimir.cpuToMilliCPU takes 1 argument
         {{- $value_string | float64 | mulf 1000 | toString }}
     {{- end -}}
 {{- end -}}
+
+{{/*
+kubectl image reference
+*/}}
+{{- define "mimir.kubectlImage" -}}
+{{ .Values.kubectlImage.repository }}:{{ .Values.kubectlImage.tag | default "latest" }}
+{{- end -}}

@@ -24,7 +24,7 @@ spec:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "tokengen") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
-      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      serviceAccountName: {{ include "mimir.serviceAccountName" . }}
       {{- if .Values.tokengenJob.priorityClassName }}
       priorityClassName: {{ .Values.tokengenJob.priorityClassName }}
       {{- end }}
@@ -37,8 +37,6 @@ spec:
       {{- end }}
       {{- end }}
       initContainers:
-        {{- toYaml .Values.tokengenJob.initContainers | nindent 8 }}
-      containers:
         - name: tokengen
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "tokengen") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -46,6 +44,7 @@ spec:
             - "-target=tokengen"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-tokengen.token-file=/shared/admin-token"
             {{- range $key, $value := .Values.tokengenJob.extraArgs }}
             - -{{ $key }}={{ $value }}
             {{- end }}
@@ -60,28 +59,22 @@ spec:
               mountPath: /etc/mimir
             - name: license
               mountPath: /license
-            - name: active-queries
-              mountPath: /active-query-tracker
-          {{- if or .Values.global.extraEnv .Values.tokengenJob.env }}
-          env:
-            {{- with .Values.global.extraEnv }}
-              {{ toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.tokengenJob.env }}
-              {{ toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
-          {{- if or .Values.global.extraEnvFrom .Values.tokengenJob.extraEnvFrom }}
-          envFrom:
-            {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.tokengenJob.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
-          securityContext:
-            {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
+            - name: shared
+              mountPath: /shared
+      containers:
+        - name: create-secret
+          image: {{ include "mimir.kubectlImage" . }}
+          imagePullPolicy: {{ .Values.kubectlImage.pullPolicy | default "IfNotPresent" }}
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              kubectl create secret generic {{ include "mimir.resourceName" (dict "ctx" . "component" "token") }} \
+                --from-file=token=/shared/admin-token \
+                --dry-run=client -o yaml | kubectl apply -f -
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
       restartPolicy: OnFailure
       volumes:
         - name: config
@@ -98,5 +91,7 @@ spec:
         - name: storage
           emptyDir: {}
         - name: active-queries
+          emptyDir: {}
+        - name: shared
           emptyDir: {}
 {{- end -}}

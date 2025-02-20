@@ -4088,6 +4088,19 @@ tokengenJob:
   # -- The name of the PriorityClass for tokenjobgen pods
   priorityClassName: null
 
+# -- kubetclImage is used in the enterprise provisioner and tokengen jobs
+kubectlImage:
+  # -- The Docker registry
+  registry: docker.io
+  # -- Docker image repository
+  repository: bitnami/kubectl
+  # -- Overrides the image tag whose default is the chart's appVersion
+  tag: null
+  # -- Overrides the image tag with an image digest
+  digest: null
+  # -- Docker image pull policy
+  pullPolicy: IfNotPresent
+
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.
 admin_api:
