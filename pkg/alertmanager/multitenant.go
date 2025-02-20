@@ -112,8 +112,8 @@ type MultitenantAlertmanagerConfig struct {
 }
 
 const (
-	defaultPeerTimeout                    = 15 * time.Second
 	defaultGrafanaAlertmanagerGracePeriod = 5 * time.Minute
+	defaultPeerTimeout                    = 15 * time.Second
 )
 
 // RegisterFlags adds the features required to config this to the given FlagSet.
@@ -1031,10 +1031,10 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 	if ok {
 		userAM.mux.ServeHTTP(w, req)
 
+		// If needed, update the last time the Alertmanager received requests.
 		am.alertmanagersMtx.Lock()
 		defer am.alertmanagersMtx.Unlock()
 		if _, ok := am.receivingRequests[userID]; ok {
-			// Update the last time the user received alerts.
 			level.Debug(am.logger).Log("msg", "updating last alert reception time", "user", userID)
 			am.receivingRequests[userID] = time.Now().Unix()
 		}
@@ -1043,8 +1043,7 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 
 	// If the Alertmanager initialization was previously skipped, start the Alertmanager.
 	am.alertmanagersMtx.Lock()
-	ts, ok := am.receivingRequests[userID]
-	if ok && time.Unix(ts, 0).IsZero() {
+	if _, ok := am.receivingRequests[userID]; ok {
 		am.receivingRequests[userID] = time.Now().Unix()
 		am.alertmanagersMtx.Unlock()
 
@@ -1055,7 +1054,7 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 			return
 		}
 
-		level.Debug(am.logger).Log("msg", "alerts received, Alertmanager initialized", "user", userID)
+		level.Debug(am.logger).Log("msg", "Alertmanager initialized after receiving request", "user", userID)
 		userAM.mux.ServeHTTP(w, req)
 		return
 	}
@@ -1081,7 +1080,9 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 	http.Error(w, "the Alertmanager is not configured", http.StatusPreconditionFailed)
 }
 
+// startAlertmanager will start the Alertmanager for a tenant, using the fallback configuration if no config is found.
 func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID string) (*Alertmanager, error) {
+	// Avoid starting the Alertmanager for tenants not owned by this instance.
 	if !am.isUserOwned(userID) {
 		return nil, errors.Wrap(errNotUploadingFallback, "user not owned by this instance")
 	}
@@ -1091,28 +1092,7 @@ func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID
 		if !errors.Is(err, alertspb.ErrNotFound) {
 			return nil, errors.Wrap(err, "failed to check for existing configuration")
 		}
-
-		// Upload an empty config so that the Alertmanager is not de-activated in the next poll.
-		level.Warn(am.logger).Log("msg", "no configuration exists for user; uploading fallback configuration", "user", userID)
-		cfgDesc := alertspb.ToProto("", nil, userID)
-		err = am.store.SetAlertConfig(ctx, cfgDesc)
-		if err != nil {
-			return nil, err
-		}
-
-		// Calling setConfig with an empty configuration will use the fallback config.
-		amConfig := amConfig{
-			AlertConfigDesc: cfgDesc,
-			tmplExternalURL: am.cfg.ExternalURL.URL,
-		}
-		err = am.setConfig(amConfig)
-		if err != nil {
-			return nil, err
-		}
-
-		am.alertmanagersMtx.Lock()
-		defer am.alertmanagersMtx.Unlock()
-		return am.alertmanagers[userID], nil
+		cfg = alertspb.ToProto("", nil, userID)
 	}
 
 	amConfig := amConfig{
