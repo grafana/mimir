@@ -284,9 +284,9 @@ func TestSpinOffQueryHandler(t *testing.T) {
 	}))
 	t.Cleanup(httpServer.Close)
 
-	parsedHttpServerURL, err := url.Parse(httpServer.URL)
+	parsedHTTPServerURL, err := url.Parse(httpServer.URL)
 	require.NoError(t, err)
-	port, err := strconv.Atoi(parsedHttpServerURL.Port())
+	port, err := strconv.Atoi(parsedHTTPServerURL.Port())
 	require.NoError(t, err)
 
 	spinOffQueryHandler := newSpinOffQueryHandler(codec, log.NewNopLogger(), port, 3, &mockRetryMetrics{})

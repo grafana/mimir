@@ -43,6 +43,7 @@ type queryFrontendTestConfig struct {
 	setup                       func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
 	withHistograms              bool
 	shardActiveSeriesQueries    bool
+	testSubquerySpinOff         bool
 }
 
 func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
@@ -81,7 +82,8 @@ func TestQueryFrontendWithBlocksStorageViaCommonFlags(t *testing.T) {
 
 func TestQueryFrontendWithBlocksStorageViaFlagsAndQueryStatsEnabled(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
-		queryStatsEnabled: true,
+		testSubquerySpinOff: true,
+		queryStatsEnabled:   true,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 			flags = mergeFlags(
 				BlocksStorageFlags(),
@@ -276,6 +278,10 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
 	})
 
+	if cfg.testSubquerySpinOff {
+		flags["-query-frontend.instant-queries-with-subquery-spin-off"] = ".*"
+	}
+
 	// Start the query-scheduler if enabled.
 	var queryScheduler *e2emimir.MimirService
 	if cfg.querySchedulerEnabled && cfg.querySchedulerDiscoveryMode == "dns" {
@@ -396,6 +402,16 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			require.Len(t, result, 0)
 		}
 
+		if userID == 0 && cfg.testSubquerySpinOff {
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_frontend_spun_off_subqueries_total"))
+			result, err := c.Query("sum_over_time(((count(series_1) * count(series_1)) or vector(1))[6h:15m])", now)
+			require.NoError(t, err)
+			require.Len(t, result, 1)
+			require.Equal(t, result.(model.Vector)[0].Metric, model.Metric{})
+			require.Equal(t, result.(model.Vector)[0].Value, model.SampleValue(24)) // vector(1) for each step
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_frontend_spun_off_subqueries_total"))
+		}
+
 		for q := 0; q < numQueriesPerUser; q++ {
 			go func() {
 				defer wg.Done()
@@ -417,8 +433,14 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		expectedQueriesCount++
 		expectedIngesterQueriesCount++
 	}
+	expectedFrontendQueriesCount := expectedQueriesCount
+	if cfg.testSubquerySpinOff {
+		expectedFrontendQueriesCount += 2 // One for the instant query and one for the spun-off subquery.
+		expectedQueriesCount++
+		expectedIngesterQueriesCount++
+	}
 
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueriesCount), "cortex_query_frontend_queries_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedFrontendQueriesCount), "cortex_query_frontend_queries_total"))
 
 	// The number of received requests may be greater than the query requests because include
 	// requests to /metrics and /ready.
