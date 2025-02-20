@@ -458,6 +458,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 				indexheader.NewStreamBinaryReaderMetrics(nil),
 				indexheader.Config{},
 			); err != nil {
+				// creating and uploading sparse-index-headers is best-effort, warn on failure
 				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockID, "err", err)
 				return nil
 			}
