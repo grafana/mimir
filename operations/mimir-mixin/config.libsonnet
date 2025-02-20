@@ -22,6 +22,9 @@
     // modify the job selectors in the dashboard queries.
     singleBinary: false,
 
+    // Added default flag for GEM-specific dashboards and alerts.
+    gem_enabled: false,
+
     // This is mapping between a Mimir component name and the regular expression that should be used
     // to match its instance and container name. Mimir jsonnet and Helm guarantee that the instance name
     // (e.g. Kubernetes Deployment) and container name always match, so it's safe to use a shared mapping.
@@ -55,6 +58,7 @@
       mimir_write: 'mimir-write',
       mimir_read: 'mimir-read',
       mimir_backend: 'mimir-backend',
+      federation_frontend: 'federation-frontend',
     },
 
     // Some dashboards show panels grouping together multiple components of a given "path".
@@ -98,6 +102,8 @@
       write: ['distributor.*', 'ingester.*', 'mimir-write.*'],
       read: ['query-frontend.*', 'querier.*', 'ruler-query-frontend.*', 'ruler-querier.*', 'mimir-read.*'],
       backend: ['ruler', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter', 'mimir-backend.*'],
+
+      federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
     },
 
     // Name selectors for different application instances, using the "per_instance_label".
@@ -144,6 +150,8 @@
       read: componentsGroupMatcher(componentGroups.read),
       backend: componentsGroupMatcher(componentGroups.backend),
       remote_ruler_read: componentsGroupMatcher(componentGroups.remote_ruler_read),
+
+      federation_frontend: instanceMatcher(componentNameRegexp.federation_frontend),
     },
     all_instances: std.join('|', std.map(function(name) componentNameRegexp[name], componentGroups.write + componentGroups.read + componentGroups.backend)),
 
@@ -181,6 +189,8 @@
       write: componentsGroupMatcher(componentGroups.write),
       read: componentsGroupMatcher(componentGroups.read),
       backend: componentsGroupMatcher(componentGroups.backend),
+
+      federation_frontend: componentNameRegexp.federation_frontend,
     },
 
     // The label used to differentiate between different Kubernetes clusters.
@@ -221,8 +231,8 @@
     // Whether mimir block-builder is enabled (experimental)
     block_builder_enabled: false,
 
-    // Whether mimir gateway is enabled
-    gateway_enabled: false,
+    // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
+    gateway_enabled: $._config.gem_enabled,
 
     // Whether grafana cloud alertmanager instance-mapper is enabled
     alertmanager_im_enabled: false,
