@@ -34,7 +34,7 @@ type ActiveSeriesTracker struct {
 	overflowCounter atomic.Int64
 }
 
-func newActiveSeriesTracker(userID string, trackedLabels []string, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
+func NewActiveSeriesTracker(userID string, trackedLabels []string, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
