@@ -1419,6 +1419,8 @@ func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
 		require.Zero(t, info.electedLastSeenTimestamp)
 	}
 
+	checkReplicaTimestamp(t, 2*time.Second, t2, userID, cluster, secondReplica, secondReplicaReceivedAtT2, secondReplicaReceivedAtT2)
+
 	// Continuing the test, say both t1 and t2 receive request from "first" replica now.
 	// They both reject it.
 	now = now.Add(9 * time.Second)
@@ -1431,7 +1433,7 @@ func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
 	// Now t1 updates the KV Store.
 	t1.updateKVStoreAll(context.Background(), now)
 
-	// t2 is reading updates from KV store, and should see "second" replica being the elected one.
+	// t2 is reading updates from KV store, and should see "first" replica being the elected one.
 	checkReplicaTimestamp(t, 2*time.Second, t2, userID, cluster, firstReplica, firstReceivedAtT1, firstReceivedAtT1)
 
 	// Since t2 has seen new elected replica too, we should have non-zero "electedLastSeenTimestamp".
