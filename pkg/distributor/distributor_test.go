@@ -3562,10 +3562,10 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 					expectedMetadata := make([]scrape.MetricMetadata, 0, len(req.Metadata))
 					for _, m := range req.Metadata {
 						expectedMetadata = append(expectedMetadata, scrape.MetricMetadata{
-							Metric: m.MetricFamilyName,
-							Type:   mimirpb.MetricMetadataMetricTypeToMetricType(m.Type),
-							Help:   m.Help,
-							Unit:   m.Unit,
+							MetricFamily: m.MetricFamilyName,
+							Type:         mimirpb.MetricMetadataMetricTypeToMetricType(m.Type),
+							Help:         m.Help,
+							Unit:         m.Unit,
 						})
 					}
 
