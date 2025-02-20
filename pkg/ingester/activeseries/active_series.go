@@ -50,8 +50,7 @@ type ActiveSeries struct {
 	configMutex      sync.RWMutex
 	matchers         *asmodel.Matchers
 	lastConfigUpdate time.Time
-
-	cat *costattribution.ActiveSeriesTracker
+	cat              *costattribution.ActiveSeriesTracker
 
 	// The duration after which series become inactive.
 	// Also used to determine if enough time has passed since configuration reload for valid results.
