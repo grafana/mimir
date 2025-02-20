@@ -4960,7 +4960,7 @@ sharding_ring:
 [max_lookback: <duration> | default = 0s]
 
 # (experimental) If enabled, the compactor will construct and upload sparse
-# index headers to object storage during each compaction cycle
+# index headers to object storage during each compaction cycle.
 # CLI flag: -compactor.upload-sparse-index-headers
 [upload_sparse_index_headers: <boolean> | default = false]
 ```
