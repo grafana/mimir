@@ -192,6 +192,13 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 				}
 
 				return topkbottomk.New(inner, param, timeRange, e.Grouping, e.Without, e.Op == parser.TOPK, q.memoryConsumptionTracker, q.annotations, e.PosRange), nil
+			case parser.COUNT_VALUES:
+				param, err := q.convertToStringOperator(e.Param)
+				if err != nil {
+					return nil, err
+				}
+
+				return aggregations.NewCountValues(inner, param, timeRange, e.Grouping, e.Without, q.memoryConsumptionTracker, e.PosRange), nil
 			default:
 				return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' aggregation with parameter", e.Op))
 			}
