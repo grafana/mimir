@@ -787,9 +787,9 @@ func (i *Ingester) metricsUpdaterServiceRunning(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) replaceMatchers(asm *asmodel.Matchers, userDB *userTSDB, now time.Time) {
+func (i *Ingester) replaceMatchersAndTrackers(asm *asmodel.Matchers, cat *costattribution.ActiveSeriesTracker, userDB *userTSDB, now time.Time) {
 	i.metrics.deletePerUserCustomTrackerMetrics(userDB.userID, userDB.activeSeries.CurrentMatcherNames())
-	userDB.activeSeries.ReloadMatchers(asm, now)
+	userDB.activeSeries.ReloadMatchersAndTrackers(asm, cat, now)
 }
 
 func (i *Ingester) updateActiveSeries(now time.Time) {
@@ -802,7 +802,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		newMatchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 		newCostAttributionActiveSeriesTracker := i.costAttributionMgr.ActiveSeriesTracker(userID)
 		if userDB.activeSeries.ConfigDiffers(newMatchersConfig, newCostAttributionActiveSeriesTracker) {
-			i.replaceMatchers(asmodel.NewMatchers(newMatchersConfig), userDB, now)
+			i.replaceMatchersAndTrackers(asmodel.NewMatchers(newMatchersConfig), newCostAttributionActiveSeriesTracker, userDB, now)
 		}
 
 		idx := userDB.Head().MustIndex()
