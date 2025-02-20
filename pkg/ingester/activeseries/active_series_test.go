@@ -776,7 +776,44 @@ func TestActiveSeries_PurgeOpt(t *testing.T) {
 	assert.Equal(t, 1, allActive)
 }
 
-func TestActiveSeries_ReloadSeriesMatchers(t *testing.T) {
+func TestActiveSeries_ReloadCostAttributionTrackers(t *testing.T) {
+	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
+	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
+
+	asm := asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{"foo": `{a=~.*}`}))
+	currentTime := time.Now()
+	c := NewActiveSeries(asm, DefaultTimeout, nil)
+	valid := c.Purge(currentTime, nil)
+	assert.True(t, valid)
+
+	// Change the cost attribution tracker, and make sure it's reloaded, purge result not valid.
+	cat := costattribution.NewActiveSeriesTracker("a", []string{"a", "b"}, 4, 5*time.Minute, log.NewNopLogger())
+	c.ReloadMatchersAndTrackers(asm, cat, currentTime)
+	valid = c.Purge(currentTime, nil)
+	assert.False(t, valid)
+
+	// Adding timeout time to make Purge results valid.
+	currentTime = currentTime.Add(DefaultTimeout)
+	c.UpdateSeries(ls1, ref1, currentTime, -1, nil)
+	c.UpdateSeries(ls2, ref2, currentTime, -1, nil)
+	valid = c.Purge(currentTime, nil)
+	assert.True(t, valid)
+	assert.NotNil(t, c.cat)
+
+	cat = costattribution.NewActiveSeriesTracker("a", []string{"a"}, 4, 5*time.Minute, log.NewNopLogger())
+	c.ReloadMatchersAndTrackers(asm, cat, currentTime)
+	valid = c.Purge(currentTime, nil)
+	assert.False(t, valid)
+	assert.Equal(t, cat, c.cat)
+
+	// Adding timeout time to make Purge results valid.
+	currentTime = currentTime.Add(DefaultTimeout)
+	c.UpdateSeries(ls1, ref1, currentTime, -1, nil)
+	c.UpdateSeries(ls2, ref2, currentTime, -1, nil)
+	valid = c.Purge(currentTime, nil)
+	assert.True(t, valid)
+}
+func TestActiveSeries_ReloadSeriesMatchersAndTrackers(t *testing.T) {
 	ref1, ls1 := storage.SeriesRef(1), labels.FromStrings("a", "1")
 	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
 	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3")
@@ -850,13 +887,15 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 		"bar": `{a=~.+}`,
 	}))
 
+	cat := costattribution.NewActiveSeriesTracker("a", []string{"a", "b"}, 4, 5*time.Minute, log.NewNopLogger())
 	currentTime := time.Now()
-	c := NewActiveSeries(asm, DefaultTimeout, nil)
+	c := NewActiveSeries(asm, DefaultTimeout, cat)
 	valid := c.Purge(currentTime, nil)
 	assert.True(t, valid)
 	allActive, activeMatching, _, _, _, _ := c.ActiveWithMatchers()
 	assert.Equal(t, 0, allActive)
 	assert.Equal(t, []int{0, 0}, activeMatching)
+	assert.Equal(t, cat, c.cat)
 
 	c.UpdateSeries(ls1, ref1, currentTime, -1, nil)
 	valid = c.Purge(currentTime, nil)
@@ -864,7 +903,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 	allActive, activeMatching, _, _, _, _ = c.ActiveWithMatchers()
 	assert.Equal(t, 1, allActive)
 	assert.Equal(t, []int{1, 1}, activeMatching)
-
+	assert.Equal(t, cat, c.cat)
 	asm = asmodel.NewMatchers(MustNewCustomTrackersConfigFromMap(t, map[string]string{
 		"foo": `{a=~.+}`,
 	}))
