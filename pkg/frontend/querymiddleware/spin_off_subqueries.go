@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -255,29 +254,26 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	}, nil
 }
 
-// spinOffQueryHandler is a query handler that takes a request and sends it to a remote endpoint.
+// spinOffQueryHandler is a query handler that takes a request and loops it back to localhost.
+// This is used to spin off subqueries as range queries to the same frontend instance.
 type spinOffQueryHandler struct {
-	codec         Codec
-	logger        log.Logger
-	rangeQueryURL *url.URL
+	codec    Codec
+	logger   log.Logger
+	httpPort int
 }
 
-func newSpinOffQueryHandler(codec Codec, logger log.Logger, sendURL string, maxRetries int, retryMiddlewareMetrics prometheus.Observer) (MetricsQueryHandler, error) {
-	rangeQueryURL, err := url.Parse(sendURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid spin-off URL: %w", err)
-	}
+func newSpinOffQueryHandler(codec Codec, logger log.Logger, httpPort int, maxRetries int, retryMiddlewareMetrics prometheus.Observer) MetricsQueryHandler {
 	var handler MetricsQueryHandler = &spinOffQueryHandler{
-		codec:         codec,
-		logger:        logger,
-		rangeQueryURL: rangeQueryURL,
+		codec:    codec,
+		logger:   logger,
+		httpPort: httpPort,
 	}
 
 	if maxRetries > 0 {
 		handler = newRetryMiddleware(logger, maxRetries, retryMiddlewareMetrics).Wrap(handler)
 	}
 
-	return handler, nil
+	return handler
 }
 
 func (s *spinOffQueryHandler) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
@@ -286,10 +282,11 @@ func (s *spinOffQueryHandler) Do(ctx context.Context, req MetricsQueryRequest) (
 		return nil, fmt.Errorf("error encoding request: %w", err)
 	}
 	httpReq.RequestURI = "" // Reset RequestURI to force URL to be used in the request.
-	// Override the URL with the configured range query URL.
-	httpReq.URL.Scheme = s.rangeQueryURL.Scheme
-	httpReq.URL.Host = s.rangeQueryURL.Host
-	httpReq.URL.Path = s.rangeQueryURL.Path
+	httpReq.URL.Scheme = "http"
+	httpReq.URL.Host = "localhost"
+	if s.httpPort != 0 {
+		httpReq.URL.Host += fmt.Sprintf(":%d", s.httpPort)
+	}
 
 	if err := user.InjectOrgIDIntoHTTPRequest(ctx, httpReq); err != nil {
 		return nil, fmt.Errorf("error injecting org ID into request: %v", err)

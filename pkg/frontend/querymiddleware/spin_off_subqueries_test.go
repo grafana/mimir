@@ -8,7 +8,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -282,15 +284,18 @@ func TestSpinOffQueryHandler(t *testing.T) {
 	}))
 	t.Cleanup(httpServer.Close)
 
-	spinOffQueryHandler, err := newSpinOffQueryHandler(
-		codec, log.NewNopLogger(), httpServer.URL+"/prometheus/api/v1/query_range", 3, &mockRetryMetrics{})
+	parsedHttpServerURL, err := url.Parse(httpServer.URL)
 	require.NoError(t, err)
+	port, err := strconv.Atoi(parsedHttpServerURL.Port())
+	require.NoError(t, err)
+
+	spinOffQueryHandler := newSpinOffQueryHandler(codec, log.NewNopLogger(), port, 3, &mockRetryMetrics{})
 
 	// Ensure we have had no requests yet.
 	require.Equal(t, 0, gotRequestCt)
 
 	req := &PrometheusRangeQueryRequest{
-		path:      "/query_range",
+		path:      "/prometheus/api/v1/query_range",
 		start:     util.TimeToMillis(now.Add(-5 * time.Minute)),
 		end:       util.TimeToMillis(now),
 		step:      30 * time.Second.Milliseconds(),

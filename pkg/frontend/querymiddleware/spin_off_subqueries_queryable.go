@@ -4,6 +4,7 @@ package querymiddleware
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -160,7 +161,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 				&PrometheusHeader{Name: "X-Mimir-Spun-Off-Subquery", Values: []string{"true"}},
 				&PrometheusHeader{Name: "Content-Type", Values: []string{"application/x-www-form-urlencoded"}},
 			)
-			newRangeRequest := NewPrometheusRangeQueryRequest(queryRangePathSuffix, headers, rangeStart, rangeEnd, step, q.req.GetLookbackDelta(), queryExpr, q.req.GetOptions(), q.req.GetHints())
+			newRangeRequest := NewPrometheusRangeQueryRequest(strings.Replace(q.req.GetPath(), instantQueryPathSuffix, queryRangePathSuffix, 1), headers, rangeStart, rangeEnd, step, q.req.GetLookbackDelta(), queryExpr, q.req.GetOptions(), q.req.GetHints())
 			rangeQueries = append(rangeQueries, newRangeRequest)
 			if rangeEnd == alignedEnd {
 				break
