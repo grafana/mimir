@@ -194,6 +194,7 @@ type multitenantAlertmanagerMetrics struct {
 	grafanaStateSize              *prometheus.GaugeVec
 	lastReloadSuccessful          *prometheus.GaugeVec
 	lastReloadSuccessfulTimestamp *prometheus.GaugeVec
+	tenantsSkipped                prometheus.Gauge
 }
 
 func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAlertmanagerMetrics {
@@ -216,6 +217,12 @@ func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAl
 		Name:      "alertmanager_config_last_reload_successful_seconds",
 		Help:      "Timestamp of the last successful configuration reload.",
 	}, []string{"user"})
+
+	m.tenantsSkipped = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "alertmanager_tenants_skipped",
+		Help:      "Number of per-tenant alertmanagers that were skipped during the last configuration sync.",
+	})
 
 	return m
 }
@@ -323,16 +330,16 @@ type MultitenantAlertmanager struct {
 	limits   Limits
 	features featurecontrol.Flagger
 
+	// Record the last time we received a request for a given Grafana tenant.
+	// We can shut down an idle Alertmanager after the grace period elapses.
+	receivingRequests sync.Map
+
 	registry          prometheus.Registerer
 	ringCheckErrors   prometheus.Counter
 	tenantsOwned      prometheus.Gauge
 	tenantsDiscovered prometheus.Gauge
 	syncTotal         *prometheus.CounterVec
 	syncFailures      *prometheus.CounterVec
-
-	// Record the last time we received a request for a given Grafana tenant.
-	// We can shut down an idle Alertmanager after the grace period elapses.
-	receivingRequests sync.Map
 }
 
 // NewMultitenantAlertmanager creates a new MultitenantAlertmanager.
@@ -705,6 +712,7 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 		am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(1))
 		am.multitenantMetrics.lastReloadSuccessfulTimestamp.WithLabelValues(user).SetToCurrentTime()
 	}
+	am.multitenantMetrics.tenantsSkipped.Set(float64(len(amInitSkipped)))
 
 	userAlertmanagersToStop := map[string]*Alertmanager{}
 	am.alertmanagersMtx.Lock()
