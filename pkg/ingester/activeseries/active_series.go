@@ -46,7 +46,7 @@ type ActiveSeries struct {
 	stripes [numStripes]seriesStripe
 	deleted deletedSeries
 
-	// configMutex protects matchers and lastMatchersUpdate. it used by both matchers and cat
+	// configMutex protects matchers, cat and lastMatchersUpdate. shared by matchers and cat
 	configMutex      sync.RWMutex
 	matchers         *asmodel.Matchers
 	lastConfigUpdate time.Time
