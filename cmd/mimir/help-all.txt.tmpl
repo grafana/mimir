@@ -1283,6 +1283,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of symbols flushers used when doing split compaction. (default 1)
   -compactor.tenant-cleanup-delay duration
     	For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant. (default 6h0m0s)
+  -compactor.upload-sparse-index-headers
+    	[experimental] If enabled, the compactor will construct and upload sparse index headers to object storage during each compaction cycle
   -config.expand-env
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value

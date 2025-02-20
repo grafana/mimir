@@ -4958,6 +4958,11 @@ sharding_ring:
 # blocks are considered regardless of their upload time.
 # CLI flag: -compactor.max-lookback
 [max_lookback: <duration> | default = 0s]
+
+# (experimental) If enabled, the compactor will construct and upload sparse
+# index headers to object storage during each compaction cycle
+# CLI flag: -compactor.upload-sparse-index-headers
+[upload_sparse_index_headers: <boolean> | default = false]
 ```
 
 ### store_gateway
