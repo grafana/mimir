@@ -2815,10 +2815,10 @@ func (d *Distributor) MetricsMetadata(ctx context.Context, req *ingester_client.
 			dedupTracker[*m] = struct{}{}
 
 			result = append(result, scrape.MetricMetadata{
-				Metric: m.MetricFamilyName,
-				Help:   m.Help,
-				Unit:   m.Unit,
-				Type:   mimirpb.MetricMetadataMetricTypeToMetricType(m.GetType()),
+				MetricFamily: m.MetricFamilyName,
+				Help:         m.Help,
+				Unit:         m.Unit,
+				Type:         mimirpb.MetricMetadataMetricTypeToMetricType(m.GetType()),
 			})
 		}
 	}

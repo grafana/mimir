@@ -89,7 +89,7 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 		// Put all the elements of the pseudo-set into a map of slices for marshalling.
 		metrics := map[string][]metricMetadata{}
 		for _, m := range resp {
-			ms, ok := metrics[m.Metric]
+			ms, ok := metrics[m.MetricFamily]
 			// We enforce this both here and in the ingesters. Doing it in the ingesters is
 			// more efficient as it is earlier in the process, but since that one is per user,
 			// we still need to do it here after all the results are merged.
@@ -102,9 +102,9 @@ func NewMetadataHandler(m MetadataSupplier) http.Handler {
 				}
 				// Most metrics will only hold 1 copy of the same metadata.
 				ms = make([]metricMetadata, 0, 1)
-				metrics[m.Metric] = ms
+				metrics[m.MetricFamily] = ms
 			}
-			metrics[m.Metric] = append(ms, metricMetadata{Type: string(m.Type), Help: m.Help, Unit: m.Unit})
+			metrics[m.MetricFamily] = append(ms, metricMetadata{Type: string(m.Type), Help: m.Help, Unit: m.Unit})
 		}
 
 		util.WriteJSONResponse(w, metadataSuccessResult{Status: statusSuccess, Data: metrics})
