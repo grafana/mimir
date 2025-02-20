@@ -68,6 +68,9 @@ const (
 	// Non-standard status code (originally introduced by nginx) for the case when a client closes
 	// the connection while the server is still processing the request.
 	statusClientClosedConnection = 499
+
+	// checkContextEveryNIterations is used in some tight loops to check if the context is done.
+	checkContextEveryNIterations = 128
 )
 
 type errorType string
@@ -963,10 +966,15 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 
 	warnings := set.Warnings()
 
+	i := 1
 	for set.Next() {
-		if err := ctx.Err(); err != nil {
-			return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+		if i%checkContextEveryNIterations == 0 {
+			if err := ctx.Err(); err != nil {
+				return apiFuncResult{nil, returnAPIError(err), warnings, closer}
+			}
 		}
+		i++
+
 		metrics = append(metrics, set.At().Labels())
 
 		if limit > 0 && len(metrics) > limit {
@@ -1229,11 +1237,11 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 			if metric == "" {
 				for _, md := range t.ListMetadata() {
 					res = append(res, metricMetadata{
-						Target: targetLabels,
-						Metric: md.Metric,
-						Type:   md.Type,
-						Help:   md.Help,
-						Unit:   md.Unit,
+						Target:       targetLabels,
+						MetricFamily: md.MetricFamily,
+						Type:         md.Type,
+						Help:         md.Help,
+						Unit:         md.Unit,
 					})
 				}
 				continue
@@ -1254,11 +1262,11 @@ func (api *API) targetMetadata(r *http.Request) apiFuncResult {
 }
 
 type metricMetadata struct {
-	Target labels.Labels    `json:"target"`
-	Metric string           `json:"metric,omitempty"`
-	Type   model.MetricType `json:"type"`
-	Help   string           `json:"help"`
-	Unit   string           `json:"unit"`
+	Target       labels.Labels    `json:"target"`
+	MetricFamily string           `json:"metric,omitempty"`
+	Type         model.MetricType `json:"type"`
+	Help         string           `json:"help"`
+	Unit         string           `json:"unit"`
 }
 
 // AlertmanagerDiscovery has all the active Alertmanagers.
@@ -1358,7 +1366,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 			if metric == "" {
 				for _, mm := range t.ListMetadata() {
 					m := metadata.Metadata{Type: mm.Type, Help: mm.Help, Unit: mm.Unit}
-					ms, ok := metrics[mm.Metric]
+					ms, ok := metrics[mm.MetricFamily]
 
 					if limitPerMetric > 0 && len(ms) >= limitPerMetric {
 						continue
@@ -1366,7 +1374,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 
 					if !ok {
 						ms = map[metadata.Metadata]struct{}{}
-						metrics[mm.Metric] = ms
+						metrics[mm.MetricFamily] = ms
 					}
 					ms[m] = struct{}{}
 				}
@@ -1375,7 +1383,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 
 			if md, ok := t.GetMetadata(metric); ok {
 				m := metadata.Metadata{Type: md.Type, Help: md.Help, Unit: md.Unit}
-				ms, ok := metrics[md.Metric]
+				ms, ok := metrics[md.MetricFamily]
 
 				if limitPerMetric > 0 && len(ms) >= limitPerMetric {
 					continue
@@ -1383,7 +1391,7 @@ func (api *API) metricMetadata(r *http.Request) apiFuncResult {
 
 				if !ok {
 					ms = map[metadata.Metadata]struct{}{}
-					metrics[md.Metric] = ms
+					metrics[md.MetricFamily] = ms
 				}
 				ms[m] = struct{}{}
 			}
