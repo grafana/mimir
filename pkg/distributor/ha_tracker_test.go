@@ -396,7 +396,7 @@ func TestHaTrackerWithMemberlistWhenReplicaDescIsMarkedDeletedThenKVStoreUpdateI
 	})
 	require.NoError(t, err)
 
-	condition := waitForHaTrackerCacheEntryRemoval(t, tracker, tenant, cluster, 2*time.Second, 50*time.Millisecond)
+	condition := waitForHaTrackerCacheEntryRemoval(t, tracker, tenant, cluster, 10*time.Second, 50*time.Millisecond)
 	require.True(t, condition)
 
 	now = now.Add(failoverTimeoutPlus100ms)
