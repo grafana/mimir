@@ -5,6 +5,7 @@ go 1.22.11
 // Please note that this directive is ignored when building with the Mimir build image,
 // that will always use its bundled toolchain.
 toolchain go1.23.6
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.5.0
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
