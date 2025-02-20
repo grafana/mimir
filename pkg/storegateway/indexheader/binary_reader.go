@@ -100,19 +100,19 @@ func WriteBinary(ctx context.Context, bkt objstore.BucketReader, id ulid.ULID, f
 	var g errgroup.Group
 	var sym, tbl io.ReadCloser
 	g.Go(func() (err error) {
-		sym, err = ir.bkt.GetRange(ir.ctx, ir.path, int64(ir.toc.Symbols), int64(ir.toc.Series-ir.toc.Symbols))
+		sym, err = ir.GetSymbolsReader()
 		if err != nil {
-			return errors.Wrapf(err, "get symbols from object storage of %s", ir.path)
+			return err
 		}
-		return
+		return nil
 	})
 
 	g.Go(func() (err error) {
-		tbl, err = ir.bkt.GetRange(ir.ctx, ir.path, int64(ir.toc.PostingsTable), int64(ir.size-ir.toc.PostingsTable))
+		tbl, err = ir.GetPostingOffestsReader()
 		if err != nil {
-			return errors.Wrapf(err, "get posting offset table from object storage of %s", ir.path)
+			return err
 		}
-		return
+		return nil
 	})
 
 	merr := multierror.MultiError{}
@@ -242,32 +242,20 @@ func (r *chunkedIndexReader) readTOC() (*index.TOC, error) {
 	return toc, nil
 }
 
-func (r *chunkedIndexReader) CopySymbols(w io.Writer, buf []byte) (err error) {
-	rc, err := r.bkt.GetRange(r.ctx, r.path, int64(r.toc.Symbols), int64(r.toc.Series-r.toc.Symbols))
+func (r *chunkedIndexReader) GetSymbolsReader() (rc io.ReadCloser, err error) {
+	rc, err = r.bkt.GetRange(r.ctx, r.path, int64(r.toc.Symbols), int64(r.toc.Series-r.toc.Symbols))
 	if err != nil {
-		return errors.Wrapf(err, "get symbols from object storage of %s", r.path)
+		return nil, errors.Wrapf(err, "get symbols from object storage of %s", r.path)
 	}
-	defer runutil.CloseWithErrCapture(&err, rc, "close symbol reader")
-
-	if _, err := io.CopyBuffer(w, rc, buf); err != nil {
-		return errors.Wrap(err, "copy symbols")
-	}
-
-	return nil
+	return rc, nil
 }
 
-func (r *chunkedIndexReader) CopyPostingsOffsets(w io.Writer, buf []byte) (err error) {
-	rc, err := r.bkt.GetRange(r.ctx, r.path, int64(r.toc.PostingsTable), int64(r.size-r.toc.PostingsTable))
+func (r *chunkedIndexReader) GetPostingOffestsReader() (rc io.ReadCloser, err error) {
+	rc, err = r.bkt.GetRange(r.ctx, r.path, int64(r.toc.PostingsTable), int64(r.size-r.toc.PostingsTable))
 	if err != nil {
-		return errors.Wrapf(err, "get posting offset table from object storage of %s", r.path)
+		return nil, errors.Wrapf(err, "get posting offset table from object storage of %s", r.path)
 	}
-	defer runutil.CloseWithErrCapture(&err, rc, "close posting offsets reader")
-
-	if _, err := io.CopyBuffer(w, rc, buf); err != nil {
-		return errors.Wrap(err, "copy posting offsets")
-	}
-
-	return nil
+	return rc, nil
 }
 
 // TODO(bwplotka): Add padding for efficient read.
