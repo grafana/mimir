@@ -64,6 +64,8 @@ var (
 	errInvalidExternalURLMissingHostname   = errors.New("the configured external URL is invalid because it's missing the hostname")
 	errZoneAwarenessEnabledWithoutZoneInfo = errors.New("the configured alertmanager has zone awareness enabled but zone is not set")
 	errNotUploadingFallback                = errors.New("not uploading fallback configuration")
+
+	zeroTimeUnix = time.Time{}.Unix()
 )
 
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
@@ -330,7 +332,7 @@ type MultitenantAlertmanager struct {
 
 	// Record the last time we received a request for a given Grafana tenant.
 	// We can shut down an idle Alertmanager after the grace period elapses.
-	receivingRequests map[string]int64
+	receivingRequests sync.Map
 }
 
 // NewMultitenantAlertmanager creates a new MultitenantAlertmanager.
@@ -397,7 +399,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		fallbackConfig:      string(fallbackConfig),
 		cfgs:                map[string]alertspb.AlertConfigDesc{},
 		alertmanagers:       map[string]*Alertmanager{},
-		receivingRequests:   map[string]int64{},
+		receivingRequests:   sync.Map{},
 		alertmanagerMetrics: newAlertmanagerMetrics(logger),
 		multitenantMetrics:  newMultitenantAlertmanagerMetrics(registerer),
 		store:               store,
@@ -743,13 +745,11 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 			return cfg, true, nil
 		}
 
-		// If the tenant ID matches the configured Grafana suffix, only run the Alertmanager if it's receiving alerts.
-		am.alertmanagersMtx.Lock()
-		defer am.alertmanagersMtx.Unlock()
-		createdAt, ok := am.receivingRequests[cfgs.Mimir.User]
-		if !ok || time.Since(time.Unix(createdAt, 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod {
+		// If the tenant ID matches the configured Grafana suffix, only run the Alertmanager if it's receiving requests.
+		createdAt, ok := am.receivingRequests.Load(cfgs.Mimir.User)
+		if !ok || time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod {
 			// Use the zero-value to indicate that we've skipped the tenant.
-			am.receivingRequests[cfgs.Mimir.User] = time.Time{}.Unix()
+			am.receivingRequests.Store(cfgs.Mimir.User, zeroTimeUnix)
 			return cfg, false, nil
 		}
 
@@ -759,9 +759,9 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 	// If the Alertmanager was previously skipped but now has a usable configuration, remove it from the skipped list.
 	if strictInit {
-		am.alertmanagersMtx.Lock()
-		delete(am.receivingRequests, cfgs.Mimir.User)
-		am.alertmanagersMtx.Unlock()
+		if _, ok := am.receivingRequests.LoadAndDelete(cfgs.Mimir.User); ok {
+			level.Debug(am.logger).Log("msg", "user has now a usable config, removing it from skipped list", "user", cfgs.Mimir.User)
+		}
 	}
 
 	// If the Mimir configuration is either default or empty, use the Grafana configuration.
@@ -1032,21 +1032,15 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 		userAM.mux.ServeHTTP(w, req)
 
 		// If needed, update the last time the Alertmanager received requests.
-		am.alertmanagersMtx.Lock()
-		defer am.alertmanagersMtx.Unlock()
-		if _, ok := am.receivingRequests[userID]; ok {
+		if _, ok := am.receivingRequests.Load(userID); ok {
 			level.Debug(am.logger).Log("msg", "updating last alert reception time", "user", userID)
-			am.receivingRequests[userID] = time.Now().Unix()
+			am.receivingRequests.Store(userID, time.Now().Unix())
 		}
 		return
 	}
 
-	// If the Alertmanager initialization was previously skipped, start the Alertmanager.
-	am.alertmanagersMtx.Lock()
-	if _, ok := am.receivingRequests[userID]; ok {
-		am.receivingRequests[userID] = time.Now().Unix()
-		am.alertmanagersMtx.Unlock()
-
+	// If the Alertmanager initialization was skipped, start the Alertmanager.
+	if _, ok := am.receivingRequests.Load(userID); ok {
 		userAM, err = am.startAlertmanager(req.Context(), userID)
 		if err != nil {
 			level.Error(am.logger).Log("msg", "unable to initialize the Alertmanager", "user", userID, "err", err)
@@ -1054,11 +1048,11 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 			return
 		}
 
+		am.receivingRequests.Store(userID, time.Now().Unix())
 		level.Debug(am.logger).Log("msg", "Alertmanager initialized after receiving request", "user", userID)
 		userAM.mux.ServeHTTP(w, req)
 		return
 	}
-	am.alertmanagersMtx.Unlock()
 
 	if am.fallbackConfig != "" {
 		userAM, err = am.alertmanagerFromFallbackConfig(req.Context(), userID)
