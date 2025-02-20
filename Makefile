@@ -55,7 +55,7 @@ JSONNET_FMT := jsonnetfmt
 
 # path to the mimir-mixin
 MIXIN_PATH := operations/mimir-mixin
-MIXIN_OUT_PATH := operations/mimir-mixin-compiled
+MIXIN_OUT_PATH ?= operations/mimir-mixin-compiled
 MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal" "-gem"
 
 # path to the mimir jsonnet manifests
@@ -683,8 +683,8 @@ check-mixin-mimirtool-rules: build-mixin
 		go run ./cmd/mimirtool rules check --rule-dirs "$(MIXIN_OUT_PATH)$$suffix"; \
 	done
 
-mixin-serve: ## Runs Grafana loading the mixin dashboards compiled at operations/mimir-mixin-compiled.
-	@./operations/mimir-mixin-tools/serve/run.sh
+mixin-serve: ## Runs Grafana loading the mixin dashboards. Use MIXIN_OUT_PATH=operations/mimir-mixin-compiled-gem for GEM variant
+	@./operations/mimir-mixin-tools/serve/run.sh -p $(MIXIN_OUT_PATH)
 
 mixin-screenshots: ## Generates mixin dashboards screenshots.
 	@find $(DOC_SOURCES_PATH)/manage/monitor-grafana-mimir/dashboards -name '*.png' -delete
