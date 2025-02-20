@@ -1,0 +1,38 @@
+---
+# Source: mimir-distributed/templates/tokengen/tokengen-rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: test-enterprise-k8s-1.25-values-mimir-tokengen
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-k8s-1.25-values
+    app.kubernetes.io/component: tokengen
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+  namespace: "citestns"
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "create", "update", "patch"]
+---
+# Source: mimir-distributed/templates/tokengen/tokengen-rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: test-enterprise-k8s-1.25-values-mimir-tokengen
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-enterprise-k8s-1.25-values
+    app.kubernetes.io/component: tokengen
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+  namespace: "citestns"
+subjects:
+- kind: ServiceAccount
+  name: test-enterprise-k8s-1.25-values-mimir
+  namespace: "citestns"
+roleRef:
+  kind: Role
+  name: test-enterprise-k8s-1.25-values-mimir-tokengen
+  apiGroup: rbac.authorization.k8s.io

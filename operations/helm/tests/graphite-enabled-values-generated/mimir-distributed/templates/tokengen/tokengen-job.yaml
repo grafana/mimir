@@ -36,27 +36,34 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        []
-      containers:
         - name: tokengen
           imagePullPolicy: IfNotPresent
           args:
             - "-target=tokengen"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - "-tokengen.token-file=/shared/admin-token"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
             - name: license
               mountPath: /license
-            - name: active-queries
-              mountPath: /active-query-tracker
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-              - ALL
-            readOnlyRootFilesystem: true
+            - name: shared
+              mountPath: /shared
+      containers:
+        - name: create-secret
+          image: bitnami/kubectl:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              kubectl create secret generic graphite-enabled-values-mimir-token \
+                --from-file=token=/shared/admin-token \
+                --dry-run=client -o yaml | kubectl apply -f -
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
       restartPolicy: OnFailure
       volumes:
         - name: config
@@ -71,4 +78,6 @@ spec:
         - name: storage
           emptyDir: {}
         - name: active-queries
+          emptyDir: {}
+        - name: shared
           emptyDir: {}
