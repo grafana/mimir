@@ -19,6 +19,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 // ClientsPool is the interface used to get the client from the pool for a specified address.
@@ -64,7 +66,7 @@ func newRulerClientFactory(clientCfg grpcclient.Config, cluster string, reg prom
 		Help:    "Time spent executing requests to the ruler.",
 		Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
 	}, []string{"operation", "status_code"})
-	invalidClusterValidation := middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_ruler_client")
+	invalidClusterValidation := util.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "ruler", util.GRPCProtocol)
 
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
 		return dialRulerClient(clientCfg, cluster, inst, requestDuration, invalidClusterValidation, logger)

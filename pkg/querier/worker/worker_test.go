@@ -174,7 +174,7 @@ func TestResetConcurrency(t *testing.T) {
 				MaxConcurrentRequests: tt.maxConcurrent,
 			}
 
-			w, err := newQuerierWorkerWithProcessor(cfg.QuerySchedulerGRPCClientConfig, cfg, log.NewNopLogger(), &mockProcessor{}, nil, nil, nil)
+			w, err := newQuerierWorkerWithProcessor(cfg.QuerySchedulerGRPCClientConfig, cfg, log.NewNopLogger(), &mockProcessor{}, nil, nil, nil, "")
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), w))
 
@@ -261,7 +261,7 @@ func TestQuerierWorker_getDesiredConcurrency(t *testing.T) {
 				MaxConcurrentRequests: testData.maxConcurrent,
 			}
 
-			w, err := newQuerierWorkerWithProcessor(cfg.QueryFrontendGRPCClientConfig, cfg, log.NewNopLogger(), &mockProcessor{}, nil, nil, nil)
+			w, err := newQuerierWorkerWithProcessor(cfg.QueryFrontendGRPCClientConfig, cfg, log.NewNopLogger(), &mockProcessor{}, nil, nil, nil, "")
 			require.NoError(t, err)
 
 			for _, instance := range testData.instances {

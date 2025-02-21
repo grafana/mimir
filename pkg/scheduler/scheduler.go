@@ -164,7 +164,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		},
 		[]string{"query_component"},
 	)
-	s.invalidClusterValidation = middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(registerer, "cortex_query_scheduler_frontend_client")
+	s.invalidClusterValidation = util.NewRequestInvalidClusterVerficationLabelsTotalCounter(registerer, "query-frontend", util.GRPCProtocol)
 
 	s.requestQueue, err = queue.NewRequestQueue(
 		s.log,
