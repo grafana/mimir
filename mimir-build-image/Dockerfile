@@ -9,7 +9,7 @@ FROM golang:1.23.6-bookworm
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
-# Override toolchain directive in go.mod, to ensure the image's Go version is used.
+# Override the toolchain directive in go.mod, to ensure the image's Go version is used.
 # Be aware that the official Go Dockerfiles already do this, but let's be explicit.
 # https://github.com/docker-library/golang/issues/472
 ENV GOTOOLCHAIN=local
