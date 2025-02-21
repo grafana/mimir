@@ -1569,7 +1569,7 @@ func verifyExpectedDeletedRuleGroupsForUser(t *testing.T, r *Ruler, userID strin
 	ctx := context.Background()
 
 	t.Run("ListRuleGroupsForUserAndNamespace()", func(t *testing.T) {
-		list, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "")
+		list, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", 0)
 		require.NoError(t, err)
 
 		if expectedDeleted {
