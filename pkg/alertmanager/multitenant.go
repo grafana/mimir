@@ -755,9 +755,13 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 		// If the tenant ID matches the configured Grafana suffix, only run the Alertmanager if it's receiving requests.
 		createdAt, ok := am.receivingRequests.Load(cfgs.Mimir.User)
-		if !ok || time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod {
-			// Use the zero-value to indicate that we've skipped the tenant.
+		if !ok {
+			// Store a zero-value timestamp to indicate that we've skipped the tenant.
 			am.receivingRequests.Store(cfgs.Mimir.User, zeroTimeUnix)
+			return cfg, false, nil
+		}
+
+		if time.Since(time.Unix(createdAt.(int64), 0)) >= am.cfg.GrafanaAlertmanagerIdleGracePeriod {
 			return cfg, false, nil
 		}
 
