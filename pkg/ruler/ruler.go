@@ -724,7 +724,7 @@ func (r *Ruler) listRuleGroupsToSyncForUsers(ctx context.Context, userIDs []stri
 	for i := 0; i < concurrency; i++ {
 		g.Go(func() error {
 			for userID := range userCh {
-				groups, err := r.store.ListRuleGroupsForUserAndNamespace(gctx, userID, "", opts...)
+				groups, err := r.store.ListRuleGroupsForUserAndNamespace(gctx, userID, "", 0, opts...)
 				if err != nil {
 					return errors.Wrapf(err, "failed to fetch rule groups for user %s", userID)
 				}
@@ -1317,7 +1317,7 @@ func (r *Ruler) ListAllRules(w http.ResponseWriter, req *http.Request) {
 	err = concurrency.ForEachUser(req.Context(), userIDs, fetchRulesConcurrency, func(ctx context.Context, userID string) error {
 		// Disable any caching when getting list of all rule groups since listing results
 		// are cached and not invalidated and this API is expected to be strongly consistent.
-		rg, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", rulestore.WithCacheDisabled())
+		rg, err := r.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", 0, rulestore.WithCacheDisabled())
 		if err != nil {
 			return errors.Wrapf(err, "failed to fetch ruler config for user %s", userID)
 		}

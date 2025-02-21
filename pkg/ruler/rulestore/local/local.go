@@ -9,6 +9,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -69,7 +71,7 @@ func (l *Client) ListAllUsers(_ context.Context, _ ...rulestore.Option) ([]strin
 }
 
 // ListRuleGroupsForUserAndNamespace implements rules.RuleStore. This method also loads the rules.
-func (l *Client) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, _ ...rulestore.Option) (rulespb.RuleGroupList, error) {
+func (l *Client) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, maxGroups int, _ ...rulestore.Option) (rulespb.RuleGroupList, error) {
 	if namespace == "" {
 		return l.loadAllRulesGroupsForUser(ctx, userID)
 	}
@@ -84,6 +86,21 @@ func (l *Client) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID s
 		desc := rulespb.ToProto(userID, namespace, rg)
 		list = append(list, desc)
 	}
+
+	if maxGroups > 0 {
+		// Sort by namespace and group
+		slices.SortFunc(list, func(a, b *rulespb.RuleGroupDesc) int {
+			nsCmp := strings.Compare(a.Namespace, b.Namespace)
+			if nsCmp != 0 {
+				return nsCmp
+			}
+
+			// If Namespaces are equal, check the group names
+			return strings.Compare(a.Name, b.Name)
+		})
+		list = list[:maxGroups]
+	}
+
 	return list, nil
 }
 
