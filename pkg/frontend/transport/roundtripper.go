@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/server"
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,11 +24,12 @@ type GrpcRoundTripper interface {
 	RoundTripGRPC(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, io.ReadCloser, error)
 }
 
-func AdaptGrpcRoundTripperToHTTPRoundTripper(r GrpcRoundTripper, cluster string, serverMetrics *server.Metrics) http.RoundTripper {
+func AdaptGrpcRoundTripperToHTTPRoundTripper(r GrpcRoundTripper, cluster string, serverMetrics *server.Metrics, logger log.Logger) http.RoundTripper {
 	return &grpcRoundTripperAdapter{
 		roundTripper:  r,
 		cluster:       cluster,
 		serverMetrics: serverMetrics,
+		logger:        logger,
 	}
 }
 
@@ -35,6 +38,7 @@ type grpcRoundTripperAdapter struct {
 	roundTripper  GrpcRoundTripper
 	cluster       string
 	serverMetrics *server.Metrics
+	logger        log.Logger
 }
 
 type buffer struct {
@@ -53,13 +57,16 @@ func (a *grpcRoundTripperAdapter) RoundTrip(r *http.Request) (*http.Response, er
 	}
 	req, err := httpgrpc.FromHTTPRequestWithCluster(r, a.cluster, metric)
 	if err != nil {
+		level.Warn(a.logger).Log("msg", "grpcRoundTripperAdapter has failed while trying to call httpgrpc.FromHTTPRequestWithCluster", "err", err)
 		return nil, err
 	}
 
 	resp, body, err := a.roundTripper.RoundTripGRPC(r.Context(), req)
 	if err != nil {
 		var ok bool
-		if resp, ok = httpgrpc.HTTPResponseFromError(err); !ok {
+		resp, ok = httpgrpc.HTTPResponseFromError(err)
+		level.Warn(a.logger).Log("msg", "grpcRoundTripperAdapter has failed while trying to call RoundTripGRPC()", "httpgrpc error", ok, "err", err)
+		if !ok {
 			return nil, err
 		}
 	}
