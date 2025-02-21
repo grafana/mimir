@@ -105,6 +105,7 @@ type Config struct {
 
 	GrafanaAlertmanagerCompatibility bool
 	GrafanaAlertmanagerTenantSuffix  string
+	EnableNotifyHooks                bool
 }
 
 // An Alertmanager manages the alerts for one user.
@@ -597,7 +598,7 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
-	// Create a function that wraps a notifier with rate limiting.
+	// Create a function that wraps a notifier with rate limiting and external hooks.
 	nw := func(integrationName string, notifier notify.Notifier) notify.Notifier {
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
@@ -606,7 +607,16 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 				integration: integrationName,
 			}
 
-			return newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
+			notifier = newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
+		}
+		if am.cfg.EnableNotifyHooks {
+			n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger)
+			if err != nil {
+				// It's rare an error is returned, but in theory it can happen.
+				level.Error(am.logger).Log("msg", "Failed to setup notify hooks", "err", err)
+			} else {
+				notifier = n
+			}
 		}
 		return notifier
 	}
