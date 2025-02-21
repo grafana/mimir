@@ -89,7 +89,7 @@ func newFrontendSchedulerWorkers(
 			// track 1ms latency too and removing any bucket bigger than 1s.
 			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
 		}, []string{schedulerAddressLabel}),
-		invalidClusterValidation: middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_query_frontend_query_scheduler_client"),
+		invalidClusterValidation: util.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "query-scheduler", util.GRPCProtocol),
 	}
 
 	var err error

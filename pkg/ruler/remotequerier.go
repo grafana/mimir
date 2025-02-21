@@ -37,6 +37,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/util"
+
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
@@ -99,7 +101,10 @@ func (c *QueryFrontendConfig) Validate() error {
 
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
 func DialQueryFrontend(cfg QueryFrontendConfig, cluster string, reg prometheus.Registerer, logger log.Logger) (httpgrpc.HTTPClient, error) {
-	invalidClusterValidation := middleware.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "cortex_query_frontend_client")
+	//TODO: understand if this is really a gRPC or an HTTP client, since we return httpgrpc.NewHTTPClient().
+	//TODO: if it is the latter, then the last parameter of NewRequestInvalidClusterVerficationLabelsTotalCounter should be "http".
+	//TODO: if it is the latter, why are we using gRPC interceptors instead of HTTP middlewares?
+	invalidClusterValidation := util.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "ruler-query-frontend", util.GRPCProtocol)
 
 	opts, err := cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),

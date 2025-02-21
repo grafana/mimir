@@ -10,32 +10,19 @@ import (
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 const (
-	failureClient         = "client"
-	failureServer         = "server"
-	protocolLabel         = "protocol"
-	methodLabel           = "method"
-	requestClusterLabel   = "request_cluster_label"
-	failingComponentLabel = "failing_component"
+	failureClient = "client"
+	failureServer = "server"
 )
 
 var (
 	errNoClusterProvided = grpcutil.Status(codes.Internal, "no cluster provided").Err()
 )
-
-func NewRequestInvalidClusterVerficationLabelsTotalCounter(reg prometheus.Registerer, prefix string) *prometheus.CounterVec {
-	return promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name:        fmt.Sprintf("%s_request_invalid_cluster_verification_labels_total", prefix),
-		Help:        "Number of requests with invalid cluster verification label.",
-		ConstLabels: nil,
-	}, []string{protocolLabel, methodLabel, requestClusterLabel, failingComponentLabel})
-}
 
 // ClusterUnaryClientInterceptor propagates the given cluster info to gRPC metadata.
 func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.CounterVec, logger log.Logger) grpc.UnaryClientInterceptor {
@@ -47,7 +34,7 @@ func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.Co
 
 		if cluster == "" {
 			level.Warn(logger).Log("msg", "no cluster provided", "method", method)
-			invalidCluster.WithLabelValues("grpc", method, cluster, failureClient).Inc()
+			invalidCluster.WithLabelValues(method, cluster, failureClient).Inc()
 			return errNoClusterProvided
 		}
 
@@ -56,7 +43,7 @@ func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.Co
 			if msgs != nil {
 				level.Warn(logger).Log(msgs)
 			}
-			invalidCluster.WithLabelValues("grpc", method, cluster, failureClient).Inc()
+			invalidCluster.WithLabelValues(method, cluster, failureClient).Inc()
 			return grpcutil.Status(codes.Internal, err.Error()).Err()
 		}
 		// The incoming context either contains no cluster verification label,
@@ -79,7 +66,7 @@ func handleError(err error, cluster string, method string, invalidCluster *prome
 				if errDetails.GetCause() == grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL {
 					msg := fmt.Sprintf("request rejected by the server: %s", stat.Message())
 					level.Warn(logger).Log("msg", msg, "method", method, "clusterVerificationLabel", cluster)
-					invalidCluster.WithLabelValues("grpc", method, cluster, failureServer).Inc()
+					invalidCluster.WithLabelValues(method, cluster, failureServer).Inc()
 					return grpcutil.Status(codes.Internal, msg).Err()
 				}
 			}
