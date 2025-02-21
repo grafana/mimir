@@ -395,14 +395,18 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		c.metrics.compactionBlocksVerificationFailed.Inc()
 	}
 
-	// Create a bucket backed by the local compaction directory. This allows calls to NewStreamBinaryReader to
-	// construct index-headers and sparse-index-headers without making requests to object storage.
-	var uploadSparseHeaders = c.uploadSparseIndexHeaders
-	level.Warn(jobLogger).Log("msg", "starting to compact", "err", err, "state", uploadSparseHeaders)
-	fsbkt, err := filesystem.NewBucket(subDir)
-	if err != nil {
-		uploadSparseHeaders = false
-		level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
+	var uploadSparseIndexHeaders = c.uploadSparseIndexHeaders
+	var fsbkt objstore.Bucket
+	if uploadSparseIndexHeaders {
+		// Create a bucket backed by the local compaction directory. This allows calls to NewStreamBinaryReader to
+		// construct sparse-index-headers without making requests to object storage. Building and uploading
+		// sparse-index-headers is best effort, and we do not skip uploading a compacted block if there's an
+		// error affecting the sparse-index-header upload.
+		fsbkt, err = filesystem.NewBucket(subDir)
+		if err != nil {
+			level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
+			uploadSparseIndexHeaders = false
+		}
 	}
 
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
@@ -444,10 +448,9 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
 		}
 
-		if uploadSparseHeaders {
-			// NewStreamBinaryReader reads a block's index and writes index-header and sparse-index-header files to disk. Discard
-			// the reader, only needs to be initialized without error. Because we don't need the StreamBinaryReader, use default
-			// indexheader.Config and do not register indexheader.StreamBinaryReaderMetrics.
+		if uploadSparseIndexHeaders {
+			// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk. Because we
+			// don't use the writer, we pass a default indexheader.Config and don't register metrics.
 			if _, err := indexheader.NewStreamBinaryReader(
 				ctx,
 				jobLogger,
@@ -458,7 +461,6 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 				indexheader.NewStreamBinaryReaderMetrics(nil),
 				indexheader.Config{},
 			); err != nil {
-				// creating and uploading sparse-index-headers is best-effort, warn on failure
 				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockID, "err", err)
 				return nil
 			}
