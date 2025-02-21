@@ -64,8 +64,6 @@ var (
 	errInvalidExternalURLMissingHostname   = errors.New("the configured external URL is invalid because it's missing the hostname")
 	errZoneAwarenessEnabledWithoutZoneInfo = errors.New("the configured alertmanager has zone awareness enabled but zone is not set")
 	errNotUploadingFallback                = errors.New("not uploading fallback configuration")
-
-	zeroTimeUnix = time.Time{}.Unix()
 )
 
 // MultitenantAlertmanagerConfig is the configuration for a multitenant Alertmanager.
@@ -757,7 +755,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		createdAt, ok := am.receivingRequests.Load(cfgs.Mimir.User)
 		if !ok {
 			// Store a zero-value timestamp to indicate that we've skipped the tenant.
-			am.receivingRequests.Store(cfgs.Mimir.User, zeroTimeUnix)
+			am.receivingRequests.Store(cfgs.Mimir.User, time.Time{}.Unix())
 			return cfg, false, nil
 		}
 
