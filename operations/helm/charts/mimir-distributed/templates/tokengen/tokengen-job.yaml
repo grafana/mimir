@@ -45,6 +45,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-tokengen.token-file=/shared/admin-token"
+            - "-log.level=debug"
             {{- range $key, $value := .Values.tokengenJob.extraArgs }}
             - -{{ $key }}={{ $value }}
             {{- end }}
