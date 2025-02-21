@@ -1961,17 +1961,6 @@
           "fieldCategory": "advanced"
         },
         {
-          "kind": "field",
-          "name": "promql_experimental_functions_enabled",
-          "required": false,
-          "desc": "Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "querier.promql-experimental-functions-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
           "kind": "block",
           "name": "mimir_query_engine",
           "required": false,
@@ -6908,17 +6897,6 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.prune-queries",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "block_promql_experimental_functions",
-          "required": false,
-          "desc": "True to control access to specific PromQL experimental functions per tenant.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.block-promql-experimental-functions",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         },

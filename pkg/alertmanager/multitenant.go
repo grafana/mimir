@@ -738,7 +738,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	// If the Mimir configuration is either default or empty, use the Grafana configuration.
 	if cfgs.Mimir.RawConfig == am.fallbackConfig || cfgs.Mimir.RawConfig == "" {
 		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", cfgs.Mimir.User)
-		cfg, err := createUsableGrafanaConfig(cfgs.Grafana, am.fallbackConfig)
+		cfg, err := am.createUsableGrafanaConfig(cfgs.Grafana, am.fallbackConfig)
 		return cfg, true, err
 	}
 
