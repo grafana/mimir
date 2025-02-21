@@ -1419,6 +1419,8 @@ func TestHATrackerChangeInElectedReplicaClearsLastSeenTimestamp(t *testing.T) {
 		require.Zero(t, info.electedLastSeenTimestamp)
 	}
 
+	// We add a polling check for t2, up to 2 seconds, to allow the cache to be populated with the correct value (secondReplica) before proceeding
+	// with the checkReplica for firstReplica.
 	checkReplicaTimestamp(t, 2*time.Second, t2, userID, cluster, secondReplica, secondReplicaReceivedAtT2, secondReplicaReceivedAtT2)
 
 	// Continuing the test, say both t1 and t2 receive request from "first" replica now.
