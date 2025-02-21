@@ -136,8 +136,7 @@ To optimize the storage of and ability to query this data, Mimir automatically a
 Some of these labels are mutually exclusive.
 {{< /admonition >}}
 
-To update this list, ...
-If you are using Grafana Cloud, contact support to configure this setting.
+Contact support to update this list of attributes.
 
 Mimir stores additional OTel resource attributes in a separate series called `target_info`, which you can query using a join query or the Prometheus `info()` function. Refer to [Functions](https://prometheus.io/docs/prometheus/latest/querying/functions/) in the Prometheus documentation for more information.
 
