@@ -141,13 +141,36 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 
 	// Load in sparse symbols and postings offset table; from disk if this is a v2 index.
 	if r.indexVersion == index.FormatV2 {
+		var reconstruct bool
 		sparseData, err := os.ReadFile(sparseHeadersPath)
 		if err != nil && !os.IsNotExist(err) {
 			level.Warn(logger).Log("msg", "failed to read sparse index-headers from disk; recreating", "id", id, "err", err)
 		}
 
+		// read persisted sparseHeaders from disk to memory.
+		if err == nil {
+			if err = r.loadFromSparseIndexHeader(logger, id, sparseHeadersPath, sparseData, postingOffsetsInMemSampling); err != nil {
+				return nil, fmt.Errorf("cannot load sparse index-header from disk: %w", err)
+			}
+
+			sampleRate := r.postingsOffsetTable.PostingOffsetInMemSampling()
+			if (sampleRate > 0) && (sampleRate < postingOffsetsInMemSampling) {
+				// if the downloaded sparse-index-header sampling is set lower (more frequent) than
+				// postingOffsetsInMemSampling, we can downsample the PostingOffsetTable to the
+				// configured rate.
+				if err := downsampleSparseIndexHeader(r, sampleRate, postingOffsetsInMemSampling); err != nil {
+					level.Warn(logger).Log("msg", "failed to downsample sparse index-headers; recreating", "id", id, "err", err)
+					reconstruct = true
+				}
+			} else if (sampleRate > 0) && (sampleRate > postingOffsetsInMemSampling) {
+				// if the downloaded sparse-header-index sampling is set higher, then reconstruct
+				// from index-header using the desired rate.
+				reconstruct = true
+			}
+		}
+
 		// If sparseHeaders are not on disk, construct sparseHeaders and write to disk.
-		if err != nil {
+		if err != nil || reconstruct {
 			if err = r.loadFromIndexHeader(logger, id, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
 				return nil, fmt.Errorf("cannot load sparse index-header: %w", err)
 			}
@@ -156,11 +179,6 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 			}
 
 			level.Debug(logger).Log("msg", "built sparse index-header file", "id", id, "path", sparseHeadersPath)
-		} else {
-			// Otherwise, read persisted sparseHeaders from disk to memory.
-			if err = r.loadFromSparseIndexHeader(logger, id, sparseHeadersPath, sparseData, postingOffsetsInMemSampling); err != nil {
-				return nil, fmt.Errorf("cannot load sparse index-header from disk: %w", err)
-			}
 		}
 	} else {
 		if err = r.loadFromIndexHeader(logger, id, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
@@ -168,6 +186,7 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 		}
 	}
 
+	level.Debug(logger).Log("msg", "built sparse index-header file", "id", id, "path", sparseHeadersPath)
 	labelNames, err := r.postingsOffsetTable.LabelNames()
 	if err != nil {
 		return nil, fmt.Errorf("cannot load label names from postings offset table: %w", err)
@@ -182,6 +201,18 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 	}
 
 	return r, err
+}
+
+func downsampleSparseIndexHeader(r *StreamBinaryReader, a, b int) error {
+	tbl, ok := r.postingsOffsetTable.(*streamindex.PostingOffsetTableV2)
+	if !ok {
+		return fmt.Errorf("failed to downsample sparse-index-header")
+	}
+	// TODO: need to track num offsets removed to decrement lastValOffset...
+	for _, pvo := range tbl.Postings() {
+		pvo.Downsample(a, b)
+	}
+	return nil
 }
 
 // loadFromSparseIndexHeader load from sparse index-header on disk.

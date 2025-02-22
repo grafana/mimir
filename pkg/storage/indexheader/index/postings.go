@@ -43,6 +43,9 @@ type PostingOffsetTable interface {
 	LabelNames() ([]string, error)
 
 	NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable)
+
+	// PostingOffsetInMemSampling ...
+	PostingOffsetInMemSampling() int
 }
 
 // PostingListOffset contains the start and end offset of a posting list.
@@ -330,6 +333,10 @@ func (t *PostingOffsetTableV1) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
+func (t *PostingOffsetTableV1) PostingOffsetInMemSampling() int {
+	return 0
+}
+
 func (t *PostingOffsetTableV1) NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable) {
 	return &indexheaderpb.PostingOffsetTable{}
 }
@@ -348,6 +355,25 @@ type PostingOffsetTableV2 struct {
 type postingValueOffsets struct {
 	offsets       []postingOffset
 	lastValOffset int64
+}
+
+func (t *PostingOffsetTableV2) Postings() map[string]*postingValueOffsets {
+	return t.postings
+}
+
+func (e *postingValueOffsets) Downsample(a int, b int) {
+	pvolen := len(e.offsets)
+	if pvolen == 0 || a <= b || a <= 0 || b <= 0 {
+		return
+	}
+
+	step := (a + b - 1) / b
+	j := 0
+	for i := 0; i < pvolen; i += step {
+		e.offsets[j] = e.offsets[i]
+		j++
+	}
+	e.offsets = e.offsets[:j]
 }
 
 // prefixOffsets returns the index of the first matching offset (start) and the index of the first non-matching (end).
@@ -608,10 +634,17 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
+// PostingOffsetInMemSampling ...
+func (t *PostingOffsetTableV2) PostingOffsetInMemSampling() int {
+	return t.postingOffsetsInMemSampling
+}
+
+
 // NewSparsePostingOffsetTable loads all postings offset table data into a sparse index-header to be persisted to disk
 func (t *PostingOffsetTableV2) NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable) {
 	sparseHeaders := &indexheaderpb.PostingOffsetTable{
-		Postings: make(map[string]*indexheaderpb.PostingValueOffsets, len(t.postings)),
+		Postings:                      make(map[string]*indexheaderpb.PostingValueOffsets, len(t.postings)),
+		PostingOffsetInMemorySampling: int64(t.postingOffsetsInMemSampling),
 	}
 
 	for name, offsets := range t.postings {
