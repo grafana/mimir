@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -257,16 +258,14 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 // spinOffQueryHandler is a query handler that takes a request and loops it back to localhost.
 // This is used to spin off subqueries as range queries to the same frontend instance.
 type spinOffQueryHandler struct {
-	codec    Codec
-	logger   log.Logger
-	httpPort int
+	codec  Codec
+	logger log.Logger
 }
 
-func newSpinOffQueryHandler(codec Codec, logger log.Logger, httpPort int, maxRetries int, retryMiddlewareMetrics prometheus.Observer) MetricsQueryHandler {
+func newSpinOffQueryHandler(codec Codec, logger log.Logger, maxRetries int, retryMiddlewareMetrics prometheus.Observer) MetricsQueryHandler {
 	var handler MetricsQueryHandler = &spinOffQueryHandler{
-		codec:    codec,
-		logger:   logger,
-		httpPort: httpPort,
+		codec:  codec,
+		logger: logger,
 	}
 
 	if maxRetries > 0 {
@@ -284,20 +283,18 @@ func (s *spinOffQueryHandler) Do(ctx context.Context, req MetricsQueryRequest) (
 	httpReq.RequestURI = "" // Reset RequestURI to force URL to be used in the request.
 	httpReq.URL.Scheme = "http"
 	httpReq.URL.Host = "localhost"
-	if s.httpPort != 0 {
-		httpReq.URL.Host += fmt.Sprintf(":%d", s.httpPort)
-	}
 
 	if err := user.InjectOrgIDIntoHTTPRequest(ctx, httpReq); err != nil {
 		return nil, fmt.Errorf("error injecting org ID into request: %v", err)
 	}
 
-	client := http.DefaultClient
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("error sending request: %v", err)
-	}
-	defer resp.Body.Close()
+	// Send the request to the http handler.
+	httpHandler := ctx.Value("handler").(http.Handler)
+
+	rec := httptest.NewRecorder() // replace with something that isn't httptest
+	httpHandler.ServeHTTP(rec, httpReq)
+
+	resp := rec.Result()
 	decoded, err := s.codec.DecodeMetricsQueryResponse(ctx, resp, req, s.logger)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding response: %v. Status: %s", err, resp.Status)

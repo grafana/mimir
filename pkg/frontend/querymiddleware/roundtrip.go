@@ -72,9 +72,6 @@ type Config struct {
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
 	CacheKeyGenerator CacheKeyGenerator `yaml:"-"`
 
-	// HTTPListenPort is used for the subquery spin-off feature to loopback subqueries to localhost.
-	HTTPListenPort int `yaml:"-"`
-
 	// ExtraInstantQueryMiddlewares and ExtraRangeQueryMiddlewares allows to
 	// inject custom middlewares into the middleware chain of instant and
 	// range queries. These middlewares will be placed right after default
@@ -382,7 +379,7 @@ func newQueryMiddlewares(
 	// Loopback subqueries to localhost. Only those in instant queries are supported.
 	// Add the retry middleware to the spin-off query handler.
 	// Spun-off queries are terminated in that handler (they don't call "next" so the retry middleware has to be added here).
-	spinOffQueryHandler := newSpinOffQueryHandler(codec, log, cfg.HTTPListenPort, cfg.MaxRetries, retryMiddlewareMetrics)
+	spinOffQueryHandler := newSpinOffQueryHandler(codec, log, cfg.MaxRetries, retryMiddlewareMetrics)
 	queryInstantMiddleware = append(
 		queryInstantMiddleware,
 		newInstrumentMiddleware("spin_off_subqueries", metrics),

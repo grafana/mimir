@@ -8,9 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -284,12 +282,7 @@ func TestSpinOffQueryHandler(t *testing.T) {
 	}))
 	t.Cleanup(httpServer.Close)
 
-	parsedHTTPServerURL, err := url.Parse(httpServer.URL)
-	require.NoError(t, err)
-	port, err := strconv.Atoi(parsedHTTPServerURL.Port())
-	require.NoError(t, err)
-
-	spinOffQueryHandler := newSpinOffQueryHandler(codec, log.NewNopLogger(), port, 3, &mockRetryMetrics{})
+	spinOffQueryHandler := newSpinOffQueryHandler(codec, log.NewNopLogger(), 3, &mockRetryMetrics{})
 
 	// Ensure we have had no requests yet.
 	require.Equal(t, 0, gotRequestCt)
@@ -302,6 +295,7 @@ func TestSpinOffQueryHandler(t *testing.T) {
 		queryExpr: parseQuery(t, "max_over_time(rate(metric_counter[1m])[5m:1m])"),
 	}
 	ctx := user.InjectOrgID(context.Background(), "test")
+	ctx = context.WithValue(ctx, "handler", httpServer.Config.Handler)
 	resp, err := spinOffQueryHandler.Do(ctx, req)
 	require.NoError(t, err)
 

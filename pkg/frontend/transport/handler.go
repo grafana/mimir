@@ -183,6 +183,12 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(ctx)
 	}
 
+	if true { // TODO: Check if this is a spin-off
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, "handler", f)
+		r = r.WithContext(ctx)
+	}
+
 	// Ensure to close the request body reader.
 	defer func() { _ = r.Body.Close() }()
 

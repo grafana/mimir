@@ -766,11 +766,8 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
 	engineOpts, _ := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
-	middlewareConfig := t.Cfg.Frontend.QueryMiddleware
-	middlewareConfig.HTTPListenPort = t.Cfg.Server.HTTPListenPort
-
 	tripperware, err := querymiddleware.NewTripperware(
-		middlewareConfig,
+		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
 		t.Overrides,
 		t.QueryFrontendCodec,
