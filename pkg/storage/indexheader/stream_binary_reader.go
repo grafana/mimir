@@ -208,10 +208,8 @@ func downsampleSparseIndexHeader(r *StreamBinaryReader, a, b int) error {
 	if !ok {
 		return fmt.Errorf("failed to downsample sparse-index-header")
 	}
-	// TODO: need to track num offsets removed to decrement lastValOffset...
-	for _, pvo := range tbl.Postings() {
-		pvo.Downsample(a, b)
-	}
+	// todo: set tbl back onto StreamBinaryReader
+	tbl.DownsamplePostings(a, b)
 	return nil
 }
 

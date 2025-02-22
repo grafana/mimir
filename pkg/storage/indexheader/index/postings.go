@@ -357,14 +357,17 @@ type postingValueOffsets struct {
 	lastValOffset int64
 }
 
-func (t *PostingOffsetTableV2) Postings() map[string]*postingValueOffsets {
-	return t.postings
+func (t *PostingOffsetTableV2) DownsamplePostings(a, b int) {
+	// todo: handle decrementing lastOffsetVal
+	for _, pvo := range t.postings {
+		_ = pvo.downsample(a, b)
+	}
 }
 
-func (e *postingValueOffsets) Downsample(a int, b int) {
+func (e *postingValueOffsets) downsample(a, b int) int {
 	pvolen := len(e.offsets)
 	if pvolen == 0 || a <= b || a <= 0 || b <= 0 {
-		return
+		return 0
 	}
 
 	step := (a + b - 1) / b
@@ -374,6 +377,7 @@ func (e *postingValueOffsets) Downsample(a int, b int) {
 		j++
 	}
 	e.offsets = e.offsets[:j]
+	return pvolen - j
 }
 
 // prefixOffsets returns the index of the first matching offset (start) and the index of the first non-matching (end).
@@ -638,7 +642,6 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 func (t *PostingOffsetTableV2) PostingOffsetInMemSampling() int {
 	return t.postingOffsetsInMemSampling
 }
-
 
 // NewSparsePostingOffsetTable loads all postings offset table data into a sparse index-header to be persisted to disk
 func (t *PostingOffsetTableV2) NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable) {
