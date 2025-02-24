@@ -27,7 +27,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-enterprise-component-image-values-mimir
+      serviceAccountName: test-enterprise-component-image-values-mimir-tokengen
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

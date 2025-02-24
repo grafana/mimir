@@ -27,7 +27,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-oss-topology-spread-constraints-values-mimir
+      serviceAccountName: test-oss-topology-spread-constraints-values-mimir-tokengen
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001

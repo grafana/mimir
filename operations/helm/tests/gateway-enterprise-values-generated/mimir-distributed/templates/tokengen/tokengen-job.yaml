@@ -27,7 +27,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: gateway-enterprise-values-mimir
+      serviceAccountName: gateway-enterprise-values-mimir-tokengen
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
