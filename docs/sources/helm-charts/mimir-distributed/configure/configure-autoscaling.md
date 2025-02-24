@@ -63,6 +63,7 @@ This section describes how to enable autoscaling when deploying Mimir for the fi
 ### Steps
 
 1. Configure the Prometheus metrics source in your values file:
+
    ```yaml
    kedaAutoscaling:
      prometheusAddress: "http://prometheus.monitoring:9090"
@@ -70,6 +71,7 @@ This section describes how to enable autoscaling when deploying Mimir for the fi
    ```
 
 2. Enable and configure autoscaling for desired components:
+
    ```yaml
    querier:
      kedaAutoscaling:
@@ -86,6 +88,7 @@ This section describes how to enable autoscaling when deploying Mimir for the fi
 ### Expected outcome
 
 After deployment:
+
 - KEDA creates ScaledObject resources for configured components
 - HPA resources are automatically created and begin monitoring metrics
 - Components scale based on configured thresholds and behaviors
@@ -117,15 +120,17 @@ Consider testing the migration in a non-production environment first.
 ### Steps
 
 1. Add autoscaling configuration with `preserveReplicas` enabled:
+
    ```yaml
    querier:
      kedaAutoscaling:
        enabled: true
-       preserveReplicas: true  # Maintains stability during migration
+       preserveReplicas: true # Maintains stability during migration
        # ... autoscaling configuration ...
    ```
 
 2. Apply the changes and verify KEDA setup:
+
    ```bash
    # Apply changes
    helm upgrade mimir grafana/mimir-distributed -f values.yaml
@@ -137,6 +142,7 @@ Consider testing the migration in a non-production environment first.
    ```
 
 3. After confirming KEDA is managing scaling (wait at least 2-3 polling intervals), remove `preserveReplicas`:
+
    ```yaml
    querier:
      kedaAutoscaling:
@@ -154,6 +160,7 @@ Consider testing the migration in a non-production environment first.
 If pods scale down to 1 replica after removing `preserveReplicas`:
 
 1. Revert changes:
+
    ```yaml
    querier:
      kedaAutoscaling:
@@ -162,10 +169,11 @@ If pods scale down to 1 replica after removing `preserveReplicas`:
    ```
 
 2. Verify KEDA setup:
-    - Check HPA status
-    - Verify metrics are being received
-    - Check for conflicts with other tools
-    - Ensure enough time was given for KEDA to take control (at least 2-3 polling intervals)
+
+   - Check HPA status
+   - Verify metrics are being received
+   - Check for conflicts with other tools
+   - Ensure enough time was given for KEDA to take control (at least 2-3 polling intervals)
 
 3. Try migration again after resolving issues
 
@@ -183,4 +191,4 @@ The following conditions indicate unhealthy autoscaling:
 
 For production deployments, configure [high availability](https://keda.sh/docs/latest/operate/cluster/#high-availability) for KEDA.
 
-For more information about monitoring autoscaling, refer to [Monitor Grafana Mimir](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/). 
+For more information about monitoring autoscaling, refer to [Monitor Grafana Mimir](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/).
