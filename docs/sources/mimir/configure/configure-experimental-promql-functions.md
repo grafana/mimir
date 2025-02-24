@@ -6,7 +6,7 @@ weight: 110
 
 # Configure experimental PromQL functions
 
-Experimental PromQL functions are disabled by default in Mimir. They can be selectively enabled per-tenant or globally for all users.
+Experimental PromQL functions are disabled by default in Mimir. You can selectively enable them per-tenant or globally for all users.
 All functions can be enabled using the special function name `all` or each individual function can be enabled specifically.
 
 You can enable functions globally for all users using the main Mimir configuration file.
