@@ -770,7 +770,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	// If the Alertmanager was previously skipped but now has a usable configuration, remove it from the skipped list.
 	if strictInit {
 		if _, ok := am.receivingRequests.LoadAndDelete(cfgs.Mimir.User); ok {
-			level.Debug(am.logger).Log("msg", "user has now a usable config, removing it from skipped list", "user", cfgs.Mimir.User)
+			level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", cfgs.Mimir.User)
 		}
 	}
 
@@ -1043,7 +1043,7 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 
 		// If needed, update the last time the Alertmanager received requests.
 		if _, ok := am.receivingRequests.Load(userID); ok {
-			level.Debug(am.logger).Log("msg", "updating last alert reception time", "user", userID)
+			level.Debug(am.logger).Log("msg", "updating last request reception time", "user", userID)
 			am.receivingRequests.Store(userID, time.Now().Unix())
 		}
 		return
