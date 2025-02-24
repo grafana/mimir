@@ -24,7 +24,7 @@ spec:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "tokengen") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
-      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      serviceAccountName: {{ include "mimir.resourceName" (dict "ctx" . "component" "tokengen") }}
       {{- if .Values.tokengenJob.priorityClassName }}
       priorityClassName: {{ .Values.tokengenJob.priorityClassName }}
       {{- end }}
