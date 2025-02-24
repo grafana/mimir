@@ -98,3 +98,5 @@ spec:
           emptyDir: {}
         - name: active-queries
           emptyDir: {}
+        - name: shared
+          emptyDir: {}
