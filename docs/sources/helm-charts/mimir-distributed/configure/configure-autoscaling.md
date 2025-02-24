@@ -1,8 +1,4 @@
 ---
-aliases:
-  - ../../operators-guide/deploying-grafana-mimir/helm/configuring-autoscaling/
-  - configuring-autoscaling/
-  - ../../operators-guide/deploy-grafana-mimir/helm/configure-autoscaling/
 description: Learn how to configure Grafana Mimir autoscaling when using Helm.
 menuTitle: Configure autoscaling
 title: Configure Grafana Mimir autoscaling with Helm
@@ -166,10 +162,10 @@ If pods scale down to 1 replica after removing `preserveReplicas`:
    ```
 
 2. Verify KEDA setup:
-   - Check HPA status
-   - Verify metrics are being received
-   - Check for conflicts with other tools
-   - Ensure enough time was given for KEDA to take control (at least 2-3 polling intervals)
+    - Check HPA status
+    - Verify metrics are being received
+    - Check for conflicts with other tools
+    - Ensure enough time was given for KEDA to take control (at least 2-3 polling intervals)
 
 3. Try migration again after resolving issues
 
