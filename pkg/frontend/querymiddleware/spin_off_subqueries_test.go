@@ -204,9 +204,9 @@ func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.
 
 	// Mock the downstream handler to always return error.
 	downstreamErr := errors.Errorf("some err")
-	downstream := mockHandlerWith(nil, downstreamErr)
+	downstream := mockHandlerWith(nil, downstreamErr) // TODO dimitarvdimitrov fix maybe
 
-	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{instantQueriesWithSubquerySpinOff: []string{".*"}}, log.NewNopLogger(), newEngine(), downstream, nil, defaultStepFunc)
+	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{instantQueriesWithSubquerySpinOff: []string{".*"}}, log.NewNopLogger(), newEngine(), nil, defaultStepFunc)
 
 	// Run the query with subquery spin-off middleware wrapping the downstream one.
 	// We expect to get the downstream error.
@@ -419,7 +419,6 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 				},
 				log.NewNopLogger(),
 				engine,
-				downstream,
 				reg,
 				defaultStepFunc,
 			)

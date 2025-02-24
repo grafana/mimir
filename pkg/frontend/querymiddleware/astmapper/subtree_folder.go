@@ -22,7 +22,7 @@ func newSubtreeFolder() ASTMapper {
 
 // MapExpr implements ExprMapper.
 func (f *subtreeFolder) MapExpr(expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
-	hasEmbeddedQueries, err := anyNode(expr, hasEmbeddedQueries)
+	hasEmbeddedQueries, err := AnyNode(expr, hasEmbeddedQueries)
 	if err != nil {
 		return nil, true, err
 	}
@@ -32,7 +32,7 @@ func (f *subtreeFolder) MapExpr(expr parser.Expr) (mapped parser.Expr, finished 
 		return expr, false, nil
 	}
 
-	hasVectorSelector, err := anyNode(expr, isVectorSelector)
+	hasVectorSelector, err := AnyNode(expr, isVectorSelector)
 	if err != nil {
 		return nil, true, err
 	}
@@ -62,9 +62,9 @@ func isVectorSelector(n parser.Node) (bool, error) {
 	return ok, nil
 }
 
-// anyNode is a helper which walks the input node and returns true if any node in the subtree
+// AnyNode is a helper which walks the input node and returns true if any node in the subtree
 // returns true for the specified predicate function.
-func anyNode(node parser.Node, fn predicate) (bool, error) {
+func AnyNode(node parser.Node, fn predicate) (bool, error) {
 	v := &visitor{
 		fn: fn,
 	}

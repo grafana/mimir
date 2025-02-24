@@ -38,7 +38,6 @@ type spinOffSubqueriesMiddleware struct {
 	limits Limits
 	logger log.Logger
 
-	rangeHandler    MetricsQueryHandler
 	engine          *promql.Engine
 	defaultStepFunc func(int64) int64
 
@@ -95,7 +94,6 @@ func newSpinOffSubqueriesMiddleware(
 	limits Limits,
 	logger log.Logger,
 	engine *promql.Engine,
-	rangeHandler MetricsQueryHandler,
 	registerer prometheus.Registerer,
 	defaultStepFunc func(int64) int64,
 ) MetricsQueryMiddleware {
@@ -107,7 +105,6 @@ func newSpinOffSubqueriesMiddleware(
 			limits:          limits,
 			logger:          logger,
 			engine:          engine,
-			rangeHandler:    rangeHandler,
 			metrics:         metrics,
 			defaultStepFunc: defaultStepFunc,
 		}
@@ -214,7 +211,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 
 	annotationAccumulator := NewAnnotationAccumulator()
 
-	queryable := newSpinOffSubqueriesQueryable(req, annotationAccumulator, s.next, s.rangeHandler)
+	queryable := newSpinOffSubqueriesQueryable(req, annotationAccumulator, s.next)
 
 	qry, err := newQuery(ctx, req, s.engine, lazyquery.NewLazyQueryable(queryable))
 	if err != nil {

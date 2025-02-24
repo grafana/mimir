@@ -142,7 +142,7 @@ func (summer *shardSummer) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 		if summer.currentShard == nil {
 			// Only shards Subqueries, they are parallelizable if they are parallelizable themselves
 			// and they don't contain aggregations over series in children exprs.
-			if isSubqueryCall(e) {
+			if IsSubqueryCall(e) {
 				if containsAggregateExpr(e) {
 					return e, true, nil
 				}
@@ -580,9 +580,9 @@ func (summer *shardSummer) shardVectorSelector(selector *parser.VectorSelector) 
 	}, nil
 }
 
-// isSubqueryCall returns true if the given function call expression is a subquery,
+// IsSubqueryCall returns true if the given function call expression is a subquery,
 // or a subquery wrapped by parenthesis.
-func isSubqueryCall(n *parser.Call) bool {
+func IsSubqueryCall(n *parser.Call) bool {
 	for _, arg := range n.Args {
 		if ok := isSubqueryCallVisitFn(arg); ok {
 			return true
