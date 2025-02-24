@@ -29,3 +29,8 @@ overrides:
 ```
 
 Blocking or allowing the use of experimental PromQL functions is enforced on instant and range queries.
+When blocked an error is returned when running a query that includes the name of the experimental function.
+
+```
+ function "sort_by_label" is not enabled
+```
