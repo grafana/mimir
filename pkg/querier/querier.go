@@ -158,10 +158,11 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	opts, mqeOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
+	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
 
-	// Experimental functions can only be enabled globally, and not on a per-engine basis.
-	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
+	// Experimental functions are always enabled globally for all engines. Access to them
+	// is controlled by an experimental functions middleware that reads per-tenant settings.
+	parser.EnableExperimentalFunctions = true
 
 	var eng promql.QueryEngine
 
@@ -316,7 +317,7 @@ func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matc
 }
 
 // Select implements storage.Querier interface.
-// The bool passed is ignored because the series is always sorted.
+// The bool passed is ignored because the series are always sorted.
 func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "querier.Select")
 	defer spanLog.Span.Finish()
@@ -341,8 +342,14 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	}
 	now := time.Now()
 
-	level.Debug(spanLog).Log("hint.func", sp.Func, "start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
-		util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
+	level.Debug(spanLog).Log(
+		"hint.func", sp.Func,
+		"start", util.TimeFromMillis(sp.Start).UTC().String(),
+		"end", util.TimeFromMillis(sp.End).UTC().String(),
+		"limit", sp.Limit, // Note that Prometheus does +1 to the original request's limit to emit a warning in the response (ref "toHintLimit" in web/api/v1/api.go).
+		"step", sp.Step,
+		"matchers", util.MatchersStringer(matchers),
+	)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {

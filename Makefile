@@ -55,8 +55,8 @@ JSONNET_FMT := jsonnetfmt
 
 # path to the mimir-mixin
 MIXIN_PATH := operations/mimir-mixin
-MIXIN_OUT_PATH := operations/mimir-mixin-compiled
-MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal"
+MIXIN_OUT_PATH ?= operations/mimir-mixin-compiled
+MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal" "-gem"
 
 # path to the mimir jsonnet manifests
 JSONNET_MANIFESTS_PATHS := operations/mimir operations/mimir-tests development
@@ -245,7 +245,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr10481-6c395eeace
+LATEST_BUILD_IMAGE_TAG ?= pr10708-6841577474
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -683,8 +683,8 @@ check-mixin-mimirtool-rules: build-mixin
 		go run ./cmd/mimirtool rules check --rule-dirs "$(MIXIN_OUT_PATH)$$suffix"; \
 	done
 
-mixin-serve: ## Runs Grafana loading the mixin dashboards compiled at operations/mimir-mixin-compiled.
-	@./operations/mimir-mixin-tools/serve/run.sh
+mixin-serve: ## Runs Grafana loading the mixin dashboards. Use MIXIN_OUT_PATH=operations/mimir-mixin-compiled-gem for GEM variant
+	@./operations/mimir-mixin-tools/serve/run.sh -p $(MIXIN_OUT_PATH)
 
 mixin-screenshots: ## Generates mixin dashboards screenshots.
 	@find $(DOC_SOURCES_PATH)/manage/monitor-grafana-mimir/dashboards -name '*.png' -delete

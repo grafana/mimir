@@ -1,10 +1,10 @@
 module github.com/grafana/mimir
 
-go 1.22.7
+go 1.22.11
 
 // Please note that this directive is ignored when building with the Mimir build image,
 // that will always use its bundled toolchain.
-toolchain go1.23.3
+toolchain go1.23.6
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.5.0
@@ -296,7 +296,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20250218083455-e4993f1b1219
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20250219231405-2df419c1a542
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
