@@ -14,6 +14,9 @@ const (
 
 	// MetadataClusterVerificationLabelKey is the key of the cluster verification label gRPC metadata.
 	MetadataClusterVerificationLabelKey = "x-cluster"
+
+	FailureClient = "client"
+	FailureServer = "server"
 )
 
 type errDifferentClusterVerificationLabels string

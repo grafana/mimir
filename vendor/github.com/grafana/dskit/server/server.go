@@ -577,7 +577,7 @@ func BuildHTTPMiddleware(cfg Config, router *mux.Router, metrics *Metrics, logge
 		},
 	}
 	if cfg.ClusterVerificationLabel != "" && cfg.ClusterVerificationLabelCheck.HTTPEnabled() {
-		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.ClusterVerificationLabel, cfg.AuxiliaryURLPaths, metrics.InvalidClusterVerificationLabels, logger))
+		httpMiddleware = append(httpMiddleware, middleware.ClusterValidationMiddleware(cfg.ClusterVerificationLabel, cfg.AuxiliaryURLPaths, logger))
 	}
 	return append(httpMiddleware, cfg.HTTPMiddleware...), nil
 }

@@ -16,16 +16,15 @@ import (
 )
 
 type Metrics struct {
-	TCPConnections                   *prometheus.GaugeVec
-	TCPConnectionsLimit              *prometheus.GaugeVec
-	RequestDuration                  *prometheus.HistogramVec
-	PerTenantRequestDuration         *prometheus.HistogramVec
-	PerTenantRequestTotal            *prometheus.CounterVec
-	ReceivedMessageSize              *prometheus.HistogramVec
-	SentMessageSize                  *prometheus.HistogramVec
-	InflightRequests                 *prometheus.GaugeVec
-	RequestThroughput                *prometheus.HistogramVec
-	InvalidClusterVerificationLabels *prometheus.CounterVec
+	TCPConnections           *prometheus.GaugeVec
+	TCPConnectionsLimit      *prometheus.GaugeVec
+	RequestDuration          *prometheus.HistogramVec
+	PerTenantRequestDuration *prometheus.HistogramVec
+	PerTenantRequestTotal    *prometheus.CounterVec
+	ReceivedMessageSize      *prometheus.HistogramVec
+	SentMessageSize          *prometheus.HistogramVec
+	InflightRequests         *prometheus.GaugeVec
+	RequestThroughput        *prometheus.HistogramVec
 }
 
 func NewServerMetrics(cfg Config) *Metrics {
@@ -92,11 +91,5 @@ func NewServerMetrics(cfg Config) *Metrics {
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
 		}, []string{"method", "route"}),
-		InvalidClusterVerificationLabels: reg.NewCounterVec(prometheus.CounterOpts{
-			Namespace:   cfg.MetricsNamespace,
-			Name:        "request_invalid_cluster_verification_labels_total",
-			Help:        "Number of requests with invalid cluster verification label.",
-			ConstLabels: nil,
-		}, []string{"protocol", "method", "request_label"}),
 	}
 }

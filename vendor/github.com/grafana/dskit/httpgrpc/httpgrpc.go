@@ -65,12 +65,9 @@ func FromHTTPRequestWithCluster(r *http.Request, cluster string, invalidClusters
 	if cluster != "" {
 		if c := r.Header.Get(clusterutil.ClusterVerificationLabelHeader); c != cluster {
 			if invalidClusters != nil {
-				invalidClusters.WithLabelValues("http", "FromHTTPRequestWithCluster", c).Inc()
+				invalidClusters.WithLabelValues("FromHTTPRequestWithCluster", c, clusterutil.FailureClient).Inc()
 			}
-			return nil, fmt.Errorf(
-				"httpgrpc.FromHTTPRequestWithCluster: %q header should be %q, but is %q",
-				clusterutil.ClusterVerificationLabelHeader, cluster, c,
-			)
+			return nil, fmt.Errorf("httpgrpc.FromHTTPRequestWithCluster: %q header should be %q, but is %q", clusterutil.ClusterVerificationLabelHeader, cluster, c)
 		}
 	}
 	return FromHTTPRequest(r)

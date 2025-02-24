@@ -15,11 +15,6 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
-const (
-	failureClient = "client"
-	failureServer = "server"
-)
-
 var (
 	errNoClusterProvided = grpcutil.Status(codes.Internal, "no cluster provided").Err()
 )
@@ -34,7 +29,7 @@ func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.Co
 
 		if cluster == "" {
 			level.Warn(logger).Log("msg", "no cluster provided", "method", method)
-			invalidCluster.WithLabelValues(method, cluster, failureClient).Inc()
+			invalidCluster.WithLabelValues(method, cluster, clusterutil.FailureClient).Inc()
 			return errNoClusterProvided
 		}
 
@@ -43,7 +38,7 @@ func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.Co
 			if msgs != nil {
 				level.Warn(logger).Log(msgs)
 			}
-			invalidCluster.WithLabelValues(method, cluster, failureClient).Inc()
+			invalidCluster.WithLabelValues(method, cluster, clusterutil.FailureClient).Inc()
 			return grpcutil.Status(codes.Internal, err.Error()).Err()
 		}
 		// The incoming context either contains no cluster verification label,
@@ -66,7 +61,7 @@ func handleError(err error, cluster string, method string, invalidCluster *prome
 				if errDetails.GetCause() == grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL {
 					msg := fmt.Sprintf("request rejected by the server: %s", stat.Message())
 					level.Warn(logger).Log("msg", msg, "method", method, "clusterVerificationLabel", cluster)
-					invalidCluster.WithLabelValues(method, cluster, failureServer).Inc()
+					invalidCluster.WithLabelValues(method, cluster, clusterutil.FailureServer).Inc()
 					return grpcutil.Status(codes.Internal, msg).Err()
 				}
 			}
