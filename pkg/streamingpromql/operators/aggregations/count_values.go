@@ -37,6 +37,7 @@ type CountValues struct {
 	// Reuse instances used to generate series labels rather than recreating them every time.
 	labelsBuilder     *labels.Builder
 	labelsBytesBuffer []byte
+	valueBuffer       []byte
 }
 
 var _ types.InstantVectorOperator = &CountValues{}
@@ -85,6 +86,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		// Don't hold onto the instances used to generate series labels for longer than necessary.
 		c.labelsBuilder = nil
 		c.labelsBytesBuffer = nil
+		c.valueBuffer = nil
 	}()
 
 	accumulator := map[string]*countValuesSeries{}
@@ -96,7 +98,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 		}
 
 		for _, p := range data.Floats {
-			if err := c.incrementCount(s.Labels, p.T, strconv.FormatFloat(p.F, 'f', -1, 64), accumulator); err != nil {
+			if err := c.incrementCount(s.Labels, p.T, c.formatFloatValue(p.F), accumulator); err != nil {
 				return nil, err
 			}
 		}
@@ -141,6 +143,15 @@ func (c *CountValues) loadLabelName() error {
 
 	slices.Sort(c.Grouping)
 	return nil
+}
+
+func (c *CountValues) formatFloatValue(f float64) string {
+	// Using AppendFloat like this (rather than FormatFloat) allows us to reuse the buffer used for formatting the string,
+	// rather than creating a new one for every value.
+	c.valueBuffer = c.valueBuffer[:0]
+	c.valueBuffer = strconv.AppendFloat(c.valueBuffer, f, 'f', -1, 64)
+
+	return string(c.valueBuffer)
 }
 
 func (c *CountValues) incrementCount(seriesLabels labels.Labels, t int64, value string, accumulator map[string]*countValuesSeries) error {
