@@ -1,4 +1,4 @@
-{{- if .Values.overrides_exporter.enabled -}}
+{{- if and .Values.overrides_exporter.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 apiVersion: v1
 kind: Service
 metadata:
@@ -12,7 +12,10 @@ metadata:
     {{- toYaml .Values.overrides_exporter.service.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  type: ClusterIP
+  type: {{ .Values.overrides_exporter.service.type }}
+  {{- if semverCompare ">= 1.22-0" (include "mimir.kubeVersion" .) }}
+  internalTrafficPolicy: {{ .Values.overrides_exporter.service.internalTrafficPolicy }}
+  {{- end }}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" .}}
       protocol: TCP

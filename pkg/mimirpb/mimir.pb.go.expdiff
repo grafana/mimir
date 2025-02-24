@@ -1,0 +1,47 @@
+diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
+index 2fcc5ccde1..0688358568 100644
+--- a/pkg/mimirpb/mimir.pb.go
++++ b/pkg/mimirpb/mimir.pb.go
+@@ -243,9 +243,6 @@ type WriteRequest struct {
+ 	SkipLabelValidation bool `protobuf:"varint,1000,opt,name=skip_label_validation,json=skipLabelValidation,proto3" json:"skip_label_validation,omitempty"`
+ 	// Skip label count validation.
+ 	SkipLabelCountValidation bool `protobuf:"varint,1001,opt,name=skip_label_count_validation,json=skipLabelCountValidation,proto3" json:"skip_label_count_validation,omitempty"`
+-
+-	// Skip unmarshaling of exemplars.
+-	skipUnmarshalingExemplars bool
+ }
+ 
+ func (m *WriteRequest) Reset()      { *m = WriteRequest{} }
+@@ -392,9 +389,6 @@ type TimeSeries struct {
+ 	Samples    []Sample    `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
+ 	Exemplars  []Exemplar  `protobuf:"bytes,3,rep,name=exemplars,proto3" json:"exemplars"`
+ 	Histograms []Histogram `protobuf:"bytes,4,rep,name=histograms,proto3" json:"histograms"`
+-
+-	// Skip unmarshaling of exemplars.
+-	SkipUnmarshalingExemplars bool
+ }
+ 
+ func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
+@@ -6212,7 +6206,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+ 				return io.ErrUnexpectedEOF
+ 			}
+ 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
+-			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
+ 			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+ 				return err
+ 			}
+@@ -6585,11 +6578,9 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
+ 			if postIndex > l {
+ 				return io.ErrUnexpectedEOF
+ 			}
+-			if !m.SkipUnmarshalingExemplars {
+-				m.Exemplars = append(m.Exemplars, Exemplar{})
+-				if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+-					return err
+-				}
++			m.Exemplars = append(m.Exemplars, Exemplar{})
++			if err := m.Exemplars[len(m.Exemplars)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
++				return err
+ 			}
+ 			iNdEx = postIndex
+ 		case 4:

@@ -19,6 +19,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
@@ -51,6 +52,10 @@ type mockQuerier struct {
 	storage.Querier
 
 	selectFn func(ctx context.Context, sorted bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
+}
+
+func (m mockQuerier) Close() error {
+	return nil
 }
 
 func (m mockQuerier) Select(ctx context.Context, sorted bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
@@ -129,7 +134,7 @@ func TestRemoteReadHandler_Samples(t *testing.T) {
 						{Value: 3, Timestamp: 3},
 					},
 					Histograms: []prompb.Histogram{
-						prom_remote.HistogramToHistogramProto(4, test.GenerateTestHistogram(4)),
+						prompb.FromIntHistogram(4, test.GenerateTestHistogram(4)),
 					},
 				},
 			},
@@ -453,7 +458,7 @@ func TestRemoteReadHandler_StreamedXORChunks(t *testing.T) {
 					require.Equal(t, 200, recorder.Result().StatusCode)
 					require.Equal(t, []string{api.ContentTypeRemoteReadStreamedChunks}, recorder.Result().Header["Content-Type"])
 
-					stream := prom_remote.NewChunkedReader(recorder.Result().Body, prom_remote.DefaultChunkedReadLimit, nil)
+					stream := prom_remote.NewChunkedReader(recorder.Result().Body, config.DefaultChunkedReadLimit, nil)
 
 					i := 0
 					for {

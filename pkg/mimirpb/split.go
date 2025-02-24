@@ -42,8 +42,8 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 
 	newPartialReq := func() (*WriteRequest, int) {
 		r := &WriteRequest{
-			Source:                  req.Source,
-			SkipLabelNameValidation: req.SkipLabelNameValidation,
+			Source:              req.Source,
+			SkipLabelValidation: req.SkipLabelValidation,
 		}
 
 		return r, r.Size()
@@ -106,8 +106,8 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 
 	newPartialReq := func() (*WriteRequest, int) {
 		r := &WriteRequest{
-			Source:                  req.Source,
-			SkipLabelNameValidation: req.SkipLabelNameValidation,
+			Source:              req.Source,
+			SkipLabelValidation: req.SkipLabelValidation,
 		}
 		return r, r.Size()
 	}

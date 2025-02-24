@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -58,11 +59,11 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 	createRequest := func() *mimirpb.WriteRequest {
 		return &mimirpb.WriteRequest{
 			Timeseries: []mimirpb.PreallocTimeseries{
-				makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), makeExemplars([]string{"trace_id", "xxx"}, now.UnixMilli(), 1)),
-				makeTimeseries([]string{model.MetricNameLabel, "series_two"}, makeSamples(now.UnixMilli(), 2), nil),
-				makeTimeseries([]string{model.MetricNameLabel, "series_three"}, makeSamples(now.UnixMilli(), 3), nil),
-				makeTimeseries([]string{model.MetricNameLabel, "series_four"}, makeSamples(now.UnixMilli(), 4), nil),
-				makeTimeseries([]string{model.MetricNameLabel, "series_five"}, makeSamples(now.UnixMilli(), 5), nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil, makeExemplars([]string{"trace_id", "xxx"}, now.UnixMilli(), 1)),
+				makeTimeseries([]string{model.MetricNameLabel, "series_two"}, makeSamples(now.UnixMilli(), 2), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_three"}, makeSamples(now.UnixMilli(), 3), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_four"}, makeSamples(now.UnixMilli(), 4), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_five"}, makeSamples(now.UnixMilli(), 5), nil, nil),
 			},
 			Metadata: []*mimirpb.MetricMetadata{
 				{MetricFamilyName: "series_one", Type: mimirpb.COUNTER, Help: "Series one description"},
@@ -98,7 +99,7 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				// Non-retryable error.
 				1: testkafka.CreateProduceResponseError(0, kafkaTopic, 1, kerr.InvalidTopicException),
 			},
-			expectedErr: fmt.Errorf(fmt.Sprintf("%s %d", failedPushingToPartitionMessage, 1)),
+			expectedErr: fmt.Errorf("%s 1", failedPushingToPartitionMessage),
 			expectedSeriesByPartition: map[int32][]string{
 				// Partition 1 is missing because it failed.
 				0: {"series_four", "series_one", "series_three"},
@@ -125,8 +126,6 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
@@ -231,27 +230,6 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 					# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 					# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
 					cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} %f
-
-					# HELP cortex_distributor_sample_delay_seconds Number of seconds by which a sample came in late wrt wallclock.
-					# TYPE cortex_distributor_sample_delay_seconds histogram
-					cortex_distributor_sample_delay_seconds_bucket{le="-60"} 0
-					cortex_distributor_sample_delay_seconds_bucket{le="-15"} 0
-					cortex_distributor_sample_delay_seconds_bucket{le="-5"} 0
-					cortex_distributor_sample_delay_seconds_bucket{le="30"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="60"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="120"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="240"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="480"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="600"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="1800"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="3600"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="7200"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="10800"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="21600"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="86400"} 5
-					cortex_distributor_sample_delay_seconds_bucket{le="+Inf"} 5
-					cortex_distributor_sample_delay_seconds_sum 0
-					cortex_distributor_sample_delay_seconds_count 5
 				`, float64(now.UnixMilli())/1000.)),
 				"cortex_distributor_received_requests_total",
 				"cortex_distributor_received_samples_total",
@@ -262,7 +240,6 @@ func TestDistributor_Push_ShouldSupportIngestStorage(t *testing.T) {
 				"cortex_distributor_exemplars_in_total",
 				"cortex_distributor_metadata_in_total",
 				"cortex_distributor_latest_seen_sample_timestamp_seconds",
-				"cortex_distributor_sample_delay_seconds",
 			))
 		})
 	}
@@ -277,7 +254,7 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 	createWriteRequest := func() *mimirpb.WriteRequest {
 		return &mimirpb.WriteRequest{
 			Timeseries: []mimirpb.PreallocTimeseries{
-				makeTimeseries([]string{model.MetricNameLabel, strings.Repeat("x", hugeLabelValueLength)}, makeSamples(now.UnixMilli(), 1), nil),
+				makeTimeseries([]string{model.MetricNameLabel, strings.Repeat("x", hugeLabelValueLength)}, makeSamples(now.UnixMilli(), 1), nil, nil),
 			},
 		}
 	}
@@ -324,7 +301,7 @@ func TestDistributor_Push_ShouldReturnErrorMappedTo4xxStatusCodeIfWriteRequestCo
 		sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)", false)
 
 		// Send write request through the HTTP handler.
-		h := Handler(maxRecvMsgSize, nil, sourceIPs, false, overrides, RetryConfig{}, distributors[0].PushWithMiddlewares, nil, log.NewNopLogger())
+		h := Handler(maxRecvMsgSize, nil, sourceIPs, false, false, overrides, RetryConfig{}, distributors[0].PushWithMiddlewares, nil, log.NewNopLogger())
 		h.ServeHTTP(resp, createRequest(t, marshalledReq))
 		assert.Equal(t, http.StatusBadRequest, resp.Code)
 	})
@@ -338,11 +315,11 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 	createRequest := func() *mimirpb.WriteRequest {
 		return &mimirpb.WriteRequest{
 			Timeseries: []mimirpb.PreallocTimeseries{
-				makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil),
-				makeTimeseries([]string{model.MetricNameLabel, "series_two"}, makeSamples(now.UnixMilli(), 2), nil),
-				makeTimeseries([]string{model.MetricNameLabel, "series_three"}, makeSamples(now.UnixMilli(), 3), nil),
-				makeTimeseries([]string{model.MetricNameLabel, "series_four"}, makeSamples(now.UnixMilli(), 4), nil),
-				makeTimeseries([]string{model.MetricNameLabel, "series_five"}, makeSamples(now.UnixMilli(), 5), nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_two"}, makeSamples(now.UnixMilli(), 2), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_three"}, makeSamples(now.UnixMilli(), 3), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_four"}, makeSamples(now.UnixMilli(), 4), nil, nil),
+				makeTimeseries([]string{model.MetricNameLabel, "series_five"}, makeSamples(now.UnixMilli(), 5), nil, nil),
 			},
 		}
 	}
@@ -390,8 +367,6 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
@@ -478,7 +453,15 @@ func TestDistributor_Push_ShouldSupportWriteBothToIngestersAndPartitions(t *test
 
 			// Ensure series has been correctly sharded to partitions.
 			actualSeriesByPartition := readAllMetricNamesByPartitionFromKafka(t, kafkaCluster.ListenAddrs(), testConfig.ingestStoragePartitions, time.Second)
-			assert.Equal(t, testData.expectedMetricsByPartition, actualSeriesByPartition)
+			if !assert.Equal(t, testData.expectedMetricsByPartition, actualSeriesByPartition, "please report this failure in https://github.com/grafana/mimir/issues/9299") {
+				// This test is sometimes flaky. Add a log line to help debug it.
+				// Inspect the offsets of partitions in Kafka. There may be records, but we couldn't fetch them in the 1s timeout above.
+				kafkaClient, err := kgo.NewClient(kgo.SeedBrokers(kafkaCluster.ListenAddrs()...))
+				assert.NoError(t, err)
+				offsets, err := kadm.NewClient(kafkaClient).ListEndOffsets(context.Background(), kafkaTopic)
+				assert.NoError(t, err)
+				t.Logf("Kafka topic %s end offsets: %#v", kafkaTopic, offsets)
+			}
 
 			// Ensure series have been correctly sharded to ingesters.
 			for _, ingester := range ingesters {
@@ -536,7 +519,7 @@ func TestDistributor_Push_ShouldCleanupWriteRequestAfterWritingBothToIngestersAn
 	// Send write request.
 	_, err := distributors[0].Push(ctx, &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil),
+			makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil, nil),
 		},
 	})
 	require.NoError(t, err)
@@ -617,7 +600,7 @@ func TestDistributor_Push_ShouldGivePrecedenceToPartitionsErrorWhenWritingBothTo
 	// Send write request.
 	_, err := distributors[0].Push(ctx, &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil),
+			makeTimeseries([]string{model.MetricNameLabel, "series_one"}, makeSamples(now.UnixMilli(), 1), nil, nil),
 		},
 	})
 
@@ -870,14 +853,10 @@ func TestDistributor_UserStats_ShouldSupportIngestStorage(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
-
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 
@@ -920,12 +899,12 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 
 	var (
 		// Define fixtures used in tests.
-		series1 = makeTimeseries([]string{labels.MetricName, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil)
-		series2 = makeTimeseries([]string{labels.MetricName, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0), nil)
-		series3 = makeTimeseries([]string{labels.MetricName, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0), nil)
-		series4 = makeTimeseries([]string{labels.MetricName, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil)
-		series5 = makeTimeseries([]string{labels.MetricName, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0), nil)
-		series6 = makeTimeseries([]string{labels.MetricName, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0), nil)
+		series1 = makeTimeseries([]string{labels.MetricName, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series2 = makeTimeseries([]string{labels.MetricName, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series3 = makeTimeseries([]string{labels.MetricName, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series4 = makeTimeseries([]string{labels.MetricName, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series5 = makeTimeseries([]string{labels.MetricName, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0), nil, nil)
+		series6 = makeTimeseries([]string{labels.MetricName, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0), nil, nil)
 
 		// To keep assertions simple, all tests push all series, and then request the cardinality of the same label names,
 		// so we expect the same response from each successful test.
@@ -1172,14 +1151,10 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
-
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 
@@ -1465,14 +1440,10 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistencyWithIngestStorage(t 
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, minimizeIngesterRequests := range []bool{false, true} {
-				minimizeIngesterRequests := minimizeIngesterRequests
-
 				t.Run(fmt.Sprintf("minimize ingester requests: %t", minimizeIngesterRequests), func(t *testing.T) {
 					t.Parallel()
 

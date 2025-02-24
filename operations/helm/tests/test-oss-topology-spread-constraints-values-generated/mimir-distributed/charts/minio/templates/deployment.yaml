@@ -6,7 +6,7 @@ metadata:
   name: test-oss-topology-spread-constraints-values-minio
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.4.0
     release: test-oss-topology-spread-constraints-values
     heritage: Helm
 spec:
@@ -27,19 +27,20 @@ spec:
         app: minio
         release: test-oss-topology-spread-constraints-values
       annotations:
-        checksum/secrets: 08ff5e5a53040c4cf9200dff17541f4cdc3e80e1728953afa758878956ea151c
-        checksum/config: 42cacda08d76f6cbb4c80157776a3b88672edbdd9c79829980ad7d43e1fecfa8
+        checksum/secrets: 41f67446a7047a9d8bae711f231007dea07e695d80be9fe96a36cc3f8409363e
+        checksum/config: dd298936b670f6779a3d9213c51e2f09123060d6a1408815338dbe6a41cb72f7
     spec:
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
+        
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
       
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"
@@ -72,7 +73,9 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi      
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
       volumes:
         - name: export
           persistentVolumeClaim:

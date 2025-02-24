@@ -38,6 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -59,8 +60,6 @@ type Config struct {
 	Addr string `yaml:"address" category:"advanced"`
 	Port int    `category:"advanced"`
 
-	AdditionalQueryQueueDimensionsEnabled bool `yaml:"additional_query_queue_dimensions_enabled" category:"experimental"`
-
 	// These configuration options are injected internally.
 	QuerySchedulerDiscovery schedulerdiscovery.Config `yaml:"-"`
 	LookBackDelta           time.Duration             `yaml:"-"`
@@ -78,8 +77,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.StringVar(&cfg.Addr, "query-frontend.instance-addr", "", "IP address to advertise to the querier (via scheduler) (default is auto-detected from network interfaces).")
 	f.IntVar(&cfg.Port, "query-frontend.instance-port", 0, "Port to advertise to querier (via scheduler) (defaults to server.grpc-listen-port).")
 
-	f.BoolVar(&cfg.AdditionalQueryQueueDimensionsEnabled, "query-frontend.additional-query-queue-dimensions-enabled", false, "Enqueue query requests with additional queue dimensions to split tenant request queues into subqueues. This enables separate requests to proceed from a tenant's subqueues even when other subqueues are blocked on slow query requests. Must be set on both query-frontend and scheduler to take effect. (default false)")
-
+	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-frontend.grpc-client-config", f)
 }
 
@@ -146,6 +144,9 @@ const (
 
 type enqueueResult struct {
 	status enqueueStatus
+	// If the status is failed and if it was because of a client error on the frontend,
+	// the clientErr should be updated with the appropriate error.
+	clientErr error
 
 	cancelCh chan<- uint64 // Channel that can be used for request cancellation. If nil, cancellation is not possible.
 }
@@ -287,6 +288,11 @@ enqueueAgain:
 			cancelCh = enqRes.cancelCh
 			break // go wait for response.
 		} else if enqRes.status == failed {
+			if enqRes.clientErr != nil {
+				// It failed because of a client error. No need to retry.
+				return nil, nil, httpgrpc.Errorf(http.StatusBadRequest, "failed to enqueue request: %s", enqRes.clientErr.Error())
+			}
+
 			retries--
 			if retries > 0 {
 				spanLogger.DebugLog("msg", "enqueuing request failed, will retry")
@@ -378,7 +384,7 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) (err error) {
 	defer func(s frontendv2pb.FrontendForQuerier_QueryResultStreamServer) {
 		err := s.SendAndClose(&frontendv2pb.QueryResultResponse{})
-		if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(err), context.Canceled) {
+		if err != nil && !errors.Is(globalerror.WrapGRPCErrorWithContextError(stream.Context(), err), context.Canceled) {
 			level.Warn(f.log).Log("msg", "failed to close query result body stream", "err", err)
 		}
 	}(stream)

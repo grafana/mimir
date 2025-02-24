@@ -18,6 +18,7 @@ func NewBucketClient(ctx context.Context, cfg Config, name string, logger log.Lo
 	bucketConfig := gcs.Config{
 		Bucket:         cfg.BucketName,
 		ServiceAccount: cfg.ServiceAccount.String(),
+		HTTPConfig:     cfg.HTTP.ToExtHTTP(),
 	}
-	return gcs.NewBucketWithConfig(ctx, logger, bucketConfig, name)
+	return gcs.NewBucketWithConfig(ctx, logger, bucketConfig, name, nil)
 }

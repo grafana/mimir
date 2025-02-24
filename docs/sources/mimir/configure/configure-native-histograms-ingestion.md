@@ -7,7 +7,9 @@ weight: 160
 
 # Configure native histograms
 
-Prometheus native histograms ingestion is an **experimental** feature of Grafana Mimir.
+{{% admonition type="note" %}}
+Native histograms are an experimental feature of Grafana Mimir.
+{{% /admonition %}}
 
 You can configure native histograms ingestion via the Prometheus [remote write API]({{< relref "../references/http-api#remote-write" >}}) endpoint globally or per tenant.
 
@@ -40,6 +42,6 @@ overrides:
     max_native_histogram_buckets: 160
 ```
 
-To learn more about sending native histograms to Mimir or Grafana Cloud Metrics via Grafana Agent or Prometheus,
-see [Scrape and send native histograms with Grafana Agent]({{< relref "../send/native-histograms#scrape-and-send-native-histograms-with-grafana-agent" >}}) or
+To learn more about sending native histograms to Mimir or Grafana Cloud Metrics via Grafana Alloy or Prometheus,
+see [Scrape and send native histograms with Grafana Alloy](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/#scrape-and-send-native-histograms-with-grafana-alloy) or
 [Scrape and send native histograms with Prometheus]({{< relref "../send/native-histograms#scrape-and-send-native-histograms-with-prometheus" >}}).

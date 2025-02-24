@@ -33,7 +33,7 @@ Available profiles:
 
 1. grafana-agent-static (started by default)
 1. prometheus (started by default)
-1. grafana-agent-flow
+1. grafana-alloy
 1. otel-collector-remote-write (don't use with the other otel collector, both use the default ports for clients)
 1. otel-collector-otlp-push (don't use with the other otel collector, both use the default ports for clients)
 

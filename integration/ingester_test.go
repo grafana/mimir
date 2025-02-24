@@ -5,7 +5,6 @@ package integration
 
 import (
 	"net/http"
-	"strconv"
 	"testing"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -145,12 +143,12 @@ func TestIngesterQuerying(t *testing.T) {
 						},
 					},
 					Histograms: []prompb.Histogram{
-						remote.HistogramToHistogramProto(queryStart.UnixMilli(), test.GenerateTestHistogram(1)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep).UnixMilli(), test.GenerateTestHistogram(2)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestHistogram(3)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestHistogram(4)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestHistogram(5)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestHistogram(6)),
+						prompb.FromIntHistogram(queryStart.UnixMilli(), test.GenerateTestHistogram(1)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep).UnixMilli(), test.GenerateTestHistogram(2)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestHistogram(3)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestHistogram(4)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestHistogram(5)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestHistogram(6)),
 					},
 				},
 			},
@@ -197,12 +195,12 @@ func TestIngesterQuerying(t *testing.T) {
 						},
 					},
 					Histograms: []prompb.Histogram{
-						remote.FloatHistogramToHistogramProto(queryStart.UnixMilli(), test.GenerateTestFloatHistogram(1)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep).UnixMilli(), test.GenerateTestFloatHistogram(2)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestFloatHistogram(3)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestFloatHistogram(4)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestFloatHistogram(5)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestFloatHistogram(6)),
+						prompb.FromFloatHistogram(queryStart.UnixMilli(), test.GenerateTestFloatHistogram(1)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep).UnixMilli(), test.GenerateTestFloatHistogram(2)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestFloatHistogram(3)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestFloatHistogram(4)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestFloatHistogram(5)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestFloatHistogram(6)),
 					},
 				},
 			},
@@ -259,10 +257,10 @@ func TestIngesterQuerying(t *testing.T) {
 						},
 					},
 					Histograms: []prompb.Histogram{
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestHistogram(3)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestHistogram(4)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestFloatHistogram(5)),
-						remote.FloatHistogramToHistogramProto(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestFloatHistogram(6)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestHistogram(3)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestHistogram(4)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestFloatHistogram(5)),
+						prompb.FromFloatHistogram(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestFloatHistogram(6)),
 					},
 				},
 			},
@@ -326,10 +324,10 @@ func TestIngesterQuerying(t *testing.T) {
 					},
 					Histograms: []prompb.Histogram{
 						// This first of these will fail to get appended because there's already a float sample for that timestamp.
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestHistogram(3)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestHistogram(4)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestHistogram(5)),
-						remote.HistogramToHistogramProto(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestHistogram(6)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*2).UnixMilli(), test.GenerateTestHistogram(3)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*3).UnixMilli(), test.GenerateTestHistogram(4)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*4).UnixMilli(), test.GenerateTestHistogram(5)),
+						prompb.FromIntHistogram(queryStart.Add(queryStep*5).UnixMilli(), test.GenerateTestHistogram(6)),
 					},
 				},
 			},
@@ -674,23 +672,6 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 	queryStart := queryEnd.Add(-1 * time.Hour)
 	queryStep := 10 * time.Minute
 
-	testCases := map[string]struct {
-		ingesterClientReportGRPCStatusCodes bool
-		expectedPushStatusCode              string
-		expectedQueryStatusCode             string
-	}{
-		"when ingester client does not report grpc codes, successful push and query give OK and 2xx": {
-			ingesterClientReportGRPCStatusCodes: false,
-			expectedPushStatusCode:              "OK",
-			expectedQueryStatusCode:             "2xx",
-		},
-		"when ingester client report grpc codes, successful push and query give OK and OK": {
-			ingesterClientReportGRPCStatusCodes: true,
-			expectedPushStatusCode:              "OK",
-			expectedQueryStatusCode:             "OK",
-		},
-	}
-
 	series := []prompb.TimeSeries{
 		{
 			Labels: []prompb.Label{
@@ -709,101 +690,96 @@ func TestIngesterReportGRPCStatusCodes(t *testing.T) {
 	}
 	expectedQueryResult := model.Matrix{}
 
-	for testName, testData := range testCases {
-		t.Run(testName, func(t *testing.T) {
-			s, err := e2e.NewScenario(networkName)
-			require.NoError(t, err)
-			defer s.Close()
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
 
-			baseFlags := map[string]string{
-				"-distributor.ingestion-tenant-shard-size":                            "0",
-				"-ingester.ring.heartbeat-period":                                     "1s",
-				"-ingester.client.report-grpc-codes-in-instrumentation-label-enabled": strconv.FormatBool(testData.ingesterClientReportGRPCStatusCodes),
-			}
-
-			flags := mergeFlags(
-				BlocksStorageFlags(),
-				BlocksStorageS3Flags(),
-				baseFlags,
-			)
-
-			// Start dependencies.
-			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-			require.NoError(t, s.StartAndWaitReady(consul, minio))
-
-			// Start Mimir components.
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
-			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
-			require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
-
-			// Wait until distributor has updated the ring.
-			require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
-			// Wait until querier has updated the ring.
-			require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
-				labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
-				labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
-
-			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
-			require.NoError(t, err)
-
-			res, err := client.Push(series)
-			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, res.StatusCode)
-
-			sums, err := ingester.SumMetrics(
-				[]string{"cortex_request_duration_seconds"},
-				e2e.WithLabelMatchers(
-					labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/Push"),
-					labels.MustNewMatcher(labels.MatchEqual, "status_code", testData.expectedPushStatusCode),
-				),
-				e2e.SkipMissingMetrics,
-				e2e.WithMetricCount,
-			)
-
-			require.NoError(t, err)
-			pushRequests := sums[0]
-			require.Equal(t, pushRequests, 1.0)
-
-			result, err := client.QueryRange(query, queryStart, queryEnd, queryStep)
-			require.NoError(t, err)
-			require.Equal(t, expectedQueryResult, result)
-
-			queryRequestCount := func(status string) (float64, error) {
-				counts, err := querier.SumMetrics([]string{"cortex_ingester_client_request_duration_seconds"},
-					e2e.WithLabelMatchers(
-						labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/QueryStream"),
-						labels.MustNewMatcher(labels.MatchRegexp, "status_code", status),
-					),
-					e2e.WithMetricCount,
-					e2e.SkipMissingMetrics,
-				)
-
-				if err != nil {
-					return 0, err
-				}
-
-				require.Len(t, counts, 1)
-				return counts[0], nil
-			}
-
-			successfulQueryRequests, err := queryRequestCount(testData.expectedQueryStatusCode)
-			require.NoError(t, err)
-
-			cancelledQueryRequests, err := queryRequestCount("cancel")
-			require.NoError(t, err)
-
-			totalQueryRequests, err := queryRequestCount(".*")
-			require.NoError(t, err)
-
-			// We expect two query requests: the first query request and the timestamp query request
-			require.Equalf(t, 1.0, totalQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
-			require.Equalf(t, 1.0, successfulQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
-			require.Equalf(t, 0.0, cancelledQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
-		})
+	baseFlags := map[string]string{
+		"-distributor.ingestion-tenant-shard-size": "0",
+		"-ingester.ring.heartbeat-period":          "1s",
 	}
+
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		baseFlags,
+	)
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	// Start Mimir components.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+
+	// Wait until distributor has updated the ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// Wait until querier has updated the ring.
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
+	require.NoError(t, err)
+
+	res, err := client.Push(series)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, res.StatusCode)
+
+	sums, err := ingester.SumMetrics(
+		[]string{"cortex_request_duration_seconds"},
+		e2e.WithLabelMatchers(
+			labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/Push"),
+			labels.MustNewMatcher(labels.MatchEqual, "status_code", "OK"),
+		),
+		e2e.SkipMissingMetrics,
+		e2e.WithMetricCount,
+	)
+
+	require.NoError(t, err)
+	pushRequests := sums[0]
+	require.Equal(t, pushRequests, 1.0)
+
+	result, err := client.QueryRange(query, queryStart, queryEnd, queryStep)
+	require.NoError(t, err)
+	require.Equal(t, expectedQueryResult, result)
+
+	queryRequestCount := func(status string) (float64, error) {
+		counts, err := querier.SumMetrics([]string{"cortex_ingester_client_request_duration_seconds"},
+			e2e.WithLabelMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/QueryStream"),
+				labels.MustNewMatcher(labels.MatchRegexp, "status_code", status),
+			),
+			e2e.WithMetricCount,
+			e2e.SkipMissingMetrics,
+		)
+
+		if err != nil {
+			return 0, err
+		}
+
+		require.Len(t, counts, 1)
+		return counts[0], nil
+	}
+
+	successfulQueryRequests, err := queryRequestCount("OK")
+	require.NoError(t, err)
+
+	cancelledQueryRequests, err := queryRequestCount("cancel")
+	require.NoError(t, err)
+
+	totalQueryRequests, err := queryRequestCount(".*")
+	require.NoError(t, err)
+
+	// We expect two query requests: the first query request and the timestamp query request
+	require.Equalf(t, 1.0, totalQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+	require.Equalf(t, 1.0, successfulQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
+	require.Equalf(t, 0.0, cancelledQueryRequests, "got %v query requests (%v successful, %v cancelled)", totalQueryRequests, successfulQueryRequests, cancelledQueryRequests)
 }

@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -21,7 +21,7 @@ func (e errLabelValues) Close() error                      { return nil }
 // ErrLabelValues returns a LabelValues with err.
 func ErrLabelValues(err error) LabelValues {
 	if err == nil {
-		return errLabelValues{err: fmt.Errorf("nil error provided")}
+		return errLabelValues{err: errors.New("nil error provided")}
 	}
 	return errLabelValues{err: err}
 }

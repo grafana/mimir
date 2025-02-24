@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
+	"github.com/grafana/mimir/pkg/scheduler/queue"
 )
 
 const (
@@ -143,7 +144,8 @@ func TestFrontendCheckReady(t *testing.T) {
 			}()
 
 			for i := 0; i < tt.connectedClients; i++ {
-				f.requestQueue.SubmitRegisterQuerierConnection("test")
+				querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), "test")
+				require.NoError(t, f.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
 			}
 			err = f.CheckReady(context.Background())
 			errMsg := ""
@@ -343,7 +345,9 @@ func testFrontend(t *testing.T, config Config, handler http.Handler, test func(a
 	).Wrap(transport.NewHandler(handlerCfg, rt, logger, nil, nil)))
 
 	httpServer := http.Server{
-		Handler: r,
+		Handler:      r,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 	defer httpServer.Shutdown(context.Background()) //nolint:errcheck
 

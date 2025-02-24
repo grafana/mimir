@@ -8,6 +8,7 @@ package compactor
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,17 +34,19 @@ import (
 )
 
 const (
-	defaultDeleteBlocksConcurrency = 16
+	defaultDeleteBlocksConcurrency       = 16
+	defaultGetDeletionMarkersConcurrency = 16
 )
 
 type BlocksCleanerConfig struct {
-	DeletionDelay              time.Duration
-	CleanupInterval            time.Duration
-	CleanupConcurrency         int
-	TenantCleanupDelay         time.Duration // Delay before removing tenant deletion mark and "debug".
-	DeleteBlocksConcurrency    int
-	NoBlocksFileCleanupEnabled bool
-	CompactionBlockRanges      mimir_tsdb.DurationList // Used for estimating compaction jobs.
+	DeletionDelay                 time.Duration
+	CleanupInterval               time.Duration
+	CleanupConcurrency            int
+	TenantCleanupDelay            time.Duration // Delay before removing tenant deletion mark and "debug".
+	DeleteBlocksConcurrency       int
+	GetDeletionMarkersConcurrency int
+	NoBlocksFileCleanupEnabled    bool
+	CompactionBlockRanges         mimir_tsdb.DurationList // Used for estimating compaction jobs.
 }
 
 type BlocksCleaner struct {
@@ -162,6 +165,7 @@ func (c *BlocksCleaner) stopping(error) error {
 }
 
 func (c *BlocksCleaner) starting(ctx context.Context) error {
+	c.instrumentBucketIndexUpdate(ctx)
 	// Run an initial cleanup in starting state. (Note that the compactor no longer waits
 	// for the blocks cleaner to finish starting before it starts compactions.)
 	c.runCleanup(ctx, false)
@@ -203,6 +207,22 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, async bool) {
 	}
 }
 
+func (c *BlocksCleaner) instrumentBucketIndexUpdate(ctx context.Context) {
+	allUsers, _, err := c.refreshOwnedUsers(ctx)
+	if err != nil {
+		level.Error(c.logger).Log("msg", "failed to discover owned users", "err", err)
+		return
+	}
+	for _, userID := range allUsers {
+		idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, c.logger)
+		if err != nil {
+			level.Error(c.logger).Log("msg", "failed to read bucket index", "user", userID, "err", err)
+			return
+		}
+		c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
+	}
+}
+
 func (c *BlocksCleaner) instrumentStartedCleanupRun(logger log.Logger) {
 	level.Info(logger).Log("msg", "started blocks cleanup and maintenance")
 	c.runsStarted.Inc()
@@ -229,6 +249,10 @@ func (c *BlocksCleaner) refreshOwnedUsers(ctx context.Context) ([]string, map[st
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "failed to discover users from bucket")
 	}
+
+	rand.Shuffle(len(users), func(i, j int) {
+		users[i], users[j] = users[j], users[i]
+	})
 
 	isActive := util.StringsMap(users)
 	isDeleted := util.StringsMap(deleted)
@@ -432,7 +456,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	}
 
 	// Generate an updated in-memory version of the bucket index.
-	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, userLogger)
+	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, c.cfg.GetDeletionMarkersConcurrency, userLogger)
 	idx, partials, err := w.UpdateIndex(ctx, idx)
 	if err != nil {
 		return err
@@ -470,7 +494,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 	c.tenantBlocks.WithLabelValues(userID).Set(float64(len(idx.Blocks)))
 	c.tenantMarkedBlocks.WithLabelValues(userID).Set(float64(len(idx.BlockDeletionMarks)))
 	c.tenantPartialBlocks.WithLabelValues(userID).Set(float64(len(partials)))
-	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).SetToCurrentTime()
+	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).Set(float64(idx.UpdatedAt))
 
 	// Compute pending compaction jobs based on current index.
 	jobs, err := estimateCompactionJobsFromBucketIndex(ctx, userID, userBucket, idx, c.cfg.CompactionBlockRanges, c.cfgProvider.CompactorSplitAndMergeShards(userID), c.cfgProvider.CompactorSplitGroups(userID))
@@ -674,7 +698,7 @@ func stalePartialBlockLastModifiedTime(ctx context.Context, blockID ulid.ULID, u
 			lastModified = attrib.LastModified
 		}
 		return nil
-	}, objstore.WithRecursiveIter)
+	}, objstore.WithRecursiveIter())
 
 	if errors.Is(err, errStopIter) {
 		return time.Time{}, nil

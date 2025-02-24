@@ -13,7 +13,7 @@ docker_compose() {
 }
 
 SCRIPT_DIR=$(cd "$(dirname -- "$0")" && pwd)
-BUILD_IMAGE=$(make -s -f "${SCRIPT_DIR}"/../../Makefile print-build-image)
+BUILD_IMAGE=$(make -s -C "${SCRIPT_DIR}"/../.. print-build-image)
 
 # Make sure docker-compose.yml is up-to-date.
 cd "$SCRIPT_DIR" && make

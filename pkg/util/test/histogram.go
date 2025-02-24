@@ -18,19 +18,19 @@ func GenerateTestFloatHistograms(i int) []*histogram.FloatHistogram {
 }
 
 func GenerateTestHistogram(i int) *histogram.Histogram {
-	return tsdbutil.GenerateTestHistogram(i)
+	return tsdbutil.GenerateTestHistogram(int64(i))
 }
 
 func GenerateTestFloatHistogram(i int) *histogram.FloatHistogram {
-	return tsdbutil.GenerateTestFloatHistogram(i)
+	return tsdbutil.GenerateTestFloatHistogram(int64(i))
 }
 
 func GenerateTestGaugeHistogram(i int) *histogram.Histogram {
-	return tsdbutil.GenerateTestGaugeHistogram(i)
+	return tsdbutil.GenerateTestGaugeHistogram(int64(i))
 }
 
 func GenerateTestGaugeFloatHistogram(i int) *histogram.FloatHistogram {
-	return tsdbutil.GenerateTestGaugeFloatHistogram(i)
+	return tsdbutil.GenerateTestGaugeFloatHistogram(int64(i))
 }
 
 // explicit decoded version of GenerateTestHistogram and GenerateTestFloatHistogram
@@ -97,20 +97,12 @@ func GenerateTestSampleHistogram(i int) *model.SampleHistogram {
 	}
 }
 
-// RequireHistogramEqual ignores counter resets of non gauge histograms
+// RequireHistogramEqual requires the two histograms to be equal.
 func RequireHistogramEqual(t require.TestingT, expected, actual *histogram.Histogram, msgAndArgs ...interface{}) {
-	if expected.CounterResetHint != histogram.GaugeType {
-		// Ignore counter resets injected by tsdb
-		actual.CounterResetHint = histogram.UnknownCounterReset
-	}
-	require.EqualValues(t, expected, actual, msgAndArgs)
+	require.EqualValues(t, expected, actual, msgAndArgs...)
 }
 
-// RequireFloatHistogramEqual ignores counter resets of non gauge histograms
+// RequireFloatHistogramEqual requires the two float histograms to be equal.
 func RequireFloatHistogramEqual(t require.TestingT, expected, actual *histogram.FloatHistogram, msgAndArgs ...interface{}) {
-	if expected.CounterResetHint != histogram.GaugeType {
-		// Ignore counter resets injected by tsdb
-		actual.CounterResetHint = histogram.UnknownCounterReset
-	}
-	require.EqualValues(t, expected, actual, msgAndArgs)
+	require.EqualValues(t, expected, actual, msgAndArgs...)
 }

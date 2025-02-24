@@ -1,0 +1,7 @@
+load 6m
+  series{label="a", idx="1"} 2 _
+  series{label="a", idx="2"} _ 4
+
+# Currently prometheus does not merge series: https://github.com/prometheus/prometheus/issues/15114
+eval range from 0 to 6m step 6m label_replace(series, "idx", "replaced", "idx", ".*")
+  series{label="a", idx="replaced"} 2 4

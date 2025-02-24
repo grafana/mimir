@@ -37,7 +37,7 @@ func NewLocalRulesClient(cfg rulestore.LocalStoreConfig, loader promRules.GroupL
 	}, nil
 }
 
-func (l *Client) ListAllUsers(_ context.Context) ([]string, error) {
+func (l *Client) ListAllUsers(_ context.Context, _ ...rulestore.Option) ([]string, error) {
 	root := l.cfg.Directory
 	infos, err := os.ReadDir(root)
 	if err != nil {
@@ -69,7 +69,7 @@ func (l *Client) ListAllUsers(_ context.Context) ([]string, error) {
 }
 
 // ListRuleGroupsForUserAndNamespace implements rules.RuleStore. This method also loads the rules.
-func (l *Client) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string) (rulespb.RuleGroupList, error) {
+func (l *Client) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, _ ...rulestore.Option) (rulespb.RuleGroupList, error) {
 	if namespace == "" {
 		return l.loadAllRulesGroupsForUser(ctx, userID)
 	}

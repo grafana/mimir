@@ -8,6 +8,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfig_Validate(t *testing.T) {
@@ -124,6 +125,109 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.MaxConsumerLagAtStartup = 1 * time.Second
 			},
 			expectedErr: ErrInvalidMaxConsumerLagAtStartup,
+		},
+		"should fail if SASL username is configured but password is not": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASLUsername = "mimir"
+			},
+			expectedErr: ErrInconsistentSASLCredentials,
+		},
+		"should fail if SASL password is configured but username is not": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				require.NoError(t, cfg.KafkaConfig.SASLPassword.Set("supersecret"))
+			},
+			expectedErr: ErrInconsistentSASLCredentials,
+		},
+		"should pass if both SASL username and password are configured": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.SASLUsername = "mimir"
+				require.NoError(t, cfg.KafkaConfig.SASLPassword.Set("supersecret"))
+			},
+		},
+		"should fail if max ingestion concurrency is lower than 0": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.IngestionConcurrencyMax = -1
+			},
+			expectedErr: ErrInvalidIngestionConcurrencyMax,
+		},
+		"should pass if max ingestion concurrency is 0": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.IngestionConcurrencyMax = 0
+			},
+		},
+		"should fail if ingestion concurrency batch size is lower than 0": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.IngestionConcurrencyMax = 5
+				cfg.KafkaConfig.IngestionConcurrencyBatchSize = -1
+			},
+			expectedErr: ErrInvalidIngestionConcurrencyParams,
+		},
+		"should fail if ingestion concurrency queue capacity is lower than 0": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.IngestionConcurrencyMax = 5
+				cfg.KafkaConfig.IngestionConcurrencyQueueCapacity = -1
+			},
+			expectedErr: ErrInvalidIngestionConcurrencyParams,
+		},
+		"should fail if ingestion concurrency estimates bytes per sample is lower than 0": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.IngestionConcurrencyMax = 5
+				cfg.KafkaConfig.IngestionConcurrencyEstimatedBytesPerSample = -1
+			},
+			expectedErr: ErrInvalidIngestionConcurrencyParams,
+		},
+		"should fail if ingestion concurrency target flushes per shard is lower than 0": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.IngestionConcurrencyMax = 5
+				cfg.KafkaConfig.IngestionConcurrencyTargetFlushesPerShard = -1
+			},
+			expectedErr: ErrInvalidIngestionConcurrencyParams,
+		},
+		"should fail when auto create topic default partitions is lower than 1": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.AutoCreateTopicEnabled = true
+				cfg.KafkaConfig.AutoCreateTopicDefaultPartitions = -100
+			},
+			expectedErr: ErrInvalidAutoCreateTopicParams,
+		},
+		"should pass when auto create topic default partitions is -1 (using Kafka broker's default)": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.AutoCreateTopicEnabled = true
+				cfg.KafkaConfig.AutoCreateTopicDefaultPartitions = -1
+			},
 		},
 	}
 

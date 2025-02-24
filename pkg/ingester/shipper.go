@@ -27,6 +27,7 @@ import (
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // shipperMetrics holds the shipper metrics. Mimir runs 1 shipper for each tenant but
@@ -103,13 +104,15 @@ func newShipper(
 //
 // It is not concurrency-safe, however it is compactor-safe (running concurrently with compactor is ok).
 func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
+	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "Ingester.Shipper.Sync")
+	defer log.Finish()
 	shippedBlocks, err := readShippedBlocks(s.dir)
 	if err != nil {
 		// If we encounter any error, proceed with an new list of shipped blocks.
 		// The meta file will be overridden later. Note that the meta file is only
 		// used to avoid unnecessary bucket.Exists call, which are properly handled
 		// by the system if their occur anyway.
-		level.Warn(s.logger).Log("msg", "reading meta file failed, will override it", "err", err)
+		level.Warn(log).Log("msg", "reading meta file failed, will override it", "err", err)
 
 		// Reset the shipped blocks slice, so we can rebuild it only with blocks that still exist locally.
 		shippedBlocks = map[ulid.ULID]time.Time{}
@@ -132,7 +135,7 @@ func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
 
 		if m.Stats.NumSamples == 0 {
 			// Ignore empty blocks.
-			level.Debug(s.logger).Log("msg", "ignoring empty block", "block", m.ULID)
+			log.DebugLog("msg", "ignoring empty block", "block", m.ULID)
 			continue
 		}
 
@@ -155,15 +158,15 @@ func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
 			continue
 		}
 
-		level.Info(s.logger).Log("msg", "uploading new block to long-term storage", "block", m.ULID)
-		if err := s.upload(ctx, m); err != nil {
+		level.Info(log).Log("msg", "uploading new block to long-term storage", "block", m.ULID)
+		if err := s.upload(ctx, log, m); err != nil {
 			// No error returned, just log line. This is because we want other blocks to be shipped even
 			// though this one failed. It will be retried on second Sync iteration.
-			level.Error(s.logger).Log("msg", "uploading new block to long-term storage failed", "block", m.ULID, "err", err)
+			level.Error(log).Log("msg", "uploading new block to long-term storage failed", "block", m.ULID, "err", err)
 			uploadErrs++
 			continue
 		}
-		level.Info(s.logger).Log("msg", "finished uploading new block to long-term storage", "block", m.ULID)
+		level.Info(log).Log("msg", "finished uploading new block to long-term storage", "block", m.ULID)
 
 		meta.Shipped[m.ULID] = model.Now()
 		shipped++
@@ -171,8 +174,8 @@ func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
 		s.metrics.lastSuccessfulUploadTime.SetToCurrentTime()
 	}
 
-	if err := writeShipperMetaFile(s.logger, s.dir, meta); err != nil {
-		level.Warn(s.logger).Log("msg", "updating meta file failed", "err", err)
+	if err := writeShipperMetaFile(log, s.dir, meta); err != nil {
+		level.Warn(log).Log("msg", "updating meta file failed", "err", err)
 	}
 
 	if uploadErrs > 0 {
@@ -186,7 +189,7 @@ func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
 // upload method uploads the block to blocks storage. Block is uploaded with updated meta.json file with extra details.
 // This updated version of meta.json is however not persisted locally on the disk, to avoid race condition when TSDB
 // library could actually unload the block if it found meta.json file missing.
-func (s *shipper) upload(ctx context.Context, meta *block.Meta) error {
+func (s *shipper) upload(ctx context.Context, logger log.Logger, meta *block.Meta) error {
 	blockDir := filepath.Join(s.dir, meta.ULID.String())
 
 	meta.Thanos.Source = s.source
@@ -198,7 +201,7 @@ func (s *shipper) upload(ctx context.Context, meta *block.Meta) error {
 	}
 
 	// Upload block with custom metadata.
-	return block.Upload(ctx, s.logger, s.bucket, blockDir, meta)
+	return block.Upload(ctx, logger, s.bucket, blockDir, meta)
 }
 
 // blockMetasFromOldest returns the block meta of each block found in dir

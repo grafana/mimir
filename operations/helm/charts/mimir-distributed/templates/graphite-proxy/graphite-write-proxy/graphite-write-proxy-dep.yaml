@@ -44,13 +44,13 @@ spec:
         {{ toYaml .Values.graphite.write_proxy.extraContainers | nindent 8 }}
         {{- end }}
         - name: graphite-write-proxy
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "graphite-write-proxy") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - -target=graphite-write-proxy
             - -config.file=/etc/mimir/mimir.yaml
           {{- range $key, $value := .Values.graphite.write_proxy.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.graphite.write_proxy.extraVolumeMounts }}

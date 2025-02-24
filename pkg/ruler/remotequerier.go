@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -28,11 +29,14 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
-	"golang.org/x/exp/slices"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage/remote"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -64,6 +68,8 @@ type QueryFrontendConfig struct {
 	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the rulers and query-frontends."`
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
+
+	MaxRetriesRate float64 `yaml:"max_retries_rate"`
 }
 
 func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
@@ -73,9 +79,11 @@ func (c *QueryFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 		"GRPC listen address of the query-frontend(s). Must be a DNS address (prefixed with dns:///) "+
 			"to enable client side load balancing.")
 
+	c.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	c.GRPCClientConfig.RegisterFlagsWithPrefix("ruler.query-frontend.grpc-client-config", f)
 
 	f.StringVar(&c.QueryResultResponseFormat, "ruler.query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from query-frontends. Supported values: %s", strings.Join(allFormats, ", ")))
+	f.Float64Var(&c.MaxRetriesRate, "ruler.query-frontend.max-retries-rate", 170, "Maximum number of retries for failed queries per second.")
 }
 
 func (c *QueryFrontendConfig) Validate() error {
@@ -111,6 +119,7 @@ type Middleware func(ctx context.Context, req *httpgrpc.HTTPRequest) error
 // RemoteQuerier executes read operations against a httpgrpc.HTTPClient.
 type RemoteQuerier struct {
 	client                             httpgrpc.HTTPClient
+	retryLimiter                       *rate.Limiter
 	timeout                            time.Duration
 	middlewares                        []Middleware
 	promHTTPPrefix                     string
@@ -126,6 +135,7 @@ var protobufDecoderInstance = protobufDecoder{}
 func NewRemoteQuerier(
 	client httpgrpc.HTTPClient,
 	timeout time.Duration,
+	maxRetryRate float64, // maxRetryRate is the maximum number of retries for failed queries per second.
 	preferredQueryResultResponseFormat string,
 	prometheusHTTPPrefix string,
 	logger log.Logger,
@@ -134,6 +144,7 @@ func NewRemoteQuerier(
 	return &RemoteQuerier{
 		client:                             client,
 		timeout:                            timeout,
+		retryLimiter:                       rate.NewLimiter(rate.Limit(maxRetryRate), 1),
 		middlewares:                        middlewares,
 		promHTTPPrefix:                     prometheusHTTPPrefix,
 		logger:                             logger,
@@ -146,8 +157,8 @@ func NewRemoteQuerier(
 }
 
 // Read satisfies Prometheus remote.ReadClient.
-// See: https://github.com/prometheus/prometheus/blob/1291ec71851a7383de30b089f456fdb6202d037a/storage/remote/client.go#L264
-func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+// See: https://github.com/prometheus/prometheus/blob/28a830ed9f331e71549c24c2ac3b441033201e8f/storage/remote/client.go#L342
+func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSeries bool) (storage.SeriesSet, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "ruler.RemoteQuerier.Read")
 	defer log.Span.Finish()
 
@@ -195,6 +206,17 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 	}
 	level.Debug(log).Log("msg", "remote read successfully performed", "qs", query)
 
+	var contentType string
+	for _, h := range resp.GetHeaders() {
+		if strings.ToLower(h.GetKey()) == "content-type" {
+			contentType = h.GetValues()[0]
+			break
+		}
+	}
+	if len(contentType) > 0 && contentType != "application/x-protobuf" {
+		return nil, errors.Errorf("unexpected response content type %s expected application/x-protobuf", contentType)
+	}
+
 	uncompressed, err := snappy.Decode(nil, resp.Body)
 	if err != nil {
 		return nil, errors.Wrap(err, "error reading response")
@@ -209,7 +231,9 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query) (*prompb.
 	if len(rdResp.Results) != 1 {
 		return nil, errors.Errorf("responses: want %d, got %d", 1, len(rdResp.Results))
 	}
-	return rdResp.Results[0], nil
+
+	res := rdResp.Results[0]
+	return remote.FromQueryResult(sortSeries, res), nil
 }
 
 // Query performs a query for the given time.
@@ -332,12 +356,23 @@ func (q *RemoteQuerier) sendRequest(ctx context.Context, req *httpgrpc.HTTPReque
 		if !retry.Ongoing() {
 			return nil, err
 		}
-		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err)
-		retry.Wait()
 
-		// Avoid masking last known error if context was cancelled while waiting.
-		if ctx.Err() != nil {
-			return nil, fmt.Errorf("%s while retrying request, last err was: %w", ctx.Err(), err)
+		retryReservation := q.retryLimiter.Reserve()
+		if !retryReservation.OK() {
+			// This should only happen if we've misconfigured the limiter.
+			return nil, fmt.Errorf("couldn't reserve a retry token")
+		}
+		// We want to wait at least the time for the backoff, but also don't want to exceed the rate limit.
+		// All of this is capped to 1m, so that we are less likely to overrun into the next evaluation.
+		// 1m was selected as giving enough time to spread out the retries.
+		retryDelay := max(retry.NextDelay(), min(time.Minute, retryReservation.Delay()))
+		level.Warn(logger).Log("msg", "failed to remotely evaluate query expression, will retry", "err", err, "retry_delay", retryDelay)
+		select {
+		case <-time.After(retryDelay):
+		case <-ctx.Done():
+			retryReservation.Cancel()
+			// Avoid masking last known error if context was cancelled while waiting.
+			return nil, fmt.Errorf("%s while retrying request, last error was: %w", ctx.Err(), err)
 		}
 	}
 }
@@ -371,7 +406,7 @@ func getHeader(headers []*httpgrpc.Header, name string) string {
 // it as an HTTP header to the list of input headers. This is required to propagate the read consistency
 // through the network when issuing an HTTPgRPC request.
 func injectHTTPGrpcReadConsistencyHeader(ctx context.Context, headers []*httpgrpc.Header) []*httpgrpc.Header {
-	if level, ok := api.ReadConsistencyFromContext(ctx); ok {
+	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
 		headers = append(headers, &httpgrpc.Header{
 			Key:    textproto.CanonicalMIMEHeaderKey(api.ReadConsistencyHeader),
 			Values: []string{level},

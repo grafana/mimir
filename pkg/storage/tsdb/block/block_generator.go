@@ -13,18 +13,18 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/util/test"
@@ -71,9 +71,11 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 	blockID := ulid.MustNew(ulid.Now(), crypto_rand.Reader)
 	blockDir := filepath.Join(storageDir, blockID.String())
 
+	stats := tsdb.BlockStats{}
+
 	// Ensure series are sorted.
-	sort.Slice(specs, func(i, j int) bool {
-		return labels.Compare(specs[i].Labels, specs[j].Labels) < 0
+	slices.SortFunc(specs, func(i, j *SeriesSpec) int {
+		return labels.Compare(i.Labels, j.Labels)
 	})
 
 	// Build symbols.
@@ -109,11 +111,15 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 
 	// Updates the Ref on each chunk.
 	for _, series := range specs {
+		stats.NumSeries++
+
 		// Ensure every chunk meta has chunk data.
 		for _, c := range series.Chunks {
 			if c.Chunk == nil {
 				return nil, errors.Errorf("missing chunk data for series %s", series.Labels.String())
 			}
+			stats.NumChunks++
+			stats.NumSamples += uint64(c.Chunk.NumSamples())
 		}
 
 		if err := chunkw.WriteChunks(series.Chunks...); err != nil {
@@ -172,6 +178,7 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 				Sources: []ulid.ULID{blockID},
 			},
 			Version: 1,
+			Stats:   stats,
 		},
 		Thanos: ThanosMeta{
 			Version: ThanosVersion1,
@@ -266,7 +273,7 @@ func CreateBlock(
 	if err := g.Wait(); err != nil {
 		return id, err
 	}
-	c, err := tsdb.NewLeveledCompactor(ctx, nil, log.NewNopLogger(), []int64{maxt - mint}, nil, nil)
+	c, err := tsdb.NewLeveledCompactor(ctx, nil, promslog.NewNopLogger(), []int64{maxt - mint}, nil, nil)
 	if err != nil {
 		return id, errors.Wrap(err, "create compactor")
 	}

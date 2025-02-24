@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -27,11 +28,6 @@ const activeSeriesMaxSizeBytes = 1 * 1024 * 1024
 // series that match the given matchers.
 func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream client.Ingester_ActiveSeriesServer) (err error) {
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
-	finishReadRequest, err := i.startReadRequest()
-	if err != nil {
-		return err
-	}
-	defer func() { finishReadRequest(err) }()
 
 	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "Ingester.ActiveSeries")
 	defer spanlog.Finish()
@@ -77,6 +73,10 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 		seriesRef, count := postings.AtBucketCount()
 		err = idx.Series(seriesRef, &buf, nil)
 		if err != nil {
+			// Postings may be stale. Skip if no underlying series exists.
+			if errors.Is(err, storage.ErrNotFound) {
+				continue
+			}
 			return fmt.Errorf("error getting series: %w", err)
 		}
 		m := &mimirpb.Metric{Labels: mimirpb.FromLabelsToLabelAdapters(buf.Labels())}

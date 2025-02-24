@@ -16,24 +16,27 @@ import (
 // NewBucketClient creates a new Swift bucket client
 func NewBucketClient(cfg Config, _ string, logger log.Logger) (objstore.Bucket, error) {
 	bucketConfig := swift.Config{
-		AuthVersion:       cfg.AuthVersion,
-		AuthUrl:           cfg.AuthURL,
-		Username:          cfg.Username,
-		UserDomainName:    cfg.UserDomainName,
-		UserDomainID:      cfg.UserDomainID,
-		UserId:            cfg.UserID,
-		Password:          cfg.Password.String(),
-		DomainId:          cfg.DomainID,
-		DomainName:        cfg.DomainName,
-		ProjectID:         cfg.ProjectID,
-		ProjectName:       cfg.ProjectName,
-		ProjectDomainID:   cfg.ProjectDomainID,
-		ProjectDomainName: cfg.ProjectDomainName,
-		RegionName:        cfg.RegionName,
-		ContainerName:     cfg.ContainerName,
-		Retries:           cfg.MaxRetries,
-		ConnectTimeout:    model.Duration(cfg.ConnectTimeout),
-		Timeout:           model.Duration(cfg.RequestTimeout),
+		ApplicationCredentialID:     cfg.ApplicationCredentialID,
+		ApplicationCredentialName:   cfg.ApplicationCredentialName,
+		ApplicationCredentialSecret: cfg.ApplicationCredentialSecret.String(),
+		AuthVersion:                 cfg.AuthVersion,
+		AuthUrl:                     cfg.AuthURL,
+		Username:                    cfg.Username,
+		UserDomainName:              cfg.UserDomainName,
+		UserDomainID:                cfg.UserDomainID,
+		UserId:                      cfg.UserID,
+		Password:                    cfg.Password.String(),
+		DomainId:                    cfg.DomainID,
+		DomainName:                  cfg.DomainName,
+		ProjectID:                   cfg.ProjectID,
+		ProjectName:                 cfg.ProjectName,
+		ProjectDomainID:             cfg.ProjectDomainID,
+		ProjectDomainName:           cfg.ProjectDomainName,
+		RegionName:                  cfg.RegionName,
+		ContainerName:               cfg.ContainerName,
+		Retries:                     cfg.MaxRetries,
+		ConnectTimeout:              model.Duration(cfg.ConnectTimeout),
+		Timeout:                     model.Duration(cfg.RequestTimeout),
 
 		// Hard-coded defaults.
 		ChunkSize:              swift.DefaultConfig.ChunkSize,
@@ -47,5 +50,5 @@ func NewBucketClient(cfg Config, _ string, logger log.Logger) (objstore.Bucket, 
 		return nil, err
 	}
 
-	return swift.NewContainer(logger, serialized)
+	return swift.NewContainer(logger, serialized, nil)
 }

@@ -17,7 +17,7 @@ type ExecutionInternal[R any] interface {
 	InitializeRetry() *common.PolicyResult[R]
 
 	// Cancel cancels the execution with the result.
-	Cancel(result *common.PolicyResult[R]) *common.PolicyResult[R]
+	Cancel(result *common.PolicyResult[R])
 
 	// IsCanceledWithResult returns whether the execution is canceled, along with the cancellation result, if any.
 	IsCanceledWithResult() (bool, *common.PolicyResult[R])

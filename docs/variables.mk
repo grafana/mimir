@@ -1,6 +1,6 @@
 GIT_ROOT := $(shell git rev-parse --show-toplevel)
 
-MIMIR_DOCS_VERSION := $(shell sed -n 's, *MIMIR_DOCS_VERSION: "\([^"]*\)",\1,p' "$(GIT_ROOT)/docs/sources/helm-charts/mimir-distributed/_index.md")
+MIMIR_DOCS_VERSION := $(shell sed -n 's, *MIMIR_VERSION: "\([^"]*\)",\1,p' "$(GIT_ROOT)/docs/sources/helm-charts/mimir-distributed/_index.md")
 ifeq ($(MIMIR_DOCS_VERSION),next)
 MIMIR_DOCS_BRANCH := main
 else

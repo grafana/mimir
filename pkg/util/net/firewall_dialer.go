@@ -72,5 +72,5 @@ func (d *FirewallDialer) control(_, address string, _ syscall.RawConn) error {
 }
 
 func isLocal(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsUnspecified()
 }

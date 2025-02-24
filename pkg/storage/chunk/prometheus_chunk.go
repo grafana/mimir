@@ -24,7 +24,7 @@ type prometheusChunk struct {
 
 func (p *prometheusChunk) NewIterator(iterator Iterator) Iterator {
 	if p.chunk == nil {
-		return errorIterator("Prometheus chunk is not set")
+		return ErrorIterator("Prometheus chunk is not set")
 	}
 
 	if pit, ok := iterator.(*prometheusChunkIterator); ok {
@@ -117,8 +117,7 @@ func (p *prometheusHistogramChunk) AddFloatHistogram(_ int64, _ *histogram.Float
 }
 
 // AddHistogram adds another histogram to the chunk. While AddHistogram works, it is only implemented to make tests
-// work, and should not be used in production. In particular, it appends all histograms to single chunk, and uses new
-// Appender for each invocation.
+// work, and should not be used in production. In particular, it uses a new Appender for each invocation.
 func (p *prometheusHistogramChunk) AddHistogram(timestamp int64, h *histogram.Histogram) (EncodedChunk, error) {
 	if p.chunk == nil {
 		p.chunk = chunkenc.NewHistogramChunk()
@@ -129,8 +128,13 @@ func (p *prometheusHistogramChunk) AddHistogram(timestamp int64, h *histogram.Hi
 		return nil, err
 	}
 
-	_, _, _, err = app.AppendHistogram(nil, timestamp, h, true)
-	return nil, err
+	c, recoded, _, err := app.AppendHistogram(nil, timestamp, h, false)
+	if err != nil || c == nil || recoded {
+		return nil, err
+	}
+	oP := newPrometheusHistogramChunk()
+	oP.chunk = c
+	return oP, nil
 }
 
 func (p *prometheusHistogramChunk) UnmarshalFromBuf(bytes []byte) error {
@@ -205,9 +209,13 @@ func (p *prometheusChunkIterator) Scan() chunkenc.ValueType {
 }
 
 func (p *prometheusChunkIterator) FindAtOrAfter(time model.Time) chunkenc.ValueType {
-	// FindAtOrAfter must return OLDEST value at given time. That means we need to start with a fresh iterator,
-	// otherwise we cannot guarantee OLDEST.
-	p.it = p.c.Iterator(p.it)
+	if p.it.AtT() > int64(time) {
+		// FindAtOrAfter must return OLDEST value at given time.
+		// If we are already beyond the desired time, then we need to start with a fresh iterator,
+		// otherwise we cannot guarantee OLDEST.
+		p.it = p.c.Iterator(p.it)
+	}
+
 	return p.it.Seek(int64(time))
 }
 
@@ -298,19 +306,19 @@ func (p *prometheusChunkIterator) Err() error {
 	return p.it.Err()
 }
 
-type errorIterator string
+type ErrorIterator string
 
-func (e errorIterator) Scan() chunkenc.ValueType                      { return chunkenc.ValNone }
-func (e errorIterator) FindAtOrAfter(_ model.Time) chunkenc.ValueType { return chunkenc.ValNone }
-func (e errorIterator) Value() model.SamplePair                       { panic("no values") }
-func (e errorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
+func (e ErrorIterator) Scan() chunkenc.ValueType                      { return chunkenc.ValNone }
+func (e ErrorIterator) FindAtOrAfter(_ model.Time) chunkenc.ValueType { return chunkenc.ValNone }
+func (e ErrorIterator) Value() model.SamplePair                       { panic("no values") }
+func (e ErrorIterator) AtHistogram(*histogram.Histogram) (int64, *histogram.Histogram) {
 	panic("no integer histograms")
 }
-func (e errorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+func (e ErrorIterator) AtFloatHistogram(*histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	panic("no float histograms")
 }
-func (e errorIterator) Timestamp() int64 { panic("no samples") }
-func (e errorIterator) Batch(_ int, _ chunkenc.ValueType, _ *zeropool.Pool[*histogram.Histogram], _ *zeropool.Pool[*histogram.FloatHistogram]) Batch {
+func (e ErrorIterator) Timestamp() int64 { panic("no samples") }
+func (e ErrorIterator) Batch(_ int, _ chunkenc.ValueType, _ *zeropool.Pool[*histogram.Histogram], _ *zeropool.Pool[*histogram.FloatHistogram]) Batch {
 	panic("no values")
 }
-func (e errorIterator) Err() error { return errors.New(string(e)) }
+func (e ErrorIterator) Err() error { return errors.New(string(e)) }

@@ -4,7 +4,9 @@ receivers:
   otlp: # Allow sending data via OTLP protocol
     protocols:
       grpc:
+        endpoint: 0.0.0.0:4317
       http:
+        endpoint: 0.0.0.0:4318
 
   # Data sources: metrics
   prometheus: # Scrape self
@@ -33,6 +35,8 @@ processors:
   batch:
 
 exporters:
+  debug:
+    verbosity: basic
   prometheusremotewrite:
     endpoint: http://mimir-1:8001/api/v1/push
 
@@ -47,4 +51,4 @@ service:
     metrics:
       receivers: [otlp, prometheus]
       processors: [batch]
-      exporters: [prometheusremotewrite]
+      exporters: [debug, prometheusremotewrite]

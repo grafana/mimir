@@ -27,6 +27,9 @@ const telegramMaxMessageLenRunes = 4096
 
 // Notifier is responsible for sending
 // alert notifications to Telegram.
+// It uses two API endpoints
+// - https://core.telegram.org/bots/api#sendphoto for sending images (only if alerts contain references to them)
+// - https://core.telegram.org/bots/api#sendmessage for sending text message
 type Notifier struct {
 	*receivers.Base
 	log      logging.Logger
@@ -57,12 +60,8 @@ func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 			return fmt.Errorf("failed to build message: %w", err)
 		}
 		for k, v := range msg {
-			fw, err := w.CreateFormField(k)
-			if err != nil {
+			if err := w.WriteField(k, v); err != nil {
 				return fmt.Errorf("failed to create form field: %w", err)
-			}
-			if _, err := fw.Write([]byte(v)); err != nil {
-				return fmt.Errorf("failed to write value: %w", err)
 			}
 		}
 		return nil
@@ -75,7 +74,7 @@ func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 	}
 
 	// Create the cmd to upload each image
-	_ = images.WithStoredImages(ctx, tn.log, tn.images, func(index int, image images.Image) error {
+	_ = images.WithStoredImages(ctx, tn.log, tn.images, func(_ int, image images.Image) error {
 		cmd, err = tn.newWebhookSyncCmd("sendPhoto", func(w *multipart.Writer) error {
 			f, err := os.Open(image.Path)
 			if err != nil {
@@ -128,9 +127,6 @@ func (tn *Notifier) buildTelegramMessage(ctx context.Context, as []*types.Alert)
 
 	m := make(map[string]string)
 	m["text"] = messageText
-	if tn.settings.MessageThreadID != "" {
-		m["message_thread_id"] = tn.settings.MessageThreadID
-	}
 	if tn.settings.ParseMode != "" {
 		m["parse_mode"] = tn.settings.ParseMode
 	}
@@ -139,9 +135,6 @@ func (tn *Notifier) buildTelegramMessage(ctx context.Context, as []*types.Alert)
 	}
 	if tn.settings.ProtectContent {
 		m["protect_content"] = "true"
-	}
-	if tn.settings.DisableNotifications {
-		m["disable_notification"] = "true"
 	}
 	return m, nil
 }
@@ -157,12 +150,18 @@ func (tn *Notifier) newWebhookSyncCmd(action string, fn func(writer *multipart.W
 		}
 	}
 
-	fw, err := w.CreateFormField("chat_id")
-	if err != nil {
+	if err := w.WriteField("chat_id", tn.settings.ChatID); err != nil {
 		return nil, err
 	}
-	if _, err := fw.Write([]byte(tn.settings.ChatID)); err != nil {
-		return nil, err
+	if tn.settings.MessageThreadID != "" {
+		if err := w.WriteField("message_thread_id", tn.settings.MessageThreadID); err != nil {
+			return nil, err
+		}
+	}
+	if tn.settings.DisableNotifications {
+		if err := w.WriteField("disable_notification", "true"); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := fn(w); err != nil {

@@ -52,14 +52,14 @@ spec:
       containers:
         {{- if $isGEMGateway }}
         - name: gateway
-          image: {{ include "mimir.imageReference" $ | quote }}
+          image: {{ include "mimir.imageReference" (dict "ctx" $ "component" "gateway") }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           args:
             - "-target=gateway"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             {{- range $key, $value := .extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- with .extraVolumeMounts }}

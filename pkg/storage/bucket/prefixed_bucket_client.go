@@ -35,6 +35,10 @@ func (b *PrefixedBucketClient) Close() error {
 	return b.bucket.Close()
 }
 
+func (b *PrefixedBucketClient) Provider() objstore.ObjProvider {
+	return b.bucket.Provider()
+}
+
 // Upload the contents of the reader as an object into the bucket.
 func (b *PrefixedBucketClient) Upload(ctx context.Context, name string, r io.Reader) (err error) {
 	err = b.bucket.Upload(ctx, b.fullName(name), r)
@@ -56,6 +60,23 @@ func (b *PrefixedBucketClient) Iter(ctx context.Context, dir string, f func(stri
 	return b.bucket.Iter(ctx, b.fullName(dir), func(s string) error {
 		return f(strings.TrimPrefix(s, b.prefix+objstore.DirDelim))
 	}, options...)
+}
+
+// IterWithAttributes calls f for each entry in the given directory similar to Iter.
+// In addition to Name, it also includes requested object attributes in the argument to f.
+//
+// Attributes can be requested using IterOption.
+// Not all IterOptions are supported by all providers, requesting for an unsupported option will fail with ErrOptionNotSupported.
+func (b *PrefixedBucketClient) IterWithAttributes(ctx context.Context, dir string, f func(objstore.IterObjectAttributes) error, options ...objstore.IterOption) error {
+	return b.bucket.IterWithAttributes(ctx, b.fullName(dir), func(attrs objstore.IterObjectAttributes) error {
+		attrs.Name = strings.TrimPrefix(attrs.Name, b.prefix+objstore.DirDelim)
+		return f(attrs)
+	}, options...)
+}
+
+// SupportedIterOptions returns a list of supported IterOptions by the underlying provider.
+func (b *PrefixedBucketClient) SupportedIterOptions() []objstore.IterOptionType {
+	return b.bucket.SupportedIterOptions()
 }
 
 // Get returns a reader for the given object name.

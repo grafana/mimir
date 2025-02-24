@@ -37,10 +37,10 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 
 	fixtures := []mimirpb.PreallocTimeseries{
 		// Note: it's important to write at least a sample, otherwise the exemplar timestamp validation doesn't pass.
-		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "a"}, makeSamples(int64(now), 1), makeExemplars([]string{"trace_id", "A"}, int64(now), 0)),
-		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "b"}, makeSamples(int64(now), 2), makeExemplars([]string{"trace_id", "B"}, int64(now), 0)),
-		makeTimeseries([]string{labels.MetricName, "series_2", "namespace", "a"}, makeSamples(int64(now), 3), makeExemplars([]string{"trace_id", "C"}, int64(now), 0)),
-		makeTimeseries([]string{labels.MetricName, "series_2", "namespace", "b"}, makeSamples(int64(now), 4), makeExemplars([]string{"trace_id", "D"}, int64(now), 0)),
+		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "a"}, makeSamples(int64(now), 1), nil, makeExemplars([]string{"trace_id", "A"}, int64(now), 0)),
+		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "b"}, makeSamples(int64(now), 2), nil, makeExemplars([]string{"trace_id", "B"}, int64(now), 0)),
+		makeTimeseries([]string{labels.MetricName, "series_2", "namespace", "a"}, makeSamples(int64(now), 3), nil, makeExemplars([]string{"trace_id", "C"}, int64(now), 0)),
+		makeTimeseries([]string{labels.MetricName, "series_2", "namespace", "b"}, makeSamples(int64(now), 4), nil, makeExemplars([]string{"trace_id", "D"}, int64(now), 0)),
 	}
 
 	tests := map[string]struct {
@@ -91,14 +91,10 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
 			for _, ingestStorageEnabled := range []bool{false, true} {
-				ingestStorageEnabled := ingestStorageEnabled
-
 				t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
 					t.Parallel()
 
@@ -124,7 +120,7 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 
 					// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 					ctx := user.InjectOrgID(context.Background(), "test")
-					ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+					ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 					// Push fixtures.
 					for _, series := range fixtures {
@@ -233,7 +229,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 					writeReq = &mimirpb.WriteRequest{}
 					for i := 0; i < limit; i++ {
 						writeReq.Timeseries = append(writeReq.Timeseries,
-							makeTimeseries([]string{model.MetricNameLabel, fmt.Sprintf("another_series_%d", i)}, makeSamples(0, 0), nil),
+							makeTimeseries([]string{model.MetricNameLabel, fmt.Sprintf("another_series_%d", i)}, makeSamples(0, 0), nil, nil),
 						)
 					}
 
@@ -312,7 +308,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 				}
 
 				// Push more series to exceed the limit once we'll query back all series.
-				writeReq = makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil))
+				writeReq = makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil, nil))
 
 				writeRes, err = ds[0].Push(userCtx, writeReq)
 				assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
@@ -358,7 +354,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 		labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
 	}
 	// Push a single series to allow us to calculate the chunk size to calculate the limit for the test.
-	writeReq := makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil))
+	writeReq := makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series"}, makeSamples(0, 0), nil, nil))
 	writeRes, err := ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
 	assert.Nil(t, err)
@@ -387,7 +383,7 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 	assert.Len(t, queryRes.Chunkseries, seriesToAdd)
 
 	// Push another series to exceed the chunk bytes limit once we'll query back all series.
-	writeReq = makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series_1"}, makeSamples(0, 0), nil))
+	writeReq = makeWriteRequestWith(makeTimeseries([]string{model.MetricNameLabel, "another_series_1"}, makeSamples(0, 0), nil, nil))
 
 	writeRes, err = ds[0].Push(ctx, writeReq)
 	assert.Equal(t, &mimirpb.WriteResponse{}, writeRes)
@@ -407,8 +403,6 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 	)
 
 	for _, ingestStorageEnabled := range []bool{false, true} {
-		ingestStorageEnabled := ingestStorageEnabled
-
 		t.Run(fmt.Sprintf("ingest storage enabled: %t", ingestStorageEnabled), func(t *testing.T) {
 			t.Parallel()
 
@@ -427,7 +421,7 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 
 			// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
 			ctx := user.InjectOrgID(context.Background(), "test")
-			ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 
 			// Push series.
 			for seriesID := 0; seriesID < numSeries; seriesID++ {

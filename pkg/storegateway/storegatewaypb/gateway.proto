@@ -25,4 +25,6 @@ service StoreGateway {
 
     // LabelValues returns all label values for given label name.
     rpc LabelValues(thanos.LabelValuesRequest) returns (thanos.LabelValuesResponse);
+
+    // When adding more read-path methods here, please update store_gateway_read_path_routes_regex in operations/mimir-mixin/config.libsonnet as well as needed.
 }

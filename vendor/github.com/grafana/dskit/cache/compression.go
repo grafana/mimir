@@ -85,6 +85,14 @@ func (s *SnappyCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
 	s.next.SetMultiAsync(encoded, ttl)
 }
 
+func (s *SnappyCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return s.next.Set(ctx, key, snappy.Encode(nil, value), ttl)
+}
+
+func (s *SnappyCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return s.next.Add(ctx, key, snappy.Encode(nil, value), ttl)
+}
+
 // GetMulti implements Cache.
 func (s *SnappyCache) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
 	found := s.next.GetMulti(ctx, keys, opts...)

@@ -480,7 +480,6 @@ func versionToRestore(versions []version, targetSize *int64) (v *version, ok boo
 	var target *version
 
 	for _, version := range versions {
-		version := version // loop variable pointer gotcha
 		info := version.info
 		if info.IsDeleteMarker || (targetSize != nil && version.size != *targetSize) {
 			continue

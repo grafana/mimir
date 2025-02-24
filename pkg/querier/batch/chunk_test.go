@@ -6,6 +6,7 @@
 package batch
 
 import (
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -36,10 +37,10 @@ func testChunkIter(t *testing.T, encoding chunk.Encoding) {
 	iter := &chunkIterator{}
 
 	iter.reset(chunk)
-	testIter(t, 100, newIteratorAdapter(nil, iter), encoding)
+	testIter(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding)
 
 	iter.reset(chunk)
-	testSeek(t, 100, newIteratorAdapter(nil, iter), encoding)
+	testSeek(t, 100, newIteratorAdapter(nil, iter, labels.EmptyLabels()), encoding)
 }
 
 func mkChunk(t require.TestingT, from model.Time, points int, encoding chunk.Encoding) chunk.Chunk {
@@ -82,7 +83,15 @@ func mkGenericChunk(t require.TestingT, from model.Time, points int, encoding ch
 	return NewGenericChunk(int64(ck.From), int64(ck.Through), ck.Data.NewIterator)
 }
 
-func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding) {
+type testBatchOptions uint
+
+const (
+	// setNotCounterResetHintsAsUnknown can be used in cases where it's onerous to generate all the expected counter
+	// reset hints (e.g. merging lots of chunks together).
+	setNotCounterResetHintsAsUnknown testBatchOptions = iota
+)
+
+func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding, opts ...testBatchOptions) {
 	nextExpectedTS := model.TimeFromUnix(0)
 	var assertPoint func(i int)
 	switch encoding {
@@ -99,7 +108,18 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			require.Equal(t, chunkenc.ValHistogram, iter.Next(), strconv.Itoa(i))
 			ts, h := iter.AtHistogram(nil)
 			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
-			test.RequireHistogramEqual(t, test.GenerateTestHistogram(int(nextExpectedTS)), h, strconv.Itoa(i))
+			expH := test.GenerateTestHistogram(int(nextExpectedTS))
+			if slices.Contains(opts, setNotCounterResetHintsAsUnknown) {
+				if h.CounterResetHint == histogram.NotCounterReset {
+					h.CounterResetHint = histogram.UnknownCounterReset
+					expH.CounterResetHint = histogram.UnknownCounterReset
+				}
+			} else {
+				if nextExpectedTS > 0 {
+					expH.CounterResetHint = histogram.NotCounterReset
+				}
+			}
+			test.RequireHistogramEqual(t, expH, h, strconv.Itoa(i))
 			nextExpectedTS = nextExpectedTS.Add(step)
 		}
 	case chunk.PrometheusFloatHistogramChunk:
@@ -107,7 +127,18 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			require.Equal(t, chunkenc.ValFloatHistogram, iter.Next(), strconv.Itoa(i))
 			ts, fh := iter.AtFloatHistogram(nil)
 			require.EqualValues(t, int64(nextExpectedTS), ts, strconv.Itoa(i))
-			test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(nextExpectedTS)), fh, strconv.Itoa(i))
+			expFH := test.GenerateTestFloatHistogram(int(nextExpectedTS))
+			if slices.Contains(opts, setNotCounterResetHintsAsUnknown) {
+				if fh.CounterResetHint == histogram.NotCounterReset {
+					fh.CounterResetHint = histogram.UnknownCounterReset
+					expFH.CounterResetHint = histogram.UnknownCounterReset
+				}
+			} else {
+				if nextExpectedTS > 0 {
+					expFH.CounterResetHint = histogram.NotCounterReset
+				}
+			}
+			test.RequireFloatHistogramEqual(t, expFH, fh, strconv.Itoa(i))
 			nextExpectedTS = nextExpectedTS.Add(step)
 		}
 	default:
@@ -119,7 +150,7 @@ func testIter(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 	require.Equal(t, chunkenc.ValNone, iter.Next())
 }
 
-func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding) {
+func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding chunk.Encoding, opts ...testBatchOptions) {
 	var assertPoint func(expectedTS int64, valType chunkenc.ValueType)
 	switch encoding {
 	case chunk.PrometheusXorChunk:
@@ -135,7 +166,18 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			require.Equal(t, chunkenc.ValHistogram, valType)
 			ts, h := iter.AtHistogram(nil)
 			require.EqualValues(t, expectedTS, ts)
-			test.RequireHistogramEqual(t, test.GenerateTestHistogram(int(expectedTS)), h)
+			expH := test.GenerateTestHistogram(int(expectedTS))
+			if slices.Contains(opts, setNotCounterResetHintsAsUnknown) {
+				if h.CounterResetHint == histogram.NotCounterReset {
+					h.CounterResetHint = histogram.UnknownCounterReset
+					expH.CounterResetHint = histogram.UnknownCounterReset
+				}
+			} else {
+				if expectedTS > 0 {
+					expH.CounterResetHint = histogram.NotCounterReset
+				}
+			}
+			test.RequireHistogramEqual(t, expH, h)
 			require.NoError(t, iter.Err())
 		}
 	case chunk.PrometheusFloatHistogramChunk:
@@ -143,7 +185,18 @@ func testSeek(t require.TestingT, points int, iter chunkenc.Iterator, encoding c
 			require.Equal(t, chunkenc.ValFloatHistogram, valType)
 			ts, fh := iter.AtFloatHistogram(nil)
 			require.EqualValues(t, expectedTS, ts)
-			test.RequireFloatHistogramEqual(t, test.GenerateTestFloatHistogram(int(expectedTS)), fh)
+			expFH := test.GenerateTestFloatHistogram(int(expectedTS))
+			if slices.Contains(opts, setNotCounterResetHintsAsUnknown) {
+				if fh.CounterResetHint == histogram.NotCounterReset {
+					fh.CounterResetHint = histogram.UnknownCounterReset
+					expFH.CounterResetHint = histogram.UnknownCounterReset
+				}
+			} else {
+				if expectedTS > 0 {
+					expFH.CounterResetHint = histogram.NotCounterReset
+				}
+			}
+			test.RequireFloatHistogramEqual(t, expFH, fh)
 			require.NoError(t, iter.Err())
 		}
 	default:
@@ -221,4 +274,41 @@ func (i *mockIterator) Batch(_ int, valueType chunkenc.ValueType, _ *zeropool.Po
 
 func (i *mockIterator) Err() error {
 	return nil
+}
+
+func TestChunkIterator_SeekBeforeCurrentBatch(t *testing.T) {
+	chunkTimestamps := []int64{50, 60, 70, 80, 90, 100}
+
+	ch := chunkenc.NewXORChunk()
+	app, err := ch.Appender()
+	require.NoError(t, err)
+	for _, ts := range chunkTimestamps {
+		app.Append(ts, float64(ts))
+	}
+
+	genericChunk := NewGenericChunk(chunkTimestamps[0], chunkTimestamps[len(chunkTimestamps)-1], func(reuse chunk.Iterator) chunk.Iterator {
+		chk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
+		require.NoError(t, err)
+		require.NoError(t, chk.UnmarshalFromBuf(ch.Bytes()))
+
+		// We should never need to reset this iterator, as the Seek call below should be satisfiable by the initial batch.
+		return &chunkIteratorThatForbidsFindAtOrAfter{chk.NewIterator(reuse)}
+	})
+
+	it := &chunkIterator{}
+	it.reset(genericChunk)
+
+	require.Equal(t, chunkenc.ValFloat, it.Next(2))
+	require.Equal(t, int64(50), it.AtTime())
+
+	require.Equal(t, chunkenc.ValFloat, it.Seek(45, 1))
+	require.Equal(t, int64(50), it.AtTime())
+}
+
+type chunkIteratorThatForbidsFindAtOrAfter struct {
+	chunk.Iterator
+}
+
+func (it *chunkIteratorThatForbidsFindAtOrAfter) FindAtOrAfter(model.Time) chunkenc.ValueType {
+	panic("FindAtOrAfter should never be called")
 }

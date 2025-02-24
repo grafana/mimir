@@ -319,6 +319,11 @@ func expandEnvironmentVariables(config []byte) []byte {
 		if v == "" && len(keyAndDefault) == 2 {
 			v = keyAndDefault[1] // Set value to the default.
 		}
+
+		if strings.Contains(v, "\n") {
+			return strings.Replace(v, "\n", "", -1)
+		}
+
 		return v
 	}))
 }

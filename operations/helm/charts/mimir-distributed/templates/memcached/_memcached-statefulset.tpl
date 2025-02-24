@@ -3,7 +3,7 @@ memcached StatefulSet
 */}}
 {{- define "mimir.memcached.statefulSet" -}}
 {{ with (index $.ctx.Values $.component) }}
-{{- if .enabled -}}
+{{- if and .enabled (not $.ctx.Values.federation_frontend.disableOtherComponents) -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -78,7 +78,7 @@ spec:
         {{- end }}
         {{- with $.ctx.Values.global.extraVolumes }}
         {{- toYaml . | nindent 8 }}
-        {{- end}}
+        {{- end }}
       containers:
         {{- if .extraContainers }}
         {{ toYaml .extraContainers | nindent 8 }}
@@ -105,7 +105,7 @@ spec:
               name: client
           args:
             - -m {{ .allocatedMemory }}
-            - --extended=modern,track_sizes{{ with .extraExtendedOptions }},{{ . }}{{ end }}
+            - --extended=modern{{ with .extraExtendedOptions }},{{ . }}{{ end }}
             - -I {{ .maxItemMemory }}m
             - -c {{ .connectionLimit }}
             - -v
@@ -129,7 +129,7 @@ spec:
             {{- end }}
             {{- with $.ctx.Values.global.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
-            {{- end}}
+            {{- end }}
 
       {{- if $.ctx.Values.memcachedExporter.enabled }}
         - name: exporter
@@ -150,12 +150,16 @@ spec:
             {{- toYaml $.ctx.Values.memcachedExporter.resources | nindent 12 }}
           securityContext:
             {{- toYaml $.ctx.Values.memcachedExporter.containerSecurityContext | nindent 12 }}
-          {{- if .extraVolumeMounts }}
+          {{- if or .extraVolumeMounts $.ctx.Values.global.extraVolumeMounts }}
           volumeMounts:
-            {{- toYaml .extraVolumeMounts | nindent 12 }}
+            {{- with .extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with $.ctx.Values.global.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
       {{- end }}
 {{- end -}}
 {{- end -}}
 {{- end -}}
-

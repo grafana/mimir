@@ -81,8 +81,10 @@ type MultitenantAlertmanagerConfig struct {
 
 	PeerTimeout time.Duration `yaml:"peer_timeout" category:"advanced"`
 
-	EnableAPI                               bool `yaml:"enable_api" category:"advanced"`
-	GrafanaAlertmanagerCompatibilityEnabled bool `yaml:"grafana_alertmanager_compatibility_enabled" category:"experimental"`
+	EnableAPI bool `yaml:"enable_api" category:"advanced"`
+
+	GrafanaAlertmanagerCompatibilityEnabled bool   `yaml:"grafana_alertmanager_compatibility_enabled" category:"experimental"`
+	GrafanaAlertmanagerTenantSuffix         string `yaml:"grafana_alertmanager_conditionally_skip_tenant_suffix" category:"experimental"`
 
 	MaxConcurrentGetRequestsPerTenant int `yaml:"max_concurrent_get_requests_per_tenant" category:"advanced"`
 
@@ -95,10 +97,17 @@ type MultitenantAlertmanagerConfig struct {
 	// Allow disabling of full_state object cleanup.
 	EnableStateCleanup bool `yaml:"enable_state_cleanup" category:"advanced"`
 
-	// Enable UTF-8 strict mode. This means Alertmanager uses the matchers/parse parser
-	// to parse configurations and API requests, instead of pkg/labels. Use this mode
-	// once you are confident that your configuration is forwards compatible.
+	// Enable UTF-8 strict mode. When enabled, Alertmanager uses the new UTF-8 parser
+	// when parsing label matchers in tenant configurations and HTTP requests, instead
+	// of the old regular expression parser, referred to as classic mode.
+	// Enable this mode once confident that all tenant configurations are forwards
+	// compatible.
 	UTF8StrictMode bool `yaml:"utf8_strict_mode" category:"experimental"`
+	// Enables logging when parsing label matchers. If UTF-8 strict mode is enabled,
+	// then the UTF-8 parser will be logged. If it is disabled, then the old regular
+	// expression parser will be logged.
+	LogParsingLabelMatchers bool `yaml:"log_parsing_label_matchers" category:"experimental"`
+	UTF8MigrationLogging    bool `yaml:"utf8_migration_logging" category:"experimental"`
 }
 
 const (
@@ -119,6 +128,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 
 	f.BoolVar(&cfg.EnableAPI, "alertmanager.enable-api", true, "Enable the alertmanager config API.")
 	f.BoolVar(&cfg.GrafanaAlertmanagerCompatibilityEnabled, "alertmanager.grafana-alertmanager-compatibility-enabled", false, "Enable routes to support the migration and operation of the Grafana Alertmanager.")
+	f.StringVar(&cfg.GrafanaAlertmanagerTenantSuffix, "alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix", "", "Skip starting the Alertmanager for tenants matching this suffix unless they have a promoted, non-default Grafana Alertmanager configuration.")
 	f.IntVar(&cfg.MaxConcurrentGetRequestsPerTenant, "alertmanager.max-concurrent-get-requests-per-tenant", 0, "Maximum number of concurrent GET requests allowed per tenant. The zero value (and negative values) result in a limit of GOMAXPROCS or 8, whichever is larger. Status code 503 is served for GET requests that would exceed the concurrency limit.")
 
 	f.BoolVar(&cfg.EnableStateCleanup, "alertmanager.enable-state-cleanup", true, "Enables periodic cleanup of alertmanager stateful data (notification logs and silences) from object storage. When enabled, data is removed for any tenant that does not have a configuration.")
@@ -129,7 +139,9 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 
 	f.DurationVar(&cfg.PeerTimeout, "alertmanager.peer-timeout", defaultPeerTimeout, "Time to wait between peers to send notifications.")
 
-	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. To identify tenants with incompatible configurations, search Mimir server logs for lines containing `Alertmanager is moving to a new parser for labels and matchers, and this input is incompatible`. To find tenant configurations that are valid but contain ambiguous matchers, search for log lines containing `Matchers input has disagreement`. Each log line includes the invalid input, a suggestion on how to fix the input (excluding ambiguous matchers, as these require manual correction), and the ID of the affected tenant. You must run Mimir with debug-level logging enabled. Otherwise, these lines aren't logged. For more information, refer to https://prometheus.io/docs/alerting/latest/configuration/#label-matchers. Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.")
+	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8). Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.")
+	f.BoolVar(&cfg.LogParsingLabelMatchers, "alertmanager.log-parsing-label-matchers", false, "Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.")
+	f.BoolVar(&cfg.UTF8MigrationLogging, "alertmanager.utf8-migration-logging-enabled", false, "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.")
 }
 
 // Validate config and returns error on failure
@@ -174,12 +186,19 @@ func (cfg *MultitenantAlertmanagerConfig) CheckExternalURL(alertmanagerHTTPPrefi
 }
 
 type multitenantAlertmanagerMetrics struct {
+	grafanaStateSize              *prometheus.GaugeVec
 	lastReloadSuccessful          *prometheus.GaugeVec
 	lastReloadSuccessfulTimestamp *prometheus.GaugeVec
 }
 
 func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAlertmanagerMetrics {
 	m := &multitenantAlertmanagerMetrics{}
+
+	m.grafanaStateSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "alertmanager_grafana_state_size_bytes",
+		Help:      "Size of the grafana alertmanager state.",
+	}, []string{"user"})
 
 	m.lastReloadSuccessful = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "cortex",
@@ -218,8 +237,14 @@ type Limits interface {
 	// when limit == rate.Inf.
 	NotificationBurstSize(tenant string, integration string) int
 
+	// AlertmanagerMaxGrafanaConfigSize returns max size of the grafana configuration file that user is allowed to upload. If 0, there is no limit.
+	AlertmanagerMaxGrafanaConfigSize(tenant string) int
+
 	// AlertmanagerMaxConfigSize returns max size of configuration file that user is allowed to upload. If 0, there is no limit.
 	AlertmanagerMaxConfigSize(tenant string) int
+
+	// AlertmanagerMaxGrafanaStateSize returns the max size of the grafana state in bytes. If 0, there is no limit.
+	AlertmanagerMaxGrafanaStateSize(tenant string) int
 
 	// AlertmanagerMaxSilencesCount returns the max number of silences, including expired silences. If negative or 0, there is no limit.
 	AlertmanagerMaxSilencesCount(tenant string) int
@@ -554,7 +579,7 @@ func (am *MultitenantAlertmanager) loadAndSyncConfigs(ctx context.Context, syncR
 		return err
 	}
 
-	am.syncConfigs(cfgs)
+	am.syncConfigs(ctx, cfgs)
 	am.deleteUnusedLocalUserState()
 
 	// Note when cleaning up remote state, remember that the user may not necessarily be configured
@@ -640,15 +665,27 @@ func (am *MultitenantAlertmanager) isUserOwned(userID string) bool {
 	return alertmanagers.Includes(am.ringLifecycler.GetInstanceAddr())
 }
 
-func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertConfigDescs) {
+func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[string]alertspb.AlertConfigDescs) {
 	level.Debug(am.logger).Log("msg", "adding configurations", "num_configs", len(cfgMap))
+	amInitSkipped := map[string]struct{}{}
 	for user, cfgs := range cfgMap {
-		cfg, err := am.computeConfig(cfgs)
+		cfg, startAM, err := am.computeConfig(cfgs)
 		if err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error computing config", "err", err)
 			continue
 		}
+
+		if !startAM {
+			level.Debug(am.logger).Log("msg", "not initializing alertmanager for grafana tenant without a promoted, non-default configuration", "user", user)
+			amInitSkipped[user] = struct{}{}
+			continue
+		}
+
+		if err := am.syncStates(ctx, cfg); err != nil {
+			level.Error(am.logger).Log("msg", "error syncing states", "err", err, "user", user)
+		}
+
 		if err := am.setConfig(cfg); err != nil {
 			am.multitenantMetrics.lastReloadSuccessful.WithLabelValues(user).Set(float64(0))
 			level.Warn(am.logger).Log("msg", "error applying config", "err", err)
@@ -660,10 +697,11 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertC
 	}
 
 	userAlertmanagersToStop := map[string]*Alertmanager{}
-
 	am.alertmanagersMtx.Lock()
 	for userID, userAM := range am.alertmanagers {
-		if _, exists := cfgMap[userID]; !exists {
+		_, exists := cfgMap[userID]
+		_, initSkipped := amInitSkipped[userID]
+		if !exists || initSkipped {
 			userAlertmanagersToStop[userID] = userAM
 			delete(am.alertmanagers, userID)
 			delete(am.cfgs, userID)
@@ -683,59 +721,122 @@ func (am *MultitenantAlertmanager) syncConfigs(cfgMap map[string]alertspb.AlertC
 }
 
 // computeConfig takes an AlertConfigDescs struct containing Mimir and Grafana configurations.
-// It returns the final configuration and external URL the Alertmanager will use.
-func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, error) {
+// It returns the final configuration and a bool indicating whether the Alertmanager should be started for the tenant.
+func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs) (amConfig, bool, error) {
 	cfg := amConfig{
 		AlertConfigDesc: cfgs.Mimir,
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 
-	switch {
-	// Mimir configuration.
-	case !cfgs.Grafana.Promoted:
-		level.Debug(am.logger).Log("msg", "grafana configuration not promoted, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, nil
-
-	case cfgs.Grafana.Default:
-		level.Debug(am.logger).Log("msg", "grafana configuration is default, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, nil
-
-	case cfgs.Grafana.RawConfig == "":
-		level.Debug(am.logger).Log("msg", "grafana configuration is empty, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, nil
-
-	// Grafana configuration.
-	case cfgs.Mimir.RawConfig == am.fallbackConfig:
-		level.Debug(am.logger).Log("msg", "mimir configuration is default, using grafana config with the default globals", "user", cfgs.Mimir.User)
-		return createUsableGrafanaConfig(cfgs.Grafana, &cfgs.Mimir)
-
-	case cfgs.Mimir.RawConfig == "":
-		level.Debug(am.logger).Log("msg", "mimir configuration is empty, using grafana config", "user", cfgs.Grafana.User)
-		return createUsableGrafanaConfig(cfgs.Grafana, nil)
-
-	// Both configurations.
-	// TODO: merge configurations.
-	default:
-		level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
-		return cfg, nil
+	// If the Grafana configuration is either default, not promoted, or empty, use the Mimir configuration.
+	if !cfgs.Grafana.Promoted || cfgs.Grafana.Default || cfgs.Grafana.RawConfig == "" {
+		level.Debug(am.logger).Log("msg", "using mimir config", "user", cfgs.Mimir.User)
+		isGrafanaTenant := am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(cfgs.Mimir.User, am.cfg.GrafanaAlertmanagerTenantSuffix)
+		return cfg, !isGrafanaTenant, nil
 	}
+
+	// If the Mimir configuration is either default or empty, use the Grafana configuration.
+	if cfgs.Mimir.RawConfig == am.fallbackConfig || cfgs.Mimir.RawConfig == "" {
+		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", cfgs.Mimir.User)
+		cfg, err := createUsableGrafanaConfig(cfgs.Grafana, am.fallbackConfig)
+		return cfg, true, err
+	}
+
+	level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
+	return cfg, true, nil
+}
+
+// syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
+func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig) error {
+	// fetching grafana state first so we can register its size independently of it being promoted or not
+	s, err := am.store.GetFullGrafanaState(ctx, cfg.User)
+	if err != nil {
+		if errors.Is(err, alertspb.ErrNotFound) {
+			// This is expected if the state was already promoted.
+			level.Debug(am.logger).Log("msg", "grafana state not found, skipping promotion", "user", cfg.User)
+			am.multitenantMetrics.grafanaStateSize.DeleteLabelValues(cfg.User)
+			return nil
+		}
+		return err
+	}
+	am.multitenantMetrics.grafanaStateSize.WithLabelValues(cfg.User).Set(float64(s.State.Size()))
+
+	am.alertmanagersMtx.Lock()
+	userAM, ok := am.alertmanagers[cfg.User]
+	am.alertmanagersMtx.Unlock()
+
+	// If we're not using Grafana configuration, we shouldn't use Grafana state.
+	// Update the flag accordingly.
+	if !cfg.usingGrafanaConfig {
+		if ok && userAM.usingGrafanaState.CompareAndSwap(true, false) {
+			level.Debug(am.logger).Log("msg", "Grafana state unpromoted", "user", cfg.User)
+		}
+		return nil
+	}
+
+	// If the Alertmanager is already using Grafana state, do nothing.
+	if ok && userAM.usingGrafanaState.Load() {
+		return nil
+	}
+
+	// Promote the Grafana Alertmanager state and update the usingGrafanaState flag.
+	level.Debug(am.logger).Log("msg", "promoting Grafana state", "user", cfg.User)
+	// Translate Grafana state keys to Mimir state keys.
+	for i, p := range s.State.Parts {
+		switch p.Key {
+		case "silences":
+			s.State.Parts[i].Key = silencesStateKeyPrefix + cfg.User
+		case "notifications":
+			s.State.Parts[i].Key = nflogStateKeyPrefix + cfg.User
+		default:
+			return fmt.Errorf("unknown part key %q", p.Key)
+		}
+	}
+
+	if !ok {
+		level.Debug(am.logger).Log("msg", "no Alertmanager found, creating new one before applying Grafana state", "user", cfg.User)
+		if err := am.setConfig(cfg); err != nil {
+			return fmt.Errorf("error creating new Alertmanager for user %s: %w", cfg.User, err)
+		}
+		am.alertmanagersMtx.Lock()
+		userAM, ok = am.alertmanagers[cfg.User]
+		am.alertmanagersMtx.Unlock()
+		if !ok {
+			return fmt.Errorf("Alertmanager for user %s not found after creation", cfg.User)
+		}
+	}
+
+	if err := userAM.mergeFullExternalState(s.State); err != nil {
+		return err
+	}
+	userAM.usingGrafanaState.Store(true)
+
+	// Delete state.
+	if err := am.store.DeleteFullGrafanaState(ctx, cfg.User); err != nil {
+		return fmt.Errorf("error deleting grafana state for user %s: %w", cfg.User, err)
+	}
+	level.Debug(am.logger).Log("msg", "Grafana state promoted", "user", cfg.User)
+	return nil
 }
 
 type amConfig struct {
 	alertspb.AlertConfigDesc
-	tmplExternalURL *url.URL
-	staticHeaders   map[string]string
+	tmplExternalURL    *url.URL
+	staticHeaders      map[string]string
+	usingGrafanaConfig bool
 }
 
 // setConfig applies the given configuration to the alertmanager for `userID`,
 // creating an alertmanager if it doesn't already exist.
 func (am *MultitenantAlertmanager) setConfig(cfg amConfig) error {
-	// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
-	// The reason for this that the config.Load function uses the origin "config",
-	// which is correct, but Mimir uses config.Load to validate both API requests and tenant
-	// configurations. This means metrics from API requests are confused with metrics from
-	// tenant configurations. To avoid this confusion, we use a different origin.
-	validateMatchersInConfigDesc(am.logger, "tenant", cfg.AlertConfigDesc)
+	if am.cfg.UTF8MigrationLogging {
+		// Instead of using "config" as the origin, as in Prometheus Alertmanager, we use "tenant".
+		// The reason for this that the config.Load function uses the origin "config",
+		// which is correct, but Mimir uses config.Load to validate both API requests and tenant
+		// configurations. This means metrics from API requests are confused with metrics from
+		// tenant configurations. To avoid this confusion, we use a different origin.
+		validateMatchersInConfigDesc(am.logger, "tenant", cfg.AlertConfigDesc)
+	}
 
 	level.Debug(am.logger).Log("msg", "setting config", "user", cfg.User)
 
@@ -832,12 +933,14 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		Limits:                            am.limits,
 		Features:                          am.features,
 		GrafanaAlertmanagerCompatibility:  am.cfg.GrafanaAlertmanagerCompatibilityEnabled,
+		GrafanaAlertmanagerTenantSuffix:   am.cfg.GrafanaAlertmanagerTenantSuffix,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
 	}
 
 	if err := newAM.ApplyConfig(amConfig, templates, rawCfg, tmplExternalURL, staticHeaders); err != nil {
+		newAM.Stop()
 		return nil, fmt.Errorf("unable to apply initial config for user %v: %v", userID, err)
 	}
 
@@ -1101,7 +1204,6 @@ func (am *MultitenantAlertmanager) UpdateState(ctx context.Context, part *cluste
 
 // deleteUnusedRemoteUserState deletes state objects in remote storage for users that are no longer configured.
 func (am *MultitenantAlertmanager) deleteUnusedRemoteUserState(ctx context.Context, allUsers []string) {
-
 	users := make(map[string]struct{}, len(allUsers))
 	for _, userID := range allUsers {
 		users[userID] = struct{}{}

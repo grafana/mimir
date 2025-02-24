@@ -6,7 +6,7 @@ metadata:
   name: test-oss-topology-spread-constraints-values-minio-post-job
   labels:
     app: minio-post-job
-    chart: minio-5.0.14
+    chart: minio-5.4.0
     release: test-oss-topology-spread-constraints-values
     heritage: Helm
   annotations:
@@ -35,7 +35,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio-make-bucket
-          image: "quay.io/minio/mc:RELEASE.2023-09-29T16-41-22Z"
+          image: "quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z"
           imagePullPolicy: IfNotPresent
           command: [ "/bin/sh", "/config/initialize" ]
           env:
@@ -54,7 +54,7 @@ spec:
             requests:
               memory: 128Mi
         - name: minio-make-user
-          image: "quay.io/minio/mc:RELEASE.2023-09-29T16-41-22Z"
+          image: "quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z"
           imagePullPolicy: IfNotPresent
           command: [ "/bin/sh", "/config/add-user" ]
           env:

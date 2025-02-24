@@ -111,6 +111,20 @@ func (g *RuleGroups) Validate(node ruleGroups) (errs []error) {
 			)
 		}
 
+		for k, v := range g.Labels {
+			if !model.LabelName(k).IsValid() || k == model.MetricNameLabel {
+				errs = append(
+					errs, fmt.Errorf("invalid label name: %s", k),
+				)
+			}
+
+			if !model.LabelValue(v).IsValid() {
+				errs = append(
+					errs, fmt.Errorf("invalid label value: %s", v),
+				)
+			}
+		}
+
 		set[g.Name] = struct{}{}
 
 		for i, r := range g.Rules {
@@ -143,10 +157,11 @@ type RuleGroup struct {
 	EvaluationDelay *model.Duration `yaml:"evaluation_delay,omitempty"`
 	QueryOffset     *model.Duration `yaml:"query_offset,omitempty"`
 
-	Limit                         int        `yaml:"limit,omitempty"`
-	Rules                         []RuleNode `yaml:"rules"`
-	SourceTenants                 []string   `yaml:"source_tenants,omitempty"`
-	AlignEvaluationTimeOnInterval bool       `yaml:"align_evaluation_time_on_interval,omitempty"`
+	Limit                         int               `yaml:"limit,omitempty"`
+	Rules                         []RuleNode        `yaml:"rules"`
+	Labels                        map[string]string `yaml:"labels,omitempty"`
+	SourceTenants                 []string          `yaml:"source_tenants,omitempty"`
+	AlignEvaluationTimeOnInterval bool              `yaml:"align_evaluation_time_on_interval,omitempty"`
 }
 
 // Rule describes an alerting or recording rule.
@@ -175,14 +190,14 @@ type RuleNode struct {
 func (r *RuleNode) Validate() (nodes []WrappedError) {
 	if r.Record.Value != "" && r.Alert.Value != "" {
 		nodes = append(nodes, WrappedError{
-			err:     fmt.Errorf("only one of 'record' and 'alert' must be set"),
+			err:     errors.New("only one of 'record' and 'alert' must be set"),
 			node:    &r.Record,
 			nodeAlt: &r.Alert,
 		})
 	}
 	if r.Record.Value == "" && r.Alert.Value == "" {
 		nodes = append(nodes, WrappedError{
-			err:     fmt.Errorf("one of 'record' or 'alert' must be set"),
+			err:     errors.New("one of 'record' or 'alert' must be set"),
 			node:    &r.Record,
 			nodeAlt: &r.Alert,
 		})
@@ -190,7 +205,7 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 
 	if r.Expr.Value == "" {
 		nodes = append(nodes, WrappedError{
-			err:  fmt.Errorf("field 'expr' must be set in rule"),
+			err:  errors.New("field 'expr' must be set in rule"),
 			node: &r.Expr,
 		})
 	} else if _, err := parser.ParseExpr(r.Expr.Value); err != nil {
@@ -202,19 +217,19 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 	if r.Record.Value != "" {
 		if len(r.Annotations) > 0 {
 			nodes = append(nodes, WrappedError{
-				err:  fmt.Errorf("invalid field 'annotations' in recording rule"),
+				err:  errors.New("invalid field 'annotations' in recording rule"),
 				node: &r.Record,
 			})
 		}
 		if r.For != 0 {
 			nodes = append(nodes, WrappedError{
-				err:  fmt.Errorf("invalid field 'for' in recording rule"),
+				err:  errors.New("invalid field 'for' in recording rule"),
 				node: &r.Record,
 			})
 		}
 		if r.KeepFiringFor != 0 {
 			nodes = append(nodes, WrappedError{
-				err:  fmt.Errorf("invalid field 'keep_firing_for' in recording rule"),
+				err:  errors.New("invalid field 'keep_firing_for' in recording rule"),
 				node: &r.Record,
 			})
 		}

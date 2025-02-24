@@ -225,7 +225,7 @@ func filterTenantsAndRewriteMatchers(idLabelName string, ids []string, allMatche
 	// In order to support that, we start with a set of 0 tenant IDs and add any tenant IDs that remain
 	// after filtering (based on the inner slice of matchers), for each outer slice.
 	for i, matchers := range allMatchers {
-		filteredIDs, unrelatedMatchers := filterValuesByMatchers(idLabelName, ids, matchers...)
+		filteredIDs, unrelatedMatchers := FilterValuesByMatchers(idLabelName, ids, matchers...)
 		for k := range filteredIDs {
 			outIDs[k] = struct{}{}
 		}

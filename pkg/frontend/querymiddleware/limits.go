@@ -90,17 +90,39 @@ type Limits interface {
 	// ResultsCacheTTLForLabelsQuery returns TTL for cached results for label names and values queries.
 	ResultsCacheTTLForLabelsQuery(userID string) time.Duration
 
+	// ResultsCacheTTLForErrors returns TTL for cached non-transient errors.
+	ResultsCacheTTLForErrors(userID string) time.Duration
+
 	// ResultsCacheForUnalignedQueryEnabled returns whether to cache results for queries that are not step-aligned
 	ResultsCacheForUnalignedQueryEnabled(userID string) bool
 
+	// EnabledPromQLExperimentalFunctions returns the names of PromQL experimental functions allowed for the tenant.
+	EnabledPromQLExperimentalFunctions(userID string) []string
+
+	// Prom2RangeCompat returns if Prometheus 2/3 range compatibility fixes are enabled for the tenant.
+	Prom2RangeCompat(userID string) bool
+
 	// BlockedQueries returns the blocked queries.
 	BlockedQueries(userID string) []*validation.BlockedQuery
+
+	// BlockedRequests returns the blocked http requests.
+	BlockedRequests(userID string) []*validation.BlockedRequest
 
 	// AlignQueriesWithStep returns if queries should be adjusted to be step-aligned
 	AlignQueriesWithStep(userID string) bool
 
 	// QueryIngestersWithin returns the maximum lookback beyond which queries are not sent to ingester.
 	QueryIngestersWithin(userID string) time.Duration
+
+	// IngestStorageReadConsistency returns the default read consistency for the tenant.
+	IngestStorageReadConsistency(userID string) string
+
+	// InstantQueriesWithSubquerySpinOff returns a list of regexp patterns of instant queries that can be optimized by spinning off range queries.
+	// If the list is empty, the feature is disabled.
+	InstantQueriesWithSubquerySpinOff(userID string) []string
+
+	// MaxFutureQueryWindow returns the maximum duration into the future a query can be executed for the tenant.
+	MaxFutureQueryWindow(userID string) time.Duration
 }
 
 type limitsMiddleware struct {
@@ -181,6 +203,33 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 		}
 	}
 
+	if maxFutureQueryWindow := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxFutureQueryWindow); maxFutureQueryWindow > 0 {
+		maxAllowedTs := util.TimeToMillis(time.Now().Add(maxFutureQueryWindow))
+		if r.GetStart() > maxAllowedTs {
+			// The request is fully outside the allowed range, so we can return an empty response.
+			level.Debug(log).Log(
+				"msg", "skipping the execution of the query because its time range is exclusively after the 'max future window' setting",
+				"reqStart", util.FormatTimeMillis(r.GetStart()),
+				"redEnd", util.FormatTimeMillis(r.GetEnd()),
+				"maxFutureWindow", maxFutureQueryWindow,
+			)
+			return newEmptyPrometheusResponse(), nil
+		}
+
+		if r.GetEnd() > maxAllowedTs {
+			level.Debug(log).Log(
+				"msg", "the end time of the query has been manipulated because of the 'max-future-query-window' setting",
+				"original", util.FormatTimeMillis(r.GetEnd()),
+				"updated", util.FormatTimeMillis(maxAllowedTs),
+				"maxFutureWindow", maxFutureQueryWindow,
+			)
+			r, err = r.WithStartEnd(r.GetStart(), maxAllowedTs)
+			if err != nil {
+				return nil, apierror.New(apierror.TypeInternal, err.Error())
+			}
+		}
+	}
+
 	return l.next.Do(ctx, r)
 }
 
@@ -192,8 +241,8 @@ type limitedParallelismRoundTripper struct {
 	middleware MetricsQueryMiddleware
 }
 
-// newLimitedParallelismRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
-func newLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limits Limits, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+// NewLimitedParallelismRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
+func NewLimitedParallelismRoundTripper(next http.RoundTripper, codec Codec, limits Limits, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return limitedParallelismRoundTripper{
 		downstream: roundTripperHandler{
 			next:  next,
@@ -242,7 +291,7 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 		return nil, err
 	}
 
-	return rt.codec.EncodeResponse(ctx, r, response)
+	return rt.codec.EncodeMetricsQueryResponse(ctx, r, response)
 }
 
 // roundTripperHandler is an adapter that implements the MetricsQueryHandler interface using a http.RoundTripper to perform
@@ -270,7 +319,7 @@ func (rth roundTripperHandler) Do(ctx context.Context, r MetricsQueryRequest) (R
 	}
 	defer func() { _ = response.Body.Close() }()
 
-	return rth.codec.DecodeResponse(ctx, response, r, rth.logger)
+	return rth.codec.DecodeMetricsQueryResponse(ctx, response, r, rth.logger)
 }
 
 // smallestPositiveNonZeroDuration returns the smallest positive and non-zero value

@@ -94,6 +94,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 		expectedMetrics         int
 		expectedActivity        string
 		expectedReadConsistency string
+		assertHeaders           func(t *testing.T, headers http.Header)
 	}{
 		{
 			name: "handler with stats enabled, POST request with params",
@@ -142,7 +143,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			request: func() *http.Request {
 				r := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
 				r.Header.Add("User-Agent", "test-user-agent")
-				return r.WithContext(api.ContextWithReadConsistency(context.Background(), api.ReadConsistencyStrong))
+				return r.WithContext(api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyStrong))
 			},
 			downstreamResponse: makeSuccessfulDownstreamResponse(),
 			expectedStatusCode: 200,
@@ -284,6 +285,28 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedActivity:        "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 		},
+		{
+			name: "handler with stats enabled, check ServiceTimingHeader",
+			cfg:  HandlerConfig{QueryStatsEnabled: true, MaxBodySize: 1024},
+			request: func() *http.Request {
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader("query=some_metric&time=42"))
+				req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+				return req
+			},
+			downstreamResponse: makeSuccessfulDownstreamResponse(),
+			expectedStatusCode: 200,
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:         5,
+			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
+			expectedReadConsistency: "",
+			assertHeaders: func(t *testing.T, headers http.Header) {
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "bytes_processed;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "samples_processed;val=0")
+			},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			activityFile := filepath.Join(t.TempDir(), "activity-tracker")
@@ -369,6 +392,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				// The response size is tracked only for successful requests.
 				if tt.expectedStatusCode >= 200 && tt.expectedStatusCode < 300 {
 					require.Equal(t, int64(len(responseData)), msg["response_size_bytes"])
+				}
+				if tt.assertHeaders != nil {
+					tt.assertHeaders(t, resp.Header())
 				}
 
 				// Check that the HTTP or Protobuf request parameters are logged.

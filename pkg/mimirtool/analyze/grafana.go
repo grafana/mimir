@@ -8,6 +8,7 @@ package analyze
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/grafana/regexp"
@@ -16,7 +17,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
 )

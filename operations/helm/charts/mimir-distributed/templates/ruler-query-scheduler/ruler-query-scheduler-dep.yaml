@@ -40,14 +40,14 @@ spec:
       {{- end }}
       containers:
         - name: ruler-query-scheduler
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "ruler-query-scheduler") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=query-scheduler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           {{- range $key, $value := .Values.ruler_query_scheduler.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.ruler_query_scheduler.extraVolumeMounts }}

@@ -30,9 +30,9 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
-	"github.com/grafana/mimir/pkg/querier/stats"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
@@ -251,8 +251,13 @@ func TestSchedulerProcessor_processQueriesOnSingleStream(t *testing.T) {
 		}, 2*time.Second, 10*time.Millisecond, "expected frontend to be informed of query result exactly once")
 
 		// We expect Send() to be called twice: first to send the querier ID to scheduler
-		// and then to send the query result.
-		loopClient.AssertNumberOfCalls(t, "Send", 2)
+		// and then to send the query result. However, there's no guarantee that the 2nd
+		// Send() has already been called when we reach this point because this test is mocking
+		// several components and there's no real coordination between them, so we poll the assertion.
+		require.EventuallyWithT(t, func(collect *assert.CollectT) {
+			loopClient.AssertNumberOfCalls(test.NewCollectWithLogf(collect), "Send", 2)
+		}, 2*time.Second, 10*time.Millisecond)
+
 		loopClient.AssertCalled(t, "Send", &schedulerpb.QuerierToScheduler{QuerierID: "test-querier-id"})
 	})
 }
@@ -287,7 +292,7 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 		requestHandler.On("Handle", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 			workerCancel()
 
-			stat := stats.FromContext(args.Get(0).(context.Context))
+			stat := querier_stats.FromContext(args.Get(0).(context.Context))
 
 			if statsEnabled {
 				require.Equal(t, queueTime, stat.LoadQueueTime())

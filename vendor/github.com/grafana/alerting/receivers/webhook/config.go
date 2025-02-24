@@ -22,8 +22,9 @@ type Config struct {
 	User     string
 	Password string
 
-	Title   string
-	Message string
+	Title     string
+	Message   string
+	TLSConfig *receivers.TLSConfig
 }
 
 func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Config, error) {
@@ -38,6 +39,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 		Password                 string                   `json:"password,omitempty" yaml:"password,omitempty"`
 		Title                    string                   `json:"title,omitempty" yaml:"title,omitempty"`
 		Message                  string                   `json:"message,omitempty" yaml:"message,omitempty"`
+		TLSConfig                *receivers.TLSConfig     `json:"tlsConfig,omitempty" yaml:"tlsConfig,omitempty"`
 	}{}
 
 	err := json.Unmarshal(jsonData, &rawSettings)
@@ -77,5 +79,15 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	if settings.Message == "" {
 		settings.Message = templates.DefaultMessageEmbed
 	}
+
+	if tlsConfig := rawSettings.TLSConfig; tlsConfig != nil {
+		settings.TLSConfig = &receivers.TLSConfig{
+			InsecureSkipVerify: tlsConfig.InsecureSkipVerify,
+			CACertificate:      decryptFn("tlsConfig.caCertificate", tlsConfig.CACertificate),
+			ClientCertificate:  decryptFn("tlsConfig.clientCertificate", tlsConfig.ClientCertificate),
+			ClientKey:          decryptFn("tlsConfig.clientKey", tlsConfig.ClientKey),
+		}
+	}
+
 	return settings, err
 }

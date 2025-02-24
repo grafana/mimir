@@ -23,6 +23,13 @@ metaMonitoring:
             username: tenant-1
             passwordSecretName: my-secret
             passwordSecretKey: metrics
+        - url: https://amp.example.com/remote_write
+          sigv4:
+            accessKey: "abcd"
+            profile: "abcd"
+            region: "us-east-1"
+            roleARN: "arn:aws:iam::1234"
+            secretKey: "abcd"
 
     logs:
       remote:

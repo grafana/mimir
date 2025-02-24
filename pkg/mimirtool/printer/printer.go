@@ -10,12 +10,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/alecthomas/chroma/v2/quick"
 	"github.com/mitchellh/colorstring"
-	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
@@ -29,13 +29,13 @@ type Printer struct {
 }
 
 // New returns a Printer struct
-func New(color bool) *Printer {
+func New(disableColor bool, forceColor bool, isTTY bool) *Printer {
 	return &Printer{
-		disableColor: color,
+		disableColor: !forceColor && (disableColor || !isTTY),
 		colorizer: colorstring.Colorize{
 			Colors:  colorstring.DefaultColors,
 			Reset:   true,
-			Disable: color,
+			Disable: !forceColor && (disableColor || !isTTY),
 		},
 	}
 }

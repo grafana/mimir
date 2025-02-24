@@ -13,14 +13,13 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
-	"go.opentelemetry.io/otel/trace/noop"
+	"go.opentelemetry.io/otel/trace/embedded"
+	"go.uber.org/atomic"
 )
 
 type OpenTelemetryProviderBridge struct {
-	// TracerProvider is the fallback trace.TracerProvider used for functions not implemented
-	// by our custom one (even if we aim to implement all of them). OpenTelemetry library
-	// requires one (compilation fails without it).
-	noop.TracerProvider
+	// See https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations.
+	embedded.TracerProvider
 
 	tracer opentracing.Tracer
 }
@@ -59,10 +58,8 @@ func (p *OpenTelemetryProviderBridge) Tracer(_ string, _ ...trace.TracerOption) 
 }
 
 type OpenTelemetryTracerBridge struct {
-	// Tracer is the fallback trace.Tracer used for functions not implemented
-	// by our custom one (even if we aim to implement all of them). OpenTelemetry library
-	// requires one (compilation fails without it).
-	noop.Tracer
+	// See https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations.
+	embedded.Tracer
 
 	tracer   opentracing.Tracer
 	provider trace.TracerProvider
@@ -142,13 +139,14 @@ func (t *OpenTelemetryTracerBridge) openTracingToOtel(ctx context.Context, span 
 }
 
 type OpenTelemetrySpanBridge struct {
-	// Span is the fallback trace.Span used for functions not implemented
-	// by our custom one (even if we aim to implement all of them). OpenTelemetry library
-	// requires one (compilation fails without it).
-	noop.Span
+	// See https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations.
+	embedded.Span
 
 	span     opentracing.Span
 	provider trace.TracerProvider
+
+	// ended allows us to provide idempotency for End. See the OTEL spec for End: https://github.com/open-telemetry/opentelemetry-specification/blob/50027a1036746dce293ee0a8592639f131fc1fb8/specification/trace/api.md#end
+	ended atomic.Bool
 }
 
 func NewOpenTelemetrySpanBridge(span opentracing.Span, provider trace.TracerProvider) *OpenTelemetrySpanBridge {
@@ -163,6 +161,9 @@ func NewOpenTelemetrySpanBridge(span opentracing.Span, provider trace.TracerProv
 // is called. Therefore, updates to the Span are not allowed after this
 // method has been called.
 func (s *OpenTelemetrySpanBridge) End(options ...trace.SpanEndOption) {
+	if !s.ended.CompareAndSwap(false, true) {
+		return
+	}
 	if len(options) == 0 {
 		s.span.Finish()
 		return
@@ -182,6 +183,11 @@ func (s *OpenTelemetrySpanBridge) AddEvent(name string, options ...trace.EventOp
 
 func (s *OpenTelemetrySpanBridge) addEvent(name string, attributes []attribute.KeyValue) {
 	s.logFieldWithAttributes(log.Event(name), attributes)
+}
+
+// AddLink implements trace.Span.
+func (s *OpenTelemetrySpanBridge) AddLink(_ trace.Link) {
+	// Ignored: OpenTracing only lets you link spans together at creation time.
 }
 
 // IsRecording returns the recording state of the Span. It will return

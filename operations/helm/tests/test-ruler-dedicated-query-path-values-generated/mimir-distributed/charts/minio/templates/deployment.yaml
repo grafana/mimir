@@ -6,7 +6,7 @@ metadata:
   name: test-ruler-dedicated-query-path-values-minio
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.4.0
     release: test-ruler-dedicated-query-path-values
     heritage: Helm
 spec:
@@ -27,19 +27,20 @@ spec:
         app: minio
         release: test-ruler-dedicated-query-path-values
       annotations:
-        checksum/secrets: c864730acd976c50ca058e41231e573051d6bf86d2b2b33dc6cb700c7a486b86
-        checksum/config: ff6673ed46bcc10cd2f7415590914b57bca3e18fb10f654a021efd4ca72b864e
+        checksum/secrets: d6192ffdfa07538ff559586dd26ccb114d316f2f0f1506ed0a7506d4aebf3e5a
+        checksum/config: 2e9c3371e78af1077dbfc3100fbb94f96842679907935bfd91ea02e7883b14e5
     spec:
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
+        
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
       
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"
@@ -72,7 +73,9 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi      
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
       volumes:
         - name: export
           persistentVolumeClaim:

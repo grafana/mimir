@@ -30,7 +30,7 @@ func NewEnvVarsWithPrefix(prefix string) EnvVarNames {
 		useLegacyRoutes       = "USE_LEGACY_ROUTES"
 		authToken             = "AUTH_TOKEN"
 		extraHeaders          = "EXTRA_HEADERS"
-		mimirHTTPPrefix       = "MIMIR_HTTP_PREFIX"
+		mimirHTTPPrefix       = "HTTP_PREFIX"
 	)
 
 	if len(prefix) > 0 && prefix[len(prefix)-1] != '_' {

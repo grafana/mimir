@@ -7,6 +7,7 @@ package lazyquery
 
 import (
 	"context"
+	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -49,8 +50,9 @@ func (l LazyQuerier) Select(ctx context.Context, selectSorted bool, params *stor
 	// make sure there is space in the buffer, to unblock the goroutine and let it die even if nobody is
 	// waiting for the result yet (or anymore).
 	future := make(chan storage.SeriesSet, 1)
+	copiedParams := copyParams(params)
 	go func() {
-		future <- l.next.Select(ctx, selectSorted, params, matchers...)
+		future <- l.next.Select(ctx, selectSorted, copiedParams, matchers...)
 	}()
 
 	return &lazySeriesSet{
@@ -58,14 +60,24 @@ func (l LazyQuerier) Select(ctx context.Context, selectSorted bool, params *stor
 	}
 }
 
+func copyParams(params *storage.SelectHints) *storage.SelectHints {
+	if params == nil {
+		return nil
+	}
+	copiedParams := *params
+	copiedParams.Grouping = slices.Clone(params.Grouping)
+
+	return &copiedParams
+}
+
 // LabelValues implements Storage.Querier
-func (l LazyQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return l.next.LabelValues(ctx, name, matchers...)
+func (l LazyQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return l.next.LabelValues(ctx, name, hints, matchers...)
 }
 
 // LabelNames implements Storage.Querier
-func (l LazyQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return l.next.LabelNames(ctx, matchers...)
+func (l LazyQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return l.next.LabelNames(ctx, hints, matchers...)
 }
 
 // Close implements Storage.Querier
@@ -104,5 +116,8 @@ func (s *lazySeriesSet) Err() error {
 
 // Warnings implements storage.SeriesSet.
 func (s *lazySeriesSet) Warnings() annotations.Annotations {
-	return nil
+	if s.next == nil {
+		s.next = <-s.future
+	}
+	return s.next.Warnings()
 }

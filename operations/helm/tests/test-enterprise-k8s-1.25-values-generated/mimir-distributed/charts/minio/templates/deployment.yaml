@@ -6,7 +6,7 @@ metadata:
   name: test-enterprise-k8s-1.25-values-minio
   labels:
     app: minio
-    chart: minio-5.0.14
+    chart: minio-5.4.0
     release: test-enterprise-k8s-1.25-values
     heritage: Helm
 spec:
@@ -27,19 +27,20 @@ spec:
         app: minio
         release: test-enterprise-k8s-1.25-values
       annotations:
-        checksum/secrets: 964484ebf812e70d928a5c88cf762bb8f7f2bad560ac89a0ea3b831324434af6
-        checksum/config: ff04929b2244140ecab055e5f8693219fe86116fd226724fdbf9e6dacdcc8ec7
+        checksum/secrets: be0ea45c11926fbaf6d49593e7e9f07714858117ed2fcd2bd8368a851cf68d95
+        checksum/config: 0353b2bc083ca1cdc37d0e034bbc961c4c2d867d134f8206d62b882556f2a784
     spec:
       securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
+        
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
+        runAsGroup: 1000
+        runAsUser: 1000
       
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2023-09-30T07-02-29Z"
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"
@@ -72,7 +73,9 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi      
+              memory: 128Mi
+          securityContext: 
+            readOnlyRootFilesystem: false      
       volumes:
         - name: export
           persistentVolumeClaim:

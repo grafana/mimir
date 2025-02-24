@@ -9,8 +9,12 @@ import (
 	"github.com/failsafe-go/failsafe-go/common"
 )
 
-// ExecutionStats contains execution stats.
-type ExecutionStats interface {
+// ExecutionInfo contains execution info.
+type ExecutionInfo interface {
+	// Context returns the context configured for the execution, else context.Background if none was configured. For
+	// executions involving a timeout or hedge, each attempt will get a separate child context.
+	Context() context.Context
+
 	// Attempts returns the number of execution attempts so far, including attempts that are currently in progress and
 	// attempts that were blocked before being executed, such as by a CircuitBreaker or RateLimiter. These can include an initial
 	// execution along with retries and hedges.
@@ -35,7 +39,7 @@ type ExecutionStats interface {
 
 // ExecutionAttempt contains information for an execution attempt.
 type ExecutionAttempt[R any] interface {
-	ExecutionStats
+	ExecutionInfo
 
 	// LastResult returns the result, if any, from the last execution attempt.
 	LastResult() R
@@ -62,10 +66,6 @@ type ExecutionAttempt[R any] interface {
 // Execution contains information about an execution.
 type Execution[R any] interface {
 	ExecutionAttempt[R]
-
-	// Context returns the context configured for the execution, else context.Background if none was configured. For
-	// executions involving a timeout or hedge, each attempt will get a separate child context.
-	Context() context.Context
 
 	// IsCanceled returns whether the execution has been canceled by an external Context or a timeout.Timeout.
 	IsCanceled() bool
@@ -106,7 +106,7 @@ type execution[R any] struct {
 }
 
 var _ Execution[any] = &execution[any]{}
-var _ ExecutionStats = &execution[any]{}
+var _ ExecutionInfo = &execution[any]{}
 
 func (e *execution[R]) Attempts() int {
 	return int(e.attempts.Load())
@@ -205,11 +205,11 @@ func (e *execution[R]) InitializeRetry() *common.PolicyResult[R] {
 	return nil
 }
 
-func (e *execution[R]) Cancel(result *common.PolicyResult[R]) *common.PolicyResult[R] {
+func (e *execution[R]) Cancel(result *common.PolicyResult[R]) {
 	e.mtx.Lock()
 	defer e.mtx.Unlock()
-	if canceled, cancelResult := e.isCanceledWithResult(); canceled {
-		return cancelResult
+	if canceled, _ := e.isCanceledWithResult(); canceled {
+		return
 	}
 
 	*e.canceledResult = result
@@ -220,7 +220,6 @@ func (e *execution[R]) Cancel(result *common.PolicyResult[R]) *common.PolicyResu
 	if e.cancelFunc != nil {
 		e.cancelFunc()
 	}
-	return result
 }
 
 func (e *execution[R]) IsCanceledWithResult() (bool, *common.PolicyResult[R]) {
@@ -263,6 +262,7 @@ func (e *execution[R]) CopyForHedge() Execution[R] {
 	c.isHedge = true
 	c.attempts.Add(1)
 	c.hedges.Add(1)
+	c.ctx, c.cancelFunc = context.WithCancel(c.ctx)
 	return c
 }
 

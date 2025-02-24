@@ -23,7 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/thanos-io/objstore/providers/s3"
 
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/configdoc"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -280,6 +280,11 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 			return nil, errors.Wrapf(err, "config=%s.%s", t.PkgPath(), t.Name())
 		}
 		if fieldFlag == nil {
+			var def string
+			if kind == KindField {
+				def = getFieldDefault(field, "")
+			}
+
 			block.Add(&ConfigEntry{
 				Kind:          kind,
 				Name:          fieldName,
@@ -288,6 +293,7 @@ func config(block *ConfigBlock, cfg interface{}, flags map[uintptr]*flag.Flag, r
 				FieldType:     fieldType,
 				FieldExample:  getFieldExample(fieldName, field.Type),
 				FieldCategory: getFieldCategory(field, ""),
+				FieldDefault:  def,
 				Element:       element,
 			})
 			continue
@@ -347,6 +353,8 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 		return "map of string to float64", true
 	case reflect.TypeOf(validation.LimitsMap[int]{}).String():
 		return "map of string to int", true
+	case reflect.TypeOf(validation.LimitsMap[string]{}).String():
+		return "map of string to string", true
 	case reflect.TypeOf(&url.URL{}).String():
 		return "url", true
 	case reflect.TypeOf(time.Duration(0)).String():
@@ -359,7 +367,9 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 		return "relabel_config...", true
 	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
 		return "blocked_queries_config...", true
-	case reflect.TypeOf(activeseries.CustomTrackersConfig{}).String():
+	case reflect.TypeOf([]*validation.BlockedRequest{}).String():
+		return "blocked_requests_config...", true
+	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
 	default:
 		return "", false
@@ -433,6 +443,8 @@ func getCustomFieldType(t reflect.Type) (string, bool) {
 		return "map of string to float64", true
 	case reflect.TypeOf(validation.LimitsMap[int]{}).String():
 		return "map of string to int", true
+	case reflect.TypeOf(validation.LimitsMap[string]{}).String():
+		return "map of string to string", true
 	case reflect.TypeOf(&url.URL{}).String():
 		return "url", true
 	case reflect.TypeOf(time.Duration(0)).String():
@@ -445,7 +457,9 @@ func getCustomFieldType(t reflect.Type) (string, bool) {
 		return "relabel_config...", true
 	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
 		return "blocked_queries_config...", true
-	case reflect.TypeOf(activeseries.CustomTrackersConfig{}).String():
+	case reflect.TypeOf([]*validation.BlockedRequest{}).String():
+		return "blocked_requests_config...", true
+	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
 	default:
 		return "", false
@@ -478,6 +492,8 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf([]*relabel.Config{})
 	case "blocked_queries_config...":
 		return reflect.TypeOf([]*validation.BlockedQuery{})
+	case "blocked_requests_config...":
+		return reflect.TypeOf([]*validation.BlockedRequest{})
 	case "map of string to float64":
 		return reflect.TypeOf(validation.LimitsMap[float64]{})
 	case "map of string to int":

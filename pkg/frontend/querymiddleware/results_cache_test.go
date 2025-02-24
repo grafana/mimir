@@ -363,7 +363,7 @@ func TestIsResponseCachable(t *testing.T) {
 	} {
 		{
 			t.Run(tc.name, func(t *testing.T) {
-				ret := isResponseCachable(tc.response, log.NewNopLogger())
+				ret := isResponseCachable(tc.response)
 				require.Equal(t, tc.expected, ret)
 			})
 		}
@@ -566,7 +566,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 func TestDefaultSplitter_QueryRequest(t *testing.T) {
 	t.Parallel()
 	reg := prometheus.NewPedanticRegistry()
-	codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON)
+	codec := NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)
 
 	ctx := context.Background()
 

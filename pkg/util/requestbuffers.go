@@ -5,43 +5,43 @@ package util
 import (
 	"bytes"
 	"sync"
-
-	"github.com/grafana/mimir/pkg/util/pool"
 )
+
+const defaultPoolBufferCap = 256 * 1024
 
 // Pool is an abstraction for a pool of byte slices.
 type Pool interface {
-	// Get returns a new byte slices that fits the given size.
-	Get(sz int) []byte
+	// Get returns a new byte slices.
+	Get() []byte
 
 	// Put puts a slice back into the pool.
 	Put(s []byte)
 }
 
 type bufferPool struct {
-	p sync.Pool
+	maxBufferCap int
+	p            sync.Pool
 }
 
-func (p *bufferPool) Get(_ int) []byte { return p.p.Get().([]byte) }
-func (p *bufferPool) Put(s []byte)     { p.p.Put(s) } //nolint:staticcheck
+func (p *bufferPool) Get() []byte { return p.p.Get().([]byte) }
+func (p *bufferPool) Put(s []byte) {
+	if p.maxBufferCap > 0 && cap(s) > p.maxBufferCap {
+		return // Discard large buffers
+	}
+	p.p.Put(s) //nolint:staticcheck
+}
 
 // NewBufferPool returns a new Pool for byte slices.
-func NewBufferPool() Pool {
+// If maxBufferCapacity is 0, the pool will not have a maximum capacity.
+func NewBufferPool(maxBufferCapacity int) Pool {
 	return &bufferPool{
+		maxBufferCap: maxBufferCapacity,
 		p: sync.Pool{
 			New: func() interface{} {
-				return make([]byte, 0, 256*1024)
+				return make([]byte, 0, defaultPoolBufferCap)
 			},
 		},
 	}
-}
-
-// NewBucketedBufferPool returns a new Pool for byte slices with bucketing.
-// The pool will have buckets for sizes from minSize to maxSize increasing by the given factor.
-func NewBucketedBufferPool(minSize, maxSize int, factor float64) Pool {
-	return pool.NewBucketedPool(minSize, maxSize, factor, func(sz int) []byte {
-		return make([]byte, 0, sz)
-	})
 }
 
 // RequestBuffers provides pooled request buffers.
@@ -70,7 +70,7 @@ func (rb *RequestBuffers) Get(size int) *bytes.Buffer {
 		return bytes.NewBuffer(make([]byte, 0, size))
 	}
 
-	b := rb.p.Get(size)
+	b := rb.p.Get()
 	buf := bytes.NewBuffer(b)
 	buf.Reset()
 	if size > 0 {

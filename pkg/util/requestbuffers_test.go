@@ -10,14 +10,12 @@ import (
 )
 
 func TestRequestBuffers(t *testing.T) {
-	const maxBufferSize = 32 * 1024
-
-	rb := NewRequestBuffers(&fakePool{maxBufferSize: maxBufferSize})
+	rb := NewRequestBuffers(&fakePool{})
 	t.Cleanup(rb.CleanUp)
 
 	b := rb.Get(1024)
 	require.NotNil(t, b)
-	assert.Equal(t, 1024, b.Cap())
+	assert.GreaterOrEqual(t, b.Cap(), 1024)
 	assert.Zero(t, b.Len())
 	// Make sure that the buffer gets reset upon next Get
 	_, err := b.Write([]byte("test"))
@@ -30,19 +28,8 @@ func TestRequestBuffers(t *testing.T) {
 	// to test if it reuses the previously returned buffer.
 	b1 := rb.Get(1024)
 	assert.Same(t, unsafe.SliceData(b1.Bytes()), unsafe.SliceData(b.Bytes()))
-	assert.Equal(t, 1024, b1.Cap())
+	assert.GreaterOrEqual(t, b1.Cap(), 1024)
 	assert.Zero(t, b1.Len())
-
-	// Retrieve a buffer larger than maxBufferSize to ensure
-	// it doesn't get reused.
-	b2 := rb.Get(maxBufferSize + 1)
-	assert.Equal(t, maxBufferSize+1, b2.Cap())
-	assert.Zero(t, b2.Len())
-
-	rb.CleanUp()
-
-	b3 := rb.Get(maxBufferSize + 1)
-	assert.NotSame(t, unsafe.SliceData(b2.Bytes()), unsafe.SliceData(b3.Bytes()))
 
 	t.Run("as nil pointer", func(t *testing.T) {
 		var rb *RequestBuffers
@@ -60,24 +47,56 @@ func TestRequestBuffers(t *testing.T) {
 	})
 }
 
-type fakePool struct {
-	maxBufferSize int
-	buffers       [][]byte
+func TestRequestsBuffersMaxPoolBufferSize(t *testing.T) {
+	const maxPoolBufferCap = defaultPoolBufferCap
+
+	t.Run("pool buffer is reused when size is less or equal to maxBufferSize", func(t *testing.T) {
+		rb := NewRequestBuffers(&fakePool{maxBufferCap: maxPoolBufferCap})
+		t.Cleanup(rb.CleanUp)
+
+		b0 := rb.Get(maxPoolBufferCap)
+		require.NotNil(t, b0)
+		assert.Zero(t, b0.Len())
+		assert.GreaterOrEqual(t, b0.Cap(), maxPoolBufferCap)
+
+		rb.CleanUp()
+
+		b1 := rb.Get(maxPoolBufferCap)
+		assert.Same(t, unsafe.SliceData(b0.Bytes()), unsafe.SliceData(b1.Bytes()))
+	})
+	t.Run("pool buffer is not reused when size is greater than maxBufferSize", func(t *testing.T) {
+		rb := NewRequestBuffers(NewBufferPool(maxPoolBufferCap))
+		t.Cleanup(rb.CleanUp)
+
+		b0 := rb.Get(maxPoolBufferCap + 1)
+		require.NotNil(t, b0)
+		assert.Zero(t, b0.Len())
+		assert.GreaterOrEqual(t, b0.Cap(), maxPoolBufferCap+1)
+
+		rb.CleanUp()
+
+		b1 := rb.Get(maxPoolBufferCap + 1)
+		assert.NotSame(t, unsafe.SliceData(b0.Bytes()), unsafe.SliceData(b1.Bytes()))
+	})
 }
 
-func (p *fakePool) Get(sz int) []byte {
-	if sz <= p.maxBufferSize {
-		for i, b := range p.buffers {
-			if cap(b) < sz {
-				continue
-			}
-			p.buffers = append(p.buffers[:i], p.buffers[i+1:]...)
-			return b
-		}
+type fakePool struct {
+	maxBufferCap int
+	buffers      [][]byte
+}
+
+func (p *fakePool) Get() []byte {
+	if len(p.buffers) > 0 {
+		buf := p.buffers[0]
+		p.buffers = p.buffers[1:]
+		return buf
 	}
-	return make([]byte, 0, sz)
+	return make([]byte, 0, defaultPoolBufferCap)
 }
 
 func (p *fakePool) Put(s []byte) {
+	if p.maxBufferCap > 0 && cap(s) > p.maxBufferCap {
+		return
+	}
 	p.buffers = append(p.buffers, s[:0])
 }

@@ -7,6 +7,7 @@ package e2emimir
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,12 +29,15 @@ import (
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
+	promConfig "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
+	promRW2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage/remote"
 	yaml "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
+	mimirapi "github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
@@ -170,6 +174,75 @@ func (c *Client) Push(timeseries []prompb.TimeSeries) (*http.Response, error) {
 	req.Header.Add("Content-Encoding", "snappy")
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+	req.Header.Set("X-Scope-OrgID", c.orgID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	// Execute HTTP request
+	res, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	defer res.Body.Close()
+	return res, nil
+}
+
+// PushInflux the input timeseries to the remote endpoint in Influx format.
+func (c *Client) PushInflux(timeseries []prompb.TimeSeries) (*http.Response, error) {
+	// Create write request.
+	data := distributor.TimeseriesToInfluxRequest(timeseries)
+
+	// Compress it.
+	var buf bytes.Buffer
+
+	gzipData := gzip.NewWriter(&buf)
+	if _, err := gzipData.Write([]byte(data)); err != nil {
+		return nil, err
+	}
+	if err := gzipData.Close(); err != nil {
+		return nil, err
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s%s", c.distributorAddress, mimirapi.InfluxPushEndpoint), &buf)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Encoding", "gzip")
+	req.Header.Set("X-Scope-OrgID", c.orgID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	// Execute HTTP request
+	res, err := c.httpClient.Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+
+	defer res.Body.Close()
+	return res, nil
+}
+
+func (c *Client) PushRW2(writeRequest *promRW2.Request) (*http.Response, error) {
+	// Create write request
+	data, err := proto.Marshal(writeRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create HTTP request
+	compressed := snappy.Encode(nil, data)
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/push", c.distributorAddress), bytes.NewReader(compressed))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Encoding", "snappy")
+	req.Header.Set("Content-Type", "application/x-protobuf;proto=io.prometheus.write.v2.Request")
+	req.Header.Set("X-Prometheus-Remote-Write-Version", "2.0.0")
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
@@ -351,7 +424,7 @@ func parseRemoteReadSamples(resp *http.Response) (*prompb.QueryResult, error) {
 }
 
 func parseRemoteReadChunks(resp *http.Response) ([]prompb.ChunkedReadResponse, error) {
-	stream := remote.NewChunkedReader(resp.Body, remote.DefaultChunkedReadLimit, nil)
+	stream := remote.NewChunkedReader(resp.Body, promConfig.DefaultChunkedReadLimit, nil)
 
 	var results []prompb.ChunkedReadResponse
 	for {
@@ -394,29 +467,29 @@ func (c *Client) QueryRawAt(query string, ts time.Time) (*http.Response, []byte,
 }
 
 // Series finds series by label matchers.
-func (c *Client) Series(matches []string, start, end time.Time) ([]model.LabelSet, error) {
+func (c *Client) Series(matches []string, start, end time.Time, opts ...promv1.Option) ([]model.LabelSet, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.Series(ctx, matches, start, end)
+	result, _, err := c.querierClient.Series(ctx, matches, start, end, opts...)
 	return result, err
 }
 
 // LabelValues gets label values
-func (c *Client) LabelValues(label string, start, end time.Time, matches []string) (model.LabelValues, error) {
+func (c *Client) LabelValues(label string, start, end time.Time, matches []string, opts ...promv1.Option) (model.LabelValues, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.LabelValues(ctx, label, matches, start, end)
+	result, _, err := c.querierClient.LabelValues(ctx, label, matches, start, end, opts...)
 	return result, err
 }
 
 // LabelNames gets label names
-func (c *Client) LabelNames(start, end time.Time) ([]string, error) {
+func (c *Client) LabelNames(start, end time.Time, matches []string, opts ...promv1.Option) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	result, _, err := c.querierClient.LabelNames(ctx, nil, start, end)
+	result, _, err := c.querierClient.LabelNames(ctx, matches, start, end, opts...)
 	return result, err
 }
 
@@ -673,11 +746,27 @@ type successResult struct {
 }
 
 // GetPrometheusRules fetches the rules from the Prometheus endpoint /api/v1/rules.
-func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
-	// Create HTTP request
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/prometheus/api/v1/rules", c.rulerAddress), nil)
+func (c *Client) GetPrometheusRules(maxGroups int, token string) ([]*promv1.RuleGroup, string, error) {
+	url, err := url.Parse(fmt.Sprintf("http://%s/prometheus/api/v1/rules", c.rulerAddress))
 	if err != nil {
-		return nil, err
+		return nil, "", err
+	}
+	if token != "" {
+		q := url.Query()
+		q.Add("group_next_token", token)
+		url.RawQuery = q.Encode()
+	}
+
+	if maxGroups != 0 {
+		q := url.Query()
+		q.Add("group_limit", strconv.Itoa(maxGroups))
+		url.RawQuery = q.Encode()
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequest("GET", url.String(), nil)
+	if err != nil {
+		return nil, "", err
 	}
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
@@ -687,13 +776,13 @@ func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
 	// Execute HTTP request
 	res, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	// Decode the response.
@@ -701,19 +790,20 @@ func (c *Client) GetPrometheusRules() ([]*promv1.RuleGroup, error) {
 		Status string `json:"status"`
 		Data   struct {
 			RuleGroups []*promv1.RuleGroup `json:"groups"`
+			NextToken  string              `json:"groupNextToken,omitempty"`
 		} `json:"data"`
 	}
 
 	decoded := response{}
 	if err := json.Unmarshal(body, &decoded); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if decoded.Status != "success" {
-		return nil, fmt.Errorf("unexpected response status '%s'", decoded.Status)
+		return nil, "", fmt.Errorf("unexpected response status '%s'", decoded.Status)
 	}
 
-	return decoded.Data.RuleGroups, nil
+	return decoded.Data.RuleGroups, decoded.Data.NextToken, nil
 }
 
 // GetRuleGroups gets the configured rule groups from the ruler.
@@ -1508,6 +1598,41 @@ func (c *Client) TestTemplatesExperimental(ctx context.Context, ttConf alertingN
 	}
 
 	decoded := alertingNotify.TestTemplatesResults{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		return nil, err
+	}
+
+	return &decoded, nil
+}
+
+func (c *Client) TestReceiversExperimental(ctx context.Context, trConf alertingNotify.TestReceiversConfigBodyParams) (*alertingNotify.TestReceiversResult, error) {
+	u := c.alertmanagerClient.URL("api/v1/grafana/receivers/test", nil)
+
+	data, err := json.Marshal(trConf)
+	if err != nil {
+		return nil, fmt.Errorf("error marshalling test receivers config: %s", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, u.String(), bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %s", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("testing receivers failed with status %d and error %s", resp.StatusCode, string(body))
+	}
+
+	decoded := alertingNotify.TestReceiversResult{}
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return nil, err
 	}

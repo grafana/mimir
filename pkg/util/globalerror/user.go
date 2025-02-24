@@ -17,10 +17,12 @@ const (
 	MissingMetricName                     ID = "missing-metric-name"
 	InvalidMetricName                     ID = "metric-name-invalid"
 	MaxLabelNamesPerSeries                ID = "max-label-names-per-series"
+	MaxLabelNamesPerInfoSeries            ID = "max-label-names-per-info-series"
 	MaxNativeHistogramBuckets             ID = "max-native-histogram-buckets"
 	NotReducibleNativeHistogram           ID = "not-reducible-native-histogram"
 	InvalidSchemaNativeHistogram          ID = "invalid-native-histogram-schema"
 	SeriesInvalidLabel                    ID = "label-invalid"
+	SeriesInvalidLabelValue               ID = "label-value-invalid"
 	SeriesLabelNameTooLong                ID = "label-name-too-long"
 	SeriesLabelValueTooLong               ID = "label-value-too-long"
 	SeriesWithDuplicateLabelNames         ID = "duplicate-label-names"
@@ -46,6 +48,7 @@ const (
 	IngesterMaxInMemorySeries            ID = "ingester-max-series"
 	IngesterMaxInflightPushRequests      ID = "ingester-max-inflight-push-requests"
 	IngesterMaxInflightPushRequestsBytes ID = "ingester-max-inflight-push-requests-bytes"
+	IngesterMaxInflightReadRequests      ID = "ingester-max-inflight-read-requests"
 
 	ExemplarLabelsMissing    ID = "exemplar-labels-missing"
 	ExemplarLabelsTooLong    ID = "exemplar-labels-too-long"
@@ -63,6 +66,7 @@ const (
 	IngestionRateLimited        ID = "tenant-max-ingestion-rate"
 	TooManyHAClusters           ID = "tenant-too-many-ha-clusters"
 	QueryBlocked                ID = "query-blocked"
+	RequestBlocked              ID = "request-blocked"
 
 	SampleTimestampTooOld    ID = "sample-timestamp-too-old"
 	SampleOutOfOrder         ID = "sample-out-of-order"
@@ -85,6 +89,11 @@ const (
 	NativeHistogramNegativeBucketCount  ID = "native-histogram-negative-bucket-count"
 	NativeHistogramSpanNegativeOffset   ID = "native-histogram-span-negative-offset"
 	NativeHistogramSpansBucketsMismatch ID = "native-histogram-spans-buckets-mismatch"
+	NativeHistogramOOODisabled          ID = "native-histogram-ooo-disabled"
+
+	// Alertmanager errors
+	AlertmanagerMaxGrafanaConfigSize ID = "alertmanager-max-grafana-config-size"
+	AlertmanagerMaxGrafanaStateSize  ID = "alertmanager-max-grafana-state-size"
 )
 
 // Message returns the provided msg, appending the error id.

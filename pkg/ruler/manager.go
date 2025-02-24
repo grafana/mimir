@@ -299,7 +299,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 	var err error
 	if n, err = newRulerNotifier(&notifier.Options{
 		QueueCapacity:   r.cfg.NotificationQueueCapacity,
-		DrainOnShutdown: r.cfg.DrainNotificationQueueOnShutdown,
+		DrainOnShutdown: true,
 		Registerer:      reg,
 		Do: func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
 			// Note: The passed-in context comes from the Prometheus notifier

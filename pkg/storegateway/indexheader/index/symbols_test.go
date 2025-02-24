@@ -9,6 +9,7 @@ import (
 	"hash/crc32"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -16,7 +17,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 
 	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
 	"github.com/grafana/mimir/pkg/util/test"

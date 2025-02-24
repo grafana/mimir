@@ -11,13 +11,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/alerting/models"
 	"github.com/prometheus/alertmanager/types"
+
+	"github.com/grafana/alerting/models"
 )
 
 type FakeProvider struct {
 	Images []*Image
 	Bytes  []byte
+}
+
+func (f *FakeProvider) GetImageFileName(token string) string {
+	for _, image := range f.Images {
+		if image.Token == token {
+			return filepath.Base(image.Path)
+		}
+	}
+	return ""
 }
 
 // GetImage returns an image with the same token.
@@ -76,7 +86,7 @@ func getImageURI(alert *types.Alert) (string, error) {
 
 // NewFakeProvider returns an image provider with N test images.
 // Each image has a token and a URL, but does not have a file on disk.
-func NewFakeProvider(n int) Provider {
+func NewFakeProvider(n int) *FakeProvider {
 	p := FakeProvider{}
 	for i := 1; i <= n; i++ {
 		p.Images = append(p.Images, &Image{
@@ -93,7 +103,7 @@ func NewFakeProvider(n int) Provider {
 // PNG on disk. The test should call deleteFunc to delete the images from disk
 // at the end of the test.
 // nolint:deadcode,unused
-func NewFakeProviderWithFile(t *testing.T, n int) Provider {
+func NewFakeProviderWithFile(t *testing.T, n int) *FakeProvider {
 	var (
 		files []string
 		p     FakeProvider

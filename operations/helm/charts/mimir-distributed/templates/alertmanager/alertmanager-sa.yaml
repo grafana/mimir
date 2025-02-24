@@ -1,0 +1,14 @@
+{{- if .Values.alertmanager.serviceAccount.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ template "mimir.alertmanager.serviceAccountName" . }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" .) | nindent 4 }}
+    {{- with .Values.alertmanager.serviceAccount.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- toYaml .Values.alertmanager.serviceAccount.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+{{- end }}

@@ -68,7 +68,6 @@ func init() {
 
 	histTestTuples = make([]WriteReadSeriesTestTuple, len(histogramProfiles))
 	for i, histProfile := range histogramProfiles {
-		i := i // shadowing it to ensure it's properly updated in the closure
 		histTestTuples[i] = WriteReadSeriesTestTuple{
 			metricName:              histProfile.metricName,
 			typeLabel:               histProfile.typeLabel,

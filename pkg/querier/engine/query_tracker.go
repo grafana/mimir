@@ -67,3 +67,7 @@ func generateActivityDescription(ctx context.Context, query string) string {
 func (q queryTracker) Delete(insertIndex int) {
 	q.tracker.Delete(insertIndex)
 }
+
+func (q *queryTracker) Close() error {
+	return q.tracker.Close()
+}

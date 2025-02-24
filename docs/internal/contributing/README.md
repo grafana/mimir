@@ -10,6 +10,8 @@ Doing so can be a helpful way of asking for assistance or to develop an idea.
 
 When you open a PR as a draft, add a short description of what you’re still working on, what you are seeking assistance with, or both.
 
+There is an automated GitHub action which closes PRs after 180 days of inactivity to keep the PR list clean. 30 days before closing, the GitHub action will add `stale` label to the PR. If you need more time, please remove the `stale` label.
+
 Before a piece of work is finished:
 
 - Organize it into one or more commits, and include a commit message for each that describes all of the changes that you made in that commit. It is more helpful to explain _why_ more than _what_, which are available via `git diff`.

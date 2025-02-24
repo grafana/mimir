@@ -1,6 +1,6 @@
 // Migration step 6:
 // - Decommission ingester-zone-[abc] StatefulSet and Service.
-(import 'test-ingest-storage-migration-step-5.jsonnet') {
+(import 'test-ingest-storage-migration-step-5b.jsonnet') {
   _config+:: {
     // This builds on previous step.
     ingest_storage_migration_classic_ingesters_scale_down: false,

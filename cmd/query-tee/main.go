@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
@@ -17,6 +18,7 @@ import (
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/common/model"
 	jaegercfg "github.com/uber/jaeger-client-go/config"
 
 	"github.com/grafana/mimir/pkg/util/instrumentation"
@@ -103,9 +105,11 @@ func mimirReadRoutes(cfg Config) []querytee.Route {
 	}
 
 	samplesComparator := querytee.NewSamplesComparator(querytee.SampleComparisonOptions{
-		Tolerance:         cfg.ProxyConfig.ValueComparisonTolerance,
-		UseRelativeError:  cfg.ProxyConfig.UseRelativeError,
-		SkipRecentSamples: cfg.ProxyConfig.SkipRecentSamples,
+		Tolerance:              cfg.ProxyConfig.ValueComparisonTolerance,
+		UseRelativeError:       cfg.ProxyConfig.UseRelativeError,
+		SkipRecentSamples:      cfg.ProxyConfig.SkipRecentSamples,
+		SkipSamplesBefore:      model.Time(time.Time(cfg.ProxyConfig.SkipSamplesBefore).UnixMilli()),
+		RequireExactErrorMatch: cfg.ProxyConfig.RequireExactErrorMatch,
 	})
 
 	var instantQueryTransformers []querytee.RequestTransformer

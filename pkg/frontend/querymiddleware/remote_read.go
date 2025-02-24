@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/golang/snappy"
 	"github.com/opentracing/opentracing-go"
@@ -37,7 +38,7 @@ type remoteReadRoundTripper struct {
 	middleware MetricsQueryMiddleware
 }
 
-func newRemoteReadRoundTripper(next http.RoundTripper, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
+func NewRemoteReadRoundTripper(next http.RoundTripper, middlewares ...MetricsQueryMiddleware) http.RoundTripper {
 	return &remoteReadRoundTripper{
 		next:       next,
 		middleware: MergeMetricsQueryMiddlewares(middlewares...),
@@ -283,6 +284,10 @@ func (r *remoteReadQueryRequest) GetQuery() string {
 
 func (r *remoteReadQueryRequest) GetHeaders() []*PrometheusHeader {
 	return nil
+}
+
+func (r *remoteReadQueryRequest) GetLookbackDelta() time.Duration {
+	return 0
 }
 
 func (r *remoteReadQueryRequest) WithID(_ int64) (MetricsQueryRequest, error) {

@@ -49,6 +49,11 @@ linters:
     - nosnakecase
     - testableexamples
     - musttag
+    - depguard
+    - goconst
+    - perfsprint
+    - mnd
+    - predeclared
 
 linters-settings:
   govet:

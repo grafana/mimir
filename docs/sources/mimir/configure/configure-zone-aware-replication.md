@@ -71,7 +71,7 @@ With a replication factor of 3, which is the default, deploy the Grafana Mimir c
 Deploying Grafana Mimir clusters to more zones than the configured replication factor does not have a negative impact.
 Deploying Grafana Mimir clusters to fewer zones than the configured replication factor can cause writes to the replica to be missed, or can cause writes to fail completely.
 
-If there are fewer than `floor(replication factor / 2)` zones with failing replicas, reads and writes can withstand zone failures.
+A Grafana Mimir deployment should have at least `floor(replication factor / 2) + 1` healthy zones to operate.
 
 ## Unbalanced zones
 

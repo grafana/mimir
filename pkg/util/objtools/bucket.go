@@ -138,7 +138,7 @@ func (c *BucketConfig) Validate() error {
 func (c *BucketConfig) validate(descriptor string) error {
 	descriptorFlagPrefix := ifNotEmptySuffix(descriptor, ".")
 	if c.backend == "" {
-		return fmt.Errorf("--" + descriptorFlagPrefix + "backend is missing")
+		return fmt.Errorf("--%sbackend is missing", descriptorFlagPrefix)
 	}
 	switch c.backend {
 	case bucket.Azure:
@@ -148,7 +148,7 @@ func (c *BucketConfig) validate(descriptor string) error {
 	case bucket.S3:
 		return c.s3.Validate(bucket.S3 + "." + descriptorFlagPrefix)
 	default:
-		return fmt.Errorf("unknown backend provided in --" + descriptorFlagPrefix + "backend")
+		return fmt.Errorf("unknown backend provided in --%sbackend", descriptorFlagPrefix)
 	}
 }
 

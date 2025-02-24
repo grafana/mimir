@@ -305,7 +305,10 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
 
 	// Ensure the bucket iteration has been retried the configured number of times.
-	bucketClient.AssertNumberOfCalls(t, "Iter", 1+3)
+	// 1 initial Iter to expose metrics before the cleanup run
+	// 1 adittional Iter on cleanup run
+	// 3 additional Iters on compaction run
+	bucketClient.AssertNumberOfCalls(t, "Iter", 1+1+3)
 
 	assert.Equal(t, []string{
 		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
@@ -915,6 +918,8 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{"user-1"}, nil)
 	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D"}, nil)
+	bucketClient.MockGet("user-1/bucket-index.json.gz", "", nil)
+
 	bucketClient.MockGet(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), `{"deletion_time": 1}`, nil)
 	bucketClient.MockUpload(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), nil)
 
@@ -2101,7 +2106,6 @@ func TestOwnUser(t *testing.T) {
 	}
 
 	for name, tc := range testCases {
-		tc := tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
@@ -2379,6 +2383,17 @@ func (s sample) Type() chunkenc.ValueType {
 	default:
 		return chunkenc.ValFloat
 	}
+}
+
+func (s sample) Copy() chunks.Sample {
+	c := sample{t: s.t, v: s.v}
+	if s.h != nil {
+		c.h = s.h.Copy()
+	}
+	if s.fh != nil {
+		c.fh = s.fh.Copy()
+	}
+	return c
 }
 
 type bucketWithMockedAttributes struct {

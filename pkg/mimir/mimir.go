@@ -48,8 +48,11 @@ import (
 	alertbucketclient "github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
 	alertstorelocal "github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
 	"github.com/grafana/mimir/pkg/api"
+	"github.com/grafana/mimir/pkg/blockbuilder"
+	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/continuoustest"
+	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -112,23 +115,25 @@ type Config struct {
 	PrintConfig                     bool                   `yaml:"-"`
 	ApplicationName                 string                 `yaml:"-"`
 
-	API              api.Config                      `yaml:"api"`
-	Server           server.Config                   `yaml:"server"`
-	Distributor      distributor.Config              `yaml:"distributor"`
-	Querier          querier.Config                  `yaml:"querier"`
-	IngesterClient   client.Config                   `yaml:"ingester_client"`
-	Ingester         ingester.Config                 `yaml:"ingester"`
-	Flusher          flusher.Config                  `yaml:"flusher"`
-	LimitsConfig     validation.Limits               `yaml:"limits"`
-	Worker           querier_worker.Config           `yaml:"frontend_worker"`
-	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
-	IngestStorage    ingest.Config                   `yaml:"ingest_storage"`
-	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
-	Compactor        compactor.Config                `yaml:"compactor"`
-	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
-	TenantFederation tenantfederation.Config         `yaml:"tenant_federation"`
-	ActivityTracker  activitytracker.Config          `yaml:"activity_tracker"`
-	Vault            vault.Config                    `yaml:"vault"`
+	API                   api.Config                      `yaml:"api"`
+	Server                server.Config                   `yaml:"server"`
+	Distributor           distributor.Config              `yaml:"distributor"`
+	Querier               querier.Config                  `yaml:"querier"`
+	IngesterClient        client.Config                   `yaml:"ingester_client"`
+	Ingester              ingester.Config                 `yaml:"ingester"`
+	Flusher               flusher.Config                  `yaml:"flusher"`
+	LimitsConfig          validation.Limits               `yaml:"limits"`
+	Worker                querier_worker.Config           `yaml:"frontend_worker"`
+	Frontend              frontend.CombinedFrontendConfig `yaml:"frontend"`
+	IngestStorage         ingest.Config                   `yaml:"ingest_storage"`
+	BlockBuilder          blockbuilder.Config             `yaml:"block_builder" doc:"hidden"`
+	BlockBuilderScheduler blockbuilderscheduler.Config    `yaml:"block_builder_scheduler" doc:"hidden"`
+	BlocksStorage         tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
+	Compactor             compactor.Config                `yaml:"compactor"`
+	StoreGateway          storegateway.Config             `yaml:"store_gateway"`
+	TenantFederation      tenantfederation.Config         `yaml:"tenant_federation"`
+	ActivityTracker       activitytracker.Config          `yaml:"activity_tracker"`
+	Vault                 vault.Config                    `yaml:"vault"`
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
@@ -144,6 +149,10 @@ type Config struct {
 	Common CommonConfig `yaml:"common"`
 
 	TimeseriesUnmarshalCachingOptimizationEnabled bool `yaml:"timeseries_unmarshal_caching_optimization_enabled" category:"experimental"`
+
+	CostAttributionEvictionInterval time.Duration `yaml:"cost_attribution_eviction_interval" category:"experimental"`
+	CostAttributionRegistryPath     string        `yaml:"cost_attribution_registry_path" category:"experimental"`
+	CostAttributionCleanupInterval  time.Duration `yaml:"cost_attribution_cleanup_interval" category:"experimental"`
 }
 
 // RegisterFlags registers flags.
@@ -169,6 +178,9 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
 	f.BoolVar(&c.EnableGoRuntimeMetrics, "enable-go-runtime-metrics", false, "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.")
 	f.BoolVar(&c.TimeseriesUnmarshalCachingOptimizationEnabled, "timeseries-unmarshal-caching-optimization-enabled", true, "Enables optimized marshaling of timeseries.")
+	f.StringVar(&c.CostAttributionRegistryPath, "cost-attribution.registry-path", "", "Defines a custom path for the registry. When specified, Mimir exposes cost attribution metrics through this custom path. If not specified, cost attribution metrics aren't exposed.")
+	f.DurationVar(&c.CostAttributionEvictionInterval, "cost-attribution.eviction-interval", 20*time.Minute, "Specifies how often inactive cost attributions for received and discarded sample trackers are evicted from the counter, ensuring they do not contribute to the cost attribution cardinality per user limit. This setting does not apply to active series, which are managed separately.")
+	f.DurationVar(&c.CostAttributionCleanupInterval, "cost-attribution.cleanup-interval", 3*time.Minute, "Time interval at which the cost attribution cleanup process runs, ensuring inactive cost attribution entries are purged.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
@@ -181,6 +193,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
 	c.IngestStorage.RegisterFlags(f)
+	c.BlockBuilder.RegisterFlags(f, logger)
+	c.BlockBuilderScheduler.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f, logger)
 	c.StoreGateway.RegisterFlags(f, logger)
@@ -246,9 +260,6 @@ func (c *Config) Validate(log log.Logger) error {
 		return errors.Wrap(err, "invalid ingest storage config")
 	}
 	if c.isAnyModuleEnabled(Ingester, Write, All) {
-		if c.IngestStorage.Enabled && !c.Ingester.DeprecatedReturnOnlyGRPCErrors {
-			return errors.New("to use ingest storage (-ingest-storage.enabled) also enable -ingester.return-only-grpc-errors")
-		}
 		if !c.IngestStorage.Enabled && !c.Ingester.PushGrpcMethodEnabled {
 			return errors.New("cannot disable Push gRPC method in ingester, while ingest storage (-ingest-storage.enabled) is not enabled")
 		}
@@ -266,7 +277,7 @@ func (c *Config) Validate(log log.Logger) error {
 		return fmt.Errorf("querier timeout (%s) must be lower than or equal to HTTP server write timeout (%s)",
 			c.Querier.EngineConfig.Timeout, c.Server.HTTPServerWriteTimeout)
 	}
-	if err := c.IngesterClient.Validate(log); err != nil {
+	if err := c.IngesterClient.Validate(); err != nil {
 		return errors.Wrap(err, "invalid ingester_client config")
 	}
 	if err := c.Ingester.Validate(log); err != nil {
@@ -702,38 +713,41 @@ type Mimir struct {
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                           *api.API
-	Server                        *server.Server
-	IngesterRing                  *ring.Ring
-	IngesterPartitionRingWatcher  *ring.PartitionRingWatcher
-	IngesterPartitionInstanceRing *ring.PartitionInstanceRing
-	TenantLimits                  validation.TenantLimits
-	Overrides                     *validation.Overrides
-	ActiveGroupsCleanup           *util.ActiveGroupsCleanupService
-	Distributor                   *distributor.Distributor
-	Ingester                      *ingester.Ingester
-	Flusher                       *flusher.Flusher
-	FrontendV1                    *frontendv1.Frontend
-	RuntimeConfig                 *runtimeconfig.Manager
-	QuerierQueryable              prom_storage.SampleAndChunkQueryable
-	ExemplarQueryable             prom_storage.ExemplarQueryable
-	MetadataSupplier              querier.MetadataSupplier
-	QuerierEngine                 promql.QueryEngine
-	QueryFrontendTripperware      querymiddleware.Tripperware
-	QueryFrontendCodec            querymiddleware.Codec
-	Ruler                         *ruler.Ruler
-	RulerDirectStorage            rulestore.RuleStore
-	RulerCachedStorage            rulestore.RuleStore
-	Alertmanager                  *alertmanager.MultitenantAlertmanager
-	Compactor                     *compactor.MultitenantCompactor
-	StoreGateway                  *storegateway.StoreGateway
-	StoreQueryable                prom_storage.Queryable
-	MemberlistKV                  *memberlist.KVInitService
-	ActivityTracker               *activitytracker.ActivityTracker
-	Vault                         *vault.Vault
-	UsageStatsReporter            *usagestats.Reporter
-	ContinuousTestManager         *continuoustest.Manager
-	BuildInfoHandler              http.Handler
+	API                              *api.API
+	Server                           *server.Server
+	IngesterRing                     *ring.Ring
+	IngesterPartitionRingWatcher     *ring.PartitionRingWatcher
+	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
+	TenantLimits                     validation.TenantLimits
+	Overrides                        *validation.Overrides
+	ActiveGroupsCleanup              *util.ActiveGroupsCleanupService
+	Distributor                      *distributor.Distributor
+	Ingester                         *ingester.Ingester
+	Flusher                          *flusher.Flusher
+	FrontendV1                       *frontendv1.Frontend
+	RuntimeConfig                    *runtimeconfig.Manager
+	QuerierQueryable                 prom_storage.SampleAndChunkQueryable
+	ExemplarQueryable                prom_storage.ExemplarQueryable
+	AdditionalStorageQueryables      []querier.TimeRangeQueryable
+	MetadataSupplier                 querier.MetadataSupplier
+	QuerierEngine                    promql.QueryEngine
+	QueryFrontendTripperware         querymiddleware.Tripperware
+	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
+	QueryFrontendCodec               querymiddleware.Codec
+	Ruler                            *ruler.Ruler
+	RulerStorage                     rulestore.RuleStore
+	Alertmanager                     *alertmanager.MultitenantAlertmanager
+	Compactor                        *compactor.MultitenantCompactor
+	StoreGateway                     *storegateway.StoreGateway
+	MemberlistKV                     *memberlist.KVInitService
+	ActivityTracker                  *activitytracker.ActivityTracker
+	Vault                            *vault.Vault
+	UsageStatsReporter               *usagestats.Reporter
+	BlockBuilder                     *blockbuilder.BlockBuilder
+	BlockBuilderScheduler            *blockbuilderscheduler.BlockBuilderScheduler
+	ContinuousTestManager            *continuoustest.Manager
+	BuildInfoHandler                 http.Handler
+	CostAttributionManager           *costattribution.Manager
 }
 
 // New makes a new Mimir.
@@ -803,6 +817,12 @@ func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
 	rules := []collectors.GoRuntimeMetricsRule{
 		// Enable the mutex wait time metric.
 		{Matcher: goregexp.MustCompile(`^/sync/mutex/wait/total:seconds$`)},
+		// Enable the GC total CPU time metric.
+		{Matcher: goregexp.MustCompile(`^/cpu/classes/gc/total:cpu-seconds$`)},
+		// Enable the total available CPU time metric.
+		{Matcher: goregexp.MustCompile(`^/cpu/classes/total:cpu-seconds$`)},
+		// Enable the total idle CPU time metric.
+		{Matcher: goregexp.MustCompile(`^/cpu/classes/idle:cpu-seconds$`)},
 	}
 
 	if cfg.EnableGoRuntimeMetrics {

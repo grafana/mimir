@@ -23,4 +23,8 @@ subjects:
 - kind: ServiceAccount
   name: {{ template "mimir.ruler.serviceAccountName" . }}
 {{- end }}
+{{- if .Values.alertmanager.serviceAccount.create }}
+- kind: ServiceAccount
+  name: {{ template "mimir.alertmanager.serviceAccountName" . }}
+{{- end }}
 {{- end }}

@@ -9,15 +9,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LimitsMap is a generic map that can hold either float64 or int as values.
-type LimitsMap[T float64 | int] struct {
+// LimitsMap is a flag.Value implementation that looks like a generic map, holding float64s, ints, or strings as values.
+type LimitsMap[T float64 | int | string] struct {
 	data      map[string]T
 	validator func(k string, v T) error
 }
 
-func NewLimitsMap[T float64 | int](validator func(k string, v T) error) LimitsMap[T] {
+func NewLimitsMap[T float64 | int | string](validator func(k string, v T) error) LimitsMap[T] {
+	return NewLimitsMapWithData(make(map[string]T), validator)
+}
+
+func NewLimitsMapWithData[T float64 | int | string](data map[string]T, validator func(k string, v T) error) LimitsMap[T] {
 	return LimitsMap[T]{
-		data:      make(map[string]T),
+		data:      data,
 		validator: validator,
 	}
 }
@@ -43,6 +47,10 @@ func (m LimitsMap[T]) Set(s string) error {
 		return err
 	}
 	return m.updateMap(newMap)
+}
+
+func (m LimitsMap[T]) Read() map[string]T {
+	return m.data
 }
 
 // Clone returns a copy of the LimitsMap.
@@ -73,6 +81,7 @@ func (m LimitsMap[T]) updateMap(newMap map[string]T) error {
 		}
 	}
 
+	clear(m.data)
 	for k, v := range newMap {
 		m.data[k] = v
 	}

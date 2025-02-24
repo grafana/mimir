@@ -31,6 +31,14 @@ func (t *SpanlessTracingCache) SetMultiAsync(data map[string][]byte, ttl time.Du
 	t.next.SetMultiAsync(data, ttl)
 }
 
+func (t *SpanlessTracingCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return t.next.Set(ctx, key, value, ttl)
+}
+
+func (t *SpanlessTracingCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return t.next.Add(ctx, key, value, ttl)
+}
+
 func (t *SpanlessTracingCache) GetMulti(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte) {
 	var (
 		bytes  int

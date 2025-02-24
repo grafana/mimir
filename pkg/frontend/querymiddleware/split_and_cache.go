@@ -262,7 +262,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			for downstreamIdx, downstreamReq := range splitReq.downstreamRequests {
 				downstreamRes := splitReq.downstreamResponses[downstreamIdx]
-				if !isResponseCachable(downstreamRes, s.logger) {
+				if !isResponseCachable(downstreamRes) {
 					continue
 				}
 
@@ -408,7 +408,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, now tim
 				"hashedKey", foundKey,
 				"traceID", cachedExtent.TraceId,
 				"start", time.UnixMilli(cachedExtent.Start),
-				"end", time.UnixMilli(cachedExtent.Start),
+				"end", time.UnixMilli(cachedExtent.End),
 			)
 			usedBytes += cachedExtent.Response.Size()
 		}
@@ -678,7 +678,7 @@ func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]Me
 func evaluateAtModifierFunction(query string, start, end int64) (string, error) {
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", apierror.New(apierror.TypeBadData, decorateWithParamName(err, "query").Error())
+		return "", apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
 	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
 		switch exprAt := n.(type) {

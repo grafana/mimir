@@ -9,10 +9,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	s3_service "github.com/aws/aws-sdk-go/service/s3"
 	"github.com/grafana/dskit/flagext"
@@ -20,6 +18,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore/providers/s3"
 
+	"github.com/grafana/mimir/pkg/storage/bucket/common"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -65,52 +64,6 @@ func thanosS3BucketLookupTypesValues() (list []string) {
 	return list
 }
 
-// HTTPConfig stores the http.Transport configuration for the s3 minio client.
-type HTTPConfig struct {
-	IdleConnTimeout       time.Duration `yaml:"idle_conn_timeout" category:"advanced"`
-	ResponseHeaderTimeout time.Duration `yaml:"response_header_timeout" category:"advanced"`
-	InsecureSkipVerify    bool          `yaml:"insecure_skip_verify" category:"advanced"`
-	TLSHandshakeTimeout   time.Duration `yaml:"tls_handshake_timeout" category:"advanced"`
-	ExpectContinueTimeout time.Duration `yaml:"expect_continue_timeout" category:"advanced"`
-	MaxIdleConns          int           `yaml:"max_idle_connections" category:"advanced"`
-	MaxIdleConnsPerHost   int           `yaml:"max_idle_connections_per_host" category:"advanced"`
-	MaxConnsPerHost       int           `yaml:"max_connections_per_host" category:"advanced"`
-
-	// Allow upstream callers to inject a round tripper
-	Transport http.RoundTripper `yaml:"-"`
-
-	TLSConfig TLSConfig `yaml:",inline"`
-}
-
-// TLSConfig configures the options for TLS connections.
-type TLSConfig struct {
-	CAPath     string `yaml:"tls_ca_path" category:"advanced"`
-	CertPath   string `yaml:"tls_cert_path" category:"advanced"`
-	KeyPath    string `yaml:"tls_key_path" category:"advanced"`
-	ServerName string `yaml:"tls_server_name" category:"advanced"`
-}
-
-// RegisterFlagsWithPrefix registers the flags for s3 storage with the provided prefix
-func (cfg *HTTPConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.DurationVar(&cfg.IdleConnTimeout, prefix+"s3.http.idle-conn-timeout", 90*time.Second, "The time an idle connection will remain idle before closing.")
-	f.DurationVar(&cfg.ResponseHeaderTimeout, prefix+"s3.http.response-header-timeout", 2*time.Minute, "The amount of time the client will wait for a servers response headers.")
-	f.BoolVar(&cfg.InsecureSkipVerify, prefix+"s3.http.insecure-skip-verify", false, "If the client connects to S3 via HTTPS and this option is enabled, the client will accept any certificate and hostname.")
-	f.DurationVar(&cfg.TLSHandshakeTimeout, prefix+"s3.tls-handshake-timeout", 10*time.Second, "Maximum time to wait for a TLS handshake. 0 means no limit.")
-	f.DurationVar(&cfg.ExpectContinueTimeout, prefix+"s3.expect-continue-timeout", 1*time.Second, "The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. 0 to send the request body immediately.")
-	f.IntVar(&cfg.MaxIdleConns, prefix+"s3.max-idle-connections", 100, "Maximum number of idle (keep-alive) connections across all hosts. 0 means no limit.")
-	f.IntVar(&cfg.MaxIdleConnsPerHost, prefix+"s3.max-idle-connections-per-host", 100, "Maximum number of idle (keep-alive) connections to keep per-host. If 0, a built-in default value is used.")
-	f.IntVar(&cfg.MaxConnsPerHost, prefix+"s3.max-connections-per-host", 0, "Maximum number of connections per host. 0 means no limit.")
-	cfg.TLSConfig.RegisterFlagsWithPrefix(prefix, f)
-}
-
-// RegisterFlagsWithPrefix registers the flags for s3 storage with the provided prefix.
-func (cfg *TLSConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.CAPath, prefix+"s3.http.tls-ca-path", "", "Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.")
-	f.StringVar(&cfg.CertPath, prefix+"s3.http.tls-cert-path", "", "Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.")
-	f.StringVar(&cfg.KeyPath, prefix+"s3.http.tls-key-path", "", "Path to the key for the client certificate. Also requires the client certificate to be configured.")
-	f.StringVar(&cfg.ServerName, prefix+"s3.http.tls-server-name", "", "Override the expected name on the server certificate.")
-}
-
 // Config holds the config options for an S3 backend
 type Config struct {
 	Endpoint             string              `yaml:"endpoint"`
@@ -118,6 +71,7 @@ type Config struct {
 	BucketName           string              `yaml:"bucket_name"`
 	SecretAccessKey      flagext.Secret      `yaml:"secret_access_key"`
 	AccessKeyID          string              `yaml:"access_key_id"`
+	SessionToken         flagext.Secret      `yaml:"session_token"`
 	Insecure             bool                `yaml:"insecure" category:"advanced"`
 	SignatureVersion     string              `yaml:"signature_version" category:"advanced"`
 	ListObjectsVersion   string              `yaml:"list_objects_version" category:"advanced"`
@@ -129,8 +83,9 @@ type Config struct {
 	SendContentMd5       bool                `yaml:"send_content_md5" category:"experimental"`
 	STSEndpoint          string              `yaml:"sts_endpoint"`
 
-	SSE  SSEConfig  `yaml:"sse"`
-	HTTP HTTPConfig `yaml:"http"`
+	SSE         SSEConfig         `yaml:"sse"`
+	HTTP        common.HTTPConfig `yaml:"http"`
+	TraceConfig TraceConfig       `yaml:"trace"`
 }
 
 // RegisterFlags registers the flags for s3 storage with the provided prefix
@@ -142,6 +97,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.AccessKeyID, prefix+"s3.access-key-id", "", "S3 access key ID")
 	f.Var(&cfg.SecretAccessKey, prefix+"s3.secret-access-key", "S3 secret access key")
+	f.Var(&cfg.SessionToken, prefix+"s3.session-token", "S3 session token")
 	f.StringVar(&cfg.BucketName, prefix+"s3.bucket-name", "", "S3 bucket name")
 	f.StringVar(&cfg.Region, prefix+"s3.region", "", "S3 region. If unset, the client will issue a S3 GetBucketLocation API call to autodetect it.")
 	f.StringVar(&cfg.Endpoint, prefix+"s3.endpoint", "", "The S3 bucket endpoint. It could be an AWS S3 endpoint listed at https://docs.aws.amazon.com/general/latest/gr/s3.html or the address of an S3-compatible service in hostname:port format.")
@@ -156,7 +112,8 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.DualstackEnabled, prefix+"s3.dualstack-enabled", true, "When enabled, direct all AWS S3 requests to the dual-stack IPv4/IPv6 endpoint for the configured region.")
 	f.StringVar(&cfg.STSEndpoint, prefix+"s3.sts-endpoint", "", "Accessing S3 resources using temporary, secure credentials provided by AWS Security Token Service.")
 	cfg.SSE.RegisterFlagsWithPrefix(prefix+"s3.sse.", f)
-	cfg.HTTP.RegisterFlagsWithPrefix(prefix, f)
+	cfg.HTTP.RegisterFlagsWithPrefix(prefix+"s3.", f)
+	cfg.TraceConfig.RegisterFlagsWithPrefix(prefix+"s3.trace.", f)
 }
 
 // Validate config and returns error on failure
@@ -267,6 +224,14 @@ func parseKMSEncryptionContext(data string) (map[string]string, error) {
 	decoded := map[string]string{}
 	err := errors.Wrap(json.Unmarshal([]byte(data), &decoded), "unable to parse KMS encryption context")
 	return decoded, err
+}
+
+type TraceConfig struct {
+	Enabled bool `yaml:"enabled" category:"advanced"`
+}
+
+func (cfg *TraceConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "When enabled, low-level S3 HTTP operation information is logged at the debug level.")
 }
 
 // bucketLookupTypeValue is an adapter between s3.BucketLookupType and flag.Value.

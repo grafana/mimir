@@ -12,8 +12,6 @@ import (
 
 	"github.com/dennwc/varint"
 	"github.com/pkg/errors"
-
-	"github.com/grafana/mimir/pkg/util/math"
 )
 
 var (
@@ -49,7 +47,7 @@ func (d *Decbuf) CheckCrc32(castagnoliTable *crc32.Table) {
 	rawBuf := make([]byte, maxChunkSize)
 
 	for bytesToRead > 0 {
-		chunkSize := math.Min(bytesToRead, maxChunkSize)
+		chunkSize := min(bytesToRead, maxChunkSize)
 		chunkBuf := rawBuf[0:chunkSize]
 
 		err := d.r.readInto(chunkBuf)

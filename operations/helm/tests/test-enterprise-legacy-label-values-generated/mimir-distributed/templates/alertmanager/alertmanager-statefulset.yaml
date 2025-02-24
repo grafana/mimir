@@ -21,7 +21,9 @@ spec:
     type: RollingUpdate
   serviceName: test-enterprise-legacy-label-values-enterprise-metrics-alertmanager
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:

@@ -74,7 +74,7 @@ func testIgnoreDeletionMarkFilter(t *testing.T, bucketIndexEnabled bool) {
 	if bucketIndexEnabled {
 		var err error
 
-		u := bucketindex.NewUpdater(bkt, userID, nil, logger)
+		u := bucketindex.NewUpdater(bkt, userID, nil, 16, logger)
 		idx, _, err = u.UpdateIndex(ctx, nil)
 		require.NoError(t, err)
 		require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, idx))

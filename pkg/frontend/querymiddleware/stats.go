@@ -132,7 +132,7 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 }
 
 func (s queryStatsMiddleware) trackReadConsistency(ctx context.Context) {
-	consistency, ok := api.ReadConsistencyFromContext(ctx)
+	consistency, ok := api.ReadConsistencyLevelFromContext(ctx)
 	if !ok {
 		return
 	}

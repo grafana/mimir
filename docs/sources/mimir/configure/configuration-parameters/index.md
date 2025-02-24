@@ -141,16 +141,13 @@ api:
   # CLI flag: -api.skip-label-name-validation-header-enabled
   [skip_label_name_validation_header_enabled: <boolean> | default = false]
 
-  # (deprecated) If true, store metadata when ingesting metrics via OTLP. This
-  # makes metric descriptions and types available for metrics ingested via OTLP.
-  # CLI flag: -distributor.enable-otlp-metadata-storage
-  [enable_otel_metadata_translation: <boolean> | default = true]
-
-  # (deprecated) Enable GET requests to the /ingester/shutdown endpoint to
-  # trigger an ingester shutdown. This is a potentially dangerous operation and
-  # should only be enabled consciously.
-  # CLI flag: -api.get-request-for-ingester-shutdown-enabled
-  [get_request_for_ingester_shutdown_enabled: <boolean> | default = false]
+  # (advanced) Allows to disable enforcement of the label count limit
+  # "max_label_names_per_series" via X-Mimir-SkipLabelCountValidation header on
+  # the http write path. Allowing this for external clients allows any client to
+  # send invalid label counts. After enabling it, requests with a specific HTTP
+  # header set to true will not have label counts validated.
+  # CLI flag: -api.skip-label-count-validation-header-enabled
+  [skip_label_count_validation_header_enabled: <boolean> | default = false]
 
   # (advanced) HTTP URL path under which the Alertmanager ui and api will be
   # served.
@@ -439,13 +436,13 @@ overrides_exporter:
     [wait_stability_max_duration: <duration> | default = 5m]
 
   # Comma-separated list of metrics to include in the exporter. Allowed metric
-  # names: ingestion_rate, ingestion_burst_size, max_global_series_per_user,
-  # max_global_series_per_metric, max_global_exemplars_per_user,
-  # max_fetched_chunks_per_query, max_fetched_series_per_query,
-  # max_fetched_chunk_bytes_per_query, ruler_max_rules_per_rule_group,
-  # ruler_max_rule_groups_per_tenant, max_global_metadata_per_user,
-  # max_global_metadata_per_metric, request_rate, request_burst_size,
-  # alertmanager_notification_rate_limit,
+  # names: ingestion_rate, ingestion_burst_size, ingestion_artificial_delay,
+  # max_global_series_per_user, max_global_series_per_metric,
+  # max_global_exemplars_per_user, max_fetched_chunks_per_query,
+  # max_fetched_series_per_query, max_fetched_chunk_bytes_per_query,
+  # ruler_max_rules_per_rule_group, ruler_max_rule_groups_per_tenant,
+  # max_global_metadata_per_user, max_global_metadata_per_metric, request_rate,
+  # request_burst_size, alertmanager_notification_rate_limit,
   # alertmanager_max_dispatcher_aggregation_groups,
   # alertmanager_max_alerts_count, alertmanager_max_alerts_size_bytes.
   # CLI flag: -overrides-exporter.enabled-metrics
@@ -458,6 +455,24 @@ overrides_exporter:
 # (experimental) Enables optimized marshaling of timeseries.
 # CLI flag: -timeseries-unmarshal-caching-optimization-enabled
 [timeseries_unmarshal_caching_optimization_enabled: <boolean> | default = true]
+
+# (experimental) Specifies how often inactive cost attributions for received and
+# discarded sample trackers are evicted from the counter, ensuring they do not
+# contribute to the cost attribution cardinality per user limit. This setting
+# does not apply to active series, which are managed separately.
+# CLI flag: -cost-attribution.eviction-interval
+[cost_attribution_eviction_interval: <duration> | default = 20m]
+
+# (experimental) Defines a custom path for the registry. When specified, Mimir
+# exposes cost attribution metrics through this custom path. If not specified,
+# cost attribution metrics aren't exposed.
+# CLI flag: -cost-attribution.registry-path
+[cost_attribution_registry_path: <string> | default = ""]
+
+# (experimental) Time interval at which the cost attribution cleanup process
+# runs, ensuring inactive cost attribution entries are purged.
+# CLI flag: -cost-attribution.cleanup-interval
+[cost_attribution_cleanup_interval: <duration> | default = 3m]
 ```
 
 ### common
@@ -759,23 +774,24 @@ pool:
   [health_check_ingesters: <boolean> | default = true]
 
 retry_after_header:
-  # (experimental) Enabled controls inclusion of the Retry-After header in the
-  # response: true includes it for client retry guidance, false omits it.
+  # (advanced) Enables inclusion of the Retry-After header in the response: true
+  # includes it for client retry guidance, false omits it.
   # CLI flag: -distributor.retry-after-header.enabled
-  [enabled: <boolean> | default = false]
+  [enabled: <boolean> | default = true]
 
-  # (experimental) Base duration in seconds for calculating the Retry-After
-  # header in responses to 429/5xx errors.
-  # CLI flag: -distributor.retry-after-header.base-seconds
-  [base_seconds: <int> | default = 3]
+  # (advanced) Minimum duration of the Retry-After HTTP header in responses to
+  # 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated
+  # as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either
+  # direction. RetryAttempt is the value of the Retry-Attempt HTTP header.
+  # CLI flag: -distributor.retry-after-header.min-backoff
+  [min_backoff: <duration> | default = 6s]
 
-  # (experimental) Sets the upper limit on the number of Retry-Attempt
-  # considered for calculation. It caps the Retry-Attempt header without
-  # rejecting additional attempts, controlling exponential backoff calculations.
-  # For example, when the base-seconds is set to 3 and max-backoff-exponent to
-  # 5, the maximum retry duration would be 3 * 2^5 = 96 seconds.
-  # CLI flag: -distributor.retry-after-header.max-backoff-exponent
-  [max_backoff_exponent: <int> | default = 5]
+  # (advanced) Minimum duration of the Retry-After HTTP header in responses to
+  # 429/5xx errors. Must be greater than or equal to 1s. Backoff is calculated
+  # as MinBackoff*2^(RetryAttempt-1) seconds with random jitter of 50% in either
+  # direction. RetryAttempt is the value of the Retry-Attempt HTTP header.
+  # CLI flag: -distributor.retry-after-header.max-backoff
+  [max_backoff: <duration> | default = 1m36s]
 
 ha_tracker:
   # Enable the distributors HA tracker so that it can accept samples from
@@ -800,9 +816,14 @@ ha_tracker:
   # CLI flag: -distributor.ha-tracker.failover-timeout
   [ha_tracker_failover_timeout: <duration> | default = 30s]
 
-  # Backend storage to use for the ring. Please be aware that memberlist is not
-  # supported by the HA tracker since gossip propagation is too slow for HA
-  # purposes.
+  # Enable the elected_replica_status metric, which shows the current elected
+  # replica. It is disabled by default due to the possible high cardinality of
+  # the metric.
+  # CLI flag: -distributor.ha-tracker.enable-elected-replica-metric
+  [enable_elected_replica_metric: <boolean> | default = false]
+
+  # Backend storage to use for the ring. Note that memberlist support is
+  # experimental.
   kvstore:
     # Backend storage to use for the ring. Supported values are: consul, etcd,
     # inmemory, memberlist, multi.
@@ -952,11 +973,6 @@ instance_limits:
 # CLI flag: -distributor.write-requests-buffer-pooling-enabled
 [write_requests_buffer_pooling_enabled: <boolean> | default = true]
 
-# (deprecated) When enabled, in-flight write requests limit is checked as soon
-# as the gRPC request is received, before the request is decoded and parsed.
-# CLI flag: -distributor.limit-inflight-requests-using-grpc-method-limiter
-[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = true]
-
 # (advanced) Number of pre-allocated workers used to forward push requests to
 # the ingesters. If 0, no workers will be used and a new goroutine will be
 # spawned for each ingester push request. If not enough workers available, new
@@ -964,11 +980,6 @@ instance_limits:
 # limiting feature.)
 # CLI flag: -distributor.reusable-ingester-push-workers
 [reusable_ingester_push_workers: <int> | default = 2000]
-
-# (experimental) When enabled, OTLP write requests are directly translated to
-# Mimir equivalents, for optimum performance.
-# CLI flag: -distributor.direct-otlp-translation-enabled
-[direct_otlp_translation_enabled: <boolean> | default = true]
 ```
 
 ### ingester
@@ -1200,7 +1211,7 @@ partition_ring:
 
 # (advanced) After what time a series is considered to be inactive.
 # CLI flag: -ingester.active-series-metrics-idle-timeout
-[active_series_metrics_idle_timeout: <duration> | default = 10m]
+[active_series_metrics_idle_timeout: <duration> | default = 20m]
 
 # (experimental) Period with which to update the per-tenant TSDB configuration.
 # CLI flag: -ingester.tsdb-config-update-period
@@ -1251,23 +1262,10 @@ instance_limits:
 # CLI flag: -ingester.read-path-memory-utilization-limit
 [read_path_memory_utilization_limit: <int> | default = 0]
 
-# (experimental) Enable logging of utilization based limiter CPU samples.
-# CLI flag: -ingester.log-utilization-based-limiter-cpu-samples
-[log_utilization_based_limiter_cpu_samples: <boolean> | default = false]
-
-# (deprecated) When enabled, in-flight write requests limit is checked as soon
-# as the gRPC request is received, before the request is decoded and parsed.
-# CLI flag: -ingester.limit-inflight-requests-using-grpc-method-limiter
-[limit_inflight_requests_using_grpc_method_limiter: <boolean> | default = true]
-
 # (advanced) Each error will be logged once in this many times. Use 0 to log all
 # of them.
 # CLI flag: -ingester.error-sample-rate
 [error_sample_rate: <int> | default = 10]
-
-# (deprecated) When enabled only gRPC errors will be returned by the ingester.
-# CLI flag: -ingester.return-only-grpc-errors
-[return_only_grpc_errors: <boolean> | default = true]
 
 # (experimental) When enabled, only series currently owned by ingester according
 # to the ring are used when checking user per-tenant series limit.
@@ -1310,9 +1308,9 @@ push_circuit_breaker:
   # CLI flag: -ingester.push-circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 10s]
 
-  # (experimental) How long the circuit breaker should wait between an
-  # activation request and becoming effectively active. During that time both
-  # failures and successes will not be counted.
+  # (experimental) Duration, in seconds, after an initial request that an
+  # activated circuit breaker should wait before becoming effectively active.
+  # During this time, neither failures nor successes are counted.
   # CLI flag: -ingester.push-circuit-breaker.initial-delay
   [initial_delay: <duration> | default = 0s]
 
@@ -1347,9 +1345,9 @@ read_circuit_breaker:
   # CLI flag: -ingester.read-circuit-breaker.cooldown-period
   [cooldown_period: <duration> | default = 10s]
 
-  # (experimental) How long the circuit breaker should wait between an
-  # activation request and becoming effectively active. During that time both
-  # failures and successes will not be counted.
+  # (experimental) Duration, in seconds, after an initial request that an
+  # activated circuit breaker should wait before becoming effectively active.
+  # During this time, neither failures nor successes are counted.
   # CLI flag: -ingester.read-circuit-breaker.initial-delay
   [initial_delay: <duration> | default = 0s]
 
@@ -1358,6 +1356,135 @@ read_circuit_breaker:
   # and its timeouts aren't reported as errors.
   # CLI flag: -ingester.read-circuit-breaker.request-timeout
   [request_timeout: <duration> | default = 30s]
+
+rejection_prioritizer:
+  # (experimental) The interval at which the rejection threshold is calibrated
+  # CLI flag: -ingester.rejection-prioritizer.calibration-interval
+  [calibration_interval: <duration> | default = 1s]
+
+push_reactive_limiter:
+  # (experimental) Enable reactive limiting when making requests to ingesters
+  # CLI flag: -ingester.push-reactive-limiter.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Minimum duration of the window that is used to determine the
+  # recent, short-term load on the system
+  # CLI flag: -ingester.push-reactive-limiter.short-window-min-duration
+  [short_window_min_duration: <duration> | default = 1s]
+
+  # (experimental) Maximum duration of the window that is used to determine the
+  # recent, short-term load on the system
+  # CLI flag: -ingester.push-reactive-limiter.short-window-max-duration
+  [short_window_max_duration: <duration> | default = 30s]
+
+  # (experimental) Minimum number of samples that must be recorded in the window
+  # CLI flag: -ingester.push-reactive-limiter.short-window-min-samples
+  [short_window_min_samples: <int> | default = 50]
+
+  # (experimental) Short-term window measurements that are stored in an
+  # exponentially weighted moving average window, representing the long-term
+  # baseline inflight time
+  # CLI flag: -ingester.push-reactive-limiter.long-window
+  [long_window: <int> | default = 60]
+
+  # (experimental) The quantile of recorded response times to consider when
+  # adjusting the concurrency limit
+  # CLI flag: -ingester.push-reactive-limiter.sample-quantile
+  [sample_quantile: <float> | default = 0.9]
+
+  # (experimental) Minimum inflight requests limit
+  # CLI flag: -ingester.push-reactive-limiter.min-inflight-limit
+  [min_inflight_limit: <int> | default = 2]
+
+  # (experimental) Maximum inflight requests limit
+  # CLI flag: -ingester.push-reactive-limiter.max-inflight-limit
+  [max_inflight_limit: <int> | default = 200]
+
+  # (experimental) Initial inflight requests limit
+  # CLI flag: -ingester.push-reactive-limiter.initial-inflight-limit
+  [initial_inflight_limit: <int> | default = 20]
+
+  # (experimental) The maximum limit as a multiple of current inflight requests
+  # CLI flag: -ingester.push-reactive-limiter.max-limit-factor
+  [max_limit_factor: <float> | default = 5]
+
+  # (experimental) How many recent limit and inflight time measurements are
+  # stored to detect whether increases in limits correlate with increases in
+  # inflight times
+  # CLI flag: -ingester.push-reactive-limiter.correlation-window
+  [correlation_window: <int> | default = 50]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which rejections start
+  # CLI flag: -ingester.push-reactive-limiter.initial-rejection-factor
+  [initial_rejection_factor: <float> | default = 2]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which all requests are rejected
+  # CLI flag: -ingester.push-reactive-limiter.max-rejection-factor
+  [max_rejection_factor: <float> | default = 3]
+
+read_reactive_limiter:
+  # (experimental) Enable reactive limiting when making requests to ingesters
+  # CLI flag: -ingester.read-reactive-limiter.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Minimum duration of the window that is used to determine the
+  # recent, short-term load on the system
+  # CLI flag: -ingester.read-reactive-limiter.short-window-min-duration
+  [short_window_min_duration: <duration> | default = 1s]
+
+  # (experimental) Maximum duration of the window that is used to determine the
+  # recent, short-term load on the system
+  # CLI flag: -ingester.read-reactive-limiter.short-window-max-duration
+  [short_window_max_duration: <duration> | default = 30s]
+
+  # (experimental) Minimum number of samples that must be recorded in the window
+  # CLI flag: -ingester.read-reactive-limiter.short-window-min-samples
+  [short_window_min_samples: <int> | default = 50]
+
+  # (experimental) Short-term window measurements that are stored in an
+  # exponentially weighted moving average window, representing the long-term
+  # baseline inflight time
+  # CLI flag: -ingester.read-reactive-limiter.long-window
+  [long_window: <int> | default = 60]
+
+  # (experimental) The quantile of recorded response times to consider when
+  # adjusting the concurrency limit
+  # CLI flag: -ingester.read-reactive-limiter.sample-quantile
+  [sample_quantile: <float> | default = 0.9]
+
+  # (experimental) Minimum inflight requests limit
+  # CLI flag: -ingester.read-reactive-limiter.min-inflight-limit
+  [min_inflight_limit: <int> | default = 2]
+
+  # (experimental) Maximum inflight requests limit
+  # CLI flag: -ingester.read-reactive-limiter.max-inflight-limit
+  [max_inflight_limit: <int> | default = 200]
+
+  # (experimental) Initial inflight requests limit
+  # CLI flag: -ingester.read-reactive-limiter.initial-inflight-limit
+  [initial_inflight_limit: <int> | default = 20]
+
+  # (experimental) The maximum limit as a multiple of current inflight requests
+  # CLI flag: -ingester.read-reactive-limiter.max-limit-factor
+  [max_limit_factor: <float> | default = 5]
+
+  # (experimental) How many recent limit and inflight time measurements are
+  # stored to detect whether increases in limits correlate with increases in
+  # inflight times
+  # CLI flag: -ingester.read-reactive-limiter.correlation-window
+  [correlation_window: <int> | default = 50]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which rejections start
+  # CLI flag: -ingester.read-reactive-limiter.initial-rejection-factor
+  [initial_rejection_factor: <float> | default = 2]
+
+  # (experimental) The number of allowed queued requests, as a multiple of
+  # current inflight requests, after which all requests are rejected
+  # CLI flag: -ingester.read-reactive-limiter.max-rejection-factor
+  [max_rejection_factor: <float> | default = 3]
 ```
 
 ### querier
@@ -1372,10 +1499,6 @@ The `querier` block configures the querier.
 # query-store-after'.
 # CLI flag: -querier.query-store-after
 [query_store_after: <duration> | default = 12h]
-
-# (deprecated) Maximum duration into the future you can query. 0 to disable.
-# CLI flag: -querier.max-query-into-future
-[max_query_into_future: <duration> | default = 10m]
 
 store_gateway_client:
   # (advanced) Enable TLS for gRPC client connecting to store-gateway.
@@ -1452,12 +1575,6 @@ store_gateway_client:
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
-# (experimental) Request store-gateways stream chunks. Store-gateways will only
-# respond with a stream of chunks if the target store-gateway supports this, and
-# this preference will be ignored by store-gateways that do not support this.
-# CLI flag: -querier.prefer-streaming-chunks-from-store-gateways
-[prefer_streaming_chunks_from_store_gateways: <boolean> | default = true]
-
 # (advanced) Number of series to buffer per ingester when streaming chunks from
 # ingesters.
 # CLI flag: -querier.streaming-chunks-per-ingester-buffer-size
@@ -1492,8 +1609,15 @@ store_gateway_client:
 # CLI flag: -querier.enable-query-engine-fallback
 [enable_query_engine_fallback: <boolean> | default = true]
 
+# (advanced) If set to true, the header 'X-Filter-Queryables' can be used to
+# filter down the list of queryables that shall be used. This is useful to test
+# and monitor single queryables in isolation.
+# CLI flag: -querier.filter-queryables-enabled
+[filter_queryables_enabled: <boolean> | default = false]
+
 # The number of workers running in each querier process. This setting limits the
-# maximum number of concurrent queries in each querier.
+# maximum number of concurrent queries in each querier. The minimum value is
+# four; lower values are ignored and set to the minimum
 # CLI flag: -querier.max-concurrent
 [max_concurrent: <int> | default = 20]
 
@@ -1524,6 +1648,59 @@ store_gateway_client:
 # be set on query-frontend too when query sharding is enabled.
 # CLI flag: -querier.promql-experimental-functions-enabled
 [promql_experimental_functions_enabled: <boolean> | default = false]
+
+mimir_query_engine:
+  # (experimental) Enable support for aggregation operations in the Mimir query
+  # engine. Only applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-aggregation-operations
+  [enable_aggregation_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for binary logical operations in the Mimir
+  # query engine. Only applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-binary-logical-operations
+  [enable_binary_logical_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for one-to-many and many-to-one binary
+  # operations (group_left/group_right) in the Mimir query engine. Only applies
+  # if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-one-to-many-and-many-to-one-binary-operations
+  [enable_one_to_many_and_many_to_one_binary_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for scalars in the Mimir query engine. Only
+  # applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-scalars
+  [enable_scalars: <boolean> | default = true]
+
+  # (experimental) Enable support for binary comparison operations between two
+  # scalars in the Mimir query engine. Only applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-scalar-scalar-binary-comparison-operations
+  [enable_scalar_scalar_binary_comparison_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for subqueries in the Mimir query engine. Only
+  # applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-subqueries
+  [enable_subqueries: <boolean> | default = true]
+
+  # (experimental) Enable support for binary comparison operations between a
+  # vector and a scalar in the Mimir query engine. Only applies if the MQE is in
+  # use.
+  # CLI flag: -querier.mimir-query-engine.enable-vector-scalar-binary-comparison-operations
+  [enable_vector_scalar_binary_comparison_operations: <boolean> | default = true]
+
+  # (experimental) Enable support for binary comparison operations between two
+  # vectors in the Mimir query engine. Only applies if the MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.enable-vector-vector-binary-comparison-operations
+  [enable_vector_vector_binary_comparison_operations: <boolean> | default = true]
+
+  # (experimental) Comma-separated list of aggregations to disable support for.
+  # Only applies if MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.disabled-aggregations
+  [disabled_aggregations: <string> | default = ""]
+
+  # (experimental) Comma-separated list of function names to disable support
+  # for. Only applies if MQE is in use.
+  # CLI flag: -querier.mimir-query-engine.disabled-functions
+  [disabled_functions: <string> | default = ""]
 ```
 
 ### frontend
@@ -1610,14 +1787,6 @@ The `frontend` block configures the query-frontend.
 # CLI flag: -query-frontend.instance-port
 [port: <int> | default = 0]
 
-# (experimental) Enqueue query requests with additional queue dimensions to
-# split tenant request queues into subqueues. This enables separate requests to
-# proceed from a tenant's subqueues even when other subqueues are blocked on
-# slow query requests. Must be set on both query-frontend and scheduler to take
-# effect. (default false)
-# CLI flag: -query-frontend.additional-query-queue-dimensions-enabled
-[additional_query_queue_dimensions_enabled: <boolean> | default = false]
-
 # (advanced) Split range queries by an interval and execute in parallel. You
 # should use a multiple of 24 hours to optimize querying blocks. 0 to disable
 # it.
@@ -1648,6 +1817,10 @@ results_cache:
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]
 
+# (experimental) Cache non-transient errors from queries.
+# CLI flag: -query-frontend.cache-errors
+[cache_errors: <boolean> | default = false]
+
 # (advanced) Maximum number of retries for a single request; beyond this, the
 # downstream error is returned.
 # CLI flag: -query-frontend.max-retries-per-request
@@ -1663,6 +1836,17 @@ results_cache:
 # True to enable query sharding.
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
+
+# (experimental) True to enable pruning dead code (eg. expressions that cannot
+# produce any results) and simplifying expressions (eg. expressions that can be
+# evaluated immediately) in queries.
+# CLI flag: -query-frontend.prune-queries
+[prune_queries: <boolean> | default = false]
+
+# (experimental) True to control access to specific PromQL experimental
+# functions per tenant.
+# CLI flag: -query-frontend.block-promql-experimental-functions
+[block_promql_experimental_functions: <boolean> | default = false]
 
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
@@ -1680,9 +1864,11 @@ results_cache:
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
 
-# (experimental) True to enable limits enforcement for remote read requests.
-# CLI flag: -query-frontend.remote-read-limits-enabled
-[remote_read_limits_enabled: <boolean> | default = false]
+# (experimental) If set, subqueries in instant queries are spun off as range
+# queries and sent to the given URL. This parameter also requires you to set
+# `instant_queries_with_subquery_spin_off` for the tenant.
+# CLI flag: -query-frontend.spin-off-instant-subqueries-to-url
+[spin_off_instant_subqueries_to_url: <string> | default = ""]
 
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
@@ -1704,20 +1890,6 @@ The `query_scheduler` block configures the query-scheduler.
 # 429.
 # CLI flag: -query-scheduler.max-outstanding-requests-per-tenant
 [max_outstanding_requests_per_tenant: <int> | default = 100]
-
-# (experimental) Enqueue query requests with additional queue dimensions to
-# split tenant request queues into subqueues. This enables separate requests to
-# proceed from a tenant's subqueues even when other subqueues are blocked on
-# slow query requests. Must be set on both query-frontend and scheduler to take
-# effect. (default false)
-# CLI flag: -query-scheduler.additional-query-queue-dimensions-enabled
-[additional_query_queue_dimensions_enabled: <boolean> | default = false]
-
-# (experimental) Use an experimental version of the query queue which has the
-# same behavior as the existing queue, but integrates tenant selection into the
-# tree model.
-# CLI flag: -query-scheduler.use-multi-algorithm-query-queue
-[use_multi_algorithm_query_queue: <boolean> | default = false]
 
 # (experimental) If a querier disconnects without sending notification about
 # graceful shutdown, the query-scheduler will keep the querier in the tenant's
@@ -1947,10 +2119,33 @@ alertmanager_client:
   # CLI flag: -ruler.alertmanager-client.basic-auth-password
   [basic_auth_password: <string> | default = ""]
 
-# (experimental) Drain all outstanding alert notifications when shutting down.
-# If false, any outstanding alert notifications are dropped when shutting down.
-# CLI flag: -ruler.drain-notification-queue-on-shutdown
-[drain_notification_queue_on_shutdown: <boolean> | default = false]
+  oauth2:
+    # OAuth2 client ID. Enables the use of OAuth2 for authenticating with
+    # Alertmanager.
+    # CLI flag: -ruler.alertmanager-client.oauth.client_id
+    [client_id: <string> | default = ""]
+
+    # OAuth2 client secret.
+    # CLI flag: -ruler.alertmanager-client.oauth.client_secret
+    [client_secret: <string> | default = ""]
+
+    # Endpoint used to fetch access token.
+    # CLI flag: -ruler.alertmanager-client.oauth.token_url
+    [token_url: <string> | default = ""]
+
+    # Optional scopes to include with the token request.
+    # CLI flag: -ruler.alertmanager-client.oauth.scopes
+    [scopes: <string> | default = ""]
+
+    # (advanced) Optional additional URL parameters to send to the token URL.
+    # CLI flag: -ruler.alertmanager-client.oauth.endpoint-params
+    [endpoint_params: <map of string to string> | default = {}]
+
+  # (advanced) Optional HTTP, HTTPS via CONNECT, or SOCKS5 proxy URL to route
+  # requests through. Applies to all requests, including auxiliary traffic, such
+  # as OAuth token requests.
+  # CLI flag: -ruler.alertmanager-client.proxy-url
+  [proxy_url: <string> | default = ""]
 
 # (advanced) Max time to tolerate outage for restoring "for" state of alert.
 # CLI flag: -ruler.for-outage-tolerance
@@ -2084,6 +2279,10 @@ query_frontend:
   # CLI flag: -ruler.query-frontend.query-result-response-format
   [query_result_response_format: <string> | default = "protobuf"]
 
+  # Maximum number of retries for failed queries per second.
+  # CLI flag: -ruler.query-frontend.max-retries-rate
+  [max_retries_rate: <float> | default = 170]
+
 tenant_federation:
   # Enable rule groups to query against multiple tenants. The tenant IDs
   # involved need to be in the rule group's 'source_tenants' field. If this flag
@@ -2091,6 +2290,32 @@ tenant_federation:
   # then these rules groups will be skipped during evaluations.
   # CLI flag: -ruler.tenant-federation.enabled
   [enabled: <boolean> | default = false]
+
+# (experimental) Interval between sending queued rule sync requests to ruler
+# replicas.
+# CLI flag: -ruler.outbound-sync-queue-poll-interval
+[outbound_sync_queue_poll_interval: <duration> | default = 10s]
+
+# (experimental) Interval between applying queued incoming rule sync requests.
+# CLI flag: -ruler.inbound-sync-queue-poll-interval
+[inbound_sync_queue_poll_interval: <duration> | default = 10s]
+
+# (experimental) Number of rules rules that don't have dependencies that we
+# allow to be evaluated concurrently across all tenants. 0 to disable.
+# CLI flag: -ruler.max-independent-rule-evaluation-concurrency
+[max_independent_rule_evaluation_concurrency: <int> | default = 0]
+
+# (experimental) Minimum threshold of the interval to last rule group runtime
+# duration to allow a rule to be evaluated concurrency. By default, the rule
+# group runtime duration must exceed 50.0% of the evaluation interval.
+# CLI flag: -ruler.independent-rule-evaluation-concurrency-min-duration-percentage
+[independent_rule_evaluation_concurrency_min_duration_percentage: <float> | default = 50]
+
+# (experimental) Writes the results of rule evaluation to ingesters or ingest
+# storage when enabled. Use this option for testing purposes. To disable, set to
+# false.
+# CLI flag: -ruler.rule-evaluation-write-enabled
+[rule_evaluation_write_enabled: <boolean> | default = true]
 ```
 
 ### ruler_storage
@@ -2139,6 +2364,11 @@ local:
   [directory: <string> | default = ""]
 
 cache:
+  # (experimental) Enabling caching of rule group contents if a cache backend is
+  # configured.
+  # CLI flag: -ruler-storage.cache.rule-group-enabled
+  [rule_group_enabled: <boolean> | default = false]
+
   # Backend for ruler storage cache, if not empty. The cache is supported for
   # any storage backend except "local". Supported values: memcached, redis.
   # CLI flag: -ruler-storage.cache.backend
@@ -2289,6 +2519,11 @@ sharding_ring:
 # CLI flag: -alertmanager.grafana-alertmanager-compatibility-enabled
 [grafana_alertmanager_compatibility_enabled: <boolean> | default = false]
 
+# (experimental) Skip starting the Alertmanager for tenants matching this suffix
+# unless they have a promoted, non-default Grafana Alertmanager configuration.
+# CLI flag: -alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix
+[grafana_alertmanager_conditionally_skip_tenant_suffix: <string> | default = ""]
+
 # (advanced) Maximum number of concurrent GET requests allowed per tenant. The
 # zero value (and negative values) result in a limit of GOMAXPROCS or 8,
 # whichever is larger. Status code 503 is served for GET requests that would
@@ -2310,7 +2545,7 @@ alertmanager_client:
   [max_send_msg_size: <int> | default = 104857600]
 
   # (advanced) Use compression when sending messages. Supported values are:
-  # 'gzip', 'snappy' and '' (disable compression)
+  # 'gzip', 'snappy', 's2' and '' (disable compression)
   # CLI flag: -alertmanager.alertmanager-client.grpc-compression
   [grpc_compression: <string> | default = ""]
 
@@ -2453,21 +2688,24 @@ alertmanager_client:
 # matchers for routes and inhibition rules, in silences, and in the labels for
 # alerts. It is recommended that all tenants run the `migrate-utf8` command in
 # mimirtool before enabling this mode. Otherwise, some tenant configurations
-# might fail to load. To identify tenants with incompatible configurations,
-# search Mimir server logs for lines containing `Alertmanager is moving to a new
-# parser for labels and matchers, and this input is incompatible`. To find
-# tenant configurations that are valid but contain ambiguous matchers, search
-# for log lines containing `Matchers input has disagreement`. Each log line
-# includes the invalid input, a suggestion on how to fix the input (excluding
-# ambiguous matchers, as these require manual correction), and the ID of the
-# affected tenant. You must run Mimir with debug-level logging enabled.
-# Otherwise, these lines aren't logged. For more information, refer to
-# https://prometheus.io/docs/alerting/latest/configuration/#label-matchers.
+# might fail to load. For more information, refer to [Enable
+# UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8).
 # Enabling and then disabling UTF-8 strict mode can break existing Alertmanager
 # configurations if tenants added UTF-8 characters to their Alertmanager
 # configuration while it was enabled.
 # CLI flag: -alertmanager.utf8-strict-mode-enabled
 [utf8_strict_mode: <boolean> | default = false]
+
+# (experimental) Enable logging when parsing label matchers. This flag is
+# intended to be used with -alertmanager.utf8-strict-mode-enabled to validate
+# UTF-8 strict mode is working as intended.
+# CLI flag: -alertmanager.log-parsing-label-matchers
+[log_parsing_label_matchers: <boolean> | default = false]
+
+# (experimental) Enable logging of tenant configurations that are incompatible
+# with UTF-8 strict mode.
+# CLI flag: -alertmanager.utf8-migration-logging-enabled
+[utf8_migration_logging: <boolean> | default = false]
 ```
 
 ### alertmanager_storage
@@ -2536,37 +2774,6 @@ The `ingester_client` block configures how the distributors connect to the inges
 # distributors, queriers and rulers.
 # The CLI flags prefix for this block configuration is: ingester.client
 [grpc_client_config: <grpc_client>]
-
-circuit_breaker:
-  # (experimental) Enable circuit breaking when making requests to ingesters
-  # CLI flag: -ingester.client.circuit-breaker.enabled
-  [enabled: <boolean> | default = false]
-
-  # (experimental) Max percentage of requests that can fail over period before
-  # the circuit breaker opens
-  # CLI flag: -ingester.client.circuit-breaker.failure-threshold
-  [failure_threshold: <int> | default = 10]
-
-  # (experimental) How many requests must have been executed in period for the
-  # circuit breaker to be eligible to open for the rate of failures
-  # CLI flag: -ingester.client.circuit-breaker.failure-execution-threshold
-  [failure_execution_threshold: <int> | default = 100]
-
-  # (experimental) Moving window of time that the percentage of failed requests
-  # is computed over
-  # CLI flag: -ingester.client.circuit-breaker.thresholding-period
-  [thresholding_period: <duration> | default = 1m]
-
-  # (experimental) How long the circuit breaker will stay in the open state
-  # before allowing some requests
-  # CLI flag: -ingester.client.circuit-breaker.cooldown-period
-  [cooldown_period: <duration> | default = 10s]
-
-# (deprecated) If set to true, gRPC status codes will be reported in
-# "status_code" label of "cortex_ingester_client_request_duration_seconds"
-# metric. Otherwise, they will be reported as "error"
-# CLI flag: -ingester.client.report-grpc-codes-in-instrumentation-label-enabled
-[report_grpc_codes_in_instrumentation_label_enabled: <boolean> | default = true]
 ```
 
 ### grpc_client
@@ -2593,7 +2800,7 @@ The `grpc_client` block configures the gRPC client used to communicate between t
 [max_send_msg_size: <int> | default = 104857600]
 
 # (advanced) Use compression when sending messages. Supported values are:
-# 'gzip', 'snappy' and '' (disable compression)
+# 'gzip', 'snappy', 's2' and '' (disable compression)
 # CLI flag: -<prefix>.grpc-compression
 [grpc_compression: <string> | default = ""]
 
@@ -2968,6 +3175,11 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.compression-enabled
 [compression_enabled: <boolean> | default = true]
 
+# (advanced) How frequently to notify watchers when a key changes. Can reduce
+# CPU activity in large memberlist deployments. 0 to notify without delay.
+# CLI flag: -memberlist.notify-interval
+[notify_interval: <duration> | default = 0s]
+
 # Gossip address to advertise to other members in the cluster. Used for NAT
 # traversal.
 # CLI flag: -memberlist.advertise-addr
@@ -3026,9 +3238,21 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.left-ingesters-timeout
 [left_ingesters_timeout: <duration> | default = 5m]
 
+# (experimental) How long to keep obsolete entries in the KV store.
+# CLI flag: -memberlist.obsolete-entries-timeout
+[obsolete_entries_timeout: <duration> | default = 30s]
+
 # (advanced) Timeout for leaving memberlist cluster.
 # CLI flag: -memberlist.leave-timeout
 [leave_timeout: <duration> | default = 20s]
+
+# (advanced) Timeout for broadcasting all remaining locally-generated updates to
+# other nodes when shutting down. Only used if there are nodes left in the
+# memberlist cluster, and only applies to locally-generated updates, not to
+# broadcast messages that are result of incoming gossip updates. 0 = no timeout,
+# wait until all locally-generated updates are sent.
+# CLI flag: -memberlist.broadcast-timeout-for-local-updates-on-shutdown
+[broadcast_timeout_for_local_updates_on_shutdown: <duration> | default = 10s]
 
 # (advanced) How much space to use for keeping received and sent messages in
 # memory for troubleshooting (two buffers). 0 to disable.
@@ -3051,6 +3275,15 @@ The `memberlist` block configures the Gossip memberlist.
 # (advanced) Timeout for writing 'packet' data.
 # CLI flag: -memberlist.packet-write-timeout
 [packet_write_timeout: <duration> | default = 5s]
+
+# (advanced) Maximum number of concurrent writes to other nodes.
+# CLI flag: -memberlist.max-concurrent-writes
+[max_concurrent_writes: <int> | default = 3]
+
+# (advanced) Timeout for acquiring one of the concurrent write slots. After this
+# time, the message will be dropped.
+# CLI flag: -memberlist.acquire-writer-timeout
+[acquire_writer_timeout: <duration> | default = 250ms]
 
 # (advanced) Enable TLS on the memberlist transport layer.
 # CLI flag: -memberlist.tls-enabled
@@ -3184,6 +3417,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -validation.max-label-names-per-series
 [max_label_names_per_series: <int> | default = 30]
 
+# Maximum number of label names per info series. Has no effect if less than the
+# value of the maximum number of label names per series option
+# (-validation.max-label-names-per-series)
+# CLI flag: -validation.max-label-names-per-info-series
+[max_label_names_per_info_series: <int> | default = 80]
+
 # Maximum length accepted for metric metadata. Metadata refers to Metric Name,
 # HELP and UNIT. Longer metadata is dropped except for HELP which is truncated.
 # CLI flag: -validation.max-metadata-length
@@ -3274,6 +3513,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.max-global-exemplars-per-user
 [max_global_exemplars_per_user: <int> | default = 0]
 
+# (experimental) Whether to ignore exemplars with out-of-order timestamps. If
+# enabled, exemplars with out-of-order timestamps are silently dropped,
+# otherwise they cause partial errors.
+# CLI flag: -ingester.ignore-ooo-exemplars
+[ignore_ooo_exemplars: <boolean> | default = false]
+
 # (experimental) Enable ingestion of native histogram samples. If false, native
 # histogram samples are ignored without an error. To query native histograms
 # with query-sharding enabled make sure to set
@@ -3281,19 +3526,39 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = false]
 
-# (advanced) Additional custom trackers for active metrics. If there are active
-# series matching a provided matcher (map value), the count will be exposed in
-# the custom trackers metric labeled using the tracker name (map key). Zero
-# valued counts are not exposed (and removed when they go back to zero).
+# (experimental) Enable experimental out-of-order native histogram ingestion.
+# This only takes effect if the `-ingester.out-of-order-time-window` value is
+# greater than zero and if `-ingester.native-histograms-ingestion-enabled =
+# true`
+# CLI flag: -ingester.ooo-native-histograms-ingestion-enabled
+[ooo_native_histograms_ingestion_enabled: <boolean> | default = true]
+
+# (advanced) Custom trackers for active metrics. If there are active series
+# matching a provided matcher (map value), the count is exposed in the custom
+# trackers metric labeled using the tracker name (map key). Zero-valued counts
+# are not exposed and are removed when they go back to zero.
 # Example:
-#   The following configuration will count the active series coming from dev and
-#   prod namespaces for each tenant and label them as {name="dev"} and
+#   The following configuration counts the active series coming from dev and
+#   prod namespaces for each tenant and labels them as {name="dev"} and
 #   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
 #   active_series_custom_trackers:
 #       dev: '{namespace=~"dev-.*"}'
 #       prod: '{namespace=~"prod-.*"}'
 # CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
+
+# (advanced) Additional custom trackers for active metrics merged on top of the
+# base custom trackers. You can use this configuration option to define the base
+# custom trackers globally for all tenants, and then use the additional trackers
+# to add extra trackers on a per-tenant basis.
+# Example:
+#   The following configuration counts the active series coming from dev and
+#   prod namespaces for each tenant and labels them as {name="dev"} and
+#   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
+#   active_series_additional_custom_trackers:
+#       dev: '{namespace=~"dev-.*"}'
+#       prod: '{namespace=~"prod-.*"}'
+[active_series_additional_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
 # (experimental) Non-zero value enables out-of-order support for most recent
 # samples that are within the time window in relation to the TSDB's maximum
@@ -3452,6 +3717,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.results-cache-ttl-for-labels-query
 [results_cache_ttl_for_labels_query: <duration> | default = 0s]
 
+# (experimental) Time to live duration for cached non-transient errors
+# CLI flag: -query-frontend.results-cache-ttl-for-errors
+[results_cache_ttl_for_errors: <duration> | default = 5m]
+
 # (advanced) Cache requests that are not step-aligned.
 # CLI flag: -query-frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]
@@ -3465,10 +3734,36 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) List of queries to block.
 [blocked_queries: <blocked_queries_config...> | default = ]
 
+# (experimental) List of http requests to block.
+[blocked_requests: <blocked_requests_config...> | default = ]
+
 # Mutate incoming queries to align their start and end with their step to
 # improve result caching.
 # CLI flag: -query-frontend.align-queries-with-step
 [align_queries_with_step: <boolean> | default = false]
+
+# (experimental) Enable certain experimental PromQL functions, which are subject
+# to being changed or removed at any time, on a per-tenant basis. Defaults to
+# empty which means all experimental functions are disabled. Set to 'all' to
+# enable all experimental functions.
+# CLI flag: -query-frontend.enabled-promql-experimental-functions
+[enabled_promql_experimental_functions: <string> | default = ""]
+
+# (experimental) Rewrite queries using the same range selector and resolution
+# [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works
+# with Prometheus 3.0 semantics
+# CLI flag: -query-frontend.prom2-range-compat
+[prom2_range_compat: <boolean> | default = false]
+
+# (experimental) List of regular expression patterns matching instant queries.
+# Subqueries within those instant queries will be spun off as range queries to
+# optimize their performance.
+[instant_queries_with_subquery_spin_off: <list of strings> | default = ]
+
+# (experimental) Mutate incoming queries that look far into the future to only
+# look into the future by the set duration. 0 to disable.
+# CLI flag: -query-frontend.max-future-query-window
+[max_future_query_window: <duration> | default = 0s]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
@@ -3490,6 +3785,31 @@ The `limits` block configures default and per-tenant limits imposed by component
 # series request result shard in bytes. 0 to disable.
 # CLI flag: -querier.active-series-results-max-size-bytes
 [active_series_results_max_size_bytes: <int> | default = 419430400]
+
+# (experimental) Defines labels for cost attribution. Applies to metrics like
+# cortex_distributor_received_attributed_samples_total. To disable, set to an
+# empty string. For example, 'team,service' produces metrics such as
+# cortex_distributor_received_attributed_samples_total{team='frontend',
+# service='api'}.
+# CLI flag: -validation.cost-attribution-labels
+[cost_attribution_labels: <string> | default = ""]
+
+# (experimental) Maximum number of cost attribution labels allowed per user, the
+# value is capped at 4.
+# CLI flag: -validation.max-cost-attribution-labels-per-user
+[max_cost_attribution_labels_per_user: <int> | default = 2]
+
+# (experimental) Maximum cardinality of cost attribution labels allowed per
+# user.
+# CLI flag: -validation.max-cost-attribution-cardinality-per-user
+[max_cost_attribution_cardinality_per_user: <int> | default = 10000]
+
+# (experimental) Defines how long cost attribution stays in overflow before
+# attempting a reset, with received/discarded samples extending the cooldown if
+# overflow persists, while active series reset and restart tracking after the
+# cooldown.
+# CLI flag: -validation.cost-attribution-cooldown
+[cost_attribution_cooldown: <duration> | default = 0s]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.
@@ -3554,6 +3874,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # is given as a comma-separated list.
 # CLI flag: -ruler.protected-namespaces
 [ruler_protected_namespaces: <string> | default = ""]
+
+# (experimental) Maximum number of independent rules that can run concurrently
+# for each tenant. Depends on ruler.max-independent-rule-evaluation-concurrency
+# being greater than 0. Ideally this flag should be a lower value. 0 to disable.
+# CLI flag: -ruler.max-independent-rule-evaluation-concurrency-per-tenant
+[ruler_max_independent_rule_evaluation_concurrency_per_tenant: <int> | default = 4]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
@@ -3647,10 +3973,18 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -alertmanager.notification-rate-limit-per-integration
 [alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
 
-# Maximum size of configuration file for Alertmanager that tenant can upload via
-# Alertmanager API. 0 = no limit.
+# Maximum size of the Grafana Alertmanager configuration for a tenant. 0 = no
+# limit.
+# CLI flag: -alertmanager.max-grafana-config-size-bytes
+[alertmanager_max_grafana_config_size_bytes: <int> | default = 0B]
+
+# Maximum size of the Alertmanager configuration for a tenant. 0 = no limit.
 # CLI flag: -alertmanager.max-config-size-bytes
 [alertmanager_max_config_size_bytes: <int> | default = 0]
+
+# Maximum size of the Grafana Alertmanager state for a tenant. 0 = no limit.
+# CLI flag: -alertmanager.max-grafana-state-size-bytes
+[alertmanager_max_grafana_state_size_bytes: <int> | default = 0B]
 
 # Maximum number of silences, including expired silences, that a tenant can have
 # at once. 0 = no limit.
@@ -3694,6 +4028,21 @@ The `limits` block configures default and per-tenant limits imposed by component
 # through OTLP.
 # CLI flag: -distributor.otel-metric-suffixes-enabled
 [otel_metric_suffixes_enabled: <boolean> | default = false]
+
+# (experimental) Whether to enable translation of OTel start timestamps to
+# Prometheus zero samples in the OTLP endpoint.
+# CLI flag: -distributor.otel-created-timestamp-zero-ingestion-enabled
+[otel_created_timestamp_zero_ingestion_enabled: <boolean> | default = false]
+
+# (experimental) Optionally specify OTel resource attributes to promote to
+# labels.
+# CLI flag: -distributor.otel-promote-resource-attributes
+[promote_otel_resource_attributes: <string> | default = ""]
+
+# (experimental) Whether to keep identifying OTel resource attributes in the
+# target_info metric on top of converting to job and instance labels.
+# CLI flag: -distributor.otel-keep-identifying-resource-attributes
+[otel_keep_identifying_resource_attributes: <boolean> | default = false]
 
 # (experimental) The default consistency level to enforce for queries when using
 # the ingest storage. Supports values: strong, eventual.
@@ -3746,6 +4095,16 @@ kafka:
   # CLI flag: -ingest-storage.kafka.write-clients
   [write_clients: <int> | default = 1]
 
+  # The username used to authenticate to Kafka using the SASL plain mechanism.
+  # To enable SASL, configure both the username and password.
+  # CLI flag: -ingest-storage.kafka.sasl-username
+  [sasl_username: <string> | default = ""]
+
+  # The password used to authenticate to Kafka using the SASL plain mechanism.
+  # To enable SASL, configure both the username and password.
+  # CLI flag: -ingest-storage.kafka.sasl-password
+  [sasl_password: <string> | default = ""]
+
   # The consumer group used by the consumer to track the last consumed offset.
   # The consumer group must be different for each ingester. If the configured
   # consumer group contains the '<partition>' placeholder, it is replaced with
@@ -3795,20 +4154,18 @@ kafka:
   # CLI flag: -ingest-storage.kafka.max-consumer-lag-at-startup
   [max_consumer_lag_at_startup: <duration> | default = 15s]
 
-  # Enable auto-creation of Kafka topic if it doesn't exist.
+  # Enable auto-creation of Kafka topic on startup if it doesn't exist. If
+  # creating the topic fails and the topic doesn't already exist, Mimir will
+  # fail to start.
   # CLI flag: -ingest-storage.kafka.auto-create-topic-enabled
   [auto_create_topic_enabled: <boolean> | default = true]
 
   # When auto-creation of Kafka topic is enabled and this value is positive,
-  # Kafka's num.partitions configuration option is set on Kafka brokers with
-  # this value when Mimir component that uses Kafka starts. This configuration
-  # option specifies the default number of partitions that the Kafka broker uses
-  # for auto-created topics. Note that this is a Kafka-cluster wide setting, and
-  # applies to any auto-created topic. If the setting of num.partitions fails,
-  # Mimir proceeds anyways, but auto-created topics could have an incorrect
-  # number of partitions.
+  # Mimir will create the topic with this number of partitions. When the value
+  # is -1 the Kafka broker will use the default number of partitions
+  # (num.partitions configuration).
   # CLI flag: -ingest-storage.kafka.auto-create-topic-default-partitions
-  [auto_create_topic_default_partitions: <int> | default = 0]
+  [auto_create_topic_default_partitions: <int> | default = -1]
 
   # The maximum size of a Kafka record data that should be generated by the
   # producer. An incoming write request larger than this size is split into
@@ -3819,7 +4176,7 @@ kafka:
 
   # The maximum size of (uncompressed) buffered and unacknowledged produced
   # records sent to Kafka. The produce request fails once this limit is reached.
-  # This limit is applied per Kafka client. 0 to disable the limit.
+  # This limit is per Kafka client. 0 to disable the limit.
   # CLI flag: -ingest-storage.kafka.producer-max-buffered-bytes
   [producer_max_buffered_bytes: <int> | default = 1073741824]
 
@@ -3827,6 +4184,55 @@ kafka:
   # until strong read consistency is enforced. 0 to disable the timeout.
   # CLI flag: -ingest-storage.kafka.wait-strong-read-consistency-timeout
   [wait_strong_read_consistency_timeout: <duration> | default = 20s]
+
+  # The maximum number of concurrent fetch requests that the ingester makes when
+  # reading data from Kafka during startup. Concurrent fetch requests are issued
+  # only when there is sufficient backlog of records to consume. 0 to disable.
+  # CLI flag: -ingest-storage.kafka.fetch-concurrency-max
+  [fetch_concurrency_max: <int> | default = 0]
+
+  # When enabled, the fetch request MaxBytes field is computed using the
+  # compressed size of previous records. When disabled, MaxBytes is computed
+  # using uncompressed bytes. Different Kafka implementations interpret MaxBytes
+  # differently.
+  # CLI flag: -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes
+  [use_compressed_bytes_as_fetch_max_bytes: <boolean> | default = true]
+
+  # The maximum number of buffered records ready to be processed. This limit
+  # applies to the sum of all inflight requests. Set to 0 to disable the limit.
+  # CLI flag: -ingest-storage.kafka.max-buffered-bytes
+  [max_buffered_bytes: <int> | default = 100000000]
+
+  # The maximum number of concurrent ingestion streams to the TSDB head. Every
+  # tenant has their own set of streams. 0 to disable.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-max
+  [ingestion_concurrency_max: <int> | default = 0]
+
+  # The number of timeseries to batch together before ingesting to the TSDB
+  # head. Only use this setting when
+  # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-batch-size
+  [ingestion_concurrency_batch_size: <int> | default = 150]
+
+  # The number of batches to prepare and queue to ingest to the TSDB head. Only
+  # use this setting when -ingest-storage.kafka.ingestion-concurrency-max is
+  # greater than 0.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-queue-capacity
+  [ingestion_concurrency_queue_capacity: <int> | default = 5]
+
+  # The expected number of times to ingest timeseries to the TSDB head after
+  # batching. With fewer flushes, the overhead of splitting up the work is
+  # higher than the benefit of parallelization. Only use this setting when
+  # -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard
+  [ingestion_concurrency_target_flushes_per_shard: <int> | default = 80]
+
+  # The estimated number of bytes a sample has at time of ingestion. This value
+  # is used to estimate the timeseries without decompressing them. Only use this
+  # setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than
+  # 0.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample
+  [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
 
 migration:
   # When both this option and ingest storage are enabled, distributors write to
@@ -3894,7 +4300,7 @@ bucket_store:
   # (advanced) Max number of concurrent queries to execute against the long-term
   # storage. The limit is shared across all tenants.
   # CLI flag: -blocks-storage.bucket-store.max-concurrent
-  [max_concurrent: <int> | default = 100]
+  [max_concurrent: <int> | default = 200]
 
   # (advanced) Timeout for the queue of queries waiting for execution. If the
   # queue is full and the timeout is reached, the query will be retried on
@@ -4054,6 +4460,12 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.ignore-deletion-marks-delay
   [ignore_deletion_mark_delay: <duration> | default = 1h]
 
+  # (experimental) Duration after which blocks marked for deletion will still be
+  # queried. This ensures queriers still query blocks that are meant to be
+  # deleted but do not have a replacement yet.
+  # CLI flag: -blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay
+  [ignore_deletion_mark_while_querying_delay: <duration> | default = 50m]
+
   bucket_index:
     # (advanced) How frequently a bucket index, which previously failed to load,
     # should be tried to load again. This option is used only by querier.
@@ -4143,22 +4555,15 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
   [streaming_series_batch_size: <int> | default = 5000]
 
-  # (experimental) This option controls the strategy to selection of series and
-  # deferring application of matchers. A more aggressive strategy will fetch
-  # less posting lists at the cost of more series. This is useful when querying
-  # large blocks in which many series share the same label name and value.
-  # Supported values (most aggressive to least aggressive): speculative,
-  # worst-case, worst-case-small-posting-lists, all.
-  # CLI flag: -blocks-storage.bucket-store.series-selection-strategy
-  [series_selection_strategy: <string> | default = "worst-case"]
-
-  series_selection_strategies:
-    # (experimental) This option is only used when
-    # blocks-storage.bucket-store.series-selection-strategy=worst-case.
-    # Increasing the series preference results in fetching more series than
-    # postings. Must be a positive floating point number.
-    # CLI flag: -blocks-storage.bucket-store.series-selection-strategies.worst-case-series-preference
-    [worst_case_series_preference: <float> | default = 0.75]
+  # (advanced) This parameter controls the trade-off in fetching series versus
+  # fetching postings to fulfill a series request. Increasing the series
+  # preference results in fetching more series and reducing the volume of
+  # postings fetched. Reducing the series preference results in the opposite.
+  # Increase this parameter to reduce the rate of fetched series bytes (see
+  # "Mimir / Queries" dashboard) or API calls to the object store. Must be a
+  # positive floating point number.
+  # CLI flag: -blocks-storage.bucket-store.series-fetch-preference
+  [series_fetch_preference: <float> | default = 0.75]
 
 tsdb:
   # Directory to store TSDBs (including WAL) in the ingesters. This directory is
@@ -4263,6 +4668,11 @@ tsdb:
   # queue.
   # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
   [head_chunks_write_queue_size: <int> | default = 1000000]
+
+  # (experimental) When enabled, ingester produces 24h blocks for out-of-order
+  # data that is before the current day, instead of the usual 2h blocks.
+  # CLI flag: -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
+  [bigger_out_of_order_blocks_for_old_samples: <boolean> | default = false]
 
   # (advanced) Max size - in bytes - of the in-memory series hash cache. The
   # cache is shared across all tenants and it's used only when query sharding is
@@ -4541,6 +4951,13 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
+
+# (experimental) Blocks uploaded before the lookback aren't considered in
+# compactor cycles. If set, this value should be larger than all values in
+# `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all
+# blocks are considered regardless of their upload time.
+# CLI flag: -compactor.max-lookback
+[max_lookback: <duration> | default = 0s]
 ```
 
 ### store_gateway
@@ -4669,6 +5086,25 @@ sharding_ring:
   # Unregister from the ring upon clean shutdown.
   # CLI flag: -store-gateway.sharding-ring.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
+
+# Experimental dynamic replication configuration.
+dynamic_replication:
+  # (experimental) Use a higher number of replicas for recent blocks. Useful to
+  # spread query load more evenly at the cost of slightly higher disk usage.
+  # CLI flag: -store-gateway.dynamic-replication.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) Threshold of the most recent sample in a block used to
+  # determine it is eligible for higher than default replication. If a block has
+  # samples within this amount of time, it is considered recent and will be
+  # owned by more replicas.
+  # CLI flag: -store-gateway.dynamic-replication.max-time-threshold
+  [max_time_threshold: <duration> | default = 25h]
+
+  # (experimental) Multiple of the default replication factor that should be
+  # used for recent blocks. Minimum value is 2
+  # CLI flag: -store-gateway.dynamic-replication.multiple
+  [multiple: <int> | default = 2]
 
 # (advanced) Comma separated list of tenants that can be loaded by the
 # store-gateway. If specified, only blocks for these tenants will be loaded by
@@ -4836,111 +5272,113 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 &nbsp;
 
 ```yaml
-# Redis Server or Cluster configuration endpoint to use for caching. A
-# comma-separated list of endpoints for Redis Cluster or Redis Sentinel.
+# (deprecated) Redis Server or Cluster configuration endpoint to use for
+# caching. A comma-separated list of endpoints for Redis Cluster or Redis
+# Sentinel.
 # CLI flag: -<prefix>.redis.endpoint
 [endpoint: <string> | default = ""]
 
-# Username to use when connecting to Redis.
+# (deprecated) Username to use when connecting to Redis.
 # CLI flag: -<prefix>.redis.username
 [username: <string> | default = ""]
 
-# Password to use when connecting to Redis.
+# (deprecated) Password to use when connecting to Redis.
 # CLI flag: -<prefix>.redis.password
 [password: <string> | default = ""]
 
-# Database index.
+# (deprecated) Database index.
 # CLI flag: -<prefix>.redis.db
 [db: <int> | default = 0]
 
-# (advanced) Redis Sentinel master name. An empty string for Redis Server or
+# (deprecated) Redis Sentinel master name. An empty string for Redis Server or
 # Redis Cluster.
 # CLI flag: -<prefix>.redis.master-name
 [master_name: <string> | default = ""]
 
-# (advanced) Client dial timeout.
+# (deprecated) Client dial timeout.
 # CLI flag: -<prefix>.redis.dial-timeout
 [dial_timeout: <duration> | default = 5s]
 
-# (advanced) Client read timeout.
+# (deprecated) Client read timeout.
 # CLI flag: -<prefix>.redis.read-timeout
 [read_timeout: <duration> | default = 3s]
 
-# (advanced) Client write timeout.
+# (deprecated) Client write timeout.
 # CLI flag: -<prefix>.redis.write-timeout
 [write_timeout: <duration> | default = 3s]
 
-# (advanced) Maximum number of connections in the pool.
+# (deprecated) Maximum number of connections in the pool.
 # CLI flag: -<prefix>.redis.connection-pool-size
 [connection_pool_size: <int> | default = 100]
 
-# (advanced) Maximum duration to wait to get a connection from pool.
+# (deprecated) Maximum duration to wait to get a connection from pool.
 # CLI flag: -<prefix>.redis.connection-pool-timeout
 [connection_pool_timeout: <duration> | default = 4s]
 
-# (advanced) Minimum number of idle connections.
+# (deprecated) Minimum number of idle connections.
 # CLI flag: -<prefix>.redis.min-idle-connections
 [min_idle_connections: <int> | default = 10]
 
-# (advanced) Amount of time after which client closes idle connections.
+# (deprecated) Amount of time after which client closes idle connections.
 # CLI flag: -<prefix>.redis.idle-timeout
 [idle_timeout: <duration> | default = 5m]
 
-# (advanced) Close connections older than this duration. If the value is zero,
+# (deprecated) Close connections older than this duration. If the value is zero,
 # then the pool does not close connections based on age.
 # CLI flag: -<prefix>.redis.max-connection-age
 [max_connection_age: <duration> | default = 0s]
 
-# (advanced) The maximum size of an item stored in Redis. Bigger items are not
+# (deprecated) The maximum size of an item stored in Redis. Bigger items are not
 # stored. If set to 0, no maximum size is enforced.
 # CLI flag: -<prefix>.redis.max-item-size
 [max_item_size: <int> | default = 16777216]
 
-# (advanced) The maximum number of concurrent asynchronous operations can occur.
+# (deprecated) The maximum number of concurrent asynchronous operations can
+# occur.
 # CLI flag: -<prefix>.redis.max-async-concurrency
 [max_async_concurrency: <int> | default = 50]
 
-# (advanced) The maximum number of enqueued asynchronous operations allowed.
+# (deprecated) The maximum number of enqueued asynchronous operations allowed.
 # CLI flag: -<prefix>.redis.max-async-buffer-size
 [max_async_buffer_size: <int> | default = 25000]
 
-# (advanced) The maximum number of concurrent connections running get
+# (deprecated) The maximum number of concurrent connections running get
 # operations. If set to 0, concurrency is unlimited.
 # CLI flag: -<prefix>.redis.max-get-multi-concurrency
 [max_get_multi_concurrency: <int> | default = 100]
 
-# (advanced) The maximum size per batch for mget operations.
+# (deprecated) The maximum size per batch for mget operations.
 # CLI flag: -<prefix>.redis.max-get-multi-batch-size
 [max_get_multi_batch_size: <int> | default = 100]
 
-# (advanced) Enable connecting to Redis with TLS.
+# (deprecated) Enable connecting to Redis with TLS.
 # CLI flag: -<prefix>.redis.tls-enabled
 [tls_enabled: <boolean> | default = false]
 
-# (advanced) Path to the client certificate, which will be used for
+# (deprecated) Path to the client certificate, which will be used for
 # authenticating with the server. Also requires the key path to be configured.
 # CLI flag: -<prefix>.redis.tls-cert-path
 [tls_cert_path: <string> | default = ""]
 
-# (advanced) Path to the key for the client certificate. Also requires the
+# (deprecated) Path to the key for the client certificate. Also requires the
 # client certificate to be configured.
 # CLI flag: -<prefix>.redis.tls-key-path
 [tls_key_path: <string> | default = ""]
 
-# (advanced) Path to the CA certificates to validate server certificate against.
-# If not set, the host's root CA certificates are used.
+# (deprecated) Path to the CA certificates to validate server certificate
+# against. If not set, the host's root CA certificates are used.
 # CLI flag: -<prefix>.redis.tls-ca-path
 [tls_ca_path: <string> | default = ""]
 
-# (advanced) Override the expected name on the server certificate.
+# (deprecated) Override the expected name on the server certificate.
 # CLI flag: -<prefix>.redis.tls-server-name
 [tls_server_name: <string> | default = ""]
 
-# (advanced) Skip validating server certificate.
+# (deprecated) Skip validating server certificate.
 # CLI flag: -<prefix>.redis.tls-insecure-skip-verify
 [tls_insecure_skip_verify: <boolean> | default = false]
 
-# (advanced) Override the default cipher suite list (separated by commas).
+# (deprecated) Override the default cipher suite list (separated by commas).
 # Allowed values:
 #
 # Secure Ciphers:
@@ -4974,7 +5412,7 @@ The `redis` block configures the Redis-based caching backend. The supported CLI 
 # CLI flag: -<prefix>.redis.tls-cipher-suites
 [tls_cipher_suites: <string> | default = ""]
 
-# (advanced) Override the default minimum TLS version. Allowed values:
+# (deprecated) Override the default minimum TLS version. Allowed values:
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -<prefix>.redis.tls-min-version
 [tls_min_version: <string> | default = ""]
@@ -5014,6 +5452,10 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # S3 access key ID
 # CLI flag: -<prefix>.s3.access-key-id
 [access_key_id: <string> | default = ""]
+
+# S3 session token
+# CLI flag: -<prefix>.s3.session-token
+[session_token: <string> | default = ""]
 
 # (advanced) If enabled, use http:// for the S3 endpoint instead of https://.
 # This could be useful in local dev/test environments while using an
@@ -5085,62 +5527,69 @@ sse:
   [kms_encryption_context: <string> | default = ""]
 
 http:
-  # (advanced) The time an idle connection will remain idle before closing.
+  # (advanced) The time an idle connection remains idle before closing.
   # CLI flag: -<prefix>.s3.http.idle-conn-timeout
   [idle_conn_timeout: <duration> | default = 1m30s]
 
-  # (advanced) The amount of time the client will wait for a servers response
+  # (advanced) The amount of time the client waits for a server's response
   # headers.
   # CLI flag: -<prefix>.s3.http.response-header-timeout
   [response_header_timeout: <duration> | default = 2m]
 
-  # (advanced) If the client connects to S3 via HTTPS and this option is
-  # enabled, the client will accept any certificate and hostname.
+  # (advanced) If the client connects to object storage via HTTPS and this
+  # option is enabled, the client accepts any certificate and hostname.
   # CLI flag: -<prefix>.s3.http.insecure-skip-verify
   [insecure_skip_verify: <boolean> | default = false]
 
-  # (advanced) Maximum time to wait for a TLS handshake. 0 means no limit.
+  # (advanced) Maximum time to wait for a TLS handshake. Set to 0 for no limit.
   # CLI flag: -<prefix>.s3.tls-handshake-timeout
   [tls_handshake_timeout: <duration> | default = 10s]
 
   # (advanced) The time to wait for a server's first response headers after
-  # fully writing the request headers if the request has an Expect header. 0 to
-  # send the request body immediately.
+  # fully writing the request headers if the request has an Expect header. Set
+  # to 0 to send the request body immediately.
   # CLI flag: -<prefix>.s3.expect-continue-timeout
   [expect_continue_timeout: <duration> | default = 1s]
 
   # (advanced) Maximum number of idle (keep-alive) connections across all hosts.
-  # 0 means no limit.
+  # Set to 0 for no limit.
   # CLI flag: -<prefix>.s3.max-idle-connections
   [max_idle_connections: <int> | default = 100]
 
   # (advanced) Maximum number of idle (keep-alive) connections to keep per-host.
-  # If 0, a built-in default value is used.
+  # Set to 0 to use a built-in default value of 2.
   # CLI flag: -<prefix>.s3.max-idle-connections-per-host
   [max_idle_connections_per_host: <int> | default = 100]
 
-  # (advanced) Maximum number of connections per host. 0 means no limit.
+  # (advanced) Maximum number of connections per host. Set to 0 for no limit.
   # CLI flag: -<prefix>.s3.max-connections-per-host
   [max_connections_per_host: <int> | default = 0]
 
-  # (advanced) Path to the CA certificates to validate server certificate
-  # against. If not set, the host's root CA certificates are used.
+  # (advanced) Path to the Certificate Authority (CA) certificates to validate
+  # the server certificate. If not set, the host's root CA certificates are
+  # used.
   # CLI flag: -<prefix>.s3.http.tls-ca-path
   [tls_ca_path: <string> | default = ""]
 
-  # (advanced) Path to the client certificate, which will be used for
-  # authenticating with the server. Also requires the key path to be configured.
+  # (advanced) Path to the client certificate, which is used for authenticating
+  # with the server. This setting also requires you to configure the key path.
   # CLI flag: -<prefix>.s3.http.tls-cert-path
   [tls_cert_path: <string> | default = ""]
 
-  # (advanced) Path to the key for the client certificate. Also requires the
-  # client certificate to be configured.
+  # (advanced) Path to the key for the client certificate. This setting also
+  # requires you to configure the client certificate.
   # CLI flag: -<prefix>.s3.http.tls-key-path
   [tls_key_path: <string> | default = ""]
 
   # (advanced) Override the expected name on the server certificate.
   # CLI flag: -<prefix>.s3.http.tls-server-name
   [tls_server_name: <string> | default = ""]
+
+trace:
+  # (advanced) When enabled, low-level S3 HTTP operation information is logged
+  # at the debug level.
+  # CLI flag: -<prefix>.s3.trace.enabled
+  [enabled: <boolean> | default = false]
 ```
 
 ### gcs_storage_backend
@@ -5172,6 +5621,65 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 # 3. On Google Compute Engine it fetches credentials from the metadata server.
 # CLI flag: -<prefix>.gcs.service-account
 [service_account: <string> | default = ""]
+
+http:
+  # (advanced) The time an idle connection remains idle before closing.
+  # CLI flag: -<prefix>.gcs.http.idle-conn-timeout
+  [idle_conn_timeout: <duration> | default = 1m30s]
+
+  # (advanced) The amount of time the client waits for a server's response
+  # headers.
+  # CLI flag: -<prefix>.gcs.http.response-header-timeout
+  [response_header_timeout: <duration> | default = 2m]
+
+  # (advanced) If the client connects to object storage via HTTPS and this
+  # option is enabled, the client accepts any certificate and hostname.
+  # CLI flag: -<prefix>.gcs.http.insecure-skip-verify
+  [insecure_skip_verify: <boolean> | default = false]
+
+  # (advanced) Maximum time to wait for a TLS handshake. Set to 0 for no limit.
+  # CLI flag: -<prefix>.gcs.tls-handshake-timeout
+  [tls_handshake_timeout: <duration> | default = 10s]
+
+  # (advanced) The time to wait for a server's first response headers after
+  # fully writing the request headers if the request has an Expect header. Set
+  # to 0 to send the request body immediately.
+  # CLI flag: -<prefix>.gcs.expect-continue-timeout
+  [expect_continue_timeout: <duration> | default = 1s]
+
+  # (advanced) Maximum number of idle (keep-alive) connections across all hosts.
+  # Set to 0 for no limit.
+  # CLI flag: -<prefix>.gcs.max-idle-connections
+  [max_idle_connections: <int> | default = 100]
+
+  # (advanced) Maximum number of idle (keep-alive) connections to keep per-host.
+  # Set to 0 to use a built-in default value of 2.
+  # CLI flag: -<prefix>.gcs.max-idle-connections-per-host
+  [max_idle_connections_per_host: <int> | default = 100]
+
+  # (advanced) Maximum number of connections per host. Set to 0 for no limit.
+  # CLI flag: -<prefix>.gcs.max-connections-per-host
+  [max_connections_per_host: <int> | default = 0]
+
+  # (advanced) Path to the Certificate Authority (CA) certificates to validate
+  # the server certificate. If not set, the host's root CA certificates are
+  # used.
+  # CLI flag: -<prefix>.gcs.http.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Path to the client certificate, which is used for authenticating
+  # with the server. This setting also requires you to configure the key path.
+  # CLI flag: -<prefix>.gcs.http.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. This setting also
+  # requires you to configure the client certificate.
+  # CLI flag: -<prefix>.gcs.http.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -<prefix>.gcs.http.tls-server-name
+  [tls_server_name: <string> | default = ""]
 ```
 
 ### azure_storage_backend
@@ -5219,6 +5727,65 @@ The `azure_storage_backend` block configures the connection to Azure object stor
 # identity is used.
 # CLI flag: -<prefix>.azure.user-assigned-id
 [user_assigned_id: <string> | default = ""]
+
+http:
+  # (advanced) The time an idle connection remains idle before closing.
+  # CLI flag: -<prefix>.azure.http.idle-conn-timeout
+  [idle_conn_timeout: <duration> | default = 1m30s]
+
+  # (advanced) The amount of time the client waits for a server's response
+  # headers.
+  # CLI flag: -<prefix>.azure.http.response-header-timeout
+  [response_header_timeout: <duration> | default = 2m]
+
+  # (advanced) If the client connects to object storage via HTTPS and this
+  # option is enabled, the client accepts any certificate and hostname.
+  # CLI flag: -<prefix>.azure.http.insecure-skip-verify
+  [insecure_skip_verify: <boolean> | default = false]
+
+  # (advanced) Maximum time to wait for a TLS handshake. Set to 0 for no limit.
+  # CLI flag: -<prefix>.azure.tls-handshake-timeout
+  [tls_handshake_timeout: <duration> | default = 10s]
+
+  # (advanced) The time to wait for a server's first response headers after
+  # fully writing the request headers if the request has an Expect header. Set
+  # to 0 to send the request body immediately.
+  # CLI flag: -<prefix>.azure.expect-continue-timeout
+  [expect_continue_timeout: <duration> | default = 1s]
+
+  # (advanced) Maximum number of idle (keep-alive) connections across all hosts.
+  # Set to 0 for no limit.
+  # CLI flag: -<prefix>.azure.max-idle-connections
+  [max_idle_connections: <int> | default = 100]
+
+  # (advanced) Maximum number of idle (keep-alive) connections to keep per-host.
+  # Set to 0 to use a built-in default value of 2.
+  # CLI flag: -<prefix>.azure.max-idle-connections-per-host
+  [max_idle_connections_per_host: <int> | default = 100]
+
+  # (advanced) Maximum number of connections per host. Set to 0 for no limit.
+  # CLI flag: -<prefix>.azure.max-connections-per-host
+  [max_connections_per_host: <int> | default = 0]
+
+  # (advanced) Path to the Certificate Authority (CA) certificates to validate
+  # the server certificate. If not set, the host's root CA certificates are
+  # used.
+  # CLI flag: -<prefix>.azure.http.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Path to the client certificate, which is used for authenticating
+  # with the server. This setting also requires you to configure the key path.
+  # CLI flag: -<prefix>.azure.http.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. This setting also
+  # requires you to configure the client certificate.
+  # CLI flag: -<prefix>.azure.http.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -<prefix>.azure.http.tls-server-name
+  [tls_server_name: <string> | default = ""]
 ```
 
 ### swift_storage_backend
@@ -5233,6 +5800,18 @@ The `swift_storage_backend` block configures the connection to OpenStack Object 
 &nbsp;
 
 ```yaml
+# OpenStack Swift application credential id
+# CLI flag: -<prefix>.swift.application-credential-id
+[application_credential_id: <string> | default = ""]
+
+# OpenStack Swift application credential name
+# CLI flag: -<prefix>.swift.application-credential-name
+[application_credential_name: <string> | default = ""]
+
+# OpenStack Swift application credential secret
+# CLI flag: -<prefix>.swift.application-credential-secret
+[application_credential_secret: <string> | default = ""]
+
 # OpenStack Swift authentication API version. 0 to autodetect.
 # CLI flag: -<prefix>.swift.auth-version
 [auth_version: <int> | default = 0]

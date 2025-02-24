@@ -26,7 +26,7 @@ import (
 
 const maxBufferPoolSize = 1024 * 1024
 
-var bufferPool = util.NewBucketedBufferPool(1e3, maxBufferPoolSize, 2)
+var bufferPool = util.NewBufferPool(maxBufferPoolSize)
 
 type parser struct {
 	processorConfig processorConfig

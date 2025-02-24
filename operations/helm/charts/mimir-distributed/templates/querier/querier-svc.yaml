@@ -1,3 +1,4 @@
+{{- if and .Values.querier.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -11,7 +12,10 @@ metadata:
     {{- toYaml .Values.querier.service.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  type: ClusterIP
+  type: {{ .Values.querier.service.type }}
+  {{- if semverCompare ">= 1.22-0" (include "mimir.kubeVersion" .) }}
+  internalTrafficPolicy: {{ .Values.querier.service.internalTrafficPolicy }}
+  {{- end}}
   ports:
     - port: {{ include "mimir.serverHttpListenPort" .}}
       protocol: TCP
@@ -23,3 +27,4 @@ spec:
       targetPort: grpc
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "querier" "memberlist" true) | nindent 4 }}
+{{- end }}

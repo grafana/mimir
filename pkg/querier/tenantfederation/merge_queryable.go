@@ -7,6 +7,7 @@ package tenantfederation
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -22,7 +23,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -51,7 +51,7 @@ func NewQueryable(upstream storage.Queryable, bypassWithSingleID bool, maxConcur
 			}, nil
 		},
 	}
-	return NewMergeQueryable(defaultTenantLabel, callbacks, tenant.NewMultiResolver(), bypassWithSingleID, maxConcurrency, reg, logger)
+	return NewMergeQueryable(defaultTenantLabel, callbacks, tenant.NewMultiResolver(), bypassWithSingleID, maxConcurrency, reg, logger, nil)
 }
 
 // MergeQueryableCallbacks contains callbacks to NewMergeQueryable, for customizing its behaviour.
@@ -63,8 +63,8 @@ type MergeQueryableCallbacks struct {
 // MergeQuerierUpstream mirrors storage.Querier, except every query method also takes a federation ID.
 type MergeQuerierUpstream interface {
 	Select(ctx context.Context, id string, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
-	LabelValues(ctx context.Context, id string, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
-	LabelNames(ctx context.Context, id string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
+	LabelValues(ctx context.Context, id string, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
+	LabelNames(ctx context.Context, id string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error)
 	Close() error
 }
 
@@ -78,12 +78,12 @@ func (q *tenantQuerier) Select(ctx context.Context, id string, sortSeries bool, 
 	return q.upstream.Select(user.InjectOrgID(ctx, id), sortSeries, hints, matchers...)
 }
 
-func (q *tenantQuerier) LabelValues(ctx context.Context, id string, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return q.upstream.LabelValues(user.InjectOrgID(ctx, id), name, matchers...)
+func (q *tenantQuerier) LabelValues(ctx context.Context, id string, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.upstream.LabelValues(user.InjectOrgID(ctx, id), name, hints, matchers...)
 }
 
-func (q *tenantQuerier) LabelNames(ctx context.Context, id string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return q.upstream.LabelNames(user.InjectOrgID(ctx, id), matchers...)
+func (q *tenantQuerier) LabelNames(ctx context.Context, id string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return q.upstream.LabelNames(user.InjectOrgID(ctx, id), hints, matchers...)
 }
 
 func (q *tenantQuerier) Close() error {
@@ -103,17 +103,15 @@ func (q *tenantQuerier) Close() error {
 // If the label `idLabelName` already exists, its value is overwritten and
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively.
-func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, resolver tenant.Resolver, bypassWithSingleID bool, maxConcurrency int, reg prometheus.Registerer, logger log.Logger) storage.Queryable {
-	// Note that we allow tenant.Resolver to be injected instead of using the
-	// tenant.TenantIDs() method because GEM needs to inject different behavior
-	// here for the cluster federation feature.
-	return &mergeQueryable{
-		logger:             logger,
-		idLabelName:        idLabelName,
-		callbacks:          callbacks,
-		resolver:           resolver,
-		bypassWithSingleID: bypassWithSingleID,
-		maxConcurrency:     maxConcurrency,
+//
+// Passing in multiTenantSelectFunc allows for customizing the behavior of the
+// Select method that is used to query multiple tenants in parallel. When left
+// nil, the default behavior is used.
+func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, resolver tenant.Resolver, bypassWithSingleID bool, maxConcurrency int, reg prometheus.Registerer, logger log.Logger, multiTenantSelectFunc MultiTenantSelectFunc) storage.Queryable {
+	if multiTenantSelectFunc == nil {
+		multiTenantSelectFunc = defaultMultiTenantSelectFunc
+	}
+	metrics := mergeQueryableMetrics{
 		tenantsQueried: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_querier_federation_tenants_queried",
 			Help:    "Number of tenants queried for a single standard query.",
@@ -129,15 +127,34 @@ func NewMergeQueryable(idLabelName string, callbacks MergeQueryableCallbacks, re
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 		}),
 	}
+	// Note that we allow tenant.Resolver to be injected instead of using the
+	// tenant.TenantIDs() method because GEM needs to inject different behavior
+	// here for the cluster federation feature.
+	return &mergeQueryable{
+		logger:                logger,
+		idLabelName:           idLabelName,
+		callbacks:             callbacks,
+		resolver:              resolver,
+		bypassWithSingleID:    bypassWithSingleID,
+		maxConcurrency:        maxConcurrency,
+		multiTenantSelectFunc: multiTenantSelectFunc,
+		mergeQueryableMetrics: metrics,
+	}
 }
 
 type mergeQueryable struct {
-	logger                    log.Logger
-	idLabelName               string
-	bypassWithSingleID        bool
-	callbacks                 MergeQueryableCallbacks
-	resolver                  tenant.Resolver
-	maxConcurrency            int
+	logger                log.Logger
+	idLabelName           string
+	bypassWithSingleID    bool
+	callbacks             MergeQueryableCallbacks
+	resolver              tenant.Resolver
+	maxConcurrency        int
+	multiTenantSelectFunc MultiTenantSelectFunc
+
+	mergeQueryableMetrics
+}
+
+type mergeQueryableMetrics struct {
 	tenantsQueried            prometheus.Histogram
 	upstreamQueryWaitDuration prometheus.Histogram
 }
@@ -159,6 +176,7 @@ func (m *mergeQueryable) Querier(mint int64, maxt int64) (storage.Querier, error
 		bypassWithSingleID:        m.bypassWithSingleID,
 		tenantsQueried:            m.tenantsQueried,
 		upstreamQueryWaitDuration: m.upstreamQueryWaitDuration,
+		multiTenantSelectFunc:     m.multiTenantSelectFunc,
 	}, nil
 }
 
@@ -177,6 +195,7 @@ type mergeQuerier struct {
 	bypassWithSingleID        bool
 	tenantsQueried            prometheus.Histogram
 	upstreamQueryWaitDuration prometheus.Histogram
+	multiTenantSelectFunc     MultiTenantSelectFunc
 }
 
 // LabelValues returns all potential values for a label name given involved federation IDs.
@@ -184,7 +203,7 @@ type mergeQuerier struct {
 // For the label `idLabelName` it will return all the underlying IDs available.
 // For the label "original_" + `idLabelName it will return all values
 // for the original `idLabelName` label.
-func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m *mergeQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ids, err := m.resolver.TenantIDs(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -192,13 +211,13 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ..
 
 	m.tenantsQueried.Observe(float64(len(ids)))
 	if m.bypassWithSingleID && len(ids) == 1 {
-		return m.upstream.LabelValues(ctx, ids[0], name, matchers...)
+		return m.upstream.LabelValues(ctx, ids[0], name, hints, matchers...)
 	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelValues")
 	defer spanlog.Finish()
 
-	matchedIDs, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
+	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
 
 	if name == m.idLabelName {
 		labelValues := make([]string, 0, len(matchedIDs))
@@ -217,13 +236,13 @@ func (m *mergeQuerier) LabelValues(ctx context.Context, name string, matchers ..
 	}
 
 	return m.mergeDistinctStringSliceWithTenants(ctx, matchedIDs, func(ctx context.Context, id string) ([]string, annotations.Annotations, error) {
-		return m.upstream.LabelValues(ctx, id, name, filteredMatchers...)
+		return m.upstream.LabelValues(ctx, id, name, hints, filteredMatchers...)
 	})
 }
 
 // LabelNames returns all the unique label names present for involved federation IDs.
 // It also adds the `idLabelName` and if present in the original results the original `idLabelName`.
-func (m *mergeQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m *mergeQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ids, err := m.resolver.TenantIDs(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -231,16 +250,16 @@ func (m *mergeQuerier) LabelNames(ctx context.Context, matchers ...*labels.Match
 
 	m.tenantsQueried.Observe(float64(len(ids)))
 	if m.bypassWithSingleID && len(ids) == 1 {
-		return m.upstream.LabelNames(ctx, ids[0], matchers...)
+		return m.upstream.LabelNames(ctx, ids[0], hints, matchers...)
 	}
 
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.LabelNames")
 	defer spanlog.Finish()
 
-	matchedIDs, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
+	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
 
 	labelNames, warnings, err := m.mergeDistinctStringSliceWithTenants(ctx, matchedIDs, func(ctx context.Context, id string) ([]string, annotations.Annotations, error) {
-		return m.upstream.LabelNames(ctx, id, filteredMatchers...)
+		return m.upstream.LabelNames(ctx, id, hints, filteredMatchers...)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -349,42 +368,82 @@ func (m *mergeQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	spanlog, ctx := spanlogger.NewWithLogger(ctx, m.logger, "mergeQuerier.Select")
 	defer spanlog.Finish()
 
-	matchedIDs, filteredMatchers := filterValuesByMatchers(m.idLabelName, ids, matchers...)
+	matchedIDs, filteredMatchers := FilterValuesByMatchers(m.idLabelName, ids, matchers...)
 
 	jobs := make([]string, 0, len(matchedIDs))
-	seriesSets := make([]storage.SeriesSet, len(matchedIDs))
 	for id := range matchedIDs {
 		jobs = append(jobs, id)
 	}
 
+	wrMergeQuerier := waitRecordingMergeQuerier{
+		start:                     start,
+		upstreamQueryWaitDuration: m.upstreamQueryWaitDuration,
+		upstream:                  m.upstream,
+	}
+
+	return m.multiTenantSelectFunc(ctx, jobs, wrMergeQuerier, m.idLabelName, m.maxConcurrency, sortSeries, hints, filteredMatchers...)
+}
+
+// MultiTenantSelectFunc is an overrideable function that queries multiple tenants in parallel.
+// By default, jobs would be the list of tenant IDs, idLabelName is used to add a label to the series
+// to identify the tenant it belongs to, maxConcurrency is the maximum number of concurrent queries allowed,
+// and ctx, sortSeries, hints, and matchers are the same as the Select method.
+type MultiTenantSelectFunc func(ctx context.Context, jobs []string, selMergeQuerier SelectMergeQuerier, idLabelName string, maxConcurrency int, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
+
+func defaultMultiTenantSelectFunc(ctx context.Context, jobs []string, selMergeQuerier SelectMergeQuerier, idLabelName string, maxConcurrency int, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	seriesSets := make([]storage.SeriesSet, len(jobs))
+
 	// We don't use the context passed to this function, since the context has to live longer
 	// than the call to ForEachJob (i.e. as long as seriesSets)
 	run := func(_ context.Context, idx int) error {
-		m.upstreamQueryWaitDuration.Observe(time.Since(start).Seconds())
 		id := jobs[idx]
-		seriesSets[idx] = &addLabelsSeriesSet{
-			upstream: m.upstream.Select(ctx, id, sortSeries, hints, filteredMatchers...),
-			labels: []labels.Label{
+		seriesSets[idx] = NewAddLabelsSeriesSet(
+			selMergeQuerier.Select(ctx, id, sortSeries, hints, matchers...),
+			[]labels.Label{
 				{
-					Name:  m.idLabelName,
+					Name:  idLabelName,
 					Value: id,
 				},
 			},
-		}
+		)
 		return nil
 	}
 
-	if err := concurrency.ForEachJob(ctx, len(jobs), m.maxConcurrency, run); err != nil {
+	if err := concurrency.ForEachJob(ctx, len(jobs), maxConcurrency, run); err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 
-	return storage.NewMergeSeriesSet(seriesSets, storage.ChainedSeriesMerge)
+	return storage.NewMergeSeriesSet(seriesSets, 0, storage.ChainedSeriesMerge)
+}
+
+type SelectMergeQuerier interface {
+	Select(ctx context.Context, id string, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
+}
+
+// waitRecordingMergeQuerier is a wrapper for MergeQuerierUpstream that records the time it took to start
+// the upstream query.
+type waitRecordingMergeQuerier struct {
+	start                     time.Time
+	upstreamQueryWaitDuration prometheus.Histogram
+	upstream                  MergeQuerierUpstream
+}
+
+func (q waitRecordingMergeQuerier) Select(ctx context.Context, id string, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	q.upstreamQueryWaitDuration.Observe(time.Since(q.start).Seconds())
+	return q.upstream.Select(ctx, id, sortSeries, hints, matchers...)
 }
 
 type addLabelsSeriesSet struct {
 	upstream   storage.SeriesSet
 	labels     []labels.Label
 	currSeries storage.Series
+}
+
+func NewAddLabelsSeriesSet(upstream storage.SeriesSet, labels []labels.Label) storage.SeriesSet {
+	return &addLabelsSeriesSet{
+		upstream: upstream,
+		labels:   labels,
+	}
 }
 
 func (m *addLabelsSeriesSet) Next() bool {

@@ -97,6 +97,7 @@ type DescribedProducersPartition struct {
 	Partition       int32              // Partition is the partition whose producer's were described.
 	ActiveProducers DescribedProducers // ActiveProducers are producer's actively transactionally producing to this partition.
 	Err             error              // Err is non-nil if describing this partition failed.
+	ErrMessage      string             // ErrMessage a potential extra message describing any error.
 }
 
 // DescribedProducersPartitions contains partitions whose producer's were described.
@@ -274,6 +275,7 @@ func (cl *Client) DescribeProducers(ctx context.Context, s TopicsSet) (Described
 					Partition:       rp.Partition,
 					ActiveProducers: drs,
 					Err:             kerr.ErrorForCode(rp.ErrorCode),
+					ErrMessage:      unptrStr(rp.ErrorMessage),
 				}
 				dps[rp.Partition] = dp // one partition globally, no need to exist-check
 				for _, rr := range rp.ActiveProducers {

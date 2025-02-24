@@ -1,4 +1,4 @@
-{{- if .Values.distributor.kedaAutoscaling.enabled }}
+{{- if and .Values.distributor.enabled .Values.distributor.kedaAutoscaling.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:

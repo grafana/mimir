@@ -16,6 +16,7 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -279,7 +280,9 @@ func TestGzipHandlerContentLength(t *testing.T) {
 	}
 	defer ln.Close()
 	srv := &http.Server{
-		Handler: nil,
+		Handler:      nil,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 	go func() { _ = srv.Serve(ln) }()
 

@@ -24,7 +24,9 @@ spec:
     type: RollingUpdate
   serviceName: test-oss-k8s-1.25-values-mimir-alertmanager
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: storage
       spec:
         accessModes:

@@ -24,6 +24,7 @@ type Config struct {
 	MentionChannel string                          `json:"mentionChannel,omitempty" yaml:"mentionChannel,omitempty"`
 	MentionUsers   receivers.CommaSeparatedStrings `json:"mentionUsers,omitempty" yaml:"mentionUsers,omitempty"`
 	MentionGroups  receivers.CommaSeparatedStrings `json:"mentionGroups,omitempty" yaml:"mentionGroups,omitempty"`
+	Color          string                          `json:"color,omitempty" yaml:"color,omitempty"`
 }
 
 func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Config, error) {
@@ -67,6 +68,8 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	if settings.Title == "" {
 		settings.Title = templates.DefaultMessageTitleEmbed
 	}
-
+	if settings.Color == "" {
+		settings.Color = templates.DefaultMessageColor
+	}
 	return settings, nil
 }

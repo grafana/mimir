@@ -42,13 +42,16 @@ type (
 		nbytes           int64
 
 		// abortedTxns
-		rf     int8
-		leader *broker
+		rf        int8
+		leader    *broker
+		followers followers
 
 		watch map[*watchFetch]struct{}
 
 		createdAt time.Time
 	}
+
+	followers []int32
 
 	partBatch struct {
 		kmsg.RecordBatch
@@ -67,6 +70,15 @@ type (
 		maxEarlierTimestamp int64
 	}
 )
+
+func (fs followers) has(b *broker) bool {
+	for _, f := range fs {
+		if f == b.node {
+			return true
+		}
+	}
+	return false
+}
 
 func (d *data) mkt(t string, nparts int, nreplicas int, configs map[string]*string) {
 	if d.tps != nil {
@@ -88,11 +100,16 @@ func (d *data) mkt(t string, nparts int, nreplicas int, configs map[string]*stri
 	}
 	if nreplicas < 0 {
 		nreplicas = 3 // cluster default
+		if nreplicas > len(d.c.bs) {
+			nreplicas = len(d.c.bs)
+		}
 	}
 	d.id2t[id] = t
 	d.t2id[t] = id
 	d.treplicas[t] = nreplicas
-	d.tcfgs[t] = configs
+	if configs != nil {
+		d.tcfgs[t] = configs
+	}
 	for i := 0; i < nparts; i++ {
 		d.tps.mkp(t, int32(i), d.c.newPartData)
 	}

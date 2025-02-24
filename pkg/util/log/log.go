@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	dslog "github.com/grafana/dskit/log"
+	"github.com/grafana/dskit/spanlogger"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -39,11 +40,11 @@ func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimit
 
 	if rateLimitedCfg.Enabled {
 		// use UTC timestamps and skip 6 stack frames if rate limited logger is needed.
-		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(6))
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", spanlogger.Caller(6))
 		logger = dslog.NewRateLimitedLogger(logger, rateLimitedCfg.LogsPerSecond, rateLimitedCfg.LogsBurstSize, rateLimitedCfg.Registry)
 	} else {
 		// use UTC timestamps and skip 5 stack frames if no rate limited logger is needed.
-		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", log.Caller(5))
+		logger = log.With(logger, "ts", log.DefaultTimestampUTC, "caller", spanlogger.Caller(5))
 	}
 	// Must put the level filter last for efficiency.
 	logger = newFilter(logger, logLevel)
@@ -53,21 +54,51 @@ func InitLogger(logFormat string, logLevel dslog.Level, buffered bool, rateLimit
 	return logger
 }
 
+type logLevel int
+
+const (
+	debugLevel logLevel = iota
+	infoLevel
+	warnLevel
+	errorLevel
+)
+
+type leveledLogger interface {
+	level() logLevel
+}
+
+var _ leveledLogger = levelFilter{}
+
 // Pass through Logger and implement the DebugEnabled interface that spanlogger looks for.
 type levelFilter struct {
 	log.Logger
-	debugEnabled bool
+	lvl logLevel
 }
 
 func newFilter(logger log.Logger, lvl dslog.Level) log.Logger {
+	var l logLevel
+	switch lvl.String() {
+	case "info":
+		l = infoLevel
+	case "warn":
+		l = warnLevel
+	case "error":
+		l = errorLevel
+	default:
+		l = debugLevel
+	}
 	return &levelFilter{
-		Logger:       level.NewFilter(logger, lvl.Option),
-		debugEnabled: lvl.String() == "debug", // Using inside knowledge about the hierarchy of possible options.
+		Logger: level.NewFilter(logger, lvl.Option),
+		lvl:    l,
 	}
 }
 
+func (f levelFilter) level() logLevel {
+	return f.lvl
+}
+
 func (f *levelFilter) DebugEnabled() bool {
-	return f.debugEnabled
+	return f.lvl <= debugLevel
 }
 
 func getWriter(buffered bool) io.Writer {

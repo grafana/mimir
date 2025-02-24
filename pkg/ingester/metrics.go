@@ -12,6 +12,7 @@ import (
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/tsdb"
 	"go.uber.org/atomic"
 
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -43,6 +44,8 @@ type ingesterMetrics struct {
 	activeSeriesCustomTrackersPerUserNativeHistograms *prometheus.GaugeVec
 	activeNativeHistogramBucketsPerUser               *prometheus.GaugeVec
 	activeNativeHistogramBucketsCustomTrackersPerUser *prometheus.GaugeVec
+
+	attributedActiveSeriesFailuresPerUser *prometheus.CounterVec
 
 	// Owned series
 	ownedSeriesPerUser *prometheus.GaugeVec
@@ -193,7 +196,10 @@ func newIngesterMetrics(
 			Name: "cortex_ingester_owned_series",
 			Help: "Number of currently owned series per user.",
 		}, []string{"user"}),
-
+		attributedActiveSeriesFailuresPerUser: promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ingester_attributed_active_series_failure",
+			Help: "The total number of failed active series decrement per user",
+		}, []string{"user"}),
 		maxUsersGauge: promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 			Name:        instanceLimits,
 			Help:        instanceLimitsHelp,
@@ -383,6 +389,7 @@ func newIngesterMetrics(
 	m.rejected.WithLabelValues(reasonIngesterMaxInMemorySeries)
 	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequests)
 	m.rejected.WithLabelValues(reasonIngesterMaxInflightPushRequestsBytes)
+	m.rejected.WithLabelValues(reasonIngesterMaxInflightReadRequests)
 
 	return m
 }
@@ -401,6 +408,7 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 
 	m.maxLocalSeriesPerUser.DeleteLabelValues(userID)
 	m.ownedSeriesPerUser.DeleteLabelValues(userID)
+	m.attributedActiveSeriesFailuresPerUser.DeleteLabelValues(userID)
 }
 
 func (m *ingesterMetrics) deletePerGroupMetricsForUser(userID, group string) {
@@ -420,7 +428,7 @@ func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, custo
 }
 
 type discardedMetrics struct {
-	sampleOutOfBounds      *prometheus.CounterVec
+	sampleTimestampTooOld  *prometheus.CounterVec
 	sampleOutOfOrder       *prometheus.CounterVec
 	sampleTooOld           *prometheus.CounterVec
 	sampleTooFarInFuture   *prometheus.CounterVec
@@ -432,7 +440,7 @@ type discardedMetrics struct {
 
 func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 	return &discardedMetrics{
-		sampleOutOfBounds:      validation.DiscardedSamplesCounter(r, reasonSampleOutOfBounds),
+		sampleTimestampTooOld:  validation.DiscardedSamplesCounter(r, reasonSampleTimestampTooOld),
 		sampleOutOfOrder:       validation.DiscardedSamplesCounter(r, reasonSampleOutOfOrder),
 		sampleTooOld:           validation.DiscardedSamplesCounter(r, reasonSampleTooOld),
 		sampleTooFarInFuture:   validation.DiscardedSamplesCounter(r, reasonSampleTooFarInFuture),
@@ -444,7 +452,7 @@ func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 }
 
 func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
-	m.sampleOutOfBounds.DeletePartialMatch(filter)
+	m.sampleTimestampTooOld.DeletePartialMatch(filter)
 	m.sampleOutOfOrder.DeletePartialMatch(filter)
 	m.sampleTooOld.DeletePartialMatch(filter)
 	m.sampleTooFarInFuture.DeletePartialMatch(filter)
@@ -455,7 +463,7 @@ func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
 }
 
 func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
-	m.sampleOutOfBounds.DeleteLabelValues(userID, group)
+	m.sampleTimestampTooOld.DeleteLabelValues(userID, group)
 	m.sampleOutOfOrder.DeleteLabelValues(userID, group)
 	m.sampleTooOld.DeleteLabelValues(userID, group)
 	m.sampleTooFarInFuture.DeleteLabelValues(userID, group)
@@ -515,6 +523,9 @@ type tsdbMetrics struct {
 	memSeries             *prometheus.Desc
 	memSeriesCreatedTotal *prometheus.Desc
 	memSeriesRemovedTotal *prometheus.Desc
+
+	headPostingsForMatchersCacheMetrics  *tsdb.PostingsForMatchersCacheMetrics
+	blockPostingsForMatchersCacheMetrics *tsdb.PostingsForMatchersCacheMetrics
 
 	regs *dskit_metrics.TenantRegistries
 }
@@ -695,6 +706,9 @@ func newTSDBMetrics(r prometheus.Registerer, logger log.Logger) *tsdbMetrics {
 			"cortex_ingester_memory_series_removed_total",
 			"The total number of series that were removed per user.",
 			[]string{"user"}, nil),
+
+		headPostingsForMatchersCacheMetrics:  tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_head_", r)),
+		blockPostingsForMatchersCacheMetrics: tsdb.NewPostingsForMatchersCacheMetrics(prometheus.WrapRegistererWithPrefix("cortex_ingester_tsdb_block_", r)),
 	}
 
 	if r != nil {

@@ -36,6 +36,7 @@
       alertmanager: 'alertmanager',
       alertmanager_im: 'alertmanager-im',
       ingester: 'ingester',
+      block_builder: 'block-builder',
       distributor: 'distributor',
       querier: 'querier',
       query_frontend: 'query-frontend',
@@ -72,6 +73,8 @@
     // docs/sources/mimir/manage/monitoring-grafana-mimir/requirements.md
     job_names: {
       ingester: ['ingester.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also custom and per-zone ingester deployments.
+      ingester_partition: ['ingester.*-partition'],  // Match exclusively temporarily partition ingesters run during the migration to ingest storage.
+      block_builder: ['block-builder.*'],
       distributor: ['distributor.*', 'cortex', 'mimir', 'mimir-write.*'],  // Match also per-zone distributor deployments.
       querier: ['querier.*', 'cortex', 'mimir', 'mimir-read.*'],  // Match also custom querier deployments.
       ruler_querier: ['ruler-querier.*'],  // Match also custom querier deployments.
@@ -80,12 +83,16 @@
       ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom ruler-query-frontend deployments.
       query_scheduler: ['query-scheduler.*', 'mimir-backend.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
       ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
-      ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor.*', 'ingester.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
+      ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor.*', 'ingester.*', 'query-frontend.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
       store_gateway: ['store-gateway.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also per-zone store-gateway deployments.
       gateway: ['gateway', 'cortex-gw.*'],  // Match also custom and per-zone gateway deployments.
       compactor: ['compactor.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also custom compactor deployments.
       alertmanager: ['alertmanager', 'cortex', 'mimir', 'mimir-backend.*'],
       overrides_exporter: ['overrides-exporter', 'mimir-backend.*'],
+
+      // The following are job matchers used to select all components in the read path.
+      main_read_path: std.uniq(std.sort(self.query_frontend + self.query_scheduler + self.querier)),
+      remote_ruler_read_path: std.uniq(std.sort(self.ruler_query_frontend + self.ruler_query_scheduler + self.ruler_querier)),
 
       // The following are job matchers used to select all components in a given "path".
       write: ['distributor.*', 'ingester.*', 'mimir-write.*'],
@@ -105,6 +112,7 @@
       // the instance when deployed in microservices mode (e.g. "distributor"
       // matcher shouldn't match "mimir-write" too).
       compactor: instanceMatcher(componentNameRegexp.compactor),
+      block_builder: instanceMatcher(componentNameRegexp.block_builder),
       alertmanager: instanceMatcher(componentNameRegexp.alertmanager),
       alertmanager_im: instanceMatcher(componentNameRegexp.alertmanager_im),
       ingester: instanceMatcher(componentNameRegexp.ingester),
@@ -143,6 +151,7 @@
       // Microservices deployment mode. The following matchers MUST match only
       // the instance when deployed in microservices mode (e.g. "distributor"
       // matcher shouldn't match "mimir-write" too).
+      block_builder: componentNameRegexp.block_builder,
       gateway: componentNameRegexp.gateway,
       distributor: componentNameRegexp.distributor,
       ingester: componentNameRegexp.ingester,
@@ -198,6 +207,9 @@
     // Used to add extra annotations to all alerts, Careful: takes precedence over default annotations.
     alert_extra_annotations: {},
 
+    // Used as the job prefix in alerts that select on job label (e.g. GossipMembersTooHigh, RingMembersMismatch). This can be set to a known namespace to prevent those alerts from firing incorrectly due to selecting similar metrics from Loki/Tempo.
+    alert_job_prefix: '.*/',
+
     // Whether alerts for experimental ingest storage are enabled.
     ingest_storage_enabled: true,
 
@@ -205,6 +217,9 @@
 
     // Whether resources dashboards are enabled (based on cAdvisor metrics).
     resources_dashboards_enabled: true,
+
+    // Whether mimir block-builder is enabled (experimental)
+    block_builder_enabled: false,
 
     // Whether mimir gateway is enabled
     gateway_enabled: false,
@@ -609,7 +624,10 @@
     },
 
     // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
-    autoscaling_hpa_prefix: 'keda-hpa-',
+    //
+    // IMPORTANT: use non-capture groups in the regular expression so that when they're used as part
+    // of other regexps we don't break existing capture groups.
+    autoscaling_hpa_prefix: 'keda-hpa-(?:mimir-)?',
 
     autoscaling: {
       query_frontend: {
@@ -629,6 +647,10 @@
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-querier',
       },
+      store_gateway: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'store-gateway-zone-a',
+      },
       distributor: {
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'distributor',
@@ -644,6 +666,11 @@
       ingester: {
         enabled: false,
         hpa_name: $._config.autoscaling_hpa_prefix + 'ingester-zone-a',
+        replica_template_name: 'ingester-zone-a',
+      },
+      compactor: {
+        enabled: false,
+        hpa_name: $._config.autoscaling_hpa_prefix + 'compactor',
       },
     },
 
@@ -655,6 +682,9 @@
 
     // All query methods from IngesterServer interface. Basically everything except Push.
     ingester_read_path_routes_regex: '/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)',
+
+    // All query methods from StoregatewayServer interface.
+    store_gateway_read_path_routes_regex: '/gatewaypb.StoreGateway/.*',
 
     // The default datasource used for dashboards.
     dashboard_datasource: 'default',
@@ -682,6 +712,10 @@
     // Disabled by default, because when -ingester.limit-inflight-requests-using-grpc-method-limiter and -distributor.limit-inflight-requests-using-grpc-method-limiter is
     // not used (default), then rejected requests are already counted as failures.
     show_rejected_requests_on_writes_dashboard: false,
+
+    // When ingester reactive limiters are enabled (using -ingester.push-reactive-limiter.enabled=true and -ingester.read-reactive-limiter.enabled=true), additional
+    // metrics related to inflight requests and rejections can be shown on the Writes and Reads dashboards.
+    show_reactive_limiter_panels: false,
 
     // Show panels that use queries for gRPC-based ingestion (distributor -> ingester)
     show_grpc_ingestion_panels: true,

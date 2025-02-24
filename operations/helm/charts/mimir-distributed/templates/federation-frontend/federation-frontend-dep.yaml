@@ -1,0 +1,134 @@
+{{- if and .Values.enterprise.enabled .Values.federation_frontend.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "federation-frontend") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "federation-frontend") | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.federation_frontend.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  replicas: {{ .Values.federation_frontend.replicas }}
+  selector:
+    matchLabels:
+      {{- include "mimir.selectorLabels" (dict "ctx" . "component" "federation-frontend") | nindent 6 }}
+  strategy:
+    {{- toYaml .Values.federation_frontend.strategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mimir.podLabels" (dict "ctx" . "component" "federation-frontend") | nindent 8 }}
+      annotations:
+        {{- include "mimir.podAnnotations" (dict "ctx" . "component" "federation-frontend") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      {{- if .Values.federation_frontend.priorityClassName }}
+      priorityClassName: {{ .Values.federation_frontend.priorityClassName }}
+      {{- end }}
+      securityContext:
+        {{- include "mimir.lib.podSecurityContext" (dict "ctx" . "component" "federation-frontend") | nindent 8 }}
+      {{- with .Values.federation_frontend.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.image.pullSecrets }}
+      imagePullSecrets:
+      {{- range .Values.image.pullSecrets }}
+        - name: {{ . }}
+      {{- end }}
+      {{- end }}
+      containers:
+        - name: federation-frontend
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "federation-frontend") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "-target=federation-frontend"
+            - "-config.expand-env=true"
+            - "-config.file=/etc/mimir/mimir.yaml"
+            {{- range $key, $value := .Values.federation_frontend.extraArgs }}
+            - -{{ $key }}={{ $value }}
+            {{- end }}
+          volumeMounts:
+            {{- if .Values.federation_frontend.extraVolumeMounts }}
+              {{ toYaml .Values.federation_frontend.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            {{- if .Values.global.extraVolumeMounts }}
+              {{ toYaml .Values.global.extraVolumeMounts | nindent 12}}
+            {{- end }}
+            - name: config
+              mountPath: /etc/mimir
+            - name: license
+              mountPath: /license
+            - name: active-queries
+              mountPath: /active-query-tracker
+          ports:
+            - name: http-metrics
+              containerPort: {{ include "mimir.serverHttpListenPort" . }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ include "mimir.serverGrpcListenPort" . }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.federation_frontend.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.federation_frontend.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.federation_frontend.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.federation_frontend.containerSecurityContext | nindent 12 }}
+          {{- $jaeger_queue_size := dig "jaegerReporterMaxQueueSize" nil .Values.federation_frontend }}
+          {{- if or .Values.global.extraEnv .Values.federation_frontend.env $jaeger_queue_size }}
+          env:
+            {{- with .Values.global.extraEnv }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.federation_frontend.env }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- if $jaeger_queue_size }}
+              - name: "JAEGER_REPORTER_MAX_QUEUE_SIZE"
+                value: {{$jaeger_queue_size | toString | toYaml }}
+             {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.federation_frontend.extraEnvFrom }}
+          envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.federation_frontend.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+{{- if .Values.federation_frontend.extraContainers }}
+{{ toYaml .Values.federation_frontend.extraContainers | nindent 8 }}
+{{- end }}
+      {{- with .Values.federation_frontend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.federation_frontend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "mimir.lib.topologySpreadConstraints" (dict "ctx" . "component" "federation-frontend") | nindent 6 }}
+      {{- with .Values.federation_frontend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.federation_frontend.terminationGracePeriodSeconds }}
+      volumes:
+        - name: config
+          {{- include "mimir.configVolume" . | nindent 10 }}
+        - name: license
+          secret:
+            secretName: {{ tpl .Values.license.secretName . }}
+        {{- if .Values.federation_frontend.extraVolumes }}
+        {{- toYaml .Values.federation_frontend.extraVolumes | nindent 8 }}
+        {{- end }}
+        {{- if .Values.global.extraVolumes }}
+        {{ toYaml .Values.global.extraVolumes | nindent 8}}
+        {{- end }}
+        - name: active-queries
+          emptyDir: {}
+{{- end }}

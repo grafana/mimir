@@ -11,16 +11,39 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
+type Opt func() []kfake.Opt
+
+// WithSASLPlain enables SASL plain authentication in the Kafka fake server,
+// expecting the input username and password credentials.
+func WithSASLPlain(username, password string) Opt {
+	return func() []kfake.Opt {
+		return []kfake.Opt{
+			kfake.EnableSASL(),
+			kfake.Superuser("PLAIN", username, password),
+		}
+	}
+}
+
 // CreateCluster returns a fake Kafka cluster for unit testing.
-func CreateCluster(t testing.TB, numPartitions int32, topicName string) (*kfake.Cluster, string) {
-	cluster, addr := CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, topicName)
+func CreateCluster(t testing.TB, numPartitions int32, topicName string, opts ...Opt) (*kfake.Cluster, string) {
+	cluster, addr := CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, topicName, opts...)
 	addSupportForConsumerGroups(t, cluster, topicName, numPartitions)
 
 	return cluster, addr
 }
 
-func CreateClusterWithoutCustomConsumerGroupsSupport(t testing.TB, numPartitions int32, topicName string) (*kfake.Cluster, string) {
-	cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.SeedTopics(numPartitions, topicName))
+func CreateClusterWithoutCustomConsumerGroupsSupport(t testing.TB, numPartitions int32, topicName string, opts ...Opt) (*kfake.Cluster, string) {
+	cfg := []kfake.Opt{
+		kfake.NumBrokers(1),
+		kfake.SeedTopics(numPartitions, topicName),
+	}
+
+	// Apply options.
+	for _, opt := range opts {
+		cfg = append(cfg, opt()...)
+	}
+
+	cluster, err := kfake.NewCluster(cfg...)
 	require.NoError(t, err)
 	t.Cleanup(cluster.Close)
 

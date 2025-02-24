@@ -35,6 +35,7 @@ func TestFirewallDialer(t *testing.T) {
 			cases: []testCase{
 				{"localhost", false},
 				{"127.0.0.1", false},
+				{"0.0.0.0", false},
 				{"google.com", false},
 				{"172.217.168.78", false},
 			},
@@ -46,15 +47,17 @@ func TestFirewallDialer(t *testing.T) {
 			cases: []testCase{
 				{"localhost", true},
 				{"127.0.0.1", true},
+				{"0.0.0.0", true},
 				{"192.168.0.1", true},
 				{"10.0.0.1", true},
 				{"google.com", false},
 				{"172.217.168.78", false},
-				{"fdf8:f53b:82e4::53", true},       // Local
-				{"fe80::200:5aee:feaa:20a2", true}, // Link-local
-				{"2001:4860:4860::8844", false},    // Google DNS
-				{"::ffff:172.217.168.78", false},   // IPv6 mapped v4 non-private
-				{"::ffff:192.168.0.1", true},       // IPv6 mapped v4 private
+				{"fdf8:f53b:82e4::53", true},        // Local
+				{"fe80::200:5aee:feaa:20a2", true},  // Link-local
+				{"ff01::2f3b:56a1:88e4:7c9d", true}, // Interface-local multicast address
+				{"2001:4860:4860::8844", false},     // Google DNS
+				{"::ffff:172.217.168.78", false},    // IPv6 mapped v4 non-private
+				{"::ffff:192.168.0.1", true},        // IPv6 mapped v4 private
 			},
 		},
 		"should support blocking custom CIDRs": {

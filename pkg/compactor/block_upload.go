@@ -25,6 +25,8 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -231,16 +233,34 @@ func (c *MultitenantCompactor) createBlockUpload(ctx context.Context, meta *bloc
 		}
 	}
 
+	blockMinTime := timestamp.Time(meta.MinTime)
+	blockMaxTime := timestamp.Time(meta.MaxTime)
+
 	// validate data is within the retention period
 	retention := c.cfgProvider.CompactorBlocksRetentionPeriod(tenantID)
 	if retention > 0 {
 		threshold := time.Now().Add(-retention)
-		if time.UnixMilli(meta.MaxTime).Before(threshold) {
-			maxTimeStr := util.FormatTimeMillis(meta.MaxTime)
+		if blockMaxTime.Before(threshold) {
 			return httpError{
-				message:    fmt.Sprintf("block max time (%s) older than retention period", maxTimeStr),
+				message:    fmt.Sprintf("block max time (%s) older than retention period", blockMaxTime.String()),
 				statusCode: http.StatusUnprocessableEntity,
 			}
+		}
+	}
+
+	blockDuration := blockMaxTime.Sub(blockMinTime)
+	maxRange := c.compactorCfg.BlockRanges[len(c.compactorCfg.BlockRanges)-1]
+	if blockDuration > maxRange {
+		return httpError{
+			message:    fmt.Sprintf("block duration (%v) is larger than max configured compactor time range (%v)", model.Duration(blockDuration), model.Duration(maxRange)),
+			statusCode: http.StatusUnprocessableEntity,
+		}
+	}
+
+	if blockMaxTime.After(blockMinTime.Truncate(maxRange).Add(maxRange)) {
+		return httpError{
+			message:    fmt.Sprintf("block time range crosses boundary of configured compactor time range (%v)", model.Duration(maxRange)),
+			statusCode: http.StatusUnprocessableEntity,
 		}
 	}
 

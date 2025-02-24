@@ -118,7 +118,8 @@ type Config struct {
 	// Compactors sharding.
 	ShardingRing RingConfig `yaml:"sharding_ring"`
 
-	CompactionJobsOrder string `yaml:"compaction_jobs_order" category:"advanced"`
+	CompactionJobsOrder string        `yaml:"compaction_jobs_order" category:"advanced"`
+	MaxLookback         time.Duration `yaml:"max_lookback" category:"experimental"`
 
 	// No need to add options to customize the retry backoff,
 	// given the defaults should be fine, but allow to override
@@ -156,6 +157,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
 	f.DurationVar(&cfg.TenantCleanupDelay, "compactor.tenant-cleanup-delay", 6*time.Hour, "For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant.")
 	f.BoolVar(&cfg.NoBlocksFileCleanupEnabled, "compactor.no-blocks-file-cleanup-enabled", false, "If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.")
+	f.DurationVar(&cfg.MaxLookback, "compactor.max-lookback", 0*time.Second, "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.")
+
 	// compactor concurrency options
 	f.IntVar(&cfg.MaxOpeningBlocksConcurrency, "compactor.max-opening-blocks-concurrency", 1, "Number of goroutines opening blocks before compaction.")
 	f.IntVar(&cfg.MaxClosingBlocksConcurrency, "compactor.max-closing-blocks-concurrency", 1, "Max number of blocks that can be closed concurrently during split compaction. Note that closing a newly compacted block uses a lot of memory for writing the index.")
@@ -300,9 +303,9 @@ type MultitenantCompactor struct {
 	syncerMetrics *aggregatedSyncerMetrics
 
 	// Block upload metrics
-	blockUploadBlocks      *prometheus.GaugeVec
-	blockUploadBytes       *prometheus.GaugeVec
-	blockUploadFiles       *prometheus.GaugeVec
+	blockUploadBlocks      *prometheus.CounterVec
+	blockUploadBytes       *prometheus.CounterVec
+	blockUploadFiles       *prometheus.CounterVec
 	blockUploadValidations atomic.Int64
 
 	// Per-tenant meta caches that are passed to MetaFetcher.
@@ -405,15 +408,15 @@ func newMultitenantCompactor(
 			Help:        blocksMarkedForDeletionHelp,
 			ConstLabels: prometheus.Labels{"reason": "compaction"},
 		}),
-		blockUploadBlocks: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
+		blockUploadBlocks: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_block_upload_api_blocks_total",
 			Help: "Total number of blocks successfully uploaded and validated using the block upload API.",
 		}, []string{"user"}),
-		blockUploadBytes: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
+		blockUploadBytes: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_block_upload_api_bytes_total",
 			Help: "Total number of bytes from successfully uploaded and validated blocks using block upload API.",
 		}, []string{"user"}),
-		blockUploadFiles: promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
+		blockUploadFiles: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_block_upload_api_files_total",
 			Help: "Total number of files from successfully uploaded and validated blocks using block upload API.",
 		}, []string{"user"}),
@@ -521,13 +524,14 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 	// Create the blocks cleaner (service).
 	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
-		DeletionDelay:              c.compactorCfg.DeletionDelay,
-		CleanupInterval:            util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
-		CleanupConcurrency:         c.compactorCfg.CleanupConcurrency,
-		TenantCleanupDelay:         c.compactorCfg.TenantCleanupDelay,
-		DeleteBlocksConcurrency:    defaultDeleteBlocksConcurrency,
-		NoBlocksFileCleanupEnabled: c.compactorCfg.NoBlocksFileCleanupEnabled,
-		CompactionBlockRanges:      c.compactorCfg.BlockRanges,
+		DeletionDelay:                 c.compactorCfg.DeletionDelay,
+		CleanupInterval:               util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
+		CleanupConcurrency:            c.compactorCfg.CleanupConcurrency,
+		TenantCleanupDelay:            c.compactorCfg.TenantCleanupDelay,
+		DeleteBlocksConcurrency:       defaultDeleteBlocksConcurrency,
+		GetDeletionMarkersConcurrency: defaultGetDeletionMarkersConcurrency,
+		NoBlocksFileCleanupEnabled:    c.compactorCfg.NoBlocksFileCleanupEnabled,
+		CompactionBlockRanges:         c.compactorCfg.BlockRanges,
 	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
@@ -782,6 +786,13 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		}
 	}
 
+	// Disable maxLookback (set to 0s) when block upload is enabled, block upload enabled implies there will be blocks
+	// beyond the lookback period, we don't want the compactor to skip these
+	var maxLookback = c.compactorCfg.MaxLookback
+	if c.cfgProvider.CompactorBlockUploadEnabled(userID) {
+		maxLookback = 0
+	}
+
 	fetcher, err := block.NewMetaFetcher(
 		userLogger,
 		c.compactorCfg.MetaSyncConcurrency,
@@ -790,6 +801,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		reg,
 		fetcherFilters,
 		metaCache,
+		maxLookback,
 	)
 	if err != nil {
 		return err

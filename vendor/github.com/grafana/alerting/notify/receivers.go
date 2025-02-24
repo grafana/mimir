@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/alerting/receivers/googlechat"
 	"github.com/grafana/alerting/receivers/kafka"
 	"github.com/grafana/alerting/receivers/line"
+	"github.com/grafana/alerting/receivers/mqtt"
 	"github.com/grafana/alerting/receivers/oncall"
 	"github.com/grafana/alerting/receivers/opsgenie"
 	"github.com/grafana/alerting/receivers/pagerduty"
@@ -48,21 +49,21 @@ var (
 )
 
 type TestReceiversResult struct {
-	Alert     types.Alert
-	Receivers []TestReceiverResult
-	NotifedAt time.Time
+	Alert     types.Alert          `json:"alert"`
+	Receivers []TestReceiverResult `json:"receivers"`
+	NotifedAt time.Time            `json:"notifiedAt"`
 }
 
 type TestReceiverResult struct {
-	Name    string
-	Configs []TestIntegrationConfigResult
+	Name    string                        `json:"name"`
+	Configs []TestIntegrationConfigResult `json:"configs"`
 }
 
 type TestIntegrationConfigResult struct {
-	Name   string
-	UID    string
-	Status string
-	Error  error
+	Name   string `json:"name"`
+	UID    string `json:"uid"`
+	Status string `json:"status"`
+	Error  string `json:"error"`
 }
 
 type GrafanaIntegrationConfig struct {
@@ -104,7 +105,7 @@ func (e IntegrationTimeoutError) Error() string {
 	return fmt.Sprintf("the receiver timed out: %s", e.Err)
 }
 
-func (am *GrafanaAlertmanager) TestReceivers(ctx context.Context, c TestReceiversConfigBodyParams) (*TestReceiversResult, error) {
+func (am *GrafanaAlertmanager) TestReceivers(ctx context.Context, c TestReceiversConfigBodyParams) (*TestReceiversResult, int, error) {
 	am.reloadConfigMtx.RLock()
 
 	tmpls := make([]string, 0, len(am.templates))
@@ -190,6 +191,7 @@ type GrafanaReceiverConfig struct {
 	KafkaConfigs        []*NotifierConfig[kafka.Config]
 	LineConfigs         []*NotifierConfig[line.Config]
 	OpsgenieConfigs     []*NotifierConfig[opsgenie.Config]
+	MqttConfigs         []*NotifierConfig[mqtt.Config]
 	PagerdutyConfigs    []*NotifierConfig[pagerduty.Config]
 	OnCallConfigs       []*NotifierConfig[oncall.Config]
 	PushoverConfigs     []*NotifierConfig[pushover.Config]
@@ -211,6 +213,38 @@ type NotifierConfig[T interface{}] struct {
 	Settings T
 }
 
+// DecodeSecretsFn is a function used to decode a map of secrets before creating a receiver.
+type DecodeSecretsFn func(secrets map[string]string) (map[string][]byte, error)
+
+// DecodeSecretsFromBase64 is a DecodeSecretsFn that base64-decodes a map of secrets.
+func DecodeSecretsFromBase64(secrets map[string]string) (map[string][]byte, error) {
+	secureSettings := make(map[string][]byte, len(secrets))
+	if secrets == nil {
+		return secureSettings, nil
+	}
+	for k, v := range secrets {
+		d, err := base64.StdEncoding.DecodeString(v)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode secure settings key %s: %w", k, err)
+		}
+		secureSettings[k] = d
+	}
+	return secureSettings, nil
+}
+
+// NoopDecode is a DecodeSecretsFn that converts a map[string]string into a map[string][]byte without decoding it.
+func NoopDecode(secrets map[string]string) (map[string][]byte, error) {
+	secureSettings := make(map[string][]byte, len(secrets))
+	if secrets == nil {
+		return secureSettings, nil
+	}
+
+	for k, v := range secrets {
+		secureSettings[k] = []byte(v)
+	}
+	return secureSettings, nil
+}
+
 // GetDecryptedValueFn is a function that returns the decrypted value of
 // the given key. If the key is not present, then it returns the fallback value.
 type GetDecryptedValueFn func(ctx context.Context, sjd map[string][]byte, key string, fallback string) string
@@ -224,12 +258,12 @@ func NoopDecrypt(_ context.Context, sjd map[string][]byte, key string, fallback 
 }
 
 // BuildReceiverConfiguration parses, decrypts and validates the APIReceiver.
-func BuildReceiverConfiguration(ctx context.Context, api *APIReceiver, decrypt GetDecryptedValueFn) (GrafanaReceiverConfig, error) {
+func BuildReceiverConfiguration(ctx context.Context, api *APIReceiver, decode DecodeSecretsFn, decrypt GetDecryptedValueFn) (GrafanaReceiverConfig, error) {
 	result := GrafanaReceiverConfig{
 		Name: api.Name,
 	}
 	for _, receiver := range api.Integrations {
-		err := parseNotifier(ctx, &result, receiver, decrypt)
+		err := parseNotifier(ctx, &result, receiver, decode, decrypt)
 		if err != nil {
 			return GrafanaReceiverConfig{}, IntegrationValidationError{
 				Integration: receiver,
@@ -241,14 +275,10 @@ func BuildReceiverConfiguration(ctx context.Context, api *APIReceiver, decrypt G
 }
 
 // parseNotifier parses receivers and populates the corresponding field in GrafanaReceiverConfig. Returns an error if the configuration cannot be parsed.
-func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver *GrafanaIntegrationConfig, decrypt GetDecryptedValueFn) error {
-	secureSettings, err := decodeSecretsFromBase64(receiver.SecureSettings)
+func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver *GrafanaIntegrationConfig, decode DecodeSecretsFn, decrypt GetDecryptedValueFn) error {
+	secureSettings, err := decode(receiver.SecureSettings)
 	if err != nil {
-		// An error means that the secure settings are not base-64 encoded.
-		secureSettings = make(map[string][]byte, len(receiver.SecureSettings))
-		for k, v := range receiver.SecureSettings {
-			secureSettings[k] = []byte(v)
-		}
+		return err
 	}
 
 	decryptFn := func(key string, fallback string) string {
@@ -281,7 +311,7 @@ func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver 
 		}
 		result.EmailConfigs = append(result.EmailConfigs, newNotifierConfig(receiver, cfg))
 	case "googlechat":
-		cfg, err := googlechat.NewConfig(receiver.Settings)
+		cfg, err := googlechat.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
@@ -298,6 +328,12 @@ func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver 
 			return err
 		}
 		result.LineConfigs = append(result.LineConfigs, newNotifierConfig(receiver, cfg))
+	case "mqtt":
+		cfg, err := mqtt.NewConfig(receiver.Settings, decryptFn)
+		if err != nil {
+			return err
+		}
+		result.MqttConfigs = append(result.MqttConfigs, newNotifierConfig(receiver, cfg))
 	case "opsgenie":
 		cfg, err := opsgenie.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
@@ -359,7 +395,7 @@ func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver 
 		}
 		result.ThreemaConfigs = append(result.ThreemaConfigs, newNotifierConfig(receiver, cfg))
 	case "victorops":
-		cfg, err := victorops.NewConfig(receiver.Settings)
+		cfg, err := victorops.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {
 			return err
 		}
@@ -386,21 +422,6 @@ func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver 
 		return fmt.Errorf("notifier %s is not supported", receiver.Type)
 	}
 	return nil
-}
-
-func decodeSecretsFromBase64(secrets map[string]string) (map[string][]byte, error) {
-	secureSettings := make(map[string][]byte, len(secrets))
-	if secrets == nil {
-		return secureSettings, nil
-	}
-	for k, v := range secrets {
-		d, err := base64.StdEncoding.DecodeString(v)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode secure settings key %s: %w", k, err)
-		}
-		secureSettings[k] = d
-	}
-	return secureSettings, nil
 }
 
 // GetActiveReceiversMap returns all receivers that are in use by a route.

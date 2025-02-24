@@ -8,6 +8,7 @@ package bucketcache
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"strconv"
@@ -18,15 +19,20 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
+	"github.com/grafana/gomemcache/memcache"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
+	"golang.org/x/crypto/blake2b"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/util/pool"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type contextKey int
@@ -37,6 +43,8 @@ const (
 
 	memoryPoolContextKey         contextKey = 0
 	cacheLookupEnabledContextKey contextKey = 1
+
+	invalidationLockTTL = 15 * time.Second
 )
 
 var errObjNotFound = errors.Errorf("object not found")
@@ -91,15 +99,15 @@ func getCacheOptions(slabs *pool.SafeSlabPool[byte]) []cache.Option {
 type CachingBucket struct {
 	objstore.Bucket
 
-	bucketID string
-	cfg      *CachingBucketConfig
-	logger   log.Logger
+	bucketID     string
+	cfg          *CachingBucketConfig
+	invalidation *cacheInvalidation
+	logger       log.Logger
 
 	requestedGetRangeBytes *prometheus.CounterVec
 	fetchedGetRangeBytes   *prometheus.CounterVec
 	refetchedGetRangeBytes *prometheus.CounterVec
 
-	operationConfigs  map[string][]*operationConfig
 	operationRequests *prometheus.CounterVec
 	operationHits     *prometheus.CounterVec
 }
@@ -112,12 +120,11 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 	}
 
 	cb := &CachingBucket{
-		Bucket:   bucketClient,
-		bucketID: bucketID,
-		cfg:      cfg,
-		logger:   logger,
-
-		operationConfigs: map[string][]*operationConfig{},
+		Bucket:       bucketClient,
+		bucketID:     bucketID,
+		cfg:          cfg,
+		invalidation: newCacheInvalidation(bucketID, cfg, logger),
+		logger:       logger,
 
 		requestedGetRangeBytes: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "thanos_store_bucket_cache_getrange_requested_bytes_total",
@@ -159,6 +166,28 @@ func NewCachingBucket(bucketID string, bucketClient objstore.Bucket, cfg *Cachin
 	return cb, nil
 }
 
+func (cb *CachingBucket) Upload(ctx context.Context, name string, r io.Reader) error {
+	keyGen := newCacheKeyBuilder(cb.bucketID, name)
+	cb.invalidation.start(ctx, name, keyGen)
+	err := cb.Bucket.Upload(ctx, name, r)
+	if err == nil {
+		cb.invalidation.finish(ctx, name, keyGen)
+	}
+
+	return err
+}
+
+func (cb *CachingBucket) Delete(ctx context.Context, name string) error {
+	keyGen := newCacheKeyBuilder(cb.bucketID, name)
+	cb.invalidation.start(ctx, name, keyGen)
+	err := cb.Bucket.Delete(ctx, name)
+	if err == nil {
+		cb.invalidation.finish(ctx, name, keyGen)
+	}
+
+	return err
+}
+
 func (cb *CachingBucket) Name() string {
 	return "caching: " + cb.Bucket.Name()
 }
@@ -185,7 +214,8 @@ func (cb *CachingBucket) Iter(ctx context.Context, dir string, f func(string) er
 		return cb.Bucket.Iter(ctx, dir, f, options...)
 	}
 
-	key := cachingKeyIter(cb.bucketID, dir, options...)
+	keyGen := newCacheKeyBuilder(cb.bucketID, dir)
+	key := keyGen.iter(options...)
 
 	// Lookup the cache.
 	if isCacheLookupEnabled(ctx) {
@@ -234,7 +264,9 @@ func (cb *CachingBucket) Exists(ctx context.Context, name string) (bool, error) 
 		return cb.Bucket.Exists(ctx, name)
 	}
 
-	key := cachingKeyExists(cb.bucketID, name)
+	keyGen := newCacheKeyBuilder(cb.bucketID, name)
+	key := keyGen.exists()
+	lockKey := keyGen.existsLock()
 
 	// Lookup the cache.
 	if isCacheLookupEnabled(ctx) {
@@ -255,13 +287,13 @@ func (cb *CachingBucket) Exists(ctx context.Context, name string) (bool, error) 
 	existsTime := time.Now()
 	ok, err := cb.Bucket.Exists(ctx, name)
 	if err == nil {
-		storeExistsCacheEntry(key, ok, existsTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
+		storeExistsCacheEntry(ctx, key, lockKey, ok, existsTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
 	}
 
 	return ok, err
 }
 
-func storeExistsCacheEntry(cachingKey string, exists bool, ts time.Time, cache cache.Cache, existsTTL, doesntExistTTL time.Duration) {
+func storeExistsCacheEntry(ctx context.Context, cachingKey, lockKey string, exists bool, ts time.Time, cache cache.Cache, existsTTL, doesntExistTTL time.Duration) {
 	var ttl time.Duration
 	if exists {
 		ttl = existsTTL - time.Since(ts)
@@ -270,7 +302,9 @@ func storeExistsCacheEntry(cachingKey string, exists bool, ts time.Time, cache c
 	}
 
 	if ttl > 0 {
-		cache.SetMultiAsync(map[string][]byte{cachingKey: []byte(strconv.FormatBool(exists))}, ttl)
+		if addErr := cache.Add(ctx, lockKey, []byte{}, invalidationLockTTL); addErr == nil {
+			cache.SetMultiAsync(map[string][]byte{cachingKey: []byte(strconv.FormatBool(exists))}, ttl)
+		}
 	}
 }
 
@@ -280,8 +314,11 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 		return cb.Bucket.Get(ctx, name)
 	}
 
-	contentKey := cachingKeyContent(cb.bucketID, name)
-	existsKey := cachingKeyExists(cb.bucketID, name)
+	keyGen := newCacheKeyBuilder(cb.bucketID, name)
+	contentLockKey := keyGen.contentLock()
+	contentKey := keyGen.content()
+	existsLockKey := keyGen.existsLock()
+	existsKey := keyGen.exists()
 
 	// Lookup the cache.
 	if isCacheLookupEnabled(ctx) {
@@ -330,19 +367,20 @@ func (cb *CachingBucket) Get(ctx context.Context, name string) (io.ReadCloser, e
 	if err != nil {
 		if cb.Bucket.IsObjNotFoundErr(err) {
 			// Cache that object doesn't exist.
-			storeExistsCacheEntry(existsKey, false, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
+			storeExistsCacheEntry(ctx, existsKey, existsLockKey, false, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
 		}
 
 		return nil, err
 	}
 
-	storeExistsCacheEntry(existsKey, true, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
+	storeExistsCacheEntry(ctx, existsKey, existsLockKey, true, getTime, cfg.cache, cfg.existsTTL, cfg.doesntExistTTL)
 	return &getReader{
 		c:         cfg.cache,
 		r:         reader,
 		buf:       new(bytes.Buffer),
 		startTime: getTime,
 		ttl:       cfg.contentTTL,
+		lockKey:   contentLockKey,
 		cacheKey:  contentKey,
 		maxSize:   cfg.maxCacheableSize,
 	}, nil
@@ -362,7 +400,8 @@ func (cb *CachingBucket) GetRange(ctx context.Context, name string, off, length 
 		return cb.Bucket.GetRange(ctx, name, off, length)
 	}
 
-	return cb.cachedGetRange(ctx, name, off, length, cfgName, cfg)
+	keyGen := newCacheKeyBuilder(cb.bucketID, name)
+	return cb.cachedGetRange(ctx, name, keyGen, off, length, cfgName, cfg)
 }
 
 func (cb *CachingBucket) Attributes(ctx context.Context, name string) (objstore.ObjectAttributes, error) {
@@ -371,11 +410,13 @@ func (cb *CachingBucket) Attributes(ctx context.Context, name string) (objstore.
 		return cb.Bucket.Attributes(ctx, name)
 	}
 
-	return cb.cachedAttributes(ctx, name, cfgName, cfg.cache, cfg.ttl)
+	keyGen := newCacheKeyBuilder(cb.bucketID, name)
+	return cb.cachedAttributes(ctx, name, keyGen, cfgName, cfg.cache, cfg.ttl)
 }
 
-func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName string, cache cache.Cache, ttl time.Duration) (objstore.ObjectAttributes, error) {
-	key := cachingKeyAttributes(cb.bucketID, name)
+func (cb *CachingBucket) cachedAttributes(ctx context.Context, name string, keyGen cacheKeyBuilder, cfgName string, cache cache.Cache, ttl time.Duration) (objstore.ObjectAttributes, error) {
+	lockKey := keyGen.attributesLock()
+	key := keyGen.attributes()
 
 	// Lookup the cache.
 	if isCacheLookupEnabled(ctx) {
@@ -400,7 +441,12 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName str
 	}
 
 	if raw, err := json.Marshal(attrs); err == nil {
-		cache.SetMultiAsync(map[string][]byte{key: raw}, ttl)
+		// Attempt to add a "lock" key to the cache if it does not already exist. Only cache this
+		// content when we were able to insert the lock key meaning this object isn't being updated
+		// by another request.
+		if addErr := cache.Add(ctx, lockKey, []byte{}, invalidationLockTTL); addErr == nil {
+			cache.SetMultiAsync(map[string][]byte{key: raw}, ttl)
+		}
 	} else {
 		level.Warn(cb.logger).Log("msg", "failed to encode cached Attributes result", "key", key, "err", err)
 	}
@@ -408,8 +454,8 @@ func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName str
 	return attrs, nil
 }
 
-func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset, length int64, cfgName string, cfg *getRangeConfig) (io.ReadCloser, error) {
-	attrs, err := cb.cachedAttributes(ctx, name, cfgName, cfg.attributes.cache, cfg.attributes.ttl)
+func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, keyGen cacheKeyBuilder, offset, length int64, cfgName string, cfg *getRangeConfig) (io.ReadCloser, error) {
+	attrs, err := cb.cachedAttributes(ctx, name, keyGen, cfgName, cfg.attributes.cache, cfg.attributes.ttl)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get object attributes: %s", name)
 	}
@@ -447,7 +493,7 @@ func (cb *CachingBucket) cachedGetRange(ctx context.Context, name string, offset
 		}
 		totalRequestedBytes += (end - off)
 
-		k := cachingKeyObjectSubrange(cb.bucketID, name, off, end)
+		k := keyGen.objectSubrange(off, end)
 		keys = append(keys, k)
 		offsetKeys[off] = k
 	}
@@ -528,7 +574,6 @@ func (cb *CachingBucket) fetchMissingSubranges(ctx context.Context, name string,
 	// Run parallel queries for each missing range. Fetched data is stored into 'hits' map, protected by hitsMutex.
 	g, gctx := errgroup.WithContext(ctx)
 	for _, m := range missing {
-		m := m
 		g.Go(func() error {
 			r, err := cb.Bucket.GetRange(gctx, name, m.start, m.end-m.start)
 			if err != nil {
@@ -597,30 +642,208 @@ func mergeRanges(input []rng, limit int64) []rng {
 	return input[:last+1]
 }
 
-func cachingKeyAttributes(bucketID, name string) string {
-	return composeCachingKey("attrs", bucketID, name)
+// cacheInvalidation manages cache entries associated with object storage items
+// to ensure that stale results are not cached when the items are modified or
+// deleted.
+type cacheInvalidation struct {
+	bucketID string
+	cfg      *CachingBucketConfig
+	logger   log.Logger
+	retryCfg backoff.Config
 }
 
-func cachingKeyObjectSubrange(bucketID, name string, start, end int64) string {
-	return composeCachingKey("subrange", bucketID, name, strconv.FormatInt(start, 10), strconv.FormatInt(end, 10))
+func newCacheInvalidation(bucketID string, cfg *CachingBucketConfig, logger log.Logger) *cacheInvalidation {
+	return &cacheInvalidation{
+		bucketID: bucketID,
+		cfg:      cfg,
+		logger:   logger,
+		// Hardcoded retry configuration since it's not really important to be able
+		// to configure this. If we can't make a call to the cache in three tries,
+		// another one probably isn't going to help.
+		retryCfg: backoff.Config{
+			MinBackoff: 10 * time.Millisecond,
+			MaxBackoff: 200 * time.Millisecond,
+			MaxRetries: 3,
+		},
+	}
 }
 
-func cachingKeyIter(bucketID, name string, options ...objstore.IterOption) string {
+// start inserts "lock" entries with a short TTL in the cache for the given item that
+// prevent new cache entries for that item from being stored. This ensures that when the
+// cache entries for the item are deleted after it is mutated, reads which try to "add"
+// the lock key cannot and will go directly to object storage for a short period of time.
+func (i *cacheInvalidation) start(ctx context.Context, name string, keyGen cacheKeyBuilder) {
+	logger := spanlogger.FromContext(ctx, i.logger)
+
+	_, attrCfg := i.cfg.findAttributesConfig(name)
+	_, existCfg := i.cfg.findExistConfig(name)
+	_, getCfg := i.cfg.findGetConfig(name)
+	if existCfg == nil && getCfg != nil {
+		existCfg = &getCfg.existsConfig
+	}
+
+	attrLockKey := keyGen.attributesLock()
+	contentLockKey := keyGen.contentLock()
+	existsLockKey := keyGen.existsLock()
+
+	if attrCfg != nil || getCfg != nil || existCfg != nil {
+		err := i.runWithRetries(ctx, func() error {
+			me := multierror.MultiError{}
+			if attrCfg != nil {
+				me.Add(attrCfg.cache.Set(ctx, attrLockKey, []byte{}, invalidationLockTTL))
+			}
+			if getCfg != nil {
+				me.Add(getCfg.cache.Set(ctx, contentLockKey, []byte{}, invalidationLockTTL))
+			}
+			if existCfg != nil {
+				me.Add(existCfg.cache.Set(ctx, existsLockKey, []byte{}, invalidationLockTTL))
+			}
+			return me.Err()
+		})
+
+		if err != nil {
+			level.Warn(logger).Log("msg", "failed to set lock object storage cache entries", "object", name, "err", err)
+		} else {
+			logger.DebugLog("msg", "set lock object storage cache entries", "object", name)
+		}
+	}
+}
+
+// finish removes attribute, existence, and content entries in a cache associated with
+// a given item. Note that it does not remove the "lock" entries in the cache to ensure
+// that other requests must read directly from object storage until the lock expires.
+func (i *cacheInvalidation) finish(ctx context.Context, name string, keyGen cacheKeyBuilder) {
+	logger := spanlogger.FromContext(ctx, i.logger)
+
+	_, attrCfg := i.cfg.findAttributesConfig(name)
+	_, existCfg := i.cfg.findExistConfig(name)
+	_, getCfg := i.cfg.findGetConfig(name)
+	if existCfg == nil && getCfg != nil {
+		existCfg = &getCfg.existsConfig
+	}
+
+	attrKey := keyGen.attributes()
+	contentKey := keyGen.content()
+	existsKey := keyGen.exists()
+
+	if attrCfg != nil || getCfg != nil || existCfg != nil {
+		err := i.runWithRetries(ctx, func() error {
+			me := multierror.MultiError{}
+			// Breaking the cache abstraction here to test for Memcached-specific
+			// errors to avoid retries when we attempt to invalidate something that
+			// doesn't exist (which is fine and expected).
+			if attrCfg != nil {
+				if err := attrCfg.cache.Delete(ctx, attrKey); err != nil && !errors.Is(err, memcache.ErrCacheMiss) {
+					me.Add(err)
+				}
+			}
+			if getCfg != nil {
+				if err := getCfg.cache.Delete(ctx, contentKey); err != nil && !errors.Is(err, memcache.ErrCacheMiss) {
+					me.Add(err)
+				}
+			}
+			if existCfg != nil {
+				if err := existCfg.cache.Delete(ctx, existsKey); err != nil && !errors.Is(err, memcache.ErrCacheMiss) {
+					me.Add(err)
+				}
+			}
+			return me.Err()
+		})
+
+		if err != nil {
+			level.Warn(logger).Log("msg", "failed to delete object storage cache entries", "object", name, "err", err)
+		} else {
+			logger.DebugLog("msg", "deleted object storage cache entries", "object", name)
+		}
+	}
+}
+
+func (i *cacheInvalidation) runWithRetries(ctx context.Context, f func() error) error {
+	retry := backoff.New(ctx, i.retryCfg)
+	var err error
+
+	for retry.Ongoing() {
+		err = f()
+		if err == nil {
+			return nil
+		}
+
+		retry.Wait()
+	}
+
+	// If the operation failed, that's the more relevant error for why we weren't able
+	// to run some cache operation even if the context was canceled before the operation
+	// could be retried.
+	if err != nil {
+		return err
+	}
+
+	return retry.Err()
+}
+
+// cacheKeyBuilder generates cache keys for the results of different operations that
+// can be performed on a particular object in object storage, hashing the name if needed
+// to ensure we don't exceed key length limits of the underlying cache.
+type cacheKeyBuilder struct {
+	bucketID string
+	name     string
+}
+
+func newCacheKeyBuilder(bucketID, name string) cacheKeyBuilder {
+	return cacheKeyBuilder{
+		bucketID: bucketID,
+		name:     maybeHashName(name),
+	}
+}
+
+func maybeHashName(name string) string {
+	// We hash object names to avoid hitting cache key length limits. If the object name
+	// is shorter than the hashed version would be, skip hashing it since it provides no
+	// value and the original name is more useful when debugging.
+	if len(name) <= base64.RawURLEncoding.EncodedLen(blake2b.Size256) {
+		return name
+	}
+
+	sum := blake2b.Sum256([]byte(name))
+	return base64.RawURLEncoding.EncodeToString(sum[:blake2b.Size256])
+}
+
+func (b cacheKeyBuilder) attributes() string {
+	return composeCachingKey("attrs", b.bucketID, b.name)
+}
+
+func (b cacheKeyBuilder) attributesLock() string {
+	return composeCachingKey("attrs", b.bucketID, b.name, "lock")
+}
+
+func (b cacheKeyBuilder) objectSubrange(start, end int64) string {
+	return composeCachingKey("subrange", b.bucketID, b.name, strconv.FormatInt(start, 10), strconv.FormatInt(end, 10))
+}
+
+func (b cacheKeyBuilder) iter(options ...objstore.IterOption) string {
 	// Ensure the caching key is different for the same request but different
 	// recursive config.
 	if params := objstore.ApplyIterOptions(options...); params.Recursive {
-		return composeCachingKey("iter", bucketID, name, "recursive")
+		return composeCachingKey("iter", b.bucketID, b.name, "recursive")
 	}
 
-	return composeCachingKey("iter", bucketID, name)
+	return composeCachingKey("iter", b.bucketID, b.name)
 }
 
-func cachingKeyExists(bucketID, name string) string {
-	return composeCachingKey("exists", bucketID, name)
+func (b cacheKeyBuilder) exists() string {
+	return composeCachingKey("exists", b.bucketID, b.name)
 }
 
-func cachingKeyContent(bucketID, name string) string {
-	return composeCachingKey("content", bucketID, name)
+func (b cacheKeyBuilder) existsLock() string {
+	return composeCachingKey("exists", b.bucketID, b.name, "lock")
+}
+
+func (b cacheKeyBuilder) content() string {
+	return composeCachingKey("content", b.bucketID, b.name)
+}
+
+func (b cacheKeyBuilder) contentLock() string {
+	return composeCachingKey("content", b.bucketID, b.name, "lock")
 }
 
 func composeCachingKey(op, bucketID string, values ...string) string {
@@ -734,6 +957,7 @@ type getReader struct {
 	startTime time.Time
 	ttl       time.Duration
 	cacheKey  string
+	lockKey   string
 	maxSize   int
 }
 
@@ -757,7 +981,12 @@ func (g *getReader) Read(p []byte) (n int, err error) {
 	if errors.Is(err, io.EOF) && g.buf != nil {
 		remainingTTL := g.ttl - time.Since(g.startTime)
 		if remainingTTL > 0 {
-			g.c.SetMultiAsync(map[string][]byte{g.cacheKey: g.buf.Bytes()}, remainingTTL)
+			// Attempt to add a "lock" key to the cache if it does not already exist. Only cache this
+			// content when we were able to insert the lock key meaning this object isn't being updated
+			// by another request.
+			if addErr := g.c.Add(context.Background(), g.lockKey, []byte{}, invalidationLockTTL); addErr == nil {
+				g.c.SetMultiAsync(map[string][]byte{g.cacheKey: g.buf.Bytes()}, remainingTTL)
+			}
 		}
 		// Clear reference, to avoid doing another Store on next read.
 		g.buf = nil

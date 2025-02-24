@@ -13,6 +13,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+var (
+	ErrNotStored  = errors.New("item not stored")
+	ErrInvalidTTL = errors.New("invalid TTL")
+)
+
 // Cache is a high level interface to interact with a cache.
 type Cache interface {
 	// GetMulti fetches multiple keys at once from a cache. In case of error,
@@ -27,6 +32,14 @@ type Cache interface {
 	// SetMultiAsync enqueues operations to store a keys and values into a cache. In case
 	// any underlying async operations fail, the errors will be tracked/logged.
 	SetMultiAsync(data map[string][]byte, ttl time.Duration)
+
+	// Set stores a key and value into a cache.
+	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
+
+	// Add stores a key and value into a cache only if it does not already exist. If the
+	// item was not stored because an entry already exists in the cache, ErrNotStored will
+	// be returned.
+	Add(ctx context.Context, key string, value []byte, ttl time.Duration) error
 
 	// Delete deletes a key from a cache. This is a synchronous operation. If an asynchronous
 	// set operation for key is still pending to be processed, it will wait for it to complete

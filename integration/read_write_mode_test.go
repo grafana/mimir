@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -60,7 +59,7 @@ func runQueryingIngester(t *testing.T, client *e2emimir.Client, seriesName strin
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime)
+	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 }
@@ -113,7 +112,7 @@ func runQueryingStoreGateway(t *testing.T, client *e2emimir.Client, cluster read
 	require.NoError(t, err)
 	require.Equal(t, model.LabelValues{"bar"}, labelValues)
 
-	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime)
+	labelNames, err := client.LabelNames(v1.MinTime, v1.MaxTime, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"__name__", "foo"}, labelNames)
 }
@@ -215,7 +214,7 @@ func runRecordingRuleQuery(t *testing.T, client *e2emimir.Client, testRuleName s
 		expectedVector = model.Vector{
 			&model.Sample{
 				Metric:    metric,
-				Histogram: mimirpb.FromHistogramToPromHistogram(remote.HistogramProtoToHistogram(series[0].Histograms[0])),
+				Histogram: mimirpb.FromHistogramToPromHistogram(series[0].Histograms[0].ToIntHistogram()),
 				Timestamp: model.Time(e2e.TimeToMilliseconds(queryTime)),
 			},
 		}

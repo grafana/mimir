@@ -56,6 +56,21 @@
 
   ingester_env_map:: {
     JAEGER_REPORTER_MAX_QUEUE_SIZE: '1000',
+
+    local requests = $.util.parseCPU($.ingester_container.resources.requests.cpu),
+    local requestsWithHeadroom = std.ceil(
+      // double the requests, but with headroom of at least 3 and at most 6 CPU
+      // too little headroom can lead to throttling
+      // too much headroom can lead to inefficeint scheduling of goroutines
+      // (e.g. when NumCPU is 128, but the ingester only needs 5 cores).
+      requests + std.max(3, std.min(6, requests)),
+    ) + 1,
+    // If the ingester read path is limited,
+    // we don't want to set GOMAXPROCS to something higher than that because then the read path limit will never be hit.
+    local limitBasedGOMAXPROCS = std.parseInt($.ingester_args['ingester.read-path-cpu-utilization-limit']) + 1,
+    local GOMAXPROCS = if 'ingester.read-path-cpu-utilization-limit' in $.ingester_args then limitBasedGOMAXPROCS else requestsWithHeadroom,
+
+    GOMAXPROCS: std.toString(GOMAXPROCS),
   },
 
   ingester_node_affinity_matchers:: [],

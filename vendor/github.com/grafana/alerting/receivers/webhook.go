@@ -1,6 +1,9 @@
 package receivers
 
-import "context"
+import (
+	"context"
+	"crypto/tls"
+)
 
 type SendWebhookSettings struct {
 	URL         string
@@ -11,6 +14,7 @@ type SendWebhookSettings struct {
 	HTTPHeader  map[string]string
 	ContentType string
 	Validation  func(body []byte, statusCode int) error
+	TLSConfig   *tls.Config
 }
 
 type WebhookSender interface {

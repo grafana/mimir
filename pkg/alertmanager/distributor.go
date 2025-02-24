@@ -81,7 +81,9 @@ func (d *Distributor) isUnaryWritePath(p string) bool {
 	if strings.HasSuffix(p, "/api/v1/grafana/templates/test") {
 		return true
 	}
-
+	if strings.HasSuffix(p, "/api/v1/grafana/receivers/test") {
+		return true
+	}
 	return false
 }
 
@@ -328,7 +330,7 @@ func (d *Distributor) doUnary(userID string, w http.ResponseWriter, r *http.Requ
 	sp, ctx := opentracing.StartSpanFromContext(r.Context(), "Distributor.doUnary")
 	defer sp.Finish()
 	// Until we have a mechanism to combine the results from multiple alertmanagers,
-	// we forward the request to only only of the alertmanagers.
+	// we forward the request to only one of the alertmanagers.
 	amDesc := replicationSet.Instances[rand.Intn(len(replicationSet.Instances))]
 	resp, err := d.doRequest(ctx, amDesc, req)
 	if err != nil {

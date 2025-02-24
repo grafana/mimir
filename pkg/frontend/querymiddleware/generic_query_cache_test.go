@@ -18,9 +18,10 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	mimirtest "github.com/grafana/mimir/pkg/util/test"
 )
 
 type newGenericQueryCacheFunc func(cache cache.Cache, splitter CacheKeyGenerator, limits Limits, next http.RoundTripper, logger log.Logger, reg prometheus.Registerer) http.RoundTripper
@@ -226,7 +227,7 @@ func testGenericQueryCacheRoundTrip(t *testing.T, newRoundTripper newGenericQuer
 						initialStoreCallsCount := cacheBackend.CountStoreCalls()
 
 						reg := prometheus.NewPedanticRegistry()
-						rt := newRoundTripper(cacheBackend, DefaultCacheKeyGenerator{codec: NewPrometheusCodec(reg, 0*time.Minute, formatJSON)}, limits, downstream, testutil.NewLogger(t), reg)
+						rt := newRoundTripper(cacheBackend, DefaultCacheKeyGenerator{codec: NewPrometheusCodec(reg, 0*time.Minute, formatJSON, nil)}, limits, downstream, mimirtest.NewTestingLogger(t), reg)
 						res, err := rt.RoundTrip(req)
 						require.NoError(t, err)
 

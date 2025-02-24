@@ -9,23 +9,29 @@ import (
 	"flag"
 
 	"github.com/grafana/dskit/flagext"
+
+	"github.com/grafana/mimir/pkg/storage/bucket/common"
 )
 
 // Config holds the config options for GCS backend
 type Config struct {
 	BucketName     string         `yaml:"bucket_name"`
 	ServiceAccount flagext.Secret `yaml:"service_account" doc:"description_method=GCSServiceAccountLongDescription"`
+
+	HTTP common.HTTPConfig `yaml:"http"`
 }
 
 // RegisterFlags registers the flags for GCS storage
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.RegisterFlagsWithPrefix("", f)
+	cfg.HTTP.RegisterFlagsWithPrefix("", f)
 }
 
 // RegisterFlagsWithPrefix registers the flags for GCS storage with the provided prefix
 func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.BucketName, prefix+"gcs.bucket-name", "", "GCS bucket name")
 	f.Var(&cfg.ServiceAccount, prefix+"gcs.service-account", cfg.GCSServiceAccountShortDescription())
+	cfg.HTTP.RegisterFlagsWithPrefix(prefix+"gcs.", f)
 }
 
 func (cfg *Config) GCSServiceAccountShortDescription() string {

@@ -22,12 +22,17 @@ std.manifestYamlDoc({
     // - multi (uses consul as primary and memberlist as secondary, but this can be switched in runtime via runtime.yaml)
     ring: 'memberlist',
 
+    enable_continuous_test: true,
+
     // If true, a load generator is started.
-    enable_load_generator: true,
+    enable_load_generator: false,
 
     // If true, start and enable scraping by these components.
     // Note that if more than one component is enabled, the dashboards shown in Grafana may contain duplicate series or aggregates may be doubled or tripled.
     enable_grafana_agent: false,
+    // If true, start a base prometheus that scrapes the Mimir component metrics and remote writes to distributor-1.
+    // Two additional Prometheus instances are started that scrape the same memcached-exporter and load-generator
+    // targets and remote write to distributor-2.
     enable_prometheus: true,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
     enable_otel_collector: false,
 
@@ -40,18 +45,19 @@ std.manifestYamlDoc({
     self.distributor +
     self.ingesters +
     self.read_components +  // Querier, Frontend and query-scheduler, if enabled.
-    self.store_gateways +
+    self.store_gateways(3) +
     self.compactor +
     self.rulers(2) +
     self.alertmanagers(3) +
     self.nginx +
     self.minio +
-    (if $._config.enable_prometheus then self.prometheus else {}) +
+    (if $._config.enable_continuous_test then self.continuous_test else {}) +
+    (if $._config.enable_prometheus then self.prometheus + self.prompair1 + self.prompair2 else {}) +
     self.grafana +
     (if $._config.enable_grafana_agent then self.grafana_agent else {}) +
     (if $._config.enable_otel_collector then self.otel_collector else {}) +
     self.jaeger +
-    (if $._config.ring == 'consul' || $._config.ring == 'multi' then self.consul else {}) +
+    self.consul +
     (if $._config.cache_backend == 'redis' then self.redis else self.memcached + self.memcached_exporter) +
     (if $._config.enable_load_generator then self.load_generator else {}) +
     (if $._config.enable_query_tee then self.query_tee else {}) +
@@ -62,12 +68,14 @@ std.manifestYamlDoc({
       name: 'distributor-1',
       target: 'distributor',
       httpPort: 8000,
+      extraArguments: '-distributor.ha-tracker.consul.hostname=consul:8500',
     }),
 
     'distributor-2': mimirService({
       name: 'distributor-2',
       target: 'distributor',
       httpPort: 8001,
+      extraArguments: '-distributor.ha-tracker.consul.hostname=consul:8500',
     }),
   },
 
@@ -105,7 +113,7 @@ std.manifestYamlDoc({
         httpPort: 8005,
         extraArguments:
           // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
-          if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9011 -querier.frontend-address=' else '',
+          if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9008 -querier.frontend-address=' else '',
       }),
 
       'query-frontend': mimirService({
@@ -116,14 +124,14 @@ std.manifestYamlDoc({
         extraArguments:
           '-query-frontend.max-total-query-length=8760h' +
           // Use of scheduler is activated by `-query-frontend.scheduler-address` option.
-          (if $._config.use_query_scheduler then ' -query-frontend.scheduler-address=query-scheduler:9011' else ''),
+          (if $._config.use_query_scheduler then ' -query-frontend.scheduler-address=query-scheduler:9008' else ''),
       }),
     } + (
       if $._config.use_query_scheduler then {
         'query-scheduler': mimirService({
           name: 'query-scheduler',
           target: 'query-scheduler',
-          httpPort: 8011,
+          httpPort: 8008,
           extraArguments: '-query-frontend.max-total-query-length=8760h',
         }),
       } else {}
@@ -159,19 +167,28 @@ std.manifestYamlDoc({
     for id in std.range(1, count)
   },
 
-  store_gateways:: {
-    'store-gateway-1': mimirService({
-      name: 'store-gateway-1',
+  store_gateways(count):: {
+    ['store-gateway-%d' % id]: mimirService({
+      name: 'store-gateway-' + id,
       target: 'store-gateway',
-      httpPort: 8008,
-      jaegerApp: 'store-gateway-1',
-    }),
+      httpPort: 8010 + id,
+      jaegerApp: 'store-gateway-%d' % id,
+    })
+    for id in std.range(1, count)
+  },
 
-    'store-gateway-2': mimirService({
-      name: 'store-gateway-2',
-      target: 'store-gateway',
-      httpPort: 8009,
-      jaegerApp: 'store-gateway-2',
+  continuous_test:: {
+    'continuous-test': mimirService({
+      name: 'continuous-test',
+      target: 'continuous-test',
+      httpPort: 8090,
+      extraArguments:
+        ' -tests.run-interval=2m' +
+        ' -tests.read-endpoint=http://query-frontend:8007/prometheus' +
+        ' -tests.tenant-id=mimir-continuous-test' +
+        ' -tests.write-endpoint=http://distributor-1:8000' +
+        ' -tests.write-read-series-test.max-query-age=1h' +
+        ' -tests.write-read-series-test.num-series=100',
     }),
   },
 
@@ -250,8 +267,9 @@ std.manifestYamlDoc({
   // Other services used by Mimir.
   consul:: {
     consul: {
-      image: 'consul',
-      command: ['agent', '-dev', '-client=0.0.0.0', '-log-level=info'],
+      image: 'consul:1.15',
+      command: ['agent', '-dev', '-client=0.0.0.0', '-log-level=debug'],
+      hostname: 'consul',
       ports: ['8500:8500'],
     },
   },
@@ -288,7 +306,7 @@ std.manifestYamlDoc({
 
   memcached:: {
     memcached: {
-      image: 'memcached:1.6.19-alpine',
+      image: 'memcached:1.6.28-alpine',
       ports: [
         '11211:11211',
       ],
@@ -297,7 +315,7 @@ std.manifestYamlDoc({
 
   memcached_exporter:: {
     'memcached-exporter': {
-      image: 'prom/memcached-exporter:v0.6.0',
+      image: 'prom/memcached-exporter:v0.15.0',
       command: ['--memcached.address=memcached:11211', '--web.listen-address=0.0.0.0:9150'],
     },
   },
@@ -317,7 +335,7 @@ std.manifestYamlDoc({
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v2.51.1',
+      image: 'prom/prometheus:v3.1.0',
       command: [
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
@@ -332,6 +350,39 @@ std.manifestYamlDoc({
     },
   },
 
+  prompair1:: {
+    prompair1: {
+      image: 'prom/prometheus:v3.1.0',
+      hostname: 'prom-ha-pair-1',
+      command: [
+        '--config.file=/etc/prometheus/prom-ha-pair-1.yaml',
+        '--enable-feature=exemplar-storage',
+        '--enable-feature=native-histograms',
+      ],
+      volumes: [
+        './config:/etc/prometheus',
+      ],
+      ports: ['9092:9090'],
+    },
+  },
+
+  prompair2:: {
+    prompair2: {
+      image: 'prom/prometheus:v3.1.0',
+      hostname: 'prom-ha-pair-2',
+      command: [
+        '--config.file=/etc/prometheus/prom-ha-pair-2.yaml',
+        '--enable-feature=exemplar-storage',
+        '--enable-feature=native-histograms',
+      ],
+      volumes: [
+        './config:/etc/prometheus',
+      ],
+      ports: ['9093:9090'],
+    },
+  },
+
+
   grafana:: {
     grafana: {
       image: 'grafana/grafana:10.4.3',
@@ -340,7 +391,7 @@ std.manifestYamlDoc({
         'GF_AUTH_ANONYMOUS_ORG_ROLE=Admin',
       ],
       volumes: [
-        './config/datasource-mimir.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
+        './config/datasources.yaml:/etc/grafana/provisioning/datasources/mimir.yaml',
         './config/dashboards-mimir.yaml:/etc/grafana/provisioning/dashboards/mimir.yaml',
         '../../operations/mimir-mixin-compiled/dashboards:/var/lib/grafana/dashboards/Mimir',
       ],
@@ -361,7 +412,8 @@ std.manifestYamlDoc({
 
   jaeger:: {
     jaeger: {
-      image: 'jaegertracing/all-in-one',
+      // Use 1.62 specifically since 1.63 removes the agent which we depend on for now.
+      image: 'jaegertracing/all-in-one:1.62.0',
       ports: ['16686:16686', '14268'],
     },
   },
@@ -407,9 +459,6 @@ std.manifestYamlDoc({
       ports: ['9999:80'],
     },
   },
-
-  // docker-compose YAML output version.
-  version: '3.4',
 
   // "true" option for std.manifestYamlDoc indents arrays in objects.
 }, true)

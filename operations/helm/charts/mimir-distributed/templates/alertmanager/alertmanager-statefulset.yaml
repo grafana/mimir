@@ -1,4 +1,4 @@
-{{- if .Values.alertmanager.enabled -}}
+{{- if and .Values.alertmanager.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 {{- if .Values.alertmanager.statefulSet.enabled -}}
 {{- $args := dict "ctx" . "component" "alertmanager" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
@@ -46,15 +46,18 @@ spec:
     {{- end }}
   serviceName: {{ template "mimir.fullname" . }}-alertmanager
   {{- if .Values.alertmanager.persistentVolume.enabled }}
+  {{- with .Values.alertmanager.persistentVolume }}
   volumeClaimTemplates:
-    - metadata:
-        name: storage
-        {{- if .Values.alertmanager.persistentVolume.annotations }}
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
+        name: {{ .name }}
+        {{- if .annotations }}
         annotations:
-          {{ toYaml .Values.alertmanager.persistentVolume.annotations | nindent 10 }}
+          {{ toYaml .annotations | nindent 10 }}
         {{- end }}
       spec:
-        {{- $storageClass := default .Values.alertmanager.persistentVolume.storageClass $rolloutZone.storageClass }}
+        {{- $storageClass := default .storageClass $rolloutZone.storageClass }}
         {{- if $storageClass }}
         {{- if (eq "-" $storageClass) }}
         storageClassName: ""
@@ -63,10 +66,11 @@ spec:
         {{- end }}
         {{- end }}
         accessModes:
-          {{- toYaml .Values.alertmanager.persistentVolume.accessModes | nindent 10 }}
+          {{- toYaml .accessModes | nindent 10 }}
         resources:
           requests:
-            storage: "{{ .Values.alertmanager.persistentVolume.size }}"
+            storage: "{{ .size }}"
+  {{- end }}
   {{- end }}
   template:
     metadata:
@@ -82,7 +86,7 @@ spec:
       {{- with .Values.alertmanager.schedulerName }}
       schedulerName: {{ . | quote }}
       {{- end }}
-      serviceAccountName: {{ template "mimir.serviceAccountName" . }}
+      serviceAccountName: {{ template "mimir.alertmanager.serviceAccountName" . }}
       {{- if .Values.alertmanager.priorityClassName }}
       priorityClassName: {{ .Values.alertmanager.priorityClassName }}
       {{- end }}
@@ -147,7 +151,7 @@ spec:
         {{ toYaml .Values.alertmanager.extraContainers | nindent 8 }}
         {{- end }}
         - name: alertmanager
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "alertmanager") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=alertmanager"
@@ -159,13 +163,13 @@ spec:
             {{- if .Values.alertmanager.zoneAwareReplication.enabled }}
             - "-alertmanager.sharding-ring.instance-availability-zone=zone-default"
             {{- end }}
+            {{- end }}
             # Prometheus HTTP client used to send alerts has a hard-coded idle
             # timeout of 5 minutes, therefore the server timeout for Alertmanager
             # needs to be higher to avoid connections being closed abruptly.
             - "-server.http-idle-timeout=6m"
-            {{- end }}
             {{- range $key, $value := .Values.alertmanager.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- if .Values.alertmanager.extraVolumeMounts }}

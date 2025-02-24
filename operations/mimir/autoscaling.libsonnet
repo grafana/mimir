@@ -18,8 +18,8 @@
     autoscaling_ruler_querier_workers_target_utilization: 0.75,  // Target to utilize 75% ruler-querier workers on peak traffic, so we have 25% room for higher peaks.
 
     autoscaling_distributor_enabled: false,
-    autoscaling_distributor_min_replicas: error 'you must set autoscaling_distributor_min_replicas in the _config',
-    autoscaling_distributor_max_replicas: error 'you must set autoscaling_distributor_max_replicas in the _config',
+    autoscaling_distributor_min_replicas_per_zone: error 'you must set autoscaling_distributor_min_replicas_per_zone in the _config',
+    autoscaling_distributor_max_replicas_per_zone: error 'you must set autoscaling_distributor_max_replicas_per_zone in the _config',
     autoscaling_distributor_cpu_target_utilization: 1,
     autoscaling_distributor_memory_target_utilization: 1,
 
@@ -299,19 +299,6 @@
           )[15m:]
         ) * 1000
       |||
-  ) + (
-    // Ensures that it only returns a result if all expected samples were present for the CPU metric over
-    // the last 15 minutes.
-    |||
-      and
-      count (
-        count_over_time(
-          present_over_time(
-            container_cpu_usage_seconds_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]
-          )[15m:1m]
-        ) >= 15
-      )
-    |||
   ),
 
   local memoryHPAQuery(with_ready_trigger) =
@@ -351,10 +338,7 @@
           )
         |||
     ) + (
-      // The first section of the query adds pods that were terminated due to an OOM in the memory calculation.
-      //
-      // The second section of the query ensures that it only returns a result if all expected samples were
-      // present for the memory metric over the last 15 minutes.
+      // Add pods that were terminated due to an OOM in the memory calculation.
       |||
         +
         sum(
@@ -364,14 +348,6 @@
           and
           max by (pod) (kube_pod_container_status_last_terminated_reason{container="%(container)s", namespace="%(namespace)s", reason="OOMKilled"%(extra_matchers)s})
           or vector(0)
-        )
-        and
-        count (
-          count_over_time(
-            present_over_time(
-              container_memory_working_set_bytes{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]
-            )[15m:1m]
-          ) >= 15
         )
       |||
     ),
@@ -390,13 +366,13 @@
     scale_down_period=null,
     extra_triggers=[],
     container_name='',
-    pod_regex='',
+    extra_matchers='',
   ):: self.newScaledObject(
     name, $._config.namespace, {
       local queryParameters = {
         container: if container_name != '' then container_name else name,
         namespace: $._config.namespace,
-        extra_matchers: if pod_regex == '' then '' else ',pod=~"%s"' % pod_regex,
+        extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
       },
 
       min_replica_count: replicasWithWeight(min_replicas, weight),
@@ -569,17 +545,19 @@
         {}
   ),
 
-  distributor_scaled_object: if !$._config.autoscaling_distributor_enabled then null else
+  newDistributorScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
-      name='distributor',
+      name=name,
+      container_name='distributor',
       cpu_requests=$.distributor_container.resources.requests.cpu,
       memory_requests=$.distributor_container.resources.requests.memory,
-      min_replicas=$._config.autoscaling_distributor_min_replicas,
-      max_replicas=$._config.autoscaling_distributor_max_replicas,
+      min_replicas=$._config.autoscaling_distributor_min_replicas_per_zone,
+      max_replicas=$._config.autoscaling_distributor_max_replicas_per_zone,
       cpu_target_utilization=$._config.autoscaling_distributor_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_distributor_memory_target_utilization,
       with_cortex_prefix=true,
       with_ready_trigger=true,
+      extra_matchers=extra_matchers,
     ) + (
       {
         spec+: {
@@ -634,9 +612,46 @@
       }
     ),
 
+  local isDistributorSingleZoneEnabled = $._config.single_zone_distributor_enabled,
+  local isDistributorMultiZoneEnabled = $._config.multi_zone_distributor_enabled,
+  local isDistributorAutoscalingEnabled = $._config.autoscaling_distributor_enabled,
+  local isDistributorAutoscalingSingleZoneEnabled = isDistributorSingleZoneEnabled && isDistributorAutoscalingEnabled,
+  local isDistributorAutoscalingZoneAEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
+  local isDistributorAutoscalingZoneBEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
+  local isDistributorAutoscalingZoneCEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
+
+  distributor_scaled_object: if !isDistributorAutoscalingSingleZoneEnabled then null else
+    // When both single-zone and multi-zone coexists, the single-zone scaling metrics shouldn't
+    // match the multi-zone pods.
+    $.newDistributorScaledObject('distributor', extra_matchers=(if isDistributorMultiZoneEnabled then 'pod!~"distributor-zone.*"' else '')),
+
   distributor_deployment: overrideSuperIfExists(
     'distributor_deployment',
-    if !$._config.autoscaling_distributor_enabled then {} else $.removeReplicasFromSpec
+    if !isDistributorAutoscalingSingleZoneEnabled then {} else $.removeReplicasFromSpec
+  ),
+
+  distributor_zone_a_scaled_object: if !isDistributorAutoscalingZoneAEnabled then null else
+    $.newDistributorScaledObject('distributor-zone-a', 'pod=~"distributor-zone-a.*"'),
+
+  distributor_zone_a_deployment: overrideSuperIfExists(
+    'distributor_zone_a_deployment',
+    if !isDistributorAutoscalingZoneAEnabled then {} else $.removeReplicasFromSpec
+  ),
+
+  distributor_zone_b_scaled_object: if !isDistributorAutoscalingZoneBEnabled then null else
+    $.newDistributorScaledObject('distributor-zone-b', 'pod=~"distributor-zone-b.*"'),
+
+  distributor_zone_b_deployment: overrideSuperIfExists(
+    'distributor_zone_b_deployment',
+    if !isDistributorAutoscalingZoneBEnabled then {} else $.removeReplicasFromSpec
+  ),
+
+  distributor_zone_c_scaled_object: if !isDistributorAutoscalingZoneCEnabled then null else
+    $.newDistributorScaledObject('distributor-zone-c', 'pod=~"distributor-zone-c.*"'),
+
+  distributor_zone_c_deployment: overrideSuperIfExists(
+    'distributor_zone_c_deployment',
+    if !isDistributorAutoscalingZoneCEnabled then {} else $.removeReplicasFromSpec
   ),
 
   ruler_scaled_object: if !$._config.autoscaling_ruler_enabled then null else $.newResourceScaledObject(

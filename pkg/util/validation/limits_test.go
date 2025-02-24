@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -22,8 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
-
-	"github.com/grafana/mimir/pkg/ingester/activeseries"
 )
 
 func TestMain(m *testing.M) {
@@ -128,7 +128,9 @@ max_partial_query_length: 1s
 	err = json.Unmarshal([]byte(inputJSON), &limitsJSON)
 	require.NoError(t, err, "expected to be able to unmarshal from JSON")
 
-	assert.True(t, cmp.Equal(limitsYAML, limitsJSON, cmp.AllowUnexported(Limits{})), "expected YAML and JSON to match")
+	// Excluding activeSeriesMergedCustomTrackersConfig because it's not comparable, but we
+	// don't care about it in this test (it's not exported to JSON or YAML).
+	assert.True(t, cmp.Equal(limitsYAML, limitsJSON, cmp.AllowUnexported(Limits{}), cmpopts.IgnoreFields(Limits{}, "activeSeriesMergedCustomTrackersConfig")), "expected YAML and JSON to match")
 }
 
 func TestLimitsAlwaysUsesPromDuration(t *testing.T) {
@@ -969,20 +971,173 @@ user1:
 	}
 }
 
-func TestCustomTrackerConfigDeserialize(t *testing.T) {
-	expectedConfig, err := activeseries.NewCustomTrackersConfig(map[string]string{"baz": `{foo="bar"}`})
-	require.NoError(t, err, "creating expected config")
+func TestRulerMaxConcurrentRuleEvaluationsPerTenantOverrides(t *testing.T) {
+	tc := map[string]struct {
+		inputYAML                    string
+		overrides                    string
+		expectedPerTenantConcurrency int64
+	}{
+		"no user specific concurrency": {
+			inputYAML: `
+ruler_max_independent_rule_evaluation_concurrency_per_tenant: 5
+`,
+			expectedPerTenantConcurrency: 5,
+		},
+		"default limit for not specific user": {
+			inputYAML: `
+ruler_max_independent_rule_evaluation_concurrency_per_tenant: 5
+`,
+			overrides: `
+randomuser:
+  ruler_max_independent_rule_evaluation_concurrency_per_tenant: 10
+`,
+			expectedPerTenantConcurrency: 5,
+		},
+		"overridden limit for specific user": {
+			inputYAML: `
+ruler_max_independent_rule_evaluation_concurrency_per_tenant: 5
+`,
+			overrides: `
+user1:
+  ruler_max_independent_rule_evaluation_concurrency_per_tenant: 15
+`,
+			expectedPerTenantConcurrency: 15,
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			var LimitsYAML Limits
+			err := yaml.Unmarshal([]byte(tt.inputYAML), &LimitsYAML)
+			require.NoError(t, err)
+
+			SetDefaultLimitsForYAMLUnmarshalling(LimitsYAML)
+
+			overrides := map[string]*Limits{}
+			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			require.NoError(t, err)
+
+			tl := NewMockTenantLimits(overrides)
+			ov, err := NewOverrides(LimitsYAML, tl)
+			require.NoError(t, err)
+
+			require.Equal(t, tt.expectedPerTenantConcurrency, ov.RulerMaxIndependentRuleEvaluationConcurrencyPerTenant("user1"))
+		})
+	}
+}
+
+func TestActiveSeriesCustomTrackersConfig(t *testing.T) {
+	tests := map[string]struct {
+		cfg                      string
+		expectedBaseConfig       string
+		expectedAdditionalConfig string
+		expectedMergedConfig     string
+	}{
+		"no base and no additional config": {
+			cfg: `
+# Set another unrelated field to trigger the limits unmarshalling.
+max_global_series_per_user: 10
+`,
+			expectedBaseConfig:       "",
+			expectedAdditionalConfig: "",
+			expectedMergedConfig:     "",
+		},
+		"only base config is set": {
+			cfg: `
+active_series_custom_trackers:
+  base_1: '{foo="base_1"}'`,
+			expectedBaseConfig:       `base_1:{foo="base_1"}`,
+			expectedAdditionalConfig: "",
+			expectedMergedConfig:     `base_1:{foo="base_1"}`,
+		},
+		"only additional config is set": {
+			cfg: `
+active_series_additional_custom_trackers:
+  additional_1: '{foo="additional_1"}'`,
+			expectedBaseConfig:       "",
+			expectedAdditionalConfig: `additional_1:{foo="additional_1"}`,
+			expectedMergedConfig:     `additional_1:{foo="additional_1"}`,
+		},
+		"both base and additional configs are set": {
+			cfg: `
+active_series_custom_trackers:
+  base_1: '{foo="base_1"}'
+  common_1: '{foo="base"}'
+
+active_series_additional_custom_trackers:
+  additional_1: '{foo="additional_1"}'
+  common_1: '{foo="additional"}'`,
+			expectedBaseConfig:       `base_1:{foo="base_1"};common_1:{foo="base"}`,
+			expectedAdditionalConfig: `additional_1:{foo="additional_1"};common_1:{foo="additional"}`,
+			expectedMergedConfig:     `additional_1:{foo="additional_1"};base_1:{foo="base_1"};common_1:{foo="additional"}`,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			for _, withDefaultValues := range []bool{true, false} {
+				t.Run(fmt.Sprintf("with default values: %t", withDefaultValues), func(t *testing.T) {
+					limitsYAML := Limits{}
+					if withDefaultValues {
+						flagext.DefaultValues(&limitsYAML)
+					}
+					require.NoError(t, yaml.Unmarshal([]byte(testData.cfg), &limitsYAML))
+
+					overrides, err := NewOverrides(limitsYAML, nil)
+					require.NoError(t, err)
+
+					// We expect the pointer holder to be always initialised, either when initializing default values
+					// or by the unmarshalling.
+					require.NotNil(t, overrides.getOverridesForUser("user").activeSeriesMergedCustomTrackersConfig)
+
+					assert.Equal(t, testData.expectedBaseConfig, overrides.getOverridesForUser("test").ActiveSeriesBaseCustomTrackersConfig.String())
+					assert.Equal(t, testData.expectedAdditionalConfig, overrides.getOverridesForUser("user").ActiveSeriesAdditionalCustomTrackersConfig.String())
+					assert.Equal(t, testData.expectedMergedConfig, overrides.ActiveSeriesCustomTrackersConfig("user").String())
+				})
+			}
+		})
+	}
+}
+
+func TestActiveSeriesCustomTrackersConfig_Concurrency(t *testing.T) {
+	const (
+		numRuns             = 100
+		numGoroutinesPerRun = 10
+	)
+
 	cfg := `
-    user:
-        active_series_custom_trackers:
-            baz: '{foo="bar"}'
-    `
+active_series_custom_trackers:
+  base_1: '{foo="base_1"}'
+  common_1: '{foo="base"}'
 
-	overrides := map[string]*Limits{}
-	require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+active_series_additional_custom_trackers:
+  additional_1: '{foo="additional_1"}'
+  common_1: '{foo="additional"}'`
 
-	assert.False(t, overrides["user"].ActiveSeriesCustomTrackersConfig.Empty())
-	assert.Equal(t, expectedConfig.String(), overrides["user"].ActiveSeriesCustomTrackersConfig.String())
+	for r := 0; r < numRuns; r++ {
+		limitsYAML := Limits{}
+		require.NoError(t, yaml.Unmarshal([]byte(cfg), &limitsYAML))
+
+		overrides, err := NewOverrides(limitsYAML, nil)
+		require.NoError(t, err)
+
+		start := make(chan struct{})
+		wg := sync.WaitGroup{}
+		wg.Add(numGoroutinesPerRun)
+
+		// Kick off goroutines.
+		for g := 0; g < numGoroutinesPerRun; g++ {
+			go func() {
+				defer wg.Done()
+				<-start
+				overrides.ActiveSeriesCustomTrackersConfig("user")
+			}()
+		}
+
+		// Unblock calls and wait until done.
+		close(start)
+		wg.Wait()
+	}
 }
 
 func TestUnmarshalYAML_ShouldValidateConfig(t *testing.T) {
@@ -1020,6 +1175,18 @@ metric_relabel_configs:
 		"should fail on invalid ingest_storage_read_consistency": {
 			cfg:         `ingest_storage_read_consistency: xyz`,
 			expectedErr: errInvalidIngestStorageReadConsistency.Error(),
+		},
+		"should fail when cost_attribution_labels exceed max_cost_attribution_labels_per_user": {
+			cfg: `
+cost_attribution_labels: label1, label2, label3,
+max_cost_attribution_labels_per_user: 2`,
+			expectedErr: errCostAttributionLabelsLimitExceeded.Error(),
+		},
+		"should fail when max_cost_attribution_labels_per_user is more than 4": {
+			cfg: `
+cost_attribution_labels: label1, label2,
+max_cost_attribution_labels_per_user: 5`,
+			expectedErr: errInvalidMaxCostAttributionLabelsPerUser.Error(),
 		},
 	}
 
@@ -1300,6 +1467,97 @@ func TestIsLimitError(t *testing.T) {
 			require.Equal(t, testData.expectedOutcome, IsLimitError(testData.err))
 		})
 	}
+}
+
+func TestAlertmanagerSizeLimitsUnmarshal(t *testing.T) {
+	for name, tc := range map[string]struct {
+		inputYAML          string
+		expectedConfigSize int
+		expectedStateSize  int
+	}{
+		"when using strings": {
+			inputYAML: `
+alertmanager_max_grafana_config_size_bytes: "4MiB"
+alertmanager_max_grafana_state_size_bytes: "2MiB"
+`,
+			expectedConfigSize: 1024 * 1024 * 4,
+			expectedStateSize:  1024 * 1024 * 2,
+		},
+		"when using 0B, returns 0": {
+			inputYAML: `
+alertmanager_max_grafana_config_size_bytes: "0"
+alertmanager_max_grafana_state_size_bytes: "0"
+`,
+			expectedConfigSize: 0,
+			expectedStateSize:  0,
+		},
+		"when nothing is given, defaults to 0": {
+			inputYAML:          "",
+			expectedConfigSize: 0,
+			expectedStateSize:  0,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			limitsYAML := Limits{}
+			err := yaml.Unmarshal([]byte(tc.inputYAML), &limitsYAML)
+			require.NoError(t, err, "expected to be able to unmarshal from YAML")
+
+			ov, err := NewOverrides(limitsYAML, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, tc.expectedConfigSize, ov.AlertmanagerMaxGrafanaConfigSize("user"))
+			require.Equal(t, tc.expectedStateSize, ov.AlertmanagerMaxGrafanaStateSize("user"))
+		})
+	}
+}
+
+func TestBlockedRequestsUnmarshal(t *testing.T) {
+	inputYAML := `
+user1:
+  blocked_requests:
+    - path: /api/v1/query
+      method: POST
+      query_params:
+        foo: 
+          value: bar
+    - query_params:
+        first: 
+          value: bar.*
+          is_regexp: true
+        other:
+          value: bar
+          is_regexp: false
+`
+	overrides := map[string]*Limits{}
+	err := yaml.Unmarshal([]byte(inputYAML), &overrides)
+	require.NoError(t, err)
+	tl := NewMockTenantLimits(overrides)
+	ov, err := NewOverrides(getDefaultLimits(), tl)
+	require.NoError(t, err)
+
+	blockedRequests := ov.BlockedRequests("user1")
+	require.Len(t, blockedRequests, 2)
+	require.Equal(t, &BlockedRequest{
+		Path:   "/api/v1/query",
+		Method: "POST",
+		QueryParams: map[string]BlockedRequestQueryParam{
+			"foo": {
+				Value: "bar",
+			},
+		},
+	}, blockedRequests[0])
+	require.Equal(t, &BlockedRequest{
+		QueryParams: map[string]BlockedRequestQueryParam{
+			"first": {
+				Value:    "bar.*",
+				IsRegexp: true,
+			},
+			"other": {
+				Value:    "bar",
+				IsRegexp: false,
+			},
+		},
+	}, blockedRequests[1])
 }
 
 func getDefaultLimits() Limits {

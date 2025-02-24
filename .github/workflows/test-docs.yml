@@ -23,7 +23,7 @@ jobs:
     - name: Determine Mimir version targeted by Helm chart documentation
       id: mimir_version
       run: |
-        MIMIR_VERSION=$(sed -ne '/^---$/,/^---$/{ s/^ *MIMIR_DOCS_VERSION: "\([^"]\{1,\}\)"/\1/p; }' docs/sources/helm-charts/mimir-distributed/_index.md)
+        MIMIR_VERSION=$(sed -ne '/^---$/,/^---$/{ s/^ *MIMIR_VERSION: "\([^"]\{1,\}\)"/\1/p; }' docs/sources/helm-charts/mimir-distributed/_index.md)
         echo "version=${MIMIR_VERSION}" | tee "${GITHUB_OUTPUT}"
     - name: Determine Mimir branch for targeted version
       id: mimir_branch

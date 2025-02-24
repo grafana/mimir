@@ -28,7 +28,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/util/test"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -158,7 +157,7 @@ func TestUpload(t *testing.T) {
 	})
 
 	t.Run("missing chunks", func(t *testing.T) {
-		test.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
+		testutil.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
 
 		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
 		require.Error(t, err)
@@ -167,7 +166,7 @@ func TestUpload(t *testing.T) {
 
 	t.Run("missing index file", func(t *testing.T) {
 		require.NoError(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String(), ChunksDirname), 0777))
-		test.Copy(t, path.Join(tmpDir, b1.String(), ChunksDirname, "000001"), path.Join(tmpDir, "test", b1.String(), ChunksDirname, "000001"))
+		testutil.Copy(t, path.Join(tmpDir, b1.String(), ChunksDirname, "000001"), path.Join(tmpDir, "test", b1.String(), ChunksDirname, "000001"))
 
 		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
 		require.Error(t, err)
@@ -175,7 +174,7 @@ func TestUpload(t *testing.T) {
 	})
 
 	t.Run("missing meta.json file", func(t *testing.T) {
-		test.Copy(t, path.Join(tmpDir, b1.String(), IndexFilename), path.Join(tmpDir, "test", b1.String(), IndexFilename))
+		testutil.Copy(t, path.Join(tmpDir, b1.String(), IndexFilename), path.Join(tmpDir, "test", b1.String(), IndexFilename))
 		require.NoError(t, os.Remove(path.Join(tmpDir, "test", b1.String(), MetaFilename)))
 
 		// Missing meta.json file.
@@ -198,7 +197,7 @@ func TestUpload(t *testing.T) {
 		require.Contains(t, err.Error(), "/meta.json: no such file or directory")
 	})
 
-	test.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
+	testutil.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
 
 	t.Run("full block", func(t *testing.T) {
 		// Full

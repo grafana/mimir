@@ -1,0 +1,27 @@
+{{- if and .Values.enterprise.enabled .Values.federation_frontend.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "federation-frontend") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "federation-frontend") | nindent 4 }}
+    {{- with .Values.federation_frontend.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- toYaml .Values.federation_frontend.service.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ include "mimir.serverHttpListenPort" . }}
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: {{ include "mimir.serverGrpcListenPort" . }}
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    {{- include "mimir.selectorLabels" (dict "ctx" . "component" "federation-frontend") | nindent 4 }}
+{{- end }}

@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"syscall"
@@ -271,8 +272,8 @@ func (a *app) allTestCaseNames() []string {
 	names := make([]string, 0, 2*len(cases))
 
 	for _, c := range cases {
-		names = append(names, benchmarkName+"/"+c.Name()+"/Mimir")
-		names = append(names, benchmarkName+"/"+c.Name()+"/Prometheus")
+		names = append(names, benchmarkName+"/"+c.Name()+"/engine=Mimir")
+		names = append(names, benchmarkName+"/"+c.Name()+"/engine=Prometheus")
 	}
 
 	return names
@@ -329,7 +330,7 @@ func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 	outputLines := strings.Split(strings.TrimSpace(buf.String()), "\n")
 
 	for _, l := range outputLines {
-		isBenchmarkHeaderLine := strings.HasPrefix(l, "goos") || strings.HasPrefix(l, "goarch") || strings.HasPrefix(l, "pkg")
+		isBenchmarkHeaderLine := strings.HasPrefix(l, "goos") || strings.HasPrefix(l, "goarch") || strings.HasPrefix(l, "pkg") || strings.HasPrefix(l, "cpu")
 		isBenchmarkLine := strings.HasPrefix(l, benchmarkName)
 		isPassLine := l == "PASS"
 
@@ -339,11 +340,22 @@ func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 			}
 		} else if isBenchmarkLine {
 			fmt.Print(l)
-			fmt.Printf("     %v B\n", usage.Maxrss)
+			fmt.Printf("     %v B\n", maxRSSInBytes(usage))
 		} else if !isPassLine {
 			fmt.Println(l)
 		}
 	}
 
 	return nil
+}
+
+func maxRSSInBytes(usage *syscall.Rusage) int64 {
+	switch runtime.GOOS {
+	case "linux":
+		return usage.Maxrss * 1024 // Maxrss is returned in kilobytes on Linux.
+	case "darwin":
+		return usage.Maxrss // Maxrss is already in bytes on macOS.
+	default:
+		panic(fmt.Sprintf("unknown GOOS '%v'", runtime.GOOS))
+	}
 }

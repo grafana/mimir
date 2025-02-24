@@ -2180,10 +2180,8 @@ func TestOpenBlockSeriesChunkRefsSetsIterator_SeriesCaching(t *testing.T) {
 	}
 
 	for testName, testCase := range testCases {
-		testCase := testCase
 		t.Run(testName, func(t *testing.T) {
 			for _, batchSize := range testCase.batchSizes {
-				batchSize := batchSize
 				t.Run(fmt.Sprintf("batch size %d", batchSize), func(t *testing.T) {
 					b := newTestBlock()
 					b.indexCache = newInMemoryIndexCache(t)
@@ -2498,7 +2496,6 @@ func BenchmarkFetchCachedSeriesForPostings(b *testing.B) {
 	}
 
 	for testName, testCase := range testCases {
-		testCase := testCase
 		b.Run(testName, func(b *testing.B) {
 			ctx := context.Background()
 			logger := log.NewNopLogger()
@@ -2566,7 +2563,6 @@ func BenchmarkStoreCachedSeriesForPostings(b *testing.B) {
 	}
 
 	for testName, testCase := range testCases {
-		testCase := testCase
 		b.Run(testName, func(b *testing.B) {
 			ctx := context.Background()
 			// We use a logger that fails the benchmark when used.

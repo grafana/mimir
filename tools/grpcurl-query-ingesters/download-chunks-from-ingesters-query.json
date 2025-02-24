@@ -1,11 +1,11 @@
 {
-  "start_timestamp_ms": 1698746364317,
-  "end_timestamp_ms": 1698748164317,
+  "start_timestamp_ms": 1724657563000,
+  "end_timestamp_ms": 1724659363000,
   "matchers": [
     {
       "type": 0,
       "name": "__name__",
-      "value": "test_series"
+      "value": "mimir_continuous_test_sine_wave_v2"
     }
   ]
 }

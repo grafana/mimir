@@ -59,6 +59,8 @@ func TestFrontend_RequestHostHeaderWhenDownstreamURLIsConfigured(t *testing.T) {
 			_, err := w.Write([]byte(responseBody))
 			require.NoError(t, err)
 		}),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 
 	defer downstreamServer.Shutdown(context.Background()) //nolint:errcheck
@@ -111,6 +113,8 @@ func TestFrontend_LogsSlowQueriesFormValues(t *testing.T) {
 			_, err := w.Write([]byte(responseBody))
 			require.NoError(t, err)
 		}),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 
 	defer downstreamServer.Shutdown(context.Background()) //nolint:errcheck
@@ -173,6 +177,8 @@ func TestFrontend_ReturnsRequestBodyTooLargeError(t *testing.T) {
 			_, err := w.Write([]byte(responseBody))
 			require.NoError(t, err)
 		}),
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 
 	defer downstreamServer.Shutdown(context.Background()) //nolint:errcheck
@@ -218,7 +224,7 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	if l != nil {
 		logger = l
 	}
-	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json")
+	codec := querymiddleware.NewPrometheusCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil)
 
 	var workerConfig querier_worker.Config
 	flagext.DefaultValues(&workerConfig)
@@ -260,7 +266,9 @@ func testFrontend(t *testing.T, config CombinedFrontendConfig, handler http.Hand
 	).Wrap(transport.NewHandler(config.Handler, rt, logger, nil, nil)))
 
 	httpServer := http.Server{
-		Handler: r,
+		Handler:      r,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 	defer httpServer.Shutdown(context.Background()) //nolint:errcheck
 

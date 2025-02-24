@@ -36,6 +36,14 @@ func (c *Versioned) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
 	c.cache.SetMultiAsync(versioned, ttl)
 }
 
+func (c *Versioned) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return c.cache.Set(ctx, c.addVersion(key), value, ttl)
+}
+
+func (c *Versioned) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return c.cache.Add(ctx, c.addVersion(key), value, ttl)
+}
+
 func (c *Versioned) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
 	versionedKeys := make([]string, len(keys))
 	for i, k := range keys {

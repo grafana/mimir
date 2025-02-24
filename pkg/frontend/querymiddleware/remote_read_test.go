@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"testing"
+	"unsafe"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -135,7 +136,7 @@ func TestRemoteReadRoundTripperCallsDownstreamOnAll(t *testing.T) {
 				actualMiddleWareCalls++
 				return tc.handler
 			})
-			rr := newRemoteReadRoundTripper(roundTripper, middleware)
+			rr := NewRemoteReadRoundTripper(roundTripper, middleware)
 			_, err := rr.RoundTrip(makeTestHTTPRequestFromRemoteRead(makeTestRemoteReadRequest()))
 			if tc.expectError != "" {
 				require.Error(t, err)
@@ -195,7 +196,7 @@ func TestRemoteReadRoundTripper_ShouldAllowMiddlewaresToManipulateRequest(t *tes
 		},
 	}
 
-	rr := newRemoteReadRoundTripper(downstream, middleware)
+	rr := NewRemoteReadRoundTripper(downstream, middleware)
 	_, err := rr.RoundTrip(makeTestHTTPRequestFromRemoteRead(origRemoteReadReq))
 	require.NoError(t, err)
 	require.NotNil(t, downstreamReq)
@@ -255,7 +256,7 @@ func TestRemoteReadRoundTripper_ShouldAllowMiddlewaresToReturnEmptyResponse(t *t
 		},
 	}
 
-	rr := newRemoteReadRoundTripper(downstream, middleware)
+	rr := NewRemoteReadRoundTripper(downstream, middleware)
 	origRemoteReadReq := makeTestRemoteReadRequest()
 
 	_, err := rr.RoundTrip(makeTestHTTPRequestFromRemoteRead(origRemoteReadReq))
@@ -383,7 +384,7 @@ func TestRemoteReadQueryRequest_WithStartEnd(t *testing.T) {
 			actualReq, ok := actual.(*remoteReadQueryRequest)
 			require.True(t, ok)
 			require.NotSame(t, actualReq.query, testData.input.query)
-			require.NotSame(t, actualReq.query.Matchers, testData.input.query.Matchers)
+			require.NotSame(t, unsafe.SliceData(actualReq.query.Matchers), unsafe.SliceData(testData.input.query.Matchers))
 
 			if actualReq.query.Hints != nil {
 				require.NotSame(t, actualReq.query.Hints, testData.input.query.Hints)

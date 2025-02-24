@@ -103,6 +103,41 @@ func (l *LRUCache) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
 	}
 }
 
+func (l *LRUCache) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	err := l.c.Set(ctx, key, value, ttl)
+
+	l.mtx.Lock()
+	defer l.mtx.Unlock()
+
+	expires := time.Now().Add(ttl)
+	l.lru.Add(key, &Item{
+		Data:      value,
+		ExpiresAt: expires,
+	})
+
+	return err
+}
+
+func (l *LRUCache) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	err := l.c.Add(ctx, key, value, ttl)
+
+	// When a caller uses the Add method, the presence of absence of an entry in the cache
+	// has significance. In order to maintain the semantics of that, we only add an entry to
+	// the LRU when it was able to be successfully added to the shared cache.
+	if err == nil {
+		l.mtx.Lock()
+		defer l.mtx.Unlock()
+
+		expires := time.Now().Add(ttl)
+		l.lru.Add(key, &Item{
+			Data:      value,
+			ExpiresAt: expires,
+		})
+	}
+
+	return err
+}
+
 func (l *LRUCache) GetMulti(ctx context.Context, keys []string, opts ...Option) (result map[string][]byte) {
 	l.requests.Add(float64(len(keys)))
 	l.mtx.Lock()

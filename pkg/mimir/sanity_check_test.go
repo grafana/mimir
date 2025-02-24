@@ -157,9 +157,6 @@ func TestCheckObjectStoresConfig(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		// Change scope since we're running each test in parallel.
-		testData := testData
-
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 

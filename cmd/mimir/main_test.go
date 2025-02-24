@@ -104,12 +104,12 @@ func TestFlagParsing(t *testing.T) {
 				defaults := mimir.Config{}
 				flagext.DefaultValues(&defaults)
 
-				require.NotZero(t, defaults.Querier.MaxQueryIntoFuture,
-					"This test asserts that mimir.Config.Querier.MaxQueryIntoFuture default value is not zero. "+
+				require.NotZero(t, defaults.Querier.QueryStoreAfter,
+					"This test asserts that mimir.Config.Querier.QueryStoreAfter default value is not zero. "+
 						"If it's zero, this test is useless. Please change it to use a config value with a non-zero default.",
 				)
 
-				require.Equal(t, cfg.Querier.MaxQueryIntoFuture, defaults.Querier.MaxQueryIntoFuture,
+				require.Equal(t, cfg.Querier.QueryStoreAfter, defaults.Querier.QueryStoreAfter,
 					"YAML parser has set the [entire] Querier config to zero values by specifying an empty node."+
 						"If this happens again, check git history on how this was checked with previous YAML parser implementation.")
 			},
@@ -374,32 +374,83 @@ func TestExpandEnvironmentVariables(t *testing.T) {
 	var tests = []struct {
 		in  string
 		out string
+		env string
 	}{
 		// Environment variables can be specified as ${env} or $env.
-		{"x$y", "xy"},
-		{"x${y}", "xy"},
+		{"x$y", "xy", "y"},
+		{"x${y}", "xy", "y"},
 
 		// Environment variables are case-sensitive. Neither are replaced.
-		{"x$Y", "x"},
-		{"x${Y}", "x"},
+		{"x$Y", "x", "y"},
+		{"x${Y}", "x", "y"},
 
 		// Defaults can only be specified when using braces.
-		{"x${Z:D}", "xD"},
-		{"x${Z:A B C D}", "xA B C D"}, // Spaces are allowed in the default.
-		{"x${Z:}", "x"},
+		{"x${Z:D}", "xD", "y"},
+		{"x${Z:A B C D}", "xA B C D", "y"}, // Spaces are allowed in the default.
+		{"x${Z:}", "x", "y"},
 
 		// Defaults don't work unless braces are used.
-		{"x$y:D", "xy:D"},
+		{"x$y:D", "xy:D", "y"},
+
+		// multiline case are managed, useful for Google Cloud Service Accounts
+		{"x$y", "x{\t\t\t\"foo\": \"bar\"\t\t}", `{
+			"foo": "bar"
+		}`},
 	}
 
-	for _, test := range tests {
-		test := test
-		t.Run(test.in, func(t *testing.T) {
-			_ = os.Setenv("y", "y")
-			output := expandEnvironmentVariables([]byte(test.in))
-			assert.Equal(t, test.out, string(output), "Input: %s", test.in)
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			_ = os.Setenv("y", tt.env)
+			output := expandEnvironmentVariables([]byte(tt.in))
+			assert.Equal(t, tt.out, string(output), "Input: %s", tt.in)
 		})
 	}
+}
+
+func TestWithGoogleCloudServiceAccountEnvVariable(t *testing.T) {
+	var configuration = `
+	common:
+	  storage:
+		gcs:
+		  service_account: >-
+		    ${COMMON_STORAGE_GCS_SERVICE_ACCOUNT}
+	
+	blocks_storage:
+	  storage_prefix: monitoringmetricsv1blocks
+	  tsdb:
+		flush_blocks_on_shutdown: true
+	`
+	var serviceAccountEnvValue = `{
+	  "type": "service_account",
+	  "project_id": "my-project",
+	  "private_key_id": "1234abc",
+	  "private_key": "-----BEGIN PRIVATE KEY-----\n\n-----END PRIVATE KEY-----\n",
+	  "client_email": "test@my-project.iam.gserviceaccount.com",
+	  "client_id": "5678",
+	  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+	  "token_uri": "https://oauth2.googleapis.com/token",
+	  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+	  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/test%40my-project.iam.gserviceaccount.com"
+	}`
+
+	var expectedResult = `
+	common:
+	  storage:
+		gcs:
+		  service_account: >-
+		    {	  "type": "service_account",	  "project_id": "my-project",	  "private_key_id": "1234abc",	  "private_key": "-----BEGIN PRIVATE KEY-----\n\n-----END PRIVATE KEY-----\n",	  "client_email": "test@my-project.iam.gserviceaccount.com",	  "client_id": "5678",	  "auth_uri": "https://accounts.google.com/o/oauth2/auth",	  "token_uri": "https://oauth2.googleapis.com/token",	  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",	  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/test%40my-project.iam.gserviceaccount.com"	}
+	
+	blocks_storage:
+	  storage_prefix: monitoringmetricsv1blocks
+	  tsdb:
+		flush_blocks_on_shutdown: true
+	`
+
+	t.Run("test with google cloud service account in env variable", func(t *testing.T) {
+		_ = os.Setenv("COMMON_STORAGE_GCS_SERVICE_ACCOUNT", serviceAccountEnvValue)
+		output := expandEnvironmentVariables([]byte(configuration))
+		assert.Equal(t, expectedResult, string(output), "Input: %s", "")
+	})
 }
 
 func TestParseConfigFileParameter(t *testing.T) {
@@ -430,13 +481,12 @@ func TestParseConfigFileParameter(t *testing.T) {
 		{"--config.file=foo --opt1 --config.expand-env", "foo", true},
 		{"--config.expand-env --opt1 --config.file=foo", "foo", true},
 	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.args, func(t *testing.T) {
-			args := strings.Split(test.args, " ")
+	for _, tt := range tests {
+		t.Run(tt.args, func(t *testing.T) {
+			args := strings.Split(tt.args, " ")
 			configFile, expandEnv := parseConfigFileParameter(args)
-			assert.Equal(t, test.configFile, configFile)
-			assert.Equal(t, test.expandEnv, expandEnv)
+			assert.Equal(t, tt.configFile, configFile)
+			assert.Equal(t, tt.expandEnv, expandEnv)
 		})
 	}
 }

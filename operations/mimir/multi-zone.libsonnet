@@ -30,6 +30,8 @@
       'store-gateway.sharding-ring.zone-awareness-enabled': 'true',
       'store-gateway.sharding-ring.prefix': 'multi-zone/',
     },
+
+    multi_zone_schedule_toleration: 'secondary-az',
   },
 
   //

@@ -36,7 +36,7 @@ func WrapQueryFuncWithReadConsistency(fn rules.QueryFunc, logger log.Logger) rul
 			spanLog.SetTag("read_consistency", api.ReadConsistencyStrong)
 			spanLog.DebugLog("msg", "forced strong read consistency because the rule depends on other rules in the same rule group")
 
-			ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 		}
 
 		return fn(ctx, qs, t)
@@ -86,17 +86,17 @@ func (q *readConsistencyQuerier) Select(ctx context.Context, sortSeries bool, hi
 }
 
 // LabelValues implements storage.Querier.
-func (q *readConsistencyQuerier) LabelValues(ctx context.Context, name string, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *readConsistencyQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ctx = forceStrongReadConsistencyIfQueryingAlertsForStateMetric(ctx, matchers, q.logger)
 
-	return q.next.LabelValues(ctx, name, matchers...)
+	return q.next.LabelValues(ctx, name, hints, matchers...)
 }
 
 // LabelNames implements storage.Querier.
-func (q *readConsistencyQuerier) LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (q *readConsistencyQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	ctx = forceStrongReadConsistencyIfQueryingAlertsForStateMetric(ctx, matchers, q.logger)
 
-	return q.next.LabelNames(ctx, matchers...)
+	return q.next.LabelNames(ctx, hints, matchers...)
 }
 
 // Close implements storage.Querier.
@@ -129,7 +129,7 @@ func forceStrongReadConsistencyIfQueryingAlertsForStateMetric(ctx context.Contex
 		spanLog.SetTag("read_consistency", api.ReadConsistencyStrong)
 		spanLog.DebugLog("msg", fmt.Sprintf("forced strong read consistency because %s metric has been queried", alertForStateMetricName))
 
-		ctx = api.ContextWithReadConsistency(ctx, api.ReadConsistencyStrong)
+		ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
 	}
 
 	return ctx

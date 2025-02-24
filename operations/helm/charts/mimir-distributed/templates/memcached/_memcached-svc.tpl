@@ -3,7 +3,7 @@ memcached Service
 */}}
 {{- define "mimir.memcached.service" -}}
 {{ with (index $.ctx.Values $.component) }}
-{{- if .enabled -}}
+{{- if and .enabled (not $.ctx.Values.federation_frontend.disableOtherComponents) -}}
 apiVersion: v1
 kind: Service
 metadata:
