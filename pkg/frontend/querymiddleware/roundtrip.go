@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -68,7 +69,7 @@ type Config struct {
 	TargetSeriesPerShard          uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 	ShardActiveSeriesQueries      bool          `yaml:"shard_active_series_queries" category:"experimental"`
 	UseActiveSeriesDecoder        bool          `yaml:"use_active_series_decoder" category:"experimental"`
-	SpinOffInstantSubqueriesToURL string        `yaml:"spin_off_instant_subqueries_to_url" category:"experimental"`
+	SpinOffInstantSubqueriesToURL string        `yaml:"spin_off_instant_subqueries_to_url" category:"experimental"` // TODO dimitarvdimitrov replace with an enabled flag
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -166,6 +167,19 @@ func (q MetricsQueryMiddlewareFunc) Wrap(h MetricsQueryHandler) MetricsQueryHand
 // MetricsQueryMiddleware is a higher order MetricsQueryHandler.
 type MetricsQueryMiddleware interface {
 	Wrap(MetricsQueryHandler) MetricsQueryHandler
+}
+
+// newOptionalMiddleware creates a new middleware that will only be applied if the condition function returns true
+func newOptionalMiddleware(condition func(MetricsQueryRequest) bool, middleware MetricsQueryMiddleware) MetricsQueryMiddleware {
+	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+		wrapped := middleware.Wrap(next)
+		return HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+			if condition(req) {
+				return wrapped.Do(ctx, req)
+			}
+			return next.Do(ctx, req)
+		})
+	})
 }
 
 // MergeMetricsQueryMiddlewares produces a middleware that applies multiple middleware in turn;
@@ -379,24 +393,6 @@ func newQueryMiddlewares(
 		newStepAlignMiddleware(limits, log, registerer),
 	)
 
-	if spinOffURL := cfg.SpinOffInstantSubqueriesToURL; spinOffURL != "" {
-		// Spin-off subqueries to a remote URL (or localhost)
-		// Add the retry middleware to the spin-off query handler.
-		// Spun-off queries are terminated in that handler (they don't call "next" so the retry middleware has to be added here).
-		spinOffQueryHandler, err := newSpinOffQueryHandler(codec, log, spinOffURL, cfg.MaxRetries, retryMiddlewareMetrics)
-		if err != nil {
-			level.Error(log).Log("msg", "failed to create spin-off query handler", "error", err)
-		} else {
-			// We're only interested in instant queries for now because their query rate is usually much higher than range queries.
-			// They are also less optimized than range queries, so we can benefit more from the spin-off.
-			queryInstantMiddleware = append(
-				queryInstantMiddleware,
-				newInstrumentMiddleware("spin_off_subqueries", metrics),
-				newSpinOffSubqueriesMiddleware(limits, log, engine, spinOffQueryHandler, registerer, defaultStepFunc),
-			)
-		}
-	}
-
 	if cfg.CacheResults && cfg.CacheErrors {
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
@@ -405,9 +401,10 @@ func newQueryMiddlewares(
 		)
 	}
 
-	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
+	// Create split and cache middleware if either splitting or caching is enabled
+	var splitAndCacheMiddleware MetricsQueryMiddleware
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), newSplitAndCacheMiddleware(
+		splitAndCacheMiddleware = newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
 			cfg.SplitQueriesByInterval,
@@ -419,7 +416,7 @@ func newQueryMiddlewares(
 			resultsCacheEnabledByOption,
 			log,
 			registerer,
-		))
+		)
 	}
 
 	queryInstantMiddleware = append(queryInstantMiddleware,
@@ -431,6 +428,42 @@ func newQueryMiddlewares(
 		newInstrumentMiddleware("prom2_compat", metrics),
 		prom2CompatMiddleware,
 	)
+
+	if spinOffURL := cfg.SpinOffInstantSubqueriesToURL; spinOffURL != "" {
+		// We're only interested in instant queries for now because their query rate is usually much higher than range queries.
+		// They are also less optimized than range queries, so we can benefit more from the spin-off.
+		queryInstantMiddleware = append(
+			queryInstantMiddleware,
+			newInstrumentMiddleware("spin_off_subqueries", metrics),
+			newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, defaultStepFunc),
+			newOptionalMiddleware(func(req MetricsQueryRequest) bool {
+				// Parse the query to check if it has a subquery
+				expr, err := parser.ParseExpr(req.GetQuery())
+				if err != nil {
+					level.Error(log).Log("msg", "failed to parse query to check for subqueries", "err", err)
+					return false
+				}
+
+				// Check if the expression has a subquery in its children
+				// TODO dimitarvdimitrov move this to astmapper package
+				hasSubquery, err := astmapper.AnyNode(expr, func(node parser.Node) (bool, error) {
+					if call, ok := node.(*parser.Call); ok {
+						return astmapper.IsSubqueryCall(call), nil
+					}
+					if _, ok := node.(*parser.SubqueryExpr); ok {
+						return true, nil
+					}
+					return false, nil
+				})
+				if err != nil {
+					level.Error(log).Log("msg", "failed to check for subqueries", "err", err)
+					return false
+				}
+
+				return hasSubquery
+			}, splitAndCacheMiddleware),
+		)
+	}
 
 	// Inject the extra middlewares provided by the user before the query pruning and query sharding middleware.
 	if len(cfg.ExtraInstantQueryMiddlewares) > 0 {

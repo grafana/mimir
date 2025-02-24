@@ -638,7 +638,7 @@ func TestIsSubqueryCall(t *testing.T) {
 
 			call, ok := expr.(*parser.Call)
 			require.True(t, ok)
-			assert.Equal(t, testData.expected, isSubqueryCall(call))
+			assert.Equal(t, testData.expected, IsSubqueryCall(call))
 		})
 	}
 }

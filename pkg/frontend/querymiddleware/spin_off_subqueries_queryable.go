@@ -21,21 +21,19 @@ type spinOffSubqueriesQueryable struct {
 	annotationAccumulator *AnnotationAccumulator
 	responseHeaders       *responseHeadersTracker
 	handler               MetricsQueryHandler
-	upstreamRangeHandler  MetricsQueryHandler
 }
 
-func newSpinOffSubqueriesQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next MetricsQueryHandler, upstreamRangeHandler MetricsQueryHandler) *spinOffSubqueriesQueryable {
+func newSpinOffSubqueriesQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next MetricsQueryHandler) *spinOffSubqueriesQueryable {
 	return &spinOffSubqueriesQueryable{
 		req:                   req,
 		annotationAccumulator: annotationAccumulator,
 		handler:               next,
 		responseHeaders:       newResponseHeadersTracker(),
-		upstreamRangeHandler:  upstreamRangeHandler,
 	}
 }
 
 func (q *spinOffSubqueriesQueryable) Querier(_, _ int64) (storage.Querier, error) {
-	return &spinOffSubqueriesQuerier{req: q.req, annotationAccumulator: q.annotationAccumulator, handler: q.handler, responseHeaders: q.responseHeaders, upstreamRangeHandler: q.upstreamRangeHandler}, nil
+	return &spinOffSubqueriesQuerier{req: q.req, annotationAccumulator: q.annotationAccumulator, handler: q.handler, responseHeaders: q.responseHeaders}, nil
 }
 
 // getResponseHeaders returns the merged response headers received by the downstream
@@ -48,7 +46,6 @@ type spinOffSubqueriesQuerier struct {
 	req                   MetricsQueryRequest
 	annotationAccumulator *AnnotationAccumulator
 	handler               MetricsQueryHandler
-	upstreamRangeHandler  MetricsQueryHandler
 
 	// Keep track of response headers received when running embedded queries.
 	responseHeaders *responseHeadersTracker
@@ -170,7 +167,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 
 		sets := make([]storage.SeriesSet, len(rangeQueries))
 		for idx, req := range rangeQueries {
-			resp, err := q.upstreamRangeHandler.Do(ctx, req)
+			resp, err := q.handler.Do(ctx, req)
 			if err != nil {
 				return storage.ErrSeriesSet(err)
 			}
