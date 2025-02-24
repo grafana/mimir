@@ -28,4 +28,4 @@ overrides:
     enabled_promql_experimental_functions: all
 ```
 
-Blocking or allowing use of experimental PromQL functions is enforced on instant and range queries.
+Blocking or allowing the use of experimental PromQL functions is enforced on instant and range queries.
