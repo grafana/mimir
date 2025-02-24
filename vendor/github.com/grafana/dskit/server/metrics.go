@@ -16,16 +16,18 @@ import (
 )
 
 type Metrics struct {
-	TCPConnections                   *prometheus.GaugeVec
-	TCPConnectionsLimit              *prometheus.GaugeVec
-	RequestDuration                  *prometheus.HistogramVec
-	PerTenantRequestDuration         *prometheus.HistogramVec
-	PerTenantRequestTotal            *prometheus.CounterVec
-	ReceivedMessageSize              *prometheus.HistogramVec
-	SentMessageSize                  *prometheus.HistogramVec
-	InflightRequests                 *prometheus.GaugeVec
-	RequestThroughput                *prometheus.HistogramVec
-	InvalidClusterVerificationLabels *prometheus.CounterVec
+	TCPConnections                 *prometheus.GaugeVec
+	TCPConnectionsLimit            *prometheus.GaugeVec
+	GRPCConcurrentStreamsByConnMax *prometheus.GaugeVec
+	GRPCConcurrentStreamsLimit     *prometheus.GaugeVec
+	RequestDuration                *prometheus.HistogramVec
+	PerTenantRequestDuration       *prometheus.HistogramVec
+	PerTenantRequestTotal          *prometheus.CounterVec
+	ReceivedMessageSize            *prometheus.HistogramVec
+	SentMessageSize                *prometheus.HistogramVec
+	InflightRequests               *prometheus.GaugeVec
+	RequestThroughput              *prometheus.HistogramVec
+	InvalidClusterRequests         *prometheus.CounterVec
 }
 
 func NewServerMetrics(cfg Config) *Metrics {
@@ -71,12 +73,12 @@ func NewServerMetrics(cfg Config) *Metrics {
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
 		}, []string{"method", "route", "status_code", "ws", "tenant"}),
-		PerTenantRequestTotal: reg.NewCounterVec(prometheus.CounterOpts{
+		PerTenantRequestTotal: factory.NewCounterVec(prometheus.CounterOpts{
 			Namespace: cfg.MetricsNamespace,
 			Name:      "per_tenant_request_total",
 			Help:      "Total count of requests for a particular tenant.",
 		}, []string{"method", "route", "status_code", "ws", "tenant"}),
-		ReceivedMessageSize: reg.NewHistogramVec(prometheus.HistogramOpts{
+		ReceivedMessageSize: factory.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: cfg.MetricsNamespace,
 			Name:      "request_message_bytes",
 			Help:      "Size (in bytes) of messages received in the request.",
@@ -103,11 +105,6 @@ func NewServerMetrics(cfg Config) *Metrics {
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
 		}, []string{"method", "route"}),
-		InvalidClusterVerificationLabels: reg.NewCounterVec(prometheus.CounterOpts{
-			Namespace:   cfg.MetricsNamespace,
-			Name:        "request_invalid_cluster_verification_labels_total",
-			Help:        "Number of requests with invalid cluster verification label.",
-			ConstLabels: nil,
-		}, []string{"protocol", "method", "request_label"}),
+		InvalidClusterRequests: middleware.NewInvalidClusterRequests(reg, cfg.MetricsNamespace),
 	}
 }

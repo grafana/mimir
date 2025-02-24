@@ -13,6 +13,7 @@ const (
 	failingSideLabel    = "failing_side"
 
 	GRPCProtocol = "grpc"
+	HTTPProtocol = "http"
 )
 
 func NewRequestInvalidClusterVerficationLabelsTotalCounter(reg prometheus.Registerer, client string, protocol string) *prometheus.CounterVec {

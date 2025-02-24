@@ -56,18 +56,17 @@ var (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval        time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	ResultsCacheConfig            `yaml:"results_cache"`
-	CacheResults                  bool          `yaml:"cache_results"`
-	CacheErrors                   bool          `yaml:"cache_errors" category:"experimental"`
-	MaxRetries                    int           `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout             time.Duration `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries                bool          `yaml:"parallelize_shardable_queries"`
-	PrunedQueries                 bool          `yaml:"prune_queries" category:"experimental"`
-	TargetSeriesPerShard          uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ShardActiveSeriesQueries      bool          `yaml:"shard_active_series_queries" category:"experimental"`
-	UseActiveSeriesDecoder        bool          `yaml:"use_active_series_decoder" category:"experimental"`
-	SpinOffInstantSubqueriesToURL string        `yaml:"spin_off_instant_subqueries_to_url" category:"experimental"`
+	SplitQueriesByInterval   time.Duration      `yaml:"split_queries_by_interval" category:"advanced"`
+	ResultsCache             ResultsCacheConfig `yaml:"results_cache"`
+	CacheResults             bool               `yaml:"cache_results"`
+	CacheErrors              bool               `yaml:"cache_errors"`
+	MaxRetries               int                `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout        time.Duration      `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries           bool               `yaml:"parallelize_shardable_queries"`
+	PrunedQueries            bool               `yaml:"prune_queries" category:"experimental"`
+	TargetSeriesPerShard     uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ShardActiveSeriesQueries bool               `yaml:"shard_active_series_queries" category:"experimental"`
+	UseActiveSeriesDecoder   bool               `yaml:"use_active_series_decoder" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
