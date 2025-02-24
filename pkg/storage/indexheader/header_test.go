@@ -172,7 +172,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 	downsampleLabelValuesOffsets, err := br2.LabelValuesOffsets(context.Background(), name, prefix, filterFunc)
 	require.NoError(t, err)
 
-	// label names and label values offsets are equal between orginal and downsampled sparse-index-headers
+	// label names and label values offsets are equal between original and downsampled sparse-index-headers
 	require.ElementsMatch(t, downsampleLabelNames, origLabelNames)
 	require.ElementsMatch(t, downsampleLabelValuesOffsets, origLabelValuesOffsets)
 

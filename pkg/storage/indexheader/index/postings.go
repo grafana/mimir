@@ -381,7 +381,6 @@ func (e *postingValueOffsets) downsample(step int) {
 		j++
 	}
 	e.offsets = e.offsets[:j]
-	return
 }
 
 // prefixOffsets returns the index of the first matching offset (start) and the index of the first non-matching (end).
