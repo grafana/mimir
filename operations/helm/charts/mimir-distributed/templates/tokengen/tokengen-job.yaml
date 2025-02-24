@@ -24,7 +24,7 @@ spec:
         {{- include "mimir.podAnnotations" (dict "ctx" . "component" "tokengen") | nindent 8 }}
       namespace: {{ .Release.Namespace | quote }}
     spec:
-      serviceAccountName: {{ include "mimir.serviceAccountName" . }}
+      serviceAccountName: {{ include "mimir.resourceName" (dict "ctx" . "component" "tokengen") }}
       {{- if .Values.tokengenJob.priorityClassName }}
       priorityClassName: {{ .Values.tokengenJob.priorityClassName }}
       {{- end }}
@@ -37,6 +37,9 @@ spec:
       {{- end }}
       {{- end }}
       initContainers:
+        {{- if .Values.tokengenJob.initContainers }}
+        {{- toYaml .Values.tokengenJob.initContainers | nindent 8 }}
+        {{- end }}
         - name: tokengen
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "tokengen") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -44,47 +47,82 @@ spec:
             - "-target=tokengen"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
-            - "-tokengen.token-file=/shared/admin-token"
-            - "-log.level=debug"
+            - -tokengen.token-file=/shared/admin-token
             {{- range $key, $value := .Values.tokengenJob.extraArgs }}
             - -{{ $key }}={{ $value }}
             {{- end }}
           volumeMounts:
             {{- if .Values.tokengenJob.extraVolumeMounts }}
-              {{ toYaml .Values.tokengenJob.extraVolumeMounts | nindent 12 }}
+            {{- toYaml .Values.tokengenJob.extraVolumeMounts | nindent 12 }}
             {{- end }}
             {{- if .Values.global.extraVolumeMounts }}
-              {{ toYaml .Values.global.extraVolumeMounts | nindent 12 }}
+            {{- toYaml .Values.global.extraVolumeMounts | nindent 12 }}
             {{- end }}
+            - name: shared
+              mountPath: /shared
             - name: config
               mountPath: /etc/mimir
             - name: license
               mountPath: /license
-            - name: shared
-              mountPath: /shared
+            - name: active-queries
+              mountPath: /active-query-tracker
+          {{- if or .Values.global.extraEnv .Values.tokengenJob.env }}
+          env:
+            {{- with .Values.global.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.tokengenJob.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          {{- if or .Values.global.extraEnvFrom .Values.tokengenJob.extraEnvFrom }}
+          envFrom:
+            {{- with .Values.global.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.tokengenJob.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
       containers:
-        - name: create-secret
+        - name: kubectl
           image: {{ include "mimir.kubectlImage" . }}
-          imagePullPolicy: {{ .Values.kubectlImage.pullPolicy | default "IfNotPresent" }}
+          imagePullPolicy: {{ .Values.kubectlImage.pullPolicy }}
           command:
-            - /bin/bash
-            - -ec
+            - "/bin/sh"
+            - "-c"
             - |
-              kubectl create secret generic {{ include "mimir.resourceName" (dict "ctx" . "component" "token") }} \
-                --from-file=token=/shared/admin-token \
-                --dry-run=client -o yaml | kubectl apply -f -
+              if [ -f /shared/admin-token ]; then
+                echo "Admin token generated successfully"
+                {{- if .Values.tokengenJob.storeTokenInSecret | default true }}
+                # Create or update the secret with the admin token
+                kubectl create secret generic {{ .Values.tokengenJob.adminTokenSecret | default (printf "%s-admin-token" .Release.Name) }} \
+                  --from-file=token=/shared/admin-token \
+                  --dry-run=client -o yaml | kubectl apply -f -
+                echo "Admin token secret created/updated successfully"
+                {{- else }}
+                echo "Skipping secret creation as storeTokenInSecret is disabled"
+                {{- end }}
+              else
+                echo "Error: Admin token file not found at /shared/admin-token"
+                exit 1
+              fi
           volumeMounts:
             - name: shared
               mountPath: /shared
+          securityContext:
+            {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
       restartPolicy: OnFailure
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
         {{- if .Values.tokengenJob.extraVolumes }}
-        {{ toYaml .Values.tokengenJob.extraVolumes | nindent 8 }}
+        {{- toYaml .Values.tokengenJob.extraVolumes | nindent 8 }}
         {{- end }}
         {{- if .Values.global.extraVolumes }}
-        {{ toYaml .Values.global.extraVolumes | nindent 8 }}
+        {{- toYaml .Values.global.extraVolumes | nindent 8 }}
         {{- end }}
         - name: license
           secret:

@@ -4074,6 +4074,11 @@ tokengenJob:
   extraEnvFrom: []
   annotations: {}
   initContainers: []
+  
+  # -- Controls whether to store the generated admin token in a Kubernetes secret
+  storeTokenInSecret: true
+  # -- Name of the secret to store the admin token. If not specified, defaults to "<release-name>-admin-token"
+  adminTokenSecret: ""
 
   # -- SecurityContext override for tokengenjob pods
   securityContext: {}
