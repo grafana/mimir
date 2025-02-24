@@ -30,7 +30,7 @@ metadata:
   namespace: "citestns"
 subjects:
 - kind: ServiceAccount
-  name: gateway-enterprise-values-mimir
+  name: gateway-enterprise-values-mimir-tokengen
   namespace: "citestns"
 roleRef:
   kind: Role

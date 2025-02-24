@@ -28,7 +28,7 @@ metadata:
   namespace: "citestns"
 subjects:
 - kind: ServiceAccount
-  name: test-enterprise-legacy-label-values-enterprise-metrics
+  name: test-enterprise-legacy-label-values-enterprise-metrics-tokengen
   namespace: "citestns"
 roleRef:
   kind: Role

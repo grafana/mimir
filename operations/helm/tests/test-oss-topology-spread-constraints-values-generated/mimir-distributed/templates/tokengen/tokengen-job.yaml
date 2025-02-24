@@ -27,7 +27,7 @@ spec:
       annotations:
       namespace: "citestns"
     spec:
-      serviceAccountName: test-oss-topology-spread-constraints-values-mimir
+      serviceAccountName: test-oss-topology-spread-constraints-values-mimir-tokengen
       securityContext:
         fsGroup: 10001
         runAsGroup: 10001
@@ -42,29 +42,50 @@ spec:
             - "-target=tokengen"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
-            - "-tokengen.token-file=/shared/admin-token"
-            - "-log.level=debug"
+            - -tokengen.token-file=/shared/admin-token
           volumeMounts:
+            - name: shared
+              mountPath: /shared
             - name: config
               mountPath: /etc/mimir
             - name: license
               mountPath: /license
-            - name: shared
-              mountPath: /shared
+            - name: active-queries
+              mountPath: /active-query-tracker
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
       containers:
-        - name: create-secret
+        - name: kubectl
           image: bitnami/kubectl:latest
           imagePullPolicy: IfNotPresent
           command:
-            - /bin/bash
-            - -ec
+            - "/bin/sh"
+            - "-c"
             - |
-              kubectl create secret generic test-oss-topology-spread-constraints-values-mimir-token \
-                --from-file=token=/shared/admin-token \
-                --dry-run=client -o yaml | kubectl apply -f -
+              if [ -f /shared/admin-token ]; then
+                echo "Admin token generated successfully"
+                # Create or update the secret with the admin token
+                kubectl create secret generic test-oss-topology-spread-constraints-values-admin-token \
+                  --from-file=token=/shared/admin-token \
+                  --dry-run=client -o yaml | kubectl apply -f -
+                echo "Admin token secret created/updated successfully"
+              else
+                echo "Error: Admin token file not found at /shared/admin-token"
+                exit 1
+              fi
           volumeMounts:
             - name: shared
               mountPath: /shared
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
       restartPolicy: OnFailure
       volumes:
         - name: config
