@@ -42,7 +42,10 @@ spec:
             - "-target=tokengen"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - -tokengen.token-file=/shared/admin-token
           volumeMounts:
+            - name: shared
+              mountPath: /shared
             - name: config
               mountPath: /etc/mimir
             - name: license
@@ -56,9 +59,33 @@ spec:
               - ALL
             readOnlyRootFilesystem: true
       containers:
-        - name: placeholder
-          image: busybox
-          command: ["sh", "-c", "echo 'Placeholder container' && sleep 1"]
+        - name: kubectl
+          image: "docker.io/bitnami/kubectl:latest"
+          imagePullPolicy: IfNotPresent
+          command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              if [ -f /shared/admin-token ]; then
+                echo "Admin token generated successfully"
+                # Create or update the secret with the admin token
+                kubectl create secret generic test-enterprise-k8s-1.25-values-admin-token \
+                  --from-file=token=/shared/admin-token \
+                  --dry-run=client -o yaml | kubectl apply -f -
+                echo "Admin token secret created/updated successfully"
+              else
+                echo "Error: Admin token file not found at /shared/admin-token"
+                exit 1
+              fi
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
       restartPolicy: OnFailure
       volumes:
         - name: config

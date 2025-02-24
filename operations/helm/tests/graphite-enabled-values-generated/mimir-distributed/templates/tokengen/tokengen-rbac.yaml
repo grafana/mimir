@@ -30,7 +30,7 @@ metadata:
   namespace: "citestns"
 subjects:
 - kind: ServiceAccount
-  name: graphite-enabled-values-mimir
+  name: graphite-enabled-values-mimir-tokengen
   namespace: "citestns"
 roleRef:
   kind: Role
