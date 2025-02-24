@@ -64,7 +64,7 @@ spec:
             readOnlyRootFilesystem: true
       containers:
         - name: kubectl
-          image: "docker.io/bitnami/kubectl:latest"
+          image: bitnami/kubectl:latest
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"
