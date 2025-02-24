@@ -1638,11 +1638,6 @@ The `querier` block configures the querier.
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
-# (experimental) Enable experimental PromQL functions. This config option should
-# be set on query-frontend too when query sharding is enabled.
-# CLI flag: -querier.promql-experimental-functions-enabled
-[promql_experimental_functions_enabled: <boolean> | default = false]
-
 mimir_query_engine:
   features:
     # (experimental) Comma-separated list of function names to disable support
@@ -1794,11 +1789,6 @@ results_cache:
 # evaluated immediately) in queries.
 # CLI flag: -query-frontend.prune-queries
 [prune_queries: <boolean> | default = false]
-
-# (experimental) True to control access to specific PromQL experimental
-# functions per tenant.
-# CLI flag: -query-frontend.block-promql-experimental-functions
-[block_promql_experimental_functions: <boolean> | default = false]
 
 # (advanced) How many series a single sharded partial query should load at most.
 # This is not a strict requirement guaranteed to be honoured by query sharding,
