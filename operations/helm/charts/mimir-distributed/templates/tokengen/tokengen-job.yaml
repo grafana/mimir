@@ -37,8 +37,9 @@ spec:
       {{- end }}
       {{- end }}
       initContainers:
+        {{- if .Values.tokengenJob.initContainers }}
         {{- toYaml .Values.tokengenJob.initContainers | nindent 8 }}
-      containers:
+        {{- end }}
         - name: tokengen
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "tokengen") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -51,10 +52,10 @@ spec:
             {{- end }}
           volumeMounts:
             {{- if .Values.tokengenJob.extraVolumeMounts }}
-              {{ toYaml .Values.tokengenJob.extraVolumeMounts | nindent 12 }}
+            {{- toYaml .Values.tokengenJob.extraVolumeMounts | nindent 12 }}
             {{- end }}
             {{- if .Values.global.extraVolumeMounts }}
-              {{ toYaml .Values.global.extraVolumeMounts | nindent 12 }}
+            {{- toYaml .Values.global.extraVolumeMounts | nindent 12 }}
             {{- end }}
             - name: config
               mountPath: /etc/mimir
@@ -65,32 +66,36 @@ spec:
           {{- if or .Values.global.extraEnv .Values.tokengenJob.env }}
           env:
             {{- with .Values.global.extraEnv }}
-              {{ toYaml . | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- with .Values.tokengenJob.env }}
-              {{ toYaml . | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
           {{- if or .Values.global.extraEnvFrom .Values.tokengenJob.extraEnvFrom }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
             {{- with .Values.tokengenJob.extraEnvFrom }}
-              {{- toYaml . | nindent 12 }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
           securityContext:
             {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
+      containers:
+        - name: placeholder
+          image: busybox
+          command: ["sh", "-c", "echo 'Placeholder container' && sleep 1"]
       restartPolicy: OnFailure
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
         {{- if .Values.tokengenJob.extraVolumes }}
-        {{ toYaml .Values.tokengenJob.extraVolumes | nindent 8 }}
+        {{- toYaml .Values.tokengenJob.extraVolumes | nindent 8 }}
         {{- end }}
         {{- if .Values.global.extraVolumes }}
-        {{ toYaml .Values.global.extraVolumes | nindent 8 }}
+        {{- toYaml .Values.global.extraVolumes | nindent 8 }}
         {{- end }}
         - name: license
           secret:
