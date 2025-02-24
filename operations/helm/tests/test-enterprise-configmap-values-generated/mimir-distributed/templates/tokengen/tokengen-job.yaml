@@ -37,8 +37,6 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        []
-      containers:
         - name: tokengen
           imagePullPolicy: IfNotPresent
           args:
@@ -61,6 +59,10 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
+      containers:
+        - name: placeholder
+          image: busybox
+          command: ["sh", "-c", "echo 'Placeholder container' && sleep 1"]
       restartPolicy: OnFailure
       volumes:
         - name: config
