@@ -88,7 +88,7 @@ spec:
             {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
       containers:
         - name: kubectl
-          image: "{{ .Values.kubectlImage.registry }}/{{ include "mimir.kubectlImage" . }}"
+          image: {{ include "mimir.kubectlImage" . }}
           imagePullPolicy: {{ .Values.kubectlImage.pullPolicy }}
           command:
             - "/bin/sh"
