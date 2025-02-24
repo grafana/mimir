@@ -153,16 +153,15 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 				return nil, fmt.Errorf("cannot load sparse index-header from disk: %w", err)
 			}
 
-			sampleRate := r.postingsOffsetTable.PostingOffsetInMemSampling()
-			if (sampleRate > 0) && (sampleRate < postingOffsetsInMemSampling) {
-				// if the downloaded sparse-index-header sampling is set lower (more frequent) than
-				// postingOffsetsInMemSampling, we can downsample the PostingOffsetTable to the
-				// configured rate.
-				if err := downsampleSparseIndexHeader(r, sampleRate, postingOffsetsInMemSampling); err != nil {
+			sampling := r.postingsOffsetTable.PostingOffsetInMemSampling()
+			if (sampling > 0) && (sampling < postingOffsetsInMemSampling) {
+				// if the sampling rate stored in the sparse-index-header is set lower (more frequent) than
+				// the configured postingOffsetsInMemSampling, downsample to the configured rate
+				if err := downsampleSparseIndexHeader(r, postingOffsetsInMemSampling, sampling); err != nil {
 					level.Warn(logger).Log("msg", "failed to downsample sparse index-headers; recreating", "id", id, "err", err)
 					reconstruct = true
 				}
-			} else if (sampleRate > 0) && (sampleRate > postingOffsetsInMemSampling) {
+			} else if (sampling > 0) && (sampling > postingOffsetsInMemSampling) {
 				// if the downloaded sparse-header-index sampling is set higher, then reconstruct
 				// from index-header using the desired rate.
 				reconstruct = true
@@ -203,13 +202,15 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 	return r, err
 }
 
-func downsampleSparseIndexHeader(r *StreamBinaryReader, a, b int) error {
+func downsampleSparseIndexHeader(r *StreamBinaryReader, curSampling, newSampling int) error {
 	tbl, ok := r.postingsOffsetTable.(*streamindex.PostingOffsetTableV2)
 	if !ok {
-		return fmt.Errorf("failed to downsample sparse-index-header")
+		return fmt.Errorf("cannot downsample sparse-index-header")
 	}
-	// todo: set tbl back onto StreamBinaryReader
-	tbl.DownsamplePostings(a, b)
+	if err := tbl.DownsamplePostings(curSampling, newSampling); err != nil {
+		return err
+	}
+	r.postingsOffsetTable = tbl
 	return nil
 }
 

@@ -129,6 +129,60 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 
 }
 
+func Test_DownsampleSparseIndexHeader(t *testing.T) {
+
+	filterFunc := func(string) bool { return true }
+	name := "__name__"
+	prefix := "continuous_app_metric36"
+
+	m, err := block.ReadMetaFromDir("./testdata/index_format_v2")
+	require.NoError(t, err)
+
+	tmpDir := t.TempDir()
+	test.Copy(t, "./testdata/index_format_v2", filepath.Join(tmpDir, m.ULID.String()))
+
+	bkt, err := filesystem.NewBucket(tmpDir)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	noopMetrics := NewStreamBinaryReaderMetrics(nil)
+
+	// call NewStreamBinaryReader to write a sparse-index-header file to disk
+	br1, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, m.ULID, 32, noopMetrics, Config{})
+	require.NoError(t, err)
+	require.Equal(t, 32, br1.postingsOffsetTable.PostingOffsetInMemSampling())
+
+	origLabelNames, err := br1.postingsOffsetTable.LabelNames()
+	require.NoError(t, err)
+
+	origLabelValuesOffsets, err := br1.LabelValuesOffsets(context.Background(), name, prefix, filterFunc)
+	require.NoError(t, err)
+
+	origIdxpbTbl := br1.postingsOffsetTable.NewSparsePostingOffsetTable()
+
+	// a second call to NewStreamBinaryReader loads the previously written sparse-index-header and downsamples
+	// the original from 1/32 entries to 1/64 entries for each posting
+	br2, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, m.ULID, 64, noopMetrics, Config{})
+	require.NoError(t, err)
+	require.Equal(t, 64, br2.postingsOffsetTable.PostingOffsetInMemSampling())
+
+	downsampleLabelNames, err := br2.postingsOffsetTable.LabelNames()
+	require.NoError(t, err)
+
+	downsampleLabelValuesOffsets, err := br2.LabelValuesOffsets(context.Background(), name, prefix, filterFunc)
+	require.NoError(t, err)
+
+	// label names and label values offsets are equal between orginal and downsampled sparse-index-headers
+	require.ElementsMatch(t, downsampleLabelNames, origLabelNames)
+	require.ElementsMatch(t, downsampleLabelValuesOffsets, origLabelValuesOffsets)
+
+	// each downsampled set of postings is a subset of the original sparse-index-headers'
+	downsampleIdxpbTbl := br2.postingsOffsetTable.NewSparsePostingOffsetTable()
+	for name, vals := range origIdxpbTbl.Postings {
+		require.Subset(t, vals.Offsets, downsampleIdxpbTbl.Postings[name].Offsets)
+	}
+}
+
 func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerReader Reader) {
 	ctx := context.Background()
 

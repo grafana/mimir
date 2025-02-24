@@ -249,6 +249,10 @@ func NewPostingOffsetTableFromSparseHeader(factory *streamencoding.DecbufFactory
 		t.postings[sName].lastValOffset = sOffsets.LastValOffset
 	}
 
+	// replace sampling if postingOffsetsInMemSampling set in proto
+	if sampling := postingsOffsetTable.GetPostingOffsetInMemorySampling(); sampling > 0 {
+		t.postingOffsetsInMemSampling = int(sampling)
+	}
 	return &t, err
 }
 
@@ -357,27 +361,27 @@ type postingValueOffsets struct {
 	lastValOffset int64
 }
 
-func (t *PostingOffsetTableV2) DownsamplePostings(a, b int) {
-	// todo: handle decrementing lastOffsetVal
-	for _, pvo := range t.postings {
-		_ = pvo.downsample(a, b)
+func (t *PostingOffsetTableV2) DownsamplePostings(cur, tgt int) error {
+	if cur >= tgt || cur <= 0 || tgt <= 0 || cur%tgt != 0 {
+		return fmt.Errorf("invalid sampling rates, cannot downsample 1/%d to 1/%d", cur, tgt)
 	}
+
+	step := cur / tgt
+	for _, pvo := range t.postings {
+		pvo.downsample(step)
+	}
+	t.postingOffsetsInMemSampling = tgt
+	return nil
 }
 
-func (e *postingValueOffsets) downsample(a, b int) int {
-	pvolen := len(e.offsets)
-	if pvolen == 0 || a <= b || a <= 0 || b <= 0 {
-		return 0
-	}
-
-	step := (a + b - 1) / b
+func (e *postingValueOffsets) downsample(step int) {
 	j := 0
-	for i := 0; i < pvolen; i += step {
+	for i := 0; i < len(e.offsets); i += step {
 		e.offsets[j] = e.offsets[i]
 		j++
 	}
 	e.offsets = e.offsets[:j]
-	return pvolen - j
+	return
 }
 
 // prefixOffsets returns the index of the first matching offset (start) and the index of the first non-matching (end).
