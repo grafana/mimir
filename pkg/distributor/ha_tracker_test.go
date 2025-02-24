@@ -318,6 +318,8 @@ func TestHaTrackerWithMemberList(t *testing.T) {
 	// Update KVStore - this should elect replica 2.
 	tracker.updateKVStoreAll(context.Background(), now)
 
+	checkReplicaTimestamp(t, 100*time.Millisecond, tracker, "user", cluster, replica2, now, now)
+
 	// Now we should accept from replica 2.
 	err = tracker.checkReplica(context.Background(), "user", cluster, replica2, now)
 	assert.NoError(t, err)
@@ -602,6 +604,9 @@ func TestHATrackerCheckReplicaOverwriteTimeout(t *testing.T) {
 	// Update KVStore - this should elect replica 2.
 	c.updateKVStoreAll(context.Background(), now)
 
+	// Validate Replica
+	checkReplicaTimestamp(t, 100*time.Millisecond, c, "user", "test", replica2, now, now)
+
 	// Now we should accept from replica 2.
 	err = c.checkReplica(context.Background(), "user", "test", replica2, now)
 	assert.NoError(t, err)
@@ -709,6 +714,8 @@ func TestHATrackerCheckReplicaMultiClusterTimeout(t *testing.T) {
 	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
 	assert.Error(t, err)
 	c.updateKVStoreAll(context.Background(), now)
+
+	checkReplicaTimestamp(t, 100*time.Millisecond, c, "user", "c1", replica2, now, now)
 
 	// Accept a sample from c1/replica2.
 	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
