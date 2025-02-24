@@ -11,6 +11,10 @@ weight: 30
 
 # Configure Grafana Mimir autoscaling with Helm
 
+{{< admonition type="warning" >}}
+Autoscaling support in the Helm chart is currently experimental. Use with caution in production environments.
+{{< /admonition >}}
+
 Mimir Helm chart supports autoscaling for the following components:
 
 - [Querier]({{< relref "../../references/architecture/components/querier" >}})
@@ -25,6 +29,17 @@ To use autoscaling, you need:
 
 1. KEDA installed in your Kubernetes cluster
 2. Prometheus metrics available for scaling decisions
+
+{{< admonition type="warning" >}}
+Do not use the same Mimir or Grafana Enterprise Metrics cluster for storing and querying autoscaling metrics. Using the same cluster can create a dangerous feedback loop:
+
+1. If the Mimir/GEM cluster becomes unavailable, autoscaling will stop working because it cannot query the metrics
+2. This can prevent the cluster from automatically scaling up during high load or recovery
+3. The inability to scale can further exacerbate the cluster's unavailability
+4. This may prevent the cluster from recovering
+
+Instead, use a separate Prometheus instance or a different metrics backend for autoscaling metrics.
+{{< /admonition >}}
 
 ## How KEDA works
 
@@ -46,7 +61,13 @@ Refer to [KEDA documentation](https://keda.sh) for more information.
 
 ## How to enable autoscaling
 
-To enable autoscaling for a component, you need to:
+There are two scenarios for enabling autoscaling:
+1. Enabling it on a fresh installation
+2. Migrating existing deployments to use autoscaling
+
+### Fresh installation
+
+For a fresh installation, you need to:
 
 1. Configure the Prometheus metrics source
 2. Enable KEDA autoscaling for the desired component
@@ -113,35 +134,57 @@ query_frontend:
     targetMemoryUtilizationPercentage: 80
 ```
 
-## Scaling metrics and thresholds
+### Migrating existing deployments
 
-Each component uses different metrics for scaling decisions:
+{{< admonition type="warning" >}}
+Autoscaling support in the Helm chart is currently experimental and migrating existing deployments carries risks for the availability of the cluster. The main risk is that enabling autoscaling removes the `replicas` field from Deployments. If KEDA/HPA hasn't started autoscaling the Deployment yet, Kubernetes interprets no replicas as meaning 1 replica, which can cause an outage. Consider testing the migration in a non-production environment first.
+{{< /admonition >}}
 
-### Querier
-- In-flight requests from the query scheduler
-- Request duration
-- Optional predictive scaling based on historical patterns
+To safely migrate an existing deployment to autoscaling:
 
-### Distributor
-- CPU utilization
-- Memory utilization
+1. Configure the Prometheus metrics source and autoscaling parameters as shown above, but add the `preserveReplicas` option to maintain stability during migration:
+   ```yaml
+   querier:
+     kedaAutoscaling:
+       enabled: true
+       preserveReplicas: true  # Keeps existing replica count during migration
+       # ... rest of the autoscaling configuration ...
+   ```
 
-### Query Frontend
-- CPU utilization
-- Memory utilization
+2. Deploy the changes and wait for KEDA to set up properly. Verify this by checking:
+   ```bash
+   # Check that HPA is created and active
+   kubectl get hpa
+   
+   # Check that ScaledObject is created
+   kubectl get scaledobject
+   
+   # Verify HPA is receiving metrics (Status column should show metrics)
+   kubectl describe hpa
+   ```
 
-## Migration to autoscaling
+3. After confirming KEDA is managing scaling (usually after a few minutes, depending on the `pollingInterval`), remove `preserveReplicas`:
+   ```yaml
+   querier:
+     kedaAutoscaling:
+       enabled: true
+       # preserveReplicas setting removed
+       # ... rest of the configuration ...
+   ```
 
-When migrating existing deployments to use autoscaling, you can use the `preserveReplicas` option to ensure a smooth transition:
+4. Deploy the changes and monitor your pods to ensure they maintain the expected replica count.
 
-```yaml
-querier:
-  kedaAutoscaling:
-    enabled: true
-    preserveReplicas: true  # Keeps existing replica count during migration
-```
+{{< admonition type="note" >}}
+If you're using GitOps tools like FluxCD or ArgoCD, additional steps might be required to handle the transition smoothly. These tools might try to reconcile the state and conflict with HPA's scaling decisions. Consult your GitOps tool's documentation for handling HPA transitions.
+{{< /admonition >}}
 
-This option allows you to migrate from non-autoscaled to autoscaled deployments without losing your current replica count. For more details, see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367).
+If you observe your pods scaling down to 1 replica after removing `preserveReplicas`:
+1. Immediately revert by setting `preserveReplicas: true` again
+2. Verify that KEDA and HPA are properly set up and receiving metrics
+3. Ensure there are no conflicts with other tools managing the Deployment's replicas
+4. Try the migration again after confirming all prerequisites are met
+
+For more details about the migration procedure and its implementation, see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367).
 
 ## What happens if KEDA is unhealthy
 
