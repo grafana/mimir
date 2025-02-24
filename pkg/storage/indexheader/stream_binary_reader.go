@@ -157,14 +157,16 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 			if (sampling > 0) && (sampling < postingOffsetsInMemSampling) {
 				// if the sampling rate stored in the sparse-index-header is set lower (more frequent) than
 				// the configured postingOffsetsInMemSampling, downsample to the configured rate
-				if err := downsampleSparseIndexHeader(r, postingOffsetsInMemSampling, sampling); err != nil {
+				if err := r.downsampleSparseIndexHeader(sampling, postingOffsetsInMemSampling); err != nil {
 					level.Warn(logger).Log("msg", "failed to downsample sparse index-headers; recreating", "id", id, "err", err)
 					reconstruct = true
 				}
 			} else if (sampling > 0) && (sampling > postingOffsetsInMemSampling) {
+				level.Warn(logger).Log("msg", "mismatch...", "id", id, "err", err)
 				// if the downloaded sparse-header-index sampling is set higher, then reconstruct
 				// from index-header using the desired rate.
 				reconstruct = true
+
 			}
 		}
 
@@ -202,12 +204,12 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 	return r, err
 }
 
-func downsampleSparseIndexHeader(r *StreamBinaryReader, curSampling, newSampling int) error {
+func (r *StreamBinaryReader) downsampleSparseIndexHeader(curSampling, tgtSampling int) error {
 	tbl, ok := r.postingsOffsetTable.(*streamindex.PostingOffsetTableV2)
 	if !ok {
 		return fmt.Errorf("cannot downsample sparse-index-header")
 	}
-	if err := tbl.DownsamplePostings(curSampling, newSampling); err != nil {
+	if err := tbl.DownsamplePostings(curSampling, tgtSampling); err != nil {
 		return err
 	}
 	r.postingsOffsetTable = tbl

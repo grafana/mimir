@@ -160,9 +160,12 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 
 	origIdxpbTbl := br1.postingsOffsetTable.NewSparsePostingOffsetTable()
 
+	// TODO: delete index-header before a second call to NewStreamBinaryReader, this forces the reader to downsample
+	// w.o. falling back to reconstructing from the header if there's an error
+
 	// a second call to NewStreamBinaryReader loads the previously written sparse-index-header and downsamples
 	// the original from 1/32 entries to 1/64 entries for each posting
-	br2, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, m.ULID, 64, noopMetrics, Config{})
+	br2, err := NewStreamBinaryReader(ctx, test.NewTestingLogger(t), bkt, tmpDir, m.ULID, 64, noopMetrics, Config{})
 	require.NoError(t, err)
 	require.Equal(t, 64, br2.postingsOffsetTable.PostingOffsetInMemSampling())
 
@@ -176,9 +179,11 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 	require.ElementsMatch(t, downsampleLabelNames, origLabelNames)
 	require.ElementsMatch(t, downsampleLabelValuesOffsets, origLabelValuesOffsets)
 
-	// each downsampled set of postings is a subset of the original sparse-index-headers'
+	// each downsampled set of postings is a subset of the original sparse-index-headers with half
+	// as many entries as the original
 	downsampleIdxpbTbl := br2.postingsOffsetTable.NewSparsePostingOffsetTable()
 	for name, vals := range origIdxpbTbl.Postings {
+		require.Equal(t, (len(vals.Offsets)+1)/2, len(downsampleIdxpbTbl.Postings[name].Offsets))
 		require.Subset(t, vals.Offsets, downsampleIdxpbTbl.Postings[name].Offsets)
 	}
 }

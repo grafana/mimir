@@ -362,11 +362,11 @@ type postingValueOffsets struct {
 }
 
 func (t *PostingOffsetTableV2) DownsamplePostings(cur, tgt int) error {
-	if cur >= tgt || cur <= 0 || tgt <= 0 || cur%tgt != 0 {
+	if cur >= tgt || cur <= 0 || tgt <= 0 || tgt%cur != 0 {
 		return fmt.Errorf("invalid sampling rates, cannot downsample 1/%d to 1/%d", cur, tgt)
 	}
 
-	step := cur / tgt
+	step := tgt / cur
 	for _, pvo := range t.postings {
 		pvo.downsample(step)
 	}
@@ -641,9 +641,11 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-// PostingOffsetInMemSampling ...
 func (t *PostingOffsetTableV2) PostingOffsetInMemSampling() int {
-	return t.postingOffsetsInMemSampling
+	if t != nil {
+		return t.postingOffsetsInMemSampling
+	}
+	return 0
 }
 
 // NewSparsePostingOffsetTable loads all postings offset table data into a sparse index-header to be persisted to disk
