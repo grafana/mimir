@@ -28,7 +28,7 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 subjects:
 - kind: ServiceAccount
-  name: {{ template "mimir.serviceAccountName" . }}
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "tokengen") }}
   namespace: {{ .Release.Namespace | quote }}
 roleRef:
   kind: Role

@@ -47,6 +47,7 @@ spec:
             - "-target=tokengen"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            - -tokengen.token-file=/shared/admin-token
             {{- range $key, $value := .Values.tokengenJob.extraArgs }}
             - -{{ $key }}={{ $value }}
             {{- end }}
@@ -57,6 +58,8 @@ spec:
             {{- if .Values.global.extraVolumeMounts }}
             {{- toYaml .Values.global.extraVolumeMounts | nindent 12 }}
             {{- end }}
+            - name: shared
+              mountPath: /shared
             - name: config
               mountPath: /etc/mimir
             - name: license
@@ -84,9 +87,33 @@ spec:
           securityContext:
             {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
       containers:
-        - name: placeholder
-          image: busybox
-          command: ["sh", "-c", "echo 'Placeholder container' && sleep 1"]
+        - name: kubectl
+          image: "{{ .Values.kubectlImage.registry }}/{{ include "mimir.kubectlImage" . }}"
+          imagePullPolicy: {{ .Values.kubectlImage.pullPolicy }}
+          command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              if [ -f /shared/admin-token ]; then
+                echo "Admin token generated successfully"
+                {{- if .Values.tokengenJob.storeTokenInSecret | default true }}
+                # Create or update the secret with the admin token
+                kubectl create secret generic {{ .Values.tokengenJob.adminTokenSecret | default (printf "%s-admin-token" .Release.Name) }} \
+                  --from-file=token=/shared/admin-token \
+                  --dry-run=client -o yaml | kubectl apply -f -
+                echo "Admin token secret created/updated successfully"
+                {{- else }}
+                echo "Skipping secret creation as storeTokenInSecret is disabled"
+                {{- end }}
+              else
+                echo "Error: Admin token file not found at /shared/admin-token"
+                exit 1
+              fi
+          volumeMounts:
+            - name: shared
+              mountPath: /shared
+          securityContext:
+            {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
       restartPolicy: OnFailure
       volumes:
         - name: config
