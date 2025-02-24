@@ -41,9 +41,9 @@ Instead, use a separate Prometheus instance or a different metrics backend for a
 
 Mimir Helm chart supports autoscaling for the following components:
 
-- [Querier]({{< relref "../../references/architecture/components/querier" >}})
-- [Query-frontend]({{< relref "../../references/architecture/components/query-frontend" >}})
-- [Distributor]({{< relref "../../references/architecture/components/distributor" >}})
+- [Querier](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/querier/)
+- [Query-frontend](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/query-frontend/)
+- [Distributor](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/distributor/)
 
 ## About KEDA
 
@@ -183,4 +183,4 @@ The following conditions indicate unhealthy autoscaling:
 
 For production deployments, configure [high availability](https://keda.sh/docs/latest/operate/cluster/#high-availability) for KEDA.
 
-For more information about monitoring autoscaling, refer to [Monitor Grafana Mimir]({{< relref "../../manage/monitor-grafana-mimir" >}}). 
+For more information about monitoring autoscaling, refer to [Monitor Grafana Mimir](https://grafana.com/docs/mimir/<MIMIR_VERSION>/manage/monitor-grafana-mimir/). 
