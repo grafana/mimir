@@ -713,5 +713,5 @@ func TestGrafanaAlertmanager(t *testing.T) {
 		default:
 			return false
 		}
-	}, 5*time.Second, 1*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
