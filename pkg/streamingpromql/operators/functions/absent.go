@@ -7,7 +7,6 @@ package functions
 
 import (
 	"context"
-	"errors"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -63,7 +62,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 
 	for range innerMetadata {
 		series, err := a.inner.NextSeries(ctx)
-		if err != nil && errors.Is(err, types.EOS) {
+		if err != nil {
 			return metadata, err
 		}
 		defer types.PutInstantVectorSeriesData(series, a.memoryConsumptionTracker)
