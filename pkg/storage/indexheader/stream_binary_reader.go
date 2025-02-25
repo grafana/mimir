@@ -155,18 +155,22 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 
 			sampling := r.postingsOffsetTable.PostingOffsetInMemSampling()
 			if (sampling > 0) && (sampling < postingOffsetsInMemSampling) {
-				// if the sampling rate stored in the sparse-index-header is set lower (more frequent) than
+				// if the sampling rate in the sparse index-header is set lower (more frequent) than
 				// the configured postingOffsetsInMemSampling, downsample to the configured rate
 				if err := r.downsampleSparseIndexHeader(sampling, postingOffsetsInMemSampling); err != nil {
-					level.Warn(logger).Log("msg", "failed to downsample sparse index-headers; recreating", "id", id, "err", err)
+					level.Warn(logger).Log(
+						"msg", "failed to downsample sparse index-header; recreating", "id", id, "err", err,
+						"header_rate", sampling, "in-mem-sampling rate", postingOffsetsInMemSampling,
+					)
 					reconstruct = true
 				}
 			} else if (sampling > 0) && (sampling > postingOffsetsInMemSampling) {
-				level.Warn(logger).Log("msg", "mismatch...", "id", id, "err", err)
-				// if the downloaded sparse-header-index sampling is set higher, then reconstruct
-				// from index-header using the desired rate.
+				// if the sparse index-header sampling rate is set higher, reconstruct from index-header
+				level.Warn(logger).Log(
+					"msg", "sparse index-header sampling rate doesn't match in-mem-sampling rate; recreating",
+					"id", id, "err", err, "header_rate", sampling, "in-mem-sampling rate", postingOffsetsInMemSampling,
+				)
 				reconstruct = true
-
 			}
 		}
 
@@ -207,7 +211,7 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 func (r *StreamBinaryReader) downsampleSparseIndexHeader(curSampling, tgtSampling int) error {
 	tbl, ok := r.postingsOffsetTable.(*streamindex.PostingOffsetTableV2)
 	if !ok {
-		return fmt.Errorf("cannot downsample sparse-index-header")
+		return fmt.Errorf("postings offset table has incompatible version v%d", r.indexVersion)
 	}
 	if err := tbl.DownsamplePostings(curSampling, tgtSampling); err != nil {
 		return err

@@ -363,7 +363,7 @@ type postingValueOffsets struct {
 
 func (t *PostingOffsetTableV2) DownsamplePostings(cur, tgt int) error {
 	if cur >= tgt || cur <= 0 || tgt <= 0 || tgt%cur != 0 {
-		return fmt.Errorf("invalid sampling rates, cannot downsample 1/%d to 1/%d", cur, tgt)
+		return fmt.Errorf("invalid in-mem-sampling rates")
 	}
 
 	step := tgt / cur

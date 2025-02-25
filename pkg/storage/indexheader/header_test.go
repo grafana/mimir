@@ -130,61 +130,64 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 }
 
 func Test_DownsampleSparseIndexHeader(t *testing.T) {
+	tests := map[string]struct {
+		protoRate         int
+		inMemSamplingRate int
+	}{
+		"downsample_1_to_32":       {1, 32},
+		"downsample_2_to_32":       {2, 32},
+		"downsample_8_to_32":       {8, 32},
+		"downsample_4_to_16":       {4, 16},
+		"downsample_4_to_48":       {4, 48},
+		"downsample_4_to_4096":     {4, 4096},
+		"downsample_noop_32_to_32": {32, 32},
+	}
 
-	filterFunc := func(string) bool { return true }
-	name := "__name__"
-	prefix := "continuous_app_metric36"
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m, err := block.ReadMetaFromDir("./testdata/index_format_v2")
+			require.NoError(t, err)
 
-	m, err := block.ReadMetaFromDir("./testdata/index_format_v2")
-	require.NoError(t, err)
+			tmpDir := t.TempDir()
+			test.Copy(t, "./testdata/index_format_v2", filepath.Join(tmpDir, m.ULID.String()))
 
-	tmpDir := t.TempDir()
-	test.Copy(t, "./testdata/index_format_v2", filepath.Join(tmpDir, m.ULID.String()))
+			bkt, err := filesystem.NewBucket(tmpDir)
+			require.NoError(t, err)
 
-	bkt, err := filesystem.NewBucket(tmpDir)
-	require.NoError(t, err)
+			ctx := context.Background()
+			noopMetrics := NewStreamBinaryReaderMetrics(nil)
 
-	ctx := context.Background()
-	noopMetrics := NewStreamBinaryReaderMetrics(nil)
+			// write a sparse index-header file to disk
+			br1, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, m.ULID, tt.protoRate, noopMetrics, Config{})
+			require.NoError(t, err)
+			require.Equal(t, tt.protoRate, br1.postingsOffsetTable.PostingOffsetInMemSampling())
 
-	// call NewStreamBinaryReader to write a sparse-index-header file to disk
-	br1, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, m.ULID, 32, noopMetrics, Config{})
-	require.NoError(t, err)
-	require.Equal(t, 32, br1.postingsOffsetTable.PostingOffsetInMemSampling())
+			origLabelNames, err := br1.postingsOffsetTable.LabelNames()
+			require.NoError(t, err)
 
-	origLabelNames, err := br1.postingsOffsetTable.LabelNames()
-	require.NoError(t, err)
+			// a second call to NewStreamBinaryReader loads the previously written sparse index-header and downsamples
+			// the header from tt.protoRate to tt.inMemSamplingRate entries for each posting
+			br2, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, m.ULID, tt.inMemSamplingRate, noopMetrics, Config{})
+			require.NoError(t, err)
+			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingOffsetInMemSampling())
 
-	origLabelValuesOffsets, err := br1.LabelValuesOffsets(context.Background(), name, prefix, filterFunc)
-	require.NoError(t, err)
+			downsampleLabelNames, err := br2.postingsOffsetTable.LabelNames()
+			require.NoError(t, err)
 
-	origIdxpbTbl := br1.postingsOffsetTable.NewSparsePostingOffsetTable()
+			// label names are equal between original and downsampled sparse index-headers
+			require.ElementsMatch(t, downsampleLabelNames, origLabelNames)
 
-	// TODO: delete index-header before a second call to NewStreamBinaryReader, this forces the reader to downsample
-	// w.o. falling back to reconstructing from the header if there's an error
+			// downsampled postings are a subset of the original sparse index-header postings
+			origIdxpbTbl := br1.postingsOffsetTable.NewSparsePostingOffsetTable()
+			downsampleIdxpbTbl := br2.postingsOffsetTable.NewSparsePostingOffsetTable()
 
-	// a second call to NewStreamBinaryReader loads the previously written sparse-index-header and downsamples
-	// the original from 1/32 entries to 1/64 entries for each posting
-	br2, err := NewStreamBinaryReader(ctx, test.NewTestingLogger(t), bkt, tmpDir, m.ULID, 64, noopMetrics, Config{})
-	require.NoError(t, err)
-	require.Equal(t, 64, br2.postingsOffsetTable.PostingOffsetInMemSampling())
-
-	downsampleLabelNames, err := br2.postingsOffsetTable.LabelNames()
-	require.NoError(t, err)
-
-	downsampleLabelValuesOffsets, err := br2.LabelValuesOffsets(context.Background(), name, prefix, filterFunc)
-	require.NoError(t, err)
-
-	// label names and label values offsets are equal between original and downsampled sparse-index-headers
-	require.ElementsMatch(t, downsampleLabelNames, origLabelNames)
-	require.ElementsMatch(t, downsampleLabelValuesOffsets, origLabelValuesOffsets)
-
-	// each downsampled set of postings is a subset of the original sparse-index-headers with half
-	// as many entries as the original
-	downsampleIdxpbTbl := br2.postingsOffsetTable.NewSparsePostingOffsetTable()
-	for name, vals := range origIdxpbTbl.Postings {
-		require.Equal(t, (len(vals.Offsets)+1)/2, len(downsampleIdxpbTbl.Postings[name].Offsets))
-		require.Subset(t, vals.Offsets, downsampleIdxpbTbl.Postings[name].Offsets)
+			rr := tt.inMemSamplingRate / tt.protoRate
+			for name, vals := range origIdxpbTbl.Postings {
+				downsampledOffsets := downsampleIdxpbTbl.Postings[name].Offsets
+				require.Equal(t, (len(vals.Offsets)+rr-1)/rr, len(downsampledOffsets))
+				require.Subset(t, vals.Offsets, downsampledOffsets)
+			}
+		})
 	}
 }
 
