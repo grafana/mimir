@@ -55,9 +55,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 		}
 
 		// Initialize presence slice
-		for range a.timeRange.StepCount {
-			a.presence = append(a.presence, false)
-		}
+		a.presence = a.presence[:a.timeRange.StepCount]
 	}
 
 	metadata := types.GetSeriesMetadataSlice(1)
