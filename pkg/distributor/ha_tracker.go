@@ -665,12 +665,10 @@ func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, r
 		return desc, true, nil
 	})
 	h.kvCASCalls.WithLabelValues(userID, cluster).Inc()
-	// If cache is currently empty, add the data we either stored or received from KVStore
+	// Add data stored or received from KVStore, if available.
 	if err == nil && desc != nil {
 		h.electedLock.Lock()
-		if h.clusters[userID][cluster] == nil {
-			h.updateCache(userID, cluster, desc)
-		}
+		h.updateCache(userID, cluster, desc)
 		h.electedLock.Unlock()
 	}
 	return err
