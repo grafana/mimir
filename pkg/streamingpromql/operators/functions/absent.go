@@ -70,20 +70,12 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 		}
 		defer types.PutInstantVectorSeriesData(series, a.memoryConsumptionTracker)
 
-		for step := range a.timeRange.StepCount {
-			t := a.timeRange.IndexTime(int64(step))
-			for _, s := range series.Floats {
-				if t == s.T {
-					a.presence[step] = true
-				}
-			}
-			for _, s := range series.Histograms {
-				if t == s.T {
-					a.presence[step] = true
-				}
-			}
+		for _, s := range series.Floats {
+			a.presence[a.timeRange.PointIndex(s.T)] = true
 		}
-
+		for _, s := range series.Histograms {
+			a.presence[a.timeRange.PointIndex(s.T)] = true
+		}
 	}
 
 	return metadata, nil
