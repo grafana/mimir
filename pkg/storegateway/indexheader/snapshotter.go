@@ -70,10 +70,9 @@ func (s *Snapshotter) persist(context.Context) error {
 }
 
 func (s *Snapshotter) PersistLoadedBlocks() error {
-	// Get the loaded blocks
 	loadedBlocks := s.bl.LoadedBlocks()
 
-	// Convert to the format we store on disk (for backward compatibility)
+	// Convert to the format we store on disk for backward compatibility
 	indexHeaderLastUsedTime := make(map[ulid.ULID]int64, len(loadedBlocks))
 	for blockID := range loadedBlocks {
 		// We use a constant timestamp since we no longer care about the actual timestamp
@@ -91,7 +90,6 @@ func (s *Snapshotter) PersistLoadedBlocks() error {
 	}
 
 	// The json marshalling is deterministic, so the checksum will be the same for the same map contents.
-	// CRC-64 is chosen for its low CPU impact compared to cryptographic hashes.
 	checksum := sha1.Sum(data)
 	if checksum == s.lastChecksum {
 		level.Debug(s.logger).Log("msg", "skipping persistence of index headers snapshot as data hasn't changed", "user", s.conf.UserID)
@@ -130,7 +128,7 @@ func RestoreLoadedBlocks(directory string) (map[ulid.ULID]struct{}, error) {
 		}
 	}
 
-	// Snapshots used to be stored with their las-used timestamp. But that wasn't used and lead to constant file churn, so we removed it.
+	// Snapshots used to be stored with their last-used timestamp. But that wasn't used and lead to constant file churn, so we removed it.
 	result := make(map[ulid.ULID]struct{}, len(snapshot.IndexHeaderLastUsedTime))
 	for blockID := range snapshot.IndexHeaderLastUsedTime {
 		result[blockID] = struct{}{}

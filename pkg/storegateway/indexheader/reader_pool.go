@@ -152,8 +152,6 @@ func (p *ReaderPool) onLazyReaderClosed(r *LazyBinaryReader) {
 	delete(p.lazyReaders, r)
 }
 
-// LoadedBlocks returns a new map of lazy-loaded block IDs.
-// We no longer track the last time blocks were used.
 func (p *ReaderPool) LoadedBlocks() map[ulid.ULID]struct{} {
 	p.lazyReadersMx.Lock()
 	defer p.lazyReadersMx.Unlock()
