@@ -589,7 +589,6 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
 	cfg.PrunedQueries = true
-	cfg.SpinOffInstantSubqueriesToURL = "http://localhost"
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)
@@ -681,7 +680,6 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	// Ensure that all request types implements all middlewares, except exclusions.
 	for requestType, middlewares := range middlewaresByRequestType {
 		t.Run(requestType, func(t *testing.T) {
-			t.SkipNow() // TODO dimitarvdimitrov fix this
 			actualNames := getMiddlewareNames(middlewares.instances)
 			expectedNames := slices.DeleteFunc(slices.Clone(allNames), func(s string) bool {
 				return slices.Contains(middlewares.exceptions, s)
