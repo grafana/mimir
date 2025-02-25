@@ -41,11 +41,9 @@ func New(cfg Config, meta receivers.Metadata, template *templates.Template, logg
 
 // Notify sends the alert notification to sns.
 func (s *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error) {
-	var (
-		tmplErr error
-		data    = notify.GetTemplateData(ctx, s.tmpl, as, s.log)
-		tmpl    = notify.TmplText(s.tmpl, data, &tmplErr)
-	)
+	var tmplErr error
+	tmpl, _ := templates.TmplText(ctx, s.tmpl, as, s.log, &tmplErr)
+
 	s.log.Info("Sending notification")
 
 	publishInput, err := s.createPublishInput(ctx, tmpl)

@@ -5,11 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/prometheus/alertmanager/types"
-	"github.com/prometheus/common/model"
-
 	"github.com/grafana/alerting/logging"
-	"github.com/grafana/alerting/models"
+	"github.com/prometheus/alertmanager/types"
 )
 
 const (
@@ -24,19 +21,14 @@ type forEachImageFunc func(index int, image Image) error
 //
 //nolint:revive
 func getImage(ctx context.Context, l logging.Logger, imageProvider Provider, alert types.Alert) (*Image, error) {
-	token := getTokenFromAnnotations(alert.Annotations)
-	if token == "" {
-		return nil, nil
-	}
-
 	ctx, cancelFunc := context.WithTimeout(ctx, ProviderTimeout)
 	defer cancelFunc()
 
-	img, err := imageProvider.GetImage(ctx, token)
+	img, err := imageProvider.GetImage(ctx, alert)
 	if errors.Is(err, ErrImageNotFound) || errors.Is(err, ErrImagesUnavailable) {
 		return nil, nil
 	} else if err != nil {
-		l.Warn("failed to get image with token", "token", token, "error", err)
+		l.Warn("failed to get image", "error", err)
 		return nil, err
 	} else {
 		return img, nil
@@ -45,12 +37,15 @@ func getImage(ctx context.Context, l logging.Logger, imageProvider Provider, ale
 
 // WithStoredImages retrieves the image for each alert and then calls forEachFunc
 // with the index of the alert and the retrieved image struct. If the alert does
-// not have an image token, or the image does not exist then forEachFunc will not be
-// called for that alert. If forEachFunc returns an error, WithStoredImages will return
-// the error and not iterate the remaining alerts. A forEachFunc can return ErrImagesDone
+// not have an image then forEachFunc will not be called for that alert.
+// If forEachFunc returns an error, WithStoredImages will return the error
+// and not iterate the remaining alerts. A forEachFunc can return ErrImagesDone
 // to stop the iteration of remaining alerts if the intended image or maximum number of
 // images have been found.
 func WithStoredImages(ctx context.Context, l logging.Logger, imageProvider Provider, forEachFunc forEachImageFunc, alerts ...*types.Alert) error {
+	if imageProvider == nil {
+		return nil
+	}
 	for index, alert := range alerts {
 		logger := l.New("alert", alert.String())
 		img, err := getImage(ctx, logger, imageProvider, *alert)
@@ -67,11 +62,4 @@ func WithStoredImages(ctx context.Context, l logging.Logger, imageProvider Provi
 		}
 	}
 	return nil
-}
-
-func getTokenFromAnnotations(annotations model.LabelSet) string {
-	if value, ok := annotations[models.ImageTokenAnnotation]; ok {
-		return string(value)
-	}
-	return ""
 }
