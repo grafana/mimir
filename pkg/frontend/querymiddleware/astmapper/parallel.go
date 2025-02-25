@@ -70,7 +70,7 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 		}
 
 		// Ensure there are no nested aggregations
-		nestedAggrs, err := AnyNode(e.Expr, isAggregateExpr)
+		nestedAggrs, err := anyNode(e.Expr, isAggregateExpr)
 
 		return err == nil && !nestedAggrs && CanParallelize(e.Expr, logger)
 
@@ -131,7 +131,7 @@ func CanParallelize(expr parser.Expr, logger log.Logger) bool {
 
 // containsAggregateExpr returns true if the given expr contains an aggregate expression within its children.
 func containsAggregateExpr(e parser.Expr) bool {
-	containsAggregate, _ := AnyNode(e, isAggregateExpr)
+	containsAggregate, _ := anyNode(e, isAggregateExpr)
 	return containsAggregate
 }
 
@@ -176,12 +176,12 @@ func argsWithDefaults(call *parser.Call) parser.Expressions {
 }
 
 func noAggregates(n parser.Node) bool {
-	hasAggregates, _ := AnyNode(n, isAggregateExpr)
+	hasAggregates, _ := anyNode(n, isAggregateExpr)
 	return !hasAggregates
 }
 
 func isConstantScalar(n parser.Node) bool {
-	isNot, _ := AnyNode(n, isNotConstantNumber)
+	isNot, _ := anyNode(n, isNotConstantNumber)
 	return !isNot
 }
 
