@@ -15,7 +15,7 @@ local filename = 'federation-frontend.json';
     .addRow(
       $.row('Overview')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.federation_frontend), $.queries.read_http_routes_regex]) +
         $.panelDescription(
           'Requests / sec',
@@ -26,7 +26,7 @@ local filename = 'federation-frontend.json';
         )
       )
       .addPanel(
-        $.panel('Latency') +
+        $.timeseriesPanel('Latency') +
         // This uses a latency recording rule for "cortex_request_duration_seconds"
         utils.latencyRecordingRulePanel(
           'cortex_request_duration_seconds',
@@ -102,7 +102,7 @@ local filename = 'federation-frontend.json';
         )
       )
       .addPanel(
-        $.panel('Number of sharded queries per query') +
+        $.timeseriesPanel('Number of sharded queries per query') +
         $.latencyPanel('cortex_federation_frontend_cluster_sharded_queries_per_query', '{%s}' % $.jobMatcher($._config.job_names.federation_frontend), multiplier=1) +
         { yaxes: $.yaxes('short') } +
         $.panelDescription(
@@ -156,7 +156,7 @@ local filename = 'federation-frontend.json';
         repeatDirection: 'h',
       }
       .addPanel(
-        $.panel('Remote requests / sec by status') +
+        $.timeseriesPanel('Remote requests / sec by status') +
         $.qpsPanel('cortex_federation_frontend_cluster_remote_latency_seconds_count{remote_cluster=~"$remote_cluster", %s}' % $.jobMatcher($._config.job_names.federation_frontend)) +
         {
           yaxes: $.yaxes('ops'),
