@@ -48,15 +48,13 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 	}
 	defer types.PutSeriesMetadataSlice(innerMetadata)
 
-	if a.presence == nil {
-		a.presence, err = types.BoolSlicePool.Get(a.timeRange.StepCount, a.memoryConsumptionTracker)
-		if err != nil {
-			return nil, err
-		}
-
-		// Initialize presence slice
-		a.presence = a.presence[:a.timeRange.StepCount]
+	a.presence, err = types.BoolSlicePool.Get(a.timeRange.StepCount, a.memoryConsumptionTracker)
+	if err != nil {
+		return nil, err
 	}
+
+	// Initialize presence slice
+	a.presence = a.presence[:a.timeRange.StepCount]
 
 	metadata := types.GetSeriesMetadataSlice(1)
 	metadata = append(metadata, types.SeriesMetadata{
