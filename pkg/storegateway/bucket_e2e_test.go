@@ -687,15 +687,15 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 	testCases := map[string]struct {
 		eagerLoadReaderEnabled       bool
 		expectedEagerLoadedBlocks    int
-		createLoadedBlocksSnapshotFn func([]ulid.ULID) map[ulid.ULID]int64
+		createLoadedBlocksSnapshotFn func([]ulid.ULID) map[ulid.ULID]struct{}
 	}{
 		"block is present in pre-shutdown loaded blocks and eager-loading is disabled": {
 			eagerLoadReaderEnabled:    false,
 			expectedEagerLoadedBlocks: 0,
-			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) map[ulid.ULID]int64 {
-				snapshot := make(map[ulid.ULID]int64)
+			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) map[ulid.ULID]struct{} {
+				snapshot := make(map[ulid.ULID]struct{})
 				for _, blockID := range blockIDs {
-					snapshot[blockID] = time.Now().UnixMilli()
+					snapshot[blockID] = struct{}{}
 				}
 				return snapshot
 			},
@@ -703,10 +703,10 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header during initial sync": {
 			eagerLoadReaderEnabled:    true,
 			expectedEagerLoadedBlocks: 6,
-			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) map[ulid.ULID]int64 {
-				snapshot := make(map[ulid.ULID]int64)
+			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) map[ulid.ULID]struct{} {
+				snapshot := make(map[ulid.ULID]struct{})
 				for _, blockID := range blockIDs {
-					snapshot[blockID] = time.Now().UnixMilli()
+					snapshot[blockID] = struct{}{}
 				}
 				return snapshot
 			},
@@ -714,10 +714,10 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 		"block is present in pre-shutdown loaded blocks and eager-loading is enabled, loading index header after initial sync": {
 			eagerLoadReaderEnabled:    true,
 			expectedEagerLoadedBlocks: 6,
-			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) map[ulid.ULID]int64 {
-				snapshot := make(map[ulid.ULID]int64)
+			createLoadedBlocksSnapshotFn: func(blockIDs []ulid.ULID) map[ulid.ULID]struct{} {
+				snapshot := make(map[ulid.ULID]struct{})
 				for _, blockID := range blockIDs {
-					snapshot[blockID] = time.Now().UnixMilli()
+					snapshot[blockID] = struct{}{}
 				}
 				return snapshot
 			},
@@ -725,11 +725,11 @@ func TestBucketStore_EagerLoading(t *testing.T) {
 		"block is not present in pre-shutdown loaded blocks snapshot and eager-loading is enabled": {
 			eagerLoadReaderEnabled:    true,
 			expectedEagerLoadedBlocks: 0, // although eager loading is enabled, this test will not do eager loading because the block ID is not in the lazy loaded file.
-			createLoadedBlocksSnapshotFn: func(_ []ulid.ULID) map[ulid.ULID]int64 {
+			createLoadedBlocksSnapshotFn: func(_ []ulid.ULID) map[ulid.ULID]struct{} {
 				// let's create a random fake blockID to be stored in lazy loaded headers file
 				fakeBlockID := ulid.MustNew(ulid.Now(), nil)
 				// this snapshot will refer to fake block, hence eager load wouldn't be executed for the real block that we test
-				return map[ulid.ULID]int64{fakeBlockID: time.Now().UnixMilli()}
+				return map[ulid.ULID]struct{}{fakeBlockID: {}}
 			},
 		},
 		"pre-shutdown loaded blocks snapshot doesn't exist and eager-loading is enabled": {
@@ -794,7 +794,7 @@ func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
 	cfg.bucketStoreConfig.IndexHeader.EagerLoadingStartupEnabled = true
 	cfg.bucketStoreConfig.IndexHeader.LazyLoadingIdleTimeout = persistInterval * 3
 	ctx := context.Background()
-	readBlocksInSnapshot := func() map[ulid.ULID]int64 {
+	readBlocksInSnapshot := func() map[ulid.ULID]struct{} {
 		blocks, err := indexheader.RestoreLoadedBlocks(cfg.tempDir)
 		assert.NoError(t, err)
 		return blocks
@@ -825,9 +825,9 @@ func TestBucketStore_PersistsLazyLoadedBlocks(t *testing.T) {
 	}, persistInterval*5, persistInterval/2)
 }
 
-type staticLoadedBlocks map[ulid.ULID]int64
+type staticLoadedBlocks map[ulid.ULID]struct{}
 
-func (b staticLoadedBlocks) LoadedBlocks() map[ulid.ULID]int64 {
+func (b staticLoadedBlocks) LoadedBlocks() map[ulid.ULID]struct{} {
 	return b
 }
 

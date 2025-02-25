@@ -152,16 +152,17 @@ func (p *ReaderPool) onLazyReaderClosed(r *LazyBinaryReader) {
 	delete(p.lazyReaders, r)
 }
 
-// LoadedBlocks returns a new map of lazy-loaded block IDs and the last time they were used in milliseconds.
-func (p *ReaderPool) LoadedBlocks() map[ulid.ULID]int64 {
+// LoadedBlocks returns a new map of lazy-loaded block IDs.
+// We no longer track the last time blocks were used.
+func (p *ReaderPool) LoadedBlocks() map[ulid.ULID]struct{} {
 	p.lazyReadersMx.Lock()
 	defer p.lazyReadersMx.Unlock()
 
-	blocks := make(map[ulid.ULID]int64, len(p.lazyReaders))
+	blocks := make(map[ulid.ULID]struct{}, len(p.lazyReaders))
 	for r := range p.lazyReaders {
 		usedAt := r.usedAt.Load()
 		if usedAt != 0 {
-			blocks[r.blockID] = usedAt / int64(time.Millisecond)
+			blocks[r.blockID] = struct{}{}
 		}
 	}
 
