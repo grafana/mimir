@@ -5,7 +5,7 @@ package indexheader
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -42,7 +42,7 @@ type Snapshotter struct {
 	// lastChecksum stores the checksum of the last persisted JSON data
 	// to avoid writing the same data repeatedly, reducing IOPS.
 	// This is useful when running with many tenants on low-performance disks.
-	lastChecksum [sha1.Size]byte
+	lastChecksum [sha256.Size]byte
 }
 
 func NewSnapshotter(logger log.Logger, conf SnapshotterConfig, bl BlocksLoader) *Snapshotter {
@@ -90,7 +90,7 @@ func (s *Snapshotter) PersistLoadedBlocks() error {
 	}
 
 	// The json marshalling is deterministic, so the checksum will be the same for the same map contents.
-	checksum := sha1.Sum(data)
+	checksum := sha256.Sum256(data)
 	if checksum == s.lastChecksum {
 		level.Debug(s.logger).Log("msg", "skipping persistence of index headers snapshot as data hasn't changed", "user", s.conf.UserID)
 		return nil
