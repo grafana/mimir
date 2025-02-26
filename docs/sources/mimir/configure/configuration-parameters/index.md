@@ -3635,6 +3635,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -store.max-labels-query-length
 [max_labels_query_length: <duration> | default = 0s]
 
+# Maximum number of items, series queries. This limit is enforced in the
+# querier. If the requested limit is outside the allowed value, the request will
+# not fail but will be manipulated to only query data up to allowed limit. 0 to
+# disable.
+# CLI flag: -querier.max-series-query-limit
+[max_series_query_limit: <int> | default = 0]
+
 # (advanced) Most recent allowed cacheable result per-tenant, to prevent caching
 # very recent results that might still be in flux.
 # CLI flag: -query-frontend.max-cache-freshness
