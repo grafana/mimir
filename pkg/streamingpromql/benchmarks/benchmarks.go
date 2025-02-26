@@ -259,7 +259,11 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr: "avg by (l)(nh_X)",
 		},
 		{
-			Expr:  "count_values('value', h_X)",
+			Expr:  "count_values('value', h_X)", // Every sample has a different value, so this expression will produce X * 100 output series.
+			Steps: 100,
+		},
+		{
+			Expr:  "count_values('value', h_X * 0)", // Every sample has the same value (0), so this expression will produce 1 series.
 			Steps: 100,
 		},
 		{
