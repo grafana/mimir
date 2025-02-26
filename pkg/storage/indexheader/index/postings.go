@@ -44,7 +44,7 @@ type PostingOffsetTable interface {
 
 	NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable)
 
-	// PostingOffsetInMemSampling ...
+	// PostingOffsetInMemSampling returns the ratio of postings offsets that the store
 	PostingOffsetInMemSampling() int
 }
 

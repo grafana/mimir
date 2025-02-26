@@ -50,7 +50,7 @@ func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T)
 	require.NoError(t, err)
 
 	logger := spanlogger.FromContext(context.Background(), log.NewNopLogger())
-	err = r.loadFromSparseIndexHeader(logger, blockID, sparseHeadersPath, sparseData, 3)
+	err = r.loadFromSparseIndexHeader(logger, sparseData, 3)
 	require.NoError(t, err)
 }
 

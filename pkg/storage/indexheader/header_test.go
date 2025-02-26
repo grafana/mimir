@@ -181,10 +181,10 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			origIdxpbTbl := br1.postingsOffsetTable.NewSparsePostingOffsetTable()
 			downsampleIdxpbTbl := br2.postingsOffsetTable.NewSparsePostingOffsetTable()
 
-			rr := tt.inMemSamplingRate / tt.protoRate
+			step := tt.inMemSamplingRate / tt.protoRate
 			for name, vals := range origIdxpbTbl.Postings {
 				downsampledOffsets := downsampleIdxpbTbl.Postings[name].Offsets
-				require.Equal(t, (len(vals.Offsets)+rr-1)/rr, len(downsampledOffsets))
+				require.Equal(t, (len(vals.Offsets)+step-1)/step, len(downsampledOffsets))
 				require.Subset(t, vals.Offsets, downsampledOffsets)
 			}
 		})
