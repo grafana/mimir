@@ -110,6 +110,8 @@ func (a *app) runBenchmarks(filteredNames []string) error {
 		return fmt.Errorf("benchmark binary failed validation: %w", err)
 	}
 
+	slog.Info("running benchmarks...")
+
 	haveRunAnyTests := false
 
 	for _, name := range filteredNames {
@@ -195,6 +197,8 @@ func (a *app) createTempDir() error {
 }
 
 func (a *app) buildBinary() error {
+	slog.Info("building binary...")
+
 	a.binaryPath = filepath.Join(a.tempDir, "benchmark-binary")
 
 	cmd := exec.Command("go", "test", "-c", "-o", a.binaryPath, "-tags", "stringlabels", ".")
