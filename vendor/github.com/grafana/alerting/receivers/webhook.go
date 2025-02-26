@@ -18,6 +18,7 @@ type SendWebhookSettings struct {
 	// This can be useful when a webhook service communicates failures in creative ways, such as using the response body instead of the status code.
 	Validation func(body []byte, statusCode int) error
 	TLSConfig  *tls.Config
+	HMACConfig *HMACConfig
 }
 
 type WebhookSender interface {

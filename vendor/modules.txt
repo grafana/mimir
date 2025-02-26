@@ -610,7 +610,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20250219153626-c475b1a572b0
+# github.com/grafana/alerting v0.0.0-20250225150117-15e285d78df2
 ## explicit; go 1.22
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
@@ -627,6 +627,7 @@ github.com/grafana/alerting/receivers/dinding
 github.com/grafana/alerting/receivers/discord
 github.com/grafana/alerting/receivers/email
 github.com/grafana/alerting/receivers/googlechat
+github.com/grafana/alerting/receivers/jira
 github.com/grafana/alerting/receivers/kafka
 github.com/grafana/alerting/receivers/line
 github.com/grafana/alerting/receivers/mqtt

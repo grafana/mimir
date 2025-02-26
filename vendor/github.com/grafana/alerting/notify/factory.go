@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/alerting/receivers/discord"
 	"github.com/grafana/alerting/receivers/email"
 	"github.com/grafana/alerting/receivers/googlechat"
+	"github.com/grafana/alerting/receivers/jira"
 	"github.com/grafana/alerting/receivers/kafka"
 	"github.com/grafana/alerting/receivers/line"
 	"github.com/grafana/alerting/receivers/mqtt"
@@ -85,6 +86,9 @@ func BuildReceiverIntegrations(
 	}
 	for i, cfg := range receiver.GooglechatConfigs {
 		ci(i, cfg.Metadata, googlechat.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata), version))
+	}
+	for i, cfg := range receiver.JiraConfigs {
+		ci(i, cfg.Metadata, jira.New(cfg.Settings, cfg.Metadata, tmpl, http.NewForkedSender(nw(cfg.Metadata)), nl(cfg.Metadata)))
 	}
 	for i, cfg := range receiver.KafkaConfigs {
 		ci(i, cfg.Metadata, kafka.New(cfg.Settings, cfg.Metadata, tmpl, nw(cfg.Metadata), img, nl(cfg.Metadata)))

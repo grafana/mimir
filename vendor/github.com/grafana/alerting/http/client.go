@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/benbjohnson/clock"
+
 	"github.com/grafana/alerting/logging"
 	"github.com/grafana/alerting/receivers"
 )
@@ -37,7 +39,7 @@ func NewClient(log logging.Logger, cfg ClientConfiguration) *Client {
 }
 
 func (ns *Client) SendWebhook(ctx context.Context, webhook *receivers.SendWebhookSettings) error {
-	// This method is carbon copy of https://github.com/grafana/grafana/blob/71d04a326be9578e2d678f23c1efa61768e0541f/pkg/services/notifications/webhook.go#L38
+	// This method was moved from https://github.com/grafana/grafana/blob/71d04a326be9578e2d678f23c1efa61768e0541f/pkg/services/notifications/webhook.go#L38
 	if webhook.HTTPMethod == "" {
 		webhook.HTTPMethod = http.MethodPost
 	}
@@ -72,7 +74,24 @@ func (ns *Client) SendWebhook(ctx context.Context, webhook *receivers.SendWebhoo
 		request.Header.Set(k, v)
 	}
 
-	resp, err := receivers.NewTLSClient(webhook.TLSConfig).Do(request)
+	client := NewTLSClient(webhook.TLSConfig)
+
+	if webhook.HMACConfig != nil {
+		ns.log.Debug("Adding HMAC roundtripper to client")
+		client.Transport, err = NewHMACRoundTripper(
+			client.Transport,
+			clock.New(),
+			webhook.HMACConfig.Secret,
+			webhook.HMACConfig.Header,
+			webhook.HMACConfig.TimestampHeader,
+		)
+		if err != nil {
+			ns.log.Error("Failed to add HMAC roundtripper to client", "error", err)
+			return err
+		}
+	}
+
+	resp, err := client.Do(request)
 	if err != nil {
 		return redactURL(err)
 	}
