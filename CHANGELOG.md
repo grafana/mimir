@@ -76,6 +76,7 @@
 * [BUGFIX] Distributor: Fix panics in `DurationWithJitter` util functions when computed variance is zero. #10507
 * [BUGFIX] Ingester: Fixed a race condition in the `PostingsForMatchers` cache that may have infrequently returned expired cached postings. #10500
 * [BUGFIX] Distributor: Report partially converted OTLP requests with status 400 Bad Request. #10588
+* [BUGFIX] Distributor: Apply ingestion rate limit after custom PushWrappers have run. This ensures that the `ingestion_rate` limit is properly applied against the same value recorded in the `cortex_distributor_received_samples_total` metric. #10754
 
 ### Mixin
 
