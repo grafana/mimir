@@ -5219,9 +5219,9 @@
           "kind": "field",
           "name": "alertmanager_notify_hook_timeout",
           "required": false,
-          "desc": "Maximum amount of time to wait for a hook to complete before. 0 = no timeout.",
+          "desc": "Maximum amount of time to wait for a hook to complete before timing out. 0 = no timeout.",
           "fieldValue": null,
-          "fieldDefaultValue": 0,
+          "fieldDefaultValue": 30000000000,
           "fieldFlag": "alertmanager.notify-hook-timeout",
           "fieldType": "duration"
         },

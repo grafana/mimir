@@ -108,7 +108,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.notify-hook-receivers comma-separated-list-of-strings
     	List of receivers to enable notify hooks for. empty = all receivers.
   -alertmanager.notify-hook-timeout duration
-    	Maximum amount of time to wait for a hook to complete before. 0 = no timeout.
+    	Maximum amount of time to wait for a hook to complete before timing out. 0 = no timeout. (default 30s)
   -alertmanager.notify-hook-url string
     	URL of a hook to invoke before a notification is sent. empty = no hook.
   -alertmanager.receivers-firewall-block-cidr-networks comma-separated-list-of-strings

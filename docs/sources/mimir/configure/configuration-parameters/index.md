@@ -4026,9 +4026,10 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -alertmanager.notify-hook-receivers
 [alertmanager_notify_hook_receivers: <string> | default = ""]
 
-# Maximum amount of time to wait for a hook to complete before. 0 = no timeout.
+# Maximum amount of time to wait for a hook to complete before timing out. 0 =
+# no timeout.
 # CLI flag: -alertmanager.notify-hook-timeout
-[alertmanager_notify_hook_timeout: <duration> | default = 0s]
+[alertmanager_notify_hook_timeout: <duration> | default = 30s]
 
 # (advanced) Whether to enable automatic suffixes to names of metrics ingested
 # through OTLP.

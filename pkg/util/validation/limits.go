@@ -430,7 +430,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.AlertmanagerMaxAlertsSizeBytes, "alertmanager.max-alerts-size-bytes", 0, "Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 	f.StringVar(&l.AlertmanagerNotifyHookURL, "alertmanager.notify-hook-url", "", "URL of a hook to invoke before a notification is sent. empty = no hook.")
 	f.Var(&l.AlertmanagerNotifyHookReceivers, "alertmanager.notify-hook-receivers", "List of receivers to enable notify hooks for. empty = all receivers.")
-	f.Var(&l.AlertmanagerNotifyHookTimeout, "alertmanager.notify-hook-timeout", "Maximum amount of time to wait for a hook to complete before. 0 = no timeout.")
+	_ = l.AlertmanagerNotifyHookTimeout.Set("30s")
+	f.Var(&l.AlertmanagerNotifyHookTimeout, "alertmanager.notify-hook-timeout", "Maximum amount of time to wait for a hook to complete before timing out. 0 = no timeout.")
 
 	// Ingest storage.
 	f.StringVar(&l.IngestStorageReadConsistency, "ingest-storage.read-consistency", api.ReadConsistencyEventual, fmt.Sprintf("The default consistency level to enforce for queries when using the ingest storage. Supports values: %s.", strings.Join(api.ReadConsistencies, ", ")))
