@@ -1346,6 +1346,19 @@ func MaxDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time
 	return result
 }
 
+// UniqueStringValuesPerTenant returns the set of unique values for the given
+// limit across all provided tenants. Without tenants it will return an empty set.
+func UniqueStringValuesPerTenant(tenantIDs []string, f func(string) string) map[string]struct{} {
+	result := map[string]struct{}{}
+	for _, tenantID := range tenantIDs {
+		v := f(tenantID)
+		if _, ok := result[v]; !ok {
+			result[v] = struct{}{}
+		}
+	}
+	return result
+}
+
 // MustRegisterExtension registers the extensions type with given name
 // and returns a function to get the extensions value from a *Limits instance.
 //

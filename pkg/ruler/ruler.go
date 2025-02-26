@@ -9,6 +9,7 @@ import (
 	"context"
 	_ "embed" // Used to embed html template
 	"encoding/base64"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"hash/fnv"
@@ -147,6 +148,8 @@ type Config struct {
 	IndependentRuleEvaluationConcurrencyMinDurationPercentage float64 `yaml:"independent_rule_evaluation_concurrency_min_duration_percentage" category:"experimental"`
 
 	RuleEvaluationWriteEnabled bool `yaml:"rule_evaluation_write_enabled" category:"experimental"`
+
+	PerNotifierClientConfigs AlertmanagerClientConfigs `yaml:"notifier_config_per_alertmanager" category:"experimental"`
 }
 
 // Validate config and returns error on failure
@@ -211,8 +214,43 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.DurationVar(&cfg.OutboundSyncQueuePollInterval, "ruler.outbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between sending queued rule sync requests to ruler replicas.`)
 	f.DurationVar(&cfg.InboundSyncQueuePollInterval, "ruler.inbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between applying queued incoming rule sync requests.`)
+	f.Var(&cfg.PerNotifierClientConfigs, "ruler.alertmanager-client-config", "A blob of notifier configuration that overrides the alertmanager-client.* options for a specific alertmanager URL. This allows different alertmanager URLs to use different client configuration. This option may be given multiple times, once per alertmanager URL. If an alertmanager is not supplied here, the alertmanager client will use the global options supplied via ruler.alertmanager-client.*.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
+}
+
+type AlertmanagerClientConfig struct {
+	AlertmanagerURL string         `yaml:"alertmanager_url"`
+	ClientConfig    NotifierConfig `yaml:"inline"`
+}
+
+type AlertmanagerClientConfigs []AlertmanagerClientConfig
+
+// String implements flag.Value
+func (accs *AlertmanagerClientConfigs) String() string {
+	out, err := json.Marshal(accs)
+	if err != nil {
+		return fmt.Sprintf("failed to marshal: %v", err)
+	}
+	return string(out)
+}
+
+// Set implements flag.Value
+func (accs *AlertmanagerClientConfigs) Set(s string) error {
+	cfg := AlertmanagerClientConfig{}
+	if err := json.Unmarshal([]byte(s), &cfg); err != nil {
+		return err
+	}
+	*accs = append(*accs, cfg)
+	return nil
+}
+
+func (accs *AlertmanagerClientConfigs) ToMap() map[string]NotifierConfig {
+	result := make(map[string]NotifierConfig)
+	for _, acc := range *accs {
+		result[acc.AlertmanagerURL] = acc.ClientConfig
+	}
+	return result
 }
 
 type rulerMetrics struct {
