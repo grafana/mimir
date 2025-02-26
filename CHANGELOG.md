@@ -96,7 +96,7 @@
 
 ### Jsonnet
 
-* [CHANGE] Update rollout-operator version to 0.22.0. #10229
+* [CHANGE] Update rollout-operator version to 0.23.0. #10229 #10750
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [CHANGE] Change multi-AZ deployments default toleration value from 'multi-az' to 'secondary-az', and make it configurable via the following settings: #10596
   * `_config.multi_zone_schedule_toleration` (default)
