@@ -28,7 +28,7 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
-* [ENHANCEMENT] Add extra values for KEDA auto scaling. #10265
+* [ENHANCEMENT] Add extra values for KEDA autoscaling, to support authenticaiton, ignoreNullValues, unsafeSsl, and support PromQLLabelSelector. #10265
 
 ## 5.6.0-rc.0
 
