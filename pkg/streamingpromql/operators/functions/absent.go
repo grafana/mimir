@@ -65,7 +65,6 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 		if err != nil {
 			return metadata, err
 		}
-		defer types.PutInstantVectorSeriesData(series, a.memoryConsumptionTracker)
 
 		for _, s := range series.Floats {
 			a.presence[a.timeRange.PointIndex(s.T)] = true
@@ -73,6 +72,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 		for _, s := range series.Histograms {
 			a.presence[a.timeRange.PointIndex(s.T)] = true
 		}
+		types.PutInstantVectorSeriesData(series, a.memoryConsumptionTracker)
 	}
 
 	return metadata, nil
