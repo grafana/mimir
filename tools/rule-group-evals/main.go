@@ -16,15 +16,16 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/rules"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/ruler"
 )
 
 // The estimated latency overhead to execute 1 strong read consistency query.
-const estimatedStrongConsistencyLatencyOverhead = 3 * time.Second
+const estimatedStrongConsistencyLatencyOverhead = time.Duration(1.5 * float64(time.Second))
 
 type Result struct {
 	Data Data `json:"data"`
