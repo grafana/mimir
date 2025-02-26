@@ -47,6 +47,7 @@ type app struct {
 	justRunIngester bool
 	cpuProfilePath  string
 	memProfilePath  string
+	benchtime       string
 }
 
 func (a *app) run() error {
@@ -151,6 +152,7 @@ func (a *app) parseArgs() error {
 	flag.StringVar(&a.ingesterAddress, "use-existing-ingester", "", "use existing ingester rather than creating a new one")
 	flag.StringVar(&a.cpuProfilePath, "cpuprofile", "", "write CPU profile to file, only supported when running a single iteration of one benchmark")
 	flag.StringVar(&a.memProfilePath, "memprofile", "", "write memory profile to file, only supported when running a single iteration of one benchmark")
+	flag.StringVar(&a.benchtime, "benchtime", "", "value passed to benchmark binary as -benchtime flag")
 
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Printf("%v\n", err)
@@ -316,6 +318,10 @@ func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 
 	if a.memProfilePath != "" {
 		args = append(args, "-test.memprofile="+a.memProfilePath)
+	}
+
+	if a.benchtime != "" {
+		args = append(args, "-test.benchtime="+a.benchtime)
 	}
 
 	cmd := exec.Command(a.binaryPath, args...)
