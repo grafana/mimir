@@ -108,6 +108,9 @@ type MultitenantAlertmanagerConfig struct {
 	// expression parser will be logged.
 	LogParsingLabelMatchers bool `yaml:"log_parsing_label_matchers" category:"experimental"`
 	UTF8MigrationLogging    bool `yaml:"utf8_migration_logging" category:"experimental"`
+
+	// Enable experimental pre-notification hooks.
+	EnableNotifyHooks bool `yaml:"enable_notify_hooks" category:"experimental"`
 }
 
 const (
@@ -142,6 +145,9 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet, logger 
 	f.BoolVar(&cfg.UTF8StrictMode, "alertmanager.utf8-strict-mode-enabled", false, "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8). Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.")
 	f.BoolVar(&cfg.LogParsingLabelMatchers, "alertmanager.log-parsing-label-matchers", false, "Enable logging when parsing label matchers. This flag is intended to be used with -alertmanager.utf8-strict-mode-enabled to validate UTF-8 strict mode is working as intended.")
 	f.BoolVar(&cfg.UTF8MigrationLogging, "alertmanager.utf8-migration-logging-enabled", false, "Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.")
+
+	f.BoolVar(&cfg.EnableNotifyHooks, "alertmanager.notify-hooks-enabled", false, "Enable pre-notification hooks.")
+
 }
 
 // Validate config and returns error on failure
@@ -217,6 +223,8 @@ func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAl
 
 // Limits defines limits used by Alertmanager.
 type Limits interface {
+	notifyHooksLimits
+
 	// AlertmanagerReceiversBlockCIDRNetworks returns the list of network CIDRs that should be blocked
 	// in the Alertmanager receivers for the given user.
 	AlertmanagerReceiversBlockCIDRNetworks(user string) []flagext.CIDR
@@ -934,6 +942,7 @@ func (am *MultitenantAlertmanager) newAlertmanager(userID string, amConfig *defi
 		Features:                          am.features,
 		GrafanaAlertmanagerCompatibility:  am.cfg.GrafanaAlertmanagerCompatibilityEnabled,
 		GrafanaAlertmanagerTenantSuffix:   am.cfg.GrafanaAlertmanagerTenantSuffix,
+		EnableNotifyHooks:                 am.cfg.EnableNotifyHooks,
 	}, reg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to start Alertmanager for user %v: %v", userID, err)
