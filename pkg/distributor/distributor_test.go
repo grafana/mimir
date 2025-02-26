@@ -656,6 +656,78 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 	}
 }
 
+func TestDistributor_IngestionRateLimiterMiddlewareWithPushWrapper(t *testing.T) {
+	// Create a push wrapper that removes all but one sample from each request
+	sampleFilterWrapper := func(next PushFunc) PushFunc {
+		return func(ctx context.Context, pushReq *Request) error {
+			req, err := pushReq.WriteRequest()
+			if err != nil {
+				return err
+			}
+
+			// Keep only the first timeseries and sample
+			req.Timeseries = req.Timeseries[:1]
+			req.Timeseries[0].Samples = req.Timeseries[0].Samples[:1]
+			return next(ctx, pushReq)
+		}
+	}
+
+	limits := prepareDefaultLimits()
+	limits.IngestionRate = 3
+	limits.IngestionBurstSize = 3
+
+	cfg := Config{
+		PushWrappers: []PushWrapper{sampleFilterWrapper},
+	}
+	distributors, _, regs, _ := prepare(t, prepConfig{
+		numIngesters:    3,
+		happyIngesters:  3,
+		numDistributors: 1,
+		configure: func(config *Config) {
+			config.PushWrappers = cfg.PushWrappers
+		},
+		limits: limits,
+	})
+	d := distributors[0]
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	// Create requests with many samples that would normally exceed the rate limit
+	reqs := []*mimirpb.WriteRequest{
+		makeWriteRequest(0, 20, 0, false, false, "test1"), // 20 samples, wrapper will reduce to 1
+		makeWriteRequest(0, 15, 0, false, false, "test2"), // 15 samples, wrapper will reduce to 1
+		makeWriteRequest(0, 30, 0, false, false, "test3"), // 30 samples, wrapper will reduce to 1
+	}
+
+	// Execute requests - they should all succeed since wrapper reduces sample count
+	for _, req := range reqs {
+		resp, err := d.Push(ctx, req)
+		require.NoError(t, err)
+		require.Equal(t, emptyResponse, resp)
+	}
+
+	// Check ingestion rate is based on actual samples sent (3 total) not original count (65 total)
+	require.Less(t, d.ingestionRate.Rate(), float64(5))
+
+	// Check metrics using GatherAndCompare
+	require.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+		# HELP cortex_distributor_samples_in_total The total number of samples that have come in to the distributor, including rejected or deduped samples.
+		# TYPE cortex_distributor_samples_in_total counter
+		cortex_distributor_samples_in_total{user="test"} 65
+
+		# HELP cortex_distributor_received_samples_total The total number of received samples, excluding rejected and deduped samples.
+		# TYPE cortex_distributor_received_samples_total counter
+		cortex_distributor_received_samples_total{user="test"} 3
+
+		# HELP cortex_distributor_requests_in_total The total number of requests that have come in to the distributor, including rejected or deduped requests.
+		# TYPE cortex_distributor_requests_in_total counter
+		cortex_distributor_requests_in_total{user="test"} 3
+
+		# HELP cortex_discarded_samples_total The total number of samples that have been rate limited.
+		# TYPE cortex_discarded_samples_total counter
+	`), "cortex_distributor_samples_in_total", "cortex_distributor_received_samples_total", "cortex_distributor_requests_in_total", "cortex_discarded_samples_total"))
+}
+
 func TestDistributor_PushInstanceLimits(t *testing.T) {
 	type testPush struct {
 		samples       int

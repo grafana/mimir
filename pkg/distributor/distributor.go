@@ -968,6 +968,8 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 	middlewares = append(middlewares, d.prePushSortAndFilterMiddleware)
 	middlewares = append(middlewares, d.prePushValidationMiddleware)
 	middlewares = append(middlewares, d.cfg.PushWrappers...)
+	// Apply ingestion rate limiting last, after all other middleware have potentially modified the request
+	middlewares = append(middlewares, d.ingestionRateLimitMiddleware)
 
 	for ix := len(middlewares) - 1; ix >= 0; ix-- {
 		next = middlewares[ix](next)
@@ -1280,6 +1282,43 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			return firstPartialErr
 		}
 
+		err = next(ctx, pushReq)
+		if err != nil {
+			// Errors resulting from the pushing to the ingesters have priority over validation errors.
+			return err
+		}
+
+		return firstPartialErr
+	}
+}
+
+func (d *Distributor) ingestionRateLimitMiddleware(next PushFunc) PushFunc {
+	return func(ctx context.Context, pushReq *Request) error {
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
+		defer maybeCleanup()
+
+		req, err := pushReq.WriteRequest()
+		if err != nil {
+			return err
+		}
+
+		userID, err := tenant.TenantID(ctx)
+		if err != nil {
+			return err
+		}
+
+		now := mtime.Now()
+		group := validation.GroupLabel(d.limits, userID, req.Timeseries)
+
+		validatedSamples := 0
+		validatedExemplars := 0
+		validatedMetadata := 0
+		for _, ts := range req.Timeseries {
+			validatedSamples += len(ts.Samples) + len(ts.Histograms)
+			validatedExemplars += len(ts.Exemplars)
+		}
+		validatedMetadata = len(req.Metadata)
+
 		totalN := validatedSamples + validatedExemplars + validatedMetadata
 		if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
 			if len(req.Timeseries) > 0 {
@@ -1299,13 +1338,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		// totalN included samples, exemplars and metadata. Ingester follows this pattern when computing its ingestion rate.
 		d.ingestionRate.Add(int64(totalN))
 
-		err = next(ctx, pushReq)
-		if err != nil {
-			// Errors resulting from the pushing to the ingesters have priority over validation errors.
-			return err
-		}
-
-		return firstPartialErr
+		return next(ctx, pushReq)
 	}
 }
 
