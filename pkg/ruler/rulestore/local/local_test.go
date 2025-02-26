@@ -79,7 +79,7 @@ func TestClient_LoadRuleGroups(t *testing.T) {
 		ctx := context.Background()
 
 		for _, u := range []string{user1, user2} {
-			rgs, err := client.ListRuleGroupsForUserAndNamespace(ctx, u, "") // Client loads rules in its List method.
+			rgs, err := client.ListRuleGroupsForUserAndNamespace(ctx, u, "", 0) // Client loads rules in its List method.
 			require.NoError(t, err)
 
 			require.Equal(t, 2, len(rgs))
@@ -93,7 +93,7 @@ func TestClient_LoadRuleGroups(t *testing.T) {
 		ctx := context.Background()
 
 		for _, u := range []string{user1, user2} {
-			rgs, err := client.ListRuleGroupsForUserAndNamespace(ctx, u, namespace2) // Client loads rules in its List method.
+			rgs, err := client.ListRuleGroupsForUserAndNamespace(ctx, u, namespace2, 0) // Client loads rules in its List method.
 			require.NoError(t, err)
 
 			require.Equal(t, 1, len(rgs))

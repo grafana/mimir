@@ -453,6 +453,9 @@ lint: check-makefiles
 	faillint -paths \
 		"github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation}" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
+	# We need to ensure that when creating http-grpc requests, the X-Cluster header is included.
+	faillint -paths "github.com/grafana/dskit/httpgrpc.{FromHTTPRequest}=github.com/grafana/dskit/httpgrpc.FromHTTPRequestWithCluster" \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;

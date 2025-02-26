@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/pkg/errors"
@@ -20,10 +21,12 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
+	"github.com/grafana/mimir/pkg/util"
+
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 )
 
-func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer) client.PoolFactory {
+func newStoreGatewayClientFactory(clientCfg grpcclient.Config, cluster string, reg prometheus.Registerer, logger log.Logger) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   "cortex",
 		Name:        "storegateway_client_request_duration_seconds",
@@ -32,13 +35,17 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 		ConstLabels: prometheus.Labels{"client": "querier"},
 	}, []string{"operation", "status_code"})
 
+	invalidClusterValidation := util.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "store-gateway", util.GRPCProtocol)
+
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
-		return dialStoreGatewayClient(clientCfg, inst, requestDuration)
+		return dialStoreGatewayClient(clientCfg, inst, requestDuration, invalidClusterValidation, cluster, logger)
 	})
 }
 
-func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec) (*storeGatewayClient, error) {
-	opts, err := clientCfg.DialOption(grpcclient.Instrument(requestDuration))
+func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, cluster string, logger log.Logger) (*storeGatewayClient, error) {
+	unary, stream := grpcclient.Instrument(requestDuration)
+	unary = append(unary, middleware.ClusterUnaryClientInterceptor(cluster, invalidClusterValidation, logger))
+	opts, err := clientCfg.DialOption(unary, stream)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +81,7 @@ func (c *storeGatewayClient) RemoteAddress() string {
 	return c.conn.Target()
 }
 
-func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig ClientConfig, logger log.Logger, reg prometheus.Registerer) *client.Pool {
+func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig ClientConfig, cluster string, logger log.Logger, reg prometheus.Registerer) *client.Pool {
 	// We prefer sane defaults instead of exposing further config options.
 	clientCfg := grpcclient.Config{
 		MaxRecvMsgSize:      100 << 20,
@@ -99,7 +106,7 @@ func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConf
 		ConstLabels: map[string]string{"client": "querier"},
 	})
 
-	return client.NewPool("store-gateway", poolCfg, discovery, newStoreGatewayClientFactory(clientCfg, reg), clientsCount, logger)
+	return client.NewPool("store-gateway", poolCfg, discovery, newStoreGatewayClientFactory(clientCfg, cluster, reg, logger), clientsCount, logger)
 }
 
 type ClientConfig struct {

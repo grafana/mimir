@@ -30,6 +30,9 @@ type CombinedFrontendConfig struct {
 	QueryMiddleware querymiddleware.Config `yaml:",inline"`
 
 	DownstreamURL string `yaml:"downstream_url" category:"advanced"`
+
+	ClusterVerificationLabel          string `yaml:"-"`
+	CheckHTTPClusterVerificationLabel bool   `yaml:"-"`
 }
 
 func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -57,15 +60,11 @@ func (cfg *CombinedFrontendConfig) Validate() error {
 // Returned RoundTripper can be wrapped in more round-tripper middlewares, and then eventually registered
 // into HTTP server using the Handler from this package. Returned RoundTripper is always non-nil
 // (if there are no errors), and it uses the returned frontend (if any).
-func InitFrontend(
-	cfg CombinedFrontendConfig,
-	v1Limits v1.Limits,
-	v2Limits v2.Limits,
-	grpcListenPort int,
-	log log.Logger,
-	reg prometheus.Registerer,
-	codec querymiddleware.Codec,
-) (http.RoundTripper, *v1.Frontend, *v2.Frontend, error) {
+func InitFrontend(cfg CombinedFrontendConfig, v1Limits v1.Limits, v2Limits v2.Limits, grpcListenPort int, log log.Logger, reg prometheus.Registerer, codec querymiddleware.Codec) (http.RoundTripper, *v1.Frontend, *v2.Frontend, error) {
+	checkCluster := cfg.ClusterVerificationLabel
+	if !cfg.CheckHTTPClusterVerificationLabel {
+		checkCluster = ""
+	}
 	switch {
 	case cfg.DownstreamURL != "":
 		// If the user has specified a downstream Prometheus, then we should use that.
@@ -87,8 +86,8 @@ func InitFrontend(
 			cfg.FrontendV2.Port = grpcListenPort
 		}
 
-		fr, err := v2.NewFrontend(cfg.FrontendV2, v2Limits, log, reg, codec)
-		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr), nil, fr, err
+		fr, err := v2.NewFrontend(cfg.FrontendV2, v2Limits, log, reg, codec, checkCluster)
+		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr, checkCluster, reg, log), nil, fr, err
 
 	default:
 		// No scheduler = use original frontend.
@@ -96,6 +95,6 @@ func InitFrontend(
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr), fr, nil, nil
+		return transport.AdaptGrpcRoundTripperToHTTPRoundTripper(fr, checkCluster, reg, log), fr, nil, nil
 	}
 }

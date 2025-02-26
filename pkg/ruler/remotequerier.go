@@ -19,6 +19,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
@@ -27,6 +28,7 @@ import (
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -34,6 +36,8 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+
+	"github.com/grafana/mimir/pkg/util"
 
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
@@ -95,10 +99,16 @@ func (c *QueryFrontendConfig) Validate() error {
 }
 
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
-func DialQueryFrontend(cfg QueryFrontendConfig) (httpgrpc.HTTPClient, error) {
+func DialQueryFrontend(cfg QueryFrontendConfig, cluster string, reg prometheus.Registerer, logger log.Logger) (httpgrpc.HTTPClient, error) {
+	//TODO: understand if this is really a gRPC or an HTTP client, since we return httpgrpc.NewHTTPClient().
+	//TODO: if it is the latter, then the last parameter of NewRequestInvalidClusterVerficationLabelsTotalCounter should be "http".
+	//TODO: if it is the latter, why are we using gRPC interceptors instead of HTTP middlewares?
+	invalidClusterValidation := util.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "ruler-query-frontend", util.GRPCProtocol)
+
 	opts, err := cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
 		middleware.ClientUserHeaderInterceptor,
+		middleware.ClusterUnaryClientInterceptor(cluster, invalidClusterValidation, logger),
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -390,6 +400,17 @@ func WithOrgIDMiddleware(ctx context.Context, req *httpgrpc.HTTPRequest) error {
 		Values: []string{orgID},
 	})
 	return nil
+}
+
+// WithClusterMiddleware returns a Middleware that injects a cluster verification label header.
+func WithClusterMiddleware(cluster string) Middleware {
+	return func(_ context.Context, req *httpgrpc.HTTPRequest) error {
+		req.Headers = append(req.Headers, &httpgrpc.Header{
+			Key:    textproto.CanonicalMIMEHeaderKey(clusterutil.ClusterVerificationLabelHeader),
+			Values: []string{cluster},
+		})
+		return nil
+	}
 }
 
 func getHeader(headers []*httpgrpc.Header, name string) string {

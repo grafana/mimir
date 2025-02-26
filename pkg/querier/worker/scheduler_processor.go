@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
@@ -28,6 +29,8 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/grafana/mimir/pkg/util"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
@@ -57,6 +60,7 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 		streamResponse:   streamResponse,
 		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:        cfg.QuerierID,
+		cluster:          cfg.ClusterVerificationLabel,
 		grpcConfig:       cfg.QueryFrontendGRPCClientConfig,
 		streamingEnabled: cfg.ResponseStreamingEnabled,
 
@@ -69,6 +73,8 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 			Help:    "Time spend doing requests to frontend.",
 			Buckets: prometheus.ExponentialBuckets(0.001, 4, 6),
 		}, []string{"operation", "status_code"}),
+
+		invalidClusterValidation: util.NewRequestInvalidClusterVerficationLabelsTotalCounter(reg, "query-frontend", util.GRPCProtocol),
 	}
 
 	frontendClientsGauge := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
@@ -103,10 +109,12 @@ type schedulerProcessor struct {
 	grpcConfig       grpcclient.Config
 	maxMessageSize   int
 	querierID        string
+	cluster          string
 	streamingEnabled bool
 
 	frontendPool                  *client.Pool
 	frontendClientRequestDuration *prometheus.HistogramVec
+	invalidClusterValidation      *prometheus.CounterVec
 
 	schedulerClientFactory func(conn *grpc.ClientConn) schedulerpb.SchedulerForQuerierClient
 }
@@ -434,7 +442,9 @@ func (w httpGrpcHeaderWriter) Set(key, val string) {
 }
 
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
-	opts, err := sp.grpcConfig.DialOption(grpcclient.Instrument(sp.frontendClientRequestDuration))
+	unary, stream := grpcclient.Instrument(sp.frontendClientRequestDuration)
+	unary = append(unary, middleware.ClusterUnaryClientInterceptor(sp.cluster, sp.invalidClusterValidation, sp.log))
+	opts, err := sp.grpcConfig.DialOption(unary, stream)
 	if err != nil {
 		return nil, err
 	}

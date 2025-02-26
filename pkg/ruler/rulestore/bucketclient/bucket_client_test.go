@@ -38,9 +38,9 @@ func TestListRules(t *testing.T) {
 	rs := NewBucketRuleStore(objstore.NewInMemBucket(), nil, log.NewNopLogger())
 
 	groups := []testGroup{
-		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "first testGroup"}},
-		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "second testGroup"}},
 		{user: "user1", namespace: "world", ruleGroup: rulefmt.RuleGroup{Name: "another namespace testGroup"}},
+		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "second testGroup"}},
+		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "first testGroup"}},
 		{user: "user2", namespace: "+-!@#$%. ", ruleGroup: rulefmt.RuleGroup{Name: "different user"}},
 	}
 
@@ -56,7 +56,7 @@ func TestListRules(t *testing.T) {
 	}
 
 	{
-		user1Groups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "")
+		user1Groups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "", 0)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
 			{User: "user1", Namespace: "hello", Name: "first testGroup"},
@@ -66,7 +66,7 @@ func TestListRules(t *testing.T) {
 	}
 
 	{
-		helloGroups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "hello")
+		helloGroups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "hello", 0)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
 			{User: "user1", Namespace: "hello", Name: "first testGroup"},
@@ -75,19 +75,27 @@ func TestListRules(t *testing.T) {
 	}
 
 	{
-		invalidUserGroups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "invalid", "")
+		groupsWithLimit, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "", 2)
+		require.NoError(t, err)
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user1", Namespace: "hello", Name: "first testGroup"},
+			{User: "user1", Namespace: "hello", Name: "second testGroup"},
+		}, groupsWithLimit)
+	}
+	{
+		invalidUserGroups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "invalid", "", 0)
 		require.NoError(t, err)
 		require.Empty(t, invalidUserGroups)
 	}
 
 	{
-		invalidNamespaceGroups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "invalid")
+		invalidNamespaceGroups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "invalid", 0)
 		require.NoError(t, err)
 		require.Empty(t, invalidNamespaceGroups)
 	}
 
 	{
-		user2Groups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user2", "")
+		user2Groups, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), "user2", "", 0)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
 			{User: "user2", Namespace: "+-!@#$%. ", Name: "different user"},
@@ -118,7 +126,7 @@ func TestLoadRules(t *testing.T) {
 	listAllRuleGroups := func() map[string]rulespb.RuleGroupList {
 		allGroupsMap := map[string]rulespb.RuleGroupList{}
 		for _, u := range []string{"user1", "user2", "user3"} {
-			rgl, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), u, "")
+			rgl, err := rs.ListRuleGroupsForUserAndNamespace(context.Background(), u, "", 0)
 			require.NoError(t, err)
 			allGroupsMap[u] = rgl
 		}
@@ -418,15 +426,15 @@ func TestListAllRuleGroupsWithNoNamespaceOrGroup(t *testing.T) {
 	}
 
 	s := NewBucketRuleStore(obj, nil, log.NewNopLogger())
-	out, err := s.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "")
+	out, err := s.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "", 0)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(out))
 
-	out, err = s.ListRuleGroupsForUserAndNamespace(context.Background(), "user2", "")
+	out, err = s.ListRuleGroupsForUserAndNamespace(context.Background(), "user2", "", 0)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(out))
 
-	out, err = s.ListRuleGroupsForUserAndNamespace(context.Background(), "user3", "")
+	out, err = s.ListRuleGroupsForUserAndNamespace(context.Background(), "user3", "", 0)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(out))           // one group
 	require.Equal(t, "group1", out[0].Name) // also verify its name
@@ -509,7 +517,7 @@ func TestCachingAndInvalidation(t *testing.T) {
 		startStores := mockCache.CountStoreCalls()
 		startFetches := mockCache.CountFetchCalls()
 
-		groups, err := ruleStore.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "")
+		groups, err := ruleStore.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "", 0)
 
 		require.NoError(t, err)
 		require.Equal(t, rulespb.RuleGroupList{
@@ -539,7 +547,7 @@ func TestCachingAndInvalidation(t *testing.T) {
 		startStores := mockCache.CountStoreCalls()
 		startFetches := mockCache.CountFetchCalls()
 
-		groups, err := ruleStore.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "", rulestore.WithCacheDisabled())
+		groups, err := ruleStore.ListRuleGroupsForUserAndNamespace(context.Background(), "user1", "", 0, rulestore.WithCacheDisabled())
 
 		require.NoError(t, err)
 		require.Equal(t, rulespb.RuleGroupList{

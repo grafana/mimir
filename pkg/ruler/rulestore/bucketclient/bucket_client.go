@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 
@@ -116,7 +117,7 @@ func (b *BucketRuleStore) ListAllUsers(ctx context.Context, opts ...rulestore.Op
 }
 
 // ListRuleGroupsForUserAndNamespace implements rules.RuleStore.
-func (b *BucketRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, opts ...rulestore.Option) (rulespb.RuleGroupList, error) {
+func (b *BucketRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string, maxGroups int, opts ...rulestore.Option) (rulespb.RuleGroupList, error) {
 	logger, ctx := spanlogger.NewWithLogger(ctx, b.logger, "BucketRuleStore.ListRuleGroupsForUserAndNamespace")
 	defer logger.Finish()
 
@@ -153,6 +154,20 @@ func (b *BucketRuleStore) ListRuleGroupsForUserAndNamespace(ctx context.Context,
 	}, objstore.WithRecursiveIter())
 	if err != nil {
 		return nil, err
+	}
+
+	if maxGroups > 0 {
+		// Sort by namespace and group
+		slices.SortFunc(groupList, func(a, b *rulespb.RuleGroupDesc) int {
+			nsCmp := strings.Compare(a.Namespace, b.Namespace)
+			if nsCmp != 0 {
+				return nsCmp
+			}
+
+			// If Namespaces are equal, check the group names
+			return strings.Compare(a.Name, b.Name)
+		})
+		groupList = groupList[:maxGroups]
 	}
 
 	return groupList, nil
@@ -262,7 +277,7 @@ func (b *BucketRuleStore) DeleteNamespace(ctx context.Context, userID string, na
 
 	// Disable caching when listing all rule groups for a user since listing entries are not
 	// invalidated in the cache when rule groups are modified and we need to delete everything.
-	ruleGroupList, err := b.ListRuleGroupsForUserAndNamespace(ctx, userID, namespace, rulestore.WithCacheDisabled())
+	ruleGroupList, err := b.ListRuleGroupsForUserAndNamespace(ctx, userID, namespace, 0, rulestore.WithCacheDisabled())
 	if err != nil {
 		return err
 	}
