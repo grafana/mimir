@@ -92,18 +92,14 @@ func newSpinOffSubqueriesMiddleware(
 	logger log.Logger,
 	engine *promql.Engine,
 	registerer prometheus.Registerer,
-	rangeMiddlewares []MetricsQueryMiddleware,
+	rangeMiddleware MetricsQueryMiddleware,
 	defaultStepFunc func(int64) int64,
 ) MetricsQueryMiddleware {
 	metrics := newSpinOffSubqueriesMetrics(registerer)
-
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		rangeNext := next
-		for _, middleware := range rangeMiddlewares {
-			if middleware == nil {
-				continue
-			}
-			rangeNext = middleware.Wrap(rangeNext)
+		if rangeMiddleware != nil {
+			rangeNext = rangeMiddleware.Wrap(next)
 		}
 
 		return &spinOffSubqueriesMiddleware{

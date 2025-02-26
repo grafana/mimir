@@ -402,11 +402,6 @@ func newQueryMiddlewares(
 		)
 	}
 
-	// Inject the extra middlewares provided by the user before the query pruning and query sharding middleware.
-	if len(cfg.ExtraRangeQueryMiddlewares) > 0 {
-		queryRangeMiddleware = append(queryRangeMiddleware, cfg.ExtraRangeQueryMiddlewares...)
-	}
-
 	queryInstantMiddleware = append(queryInstantMiddleware,
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
@@ -416,18 +411,19 @@ func newQueryMiddlewares(
 		prom2CompatMiddleware,
 	)
 
-	rangeQuerySpinOffMiddlewares := append([]MetricsQueryMiddleware{
-		splitAndCacheMiddleware,
-	}, cfg.ExtraRangeQueryMiddlewares...)
 	queryInstantMiddleware = append(
 		queryInstantMiddleware,
 		newInstrumentMiddleware("spin_off_subqueries", metrics),
-		newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, rangeQuerySpinOffMiddlewares, defaultStepFunc),
+		newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, defaultStepFunc),
 	)
 
 	// Inject the extra middlewares provided by the user before the query pruning and query sharding middleware.
 	if len(cfg.ExtraInstantQueryMiddlewares) > 0 {
 		queryInstantMiddleware = append(queryInstantMiddleware, cfg.ExtraInstantQueryMiddlewares...)
+	}
+	// Inject the extra middlewares provided by the user before the query pruning and query sharding middleware.
+	if len(cfg.ExtraRangeQueryMiddlewares) > 0 {
+		queryRangeMiddleware = append(queryRangeMiddleware, cfg.ExtraRangeQueryMiddlewares...)
 	}
 
 	if cfg.ShardedQueries {
