@@ -2254,7 +2254,7 @@ metadata:
   name: memcached-metadata
   namespace: default
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       name: memcached-metadata

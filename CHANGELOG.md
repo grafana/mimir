@@ -103,6 +103,7 @@
   * `_config.multi_zone_etcd_schedule_toleration` (etcd's override)
 * [CHANGE] Ring: relaxed the hash ring heartbeat timeout for store-gateways: #10634
   * `-store-gateway.sharding-ring.heartbeat-timeout` set to `10m`
+* [CHANGE] Memcached: Use 3 replicas for all cache types by default. #10739
 * [ENHANCEMENT] Enforce `persistentVolumeClaimRetentionPolicy` `Retain` policy on partition ingesters during migration to experimental ingest storage. #10395
 * [ENHANCEMENT] Allow to not configure `topologySpreadConstraints` by setting the following configuration options to a negative value: #10540
   * `distributor_topology_spread_max_skew`
