@@ -600,15 +600,6 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 
 	// Create a function that wraps a notifier with rate limiting and external hooks.
 	nw := func(integrationName string, notifier notify.Notifier) notify.Notifier {
-		if am.cfg.Limits != nil {
-			rl := &tenantRateLimits{
-				tenant:      am.cfg.UserID,
-				limits:      am.cfg.Limits,
-				integration: integrationName,
-			}
-
-			notifier = newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
-		}
 		if am.cfg.EnableNotifyHooks {
 			n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger)
 			if err != nil {
@@ -617,6 +608,15 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 			} else {
 				notifier = n
 			}
+		}
+		if am.cfg.Limits != nil {
+			rl := &tenantRateLimits{
+				tenant:      am.cfg.UserID,
+				limits:      am.cfg.Limits,
+				integration: integrationName,
+			}
+
+			notifier = newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
 		}
 		return notifier
 	}
