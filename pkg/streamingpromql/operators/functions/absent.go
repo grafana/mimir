@@ -82,17 +82,15 @@ func (a *Absent) NextSeries(_ context.Context) (types.InstantVectorSeriesData, e
 	output := types.InstantVectorSeriesData{}
 
 	var err error
-	idx := 0
 	for step := range a.timeRange.StepCount {
 		t := a.timeRange.IndexTime(int64(step))
 		if !a.presence[step] {
 			// We only allocate the slice once we know we have point to add.
-			if idx == 0 {
+			if output.Floats == nil {
 				output.Floats, err = types.FPointSlicePool.Get(a.timeRange.StepCount, a.memoryConsumptionTracker)
 				if err != nil {
 					return output, err
 				}
-				idx++
 			}
 			output.Floats = append(output.Floats, promql.FPoint{T: t, F: 1})
 		}
