@@ -256,7 +256,7 @@ func NewPostingOffsetTableFromSparseHeader(factory *streamencoding.DecbufFactory
 	for sName, sOffsets := range postingsOffsetTable.Postings {
 		downsampledLen := len(sOffsets.Offsets) / step
 		if len(sOffsets.Offsets)%step != 0 {
-			downsampledLen += 1
+			downsampledLen++
 		}
 		t.postings[sName] = &postingValueOffsets{offsets: make([]postingOffset, downsampledLen)}
 		for i, sPostingOff := range sOffsets.Offsets {
