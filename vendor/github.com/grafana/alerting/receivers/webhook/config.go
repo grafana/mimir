@@ -22,9 +22,10 @@ type Config struct {
 	User     string
 	Password string
 
-	Title     string
-	Message   string
-	TLSConfig *receivers.TLSConfig
+	Title      string
+	Message    string
+	TLSConfig  *receivers.TLSConfig
+	HMACConfig *receivers.HMACConfig
 }
 
 func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Config, error) {
@@ -40,6 +41,7 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 		Title                    string                   `json:"title,omitempty" yaml:"title,omitempty"`
 		Message                  string                   `json:"message,omitempty" yaml:"message,omitempty"`
 		TLSConfig                *receivers.TLSConfig     `json:"tlsConfig,omitempty" yaml:"tlsConfig,omitempty"`
+		HMACConfig               *receivers.HMACConfig    `json:"hmacConfig,omitempty" yaml:"hmacConfig,omitempty"`
 	}{}
 
 	err := json.Unmarshal(jsonData, &rawSettings)
@@ -86,6 +88,14 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 			CACertificate:      decryptFn("tlsConfig.caCertificate", tlsConfig.CACertificate),
 			ClientCertificate:  decryptFn("tlsConfig.clientCertificate", tlsConfig.ClientCertificate),
 			ClientKey:          decryptFn("tlsConfig.clientKey", tlsConfig.ClientKey),
+		}
+	}
+
+	if hmacConfig := rawSettings.HMACConfig; hmacConfig != nil {
+		settings.HMACConfig = &receivers.HMACConfig{
+			Secret:          decryptFn("hmacConfig.secret", hmacConfig.Secret),
+			Header:          hmacConfig.Header,
+			TimestampHeader: hmacConfig.TimestampHeader,
 		}
 	}
 
