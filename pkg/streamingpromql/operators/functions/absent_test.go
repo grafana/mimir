@@ -4,9 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/stretchr/testify/require"
 )
 
 func TestAbsent_NextSeries_CalledCondition(t *testing.T) {
