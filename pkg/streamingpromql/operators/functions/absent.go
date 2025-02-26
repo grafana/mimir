@@ -63,7 +63,7 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 	for range innerMetadata {
 		series, err := a.inner.NextSeries(ctx)
 		if err != nil {
-			return metadata, err
+			return nil, err
 		}
 
 		for _, s := range series.Floats {
