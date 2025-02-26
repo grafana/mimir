@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
+	alertingHttp "github.com/grafana/alerting/http"
 	"github.com/grafana/alerting/images"
 	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/alerting/notify/nfstatus"
@@ -674,16 +675,12 @@ func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConf
 		return nil, err
 	}
 
-	whFn := func(alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
-		return NewSender(logger), nil
-	}
-
 	integrations, err := alertingNotify.BuildReceiverIntegrations(
 		rCfg,
 		tmpl,
-		&images.UnavailableProvider{}, // TODO: include images in notifications
+		&images.URLProvider{},
 		newLoggerFactory(logger),
-		whFn,
+		alertingHttp.ClientConfiguration{UserAgent: version.UserAgent()},
 		alertingReceivers.NewEmailSenderFactory(emailCfg),
 		1, // orgID is always 1.
 		version.Version,
