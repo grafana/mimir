@@ -443,15 +443,10 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return errors.Wrapf(err, "invalid result block %s", bdir)
 		}
 
-		begin := time.Now()
-		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil); err != nil {
-			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
-		}
-
 		if uploadSparseIndexHeaders {
 			// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk. Because we
 			// don't use the writer, we pass a default indexheader.Config and don't register metrics.
-			if _, err := indexheader.NewStreamBinaryReader(
+			if br, err := indexheader.NewStreamBinaryReader(
 				ctx,
 				jobLogger,
 				fsbkt,
@@ -462,16 +457,14 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 				indexheader.Config{},
 			); err != nil {
 				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockID, "err", err)
-				return nil
+			} else {
+				br.Close()
 			}
+		}
 
-			// upload local sparse-index-header to object storage
-			src := path.Join(bdir, block.SparseIndexHeaderFilename)
-			dst := path.Join(blockID, block.SparseIndexHeaderFilename)
-			if err := objstore.UploadFile(ctx, jobLogger, c.bkt, src, dst); err != nil {
-				level.Warn(jobLogger).Log("msg", "failed to upload sparse index headers", "block", blockID, "err", err)
-				return nil
-			}
+		begin := time.Now()
+		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil); err != nil {
+			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
 		}
 
 		elapsed := time.Since(begin)

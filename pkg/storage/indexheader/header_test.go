@@ -134,13 +134,16 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 		protoRate         int
 		inMemSamplingRate int
 	}{
-		"downsample_1_to_32":       {1, 32},
-		"downsample_2_to_32":       {2, 32},
-		"downsample_8_to_32":       {8, 32},
-		"downsample_4_to_16":       {4, 16},
-		"downsample_4_to_48":       {4, 48},
-		"downsample_4_to_4096":     {4, 4096},
-		"downsample_noop_32_to_32": {32, 32},
+		"downsample_1_to_32":                          {1, 32},
+		"downsample_2_to_32":                          {2, 32},
+		"downsample_4_to_16":                          {4, 16},
+		"downsample_4_to_48":                          {4, 48},
+		"downsample_8_to_24":                          {8, 32},
+		"proto_value_not_divisible_rebuild_8_to_20":   {8, 20},
+		"noop_32_to_32":                               {32, 32},
+		"cannot_upsample_from_proto_rebuild_48_to_32": {48, 32},
+		"cannot_upsample_from_proto_rebuild_64_to_32": {64, 32},
+		"downsample_1024_to_4096":                     {1024, 4096},
 	}
 
 	for name, tt := range tests {
@@ -167,7 +170,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 
 			// a second call to NewStreamBinaryReader loads the previously written sparse index-header and downsamples
 			// the header from tt.protoRate to tt.inMemSamplingRate entries for each posting
-			br2, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, m.ULID, tt.inMemSamplingRate, noopMetrics, Config{})
+			br2, err := NewStreamBinaryReader(ctx, test.NewTestingLogger(t), bkt, tmpDir, m.ULID, tt.inMemSamplingRate, noopMetrics, Config{})
 			require.NoError(t, err)
 			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingOffsetInMemSampling())
 
@@ -177,15 +180,28 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			// label names are equal between original and downsampled sparse index-headers
 			require.ElementsMatch(t, downsampleLabelNames, origLabelNames)
 
-			// downsampled postings are a subset of the original sparse index-header postings
 			origIdxpbTbl := br1.postingsOffsetTable.NewSparsePostingOffsetTable()
 			downsampleIdxpbTbl := br2.postingsOffsetTable.NewSparsePostingOffsetTable()
 
 			step := tt.inMemSamplingRate / tt.protoRate
 			for name, vals := range origIdxpbTbl.Postings {
 				downsampledOffsets := downsampleIdxpbTbl.Postings[name].Offsets
-				require.Equal(t, (len(vals.Offsets)+step-1)/step, len(downsampledOffsets))
-				require.Subset(t, vals.Offsets, downsampledOffsets)
+
+				// downsampled postings are a subset of the original sparse index-header postings
+				if (tt.inMemSamplingRate > tt.protoRate) && (tt.inMemSamplingRate%tt.protoRate == 0) {
+					require.Equal(t, (len(vals.Offsets)+step-1)/step, len(downsampledOffsets))
+					require.Subset(t, vals.Offsets, downsampledOffsets)
+				}
+
+				// cannot "upsample" a sparse index header. When the sampling value found in sparse header is larger
+				// than the configured rate, should rebuild sparse headers. The rebuilt headers should be at least
+				// as large as the original sparse index header postings.
+				if tt.inMemSamplingRate < tt.protoRate {
+					require.GreaterOrEqual(t, len(downsampledOffsets), len(vals.Offsets))
+					if tt.inMemSamplingRate%tt.protoRate == 0 {
+						require.Subset(t, downsampledOffsets, vals.Offsets)
+					}
+				}
 			}
 		})
 	}

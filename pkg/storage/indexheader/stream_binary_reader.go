@@ -149,35 +149,12 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 			level.Warn(logger).Log("msg", "failed to read sparse index-headers from disk; recreating", "err", err)
 		}
 
-		// read persisted sparseHeaders from disk to memory.
 		if err == nil {
 			if err = r.loadFromSparseIndexHeader(logger, sparseData, postingOffsetsInMemSampling); err != nil {
-				return nil, fmt.Errorf("cannot load sparse index-header from disk: %w", err)
-			}
-
-			sampling := r.postingsOffsetTable.PostingOffsetInMemSampling()
-			if (sampling > 0) && (sampling < postingOffsetsInMemSampling) {
-				// if the sampling rate in the sparse index-header is set lower (more frequent) than
-				// the configured postingOffsetsInMemSampling, downsample to the configured rate
-				if err := r.downsampleSparseIndexHeader(sampling, postingOffsetsInMemSampling); err != nil {
-					level.Warn(logger).Log(
-						"msg", "failed to downsample sparse index-header; recreating", "err", err,
-						"header_rate", sampling, "in-mem-sampling rate", postingOffsetsInMemSampling,
-					)
-					reconstruct = true
-				}
-			} else if (sampling > 0) && (sampling > postingOffsetsInMemSampling) {
-				// if the sparse index-header sampling rate is set higher, reconstruct from index-header
-				level.Warn(logger).Log(
-					"msg", "sparse index-header sampling rate doesn't match in-mem-sampling rate; recreating",
-					"err", err, "header_sampling_rate", sampling,
-				)
 				reconstruct = true
 			}
 		}
 
-		// construct sparseHeaders and write to disk if sparseHeaders are not on disk or the sparseHeaders on disk couldn't be
-		// downsampled to the configured rate
 		if err != nil || reconstruct {
 			if err = r.loadFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
 				return nil, fmt.Errorf("cannot load sparse index-header: %w", err)
@@ -185,7 +162,9 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 			if err := writeSparseHeadersToFile(logger, sparseHeadersPath, r); err != nil {
 				return nil, fmt.Errorf("cannot write sparse index-header to disk: %w", err)
 			}
+			level.Debug(logger).Log("msg", "built sparse index-header file")
 		}
+
 	} else {
 		if err = r.loadFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
 			return nil, fmt.Errorf("cannot load sparse index-header: %w", err)
@@ -207,17 +186,6 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 	}
 
 	return r, err
-}
-
-func (r *StreamBinaryReader) downsampleSparseIndexHeader(curSampling, tgtSampling int) error {
-	tbl, ok := r.postingsOffsetTable.(*streamindex.PostingOffsetTableV2)
-	if !ok {
-		return fmt.Errorf("postings offset table has incompatible version v%d", r.indexVersion)
-	}
-	if err := tbl.DownsamplePostings(curSampling, tgtSampling); err != nil {
-		return err
-	}
-	return nil
 }
 
 // loadFromSparseIndexHeader load from sparse index-header on disk.

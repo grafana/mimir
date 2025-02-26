@@ -101,32 +101,3 @@ func TestPostingValueOffsets(t *testing.T) {
 		})
 	}
 }
-
-func Test_PostingValueOffsets_Downsample(t *testing.T) {
-
-	pvos := make([]postingOffset, 20)
-	for i := range pvos {
-		pvos[i] = postingOffset{value: fmt.Sprintf("%d", i)}
-	}
-
-	tests := []struct {
-		name        string
-		pvo         []postingOffset
-		step        int
-		expectedLen int
-	}{
-		{"len_eq_when_step_size=1", pvos, 1, 20},
-		{"len_approx_halved_when_step_size=2", pvos, 2, 10},
-		{"len_approx_quartered_when_step_size=4", pvos, 4, 5},
-		{"len_one_when_step_size_is_len_offsets", pvos, 20, 1},
-		{"len_one_when_step_size_exceeds_len_offsets", pvos, 200, 1},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			pvo := &postingValueOffsets{offsets: append([]postingOffset{}, tc.pvo...)}
-			pvo.downsample(tc.step)
-			assert.Equal(t, tc.expectedLen, len(pvo.offsets), "unexpected length for step size %d", tc.step)
-		})
-	}
-}

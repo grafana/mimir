@@ -44,7 +44,7 @@ type PostingOffsetTable interface {
 
 	NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable)
 
-	// PostingOffsetInMemSampling returns the ratio of postings offsets that the store
+	// PostingOffsetInMemSampling returns the ratio of postings kept in memory to those kept
 	PostingOffsetInMemSampling() int
 }
 
@@ -237,21 +237,35 @@ func NewPostingOffsetTableFromSparseHeader(factory *streamencoding.DecbufFactory
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
 	}
 
-	for sName, sOffsets := range postingsOffsetTable.Postings {
-		t.postings[sName] = &postingValueOffsets{
-			offsets: make([]postingOffset, len(sOffsets.Offsets)),
+	var step int
+	var ok bool
+	pbSampling := int(postingsOffsetTable.GetPostingOffsetInMemorySampling())
+	if (pbSampling > 0) && (pbSampling <= postingOffsetsInMemSampling) {
+		// if the sampling rate in the sparse index-header is set lower (more frequent) than
+		// the configured postingOffsetsInMemSampling we downsample to the configured rate
+		step, ok = stepSize(pbSampling, postingOffsetsInMemSampling)
+		if !ok {
+			return nil, fmt.Errorf("sparse index-header sampling rate not compatible with in-mem-sampling rate")
 		}
-
-		for i, sPostingOff := range sOffsets.Offsets {
-			t.postings[sName].offsets[i] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
-		}
-
-		t.postings[sName].lastValOffset = sOffsets.LastValOffset
+	} else if (pbSampling > 0) && (pbSampling > postingOffsetsInMemSampling) {
+		// if the sparse index-header sampling rate is set higher must reconstruct from index-header
+		return nil, fmt.Errorf("sparse index-header sampling rate exceeds in-mem-sampling rate")
 	}
 
-	// replace sampling if postingOffsetsInMemSampling set in proto
-	if sampling := postingsOffsetTable.GetPostingOffsetInMemorySampling(); sampling > 0 {
-		t.postingOffsetsInMemSampling = int(sampling)
+	var last int64
+	for sName, sOffsets := range postingsOffsetTable.Postings {
+		downsampledLen := len(sOffsets.Offsets) / step
+		if len(sOffsets.Offsets)%step != 0 {
+			downsampledLen += 1
+		}
+		t.postings[sName] = &postingValueOffsets{offsets: make([]postingOffset, downsampledLen)}
+		for i, sPostingOff := range sOffsets.Offsets {
+			if i%step == 0 {
+				t.postings[sName].offsets[i/step] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
+				last = sOffsets.LastValOffset
+			}
+		}
+		t.postings[sName].lastValOffset = last
 	}
 	return &t, err
 }
@@ -359,28 +373,6 @@ type PostingOffsetTableV2 struct {
 type postingValueOffsets struct {
 	offsets       []postingOffset
 	lastValOffset int64
-}
-
-func (t *PostingOffsetTableV2) DownsamplePostings(cur, tgt int) error {
-	if cur >= tgt || cur <= 0 || tgt <= 0 || tgt%cur != 0 {
-		return fmt.Errorf("invalid in-mem-sampling rates")
-	}
-
-	step := tgt / cur
-	for _, pvo := range t.postings {
-		pvo.downsample(step)
-	}
-	t.postingOffsetsInMemSampling = tgt
-	return nil
-}
-
-func (e *postingValueOffsets) downsample(step int) {
-	j := 0
-	for i := 0; i < len(e.offsets); i += step {
-		e.offsets[j] = e.offsets[i]
-		j++
-	}
-	e.offsets = e.offsets[:j]
 }
 
 // prefixOffsets returns the index of the first matching offset (start) and the index of the first non-matching (end).
@@ -680,4 +672,11 @@ func skipNAndName(d *streamencoding.Decbuf, buf *int) {
 		return
 	}
 	d.Skip(*buf)
+}
+
+func stepSize(cur, tgt int) (int, bool) {
+	if cur > tgt || cur <= 0 || tgt <= 0 || tgt%cur != 0 {
+		return 0, false
+	}
+	return tgt / cur, true
 }
