@@ -9,8 +9,10 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
@@ -132,6 +134,11 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 	clients := map[BlocksStoreClient][]ulid.ULID{}
 
 	// Get the client for each store-gateway.
+	instancesStr := make([]string, 0, len(instances))
+	for _, instance := range instances {
+		instancesStr = append(instancesStr, instance.Id)
+	}
+	level.Warn(log.NewLogfmtLogger(os.Stderr)).Log(fmt.Sprintf("instances: %#v", instancesStr))
 	for addr, instance := range instances {
 		c, err := s.clientsPool.GetClientForInstance(instance)
 		if err != nil {

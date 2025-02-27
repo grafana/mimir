@@ -184,7 +184,7 @@ limits:
   ha_cluster_label: ha_cluster
   ha_replica_label: ha_replica
   ha_max_clusters: 10
-  store_gateway_tenant_shard_size: 1
+  store_gateway_tenant_shard_size: 4
 
 runtime_config:
   file: ./config/runtime.yaml
