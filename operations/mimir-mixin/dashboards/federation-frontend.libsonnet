@@ -15,7 +15,7 @@ local filename = 'federation-frontend.json';
     .addRow(
       $.row('Overview')
       .addPanel(
-        $.panel('Requests / sec') +
+        $.timeseriesPanel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.federation_frontend), $.queries.read_http_routes_regex]) +
         $.panelDescription(
           'Requests / sec',
@@ -26,13 +26,14 @@ local filename = 'federation-frontend.json';
         )
       )
       .addPanel(
-        $.panel('Latency') +
+        $.timeseriesPanel('Latency') +
         // This uses a latency recording rule for "cortex_request_duration_seconds"
         utils.latencyRecordingRulePanel(
           'cortex_request_duration_seconds',
           $.jobSelector($._config.job_names.federation_frontend) +
           [utils.selector.re('route', $.queries.read_http_routes_regex)]
-        )
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'ms' } } }
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -67,7 +68,8 @@ local filename = 'federation-frontend.json';
           'sum by (route) (rate(cortex_request_duration_seconds_count{%s, route=~"%s"}[$__rate_interval]))' %
           [$.jobMatcher($._config.job_names.federation_frontend), $.queries.read_http_routes_regex],
           '{{route}}'
-        ) { fieldConfig+: { defaults+: { unit: 'req/s' } } }
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } }
       )
       .addPanel(
         $.timeseriesPanel('P99 latency by route') +
@@ -76,7 +78,8 @@ local filename = 'federation-frontend.json';
           'histogram_quantile(0.99, sum by(le, route) (rate(cortex_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' %
           [$.jobMatcher($._config.job_names.federation_frontend), $.queries.read_http_routes_regex],
           '{{route}}'
-        )
+        ) +
+        { fieldConfig+: { defaults+: { unit: 's' } } }
       )
     )
     .addRow(
@@ -102,9 +105,9 @@ local filename = 'federation-frontend.json';
         )
       )
       .addPanel(
-        $.panel('Number of sharded queries per query') +
+        $.timeseriesPanel('Number of sharded queries per query') +
         $.latencyPanel('cortex_federation_frontend_cluster_sharded_queries_per_query', '{%s}' % $.jobMatcher($._config.job_names.federation_frontend), multiplier=1) +
-        { yaxes: $.yaxes('short') } +
+        { fieldConfig+: { defaults+: { unit: 'short' } } } +
         $.panelDescription(
           'Number of sharded queries per shardable query',
           |||
@@ -156,16 +159,15 @@ local filename = 'federation-frontend.json';
         repeatDirection: 'h',
       }
       .addPanel(
-        $.panel('Remote requests / sec by status') +
+        $.timeseriesPanel('Remote requests / sec by status') +
         $.qpsPanel('cortex_federation_frontend_cluster_remote_latency_seconds_count{remote_cluster=~"$remote_cluster", %s}' % $.jobMatcher($._config.job_names.federation_frontend)) +
-        {
-          yaxes: $.yaxes('ops'),
-          aliasColors: {
-            client_error: 'orange',
-            server_error: 'red',
-            success: 'green',
-          },
-        } +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
+        $.aliasColors({
+          client_error: 'orange',
+          server_error: 'red',
+          success: 'green',
+          cancelled: 'yellow',
+        }) +
         $.panelDescription(
           'Remote requests / sec by status',
           |||
@@ -175,13 +177,13 @@ local filename = 'federation-frontend.json';
         )
       )
       .addPanel(
-        $.panel('Remote requests / sec by request type') +
+        $.timeseriesPanel('Remote requests / sec by request type') +
         $.queryPanel(
           'sum by (request_type) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_count{remote_cluster=~"$remote_cluster", %s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.federation_frontend),
           ['{{request_type}}'],
         ) +
         $.stack +
-        { yaxes: $.yaxes('ops') } +
+        { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
         $.panelDescription(
           'Remote requests / sec by request type',
           |||
@@ -190,7 +192,7 @@ local filename = 'federation-frontend.json';
         )
       )
       .addPanel(
-        $.panel('Remote latency') +
+        $.timeseriesPanel('Remote latency') +
         $.queryPanel(
           [
             'histogram_quantile(0.99, sum by(le, remote_cluster) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_bucket{remote_cluster=~"$remote_cluster", %s}[$__rate_interval])))' % $.jobMatcher($._config.job_names.federation_frontend),
@@ -206,6 +208,7 @@ local filename = 'federation-frontend.json';
           ],
           ['99th Percentile', '50th Percentile', 'Average']
         ) +
+        { fieldConfig+: { defaults+: { unit: 's' } } } +
         $.panelDescription(
           'Cluster response latency',
           |||
