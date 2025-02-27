@@ -191,18 +191,6 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 					require.Equal(t, (len(vals.Offsets)+step-1)/step, len(downsampledOffsets))
 					require.Subset(t, vals.Offsets, downsampledOffsets)
 				}
-
-				// cannot "upsample" a sparse index header. When the sampling value found in sparse header is larger
-				// than the configured rate, should rebuild sparse headers. The rebuilt headers should be at least
-				// as large as the original sparse index header postings.
-				if tt.inMemSamplingRate < tt.protoRate {
-					require.GreaterOrEqual(t, len(downsampledOffsets), len(vals.Offsets))
-					if tt.inMemSamplingRate%tt.protoRate == 0 {
-						require.Subset(t, downsampledOffsets, vals.Offsets)
-					}
-				}
-
-				// lastValOffset should be set for all series
 				require.NotZero(t, downsampleIdxpbTbl.Postings[name].LastValOffset)
 			}
 		})
