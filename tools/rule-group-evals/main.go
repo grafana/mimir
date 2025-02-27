@@ -145,9 +145,9 @@ func analyseRuleGroup(group *Group) {
 	batches := concurrencyController.SplitGroupIntoBatches(context.Background(), rules.NewGroup(rules.GroupOptions{Rules: promRules}))
 	group.rulesEstimatedConcurrentEvaluationDuration = 0
 	for _, batch := range batches {
-		var maxOfBatchSeconds float64 = 0
+		var maxOfBatchSeconds float64
 		for _, idx := range batch {
-			maxOfBatchSeconds = math.Max(float64(maxOfBatchSeconds), group.Rules[idx].GetEvaluationDuration().Seconds()+estimatedStrongConsistencyLatencyOverhead.Seconds())
+			maxOfBatchSeconds = math.Max(maxOfBatchSeconds, group.Rules[idx].GetEvaluationDuration().Seconds()+estimatedStrongConsistencyLatencyOverhead.Seconds())
 		}
 		group.rulesEstimatedConcurrentEvaluationDuration += time.Duration(maxOfBatchSeconds) * time.Second
 	}
@@ -227,7 +227,7 @@ func downloadRules(destination string) {
 	}
 }
 
-func downloadNamespaceRules(desitnation string, cluster string, namespace string) {
+func downloadNamespaceRules(destination string, cluster string, namespace string) {
 	fmt.Println("downloading", cluster, namespace)
 	kubefwd := exec.Command("kubectl", "--context", cluster, "--namespace", namespace, "port-forward", "svc/ruler", "8080:80")
 	noErr(kubefwd.Start())
@@ -239,7 +239,7 @@ func downloadNamespaceRules(desitnation string, cluster string, namespace string
 	g := errgroup.Group{}
 	g.SetLimit(10)
 	tenants := tenantNames()
-	noErr(os.MkdirAll(filepath.Join(desitnation, namespace), 0777))
+	noErr(os.MkdirAll(filepath.Join(destination, namespace), 0777))
 	for tenantIdx, tenant := range tenants {
 		tenant := tenant
 		tenantIdx := tenantIdx
@@ -252,7 +252,7 @@ func downloadNamespaceRules(desitnation string, cluster string, namespace string
 			noErr(err)
 			respBody, err := io.ReadAll(resp.Body)
 			noErr(err)
-			noErr(os.WriteFile(filepath.Join(desitnation, namespace, fmt.Sprintf("%s.json", tenant)), respBody, 0600))
+			noErr(os.WriteFile(filepath.Join(destination, namespace, fmt.Sprintf("%s.json", tenant)), respBody, 0600))
 			return nil
 		})
 	}
