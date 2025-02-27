@@ -1428,16 +1428,17 @@
                "useTags": false
             },
             {
-               "allValue": null,
+               "allValue": ".+",
                "current": {
-                  "text": "prod",
-                  "value": "prod"
+                  "selected": true,
+                  "text": "All",
+                  "value": "$__all"
                },
                "datasource": "$datasource",
                "hide": 2,
                "includeAll": true,
                "label": "remote_cluster",
-               "multi": false,
+               "multi": true,
                "name": "remote_cluster",
                "options": [ ],
                "query": "label_values(cortex_federation_frontend_cluster_remote_latency_seconds, remote_cluster)",
