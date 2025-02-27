@@ -144,7 +144,7 @@ Consider testing the migration in a non-production environment first.
        # Remove preserveReplicas
    ```
 
-4. Apply the updated configuration:
+5. Apply the updated configuration:
    ```bash
    helm upgrade mimir grafana/mimir-distributed -f values.yaml
    ```
