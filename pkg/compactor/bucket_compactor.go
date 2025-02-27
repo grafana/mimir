@@ -395,34 +395,19 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		c.metrics.compactionBlocksVerificationFailed.Inc()
 	}
 
-	var uploadSparseIndexHeaders = c.uploadSparseIndexHeaders
-	var fsbkt objstore.Bucket
-	if uploadSparseIndexHeaders {
-		// Create a bucket backed by the local compaction directory. This allows calls to NewStreamBinaryReader to
-		// construct sparse-index-headers without making requests to object storage. Building and uploading
-		// sparse-index-headers is best effort, and we do not skip uploading a compacted block if there's an
-		// error affecting the sparse-index-header upload.
-		fsbkt, err = filesystem.NewBucket(subDir)
-		if err != nil {
-			level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
-			uploadSparseIndexHeaders = false
-		}
-	}
-
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
+
+	// update labels and verify all blocks
 	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
-
-		uploadedBlocks.Inc()
-
-		blockID := blockToUpload.ulid.String()
-		bdir := filepath.Join(subDir, blockID)
+		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
 
 		// When splitting is enabled, we need to inject the shard ID as an external label.
 		newLabels := job.Labels().Map()
 		if job.UseSplitting() {
 			newLabels[mimir_tsdb.CompactorShardIDExternalLabel] = sharding.FormatShardIDLabelValue(uint64(blockToUpload.shardIndex), uint64(job.SplittingShards()))
 		}
+		blocksToUpload[idx].labels = newLabels
 
 		newMeta, err := block.InjectThanosMeta(jobLogger, bdir, block.ThanosMeta{
 			Labels:       newLabels,
@@ -430,6 +415,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			Source:       block.CompactorSource,
 			SegmentFiles: block.GetSegmentFiles(bdir),
 		}, nil)
+
 		if err != nil {
 			return errors.Wrapf(err, "failed to finalize the block %s", bdir)
 		}
@@ -438,26 +424,48 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return errors.Wrap(err, "remove tombstones")
 		}
 
-		// Ensure the compacted block is valid.
 		if err := block.VerifyBlock(ctx, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime, false); err != nil {
 			return errors.Wrapf(err, "invalid result block %s", bdir)
 		}
+		return nil
+	})
+	if err != nil {
+		return false, nil, err
+	}
 
-		if uploadSparseIndexHeaders {
-			if err := prepareSparseIndexHeader(
-				ctx, jobLogger, fsbkt, subDir, blockToUpload.ulid, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig,
-			); err != nil {
-				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockID, "err", err)
-			}
+	// Optionally build sparse-index-headers. Building sparse-index-headers is best effort, we do not skip uploading a 
+	// compacted block if there's an error affecting sparse-index-headers.
+	if c.uploadSparseIndexHeaders {
+		// Create a bucket backed by the local compaction directory, allows calls to prepareSparseIndexHeader to
+		// construct sparse-index-headers without making requests to object storage.
+		fsbkt, err := filesystem.NewBucket(subDir)
+		if err != nil {
+			level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
+			return
+		} else {
+			_ = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
+				blockToUpload := blocksToUpload[idx]
+				err := prepareSparseIndexHeader(ctx, jobLogger, fsbkt, subDir, blockToUpload.ulid, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig)
+				if err != nil {
+					level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
+				}
+				return nil
+			})
 		}
+	}
 
+	// upload all blocks
+	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
+		blockToUpload := blocksToUpload[idx]
+		uploadedBlocks.Inc()
+		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
 		begin := time.Now()
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil); err != nil {
 			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
 		}
 
 		elapsed := time.Since(begin)
-		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", blockToUpload.ulid, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(newLabels))
+		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", blockToUpload.ulid, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(blockToUpload.labels))
 		return nil
 	})
 	if err != nil {
@@ -565,6 +573,7 @@ func convertCompactionResultToForEachJobs(compactedBlocks []ulid.ULID, splitJob 
 type ulidWithShardIndex struct {
 	ulid       ulid.ULID
 	shardIndex int
+	labels     map[string]string
 }
 
 // issue347Error is a type wrapper for errors that should invoke the repair process for broken block.
