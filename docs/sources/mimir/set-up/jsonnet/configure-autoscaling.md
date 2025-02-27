@@ -25,10 +25,11 @@ KEDA is an operator, running in the Kubernetes cluster, which is responsible to 
 {{< admonition type="warning" >}}
 Do not use the same Mimir or Grafana Enterprise Metrics cluster for storing and querying autoscaling metrics. Using the same cluster can create a dangerous feedback loop:
 
-1. If the Mimir/GEM cluster becomes unavailable, autoscaling will stop working because it cannot query the metrics
-2. This can prevent the cluster from automatically scaling up during high load or recovery
-3. The inability to scale can further exacerbate the cluster's unavailability
-4. This may prevent the cluster from recovering
+Don't use the same Mimir or Grafana Enterprise Metrics cluster for storing and querying autoscaling metrics. Using the same cluster can create a dangerous feedback loop.
+
+For instance, if the Mimir or GEM cluster becomes unavailable, autoscaling stops working, because it cannot query the metrics. This prevents the cluster from automatically scaling up during high load or recovery. This inability to scale further exacerbates the cluster's unavailability, which might, in turn, prevent the cluster from recovering.
+
+Instead, use a separate Prometheus instance or a different metrics backend for autoscaling metrics.
 
 Instead, use a separate Prometheus instance or a different metrics backend for autoscaling metrics.
 {{< /admonition >}}
