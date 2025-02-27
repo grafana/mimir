@@ -155,6 +155,8 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 			}
 		}
 
+		// reconstruct from index if the sparse index-header file isn't on disk or if the sampling rate of the headers
+		// on disk can't be downsampled to the desired rate.
 		if err != nil || reconstruct {
 			if err = r.loadFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
 				return nil, fmt.Errorf("cannot load sparse index-header: %w", err)

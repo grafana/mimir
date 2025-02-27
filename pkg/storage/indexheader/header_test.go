@@ -134,16 +134,15 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 		protoRate         int
 		inMemSamplingRate int
 	}{
-		"downsample_1_to_32":                          {1, 32},
-		"downsample_2_to_32":                          {2, 32},
-		"downsample_4_to_16":                          {4, 16},
-		"downsample_4_to_48":                          {4, 48},
-		"downsample_8_to_24":                          {8, 32},
-		"proto_value_not_divisible_rebuild_8_to_20":   {8, 20},
-		"noop_32_to_32":                               {32, 32},
-		"cannot_upsample_from_proto_rebuild_48_to_32": {48, 32},
-		"cannot_upsample_from_proto_rebuild_64_to_32": {64, 32},
-		"downsample_1024_to_4096":                     {1024, 4096},
+		"downsample_1_to_32":                                   {1, 32},
+		"downsample_4_to_16":                                   {4, 16},
+		"downsample_8_to_24":                                   {8, 32},
+		"downsample_17_to_51":                                  {17, 51},
+		"noop_on_same_sampling_rate":                           {32, 32},
+		"rebuild_proto_sampling_rate_not_divisible":            {8, 20},
+		"rebuild_cannot_upsample_from_proto_48_to_32":          {48, 32},
+		"rebuild_cannot_upsample_from_proto_64_to_32":          {64, 32},
+		"downsample_to_low_frequency_keep_only_first_and_last": {4, 16384},
 	}
 
 	for name, tt := range tests {
@@ -170,7 +169,7 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 
 			// a second call to NewStreamBinaryReader loads the previously written sparse index-header and downsamples
 			// the header from tt.protoRate to tt.inMemSamplingRate entries for each posting
-			br2, err := NewStreamBinaryReader(ctx, test.NewTestingLogger(t), bkt, tmpDir, m.ULID, tt.inMemSamplingRate, noopMetrics, Config{})
+			br2, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, m.ULID, tt.inMemSamplingRate, noopMetrics, Config{})
 			require.NoError(t, err)
 			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingOffsetInMemSampling())
 
@@ -202,6 +201,9 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 						require.Subset(t, downsampledOffsets, vals.Offsets)
 					}
 				}
+
+				// lastValOffset should be set for all series
+				require.NotZero(t, downsampleIdxpbTbl.Postings[name].LastValOffset)
 			}
 		})
 	}

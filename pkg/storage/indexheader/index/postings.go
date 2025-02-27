@@ -44,7 +44,8 @@ type PostingOffsetTable interface {
 
 	NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable)
 
-	// PostingOffsetInMemSampling returns the ratio of postings kept in memory to those kept
+	// PostingOffsetInMemSampling returns the inverse of the fraction of postings held in memory. A lower value indicates
+	// postings are sample more frequently.
 	PostingOffsetInMemSampling() int
 }
 
@@ -252,20 +253,27 @@ func NewPostingOffsetTableFromSparseHeader(factory *streamencoding.DecbufFactory
 		return nil, fmt.Errorf("sparse index-header sampling rate exceeds in-mem-sampling rate")
 	}
 
-	var last int64
+	// The first and last values for each name are always present, we keep 1/postingOffsetsInMemSampling of the rest.
 	for sName, sOffsets := range postingsOffsetTable.Postings {
-		downsampledLen := len(sOffsets.Offsets) / step
-		if len(sOffsets.Offsets)%step != 0 {
-			downsampledLen++
+		var downsampledLen int
+
+		olen := len(sOffsets.Offsets)
+		if olen == 1 {
+			downsampledLen = 1
+		} else {
+			downsampledLen = 1 + olen/step
 		}
+
 		t.postings[sName] = &postingValueOffsets{offsets: make([]postingOffset, downsampledLen)}
 		for i, sPostingOff := range sOffsets.Offsets {
 			if i%step == 0 {
 				t.postings[sName].offsets[i/step] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
-				last = sOffsets.LastValOffset
+			} else if i == olen-1 {
+				t.postings[sName].offsets[downsampledLen-1] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
 			}
 		}
-		t.postings[sName].lastValOffset = last
+
+		t.postings[sName].lastValOffset = sOffsets.LastValOffset
 	}
 	return &t, err
 }
