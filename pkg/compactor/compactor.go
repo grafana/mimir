@@ -33,6 +33,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
@@ -132,7 +133,9 @@ type Config struct {
 	BlocksCompactorFactory BlocksCompactorFactory `yaml:"-"`
 
 	// Allow compactor to upload sparse-index-header files
-	UploadSparseIndexHeaders bool `yaml:"upload_sparse_index_headers" category:"experimental"`
+	UploadSparseIndexHeaders       bool               `yaml:"upload_sparse_index_headers" category:"experimental"`
+	SparseIndexHeadersSamplingRate int                `yaml:"-"`
+	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -839,6 +842,8 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.compactorCfg.BlockSyncConcurrency,
 		c.bucketCompactorMetrics,
 		c.compactorCfg.UploadSparseIndexHeaders,
+		c.compactorCfg.SparseIndexHeadersSamplingRate,
+		c.compactorCfg.SparseIndexHeadersConfig,
 	)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket compactor")
