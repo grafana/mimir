@@ -134,15 +134,15 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 		protoRate         int
 		inMemSamplingRate int
 	}{
-		"downsample_1_to_32":                                   {1, 32},
-		"downsample_4_to_16":                                   {4, 16},
-		"downsample_8_to_24":                                   {8, 32},
-		"downsample_17_to_51":                                  {17, 51},
-		"noop_on_same_sampling_rate":                           {32, 32},
-		"rebuild_proto_sampling_rate_not_divisible":            {8, 20},
-		"rebuild_cannot_upsample_from_proto_48_to_32":          {48, 32},
-		"rebuild_cannot_upsample_from_proto_64_to_32":          {64, 32},
-		"downsample_to_low_frequency_keep_only_first_and_last": {4, 16384},
+		"downsample_1_to_32":                          {1, 32},
+		"downsample_4_to_16":                          {4, 16},
+		"downsample_8_to_24":                          {8, 32},
+		"downsample_17_to_51":                         {17, 51},
+		"noop_on_same_sampling_rate":                  {32, 32},
+		"rebuild_proto_sampling_rate_not_divisible":   {8, 20},
+		"rebuild_cannot_upsample_from_proto_48_to_32": {48, 32},
+		"rebuild_cannot_upsample_from_proto_64_to_32": {64, 32},
+		"downsample_to_low_frequency":                 {4, 16384},
 	}
 
 	for name, tt := range tests {

@@ -253,26 +253,17 @@ func NewPostingOffsetTableFromSparseHeader(factory *streamencoding.DecbufFactory
 		return nil, fmt.Errorf("sparse index-header sampling rate exceeds in-mem-sampling rate")
 	}
 
-	// The first and last values for each name are always present, we keep 1/postingOffsetsInMemSampling of the rest.
 	for sName, sOffsets := range postingsOffsetTable.Postings {
-		var downsampledLen int
 
 		olen := len(sOffsets.Offsets)
-		if olen == 1 {
-			downsampledLen = 1
-		} else {
-			downsampledLen = 1 + olen/step
-		}
+		downsampledLen := (olen + step - 1) / step
 
 		t.postings[sName] = &postingValueOffsets{offsets: make([]postingOffset, downsampledLen)}
 		for i, sPostingOff := range sOffsets.Offsets {
 			if i%step == 0 {
 				t.postings[sName].offsets[i/step] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
-			} else if i == olen-1 {
-				t.postings[sName].offsets[downsampledLen-1] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
 			}
 		}
-
 		t.postings[sName].lastValOffset = sOffsets.LastValOffset
 	}
 	return &t, err
