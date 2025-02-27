@@ -58,6 +58,7 @@
   * `go_cpu_classes_gc_total_cpu_seconds_total`
   * `go_cpu_classes_total_cpu_seconds_total`
   * `go_cpu_classes_idle_cpu_seconds_total`
+* [ENHANCEMENT] Add experimental metric `cortex_distributor_dropped_native_histograms_total`. #10760
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 * [BUGFIX] Querier: fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #10154
 * [BUGFIX] Query-frontend and querier: show warning/info annotations in some cases where they were missing (if a lazy querier was used). #10277
