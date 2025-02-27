@@ -121,12 +121,13 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		return cleanUp(logger, bkt, id, errors.Wrap(err, "upload index"))
 	}
 
-	if err := objstore.UploadFile(ctx, logger, bkt,
-		filepath.Join(blockDir, SparseIndexHeaderFilename),
-		filepath.Join(id.String(), SparseIndexHeaderFilename),
-	); err != nil {
-		// Don't call cleanUp. Uploading sparse index headers is best effort.
-		level.Warn(logger).Log("msg", "failed to upload sparse index headers", "block", id.String(), "err", err)
+	src := filepath.Join(blockDir, SparseIndexHeaderFilename)
+	dst := filepath.Join(id.String(), SparseIndexHeaderFilename)
+	if _, err := os.Stat(src); err == nil {
+		if err := objstore.UploadFile(ctx, logger, bkt, src, dst); err != nil {
+			// Don't call cleanUp. Uploading sparse index headers is best effort.
+			level.Warn(logger).Log("msg", "failed to upload sparse index headers", "block", id.String(), "err", err)
+		}
 	}
 
 	// Meta.json always need to be uploaded as a last item. This will allow to assume block directories without meta file to be pending uploads.
