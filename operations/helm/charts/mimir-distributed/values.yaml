@@ -1103,7 +1103,7 @@ ingester:
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-a
   #       storageClass: storage-class-us-central1-a
-  #     - name: zone-a
+  #     - name: zone-b
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-b
   #       storageClass: storage-class-us-central1-b
@@ -2247,7 +2247,7 @@ store_gateway:
   #     - name: zone-a
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-a
-  #     - name: zone-a
+  #     - name: zone-b
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-b
   #     - name: zone-c
