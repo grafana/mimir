@@ -34,6 +34,11 @@ jobs:
           repo_secrets: |
             APP_ID=mimir-github-bot:app_id
             PRIVATE_KEY=mimir-github-bot:private_key
+      # Use the secrets, they will be obfuscated but that way we'll know they're accessible
+      - name: Echo
+        run: |
+          echo "${{ env.APP_ID }}"
+          echo "${{ env.PRIVATE_KEY }}"
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
       # Determine if we will deploy (aka push) the image to the registry.
