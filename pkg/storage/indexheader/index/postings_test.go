@@ -3,9 +3,13 @@
 package index
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 )
 
 func TestPostingValueOffsets(t *testing.T) {
@@ -99,4 +103,58 @@ func TestPostingValueOffsets(t *testing.T) {
 			assert.Equal(t, testCase.expectedFound, found)
 		})
 	}
+}
+
+func createPostingOffset(n int) []*indexheaderpb.PostingOffset {
+	offsets := make([]*indexheaderpb.PostingOffset, n)
+	for i := 0; i < n; i++ {
+		offsets[i] = &indexheaderpb.PostingOffset{Value: fmt.Sprintf("%d", i), TableOff: int64(i)}
+	}
+	return offsets
+}
+
+func Test_NewPostingOffsetTableFromSparseHeader(t *testing.T) {
+
+	testCases := map[string]struct {
+		existingOffsetsLen              int
+		postingOffsetsInMemSamplingRate int
+		protoSamplingRate               int64
+		expectedLen                     int
+		expectErr                       bool
+	}{
+		"downsample_noop_proto_has_equal_sampling_rate":           {100, 32, 32, 100, false},
+		"downsample_short_offsets":                                {2, 32, 16, 1, false},
+		"downsample_noop_short_offsets":                           {1, 32, 16, 1, false},
+		"downsample_proto_has_divisible_sampling_rate":            {100, 32, 16, 50, false},
+		"cannot_downsample_proto_has_no_sampling_rate":            {100, 32, 0, 0, true},
+		"cannot_upsample_proto_has_less_frequent_sampling_rate":   {100, 32, 64, 0, true},
+		"cannot_downsample_proto_has_non_divisible_sampling_rate": {100, 32, 10, 0, true},
+		"downsample_sampling_rates_ratio_does_not_divide_offsets": {33, 32, 16, 17, false},
+		"downsample_sampling_rates_ratio_exceeds_offset_len":      {10, 1024, 8, 1, false},
+		"downsample_sampling_rates_ratio_equals_offset_len":       {100, 100, 1, 1, false},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			factory := streamencoding.DecbufFactory{}
+
+			postingsMap := make(map[string]*indexheaderpb.PostingValueOffsets)
+			postingsMap["__name__"] = &indexheaderpb.PostingValueOffsets{Offsets: createPostingOffset(testCase.existingOffsetsLen)}
+
+			protoTbl := indexheaderpb.PostingOffsetTable{
+				Postings:                      postingsMap,
+				PostingOffsetInMemorySampling: testCase.protoSamplingRate,
+			}
+
+			tbl, err := NewPostingOffsetTableFromSparseHeader(&factory, &protoTbl, 0, testCase.postingOffsetsInMemSamplingRate)
+			if testCase.expectErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, testCase.expectedLen, len(tbl.postings["__name__"].offsets))
+			}
+
+		})
+	}
+
 }

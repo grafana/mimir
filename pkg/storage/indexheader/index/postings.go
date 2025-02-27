@@ -238,17 +238,21 @@ func NewPostingOffsetTableFromSparseHeader(factory *streamencoding.DecbufFactory
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
 	}
 
+	pbSampling := int(postingsOffsetTable.GetPostingOffsetInMemorySampling())
+	if pbSampling == 0 {
+		return nil, fmt.Errorf("sparse index-header sampling rate not set")
+	}
+
 	var step int
 	var ok bool
-	pbSampling := int(postingsOffsetTable.GetPostingOffsetInMemorySampling())
-	if (pbSampling > 0) && (pbSampling <= postingOffsetsInMemSampling) {
+	if pbSampling <= postingOffsetsInMemSampling {
 		// if the sampling rate in the sparse index-header is set lower (more frequent) than
 		// the configured postingOffsetsInMemSampling we downsample to the configured rate
 		step, ok = stepSize(pbSampling, postingOffsetsInMemSampling)
 		if !ok {
 			return nil, fmt.Errorf("sparse index-header sampling rate not compatible with in-mem-sampling rate")
 		}
-	} else if (pbSampling > 0) && (pbSampling > postingOffsetsInMemSampling) {
+	} else {
 		// if the sparse index-header sampling rate is set higher must reconstruct from index-header
 		return nil, fmt.Errorf("sparse index-header sampling rate exceeds in-mem-sampling rate")
 	}
