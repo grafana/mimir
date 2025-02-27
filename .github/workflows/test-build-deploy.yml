@@ -123,6 +123,7 @@ jobs:
       # Retrieve GitHub App Credentials from Vault for mimir-github-bot
       - name: Retrieve GitHub App Credentials from Vault
         id: get-secrets
+        shell: sh
         uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
         with:
           repo_secrets: |
