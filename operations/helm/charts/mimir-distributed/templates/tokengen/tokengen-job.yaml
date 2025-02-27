@@ -36,10 +36,14 @@ spec:
         - name: {{ . }}
       {{- end }}
       {{- end }}
+      {{- if .Values.tokengenJob.storeTokenInSecret }}
       initContainers:
         {{- if .Values.tokengenJob.initContainers }}
         {{- toYaml .Values.tokengenJob.initContainers | nindent 8 }}
         {{- end }}
+      {{- else }}
+      containers:
+      {{- end }}
         - name: tokengen
           image: {{ include "mimir.imageReference" (dict "ctx" . "component" "tokengen") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -86,6 +90,7 @@ spec:
           {{- end }}
           securityContext:
             {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
+      {{- if .Values.tokengenJob.storeTokenInSecret }}
       containers:
         - name: kubectl
           image: {{ include "mimir.kubectlImage" . }}
@@ -96,15 +101,11 @@ spec:
             - |
               if [ -f /shared/admin-token ]; then
                 echo "Admin token generated successfully"
-                {{- if .Values.tokengenJob.storeTokenInSecret | default true }}
                 # Create or update the secret with the admin token
-                kubectl create secret generic {{ .Values.tokengenJob.adminTokenSecret | default (printf "%s-admin-token" .Release.Name) }} \
+                kubectl create secret generic {{ .Values.tokengenJob.adminTokenSecret }} \
                   --from-file=token=/shared/admin-token \
                   --dry-run=client -o yaml | kubectl apply -f -
                 echo "Admin token secret created/updated successfully"
-                {{- else }}
-                echo "Skipping secret creation as storeTokenInSecret is disabled"
-                {{- end }}
               else
                 echo "Error: Admin token file not found at /shared/admin-token"
                 exit 1
@@ -114,6 +115,7 @@ spec:
               mountPath: /shared
           securityContext:
             {{- toYaml .Values.tokengenJob.containerSecurityContext | nindent 12 }}
+      {{- end }}
       restartPolicy: OnFailure
       volumes:
         - name: config

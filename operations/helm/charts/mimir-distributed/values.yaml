@@ -4075,9 +4075,9 @@ tokengenJob:
   annotations: {}
   initContainers: []
   # -- Controls whether to store the generated admin token in a Kubernetes secret
-  storeTokenInSecret: true
+  storeTokenInSecret: false
   # -- Name of the secret to store the admin token. If not specified, defaults to "<release-name>-admin-token"
-  adminTokenSecret: ""
+  adminTokenSecret: "admin-token"
 
   # -- SecurityContext override for tokengenjob pods
   securityContext: {}
@@ -4100,8 +4100,6 @@ kubectlImage:
   repository: bitnami/kubectl
   # -- Overrides the image tag whose default is the chart's appVersion
   tag: null
-  # -- Overrides the image tag with an image digest
-  digest: null
   # -- Docker image pull policy
   pullPolicy: IfNotPresent
 

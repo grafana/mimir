@@ -739,5 +739,5 @@ mimir.cpuToMilliCPU takes 1 argument
 kubectl image reference
 */}}
 {{- define "mimir.kubectlImage" -}}
-{{ .Values.kubectlImage.repository }}:{{ .Values.kubectlImage.tag | default "latest" }}
+{{ .Values.kubectlImage.repository }}:{{ .Values.kubectlImage.tag }}
 {{- end -}}
