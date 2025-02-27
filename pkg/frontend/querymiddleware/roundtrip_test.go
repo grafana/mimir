@@ -589,7 +589,6 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	cfg.CacheResults = true
 	cfg.ShardedQueries = true
 	cfg.PrunedQueries = true
-	cfg.SpinOffInstantSubqueriesToURL = "http://localhost"
 
 	// Ensure all features are enabled, so that we assert on all middlewares.
 	require.NotZero(t, cfg.CacheResults)

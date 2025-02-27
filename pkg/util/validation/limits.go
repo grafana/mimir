@@ -193,7 +193,7 @@ type Limits struct {
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
 	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions" category:"experimental"`
 	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
-	InstantQueriesWithSubquerySpinOff      []string               `yaml:"instant_queries_with_subquery_spin_off" json:"instant_queries_with_subquery_spin_off" doc:"nocli|description=List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance." category:"experimental"`
+	InstantQueriesWithSubquerySpinOff      flagext.StringSliceCSV `yaml:"instant_queries_with_subquery_spin_off" json:"instant_queries_with_subquery_spin_off" category:"experimental"`
 	MaxFutureQueryWindow                   model.Duration         `yaml:"max_future_query_window" json:"max_future_query_window" category:"experimental"`
 
 	// Cardinality
@@ -401,6 +401,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
 	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
 	f.Var(&l.MaxFutureQueryWindow, maxFutureQueryWindowFlag, "Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.")
+	f.Var(&l.InstantQueriesWithSubquerySpinOff, "query-frontend.instant-queries-with-subquery-spin-off", "List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")

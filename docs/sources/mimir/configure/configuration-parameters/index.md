@@ -1854,12 +1854,6 @@ results_cache:
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
 
-# (experimental) If set, subqueries in instant queries are spun off as range
-# queries and sent to the given URL. This parameter also requires you to set
-# `instant_queries_with_subquery_spin_off` for the tenant.
-# CLI flag: -query-frontend.spin-off-instant-subqueries-to-url
-[spin_off_instant_subqueries_to_url: <string> | default = ""]
-
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
@@ -3752,7 +3746,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) List of regular expression patterns matching instant queries.
 # Subqueries within those instant queries will be spun off as range queries to
 # optimize their performance.
-[instant_queries_with_subquery_spin_off: <list of strings> | default = ]
+# CLI flag: -query-frontend.instant-queries-with-subquery-spin-off
+[instant_queries_with_subquery_spin_off: <string> | default = ""]
 
 # (experimental) Mutate incoming queries that look far into the future to only
 # look into the future by the set duration. 0 to disable.
