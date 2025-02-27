@@ -3055,7 +3055,7 @@ type blocksStoreSetMock struct {
 	nextResult      int
 }
 
-func (m *blocksStoreSetMock) GetClientsFor(_ string, _ []ulid.ULID, _ map[ulid.ULID][]string) (map[BlocksStoreClient][]ulid.ULID, error) {
+func (m *blocksStoreSetMock) GetClientsFor(_ string, _ bucketindex.Blocks, _ map[ulid.ULID][]string) (map[BlocksStoreClient][]ulid.ULID, error) {
 	if m.nextResult >= len(m.mockedResponses) {
 		panic("not enough mocked results")
 	}
@@ -3191,9 +3191,10 @@ func (m *cancelerStoreGatewayClientMock) RemoteAddress() string {
 }
 
 type blocksStoreLimitsMock struct {
-	maxLabelsQueryLength        time.Duration
-	maxChunksPerQuery           int
-	storeGatewayTenantShardSize int
+	maxLabelsQueryLength            time.Duration
+	maxChunksPerQuery               int
+	storeGatewayTenantShardSize     int
+	storeGatewayExpandedReplication bool
 }
 
 func (m *blocksStoreLimitsMock) MaxLabelsQueryLength(_ string) time.Duration {
@@ -3206,6 +3207,10 @@ func (m *blocksStoreLimitsMock) MaxChunksPerQuery(_ string) int {
 
 func (m *blocksStoreLimitsMock) StoreGatewayTenantShardSize(_ string) int {
 	return m.storeGatewayTenantShardSize
+}
+
+func (m *blocksStoreLimitsMock) StoreGatewayExpandedReplication(_ string) bool {
+	return m.storeGatewayExpandedReplication
 }
 
 func (m *blocksStoreLimitsMock) S3SSEType(_ string) string {

@@ -1419,8 +1419,13 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label names response hints").Error())
 	}
 
+	names := util.MergeSlices(sets...)
+	if req.Limit > 0 && len(names) > int(req.Limit) {
+		names = names[:req.Limit]
+	}
+
 	return &storepb.LabelNamesResponse{
-		Names: util.MergeSlices(sets...),
+		Names: names,
 		Hints: anyHints,
 	}, nil
 }
@@ -1595,8 +1600,13 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label values response hints").Error())
 	}
 
+	values := util.MergeSlices(sets...)
+	if req.Limit > 0 && len(values) > int(req.Limit) {
+		values = values[:req.Limit]
+	}
+
 	return &storepb.LabelValuesResponse{
-		Values: util.MergeSlices(sets...),
+		Values: values,
 		Hints:  anyHints,
 	}, nil
 }

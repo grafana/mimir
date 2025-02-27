@@ -240,6 +240,12 @@ func WithResultsCacheEnabled(enabled bool) RequestOption {
 	}
 }
 
+func WithAdditionalHeaders(headers map[string]string) RequestOption {
+	return func(options *requestOptions) {
+		options.additionalHeaders = headers
+	}
+}
+
 // contextWithRequestOptions returns a context.Context with the request options applied.
 func contextWithRequestOptions(ctx context.Context, options ...RequestOption) context.Context {
 	actual := &requestOptions{}
@@ -252,6 +258,7 @@ func contextWithRequestOptions(ctx context.Context, options ...RequestOption) co
 
 type requestOptions struct {
 	resultsCacheDisabled bool
+	additionalHeaders    map[string]string
 }
 
 type key int
@@ -271,9 +278,15 @@ type clientRoundTripper struct {
 // RoundTrip add the tenant ID header required by Mimir.
 func (rt *clientRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	options, _ := req.Context().Value(requestOptionsKey).(*requestOptions)
-	if options != nil && options.resultsCacheDisabled {
-		// Despite the name, the "no-store" directive also disables results cache lookup in Mimir.
-		req.Header.Set("Cache-Control", "no-store")
+	if options != nil {
+		if options.resultsCacheDisabled {
+			// Despite the name, the "no-store" directive also disables results cache lookup in Mimir.
+			req.Header.Set("Cache-Control", "no-store")
+		}
+
+		for k, v := range options.additionalHeaders {
+			req.Header.Set(k, v)
+		}
 	}
 
 	if rt.bearerToken != "" {

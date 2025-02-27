@@ -20,6 +20,7 @@ type Metrics struct {
 	TCPConnectionsLimit      *prometheus.GaugeVec
 	RequestDuration          *prometheus.HistogramVec
 	PerTenantRequestDuration *prometheus.HistogramVec
+	PerTenantRequestTotal    *prometheus.CounterVec
 	ReceivedMessageSize      *prometheus.HistogramVec
 	SentMessageSize          *prometheus.HistogramVec
 	InflightRequests         *prometheus.GaugeVec
@@ -57,6 +58,11 @@ func NewServerMetrics(cfg Config) *Metrics {
 			NativeHistogramBucketFactor:     cfg.MetricsNativeHistogramFactor,
 			NativeHistogramMaxBucketNumber:  100,
 			NativeHistogramMinResetDuration: time.Hour,
+		}, []string{"method", "route", "status_code", "ws", "tenant"}),
+		PerTenantRequestTotal: reg.NewCounterVec(prometheus.CounterOpts{
+			Namespace: cfg.MetricsNamespace,
+			Name:      "per_tenant_request_total",
+			Help:      "Total count of requests for a particular tenant.",
 		}, []string{"method", "route", "status_code", "ws", "tenant"}),
 		ReceivedMessageSize: reg.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: cfg.MetricsNamespace,

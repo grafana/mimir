@@ -134,6 +134,8 @@ message LabelNamesRequest {
   google.protobuf.Any hints = 5;
 
   repeated LabelMatcher matchers = 6 [(gogoproto.nullable) = false];
+
+  int64 limit = 7;
 }
 
 message LabelNamesResponse {
@@ -165,6 +167,8 @@ message LabelValuesRequest {
   google.protobuf.Any hints = 6;
 
   repeated LabelMatcher matchers = 7 [(gogoproto.nullable) = false];
+
+  int64 limit = 8;
 }
 
 message LabelValuesResponse {

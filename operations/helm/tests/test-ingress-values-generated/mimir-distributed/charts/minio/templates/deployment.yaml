@@ -6,7 +6,7 @@ metadata:
   name: test-ingress-values-minio
   labels:
     app: minio
-    chart: minio-5.3.0
+    chart: minio-5.4.0
     release: test-ingress-values
     heritage: Helm
 spec:
@@ -27,8 +27,8 @@ spec:
         app: minio
         release: test-ingress-values
       annotations:
-        checksum/secrets: 015821c17413edf4491f30c6d9c7e1857d3ab1afe0dc51189b74b36780fe7723
-        checksum/config: dee881d6f221d6c65d217ab2dcaa4d96bd8a62b4b2581909a433395bcecb0dbc
+        checksum/secrets: 6436024bb4e3baea76128a5de7e10a7d91c70a6e8edbbd6420aa38ef9f125a84
+        checksum/config: b27cad450dbe41bdac167652ec99862a9ee95dafbac6c3991d5351812ac5b8a2
     spec:
       securityContext:
         
@@ -40,7 +40,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2024-04-18T19-09-19Z"
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"

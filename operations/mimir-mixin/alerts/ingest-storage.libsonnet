@@ -230,12 +230,12 @@
         // Alert if block-builder didn't process cycles in the past hour.
         {
           alert: $.alertName('BlockBuilderNoCycleProcessing'),
-          'for': '5m',
+          'for': '20m',
           expr: |||
             max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[60m]))) == 0
           ||| % $._config,
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has not processed cycles in the past hour.' % $._config,
@@ -255,19 +255,31 @@
             severity: 'warning',
           },
           annotations: {
-            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s reports partition lag of {{ printf "%%.2f" $value }}%%.' % $._config,
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s reports partition lag of {{ printf "%%.2f" $value }}.' % $._config,
+          },
+        },
+        {
+          alert: $.alertName('BlockBuilderLagging'),
+          'for': '140m',  // 2h20m. Indicating the lag did not come down for ~2 consumption cycles.
+          expr: |||
+            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_blockbuilder_consumer_lag_records[10m])) > 4e6
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s reports partition lag of {{ printf "%%.2f" $value }}.' % $._config,
           },
         },
 
-        // Alert if block-builder is failing to compact and upload any blocks.
+        // Alert immediately if block-builder is failing to compact and upload any blocks.
         {
           alert: $.alertName('BlockBuilderCompactAndUploadFailed'),
-          'for': '5m',
           expr: |||
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_blockbuilder_tsdb_compact_and_upload_failed_total[1m])) > 0
           ||| % $._config,
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s fails to compact and upload blocks.' % $._config,

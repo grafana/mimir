@@ -351,7 +351,12 @@ func (a *AlertCommand) verifyConfig(_ *kingpin.ParseContext) error {
 	))
 
 	go func() {
-		log.Fatal(http.ListenAndServe(":9090", nil))
+		server := http.Server{
+			Addr:         ":9090",
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		}
+		log.Fatal(server.ListenAndServe())
 	}()
 
 	ctx := context.Background()

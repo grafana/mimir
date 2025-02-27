@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -27,6 +28,7 @@ var (
 	allowedMetricNames = []string{
 		ingestionRate,
 		ingestionBurstSize,
+		ingestionArtificialDelay,
 		maxGlobalSeriesPerUser,
 		maxGlobalSeriesPerMetric,
 		maxGlobalExemplarsPerUser,
@@ -61,6 +63,7 @@ var (
 const (
 	ingestionRate                              = "ingestion_rate"
 	ingestionBurstSize                         = "ingestion_burst_size"
+	ingestionArtificialDelay                   = "ingestion_artificial_delay"
 	maxGlobalSeriesPerUser                     = "max_global_series_per_user"
 	maxGlobalSeriesPerMetric                   = "max_global_series_per_metric"
 	maxGlobalExemplarsPerUser                  = "max_global_exemplars_per_user"
@@ -186,6 +189,11 @@ func setupExportedMetrics(enabledMetrics *util.AllowedTenants, extraMetrics []Ex
 	}
 	if enabledMetrics.IsAllowed(ingestionBurstSize) {
 		exportedMetrics = append(exportedMetrics, ExportedMetric{ingestionBurstSize, func(limits *validation.Limits) float64 { return float64(limits.IngestionBurstSize) }})
+	}
+	if enabledMetrics.IsAllowed(ingestionArtificialDelay) {
+		exportedMetrics = append(exportedMetrics, ExportedMetric{ingestionArtificialDelay, func(limits *validation.Limits) float64 {
+			return float64(time.Duration(limits.IngestionArtificialDelay) / time.Second)
+		}})
 	}
 	if enabledMetrics.IsAllowed(maxGlobalSeriesPerUser) {
 		exportedMetrics = append(exportedMetrics, ExportedMetric{maxGlobalSeriesPerUser, func(limits *validation.Limits) float64 { return float64(limits.MaxGlobalSeriesPerUser) }})

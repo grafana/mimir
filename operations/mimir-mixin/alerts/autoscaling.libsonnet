@@ -15,7 +15,7 @@
                   # Add "metric" label.
                   + on(%(aggregation_labels)s, horizontalpodautoscaler) group_right
                     # Using `max by ()` so that series churn doesn't break the promQL join
-                    max by (%(aggregation_labels)s, horizontalpodautoscaler) (
+                    max by (%(aggregation_labels)s, horizontalpodautoscaler, metric) (
                       label_replace(kube_horizontalpodautoscaler_spec_target_metric*0, "metric", "$1", "metric_name", "(.+)")
                     )
                   > 0),

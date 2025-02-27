@@ -50,10 +50,20 @@ Create chart name and version as used by the chart label.
 {{- end -}}
 
 {{/*
-Calculate image name based on whether enterprise features are requested
+Build mimir image reference based on whether enterprise features are requested. The component local values always take precedence.
+Params:
+  ctx = . context
+  component = component name
 */}}
 {{- define "mimir.imageReference" -}}
-{{- if .Values.enterprise.enabled -}}{{ .Values.enterprise.image.repository }}:{{ .Values.enterprise.image.tag }}{{- else -}}{{ .Values.image.repository }}:{{ .Values.image.tag }}{{- end -}}
+{{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
+{{- $image := $componentSection.image | default dict -}}
+{{- if .ctx.Values.enterprise.enabled -}}
+  {{- $image = mustMerge $image .ctx.Values.enterprise.image -}}
+{{- else -}}
+  {{- $image = mustMerge $image .ctx.Values.image -}}
+{{- end -}}
+{{ $image.repository }}:{{ $image.tag }}
 {{- end -}}
 
 {{/*
@@ -539,11 +549,19 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 {{- end -}}
 
 {{- define "mimir.remoteWriteUrl.inCluster" -}}
+{{- if or (eq (include "mimir.gateway.isEnabled" . ) "true") .Values.nginx.enabled -}}
 {{ include "mimir.gatewayUrl" . }}/api/v1/push
+{{- else -}}
+http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}/api/v1/push
+{{- end -}}
 {{- end -}}
 
 {{- define "mimir.remoteReadUrl.inCluster" -}}
+{{- if or (eq (include "mimir.gateway.isEnabled" . ) "true") .Values.nginx.enabled -}}
 {{ include "mimir.gatewayUrl" . }}{{ include "mimir.prometheusHttpPrefix" . }}
+{{- else -}}
+http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}{{ include "mimir.prometheusHttpPrefix" . }}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -663,21 +681,21 @@ mimir.siToBytes takes 1 argument
 */}}
 {{- define "mimir.siToBytes" -}}
     {{- if (hasSuffix "Ki" .value) -}}
-        {{- trimSuffix "Ki" .value | float64 | mul 1024 | ceil | int64 -}}
+        {{- trimSuffix "Ki" .value | float64 | mulf 1024 | ceil | int64 -}}
     {{- else if (hasSuffix "Mi" .value) -}}
-        {{- trimSuffix "Mi" .value | float64 | mul 1048576 | ceil | int64 -}}
+        {{- trimSuffix "Mi" .value | float64 | mulf 1048576 | ceil | int64 -}}
     {{- else if (hasSuffix "Gi" .value) -}}
-        {{- trimSuffix "Gi" .value | float64 | mul 1073741824 | ceil | int64 -}}
+        {{- trimSuffix "Gi" .value | float64 | mulf 1073741824 | ceil | int64 -}}
     {{- else if (hasSuffix "Ti" .value) -}}
-        {{- trimSuffix "Ti" .value | float64 | mul 1099511627776 | ceil | int64 -}}
+        {{- trimSuffix "Ti" .value | float64 | mulf 1099511627776 | ceil | int64 -}}
     {{- else if (hasSuffix "k" .value) -}}
-        {{- trimSuffix "k" .value | float64 | mul 1000 | ceil | int64 -}}
+        {{- trimSuffix "k" .value | float64 | mulf 1000 | ceil | int64 -}}
     {{- else if (hasSuffix "M" .value) -}}
-        {{- trimSuffix "M" .value | float64 | mul 1000000 | ceil | int64 -}}
+        {{- trimSuffix "M" .value | float64 | mulf 1000000 | ceil | int64 -}}
     {{- else if (hasSuffix "G" .value) -}}
-        {{- trimSuffix "G" .value | float64 | mul 1000000000 | ceil | int64 -}}
+        {{- trimSuffix "G" .value | float64 | mulf 1000000000 | ceil | int64 -}}
     {{- else if (hasSuffix "T" .value) -}}
-        {{- trimSuffix "T" .value | float64 | mul 1000000000000 | ceil | int64 -}}
+        {{- trimSuffix "T" .value | float64 | mulf 1000000000000 | ceil | int64 -}}
     {{- else if (hasSuffix "m" .value) -}}
         {{- trimSuffix "m" .value | float64 | mulf 0.001 | ceil | int64 -}}
     {{- else -}}

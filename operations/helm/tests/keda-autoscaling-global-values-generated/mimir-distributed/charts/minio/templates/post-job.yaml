@@ -6,7 +6,7 @@ metadata:
   name: keda-autoscaling-global-values-minio-post-job
   labels:
     app: minio-post-job
-    chart: minio-5.3.0
+    chart: minio-5.4.0
     release: keda-autoscaling-global-values
     heritage: Helm
   annotations:
@@ -35,7 +35,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio-make-bucket
-          image: "quay.io/minio/mc:RELEASE.2024-04-18T16-45-29Z"
+          image: "quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z"
           imagePullPolicy: IfNotPresent
           command: [ "/bin/sh", "/config/initialize" ]
           env:
@@ -54,7 +54,7 @@ spec:
             requests:
               memory: 128Mi
         - name: minio-make-user
-          image: "quay.io/minio/mc:RELEASE.2024-04-18T16-45-29Z"
+          image: "quay.io/minio/mc:RELEASE.2024-11-21T17-21-54Z"
           imagePullPolicy: IfNotPresent
           command: [ "/bin/sh", "/config/add-user" ]
           env:

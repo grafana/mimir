@@ -1438,6 +1438,40 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 	}
 }
 
+func TestBlocksCleaner_instrumentBucketIndexUpdate(t *testing.T) {
+
+	reg := prometheus.NewPedanticRegistry()
+	ctx := context.Background()
+
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:                 12 * time.Hour,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
+	}
+
+	logger := log.NewNopLogger()
+	cfgProvider := newMockConfigProvider()
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+
+	idx := bucketindex.Index{UpdatedAt: 1}
+	require.NoError(t, bucketindex.WriteIndex(ctx, bucketClient, "user-1", cfgProvider, &idx))
+
+	cleaner.instrumentBucketIndexUpdate(ctx)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_bucket_index_last_successful_update_timestamp_seconds Timestamp of the last successful update of a tenant's bucket index.
+		# TYPE cortex_bucket_index_last_successful_update_timestamp_seconds gauge
+		cortex_bucket_index_last_successful_update_timestamp_seconds{user="user-1"} 1
+		`),
+		"cortex_bucket_index_last_successful_update_timestamp_seconds"))
+}
+
 type hookBucket struct {
 	objstore.Bucket
 

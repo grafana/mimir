@@ -58,6 +58,7 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 	}
 
 	if level != querierapi.ReadConsistencyStrong {
+		spanLog.DebugLog("msg", "evaluating query with eventually consistent read consistency")
 		return r.next.RoundTrip(req)
 	}
 
@@ -76,9 +77,12 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 				return errors.Wrapf(err, "wait for last produced offsets of topic '%s'", offsetsReader.Topic())
 			}
 
+			headerValue := string(querierapi.EncodeOffsets(offsets))
 			reqHeaderLock.Lock()
-			req.Header.Add(headerKey, string(querierapi.EncodeOffsets(offsets)))
+			req.Header.Add(headerKey, headerValue)
 			reqHeaderLock.Unlock()
+
+			spanLog.DebugLog("msg", "got offsets for strong read consistency", "header", headerKey, "value", headerValue)
 
 			return nil
 		})
@@ -87,6 +91,8 @@ func (r *readConsistencyRoundTripper) RoundTrip(req *http.Request) (_ *http.Resp
 	if err = errGroup.Wait(); err != nil {
 		return nil, err
 	}
+
+	spanLog.DebugLog("msg", "evaluating query with strong read consistency")
 
 	return r.next.RoundTrip(req)
 }

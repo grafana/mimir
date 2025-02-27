@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
+	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
@@ -62,6 +63,9 @@ const (
 	QueryIngestersWithinFlag                  = "querier.query-ingesters-within"
 	AlertmanagerMaxGrafanaConfigSizeFlag      = "alertmanager.max-grafana-config-size-bytes"
 	AlertmanagerMaxGrafanaStateSizeFlag       = "alertmanager.max-grafana-state-size-bytes"
+	costAttributionLabelsFlag                 = "validation.cost-attribution-labels"
+	maxCostAttributionLabelsPerUserFlag       = "validation.max-cost-attribution-labels-per-user"
+	maxFutureQueryWindowFlag                  = "query-frontend.max-future-query-window"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -70,6 +74,9 @@ const (
 var (
 	errInvalidIngestStorageReadConsistency         = fmt.Errorf("invalid ingest storage read consistency (supported values: %s)", strings.Join(api.ReadConsistencies, ", "))
 	errInvalidMaxEstimatedChunksPerQueryMultiplier = errors.New("invalid value for -" + MaxEstimatedChunksPerQueryMultiplierFlag + ": must be 0 or greater than or equal to 1")
+	errCostAttributionLabelsLimitExceeded          = errors.New("invalid value for -" + costAttributionLabelsFlag + ": exceeds the limit defined by -" + maxCostAttributionLabelsPerUserFlag)
+	errInvalidMaxCostAttributionLabelsPerUser      = errors.New("invalid value for -" + maxCostAttributionLabelsPerUserFlag + ": must be less than or equal to 4")
+	errInvalidMaxFutureQueryWindow                 = errors.New("invalid value for -" + maxFutureQueryWindowFlag + ": must be greater than or equal to 0")
 )
 
 // LimitError is a marker interface for the errors that do not comply with the specified limits.
@@ -141,8 +148,12 @@ type Limits struct {
 	NativeHistogramsIngestionEnabled bool `yaml:"native_histograms_ingestion_enabled" json:"native_histograms_ingestion_enabled" category:"experimental"`
 	// OOO native histograms
 	OOONativeHistogramsIngestionEnabled bool `yaml:"ooo_native_histograms_ingestion_enabled" json:"ooo_native_histograms_ingestion_enabled" category:"experimental"`
+
 	// Active series custom trackers
-	ActiveSeriesCustomTrackersConfig asmodel.CustomTrackersConfig `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count will be exposed in the custom trackers metric labeled using the tracker name (map key). Zero valued counts are not exposed (and removed when they go back to zero)." category:"advanced"`
+	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
+	ActiveSeriesAdditionalCustomTrackersConfig asmodel.CustomTrackersConfig                  `yaml:"active_series_additional_custom_trackers" json:"active_series_additional_custom_trackers" doc:"description=Additional custom trackers for active metrics merged on top of the base custom trackers. You can use this configuration option to define the base custom trackers globally for all tenants, and then use the additional trackers to add extra trackers on a per-tenant basis." category:"advanced"`
+	activeSeriesMergedCustomTrackersConfig     *atomic.Pointer[asmodel.CustomTrackersConfig] `yaml:"-" json:"-"`
+
 	// Max allowed time window for out-of-order samples.
 	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window" category:"experimental"`
 	OutOfOrderBlocksExternalLabelEnabled bool           `yaml:"out_of_order_blocks_external_label_enabled" json:"out_of_order_blocks_external_label_enabled" category:"experimental"`
@@ -178,14 +189,24 @@ type Limits struct {
 	ResultsCacheForUnalignedQueryEnabled   bool                   `yaml:"cache_unaligned_requests" json:"cache_unaligned_requests" category:"advanced"`
 	MaxQueryExpressionSizeBytes            int                    `yaml:"max_query_expression_size_bytes" json:"max_query_expression_size_bytes"`
 	BlockedQueries                         []*BlockedQuery        `yaml:"blocked_queries,omitempty" json:"blocked_queries,omitempty" doc:"nocli|description=List of queries to block." category:"experimental"`
+	BlockedRequests                        []*BlockedRequest      `yaml:"blocked_requests,omitempty" json:"blocked_requests,omitempty" doc:"nocli|description=List of http requests to block." category:"experimental"`
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
 	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions" category:"experimental"`
+	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
+	InstantQueriesWithSubquerySpinOff      flagext.StringSliceCSV `yaml:"instant_queries_with_subquery_spin_off" json:"instant_queries_with_subquery_spin_off" category:"experimental"`
+	MaxFutureQueryWindow                   model.Duration         `yaml:"max_future_query_window" json:"max_future_query_window" category:"experimental"`
 
 	// Cardinality
 	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
 	LabelNamesAndValuesResultsMaxSizeBytes        int  `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
 	LabelValuesMaxCardinalityLabelNamesPerRequest int  `yaml:"label_values_max_cardinality_label_names_per_request" json:"label_values_max_cardinality_label_names_per_request"`
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"experimental"`
+
+	// Cost attribution and limit.
+	CostAttributionLabels                flagext.StringSliceCSV `yaml:"cost_attribution_labels" json:"cost_attribution_labels" category:"experimental"`
+	MaxCostAttributionLabelsPerUser      int                    `yaml:"max_cost_attribution_labels_per_user" json:"max_cost_attribution_labels_per_user" category:"experimental"`
+	MaxCostAttributionCardinalityPerUser int                    `yaml:"max_cost_attribution_cardinality_per_user" json:"max_cost_attribution_cardinality_per_user" category:"experimental"`
+	CostAttributionCooldown              model.Duration         `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay                                  model.Duration         `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
@@ -228,16 +249,19 @@ type Limits struct {
 	NotificationRateLimit               float64            `yaml:"alertmanager_notification_rate_limit" json:"alertmanager_notification_rate_limit"`
 	NotificationRateLimitPerIntegration LimitsMap[float64] `yaml:"alertmanager_notification_rate_limit_per_integration" json:"alertmanager_notification_rate_limit_per_integration"`
 
-	AlertmanagerMaxGrafanaConfigSizeBytes      flagext.Bytes `yaml:"alertmanager_max_grafana_config_size_bytes" json:"alertmanager_max_grafana_config_size_bytes"`
-	AlertmanagerMaxConfigSizeBytes             int           `yaml:"alertmanager_max_config_size_bytes" json:"alertmanager_max_config_size_bytes"`
-	AlertmanagerMaxGrafanaStateSizeBytes       flagext.Bytes `yaml:"alertmanager_max_grafana_state_size_bytes" json:"alertmanager_max_grafana_state_size_bytes"`
-	AlertmanagerMaxSilencesCount               int           `yaml:"alertmanager_max_silences_count" json:"alertmanager_max_silences_count"`
-	AlertmanagerMaxSilenceSizeBytes            int           `yaml:"alertmanager_max_silence_size_bytes" json:"alertmanager_max_silence_size_bytes"`
-	AlertmanagerMaxTemplatesCount              int           `yaml:"alertmanager_max_templates_count" json:"alertmanager_max_templates_count"`
-	AlertmanagerMaxTemplateSizeBytes           int           `yaml:"alertmanager_max_template_size_bytes" json:"alertmanager_max_template_size_bytes"`
-	AlertmanagerMaxDispatcherAggregationGroups int           `yaml:"alertmanager_max_dispatcher_aggregation_groups" json:"alertmanager_max_dispatcher_aggregation_groups"`
-	AlertmanagerMaxAlertsCount                 int           `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
-	AlertmanagerMaxAlertsSizeBytes             int           `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
+	AlertmanagerMaxGrafanaConfigSizeBytes      flagext.Bytes          `yaml:"alertmanager_max_grafana_config_size_bytes" json:"alertmanager_max_grafana_config_size_bytes"`
+	AlertmanagerMaxConfigSizeBytes             int                    `yaml:"alertmanager_max_config_size_bytes" json:"alertmanager_max_config_size_bytes"`
+	AlertmanagerMaxGrafanaStateSizeBytes       flagext.Bytes          `yaml:"alertmanager_max_grafana_state_size_bytes" json:"alertmanager_max_grafana_state_size_bytes"`
+	AlertmanagerMaxSilencesCount               int                    `yaml:"alertmanager_max_silences_count" json:"alertmanager_max_silences_count"`
+	AlertmanagerMaxSilenceSizeBytes            int                    `yaml:"alertmanager_max_silence_size_bytes" json:"alertmanager_max_silence_size_bytes"`
+	AlertmanagerMaxTemplatesCount              int                    `yaml:"alertmanager_max_templates_count" json:"alertmanager_max_templates_count"`
+	AlertmanagerMaxTemplateSizeBytes           int                    `yaml:"alertmanager_max_template_size_bytes" json:"alertmanager_max_template_size_bytes"`
+	AlertmanagerMaxDispatcherAggregationGroups int                    `yaml:"alertmanager_max_dispatcher_aggregation_groups" json:"alertmanager_max_dispatcher_aggregation_groups"`
+	AlertmanagerMaxAlertsCount                 int                    `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
+	AlertmanagerMaxAlertsSizeBytes             int                    `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
+	AlertmanagerNotifyHookURL                  string                 `yaml:"alertmanager_notify_hook_url" json:"alertmanager_notify_hook_url"`
+	AlertmanagerNotifyHookReceivers            flagext.StringSliceCSV `yaml:"alertmanager_notify_hook_receivers" json:"alertmanager_notify_hook_receivers"`
+	AlertmanagerNotifyHookTimeout              model.Duration         `yaml:"alertmanager_notify_hook_timeout" json:"alertmanager_notify_hook_timeout"`
 
 	// OpenTelemetry
 	OTelMetricSuffixesEnabled                bool                   `yaml:"otel_metric_suffixes_enabled" json:"otel_metric_suffixes_enabled" category:"advanced"`
@@ -292,14 +316,18 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, MaxMetadataPerMetricFlag, 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 	f.BoolVar(&l.IgnoreOOOExemplars, "ingester.ignore-ooo-exemplars", false, "Whether to ignore exemplars with out-of-order timestamps. If enabled, exemplars with out-of-order timestamps are silently dropped, otherwise they cause partial errors.")
-	f.Var(&l.ActiveSeriesCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
+	f.Var(&l.ActiveSeriesBaseCustomTrackersConfig, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
 	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", false, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
-	f.BoolVar(&l.OOONativeHistogramsIngestionEnabled, "ingester.ooo-native-histograms-ingestion-enabled", false, "Enable experimental out-of-order native histogram ingestion. This only takes effect if the `-ingester.out-of-order-time-window` value is greater than zero and if `-ingester.native-histograms-ingestion-enabled = true`")
+	f.BoolVar(&l.OOONativeHistogramsIngestionEnabled, "ingester.ooo-native-histograms-ingestion-enabled", true, "Enable experimental out-of-order native histogram ingestion. This only takes effect if the `-ingester.out-of-order-time-window` value is greater than zero and if `-ingester.native-histograms-ingestion-enabled = true`")
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
+	f.Var(&l.CostAttributionLabels, costAttributionLabelsFlag, "Defines labels for cost attribution. Applies to metrics like cortex_distributor_received_attributed_samples_total. To disable, set to an empty string. For example, 'team,service' produces metrics such as cortex_distributor_received_attributed_samples_total{team='frontend', service='api'}.")
+	f.IntVar(&l.MaxCostAttributionLabelsPerUser, maxCostAttributionLabelsPerUserFlag, 2, "Maximum number of cost attribution labels allowed per user, the value is capped at 4.")
+	f.IntVar(&l.MaxCostAttributionCardinalityPerUser, "validation.max-cost-attribution-cardinality-per-user", 10000, "Maximum cardinality of cost attribution labels allowed per user.")
+	f.Var(&l.CostAttributionCooldown, "validation.cost-attribution-cooldown", "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.")
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 0, "Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, MaxSeriesPerQueryFlag, 0, "The maximum number of unique series for which a query can fetch samples from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable")
@@ -371,6 +399,9 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxQueryExpressionSizeBytes, MaxQueryExpressionSizeBytesFlag, 0, "Max size of the raw query, in bytes. This limit is enforced by the query-frontend for instant, range and remote read queries. 0 to not apply a limit to the size of the query.")
 	f.BoolVar(&l.AlignQueriesWithStep, alignQueriesWithStepFlag, false, "Mutate incoming queries to align their start and end with their step to improve result caching.")
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
+	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
+	f.Var(&l.MaxFutureQueryWindow, maxFutureQueryWindowFlag, "Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.")
+	f.Var(&l.InstantQueriesWithSubquerySpinOff, "query-frontend.instant-queries-with-subquery-spin-off", "List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
@@ -398,10 +429,17 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.AlertmanagerMaxDispatcherAggregationGroups, "alertmanager.max-dispatcher-aggregation-groups", 0, "Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsCount, "alertmanager.max-alerts-count", 0, "Maximum number of alerts that a single tenant can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsSizeBytes, "alertmanager.max-alerts-size-bytes", 0, "Maximum total size of alerts that a single tenant can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
+	f.StringVar(&l.AlertmanagerNotifyHookURL, "alertmanager.notify-hook-url", "", "URL of a hook to invoke before a notification is sent. empty = no hook.")
+	f.Var(&l.AlertmanagerNotifyHookReceivers, "alertmanager.notify-hook-receivers", "List of receivers to enable notify hooks for. empty = all receivers.")
+	_ = l.AlertmanagerNotifyHookTimeout.Set("30s")
+	f.Var(&l.AlertmanagerNotifyHookTimeout, "alertmanager.notify-hook-timeout", "Maximum amount of time to wait for a hook to complete before timing out. 0 = no timeout.")
 
 	// Ingest storage.
 	f.StringVar(&l.IngestStorageReadConsistency, "ingest-storage.read-consistency", api.ReadConsistencyEventual, fmt.Sprintf("The default consistency level to enforce for queries when using the ingest storage. Supports values: %s.", strings.Join(api.ReadConsistencies, ", ")))
 	f.IntVar(&l.IngestionPartitionsTenantShardSize, "ingest-storage.ingestion-partition-tenant-shard-size", 0, "The number of partitions a tenant's data should be sharded to when using the ingest storage. Tenants are sharded across partitions using shuffle-sharding. 0 disables shuffle sharding and tenant is sharded across all partitions.")
+
+	// Ensure the pointer holder is initialized.
+	l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -431,6 +469,9 @@ func (l *Limits) unmarshal(decode func(any) error) error {
 		l.NotificationRateLimitPerIntegration = defaultLimits.NotificationRateLimitPerIntegration.Clone()
 		l.RulerMaxRulesPerRuleGroupByNamespace = defaultLimits.RulerMaxRulesPerRuleGroupByNamespace.Clone()
 		l.RulerMaxRuleGroupsPerTenantByNamespace = defaultLimits.RulerMaxRuleGroupsPerTenantByNamespace.Clone()
+
+		// Reset the merged custom active series trackers config, to not interfere with the default limits.
+		l.activeSeriesMergedCustomTrackersConfig = atomic.NewPointer[asmodel.CustomTrackersConfig](nil)
 	}
 
 	// Decode into a reflection-crafted struct that has fields for the extensions.
@@ -474,6 +515,18 @@ func (l *Limits) validate() error {
 
 	if !util.StringsContain(api.ReadConsistencies, l.IngestStorageReadConsistency) {
 		return errInvalidIngestStorageReadConsistency
+	}
+
+	if len(l.CostAttributionLabels) > l.MaxCostAttributionLabelsPerUser {
+		return errCostAttributionLabelsLimitExceeded
+	}
+
+	if l.MaxCostAttributionLabelsPerUser > 4 {
+		return errInvalidMaxCostAttributionLabelsPerUser
+	}
+
+	if l.MaxFutureQueryWindow < 0 {
+		return errInvalidMaxFutureQueryWindow
 	}
 
 	return nil
@@ -700,6 +753,11 @@ func (o *Overrides) BlockedQueries(userID string) []*BlockedQuery {
 	return o.getOverridesForUser(userID).BlockedQueries
 }
 
+// BlockedRequests returns the blocked http requests.
+func (o *Overrides) BlockedRequests(userID string) []*BlockedRequest {
+	return o.getOverridesForUser(userID).BlockedRequests
+}
+
 // MaxLabelsQueryLength returns the limit of the length (in time) of a label names or values request.
 func (o *Overrides) MaxLabelsQueryLength(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).MaxLabelsQueryLength)
@@ -778,8 +836,34 @@ func (o *Overrides) IgnoreOOOExemplars(userID string) bool {
 	return o.getOverridesForUser(userID).IgnoreOOOExemplars
 }
 
+// ActiveSeriesCustomTrackersConfig returns all active series custom trackers that should be used for
+// the input tenant. The trackers are the merge of the configure base and additional custom trackers.
 func (o *Overrides) ActiveSeriesCustomTrackersConfig(userID string) asmodel.CustomTrackersConfig {
-	return o.getOverridesForUser(userID).ActiveSeriesCustomTrackersConfig
+	limits := o.getOverridesForUser(userID)
+
+	// We expect the pointer holder to be initialized. However, in some tests it doesn't get initialized
+	// for simplicity. In such case, we just recompute the merge each time.
+	if limits.activeSeriesMergedCustomTrackersConfig == nil {
+		return asmodel.MergeCustomTrackersConfig(
+			limits.ActiveSeriesBaseCustomTrackersConfig,
+			limits.ActiveSeriesAdditionalCustomTrackersConfig,
+		)
+	}
+
+	if merged := limits.activeSeriesMergedCustomTrackersConfig.Load(); merged != nil {
+		return *merged
+	}
+
+	// Merge the base trackers with the additional ones.
+	merged := asmodel.MergeCustomTrackersConfig(
+		limits.ActiveSeriesBaseCustomTrackersConfig,
+		limits.ActiveSeriesAdditionalCustomTrackersConfig,
+	)
+
+	// Cache it.
+	limits.activeSeriesMergedCustomTrackersConfig.Store(&merged)
+
+	return merged
 }
 
 // OutOfOrderTimeWindow returns the out-of-order time window for the user.
@@ -792,9 +876,29 @@ func (o *Overrides) OutOfOrderBlocksExternalLabelEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).OutOfOrderBlocksExternalLabelEnabled
 }
 
+func (o *Overrides) MaxFutureQueryWindow(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).MaxFutureQueryWindow)
+}
+
 // SeparateMetricsGroupLabel returns the custom label used to separate specific metrics
 func (o *Overrides) SeparateMetricsGroupLabel(userID string) string {
 	return o.getOverridesForUser(userID).SeparateMetricsGroupLabel
+}
+
+func (o *Overrides) CostAttributionLabels(userID string) []string {
+	return o.getOverridesForUser(userID).CostAttributionLabels
+}
+
+func (o *Overrides) MaxCostAttributionLabelsPerUser(userID string) int {
+	return o.getOverridesForUser(userID).MaxCostAttributionLabelsPerUser
+}
+
+func (o *Overrides) CostAttributionCooldown(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).CostAttributionCooldown)
+}
+
+func (o *Overrides) MaxCostAttributionCardinalityPerUser(userID string) int {
+	return o.getOverridesForUser(userID).MaxCostAttributionCardinalityPerUser
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.
@@ -1075,6 +1179,18 @@ func (o *Overrides) AlertmanagerMaxAlertsSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).AlertmanagerMaxAlertsSizeBytes
 }
 
+func (o *Overrides) AlertmanagerNotifyHookURL(userID string) string {
+	return o.getOverridesForUser(userID).AlertmanagerNotifyHookURL
+}
+
+func (o *Overrides) AlertmanagerNotifyHookReceivers(userID string) []string {
+	return o.getOverridesForUser(userID).AlertmanagerNotifyHookReceivers
+}
+
+func (o *Overrides) AlertmanagerNotifyHookTimeout(userID string) time.Duration {
+	return time.Duration(o.getOverridesForUser(userID).AlertmanagerNotifyHookTimeout)
+}
+
 func (o *Overrides) ResultsCacheTTL(user string) time.Duration {
 	return time.Duration(o.getOverridesForUser(user).ResultsCacheTTL)
 }
@@ -1101,6 +1217,10 @@ func (o *Overrides) ResultsCacheForUnalignedQueryEnabled(userID string) bool {
 
 func (o *Overrides) EnabledPromQLExperimentalFunctions(userID string) []string {
 	return o.getOverridesForUser(userID).EnabledPromQLExperimentalFunctions
+}
+
+func (o *Overrides) Prom2RangeCompat(userID string) bool {
+	return o.getOverridesForUser(userID).Prom2RangeCompat
 }
 
 func (o *Overrides) OTelMetricSuffixesEnabled(tenantID string) bool {
@@ -1135,6 +1255,10 @@ func (o *Overrides) IngestStorageReadConsistency(userID string) string {
 
 func (o *Overrides) IngestionPartitionsTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionPartitionsTenantShardSize
+}
+
+func (o *Overrides) InstantQueriesWithSubquerySpinOff(userID string) []string {
+	return o.getOverridesForUser(userID).InstantQueriesWithSubquerySpinOff
 }
 
 func (o *Overrides) getOverridesForUser(userID string) *Limits {

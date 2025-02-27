@@ -22,6 +22,9 @@
     // modify the job selectors in the dashboard queries.
     singleBinary: false,
 
+    // Added default flag for GEM-specific dashboards and alerts.
+    gem_enabled: false,
+
     // This is mapping between a Mimir component name and the regular expression that should be used
     // to match its instance and container name. Mimir jsonnet and Helm guarantee that the instance name
     // (e.g. Kubernetes Deployment) and container name always match, so it's safe to use a shared mapping.
@@ -55,6 +58,7 @@
       mimir_write: 'mimir-write',
       mimir_read: 'mimir-read',
       mimir_backend: 'mimir-backend',
+      federation_frontend: 'federation-frontend',
     },
 
     // Some dashboards show panels grouping together multiple components of a given "path".
@@ -83,7 +87,7 @@
       ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom ruler-query-frontend deployments.
       query_scheduler: ['query-scheduler.*', 'mimir-backend.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
       ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
-      ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor.*', 'ingester.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
+      ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor.*', 'ingester.*', 'query-frontend.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir', 'mimir-write.*', 'mimir-read.*', 'mimir-backend.*'],
       store_gateway: ['store-gateway.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also per-zone store-gateway deployments.
       gateway: ['gateway', 'cortex-gw.*'],  // Match also custom and per-zone gateway deployments.
       compactor: ['compactor.*', 'cortex', 'mimir', 'mimir-backend.*'],  // Match also custom compactor deployments.
@@ -98,6 +102,8 @@
       write: ['distributor.*', 'ingester.*', 'mimir-write.*'],
       read: ['query-frontend.*', 'querier.*', 'ruler-query-frontend.*', 'ruler-querier.*', 'mimir-read.*'],
       backend: ['ruler', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter', 'mimir-backend.*'],
+
+      federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
     },
 
     // Name selectors for different application instances, using the "per_instance_label".
@@ -144,6 +150,8 @@
       read: componentsGroupMatcher(componentGroups.read),
       backend: componentsGroupMatcher(componentGroups.backend),
       remote_ruler_read: componentsGroupMatcher(componentGroups.remote_ruler_read),
+
+      federation_frontend: instanceMatcher(componentNameRegexp.federation_frontend),
     },
     all_instances: std.join('|', std.map(function(name) componentNameRegexp[name], componentGroups.write + componentGroups.read + componentGroups.backend)),
 
@@ -181,6 +189,8 @@
       write: componentsGroupMatcher(componentGroups.write),
       read: componentsGroupMatcher(componentGroups.read),
       backend: componentsGroupMatcher(componentGroups.backend),
+
+      federation_frontend: componentNameRegexp.federation_frontend,
     },
 
     // The label used to differentiate between different Kubernetes clusters.
@@ -221,8 +231,8 @@
     // Whether mimir block-builder is enabled (experimental)
     block_builder_enabled: false,
 
-    // Whether mimir gateway is enabled
-    gateway_enabled: false,
+    // Whether mimir gateway is enabled. The gateway is usually enabled in GEM deployments.
+    gateway_enabled: $._config.gem_enabled,
 
     // Whether grafana cloud alertmanager instance-mapper is enabled
     alertmanager_im_enabled: false,
@@ -624,7 +634,10 @@
     },
 
     // Whether autoscaling panels and alerts should be enabled for specific Mimir services.
-    autoscaling_hpa_prefix: 'keda-hpa-',
+    //
+    // IMPORTANT: use non-capture groups in the regular expression so that when they're used as part
+    // of other regexps we don't break existing capture groups.
+    autoscaling_hpa_prefix: 'keda-hpa-(?:mimir-)?',
 
     autoscaling: {
       query_frontend: {
@@ -709,6 +722,10 @@
     // Disabled by default, because when -ingester.limit-inflight-requests-using-grpc-method-limiter and -distributor.limit-inflight-requests-using-grpc-method-limiter is
     // not used (default), then rejected requests are already counted as failures.
     show_rejected_requests_on_writes_dashboard: false,
+
+    // When ingester reactive limiters are enabled (using -ingester.push-reactive-limiter.enabled=true and -ingester.read-reactive-limiter.enabled=true), additional
+    // metrics related to inflight requests and rejections can be shown on the Writes and Reads dashboards.
+    show_reactive_limiter_panels: false,
 
     // Show panels that use queries for gRPC-based ingestion (distributor -> ingester)
     show_grpc_ingestion_panels: true,

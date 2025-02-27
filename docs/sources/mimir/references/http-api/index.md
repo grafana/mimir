@@ -860,7 +860,7 @@ Prometheus-compatible rules endpoint to list alerting and recording rules that a
 
 The `type` parameter is optional. If set, only the specified type of rule is returned.
 
-The `file`, `rule_group` and `rule_name` parameters are optional, and can accept multiple values. If set, the response content is filtered accordingly.
+The `file`, `rule_group` and `rule_name` parameters are optional, and can accept multiple values. If set, the response content is filtered accordingly. The parameters can also be provided as `file[]`, `rule_group[]` and `rule_name[]` - if both are provided e.g `file` and `file[]` , `file[]` will take precdent.
 
 The `exclude_alerts` parameter is optional. If set, it only returns rules and excludes active alerts.
 

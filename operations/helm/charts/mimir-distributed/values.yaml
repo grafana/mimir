@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r321-3410e68
+  tag: r331-5506d2e
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -405,7 +405,7 @@ mimir:
     store_gateway:
       sharding_ring:
         heartbeat_period: 1m
-        heartbeat_timeout: 4m
+        heartbeat_timeout: 10m
         wait_stability_min_duration: 1m
         {{- if .Values.store_gateway.zoneAwareReplication.enabled }}
         kvstore:
@@ -569,6 +569,12 @@ alertmanager:
   #   E.g. if 'replicas' is set to 4 and there are 3 zones, then 4/3=1.33 and after rounding up it means 2 pods per zone are started.
   replicas: 1
 
+  # -- Allows to override the container image of the alertmanager component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   statefulSet:
     enabled: true
 
@@ -647,6 +653,10 @@ alertmanager:
     # Alertmanager will create/use a Persistent Volume Claim
     # If false, use emptyDir
     enabled: true
+
+    # Alertmanager data Persistent Volume Claim template name
+    #
+    name: storage
 
     # Alertmanager data Persistent Volume Claim annotations
     #
@@ -832,6 +842,12 @@ distributor:
   # -- Whether to render the manifests related to the distributor component.
   enabled: true
 
+  # -- Allows to override the container image of the distributor component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
@@ -840,11 +856,11 @@ distributor:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -945,6 +961,12 @@ ingester:
   # -- Whether to render the manifests related to the ingester component.
   enabled: true
 
+  # -- Allows to override the container image of the ingester component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # -- Total number of replicas for the ingester across all availability zones
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
@@ -1014,6 +1036,10 @@ ingester:
     # It is advisable to enable volume persistence in ingester to avoid losing metrics.
     #
     enabled: true
+
+    # Ingester data Persistent Volume Claim template name
+    #
+    name: storage
 
     # Ingester data Persistent Volume Claim annotations
     #
@@ -1095,7 +1121,7 @@ ingester:
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-a
   #       storageClass: storage-class-us-central1-a
-  #     - name: zone-a
+  #     - name: zone-b
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-b
   #       storageClass: storage-class-us-central1-b
@@ -1170,6 +1196,13 @@ ingester:
 
 overrides_exporter:
   enabled: true
+
+  # -- Allows to override the container image of the overrides-exporter component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 1
 
   annotations: {}
@@ -1259,6 +1292,13 @@ overrides_exporter:
 
 ruler:
   enabled: true
+
+  # -- Allows to override the container image of the ruler component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 1
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
@@ -1266,11 +1306,11 @@ ruler:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -1381,6 +1421,12 @@ ruler:
 
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_querier:
+  # -- Allows to override the container image of the ruler-querier component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 2
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
@@ -1388,11 +1434,11 @@ ruler_querier:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -1499,6 +1545,12 @@ ruler_querier:
 
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_frontend:
+  # -- Allows to override the container image of the ruler-query-frontend component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
@@ -1507,11 +1559,11 @@ ruler_query_frontend:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -1609,6 +1661,12 @@ ruler_query_frontend:
 
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_scheduler:
+  # -- Allows to override the container image of the ruler-query-scheduler component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 2
 
   service:
@@ -1698,6 +1756,12 @@ querier:
   # -- Whether to render the manifests related to the querier component.
   enabled: true
 
+  # -- Allows to override the container image of the querier component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 2
 
   # -- [Experimental] Configure autoscaling via KEDA (https://keda.sh). This requires having
@@ -1705,11 +1769,11 @@ querier:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -1829,6 +1893,12 @@ query_frontend:
   # -- Whether to render the manifests related to the query-frontend component.
   enabled: true
 
+  # -- Allows to override the container image of the query-frontend component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
 
@@ -1837,11 +1907,11 @@ query_frontend:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -1939,6 +2009,13 @@ query_frontend:
 
 query_scheduler:
   enabled: true
+
+  # -- Allows to override the container image of the query-scheduler component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 2
 
   service:
@@ -2028,6 +2105,12 @@ store_gateway:
   # -- Whether to render the manifests related to the store-gateway component.
   enabled: true
 
+  # -- Allows to override the container image of the store-gateway component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # -- Total number of replicas for the store-gateway across all availability zones
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
   # Otherwise each zone starts `ceil(replicas / number_of_zones)` number of pods.
@@ -2096,6 +2179,10 @@ store_gateway:
     # If false, use emptyDir
     #
     enabled: true
+
+    # Store-gateway data Persistent Volume Claim template name
+    #
+    name: storage
 
     # Store-gateway data Persistent Volume Claim annotations
     #
@@ -2178,7 +2265,7 @@ store_gateway:
   #     - name: zone-a
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-a
-  #     - name: zone-a
+  #     - name: zone-b
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-b
   #     - name: zone-c
@@ -2245,6 +2332,12 @@ compactor:
   # -- Whether to render the manifests related to the compactor component.
   enabled: true
 
+  # -- Allows to override the container image of the compactor component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   replicas: 1
 
   service:
@@ -2302,6 +2395,10 @@ compactor:
     # If false, use emptyDir
     #
     enabled: true
+
+    # compactor data Persistent Volume Claim template name
+    #
+    name: storage
 
     # compactor data Persistent Volume Claim annotations
     #
@@ -2375,7 +2472,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.33-alpine
+    tag: 1.6.36-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -3276,6 +3373,13 @@ gateway:
   # The value of this field is ignored when gateway.enabled=false.
   enabledNonEnterprise: false
 
+  # -- Allows to override the container image of the gateway component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  # Only applies to the GEM gateway. Use gateway.nginx.image for the nginx gateway.
+  image:
+    # repository: grafana/mimir-enterprise
+    # tag: 2.15.0
+
   # -- Number of replicas for the Deployment
   replicas: 1
 
@@ -3967,7 +4071,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r321-15e82100
+    tag: r331-c97de180
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -4007,6 +4111,12 @@ tokengenJob:
 admin_api:
   # -- Whether to render the manifests related to the admin-api component.
   enabled: true
+
+  # -- Allows to override the container image of the admin-api component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/enterprise-metrics
+    # tag: 2.15.0
 
   replicas: 1
 
@@ -4484,6 +4594,12 @@ federation_frontend:
   # -- Specifies whether the federation-frontend should be enabled
   enabled: false
 
+  # -- Allows to override the container image of the federation-frontend component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
+
   # -- Specifies whether other components should be deployed. This is an easy way to deploy the resources necessary for a standalone
   # federation-frontend without the rest of the GEM components.
   disableOtherComponents: false
@@ -4523,7 +4639,7 @@ federation_frontend:
   # -- Additional volumes for the federation-frontend pods
   extraVolumes: []
 
-  # -- Additional containers to be added to the graphite-metric-name-cache pod.
+  # -- Additional containers to be added to the federation-frontend pod.
   extraContainers: []
 
   # -- The name of the PriorityClass for federation-frontend pods
@@ -4577,6 +4693,11 @@ federation_frontend:
 # that writing and reading metrics works. Currently not supported for
 # installations using GEM token-based authentication.
 smoke_test:
+  # -- Allows to override the container image of the smoke-test component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir
+    # tag: 2.15.0
   # -- Controls the backoffLimit on the Kubernetes Job. The Job is marked as failed after that many retries.
   backoffLimit: 5
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
@@ -4587,6 +4708,7 @@ smoke_test:
   extraEnvFrom: []
   annotations: {}
   initContainers: []
+  resources: {}
   # -- The name of the PriorityClass for smoke-test pods
   priorityClassName: null
 
@@ -4595,6 +4717,11 @@ smoke_test:
 # https://grafana.com/docs/mimir/latest/manage/tools/mimir-continuous-test/
 continuous_test:
   enabled: false
+  # -- Allows to override the container image of the continuous-test component.
+  # When set it takes precedence over what is defined in global "image" or "enterprise.image" sections.
+  image:
+    # repository: grafana/mimir-continuous-test
+    # tag: 2.15.0
   # -- Number of replicas to start of continuous test
   replicas: 1
   # The image section has been removed as continuous test is now a module of the regular Mimir image.

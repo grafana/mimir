@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/grafana/alerting/receivers"
 	"github.com/grafana/alerting/templates"
 )
 
@@ -20,12 +21,13 @@ type Config struct {
 	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 }
 
-func NewConfig(jsonData json.RawMessage) (Config, error) {
+func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Config, error) {
 	settings := Config{}
 	err := json.Unmarshal(jsonData, &settings)
 	if err != nil {
 		return settings, fmt.Errorf("failed to unmarshal settings: %w", err)
 	}
+	settings.URL = decryptFn("url", settings.URL)
 	if settings.URL == "" {
 		return settings, errors.New("could not find victorops url property in settings")
 	}

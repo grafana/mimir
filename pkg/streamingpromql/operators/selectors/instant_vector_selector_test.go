@@ -196,6 +196,7 @@ func TestInstantVectorSelector_NativeHistogramPointerHandling(t *testing.T) {
 					LookbackDelta: 5 * time.Minute,
 				},
 				MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
+				Stats:                    &types.QueryStats{},
 			}
 
 			ctx := context.Background()
@@ -239,6 +240,7 @@ func TestInstantVectorSelector_SliceSizing(t *testing.T) {
 					LookbackDelta: 5 * time.Minute,
 				},
 				MemoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(0, nil),
+				Stats:                    &types.QueryStats{},
 			}
 
 			ctx := context.Background()

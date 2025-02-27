@@ -189,7 +189,7 @@ The [release process](https://github.com/grafana/mimir/blob/main/.github/workflo
 
      You might have to wait a few minutes.
 
-   - For stable releases (i.e. excluding release candidates): In a browser, go to the [helm chart docs versions](https://grafana.com/docs/versions/?project=/docs/helm-charts/mimir-distributed/) and verify that the new version is selectable. This might take up to 15 minutes.
+   - For stable releases (i.e. excluding release candidates): In a browser, go to the [helm chart docs versions](https://grafana.com/docs/versions/?project=/docs/helm-charts/mimir-distributed/) and verify that the new version is selectable. This might take up to 15 minutes. If this doesn't happen because the `publish-technical-documentation-release-helm-charts` action can't find the release tag, try re-running the workflow on the release branch again after waiting a few minutes.
 
 1. After the release tag in Git is created, merge the branch back into `main` by following the same procedure as for Mimir releases: [Merging release branch into main](https://github.com/grafana/mimir/blob/main/RELEASE.md#merging-release-branch-into-main).
 

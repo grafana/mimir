@@ -129,7 +129,7 @@ func TestIngester_compactBlocksToReduceInMemorySeries_ShouldTriggerCompactionOnl
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
 
 	// Use a trick to track all series we've written so far as "inactive".
-	ingester.getTSDB(userID).activeSeries.Purge(now.Add(30 * time.Minute))
+	ingester.getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
 
 	// Pre-condition check.
 	require.Equal(t, uint64(10), ingester.getTSDB(userID).Head().NumSeries())

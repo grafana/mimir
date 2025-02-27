@@ -739,10 +739,6 @@ func TestCompareLabelAdapters(t *testing.T) {
 	}
 }
 
-func TestRemoteWriteV1HistogramEquivalence(t *testing.T) {
-	test.RequireSameShape(t, prompb.Histogram{}, Histogram{}, false, true)
-}
-
 // The main usecase for `LabelsToKeyString` is to generate hashKeys
 // for maps. We are benchmarking that here.
 func BenchmarkSeriesMap(b *testing.B) {

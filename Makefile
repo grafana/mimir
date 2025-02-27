@@ -55,8 +55,8 @@ JSONNET_FMT := jsonnetfmt
 
 # path to the mimir-mixin
 MIXIN_PATH := operations/mimir-mixin
-MIXIN_OUT_PATH := operations/mimir-mixin-compiled
-MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal"
+MIXIN_OUT_PATH ?= operations/mimir-mixin-compiled
+MIXIN_OUT_PATH_SUFFIXES := "" "-baremetal" "-gem"
 
 # path to the mimir jsonnet manifests
 JSONNET_MANIFESTS_PATHS := operations/mimir operations/mimir-tests development
@@ -103,12 +103,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 			-t $(IMAGE_PREFIX)$(shell basename $(@D))-continuous-test:$(IMAGE_TAG) $(@D)/; \
 	fi;
-	if [ -f $(@D)/Dockerfile.alpine ]; then \
-		$(SUDO) docker build -f $(@D)/Dockerfile.alpine \
-			--build-arg=revision=$(GIT_REVISION) \
-			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
-			-t $(IMAGE_PREFIX)$(shell basename $(@D))-alpine:$(IMAGE_TAG) $(@D)/; \
-	fi;
 	@echo
 	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)) -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG) $(@D)/
 	@echo
@@ -117,7 +111,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG)
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))-continuous-test:$(IMAGE_TAG)
-	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))-alpine:$(IMAGE_TAG)
 	@echo
 	@echo Please use '"make push-multiarch-build-image"' to build and push build image.
 	@echo Please use '"make push-multiarch-mimir"' to build and push Mimir image.
@@ -126,18 +119,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 
 %/$(UPTODATE_RACE): GOOS=linux
 %/$(UPTODATE_RACE): %/Dockerfile
-	# Build Dockerfile.alpine if it exists
-	if [ -f $(@D)/Dockerfile.alpine ]; then \
-		$(SUDO) docker build -f $(@D)/Dockerfile.alpine \
-			--build-arg=revision=$(GIT_REVISION) \
-			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
-			--build-arg=USE_BINARY_SUFFIX=true \
-			--build-arg=BINARY_SUFFIX=_race \
-			--build-arg=EXTRA_PACKAGES="gcompat" \
-			-t $(IMAGE_PREFIX)$(shell basename $(@D))-alpine:$(IMAGE_TAG_RACE) $(@D)/; \
-	fi;
-	@echo
-	# We need gcompat -- compatibility layer with glibc, as race-detector currently requires glibc, but Alpine uses musl libc instead.
+	# We need gcompat -- compatibility layer with glibc, as race-detector currently requires glibc.
 	$(SUDO) docker build \
 		--build-arg=revision=$(GIT_REVISION) \
 		--build-arg=goproxyValue=$(GOPROXY_VALUE) \
@@ -149,7 +131,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo Go binaries were built using GOOS=$(GOOS) and GOARCH=$(GOARCH)
 	@echo
 	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG_RACE)
-	@echo Image name: $(IMAGE_PREFIX)$(shell basename $(@D))-alpine:$(IMAGE_TAG_RACE)
 	@echo
 	@touch $@
 
@@ -157,7 +138,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # Other options are documented in https://docs.docker.com/engine/reference/commandline/buildx_build/#output.
 # CI workflow uses PUSH_MULTIARCH_TARGET="type=oci,dest=file.oci" to store images locally for next steps in the pipeline.
 PUSH_MULTIARCH_TARGET ?= type=registry
-PUSH_MULTIARCH_TARGET_ALPINE ?= type=registry
 PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST ?= type=registry
 
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
@@ -187,16 +167,6 @@ push-multiarch-%/$(UPTODATE):
 			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
 			--build-arg=USE_BINARY_SUFFIX=true \
 			-t $(IMAGE_PREFIX)$(shell basename $(DIR))-continuous-test:$(IMAGE_TAG) $(DIR)/; \
-	fi;
-	# Build Dockerfile.alpine if it exists
-	if [ -f $(DIR)/Dockerfile.alpine ]; then \
-		$(SUDO) docker buildx build -f $(DIR)/Dockerfile.alpine \
-			-o $(PUSH_MULTIARCH_TARGET_ALPINE) \
-			--platform linux/amd64,linux/arm64 \
-			--build-arg=revision=$(GIT_REVISION) \
-			--build-arg=goproxyValue=$(GOPROXY_VALUE) \
-			--build-arg=USE_BINARY_SUFFIX=true \
-			-t $(IMAGE_PREFIX)$(shell basename $(DIR))-alpine:$(IMAGE_TAG) $(DIR)/; \
 	fi;
 
 push-multiarch-mimir: ## Push mimir docker image.
@@ -275,7 +245,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr9491-80f5778956
+LATEST_BUILD_IMAGE_TAG ?= pr10708-6841577474
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -713,8 +683,8 @@ check-mixin-mimirtool-rules: build-mixin
 		go run ./cmd/mimirtool rules check --rule-dirs "$(MIXIN_OUT_PATH)$$suffix"; \
 	done
 
-mixin-serve: ## Runs Grafana loading the mixin dashboards compiled at operations/mimir-mixin-compiled.
-	@./operations/mimir-mixin-tools/serve/run.sh
+mixin-serve: ## Runs Grafana loading the mixin dashboards. Use MIXIN_OUT_PATH=operations/mimir-mixin-compiled-gem for GEM variant
+	@./operations/mimir-mixin-tools/serve/run.sh -p $(MIXIN_OUT_PATH)
 
 mixin-screenshots: ## Generates mixin dashboards screenshots.
 	@find $(DOC_SOURCES_PATH)/manage/monitor-grafana-mimir/dashboards -name '*.png' -delete

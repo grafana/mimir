@@ -76,18 +76,18 @@ func NewVectorScalarBinaryOperation(
 
 	if !b.ScalarIsLeftSide {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
-			return f(vectorF, scalar, vectorH, nil)
+			return f(vectorF, scalar, vectorH, nil, true, true)
 		}
 	} else if op.IsComparisonOperator() && !returnBool {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
-			_, _, keep, valid, err := f(scalar, vectorF, nil, vectorH)
+			_, _, keep, valid, err := f(scalar, vectorF, nil, vectorH, true, true)
 
 			// We always want to return the value from the vector when we're doing a filter-style comparison.
 			return vectorF, vectorH, keep, valid, err
 		}
 	} else {
 		b.opFunc = func(scalar float64, vectorF float64, vectorH *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, bool, error) {
-			return f(scalar, vectorF, nil, vectorH)
+			return f(scalar, vectorF, nil, vectorH, true, true)
 		}
 	}
 
@@ -174,7 +174,7 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 	v.vectorIterator.Reset(series)
 
 	for {
-		t, vectorF, vectorH, keep := v.vectorIterator.Next()
+		t, vectorF, vectorH, vectorHIndex, keep := v.vectorIterator.Next()
 
 		if !keep {
 			// We are done.
@@ -213,6 +213,11 @@ func (v *VectorScalarBinaryOperation) NextSeries(ctx context.Context) (types.Ins
 				if err := prepareHPointSlice(); err != nil {
 					return types.InstantVectorSeriesData{}, err
 				}
+			}
+
+			if h == vectorH {
+				// We're reusing the FloatHistogram from the vector. Remove it from the vector so that it is not modified when the slice is reused.
+				series.Histograms[vectorHIndex].H = nil
 			}
 
 			hPoints = append(hPoints, promql.HPoint{T: t, H: h})

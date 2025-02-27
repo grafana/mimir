@@ -253,7 +253,8 @@ std.manifestYamlDoc({
 
   jaeger:: {
     jaeger: {
-      image: 'jaegertracing/all-in-one',
+      // Use 1.62 specifically since 1.63 removes the agent which we depend on for now.
+      image: 'jaegertracing/all-in-one:1.62.0',
       ports: ['16686:16686', '14268'],
     },
   },

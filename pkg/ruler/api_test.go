@@ -1098,6 +1098,72 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				},
 			},
 		},
+		"when filtering using query parameters from vanilla Prometheus": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams: "?" + url.Values{
+				"file[]":       []string{namespaceName(3)},
+				"rule_group[]": []string{groupName(2)},
+			}.Encode(),
+			limits: validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: groupName(2),
+					File: namespaceName(3),
+					Rules: []rule{
+						&recordingRule{
+							Name:   "NonUniqueNamedRule",
+							Query:  "up",
+							Health: "unknown",
+							Type:   "recording",
+						},
+						&alertingRule{
+							Name:   "UniqueNamedRuleN3G2",
+							Query:  "up < 1",
+							State:  "inactive",
+							Health: "unknown",
+							Type:   "alerting",
+							Alerts: []*Alert{},
+						},
+					},
+					Interval: 60,
+				},
+			},
+		},
+		"when supplying filter params in both formats, vanilla Prometheus format takes precedent": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams: "?" + url.Values{
+				"file:":        []string{"foo"},
+				"rule_group":   []string{"bar"},
+				"file[]":       []string{namespaceName(3)},
+				"rule_group[]": []string{groupName(2)},
+			}.Encode(),
+			limits: validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: groupName(2),
+					File: namespaceName(3),
+					Rules: []rule{
+						&recordingRule{
+							Name:   "NonUniqueNamedRule",
+							Query:  "up",
+							Health: "unknown",
+							Type:   "recording",
+						},
+						&alertingRule{
+							Name:   "UniqueNamedRuleN3G2",
+							Query:  "up < 1",
+							State:  "inactive",
+							Health: "unknown",
+							Type:   "alerting",
+							Alerts: []*Alert{},
+						},
+					},
+					Interval: 60,
+				},
+			},
+		},
 	}
 
 	for name, tc := range testCases {

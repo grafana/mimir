@@ -197,8 +197,9 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger *spanlogger.SpanLo
 	gzipped := bytes.NewReader(sparseData)
 	gzipReader, err := gzip.NewReader(gzipped)
 	if err != nil {
-		return fmt.Errorf("failed to create sparse index-header reader: %w", err)
+		return fmt.Errorf("failed to create sparse index-header gzip reader: %w", err)
 	}
+	defer runutil.CloseWithLogOnErr(logger, gzipReader, "close sparse index-header gzip reader")
 
 	sparseData, err = io.ReadAll(gzipReader)
 	if err != nil {

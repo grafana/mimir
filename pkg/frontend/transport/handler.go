@@ -329,6 +329,7 @@ func (f *Handler) reportQueryStats(
 		"fetched_index_bytes", numIndexBytes,
 		"sharded_queries", stats.LoadShardedQueries(),
 		"split_queries", stats.LoadSplitQueries(),
+		"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
 		"estimated_series_count", stats.GetEstimatedSeriesCount(),
 		"queue_time_seconds", stats.LoadQueueTime().Seconds(),
 		"encode_time_seconds", stats.LoadEncodeTime().Seconds(),

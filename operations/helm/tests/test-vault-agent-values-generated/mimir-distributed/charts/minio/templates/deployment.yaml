@@ -6,7 +6,7 @@ metadata:
   name: test-vault-agent-values-minio
   labels:
     app: minio
-    chart: minio-5.3.0
+    chart: minio-5.4.0
     release: test-vault-agent-values
     heritage: Helm
 spec:
@@ -27,8 +27,8 @@ spec:
         app: minio
         release: test-vault-agent-values
       annotations:
-        checksum/secrets: 29aa49bcb99d88fbaed313b80a190926bc9bf1e7772861ea625406891b408c6f
-        checksum/config: 5c66fb89a4f70bd32a97bc865a27e30abaf182434cf635121e719b617ed798cb
+        checksum/secrets: 09d8dca81a08b6344dffa449f7317796ae11a2039df9d80a69dc5c21d7d72f22
+        checksum/config: c26c7837d436ed1507c6e31180f182c642e3a1bae46583bcc8355fb1ad50409e
     spec:
       securityContext:
         
@@ -40,7 +40,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2024-04-18T19-09-19Z"
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"

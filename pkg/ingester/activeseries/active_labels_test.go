@@ -23,7 +23,7 @@ func (m *mockPostingsReader) Postings(ctx context.Context, name string, values .
 	valuePostings := make([]index.Postings, 0, len(values))
 
 	for _, value := range values {
-		valuePostings = append(valuePostings, m.postings.Get(name, value))
+		valuePostings = append(valuePostings, m.postings.Postings(ctx, name, value))
 	}
 
 	return index.Merge(ctx, valuePostings...), nil
@@ -41,7 +41,7 @@ func TestIsLabelValueActive(t *testing.T) {
 		labels.FromStrings("a", "5"),
 	}
 	allStorageRefs := []storage.SeriesRef{1, 2, 3, 4, 5}
-	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl))
+	activeSeries := NewActiveSeries(&asmodel.Matchers{}, time.Duration(ttl), nil)
 
 	memPostings := index.NewMemPostings()
 	for i, l := range series {
@@ -51,10 +51,10 @@ func TestIsLabelValueActive(t *testing.T) {
 
 	// Update each series at a different time according to its index.
 	for i := range allStorageRefs {
-		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1)
+		activeSeries.UpdateSeries(series[i], allStorageRefs[i], time.Unix(int64(i), 0), -1, nil)
 	}
 
-	valid := activeSeries.Purge(mockedTime)
+	valid := activeSeries.Purge(mockedTime, nil)
 	require.True(t, valid)
 
 	result, err := IsLabelValueActive(ctx, reader, activeSeries, "a", "1")

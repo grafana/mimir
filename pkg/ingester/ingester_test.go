@@ -60,6 +60,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
+	"github.com/grafana/mimir/pkg/costattribution"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -327,24 +328,25 @@ func TestIngester_StartReadRequest(t *testing.T) {
 			}
 			defer services.StopAndAwaitTerminated(context.Background(), failingIng) //nolint:errcheck
 
-			finish, err := failingIng.startReadRequest()
+			ctx, err := failingIng.StartReadRequest(context.Background())
 			require.Equal(t, int64(tc.expectedAcquiredPermitCount), acquiredPermitCount.Load())
 
 			if err == nil {
 				require.Nil(t, tc.verifyErr)
-				require.NotNil(t, finish)
+				require.NotNil(t, ctx)
 
 				// Calling finish must release a potentially acquired permit
 				// and in that case record a success, and no failures.
 				expectedSuccessCount := acquiredPermitCount.Load()
-				finish(err)
-				require.Equal(t, int64(0), acquiredPermitCount.Load())
+				require.Equal(t, tc.expectedAcquiredPermitCount, int(acquiredPermitCount.Load()))
+				finishFn, _ := failingIng.PrepareReadRequest(ctx)
+				finishFn(nil)
 				require.Equal(t, expectedSuccessCount, recordedSuccessCount.Load())
 				require.Equal(t, int64(0), recordedFailureCount.Load())
 			} else {
 				require.NotNil(t, tc.verifyErr)
 				tc.verifyErr(err)
-				require.Nil(t, finish)
+				require.Nil(t, ctx)
 			}
 		})
 	}
@@ -3589,53 +3591,114 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 }
 
 func BenchmarkIngesterPush(b *testing.B) {
-	registry := prometheus.NewRegistry()
-	ctx := user.InjectOrgID(context.Background(), userID)
+	costAttributionCases := []struct {
+		state          string
+		limitsCfg      func(*validation.Limits)
+		customRegistry *prometheus.Registry
+	}{
+		{
+			state:          "enabled",
+			limitsCfg:      func(*validation.Limits) {},
+			customRegistry: nil,
+		},
+		{
+			state: "disabled",
+			limitsCfg: func(limits *validation.Limits) {
+				if limits == nil {
+					return
+				}
+				limits.CostAttributionLabels = []string{"cpu"}
+				limits.MaxCostAttributionCardinalityPerUser = 100
+			},
+			customRegistry: prometheus.NewRegistry(),
+		},
+	}
 
-	// Create a mocked ingester
-	cfg := defaultIngesterTestConfig(b)
+	tests := []struct {
+		name      string
+		limitsCfg func() validation.Limits
+	}{
+		{
+			name: "ingester push succeeded",
+			limitsCfg: func() validation.Limits {
+				limitsCfg := defaultLimitsTestConfig()
+				limitsCfg.NativeHistogramsIngestionEnabled = true
+				return limitsCfg
+			},
+		},
+	}
 
-	ingester, err := prepareIngesterWithBlocksStorage(b, cfg, nil, registry)
-	require.NoError(b, err)
-	require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
-	defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
+	for _, caCase := range costAttributionCases {
+		b.Run(fmt.Sprintf("cost_attribution=%s", caCase.state), func(b *testing.B) {
+			for _, t := range tests {
+				b.Run(fmt.Sprintf("scenario=%s", t.name), func(b *testing.B) {
+					registry := prometheus.NewRegistry()
+					ctx := user.InjectOrgID(context.Background(), userID)
 
-	// Wait until the ingester is healthy
-	test.Poll(b, 100*time.Millisecond, 1, func() interface{} {
-		return ingester.lifecycler.HealthyInstancesCount()
-	})
+					// Create a mocked ingester
+					cfg := defaultIngesterTestConfig(b)
 
-	// Push a single time series to set the TSDB min time.
-	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
-	startTime := util.TimeToMillis(time.Now())
+					limitCfg := t.limitsCfg()
+					caCase.limitsCfg(&limitCfg)
 
-	currTimeReq := mimirpb.ToWriteRequest(
-		metricLabelAdapters,
-		[]mimirpb.Sample{{Value: 1, TimestampMs: startTime}},
-		nil,
-		nil,
-		mimirpb.API,
-	)
-	_, err = ingester.Push(ctx, currTimeReq)
-	require.NoError(b, err)
+					overrides, err := validation.NewOverrides(limitCfg, nil)
+					require.NoError(b, err)
 
-	const (
-		series  = 10
-		samples = 1
-	)
+					var cam *costattribution.Manager
+					if caCase.customRegistry != nil {
+						cam, err = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, caCase.customRegistry)
+						require.NoError(b, err)
+					}
 
-	allLabels, allSamples := benchmarkData(series)
+					ingester, err := prepareIngesterWithBlockStorageOverridesAndCostAttribution(b, cfg, overrides, nil, "", "", registry, cam)
+					require.NoError(b, err)
+					require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
 
-	b.ResetTimer()
-	for iter := 0; iter < b.N; iter++ {
-		// Bump the timestamp on each of our test samples each time round the loop
-		for j := 0; j < samples; j++ {
-			for i := range allSamples {
-				allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
+					b.Cleanup(func() {
+						require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingester))
+					})
+
+					// Wait until the ingester is healthy
+					test.Poll(b, 100*time.Millisecond, 1, func() interface{} {
+						return ingester.lifecycler.HealthyInstancesCount()
+					})
+
+					// Push a single time series to set the TSDB min time.
+					metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+					startTime := util.TimeToMillis(time.Now())
+
+					currTimeReq := mimirpb.ToWriteRequest(
+						metricLabelAdapters,
+						[]mimirpb.Sample{{Value: 1, TimestampMs: startTime}},
+						nil,
+						nil,
+						mimirpb.API,
+					)
+					_, err = ingester.Push(ctx, currTimeReq)
+					require.NoError(b, err)
+
+					// so we are benchmark 5000 series with 10 sample each
+					const (
+						series  = 5000
+						samples = 10
+					)
+
+					allLabels, allSamples := benchmarkData(series)
+
+					b.ResetTimer()
+					for iter := 0; iter < b.N; iter++ {
+						// Bump the timestamp on each of our test samples each time round the loop
+						for j := 0; j < samples; j++ {
+							for i := range allSamples {
+								allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
+							}
+							_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, nil, mimirpb.API))
+							require.NoError(b, err)
+						}
+					}
+				})
 			}
-			_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, nil, mimirpb.API))
-			require.NoError(b, err)
-		}
+		})
 	}
 }
 
@@ -3995,7 +4058,7 @@ func Test_Ingester_LabelNames(t *testing.T) {
 			labels.MustNewMatcher(labels.MatchNotEqual, "route", "get_user"),
 		}
 
-		req, err := client.ToLabelNamesRequest(0, model.Latest, matchers)
+		req, err := client.ToLabelNamesRequest(0, model.Latest, nil, matchers)
 		require.NoError(t, err)
 
 		// Get label names
@@ -4004,19 +4067,60 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		assert.ElementsMatch(t, expected, res.LabelNames)
 	})
 
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+	t.Run("without matchers, with limit", func(t *testing.T) {
+		expected := []string{"__name__", "route"}
 
-		_, err := i.LabelNames(ctx, &client.LabelNamesRequest{})
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
+		hints := &storage.LabelHints{Limit: 2}
+
+		req, err := client.ToLabelNamesRequest(0, model.Latest, hints, nil)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.LabelNames(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
+	})
+
+	t.Run("without matchers, with limit set to 0", func(t *testing.T) {
+		expected := []string{"__name__", "status", "route"}
+
+		hints := &storage.LabelHints{Limit: 0}
+
+		req, err := client.ToLabelNamesRequest(0, model.Latest, hints, nil)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.LabelNames(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
+	})
+
+	t.Run("without matchers, with limit set to same number of items returned", func(t *testing.T) {
+		expected := []string{"__name__", "status", "route"}
+
+		hints := &storage.LabelHints{Limit: 3}
+
+		req, err := client.ToLabelNamesRequest(0, model.Latest, hints, nil)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.LabelNames(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
+	})
+
+	t.Run("without matchers, with limit set to a higher number than the items returned", func(t *testing.T) {
+		expected := []string{"__name__", "status", "route"}
+
+		hints := &storage.LabelHints{Limit: 10}
+
+		req, err := client.ToLabelNamesRequest(0, model.Latest, hints, nil)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.LabelNames(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
 	})
 }
 
@@ -4068,19 +4172,24 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		assert.ElementsMatch(t, expectedValues, res.LabelValues)
 	}
 
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
+	expectedLimit := map[int][]string{
+		0: {"test_1", "test_2"}, // no limit
+		1: {"test_1"},
+		2: {"test_1", "test_2"}, // limit equals to the number of results
+		4: {"test_1", "test_2"}, // limit greater than the number of results
+	}
+	t.Run("with limit", func(t *testing.T) {
+		for limit, expectedValues := range expectedLimit {
+			hints := &storage.LabelHints{Limit: limit}
 
-		_, err := i.LabelValues(ctx, &client.LabelValuesRequest{})
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
+			req, err := client.ToLabelValuesRequest("__name__", 0, model.Latest, hints, nil)
+			require.NoError(t, err)
+
+			// Get label names
+			res, err := i.LabelValues(ctx, req)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, expectedValues, res.LabelValues)
+		}
 	})
 }
 
@@ -4276,21 +4385,6 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 			assert.ElementsMatch(t, extractItemsWithSortedValues(s.SentResponses), tc.expected)
 		})
 	}
-
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
-
-		err := i.LabelNamesAndValues(&client.LabelNamesAndValuesRequest{}, nil)
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
-	})
 }
 
 func TestIngester_LabelValuesCardinality(t *testing.T) {
@@ -4396,21 +4490,6 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 			require.ElementsMatch(t, s.SentResponses[0].Items, tc.expectedItems)
 		})
 	}
-
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
-
-		err := i.LabelValuesCardinality(&client.LabelValuesCardinalityRequest{}, nil)
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
-	})
 }
 
 type series struct {
@@ -4747,6 +4826,7 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 	tests := map[string]struct {
 		from     int64
 		to       int64
+		limit    int64
 		matchers []*client.LabelMatchers
 		expected []*mimirpb.Metric
 	}{
@@ -4837,6 +4917,33 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[4].lbls)},
 			},
 		},
+		"should respect requested limit": {
+			from:  math.MinInt64,
+			to:    math.MaxInt64,
+			limit: 1,
+			matchers: []*client.LabelMatchers{{
+				Matchers: []*client.LabelMatcher{
+					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
+				},
+			}},
+			expected: []*mimirpb.Metric{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
+			},
+		},
+		"should return all matching metrics when limit is higher than the result": {
+			from:  math.MinInt64,
+			to:    math.MaxInt64,
+			limit: 5,
+			matchers: []*client.LabelMatchers{{
+				Matchers: []*client.LabelMatcher{
+					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
+				},
+			}},
+			expected: []*mimirpb.Metric{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[1].lbls)},
+			},
+		},
 	}
 
 	registry := prometheus.NewRegistry()
@@ -4868,6 +4975,7 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 				StartTimestampMs: testData.from,
 				EndTimestampMs:   testData.to,
 				MatchersSet:      testData.matchers,
+				Limit:            testData.limit,
 			}
 
 			res, err := i.MetricsForLabelMatchers(ctx, req)
@@ -4875,21 +4983,6 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 			assert.ElementsMatch(t, testData.expected, res.Metric)
 		})
 	}
-
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
-
-		_, err := i.MetricsForLabelMatchers(ctx, &client.MetricsForLabelMatchersRequest{})
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
-	})
 }
 
 func Test_Ingester_MetricsForLabelMatchers_Deduplication(t *testing.T) {
@@ -5281,7 +5374,7 @@ func TestIngester_QueryStream(t *testing.T) {
 		})
 		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
 
-		err = i.QueryStream(&client.QueryRequest{}, nil)
+		_, err := i.StartReadRequest(context.Background())
 		stat, ok := grpcutil.ErrorToStatus(err)
 		require.True(t, ok)
 		require.Equal(t, codes.ResourceExhausted, stat.Code())
@@ -5719,7 +5812,7 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 
 func TestIngester_QueryExemplars(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
-	ctx := user.InjectOrgID(context.Background(), userID)
+	user.InjectOrgID(context.Background(), userID)
 	registry := prometheus.NewRegistry()
 	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil, registry)
 	require.NoError(t, err)
@@ -5731,21 +5824,6 @@ func TestIngester_QueryExemplars(t *testing.T) {
 	// Wait until it's healthy.
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
-	})
-
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
-
-		_, err := i.QueryExemplars(ctx, &client.ExemplarQueryRequest{})
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
 	})
 }
 
@@ -6232,10 +6310,14 @@ func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config,
 }
 
 func prepareIngesterWithBlockStorageAndOverrides(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, ingestersRing ring.ReadRing, dataDir string, bucketDir string, registerer prometheus.Registerer) (*Ingester, error) {
-	return prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t, ingesterCfg, overrides, ingestersRing, nil, dataDir, bucketDir, registerer)
+	return prepareIngesterWithBlockStorageOverridesAndCostAttribution(t, ingesterCfg, overrides, ingestersRing, dataDir, bucketDir, registerer, nil)
 }
 
-func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionRingWatcher, dataDir string, bucketDir string, registerer prometheus.Registerer) (*Ingester, error) {
+func prepareIngesterWithBlockStorageOverridesAndCostAttribution(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, ingestersRing ring.ReadRing, dataDir string, bucketDir string, registerer prometheus.Registerer, cam *costattribution.Manager) (*Ingester, error) {
+	return prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t, ingesterCfg, overrides, ingestersRing, nil, dataDir, bucketDir, registerer, cam)
+}
+
+func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, ingesterCfg Config, overrides *validation.Overrides, ingestersRing ring.ReadRing, partitionsRing *ring.PartitionRingWatcher, dataDir string, bucketDir string, registerer prometheus.Registerer, cam *costattribution.Manager) (*Ingester, error) {
 	// Create a data dir if none has been provided.
 	if dataDir == "" {
 		dataDir = t.TempDir()
@@ -6256,7 +6338,7 @@ func prepareIngesterWithBlockStorageAndOverridesAndPartitionRing(t testing.TB, i
 		ingestersRing = createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig())
 	}
 
-	ingester, err := New(ingesterCfg, overrides, ingestersRing, partitionsRing, nil, registerer, noDebugNoopLogger{}) // LOGGING: log.NewLogfmtLogger(os.Stderr)
+	ingester, err := New(ingesterCfg, overrides, ingestersRing, partitionsRing, nil, cam, registerer, noDebugNoopLogger{}) // LOGGING: log.NewLogfmtLogger(os.Stderr)
 	if err != nil {
 		return nil, err
 	}
@@ -6462,7 +6544,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			// setup the tsdbs dir
 			testData.setup(t, tempDir)
 
-			ingester, err := New(ingesterCfg, overrides, createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig()), nil, nil, nil, log.NewNopLogger())
+			ingester, err := New(ingesterCfg, overrides, createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig()), nil, nil, nil, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			startErr := services.StartAndAwaitRunning(context.Background(), ingester)
@@ -7266,21 +7348,6 @@ func Test_Ingester_UserStats(t *testing.T) {
 	// Active series are considered according to the wall time during the push, not the sample timestamp.
 	// Therefore all three series are still active at this point.
 	assert.Equal(t, uint64(3), res.NumSeries)
-
-	t.Run("limited due to resource utilization", func(t *testing.T) {
-		origLimiter := i.utilizationBasedLimiter
-		t.Cleanup(func() {
-			i.utilizationBasedLimiter = origLimiter
-		})
-		i.utilizationBasedLimiter = &fakeUtilizationBasedLimiter{limitingReason: "cpu"}
-
-		_, err := i.UserStats(ctx, &client.UserStatsRequest{})
-		stat, ok := grpcutil.ErrorToStatus(err)
-		require.True(t, ok)
-		require.Equal(t, codes.ResourceExhausted, stat.Code())
-		require.Equal(t, ingesterTooBusyMsg, stat.Message())
-		verifyUtilizationLimitedRequestsMetric(t, registry)
-	})
 }
 
 func Test_Ingester_AllUserStats(t *testing.T) {
@@ -7622,7 +7689,7 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 	ingesterCfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
 	ingesterCfg.BlocksStorageConfig.TSDB.Retention = 2 * 24 * time.Hour // Make sure that no newly created blocks are deleted.
 
-	ingester, err := New(ingesterCfg, overrides, createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig()), nil, nil, nil, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, overrides, createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig()), nil, nil, nil, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
 
@@ -8366,6 +8433,7 @@ func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.
 		# TYPE cortex_ingester_instance_rejected_requests_total counter
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 1
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests_bytes"} 0
+        cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_read_requests"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_ingestion_rate"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0
@@ -8465,6 +8533,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 		# TYPE cortex_ingester_instance_rejected_requests_total counter
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests_bytes"} 3
+        cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_read_requests"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_ingestion_rate"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
 		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0
@@ -9114,7 +9183,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 	})
 
 	activeSeriesTenantOverride := new(TenantLimitsMock)
-	activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
+	activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesBaseCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
 	activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
 
 	tests := map[string]struct {
@@ -9404,7 +9473,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			cfg.ActiveSeriesMetrics.Enabled = !testData.disableActiveSeries
 
 			limits := defaultLimitsTestConfig()
-			limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+			limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 			limits.NativeHistogramsIngestionEnabled = true
 			overrides, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 			require.NoError(t, err)
@@ -9476,7 +9545,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 	defaultActiveSeriesTenantOverride := new(TenantLimitsMock)
 	defaultActiveSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
-	defaultActiveSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
+	defaultActiveSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesBaseCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
 
 	tests := map[string]struct {
 		test               func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
@@ -9537,9 +9606,9 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 				// Add new runtime configs
 				activeSeriesTenantOverride := new(TenantLimitsMock)
 				activeSeriesTenantOverride.On("ByUserID", userID2).Return(nil)
-				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
+				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesBaseCustomTrackersConfig: activeSeriesTenantConfig, NativeHistogramsIngestionEnabled: true})
 				limits := defaultLimitsTestConfig()
-				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
 				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 				require.NoError(t, err)
@@ -9670,7 +9739,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 				// Remove runtime configs
 				limits := defaultLimitsTestConfig()
-				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
 				override, err := validation.NewOverrides(limits, nil)
 				require.NoError(t, err)
@@ -9787,14 +9856,14 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 
 				// Change runtime configs
 				activeSeriesTenantOverride := new(TenantLimitsMock)
-				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesCustomTrackersConfig: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
+				activeSeriesTenantOverride.On("ByUserID", userID).Return(&validation.Limits{ActiveSeriesBaseCustomTrackersConfig: mustNewActiveSeriesCustomTrackersConfigFromMap(t, map[string]string{
 					"team_a": `{team="a"}`,
 					"team_b": `{team="b"}`,
 					"team_c": `{team="b"}`,
 					"team_d": `{team="b"}`,
 				}), NativeHistogramsIngestionEnabled: true})
 				limits := defaultLimitsTestConfig()
-				limits.ActiveSeriesCustomTrackersConfig = activeSeriesDefaultConfig
+				limits.ActiveSeriesBaseCustomTrackersConfig = activeSeriesDefaultConfig
 				limits.NativeHistogramsIngestionEnabled = true
 				override, err := validation.NewOverrides(limits, activeSeriesTenantOverride)
 				require.NoError(t, err)
@@ -9926,7 +9995,7 @@ func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 			cfg.ActiveSeriesMetrics.Enabled = true
 
 			limits := defaultLimitsTestConfig()
-			limits.ActiveSeriesCustomTrackersConfig = testData.activeSeriesConfig
+			limits.ActiveSeriesBaseCustomTrackersConfig = testData.activeSeriesConfig
 			limits.NativeHistogramsIngestionEnabled = true
 			var overrides *validation.Overrides
 			var err error

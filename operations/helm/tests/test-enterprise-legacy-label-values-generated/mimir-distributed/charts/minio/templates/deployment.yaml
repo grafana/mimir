@@ -6,7 +6,7 @@ metadata:
   name: test-enterprise-legacy-label-values-minio
   labels:
     app: minio
-    chart: minio-5.3.0
+    chart: minio-5.4.0
     release: test-enterprise-legacy-label-values
     heritage: Helm
 spec:
@@ -27,8 +27,8 @@ spec:
         app: minio
         release: test-enterprise-legacy-label-values
       annotations:
-        checksum/secrets: 634c0d5124d63f1c143ab694cdeacaaef361d61f2a1380d7ddbbc037b746a53f
-        checksum/config: c23de2334953f8c2a2738408f51ca526cead96957e262924d197e58bbcdeda96
+        checksum/secrets: 8caf5b0ca6d746285cd329e4ec44e175a7c0efc98d72f9eb6ff7711f9d308bb8
+        checksum/config: 0c80bc403fdb73f5abe7ddc1708059b5652bf5d5c0a30a6d1f99e1f90a1a7b41
     spec:
       securityContext:
         
@@ -40,7 +40,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2024-04-18T19-09-19Z"
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"

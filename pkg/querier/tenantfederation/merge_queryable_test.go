@@ -169,7 +169,7 @@ func (m mockTenantQuerier) Select(ctx context.Context, _ bool, _ *storage.Select
 
 // LabelValues implements the storage.LabelQuerier interface.
 // The mockTenantQuerier returns all a sorted slice of all label values and does not support reducing the result set with matchers.
-func (m mockTenantQuerier) LabelValues(ctx context.Context, name string, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m mockTenantQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -198,6 +198,11 @@ func (m mockTenantQuerier) LabelValues(ctx context.Context, name string, _ *stor
 		results = append(results, k)
 	}
 	slices.Sort(results)
+
+	if hints != nil && hints.Limit > 0 && len(results) > hints.Limit {
+		results = results[:hints.Limit]
+	}
+
 	return results, warnings, nil
 }
 
@@ -205,7 +210,7 @@ func (m mockTenantQuerier) LabelValues(ctx context.Context, name string, _ *stor
 // It returns a sorted slice of all label names in the querier.
 // If only one matcher is provided with label Name=seriesWithLabelNames then the resulting set will have the values of that matchers pipe-split appended.
 // I.e. querying for {seriesWithLabelNames="foo|bar|baz"} will have as result [bar, baz, foo, <rest of label names from querier matrix> ]
-func (m mockTenantQuerier) LabelNames(ctx context.Context, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+func (m mockTenantQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -238,6 +243,11 @@ func (m mockTenantQuerier) LabelNames(ctx context.Context, _ *storage.LabelHints
 		results = append(results, k)
 	}
 	slices.Sort(results)
+
+	if hints != nil && hints.Limit > 0 && len(results) > hints.Limit {
+		results = results[:hints.Limit]
+	}
+
 	return results, warnings, nil
 }
 

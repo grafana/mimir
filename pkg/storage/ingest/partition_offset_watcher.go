@@ -15,7 +15,7 @@ var (
 	errPartitionOffsetWatcherStopped = errors.New("partition offset watcher is stopped")
 )
 
-type partitionOffsetWatcher struct {
+type PartitionOffsetWatcher struct {
 	services.Service
 
 	// mx protects the following fields.
@@ -35,8 +35,8 @@ type partitionOffsetWatcher struct {
 	stopped bool
 }
 
-func newPartitionOffsetWatcher() *partitionOffsetWatcher {
-	w := &partitionOffsetWatcher{
+func NewPartitionOffsetWatcher() *PartitionOffsetWatcher {
+	w := &PartitionOffsetWatcher{
 		lastConsumedOffset: -1, // -1 means nothing has been consumed yet.
 		watchGroups:        map[int64]*partitionOffsetWatchGroup{},
 	}
@@ -46,7 +46,7 @@ func newPartitionOffsetWatcher() *partitionOffsetWatcher {
 	return w
 }
 
-func (w *partitionOffsetWatcher) stopping(_ error) error {
+func (w *PartitionOffsetWatcher) stopping(_ error) error {
 	w.mx.Lock()
 	defer w.mx.Unlock()
 
@@ -64,7 +64,7 @@ func (w *partitionOffsetWatcher) stopping(_ error) error {
 
 // Notify that a given offset has been consumed. This function is expected to run very quickly
 // and never block in practice.
-func (w *partitionOffsetWatcher) Notify(lastConsumedOffset int64) {
+func (w *PartitionOffsetWatcher) Notify(lastConsumedOffset int64) {
 	w.mx.Lock()
 	defer w.mx.Unlock()
 
@@ -90,7 +90,7 @@ func (w *partitionOffsetWatcher) Notify(lastConsumedOffset int64) {
 }
 
 // Wait until the given offset has been consumed or the context is canceled.
-func (w *partitionOffsetWatcher) Wait(ctx context.Context, waitForOffset int64) error {
+func (w *PartitionOffsetWatcher) Wait(ctx context.Context, waitForOffset int64) error {
 	// A negative offset is used to signal the partition is empty,
 	// so we can immediately return.
 	if waitForOffset < 0 {
@@ -164,7 +164,7 @@ func (w *partitionOffsetWatcher) Wait(ctx context.Context, waitForOffset int64) 
 }
 
 // LastConsumedOffset returns the last consumed offset.
-func (w *partitionOffsetWatcher) LastConsumedOffset() int64 {
+func (w *PartitionOffsetWatcher) LastConsumedOffset() int64 {
 	w.mx.Lock()
 	defer w.mx.Unlock()
 
@@ -173,7 +173,7 @@ func (w *partitionOffsetWatcher) LastConsumedOffset() int64 {
 
 // waitingGoroutinesCount returns the number of active watch groups (an active group has at least
 // 1 goroutine waiting). This function is useful for testing.
-func (w *partitionOffsetWatcher) watchGroupsCount() int {
+func (w *PartitionOffsetWatcher) watchGroupsCount() int {
 	w.mx.Lock()
 	defer w.mx.Unlock()
 

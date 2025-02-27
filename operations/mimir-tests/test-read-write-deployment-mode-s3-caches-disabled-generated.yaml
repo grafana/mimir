@@ -418,7 +418,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -shutdown-delay=90s
-        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -428,7 +428,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "5000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.15.0
         imagePullPolicy: IfNotPresent
         name: mimir-read
         ports:
@@ -492,7 +492,7 @@ spec:
         - -kubernetes.namespace=default
         - -use-zone-tracker=true
         - -zone-tracker.config-map-name=rollout-operator-zone-tracker
-        image: grafana/rollout-operator:v0.22.0
+        image: grafana/rollout-operator:v0.23.0
         imagePullPolicy: IfNotPresent
         name: rollout-operator
         ports:
@@ -618,7 +618,7 @@ spec:
         - -server.http-idle-timeout=6m
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.heartbeat-period=1m
-        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-a
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -632,7 +632,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.15.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -787,7 +787,7 @@ spec:
         - -server.http-idle-timeout=6m
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.heartbeat-period=1m
-        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-b
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -801,7 +801,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.15.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -956,7 +956,7 @@ spec:
         - -server.http-idle-timeout=6m
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.heartbeat-period=1m
-        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.instance-availability-zone=zone-c
         - -store-gateway.sharding-ring.prefix=multi-zone/
         - -store-gateway.sharding-ring.replication-factor=3
@@ -970,7 +970,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.15.0
         imagePullPolicy: IfNotPresent
         name: mimir-backend
         ports:
@@ -1108,7 +1108,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.15.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1246,7 +1246,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.15.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:
@@ -1384,7 +1384,7 @@ spec:
         env:
         - name: JAEGER_REPORTER_MAX_QUEUE_SIZE
           value: "1000"
-        image: grafana/mimir:2.14.1
+        image: grafana/mimir:2.15.0
         imagePullPolicy: IfNotPresent
         name: mimir-write
         ports:

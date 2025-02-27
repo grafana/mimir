@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"mime/multipart"
-	"os"
 
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/types"
@@ -76,20 +74,15 @@ func (tn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 	// Create the cmd to upload each image
 	_ = images.WithStoredImages(ctx, tn.log, tn.images, func(_ int, image images.Image) error {
 		cmd, err = tn.newWebhookSyncCmd("sendPhoto", func(w *multipart.Writer) error {
-			f, err := os.Open(image.Path)
+			f, err := image.RawData(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to open image: %w", err)
 			}
-			defer func() {
-				if err := f.Close(); err != nil {
-					tn.log.Warn("failed to close image", "error", err)
-				}
-			}()
-			fw, err := w.CreateFormFile("photo", image.Path)
+			fw, err := w.CreateFormFile("photo", f.Name)
 			if err != nil {
 				return fmt.Errorf("failed to create form file: %w", err)
 			}
-			if _, err := io.Copy(fw, f); err != nil {
+			if _, err := fw.Write(f.Content); err != nil {
 				return fmt.Errorf("failed to write to form file: %w", err)
 			}
 			return nil
