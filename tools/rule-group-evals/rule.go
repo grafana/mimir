@@ -30,7 +30,7 @@ func (r *Rule) Labels() labels.Labels {
 	panic("Rule.Labels() is not supported")
 }
 
-func (r *Rule) Eval(ctx context.Context, queryOffset time.Duration, evaluationTime time.Time, queryFunc rules.QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
+func (r *Rule) Eval(_ context.Context, _ time.Duration, _ time.Time, _ rules.QueryFunc, _ *url.URL, _ int) (promql.Vector, error) {
 	panic("Rule.Eval() is not supported")
 }
 
