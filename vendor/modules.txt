@@ -651,12 +651,13 @@ github.com/grafana/alerting/receivers/webex
 github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
-# github.com/grafana/dskit v0.0.0-20250213152722-e83d24ebed15
+# github.com/grafana/dskit v0.0.0-20250227233310-511f086c60ed
 ## explicit; go 1.21
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
 github.com/grafana/dskit/cache
 github.com/grafana/dskit/cancellation
+github.com/grafana/dskit/clusterutil
 github.com/grafana/dskit/concurrency
 github.com/grafana/dskit/crypto/tls
 github.com/grafana/dskit/dns
