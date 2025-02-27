@@ -25,26 +25,10 @@ jobs:
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
-      # Retrieve GitHub App Credentials from Vault for mimir-github-bot
-      - name: Retrieve GitHub App Credentials from Vault
-        id: get_secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
-        with:
-          vault_instance: dev
-          repo_secrets: |
-            APP_ID=mimir-github-bot:app_id
-            PRIVATE_KEY=mimir-github-bot:private_key
-      # Use the secrets, they will be obfuscated but that way we'll know they're accessible
-      - name: Echo
-        run: |
-          echo "${{ env.APP_ID }}"
-          echo "${{ env.PRIVATE_KEY }}"
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
       # Determine if we will deploy (aka push) the image to the registry.
       is_deploy: ${{ (startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/r')) && github.event_name == 'push' && github.repository == 'grafana/mimir' }}
-      app_id: ${{ steps.get_secrets.outputs.APP_ID }}
-      private_key: ${{ steps.get_secrets.outputs.PRIVATE_KEY }}
 
   goversion:
     runs-on: ubuntu-latest
@@ -132,13 +116,22 @@ jobs:
       - name: Run Git Config
         run: git config --global --add safe.directory '*'
 
+      # Retrieve GitHub App Credentials from Vault for mimir-github-bot
+      - name: Retrieve GitHub App Credentials from Vault
+        id: get-secrets
+        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
+        with:
+          repo_secrets: |
+            APP_ID=mimir-github-bot:app_id
+            PRIVATE_KEY=mimir-github-bot:private_key
+
       # Generate GitHub App Token for PR approval and auto-merge
       - name: Generate GitHub App Token
         id: app-token
         uses: actions/create-github-app-token@v1
         with:
-          app-id: ${{ needs.prepare.outputs.app_id }}
-          private-key: ${{ needs.prepare.outputs.private_key }}
+          app-id: ${{ steps.get-secrets.outputs.APP_ID }}
+          private-key: ${{ steps.get-secrets.outputs.PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
       - name: Run doc-validator tool (mimir)
