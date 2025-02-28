@@ -1,0 +1,12 @@
+{{- if .Values.kedaAutoscaling.authentication.enabled }}
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: keda-triggger-auth
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  secretTargetRef:
+  {{- with .Values.kedaAutoscaling.authentication.secretTargetRef }}
+    {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

@@ -28,6 +28,7 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
+* [ENHANCEMENT] Add extra values for KEDA autoscaling, to support authenticaiton, ignoreNullValues, unsafeSsl, and support PromQLLabelSelector. #10265
 
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [CHANGE] Ring: relaxed the hash ring heartbeat timeout for store-gateways: #10634
