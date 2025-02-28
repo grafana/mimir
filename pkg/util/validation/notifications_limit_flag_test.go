@@ -8,9 +8,9 @@ package validation
 import (
 	"bytes"
 	"flag"
-	"maps"
 	"testing"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -19,17 +19,17 @@ import (
 func TestNotificationLimitsMap(t *testing.T) {
 	for name, tc := range map[string]struct {
 		args     []string
-		expected LimitsMap[float64]
+		expected flagext.LimitsMap[float64]
 		error    string
 	}{
 		"basic test": {
 			args: []string{"-map-flag", "{\"email\": 100 }"},
-			expected: LimitsMap[float64]{
-				validator: validateIntegrationLimit,
-				data: map[string]float64{
+			expected: flagext.NewLimitsMapWithData[float64](
+				map[string]float64{
 					"email": 100,
 				},
-			},
+				validateIntegrationLimit,
+			),
 		},
 
 		"unknown integration": {
@@ -55,14 +55,14 @@ func TestNotificationLimitsMap(t *testing.T) {
 				assert.Equal(t, tc.error, err.Error())
 			} else {
 				assert.NoError(t, err)
-				assert.True(t, maps.Equal(tc.expected.data, v.data))
+				assert.True(t, tc.expected.Equal(v))
 			}
 		})
 	}
 }
 
 type TestStruct struct {
-	Flag LimitsMap[float64] `yaml:"flag"`
+	Flag flagext.LimitsMap[float64] `yaml:"flag"`
 }
 
 func TestNotificationsLimitMapYaml(t *testing.T) {
@@ -84,7 +84,7 @@ func TestNotificationsLimitMapYaml(t *testing.T) {
 
 	err = yaml.Unmarshal(expected, &actualStruct)
 	require.NoError(t, err)
-	assert.Equal(t, testStruct.Flag.data, actualStruct.Flag.data)
+	assert.True(t, testStruct.Flag.Equal(actualStruct.Flag))
 }
 
 func TestUnknownIntegrationWhenLoadingYaml(t *testing.T) {
