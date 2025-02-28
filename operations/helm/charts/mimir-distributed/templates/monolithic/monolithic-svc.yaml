@@ -1,6 +1,5 @@
-{{- if has .Values.deploymentMode (list "microservices" "monolithic")}}
-{{- if and .Values.alertmanager.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
-{{- $args := dict "ctx" . "component" "alertmanager" "memberlist" true -}}
+{{- if and (eq .Values.deploymentMode "monolithic") (not .Values.federation_frontend.disableOtherComponents) }}
+{{- $args := dict "ctx" . "component" "monolithic" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
 {{- with $ -}}
@@ -11,23 +10,23 @@ metadata:
   name: {{ include "mimir.resourceName" $args }}
   labels:
     {{- include "mimir.labels" $args | nindent 4 }}
-    {{- if and $zoneName .Values.alertmanager.zoneAwareReplication.migration.enabled }}
+    {{- if and $zoneName .Values.monolithic.zoneAwareReplication.migration.enabled }}
     # Prevent scraping PODs via this service during migration as the original non zone-aware service already scrapes all PODs and you get duplicate metrics.
     prometheus.io/service-monitor: "false"
     {{- end }}
-    {{- with .Values.alertmanager.service.labels }}
+    {{- with .Values.monolithic.service.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
   annotations:
-    {{- toYaml .Values.alertmanager.service.annotations | nindent 4 }}
+    {{- toYaml .Values.monolithic.service.annotations | nindent 4 }}
   namespace: {{ .Release.Namespace | quote }}
 spec:
-  type: {{ .Values.alertmanager.service.type }}
+  type: {{ .Values.monolithic.service.type }}
   {{- if semverCompare ">= 1.22-0" (include "mimir.kubeVersion" .) }}
-  internalTrafficPolicy: {{ .Values.alertmanager.service.internalTrafficPolicy }}
+  internalTrafficPolicy: {{ .Values.monolithic.service.internalTrafficPolicy }}
   {{- end }}
   ports:
-    - port: {{ include "mimir.serverHttpListenPort" . }}
+    - port: {{ include "mimir.serverHttpListenPort" .}}
       protocol: TCP
       name: http-metrics
       targetPort: http-metrics
@@ -39,7 +38,6 @@ spec:
     {{- include "mimir.selectorLabels" $args | nindent 4 }}
 
 ---
-{{ end }}
 {{ end }}
 {{ end }}
 {{ end }}

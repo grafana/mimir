@@ -30,6 +30,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## main / unreleased
 * [ENHANCEMENT] Add extra values for KEDA autoscaling, to support authenticaiton, ignoreNullValues, unsafeSsl, and support PromQLLabelSelector. #10265
 
+* [FEATURE] Support monolithic deployment with the helm chart. #4832
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [CHANGE] Ring: relaxed the hash ring heartbeat timeout for store-gateways: #10634
   * `-store-gateway.sharding-ring.heartbeat-timeout` set to `10m`

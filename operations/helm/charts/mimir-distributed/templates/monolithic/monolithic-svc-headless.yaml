@@ -1,0 +1,30 @@
+{{- if and (eq .Values.deploymentMode "monolithic") (not .Values.federation_frontend.disableOtherComponents) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "monolithic") }}-headless
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "monolithic" "memberlist" true) | nindent 4 }}
+    prometheus.io/service-monitor: "false"
+    {{- with .Values.monolithic.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- toYaml .Values.monolithic.service.annotations | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: {{ include "mimir.serverHttpListenPort" .}}
+      protocol: TCP
+      name: http-metrics
+      targetPort: http-metrics
+    - port: {{ include "mimir.serverGrpcListenPort" . }}
+      protocol: TCP
+      name: grpc
+      targetPort: grpc
+  selector:
+    {{- include "mimir.selectorLabels" (dict "ctx" . "component" "monolithic" "memberlist" true) | nindent 4 }}
+  publishNotReadyAddresses: true
+{{- end }}

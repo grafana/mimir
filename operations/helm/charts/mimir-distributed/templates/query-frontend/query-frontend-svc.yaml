@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if and .Values.query_frontend.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: v1
 kind: Service
@@ -27,4 +28,5 @@ spec:
       targetPort: grpc
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "query-frontend") | nindent 4 }}
+{{- end }}
 {{- end }}

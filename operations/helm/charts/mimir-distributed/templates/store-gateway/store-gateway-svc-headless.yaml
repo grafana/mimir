@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if and .Values.store_gateway.enabled (not .Values.federation_frontend.disableOtherComponents) }}
 apiVersion: v1
 kind: Service
@@ -26,4 +27,5 @@ spec:
       targetPort: grpc
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "store-gateway" "memberlist" true) | nindent 4 }}
+{{- end }}
 {{- end }}

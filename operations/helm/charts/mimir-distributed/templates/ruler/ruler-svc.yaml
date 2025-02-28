@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if and .Values.ruler.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
 apiVersion: v1
 kind: Service
@@ -24,3 +25,4 @@ spec:
   selector:
     {{- include "mimir.selectorLabels" (dict "ctx" . "component" "ruler" "memberlist" true) | nindent 4 }}
 {{- end -}}
+{{- end }}

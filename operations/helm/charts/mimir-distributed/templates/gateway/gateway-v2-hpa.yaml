@@ -1,3 +1,4 @@
+{{- if eq .Values.deploymentMode "microservices" }}
 {{- if .Values.gateway.autoscaling.enabled }}
 {{- if eq (include "mimir.hpa.version" .) "autoscaling/v2" }}
 apiVersion: autoscaling/v2
@@ -33,3 +34,4 @@ spec:
   {{- end }}
 {{- end -}}
 {{- end -}}
+{{- end }}
