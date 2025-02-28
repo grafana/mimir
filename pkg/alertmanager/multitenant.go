@@ -752,16 +752,17 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		AlertConfigDesc: cfgs.Mimir,
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
-	strictInit := am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(cfgs.Mimir.User, am.cfg.GrafanaAlertmanagerTenantSuffix)
 
-	// A Grafana configuration is considered usable if it's promoted, non-default, and not empty.
-	if !cfgs.Grafana.Promoted || cfgs.Grafana.Default || cfgs.Grafana.RawConfig == "" {
-		if !strictInit {
+	// Check if this tenant can be skipped (Grafana suffix matching).
+	skippable := am.canSkipTenant(cfgs.Mimir.User)
+
+	// If Grafana config is not usable, skip if possible.
+	if !isGrafanaConfigUsable(cfgs.Grafana) {
+		if !skippable {
 			return cfg, true, nil
 		}
 
-		// If the tenant ID matches the configured Grafana suffix, only run the Alertmanager if it's receiving requests.
-		// If there's no value, store a zero-value timestamp to indicate that we've skipped the tenant.
+		// For skippable tenants, only run if receiving requests recently.
 		createdAt, loaded := am.lastRequestTime.LoadOrStore(cfgs.Mimir.User, time.Time{}.Unix())
 		if !loaded {
 			return cfg, false, nil
@@ -775,14 +776,13 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		return cfg, true, nil
 	}
 
-	// If the Alertmanager was previously skipped but now has a usable configuration, remove it from the skipped list.
-	if strictInit {
+	// Clear any previous skipped status since we now have a usable config.
+	if skippable {
 		if _, ok := am.lastRequestTime.LoadAndDelete(cfgs.Mimir.User); ok {
 			level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", cfgs.Mimir.User)
 		}
 	}
 
-	// If the Mimir configuration is either default or empty, use the Grafana configuration.
 	if cfgs.Mimir.RawConfig == am.fallbackConfig || cfgs.Mimir.RawConfig == "" {
 		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", cfgs.Mimir.User)
 		cfg, err := am.createUsableGrafanaConfig(cfgs.Grafana, am.fallbackConfig)
@@ -791,6 +791,16 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 	level.Warn(am.logger).Log("msg", "merging configurations not implemented, using mimir config", "user", cfgs.Mimir.User)
 	return cfg, true, nil
+}
+
+// isGrafanaConfigUsable returns true if the Grafana configuration is promoted, non-default, and not empty.
+func isGrafanaConfigUsable(cfg alertspb.GrafanaAlertConfigDesc) bool {
+	return cfg.Promoted && !cfg.Default && cfg.RawConfig != ""
+}
+
+// canSkipTenant returns true if the tenant can be skipped (Grafana suffix matching).
+func (am *MultitenantAlertmanager) canSkipTenant(userID string) bool {
+	return am.cfg.GrafanaAlertmanagerTenantSuffix != "" && strings.HasSuffix(userID, am.cfg.GrafanaAlertmanagerTenantSuffix)
 }
 
 // syncStates promotes/unpromotes the Grafana state and updates the 'promoted' flag if needed.
