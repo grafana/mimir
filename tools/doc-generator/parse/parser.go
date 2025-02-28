@@ -365,9 +365,9 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 		return "string", true
 	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", true
-	case reflect.TypeOf([]*flagext.BlockedQuery{}).String():
+	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
 		return "blocked_queries_config...", true
-	case reflect.TypeOf([]*flagext.BlockedRequest{}).String():
+	case reflect.TypeOf([]*validation.BlockedRequest{}).String():
 		return "blocked_requests_config...", true
 	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
@@ -455,9 +455,9 @@ func getCustomFieldType(t reflect.Type) (string, bool) {
 		return "string", true
 	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", true
-	case reflect.TypeOf([]*flagext.BlockedQuery{}).String():
+	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
 		return "blocked_queries_config...", true
-	case reflect.TypeOf([]*flagext.BlockedRequest{}).String():
+	case reflect.TypeOf([]*validation.BlockedRequest{}).String():
 		return "blocked_requests_config...", true
 	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
