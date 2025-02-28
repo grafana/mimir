@@ -24,7 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestBuildNotifierConfig(t *testing.T) {
@@ -387,7 +386,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 						ClientID:     "oauth2-client-id",
 						ClientSecret: flagext.SecretWithValue("test"),
 						TokenURL:     "https://oauth2-token-endpoint.local/token",
-						EndpointParams: validation.NewLimitsMapWithData[string](
+						EndpointParams: flagext.NewLimitsMapWithData[string](
 							map[string]string{
 								"param1": "value1",
 								"param2": "value2",
