@@ -125,7 +125,7 @@ func (c *CountValues) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadat
 	for _, s := range accumulator {
 		outputMetadata = append(outputMetadata, types.SeriesMetadata{Labels: s.labels})
 
-		points, err := s.ToPoints(c.MemoryConsumptionTracker, c.TimeRange)
+		points, err := s.toPoints(c.MemoryConsumptionTracker, c.TimeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -208,7 +208,7 @@ func (c *CountValues) computeOutputLabels(seriesLabels labels.Labels, value stri
 	return c.labelsBuilder.Labels()
 }
 
-func (s *countValuesSeries) ToPoints(memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) ([]promql.FPoint, error) {
+func (s *countValuesSeries) toPoints(memoryConsumptionTracker *limiting.MemoryConsumptionTracker, timeRange types.QueryTimeRange) ([]promql.FPoint, error) {
 	p, err := types.FPointSlicePool.Get(s.outputPointCount, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
