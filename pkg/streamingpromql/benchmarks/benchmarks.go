@@ -306,6 +306,13 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "timestamp(a_X)",
 		},
+		{
+			Expr: "absent(a_X)",
+		},
+		// Test when no samples present
+		{
+			Expr: "absent(a_X > Inf)",
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.
