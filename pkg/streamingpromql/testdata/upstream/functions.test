@@ -1233,25 +1233,20 @@ eval instant at 1m count_over_time({__name__=~"data(_histogram)?"}[2m])
 clear
 
 # Test for absent()
-# Unsupported by streaming engine.
-# eval instant at 50m absent(nonexistent)
-# 	{} 1
+eval instant at 50m absent(nonexistent)
+	{} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(nonexistent{job="testjob", instance="testinstance", method=~".x"})
-# 	{instance="testinstance", job="testjob"} 1
+eval instant at 50m absent(nonexistent{job="testjob", instance="testinstance", method=~".x"})
+	{instance="testinstance", job="testjob"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",foo="bar"})
-# 	{foo="bar"} 1
+eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",foo="bar"})
+	{foo="bar"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",job="three",foo="bar"})
-# 	{foo="bar"} 1
+eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",job="three",foo="bar"})
+	{foo="bar"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(nonexistent{job="testjob",job=~"testjob2",foo="bar"})
-# 	{foo="bar"} 1
+eval instant at 50m absent(nonexistent{job="testjob",job=~"testjob2",foo="bar"})
+	{foo="bar"} 1
 
 clear
 
@@ -1260,43 +1255,33 @@ load 5m
 	http_requests{job="api-server", instance="0", group="production"}	0+10x10
 	http_requests_histogram{job="api-server", instance="0", group="production"} {{schema:0 sum:1 count:1}}x11
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(http_requests)
+eval instant at 50m absent(http_requests)
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(sum(http_requests))
+eval instant at 50m absent(sum(http_requests))
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(http_requests_histogram)
+eval instant at 50m absent(http_requests_histogram)
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(sum(http_requests_histogram))
+eval instant at 50m absent(sum(http_requests_histogram))
 
 clear
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
-# 	{} 1
+eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
+	{} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(max(nonexistant))
-# 	{} 1
+eval instant at 50m absent(max(nonexistant))
+	{} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(nonexistant > 1)
-# 	{} 1
+eval instant at 50m absent(nonexistant > 1)
+	{} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(a + b)
-# 	{} 1
+eval instant at 50m absent(a + b)
+	{} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(a and b)
-# 	{} 1
+eval instant at 50m absent(a and b)
+	{} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(rate(nonexistant[5m]))
-# 	{} 1
+eval instant at 50m absent(rate(nonexistant[5m]))
+	{} 1
 
 clear
 

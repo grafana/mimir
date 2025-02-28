@@ -1070,3 +1070,82 @@ load 1m
 
 eval range from 1m to 3m step 1m quantile_over_time(scalar(quantile), metric[1m1s])
   {} 1.6 6.5 11.1
+
+clear
+
+# absent() tests
+load 6m
+  series{case="-"} _x11
+  series{case="0a"} _x11
+  series{case="0b"} _x11
+  series{case="0"} 0x11
+  series{case="a"} _ 1 _ 1 _ 1 _ 1 _ 1 _ 
+  series{case="b"} _ _ 2 _ 2 _ 2 _ 2 _ 2 
+  series{case="c"} _ _ _ 3 _ _ _ 3 _ _ _ 
+
+eval instant at 0m absent(series)
+  # expected no result
+
+eval instant at 0m absent(series > Inf)
+  {} 1
+
+eval instant at 0m absent(series{case="-"})
+  {case="-"} 1
+
+eval instant at 0m absent(series{case="a"})
+  {case="a"} 1
+
+eval instant at 8m absent(series{case="a"})
+  # expected no result
+
+eval instant at 0m absent(series{case=~"(a|b)"})
+  {} 1
+
+eval instant at 8m absent(series{case=~"(a|b)"})
+  # expected no result
+
+eval range from 0s to 66m step 6m absent(series)
+  # expected no result
+
+eval range from 0s to 66m step 6m absent(series{case="-"})
+  {case="-"} 1x11
+
+eval range from 0s to 66m step 6m absent(series{case="0"})
+  # expected no result
+
+eval range from 0s to 66m step 6m absent(series{case=~"(a|b)"})
+  {} 1 _ _ _ _ _ _ _ _ _ _ 1
+
+eval range from 0s to 66m step 6m absent(series{case=~"(0a|0b)"})
+  {} 1x11
+
+eval range from 0s to 66m step 6m absent(series > Inf)
+  {} 1x11
+
+eval range from 0s to 66m step 6m absent(non_existent_metric)
+  {} 1x11
+
+# test absent() with histogram
+load 6m
+  histo{case="0"} _x11
+  histo{case="a"} _ {{schema:0 sum:1 count:1}}x10
+
+eval instant at 0m absent(histo)
+  {} 1
+
+eval instant at 6m absent(histo)
+  # expected no result
+
+eval range from 0s to 66m step 6m absent(histo)
+  {} 1
+
+eval range from 0s to 66m step 6m absent(histo{case="0"})
+  {case="0"} 1x11
+
+eval range from 0s to 66m step 6m absent(histo{case="a"})
+  {case="a"} 1
+
+eval range from 0s to 66m step 6m absent(histo{case=~"(0|a)"})
+  {} 1 
+
+clear
