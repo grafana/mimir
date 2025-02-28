@@ -243,29 +243,33 @@ func NewPostingOffsetTableFromSparseHeader(factory *streamencoding.DecbufFactory
 		return nil, fmt.Errorf("sparse index-header sampling rate not set")
 	}
 
-	var step int
-	var ok bool
-	if pbSampling <= postingOffsetsInMemSampling {
-		// if the sampling rate in the sparse index-header is set lower (more frequent) than
-		// the configured postingOffsetsInMemSampling we downsample to the configured rate
-		step, ok = stepSize(pbSampling, postingOffsetsInMemSampling)
-		if !ok {
-			return nil, fmt.Errorf("sparse index-header sampling rate not compatible with in-mem-sampling rate")
-		}
-	} else {
-		// if the sparse index-header sampling rate is set higher must reconstruct from index-header
+	if pbSampling > postingOffsetsInMemSampling {
 		return nil, fmt.Errorf("sparse index-header sampling rate exceeds in-mem-sampling rate")
+	}
+
+	// if the sampling rate in the sparse index-header is set lower (more frequent) than
+	// the configured postingOffsetsInMemSampling we downsample to the configured rate
+	step, ok := stepSize(pbSampling, postingOffsetsInMemSampling)
+	if !ok {
+		return nil, fmt.Errorf("sparse index-header sampling rate not compatible with in-mem-sampling rate")
 	}
 
 	for sName, sOffsets := range postingsOffsetTable.Postings {
 
 		olen := len(sOffsets.Offsets)
 		downsampledLen := (olen + step - 1) / step
+		if (olen > 1) && (downsampledLen == 1) {
+			downsampledLen++
+		}
 
 		t.postings[sName] = &postingValueOffsets{offsets: make([]postingOffset, downsampledLen)}
 		for i, sPostingOff := range sOffsets.Offsets {
 			if i%step == 0 {
 				t.postings[sName].offsets[i/step] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
+			}
+
+			if i == olen-1 {
+				t.postings[sName].offsets[downsampledLen-1] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
 			}
 		}
 		t.postings[sName].lastValOffset = sOffsets.LastValOffset

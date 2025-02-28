@@ -128,11 +128,29 @@ func Test_NewPostingOffsetTableFromSparseHeader(t *testing.T) {
 			protoSamplingRate:               32,
 			expectedLen:                     100,
 		},
+		"downsample_noop_preserve": {
+			existingOffsetsLen:              1,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               16,
+			expectedLen:                     1,
+		},
+		"downsample_noop_retain_first_and_last_posting": {
+			existingOffsetsLen:              2,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               16,
+			expectedLen:                     2,
+		},
+		"downsample_noop_retain_first_and_last_posting_larger_sampling_rates_ratio": {
+			existingOffsetsLen:              2,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               8,
+			expectedLen:                     2,
+		},
 		"downsample_short_offsets": {
 			existingOffsetsLen:              2,
 			postingOffsetsInMemSamplingRate: 32,
 			protoSamplingRate:               16,
-			expectedLen:                     1,
+			expectedLen:                     2,
 		},
 		"downsample_noop_short_offsets": {
 			existingOffsetsLen:              1,
@@ -174,13 +192,13 @@ func Test_NewPostingOffsetTableFromSparseHeader(t *testing.T) {
 			existingOffsetsLen:              10,
 			postingOffsetsInMemSamplingRate: 1024,
 			protoSamplingRate:               8,
-			expectedLen:                     1,
+			expectedLen:                     2,
 		},
 		"downsample_sampling_rates_ratio_equals_offset_len": {
 			existingOffsetsLen:              100,
 			postingOffsetsInMemSamplingRate: 100,
 			protoSamplingRate:               1,
-			expectedLen:                     1,
+			expectedLen:                     2,
 		},
 	}
 

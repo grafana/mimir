@@ -133,16 +133,69 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 	tests := map[string]struct {
 		protoRate         int
 		inMemSamplingRate int
+		expected          map[string]int
 	}{
-		"downsample_1_to_32":                          {1, 32},
-		"downsample_4_to_16":                          {4, 16},
-		"downsample_8_to_24":                          {8, 32},
-		"downsample_17_to_51":                         {17, 51},
-		"noop_on_same_sampling_rate":                  {32, 32},
-		"rebuild_proto_sampling_rate_not_divisible":   {8, 20},
-		"rebuild_cannot_upsample_from_proto_48_to_32": {48, 32},
-		"rebuild_cannot_upsample_from_proto_64_to_32": {64, 32},
-		"downsample_to_low_frequency":                 {4, 16384},
+		"downsample_1_to_32": {
+			protoRate:         1,
+			inMemSamplingRate: 32,
+			expected: map[string]int{
+				"__name__":            4,
+				"":                    1,
+				"__blockgen_target__": 4,
+			},
+		},
+		"downsample_4_to_16": {
+			protoRate:         4,
+			inMemSamplingRate: 16,
+			expected: map[string]int{
+				"__name__":            7,
+				"":                    1,
+				"__blockgen_target__": 7,
+			},
+		},
+		"downsample_8_to_24": {
+			protoRate:         8,
+			inMemSamplingRate: 24,
+			expected: map[string]int{
+				"__name__":            5,
+				"":                    1,
+				"__blockgen_target__": 5,
+			},
+		},
+		"downsample_17_to_51": {
+			protoRate:         17,
+			inMemSamplingRate: 51,
+			expected: map[string]int{
+				"__name__":            3,
+				"":                    1,
+				"__blockgen_target__": 3,
+			},
+		},
+		"noop_on_same_sampling_rate": {
+			protoRate:         32,
+			inMemSamplingRate: 32,
+		},
+		"rebuild_proto_sampling_rate_not_divisible": {
+			protoRate:         8,
+			inMemSamplingRate: 20,
+		},
+		"rebuild_cannot_upsample_from_proto_48_to_32": {
+			protoRate:         48,
+			inMemSamplingRate: 32,
+		},
+		"rebuild_cannot_upsample_from_proto_64_to_32": {
+			protoRate:         64,
+			inMemSamplingRate: 32,
+		},
+		"downsample_to_low_frequency": {
+			protoRate:         4,
+			inMemSamplingRate: 16384,
+			expected: map[string]int{
+				"__name__":            2,
+				"":                    1,
+				"__blockgen_target__": 2,
+			},
+		},
 	}
 
 	for name, tt := range tests {
@@ -182,15 +235,18 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			origIdxpbTbl := br1.postingsOffsetTable.NewSparsePostingOffsetTable()
 			downsampleIdxpbTbl := br2.postingsOffsetTable.NewSparsePostingOffsetTable()
 
-			step := tt.inMemSamplingRate / tt.protoRate
 			for name, vals := range origIdxpbTbl.Postings {
 				downsampledOffsets := downsampleIdxpbTbl.Postings[name].Offsets
-
 				// downsampled postings are a subset of the original sparse index-header postings
 				if (tt.inMemSamplingRate > tt.protoRate) && (tt.inMemSamplingRate%tt.protoRate == 0) {
-					require.Equal(t, (len(vals.Offsets)+step-1)/step, len(downsampledOffsets))
-					require.Subset(t, vals.Offsets, downsampledOffsets)
+					require.Equal(t, tt.expected[name], len(downsampledOffsets))
+					require.Subset(t, vals.Offsets, downsampledOffsets, "downsampled offsets not a subset of original for name '%s'", name)
+
+					require.Equal(t, downsampledOffsets[0], vals.Offsets[0], "downsampled offsets do not contain first value for name '%s'", name)
+					require.Equal(t, downsampledOffsets[len(downsampledOffsets)-1], vals.Offsets[len(vals.Offsets)-1], "downsampled offsets do not contain last value for name '%s'", name)
 				}
+
+				// check first and last entry from the original postings in downsampled set
 				require.NotZero(t, downsampleIdxpbTbl.Postings[name].LastValOffset)
 			}
 		})
