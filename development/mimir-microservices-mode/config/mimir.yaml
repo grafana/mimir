@@ -1,5 +1,8 @@
 multitenancy_enabled: false
 
+server:
+  grpc_server_max_concurrent_streams: 5
+
 distributor:
   ha_tracker:
     enable_ha_tracker: true
@@ -183,6 +186,7 @@ limits:
   ha_cluster_label: ha_cluster
   ha_replica_label: ha_replica
   ha_max_clusters: 10
+  ingestion_artificial_delay: 500ms
 
 runtime_config:
   file: ./config/runtime.yaml

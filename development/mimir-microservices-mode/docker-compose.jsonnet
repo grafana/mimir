@@ -257,6 +257,7 @@ std.manifestYamlDoc({
     // Only publish HTTP and debug port, but not gRPC one.
     ports: ['%d:%d' % [options.httpPort, options.httpPort]] +
            ['%d:%d' % [options.memberlistBindPort, options.memberlistBindPort]] +
+           ['%d:%d' % [options.httpPort + 4000, options.grpcPort]] +
            if $._config.debug then [
              '%d:%d' % [options.debugPort, options.debugPort],
            ] else [],

@@ -22,6 +22,7 @@
     "ports":
       - "8031:8031"
       - "10031:10031"
+      - "12031:9031"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -48,6 +49,7 @@
     "ports":
       - "8032:8032"
       - "10032:10032"
+      - "12032:9032"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -74,6 +76,7 @@
     "ports":
       - "8033:8033"
       - "10033:10033"
+      - "12033:9033"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -100,6 +103,7 @@
     "ports":
       - "8006:8006"
       - "10006:10006"
+      - "12006:9006"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -136,6 +140,7 @@
     "ports":
       - "8090:8090"
       - "10090:10090"
+      - "12090:9090"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -161,6 +166,7 @@
     "ports":
       - "8000:8000"
       - "10000:10000"
+      - "12000:9000"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -186,6 +192,7 @@
     "ports":
       - "8001:8001"
       - "10001:10001"
+      - "12001:9001"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -223,6 +230,7 @@
     "ports":
       - "8002:8002"
       - "10002:10002"
+      - "12002:9002"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -250,6 +258,7 @@
     "ports":
       - "8003:8003"
       - "10003:10003"
+      - "12003:9003"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -277,6 +286,7 @@
     "ports":
       - "8004:8004"
       - "10004:10004"
+      - "12004:9004"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -381,6 +391,7 @@
     "ports":
       - "8005:8005"
       - "10005:10005"
+      - "12005:9005"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -407,6 +418,7 @@
     "ports":
       - "8007:8007"
       - "10007:10007"
+      - "12007:9007"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -433,6 +445,7 @@
     "ports":
       - "8008:8008"
       - "10008:10008"
+      - "12008:9008"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -459,6 +472,7 @@
     "ports":
       - "8022:8022"
       - "10022:10022"
+      - "12022:9022"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -485,6 +499,7 @@
     "ports":
       - "8023:8023"
       - "10023:10023"
+      - "12023:9023"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -511,6 +526,7 @@
     "ports":
       - "8011:8011"
       - "10011:10011"
+      - "12011:9011"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -537,6 +553,7 @@
     "ports":
       - "8012:8012"
       - "10012:10012"
+      - "12012:9012"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
@@ -563,6 +580,7 @@
     "ports":
       - "8013:8013"
       - "10013:10013"
+      - "12013:9013"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
