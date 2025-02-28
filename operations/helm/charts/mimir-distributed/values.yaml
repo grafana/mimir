@@ -4094,13 +4094,13 @@ tokengenJob:
 
 # -- kubetclImage is used in the enterprise provisioner and tokengen jobs
 kubectlImage:
-  # -- The Docker registry
+  # -- The Docker registry for the kubectl image
   registry: docker.io
-  # -- Docker image repository
+  # -- The kubectl image repository
   repository: bitnami/kubectl
-  # -- Overrides the image tag whose default is the chart's appVersion
-  tag: null
-  # -- Docker image pull policy
+  # -- The kubectl image tag
+  tag: latest
+  # -- The kubectl image pull policy
   pullPolicy: IfNotPresent
 
 # Settings for the admin_api service providing authentication and authorization service.
