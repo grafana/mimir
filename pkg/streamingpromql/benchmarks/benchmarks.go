@@ -208,9 +208,9 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "label_replace(a_X, 'l2', '$1', 'l', '(.*)')",
 		},
-		//{
-		//	Expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
-		//},
+		{
+			Expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
+		},
 		{
 			Expr:             "sort(a_X)",
 			InstantQueryOnly: true,
@@ -305,6 +305,13 @@ func TestCases(metricSizes []int) []BenchCase {
 		// Functions which have special handling inside eval()
 		{
 			Expr: "timestamp(a_X)",
+		},
+		{
+			Expr: "absent(a_X)",
+		},
+		// Test when no samples present
+		{
+			Expr: "absent(a_X > Inf)",
 		},
 	}
 

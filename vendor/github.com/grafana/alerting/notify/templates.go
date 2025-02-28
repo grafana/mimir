@@ -1,11 +1,13 @@
 package notify
 
 import (
+	"bytes"
 	"context"
 	"net/url"
 	tmpltext "text/template"
 
 	"github.com/go-kit/log/level"
+
 	"github.com/grafana/alerting/templates"
 	"github.com/prometheus/alertmanager/template"
 )
@@ -32,6 +34,10 @@ type TestTemplatesResult struct {
 
 	// Interpolated value of the template.
 	Text string `json:"text"`
+
+	// Scope that was successfully used to interpolate the template. If the root scope "." fails, more specific
+	// scopes will be tried, such as ".Alerts', or ".Alert".
+	Scope TemplateScope `json:"scope"`
 }
 
 type TestTemplatesErrorResult struct {
@@ -57,6 +63,30 @@ const (
 	DefaultGroupLabel      = "group_label"
 	DefaultGroupLabelValue = "group_label_value"
 )
+
+// TemplateScope is the scope used to interpolate the template when testing.
+type TemplateScope string
+
+const (
+	rootScope   TemplateScope = "."
+	alertsScope TemplateScope = ".Alerts"
+	alertScope  TemplateScope = ".Alert"
+)
+
+// Data returns the template data to be used with the given scope.
+func (s TemplateScope) Data(data *templates.ExtendedData) any {
+	switch s {
+	case rootScope:
+		return data
+	case alertsScope:
+		return data.Alerts
+	case alertScope:
+		if len(data.Alerts) > 0 {
+			return data.Alerts[0]
+		}
+	}
+	return nil
+}
 
 // TestTemplate tests the given template string against the given alerts. Existing templates are used to provide context for the test.
 // If an existing template of the same filename as the one being tested is found, it will not be used as context.
@@ -120,4 +150,30 @@ func templateFromContent(tmpls []string, externalURL string, options ...template
 	}
 	tmpl.ExternalURL = extURL
 	return tmpl, nil
+}
+
+// testTemplateScopes tests the given template with the root scope. If the root scope fails, it tries
+// other more specific scopes, such as ".Alerts" or ".Alert".
+// If none of the more specific scopes work either, the original error is returned.
+func testTemplateScopes(newTextTmpl *tmpltext.Template, def string, data *templates.ExtendedData) (string, TemplateScope, error) {
+	var buf bytes.Buffer
+	defaultErr := newTextTmpl.ExecuteTemplate(&buf, def, data)
+	if defaultErr == nil {
+		return buf.String(), rootScope, nil
+	}
+
+	// Before returning this error, we try others scopes to see if the error is due to the template being intended
+	// to be used with a specific scope, such as ".Alerts" or ".Alert". If none of these scopes work, we return
+	// the original error.
+	// This is a fairly brute force approach, but it's the best we can do without heuristics or asking the
+	// caller to provide the correct scope.
+	for _, scope := range []TemplateScope{alertsScope, alertScope} {
+		var buf bytes.Buffer
+		err := newTextTmpl.ExecuteTemplate(&buf, def, scope.Data(data))
+		if err == nil {
+			return buf.String(), scope, nil
+		}
+	}
+
+	return "", rootScope, defaultErr
 }

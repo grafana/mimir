@@ -1,0 +1,30 @@
+{{- /*gotype: github.com/grafana/mimir/pkg/ruler.ruleGroupsPageContents*/ -}}
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/html">
+<head>
+    <meta charset="UTF-8">
+    <title>Ruler: bucket tenant rule groups</title>
+</head>
+<body>
+<h1>Ruler: bucket tenant rule groups</h1>
+<p>Current time: {{ .Now }}</p>
+<p>Showing rule groups for tenant: <strong>{{ .Tenant }}</strong></p>
+<table border="1" cellpadding="5" style="border-collapse: collapse">
+    <thead>
+    <tr>
+        <th>Namespace</th>
+        <th>Name</th>
+    </tr>
+    </thead>
+    <tbody style="font-family: monospace;">
+    {{ $page := . }}
+    {{ range .Groups }}
+        <tr>
+            <td>{{ .Namespace }}</td>
+            <td>{{ .Name }}</td>
+        </tr>
+    {{ end }}
+    </tbody>
+</table>
+</body>
+</html>

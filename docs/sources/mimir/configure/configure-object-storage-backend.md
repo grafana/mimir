@@ -133,14 +133,17 @@ common:
       endpoint_suffix: "blob.core.windows.net"
 
 blocks_storage:
+  backend: azure
   azure:
     container_name: mimir-blocks
 
 alertmanager_storage:
+  backend: azure
   azure:
     container_name: mimir-alertmanager
 
 ruler_storage:
+  backend: azure
   azure:
     container_name: mimir-ruler
 ```

@@ -4712,8 +4712,9 @@
           "required": false,
           "desc": "List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.",
           "fieldValue": null,
-          "fieldDefaultValue": [],
-          "fieldType": "list of strings",
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.instant-queries-with-subquery-spin-off",
+          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
@@ -5194,6 +5195,36 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "alertmanager.max-alerts-size-bytes",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_notify_hook_url",
+          "required": false,
+          "desc": "URL of a hook to invoke before a notification is sent. empty = no hook.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "alertmanager.notify-hook-url",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_notify_hook_receivers",
+          "required": false,
+          "desc": "List of receivers to enable notify hooks for. empty = all receivers.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "alertmanager.notify-hook-receivers",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_notify_hook_timeout",
+          "required": false,
+          "desc": "Maximum amount of time to wait for a hook to complete before timing out. 0 = no timeout.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "alertmanager.notify-hook-timeout",
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -6931,17 +6962,6 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.use-active-series-decoder",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "spin_off_instant_subqueries_to_url",
-          "required": false,
-          "desc": "If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to set `instant_queries_with_subquery_spin_off` for the tenant.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "query-frontend.spin-off-instant-subqueries-to-url",
-          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
@@ -16356,6 +16376,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "alertmanager.utf8-migration-logging-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "enable_notify_hooks",
+          "required": false,
+          "desc": "Enable pre-notification hooks.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.notify-hooks-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }

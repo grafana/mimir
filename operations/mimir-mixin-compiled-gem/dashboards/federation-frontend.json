@@ -35,19 +35,26 @@
             "height": "250px",
             "panels": [
                {
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Requests / sec\nThe number of requests per second to the federation-frontend.\nThis includes all read requests: instant & range queries, series, label values, label names, etc.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
+                           "drawStyle": "line",
                            "fillOpacity": 100,
                            "lineWidth": 0,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
                            "stacking": {
+                              "group": "A",
                               "mode": "normal"
                            }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
                         },
                         "unit": "reqps"
                      },
@@ -189,30 +196,18 @@
                         }
                      ]
                   },
-                  "fill": 1,
                   "id": 1,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
-                  },
-                  "lines": true,
-                  "linewidth": 1,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
                   "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((federation-frontend.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
@@ -221,72 +216,47 @@
                         "refId": "A"
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Requests / sec",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
-                  "fill": 1,
-                  "id": 2,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "ms"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 2,
                   "links": [ ],
                   "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
                   "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((federation-frontend.*))\", route=~\"(prometheus|api_prom)_api_v1_.+\"})) * 1e3",
@@ -307,23 +277,8 @@
                         "refId": "C"
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Latency",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
+                  "type": "timeseries",
                   "yaxes": [
                      {
                         "format": "ms",
@@ -708,7 +663,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "req/s"
+                        "unit": "reqps"
                      },
                      "overrides": [ ]
                   },
@@ -756,7 +711,7 @@
                            "mode": "absolute",
                            "steps": [ ]
                         },
-                        "unit": "short"
+                        "unit": "s"
                      },
                      "overrides": [ ]
                   },
@@ -848,41 +803,44 @@
                   "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Number of sharded queries per shardable query\nThe number of sharded queries that have been executed for a single input query.\nIt only tracks queries that have been successfully rewritten in a shardable way.\nIf a query is shardable, then there is at least one sharded query per remote cluster.\nIf the query is more complex, then there may be more queries per remote cluster.\nFor example, `sum(foo) + sum(bar)` will result in two queries per remote cluster.\n\n",
                   "fieldConfig": {
                      "defaults": {
-                        "unit": "ms"
-                     }
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "short"
+                     },
+                     "overrides": [ ]
                   },
-                  "fill": 1,
                   "id": 10,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
-                  },
-                  "lines": true,
-                  "linewidth": 1,
                   "links": [ ],
                   "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
                   "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "histogram_quantile(0.99, sum(rate(cortex_federation_frontend_cluster_sharded_queries_per_query_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((federation-frontend.*))\"}[$__rate_interval])) by (le)) * 1",
@@ -903,26 +861,11 @@
                         "refId": "C"
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Number of sharded queries per query",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
+                  "type": "timeseries",
                   "yaxes": [
                      {
-                        "format": "short",
+                        "format": "ms",
                         "label": null,
                         "logBase": 1,
                         "max": null,
@@ -1051,19 +994,26 @@
             "height": "250px",
             "panels": [
                {
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Remote requests / sec by status\nRate of remote requests to $remote_cluster segmented by status.\nThis includes all requests sent to the remote clusters.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
+                           "drawStyle": "line",
                            "fillOpacity": 100,
                            "lineWidth": 0,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
                            "stacking": {
+                              "group": "A",
                               "mode": "normal"
                            }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
                         },
                         "unit": "reqps"
                      },
@@ -1202,33 +1152,81 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "cancelled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "yellow",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "client_error"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "orange",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "server_error"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "red",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "success"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "green",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
                         }
                      ]
                   },
-                  "fill": 1,
                   "id": 12,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
-                  },
-                  "lines": true,
-                  "linewidth": 1,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
                   "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_federation_frontend_cluster_remote_latency_seconds_count{remote_cluster=~\"$remote_cluster\", cluster=~\"$cluster\", job=~\"($namespace)/((federation-frontend.*))\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z]+)\"))\n",
@@ -1237,84 +1235,47 @@
                         "refId": "A"
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Remote requests / sec by status",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "ops",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Remote requests / sec by request type\nRate of remote requests to $remote_cluster segmented by request type.\n\n",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
+                           "drawStyle": "line",
                            "fillOpacity": 100,
                            "lineWidth": 0,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
                            "stacking": {
+                              "group": "A",
                               "mode": "normal"
                            }
-                        }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "reqps"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 13,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
                      }
                   },
-                  "fill": 1,
-                  "id": 13,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
-                  },
-                  "lines": true,
-                  "linewidth": 1,
-                  "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
                   "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "sum by (request_type) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_count{remote_cluster=~\"$remote_cluster\", cluster=~\"$cluster\", job=~\"($namespace)/((federation-frontend.*))\"}[$__rate_interval]))",
@@ -1323,73 +1284,47 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Remote requests / sec by request type",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "ops",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                },
                {
-                  "aliasColors": { },
-                  "bars": false,
-                  "dashLength": 10,
-                  "dashes": false,
                   "datasource": "$datasource",
                   "description": "### Cluster response latency\nDisplays remote latency at different quantiles.\nThis includes all requests sent to the remote clusters.\n\n",
-                  "fill": 1,
-                  "id": 14,
-                  "legend": {
-                     "avg": false,
-                     "current": false,
-                     "max": false,
-                     "min": false,
-                     "show": true,
-                     "total": false,
-                     "values": false
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "s"
+                     },
+                     "overrides": [ ]
                   },
-                  "lines": true,
-                  "linewidth": 1,
+                  "id": 14,
                   "links": [ ],
-                  "nullPointMode": "null as zero",
-                  "percentage": false,
-                  "pointradius": 5,
-                  "points": false,
-                  "renderer": "flot",
-                  "seriesOverrides": [ ],
-                  "spaceLength": 10,
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
                   "span": 4,
-                  "stack": false,
-                  "steppedLine": false,
                   "targets": [
                      {
                         "expr": "histogram_quantile(0.99, sum by(le, remote_cluster) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_bucket{remote_cluster=~\"$remote_cluster\", cluster=~\"$cluster\", job=~\"($namespace)/((federation-frontend.*))\"}[$__rate_interval])))",
@@ -1410,41 +1345,8 @@
                         "legendLink": null
                      }
                   ],
-                  "thresholds": [ ],
-                  "timeFrom": null,
-                  "timeShift": null,
                   "title": "Remote latency",
-                  "tooltip": {
-                     "shared": false,
-                     "sort": 0,
-                     "value_type": "individual"
-                  },
-                  "type": "graph",
-                  "xaxis": {
-                     "buckets": null,
-                     "mode": "time",
-                     "name": null,
-                     "show": true,
-                     "values": [ ]
-                  },
-                  "yaxes": [
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": 0,
-                        "show": true
-                     },
-                     {
-                        "format": "short",
-                        "label": null,
-                        "logBase": 1,
-                        "max": null,
-                        "min": null,
-                        "show": false
-                     }
-                  ]
+                  "type": "timeseries"
                }
             ],
             "repeat": "remote_cluster",
