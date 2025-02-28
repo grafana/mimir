@@ -1759,6 +1759,8 @@ How to **investigate**:
 - Check if the per-partition lag, reported by the `cortex_blockbuilder_consumer_lag_records` metric, has been growing over the past hours.
 - Explore the block-builder logs for any errors reported while it processed the partition.
 
+Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
+
 ### MimirBlockBuilderCompactAndUploadFailed
 
 How it **works**:
@@ -1770,6 +1772,8 @@ How it **works**:
 How to **investigate**:
 
 - Explore the block-builder logs to check what errors are there.
+
+Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
 
 ## Errors catalog
 
