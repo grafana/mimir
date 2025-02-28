@@ -433,7 +433,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		return false, nil, err
 	}
 
-	// Optionally build sparse-index-headers. Building sparse-index-headers is best effort, we do not skip uploading a 
+	// Optionally build sparse-index-headers. Building sparse-index-headers is best effort, we do not skip uploading a
 	// compacted block if there's an error affecting sparse-index-headers.
 	if c.uploadSparseIndexHeaders {
 		// Create a bucket backed by the local compaction directory, allows calls to prepareSparseIndexHeader to
