@@ -2512,9 +2512,9 @@ func TestComputeConfig(t *testing.T) {
 	amWithSuffix := setupSingleMultitenantAlertmanager(t, cfg2, store, nil, featurecontrol.NoopFlags{}, log.NewNopLogger(), reg2)
 
 	tenantReceivingRequests := "receiving-1-grafana"
-	amWithSuffix.receivingRequests.Store(tenantReceivingRequests, time.Now().Unix())
+	amWithSuffix.lastRequestTime.Store(tenantReceivingRequests, time.Now().Unix())
 	tenantReceivingRequestsExpired := "receiving-2-grafana"
-	amWithSuffix.receivingRequests.Store(tenantReceivingRequestsExpired, time.Now().Add(-time.Hour).Unix())
+	amWithSuffix.lastRequestTime.Store(tenantReceivingRequestsExpired, time.Now().Add(-time.Hour).Unix())
 
 	var grafanaCfg GrafanaAlertmanagerConfig
 	require.NoError(t, json.Unmarshal([]byte(grafanaConfig), &grafanaCfg))

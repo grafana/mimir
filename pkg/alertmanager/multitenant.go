@@ -328,9 +328,10 @@ type MultitenantAlertmanager struct {
 	limits   Limits
 	features featurecontrol.Flagger
 
-	// Record the last time we received a request for a given Grafana tenant.
-	// We can shut down an idle Alertmanager after the grace period elapses.
-	receivingRequests sync.Map
+	// lastRequestTime tracks request timestamps for conditionally-started Grafana Alertmanagers.
+	// Only applies to tenants with the configured suffix that were skipped during initial sync
+	// due to having no usable configuration. Used to determine when to shut down idle instances.
+	lastRequestTime sync.Map
 
 	registry          prometheus.Registerer
 	ringCheckErrors   prometheus.Counter
@@ -404,7 +405,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		fallbackConfig:      string(fallbackConfig),
 		cfgs:                map[string]alertspb.AlertConfigDesc{},
 		alertmanagers:       map[string]*Alertmanager{},
-		receivingRequests:   sync.Map{},
+		lastRequestTime:     sync.Map{},
 		alertmanagerMetrics: newAlertmanagerMetrics(logger),
 		multitenantMetrics:  newMultitenantAlertmanagerMetrics(registerer),
 		store:               store,
@@ -753,7 +754,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 		// If the tenant ID matches the configured Grafana suffix, only run the Alertmanager if it's receiving requests.
 		// If there's no value, store a zero-value timestamp to indicate that we've skipped the tenant.
-		createdAt, loaded := am.receivingRequests.LoadOrStore(cfgs.Mimir.User, time.Time{}.Unix())
+		createdAt, loaded := am.lastRequestTime.LoadOrStore(cfgs.Mimir.User, time.Time{}.Unix())
 		if !loaded {
 			return cfg, false, nil
 		}
@@ -768,7 +769,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 
 	// If the Alertmanager was previously skipped but now has a usable configuration, remove it from the skipped list.
 	if strictInit {
-		if _, ok := am.receivingRequests.LoadAndDelete(cfgs.Mimir.User); ok {
+		if _, ok := am.lastRequestTime.LoadAndDelete(cfgs.Mimir.User); ok {
 			level.Debug(am.logger).Log("msg", "user now has a usable config, removing it from skipped list", "user", cfgs.Mimir.User)
 		}
 	}
@@ -1041,15 +1042,15 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 		userAM.mux.ServeHTTP(w, req)
 
 		// If needed, update the last time the Alertmanager received requests.
-		if _, ok := am.receivingRequests.Load(userID); ok {
+		if _, ok := am.lastRequestTime.Load(userID); ok {
 			level.Debug(am.logger).Log("msg", "updating last request reception time", "user", userID)
-			am.receivingRequests.Store(userID, time.Now().Unix())
+			am.lastRequestTime.Store(userID, time.Now().Unix())
 		}
 		return
 	}
 
 	// If the Alertmanager initialization was skipped, start the Alertmanager.
-	if _, ok := am.receivingRequests.Load(userID); ok {
+	if _, ok := am.lastRequestTime.Load(userID); ok {
 		userAM, err = am.startAlertmanager(req.Context(), userID)
 		if err != nil {
 			level.Error(am.logger).Log("msg", "unable to initialize the Alertmanager", "user", userID, "err", err)
@@ -1057,7 +1058,7 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 			return
 		}
 
-		am.receivingRequests.Store(userID, time.Now().Unix())
+		am.lastRequestTime.Store(userID, time.Now().Unix())
 		level.Debug(am.logger).Log("msg", "Alertmanager initialized after receiving request", "user", userID)
 		userAM.mux.ServeHTTP(w, req)
 		return
