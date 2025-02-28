@@ -2555,7 +2555,7 @@ func TestComputeConfig(t *testing.T) {
 			expURL: mimirExternalURL,
 		},
 		{
-			name: "no grafana configuration, receiving alerts",
+			name: "no grafana configuration, receiving requests",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
 					User:      tenantReceivingRequests,
@@ -2608,7 +2608,7 @@ func TestComputeConfig(t *testing.T) {
 			expURL: mimirExternalURL,
 		},
 		{
-			name: "empty grafana configuration, receiving alerts",
+			name: "empty grafana configuration, receiving requests",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
 					User:      tenantReceivingRequests,
@@ -2676,7 +2676,7 @@ func TestComputeConfig(t *testing.T) {
 			expURL: mimirExternalURL,
 		},
 		{
-			name: "grafana configuration is not promoted, receiving alerts",
+			name: "grafana configuration is not promoted, receiving requests",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
 					User:      tenantReceivingRequests,
@@ -2743,7 +2743,7 @@ func TestComputeConfig(t *testing.T) {
 			expURL: mimirExternalURL,
 		},
 		{
-			name: "grafana configuration is default, receiving alerts",
+			name: "grafana configuration is default, receiving requests",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
 					User:      tenantReceivingRequests,
@@ -2814,7 +2814,7 @@ func TestComputeConfig(t *testing.T) {
 			expHeaders: map[string]string{"Test-Header-1": "test-value-1", "Test-Header-2": "test-value-2"},
 		},
 		{
-			name: "empty mimir configuration, receiving alerts",
+			name: "empty mimir configuration, receiving requests",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
 					User:      tenantReceivingRequests,
@@ -2914,7 +2914,7 @@ func TestComputeConfig(t *testing.T) {
 		},
 		{
 			// TODO: change once merging configs is implemented.
-			name: "both mimir and grafana configurations (merging not implemented), receiving alerts",
+			name: "both mimir and grafana configurations (merging not implemented), receiving requests",
 			cfg: alertspb.AlertConfigDescs{
 				Mimir: alertspb.AlertConfigDesc{
 					User:      tenantReceivingRequests,

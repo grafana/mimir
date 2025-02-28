@@ -2511,7 +2511,7 @@ sharding_ring:
 
 # (experimental) Skip starting the Alertmanager for tenants matching this suffix
 # unless they have a promoted, non-default Grafana Alertmanager configuration or
-# they are receiving alerts.
+# they are receiving requests.
 # CLI flag: -alertmanager.grafana-alertmanager-conditionally-skip-tenant-suffix
 [grafana_alertmanager_conditionally_skip_tenant_suffix: <string> | default = ""]
 
