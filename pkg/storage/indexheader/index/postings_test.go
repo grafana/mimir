@@ -122,16 +122,66 @@ func Test_NewPostingOffsetTableFromSparseHeader(t *testing.T) {
 		expectedLen                     int
 		expectErr                       bool
 	}{
-		"downsample_noop_proto_has_equal_sampling_rate":           {100, 32, 32, 100, false},
-		"downsample_short_offsets":                                {2, 32, 16, 1, false},
-		"downsample_noop_short_offsets":                           {1, 32, 16, 1, false},
-		"downsample_proto_has_divisible_sampling_rate":            {100, 32, 16, 50, false},
-		"cannot_downsample_proto_has_no_sampling_rate":            {100, 32, 0, 0, true},
-		"cannot_upsample_proto_has_less_frequent_sampling_rate":   {100, 32, 64, 0, true},
-		"cannot_downsample_proto_has_non_divisible_sampling_rate": {100, 32, 10, 0, true},
-		"downsample_sampling_rates_ratio_does_not_divide_offsets": {33, 32, 16, 17, false},
-		"downsample_sampling_rates_ratio_exceeds_offset_len":      {10, 1024, 8, 1, false},
-		"downsample_sampling_rates_ratio_equals_offset_len":       {100, 100, 1, 1, false},
+		"downsample_noop_proto_has_equal_sampling_rate": {
+			existingOffsetsLen:              100,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               32,
+			expectedLen:                     100,
+		},
+		"downsample_short_offsets": {
+			existingOffsetsLen:              2,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               16,
+			expectedLen:                     1,
+		},
+		"downsample_noop_short_offsets": {
+			existingOffsetsLen:              1,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               16,
+			expectedLen:                     1,
+		},
+		"downsample_proto_has_divisible_sampling_rate": {
+			existingOffsetsLen:              100,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               16,
+			expectedLen:                     50,
+		},
+		"cannot_downsample_proto_has_no_sampling_rate": {
+			existingOffsetsLen:              100,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               0,
+			expectErr:                       true,
+		},
+		"cannot_upsample_proto_has_less_frequent_sampling_rate": {
+			existingOffsetsLen:              100,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               64,
+			expectErr:                       true,
+		},
+		"cannot_downsample_proto_has_non_divisible_sampling_rate": {
+			existingOffsetsLen:              100,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               10,
+			expectErr:                       true,
+		},
+		"downsample_sampling_rates_ratio_does_not_divide_offsets": {
+			existingOffsetsLen:              33,
+			postingOffsetsInMemSamplingRate: 32,
+			protoSamplingRate:               16,
+			expectedLen:                     17,
+		},
+		"downsample_sampling_rates_ratio_exceeds_offset_len": {
+			existingOffsetsLen:              10,
+			postingOffsetsInMemSamplingRate: 1024,
+			protoSamplingRate:               8,
+			expectedLen:                     1,
+		},
+		"downsample_sampling_rates_ratio_equals_offset_len": {
+			existingOffsetsLen:              100,
+			postingOffsetsInMemSamplingRate: 100,
+			protoSamplingRate:               1,
+			expectedLen:                     1,
+		},
 	}
 
 	for testName, testCase := range testCases {
