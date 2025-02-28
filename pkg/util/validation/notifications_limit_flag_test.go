@@ -30,12 +30,6 @@ func TestNotificationLimitsMap(t *testing.T) {
 				},
 				validateIntegrationLimit,
 			),
-			/*expected: flagext.LimitsMap[float64]{
-				validator: validateIntegrationLimit,
-				data: map[string]float64{
-					"email": 100,
-				},
-			},*/
 		},
 
 		"unknown integration": {
