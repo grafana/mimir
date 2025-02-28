@@ -454,6 +454,14 @@ lint: check-makefiles
 		"github.com/twmb/franz-go/pkg/kgo.{AllowAutoTopicCreation}" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
+	# Ensure lines are sorted after lint:sorted directives.
+	go run ./tools/lint-sorted/ \
+		-path ./pkg \
+		-path ./cmd \
+		-path ./tools \
+		-path ./integration \
+		-include '*.go'
+
 format: ## Run gofmt and goimports.
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
