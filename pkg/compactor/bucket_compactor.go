@@ -499,8 +499,7 @@ func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objsto
 	if err != nil {
 		return err
 	}
-	br.Close()
-	return nil
+	return br.Close()
 }
 
 // verifyCompactedBlocksTimeRanges does a full run over the compacted blocks
