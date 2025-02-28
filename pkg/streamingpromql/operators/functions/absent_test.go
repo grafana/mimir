@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func TestAbsent_NextSeries_CalledCondition(t *testing.T) {
+func TestAbsent_NextSeries_ExhaustedCondition(t *testing.T) {
 	memTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 
 	a := &Absent{
@@ -38,6 +38,6 @@ func TestAbsent_NextSeries_CalledCondition(t *testing.T) {
 		result2, err := a.NextSeries(context.Background())
 		require.Equal(t, types.EOS, err)
 		require.Empty(t, result2.Floats)
-		require.True(t, a.called)
+		require.True(t, a.exhausted)
 	})
 }

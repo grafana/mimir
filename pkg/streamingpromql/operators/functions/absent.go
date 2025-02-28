@@ -25,7 +25,7 @@ type Absent struct {
 	expressionPosition       posrange.PositionRange
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	presence                 []bool
-	called                   bool
+	exhausted                bool
 }
 
 var _ types.InstantVectorOperator = &Absent{}
@@ -81,11 +81,11 @@ func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, er
 
 func (a *Absent) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {
 	output := types.InstantVectorSeriesData{}
-	defer func() { a.called = true }()
-
-	if a.called {
+	if a.exhausted {
 		return output, types.EOS
 	}
+
+	a.exhausted = true
 
 	var err error
 	for step := range a.timeRange.StepCount {
