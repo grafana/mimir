@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
@@ -57,18 +56,17 @@ var (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval        time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	ResultsCacheConfig            `yaml:"results_cache"`
-	CacheResults                  bool          `yaml:"cache_results"`
-	CacheErrors                   bool          `yaml:"cache_errors" category:"experimental"`
-	MaxRetries                    int           `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout             time.Duration `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries                bool          `yaml:"parallelize_shardable_queries"`
-	PrunedQueries                 bool          `yaml:"prune_queries" category:"experimental"`
-	TargetSeriesPerShard          uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ShardActiveSeriesQueries      bool          `yaml:"shard_active_series_queries" category:"experimental"`
-	UseActiveSeriesDecoder        bool          `yaml:"use_active_series_decoder" category:"experimental"`
-	SpinOffInstantSubqueriesToURL string        `yaml:"spin_off_instant_subqueries_to_url" category:"experimental"`
+	SplitQueriesByInterval   time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
+	ResultsCacheConfig       `yaml:"results_cache"`
+	CacheResults             bool          `yaml:"cache_results"`
+	CacheErrors              bool          `yaml:"cache_errors" category:"experimental"`
+	MaxRetries               int           `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout        time.Duration `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries           bool          `yaml:"parallelize_shardable_queries"`
+	PrunedQueries            bool          `yaml:"prune_queries" category:"experimental"`
+	TargetSeriesPerShard     uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ShardActiveSeriesQueries bool          `yaml:"shard_active_series_queries" category:"experimental"`
+	UseActiveSeriesDecoder   bool          `yaml:"use_active_series_decoder" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -100,7 +98,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
-	f.StringVar(&cfg.SpinOffInstantSubqueriesToURL, "query-frontend.spin-off-instant-subqueries-to-url", "", "If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to set `instant_queries_with_subquery_spin_off` for the tenant.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -379,24 +376,6 @@ func newQueryMiddlewares(
 		newStepAlignMiddleware(limits, log, registerer),
 	)
 
-	if spinOffURL := cfg.SpinOffInstantSubqueriesToURL; spinOffURL != "" {
-		// Spin-off subqueries to a remote URL (or localhost)
-		// Add the retry middleware to the spin-off query handler.
-		// Spun-off queries are terminated in that handler (they don't call "next" so the retry middleware has to be added here).
-		spinOffQueryHandler, err := newSpinOffQueryHandler(codec, log, spinOffURL, cfg.MaxRetries, retryMiddlewareMetrics)
-		if err != nil {
-			level.Error(log).Log("msg", "failed to create spin-off query handler", "error", err)
-		} else {
-			// We're only interested in instant queries for now because their query rate is usually much higher than range queries.
-			// They are also less optimized than range queries, so we can benefit more from the spin-off.
-			queryInstantMiddleware = append(
-				queryInstantMiddleware,
-				newInstrumentMiddleware("spin_off_subqueries", metrics),
-				newSpinOffSubqueriesMiddleware(limits, log, engine, spinOffQueryHandler, registerer, defaultStepFunc),
-			)
-		}
-	}
-
 	if cfg.CacheResults && cfg.CacheErrors {
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
@@ -405,9 +384,10 @@ func newQueryMiddlewares(
 		)
 	}
 
-	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
+	// Create split and cache middleware if either splitting or caching is enabled
+	var splitAndCacheMiddleware MetricsQueryMiddleware
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), newSplitAndCacheMiddleware(
+		splitAndCacheMiddleware = newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
 			cfg.SplitQueriesByInterval,
@@ -419,17 +399,22 @@ func newQueryMiddlewares(
 			resultsCacheEnabledByOption,
 			log,
 			registerer,
-		))
+		)
 	}
 
 	queryInstantMiddleware = append(queryInstantMiddleware,
-		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
 		newInstrumentMiddleware("prom2_compat", metrics),
 		prom2CompatMiddleware,
+	)
+
+	queryInstantMiddleware = append(
+		queryInstantMiddleware,
+		newInstrumentMiddleware("spin_off_subqueries", metrics),
+		newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, defaultStepFunc),
 	)
 
 	// Inject the extra middlewares provided by the user before the query pruning and query sharding middleware.

@@ -14,7 +14,7 @@ metadata:
   namespace: "citestns"
 spec:
   podManagementPolicy: Parallel
-  replicas: 4
+  replicas: 3
   selector:
     matchLabels:
       app.kubernetes.io/name: mimir

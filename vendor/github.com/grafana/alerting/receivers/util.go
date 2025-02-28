@@ -43,6 +43,17 @@ type HTTPCfg struct {
 	Password string
 }
 
+// HMACConfig contains configuration for HMAC signing of HTTP requests
+type HMACConfig struct {
+	// Secret to use for HMAC signing.
+	Secret string `json:"secret,omitempty" yaml:"secret,omitempty"`
+	// Header is the name of the header containing the HMAC signature.
+	Header string `json:"header,omitempty" yaml:"header,omitempty"`
+	// TimestampHeader is the name of the header containing the timestamp
+	// used to generate the HMAC signature. If empty, timestamp is not included.
+	TimestampHeader string `yaml:"timestampHeader,omitempty" json:"timestampHeader,omitempty"`
+}
+
 type TLSConfig struct {
 	CACertificate      string `json:"caCertificate,omitempty" yaml:"caCertificate,omitempty"`
 	ClientCertificate  string `json:"clientCertificate,omitempty" yaml:"clientCertificate,omitempty"`
@@ -74,29 +85,6 @@ func (cfg *TLSConfig) ToCryptoTLSConfig() (*tls.Config, error) {
 	}
 
 	return tlsCfg, nil
-}
-
-// NewTLSClient creates a new HTTP client with the provided TLS configuration or with default settings.
-func NewTLSClient(tlsConfig *tls.Config) *http.Client {
-	nc := func(tlsConfig *tls.Config) *http.Client {
-		return &http.Client{
-			Timeout: time.Second * 30,
-			Transport: &http.Transport{
-				TLSClientConfig: tlsConfig,
-				Proxy:           http.ProxyFromEnvironment,
-				Dial: (&net.Dialer{
-					Timeout: 30 * time.Second,
-				}).Dial,
-				TLSHandshakeTimeout: 5 * time.Second,
-			},
-		}
-	}
-
-	if tlsConfig == nil {
-		return nc(&tls.Config{Renegotiation: tls.RenegotiateFreelyAsClient})
-	}
-
-	return nc(tlsConfig)
 }
 
 // SendHTTPRequest sends an HTTP request.

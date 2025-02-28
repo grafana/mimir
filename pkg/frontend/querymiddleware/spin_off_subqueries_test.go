@@ -5,9 +5,6 @@ package querymiddleware
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"sort"
 	"strings"
 	"testing"
@@ -206,7 +203,7 @@ func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.
 	downstreamErr := errors.Errorf("some err")
 	downstream := mockHandlerWith(nil, downstreamErr)
 
-	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{instantQueriesWithSubquerySpinOff: []string{".*"}}, log.NewNopLogger(), newEngine(), downstream, nil, defaultStepFunc)
+	spinoffMiddleware := newSpinOffSubqueriesMiddleware(mockLimits{instantQueriesWithSubquerySpinOff: []string{".*"}}, log.NewNopLogger(), newEngine(), nil, nil, defaultStepFunc)
 
 	// Run the query with subquery spin-off middleware wrapping the downstream one.
 	// We expect to get the downstream error.
@@ -214,107 +211,6 @@ func TestSubquerySpinOff_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.
 	_, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
 	require.Error(t, err)
 	assert.Equal(t, downstreamErr, err)
-}
-
-func TestSpinOffQueryHandler(t *testing.T) {
-	now := time.Now()
-
-	numSeries := 5
-	series := make([]storage.Series, 0, numSeries)
-	// Add counter series.
-	for i := 0; i < numSeries; i++ {
-		gen := factor(float64(i) * 0.1)
-		series = append(series, newSeries(newTestCounterLabels(len(series)), now.Add(-5*time.Minute), now, 30*time.Second, gen))
-	}
-	// Create a queryable on the fixtures.
-	queryable := storageSeriesQueryable(series)
-
-	engine := newEngine()
-	downstream := &downstreamHandler{
-		engine:    engine,
-		queryable: queryable,
-	}
-
-	gotRequestCt := 0
-	codec := newTestPrometheusCodec()
-	// Create a local server that handles queries.
-	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotRequestCt++
-		if gotRequestCt == 1 {
-			// Test a failure case where the first request fails.
-			http.Error(w, "unexpected request", http.StatusInternalServerError)
-			return
-		}
-
-		if r.URL.Path != "/prometheus/api/v1/query_range" {
-			http.Error(w, "invalid path", http.StatusNotFound)
-			return
-		}
-
-		if org := r.Header.Get(user.OrgIDHeaderName); org != "test" {
-			http.Error(w, "invalid org", http.StatusUnauthorized)
-			return
-		}
-
-		metricsReq, err := codec.DecodeMetricsQueryRequest(r.Context(), r)
-		if err != nil {
-			http.Error(w, errors.Wrap(err, "failed to decode request").Error(), http.StatusBadRequest)
-			return
-		}
-
-		resp, err := downstream.Do(r.Context(), metricsReq)
-		if err != nil {
-			http.Error(w, errors.Wrap(err, "failed to execute request").Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		httpResp, err := codec.EncodeMetricsQueryResponse(r.Context(), r, resp)
-		if err != nil {
-			http.Error(w, errors.Wrap(err, "failed to encode response").Error(), http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", httpResp.Header.Get("Content-Type"))
-		w.Header().Set("Content-Length", httpResp.Header.Get("Content-Length"))
-		io.Copy(w, httpResp.Body)
-		httpResp.Body.Close()
-	}))
-	t.Cleanup(httpServer.Close)
-
-	spinOffQueryHandler, err := newSpinOffQueryHandler(
-		codec, log.NewNopLogger(), httpServer.URL+"/prometheus/api/v1/query_range", 3, &mockRetryMetrics{})
-	require.NoError(t, err)
-
-	// Ensure we have had no requests yet.
-	require.Equal(t, 0, gotRequestCt)
-
-	req := &PrometheusRangeQueryRequest{
-		path:      "/query_range",
-		start:     util.TimeToMillis(now.Add(-5 * time.Minute)),
-		end:       util.TimeToMillis(now),
-		step:      30 * time.Second.Milliseconds(),
-		queryExpr: parseQuery(t, "max_over_time(rate(metric_counter[1m])[5m:1m])"),
-	}
-	ctx := user.InjectOrgID(context.Background(), "test")
-	resp, err := spinOffQueryHandler.Do(ctx, req)
-	require.NoError(t, err)
-
-	// Ensure we got the expected number of requests.
-	require.Equal(t, 2, gotRequestCt)
-
-	// Ensure the query produces some results.
-	require.NotEmpty(t, resp.(*PrometheusResponse).Data.Result)
-	requireValidSamples(t, resp.(*PrometheusResponse).Data.Result)
-
-	// Ensure the result is the same as the one produced by the downstream handler.
-	expectedRes, err := downstream.Do(context.Background(), req)
-	require.Nil(t, err)
-
-	expectedPrometheusRes := expectedRes.(*PrometheusResponse)
-	sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
-	sort.Sort(byLabels(resp.(*PrometheusResponse).Data.Result))
-	approximatelyEquals(t, expectedPrometheusRes, resp.(*PrometheusResponse))
 }
 
 var defaultStepFunc = func(int64) int64 {
@@ -412,6 +308,15 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 				removeAllAnnotationPositionInformation(expectedPrometheusRes.Warnings)
 			}
 
+			// Create a fake middleware that tracks if it was called
+			called := false
+			fakeMiddleware := MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+				return HandlerFunc(func(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+					called = true
+					return next.Do(ctx, req)
+				})
+			})
+
 			reg := prometheus.NewPedanticRegistry()
 			spinoffMiddleware := newSpinOffSubqueriesMiddleware(
 				mockLimits{
@@ -419,14 +324,20 @@ func runSubquerySpinOffTests(t *testing.T, tests map[string]subquerySpinOffTest,
 				},
 				log.NewNopLogger(),
 				engine,
-				downstream,
 				reg,
+				fakeMiddleware,
 				defaultStepFunc,
 			)
 
 			ctx := user.InjectOrgID(context.Background(), "test")
 			spinoffRes, err := spinoffMiddleware.Wrap(downstream).Do(ctx, req)
 			require.Nil(t, err)
+
+			if testData.expectedSpunOffSubqueries > 0 {
+				assert.True(t, called, "the fake range middleware should have been called")
+			} else {
+				assert.False(t, called, "the fake range middleware should not have been called")
+			}
 
 			// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
 			// if you rerun the same query twice).

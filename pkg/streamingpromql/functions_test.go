@@ -80,6 +80,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 	expressions := map[string]string{
 		// Please keep this list sorted alphabetically.
 		"abs":                `abs({__name__=~"float.*"})`,
+		"absent":             `<skip>`,
 		"acos":               `acos({__name__=~"float.*"})`,
 		"acosh":              `acosh({__name__=~"float.*"})`,
 		"asin":               `asin({__name__=~"float.*"})`,
@@ -115,6 +116,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"idelta":             `idelta({__name__=~"float.*"}[1m])`,
 		"increase":           `increase({__name__=~"float.*"}[1m])`,
 		"irate":              `irate({__name__=~"float.*"}[1m])`,
+		"label_join":         `label_join({__name__=~"float.*"}, "__name__", "", "env")`,
 		"label_replace":      `label_replace({__name__=~"float.*"}, "__name__", "$1", "env", "(.*)")`,
 		"last_over_time":     `<skip>`, // last_over_time() doesn't drop the metric name, so this test doesn't apply.
 		"ln":                 `ln({__name__=~"float.*"})`,

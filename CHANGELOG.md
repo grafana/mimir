@@ -5,6 +5,8 @@
 ### Grafana Mimir
 
 * [FEATURE] Ingester/Distributor: Add support for exporting cost attribution metrics (`cortex_ingester_attributed_active_series`, `cortex_distributor_received_attributed_samples_total`, and `cortex_discarded_attributed_samples_total`) with labels specified by customers to a custom Prometheus registry. This feature enables more flexible billing data tracking. #10269 #10702
+* [FEATURE] Ruler: Added `/ruler/tenants` endpoints to list the discovered tenants with rule groups. #10738
+* [FEATURE] Distributor: Add experimental Influx handler. #10153
 * [CHANGE] Querier: pass context to queryable `IsApplicable` hook. #10451
 * [CHANGE] Distributor: OTLP and push handler replace all non-UTF8 characters with the unicode replacement character `\uFFFD` in error messages before propagating them. #10236
 * [CHANGE] Querier: pass query matchers to queryable `IsApplicable` hook. #10256
@@ -16,8 +18,7 @@
 * [CHANGE] Ruler: Add `user` and `reason` labels to `cortex_ruler_write_requests_failed_total` and `cortex_ruler_queries_failed_total`; add `user` to
     `cortex_ruler_write_requests_total` and `cortex_ruler_queries_total` metrics. #10536
 * [CHANGE] Querier / Query-frontend: Remove experimental `-querier.promql-experimental-functions-enabled` and `-query-frontend.block-promql-experimental-functions` CLI flags and respective YAML configuration options to enable experimental PromQL functions. Instead access to experimental PromQL functions is always blocked. You can enable them using the per-tenant setting `enabled_promql_experimental_functions`. #10660
-* [CHANGE] Include posting sampling rate in sparse index headers. When the sampling rate isn't set in a sparse index header, store gateway will rebuild the sparse header with the configured `blocks-storage.bucket-store.posting-offsets-in-mem-sampling` value. If the sparse header's sampling rate is set, but doesn't match the configured rate, store gateway will either rebuild the sparse header or downsample to the configured sampling rate. #10684
-* [FEATURE] Distributor: Add experimental Influx handler. #10153
+* [CHANGE] Store-gateway: Include posting sampling rate in sparse index headers. When the sampling rate isn't set in a sparse index header, store gateway will rebuild the sparse header with the configured `blocks-storage.bucket-store.posting-offsets-in-mem-sampling` value. If the sparse header's sampling rate is set, but doesn't match the configured rate, store gateway will either rebuild the sparse header or downsample to the configured sampling rate. #10684
 * [ENHANCEMENT] Compactor: Expose `cortex_bucket_index_last_successful_update_timestamp_seconds` for all tenants assigned to the compactor before starting the block cleanup job. #10569
 * [ENHANCEMENT] Query Frontend: Return server-side `samples_processed` statistics. #10103
 * [ENHANCEMENT] Distributor: OTLP receiver now converts also metric metadata. See also https://github.com/prometheus/prometheus/pull/15416. #10168
@@ -48,7 +49,7 @@
 * [ENHANCEMENT] Distributor, querier, ingester and store-gateway: Add support for `limit` parameter for label names and values requests. #10410
 * [ENHANCEMENT] Query-frontend: Allow adjustment of queries looking into the future to a maximum duration with experimental `-query-frontend.max-future-query-window` flag. #10547
 * [ENHANCEMENT] Ruler: Adds support for filtering results from rule status endpoint by `file[]`, `rule_group[]` and `rule_name[]`. #10589
-* [ENHANCEMENT] Query-frontend: Add option to "spin off" subqueries as actual range queries, so that they benefit from query acceleration techniques such as sharding, splitting and caching. To enable this, set the `-query-frontend.spin-off-instant-subqueries-to-url=<url>` option on the frontend and the `instant_queries_with_subquery_spin_off` per-tenant override with regular expressions matching the queries to enable. #10460 #10603 #10621
+* [ENHANCEMENT] Query-frontend: Add option to "spin off" subqueries as actual range queries, so that they benefit from query acceleration techniques such as sharding, splitting, and caching. To enable this feature, set the `-query-frontend.instant-queries-with-subquery-spin-off=<comma separated list>` option on the frontend or the `instant_queries_with_subquery_spin_off` per-tenant override with regular expressions matching the queries to enable. #10460 #10603 #10621 #10742
 * [ENHANCEMENT] Querier, ingester: The series API respects passed `limit` parameter. #10620 #10652
 * [ENHANCEMENT] Store-gateway: Add experimental settings under `-store-gateway.dynamic-replication` to allow more than the default of 3 store-gateways to own recent blocks. #10382 #10637
 * [ENHANCEMENT] Ingester: Add reactive concurrency limiters to protect push and read operations from overload. #10574
@@ -87,7 +88,7 @@
 * [ENHANCEMENT] Dashboards: 'Writes' dashboard: show write requests broken down by request type. #10599
 * [ENHANCEMENT] Dashboards: clarify when query-frontend and query-scheduler dashboard panels are expected to show no data. #10624
 * [ENHANCEMENT] Alerts: Add warning alert `DistributorGcUsesTooMuchCpu`. #10641
-* [ENHANCEMENT] Dashboards: Add "Federation-frontend" dashboard for GEM. #10697
+* [ENHANCEMENT] Dashboards: Add "Federation-frontend" dashboard for GEM. #10697 #10736
 * [ENHANCEMENT] Alerts: Add "Federation-frontend" alert for remote clusters returning errors. #10698
 * [BUGFIX] Dashboards: fix how we switch between classic and native histograms. #10018
 * [BUGFIX] Alerts: Ignore cache errors performing `delete` operations since these are expected to fail when keys don't exist. #10287
@@ -97,7 +98,7 @@
 
 ### Jsonnet
 
-* [CHANGE] Update rollout-operator version to 0.22.0. #10229
+* [CHANGE] Update rollout-operator version to 0.23.0. #10229 #10750
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [CHANGE] Change multi-AZ deployments default toleration value from 'multi-az' to 'secondary-az', and make it configurable via the following settings: #10596
   * `_config.multi_zone_schedule_toleration` (default)
@@ -105,6 +106,7 @@
   * `_config.multi_zone_etcd_schedule_toleration` (etcd's override)
 * [CHANGE] Ring: relaxed the hash ring heartbeat timeout for store-gateways: #10634
   * `-store-gateway.sharding-ring.heartbeat-timeout` set to `10m`
+* [CHANGE] Memcached: Use 3 replicas for all cache types by default. #10739
 * [ENHANCEMENT] Enforce `persistentVolumeClaimRetentionPolicy` `Retain` policy on partition ingesters during migration to experimental ingest storage. #10395
 * [ENHANCEMENT] Allow to not configure `topologySpreadConstraints` by setting the following configuration options to a negative value: #10540
   * `distributor_topology_spread_max_skew`
@@ -112,6 +114,7 @@
   * `querier_topology_spread_max_skew`
   * `ruler_topology_spread_max_skew`
   * `ruler_querier_topology_spread_max_skew`
+* [ENHANCEMENT] Validate the `$._config.shuffle_sharding.ingester_partitions_shard_size` value when partition shuffle sharding is enabled in the ingest-storage mode. #10746
 * [BUGFIX] Ports in container rollout-operator. #10273
 * [BUGFIX] When downscaling is enabled, the components must annotate `prepare-downscale-http-port` with the value set in `$._config.server_http_port`. #10367
 

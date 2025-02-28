@@ -66,7 +66,7 @@ require (
 	github.com/google/go-github/v57 v57.0.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
-	github.com/grafana/alerting v0.0.0-20250211121439-8f8949c22647
+	github.com/grafana/alerting v0.0.0-20250225150117-15e285d78df2
 	github.com/grafana/regexp v0.0.0-20240607082908-2cb410fa05da
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.15.0
@@ -296,7 +296,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20250219231405-2df419c1a542
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20250224224203-01b2bbe34703
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
