@@ -4092,6 +4092,10 @@ tokengenJob:
   extraEnvFrom: []
   annotations: {}
   initContainers: []
+  # -- Controls whether to store the generated admin token in a Kubernetes secret
+  storeTokenInSecret: false
+  # -- Name of the secret to store the admin token.
+  adminTokenSecret: "admin-token"
 
   # -- SecurityContext override for tokengenjob pods
   securityContext: {}
@@ -4105,6 +4109,17 @@ tokengenJob:
 
   # -- The name of the PriorityClass for tokenjobgen pods
   priorityClassName: null
+
+# -- kubetclImage is used in the enterprise provisioner and tokengen jobs
+kubectlImage:
+  # -- The Docker registry for the kubectl image
+  registry: docker.io
+  # -- The kubectl image repository
+  repository: bitnami/kubectl
+  # -- The kubectl image tag
+  tag: latest
+  # -- The kubectl image pull policy
+  pullPolicy: IfNotPresent
 
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.

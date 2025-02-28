@@ -1,0 +1,37 @@
+{{- if and .Values.enterprise.enabled .Values.tokengenJob.enable (not .Values.federation_frontend.disableOtherComponents) -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "tokengen") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "tokengen") | nindent 4 }}
+  annotations:
+    {{- if .Values.tokengenJob.annotations }}
+    {{- toYaml .Values.tokengenJob.annotations | nindent 4 }}
+    {{- end }}
+  namespace: {{ .Release.Namespace | quote }}
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "tokengen") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "tokengen") | nindent 4 }}
+  annotations:
+    {{- if .Values.tokengenJob.annotations }}
+    {{- toYaml .Values.tokengenJob.annotations | nindent 4 }}
+    {{- end }}
+  namespace: {{ .Release.Namespace | quote }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "tokengen") }}
+  namespace: {{ .Release.Namespace | quote }}
+roleRef:
+  kind: Role
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "tokengen") }}
+  apiGroup: rbac.authorization.k8s.io
+{{- end -}}
