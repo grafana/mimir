@@ -6,9 +6,9 @@
 package validation
 
 import (
+	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/mimir/pkg/util"
 )
 
