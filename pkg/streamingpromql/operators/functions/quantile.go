@@ -476,7 +476,7 @@ func ensureMonotonicAndIgnoreSmallDeltas(buckets buckets, tolerance float64) (bo
 	return forcedMonotonic, fixedPrecision
 }
 
-// Quantile calculates the given Quantile of a vector of samples.
+// Quantile calculates the given quantile of a vector of samples.
 //
 // values will be sorted in place.
 // If values has zero elements, NaN is returned.

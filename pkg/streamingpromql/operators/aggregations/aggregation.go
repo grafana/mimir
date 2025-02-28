@@ -119,8 +119,8 @@ func (a *Aggregation) ExpressionPosition() posrange.PositionRange {
 
 func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	// Pre-process any Scalar params
-	var err error
 	if a.Param != nil {
+		var err error
 		a.paramData, err = a.Param.GetValues(ctx)
 		if err != nil {
 			return nil, err
@@ -232,7 +232,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
-	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.paramData, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationParam)
+	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.paramData, a.TimeRange, a.MemoryConsumptionTracker, a.emitParamAnnotation)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -277,12 +277,12 @@ func (a *Aggregation) emitAnnotation(generator types.AnnotationGenerator) {
 	a.Annotations.Add(generator(metricName, a.Inner.ExpressionPosition()))
 }
 
-func (a *Aggregation) emitAnnotationParam(param float64, generator types.AnnotationParamGenerator) {
+func (a *Aggregation) emitParamAnnotation(param float64, generator paramAnnotationGenerator) {
 	a.Annotations.Add(generator(param, a.Param.ExpressionPosition()))
 }
 
 func (a *Aggregation) Close() {
-	if len(a.paramData.Samples) > 0 {
+	if a.paramData.Samples != nil {
 		types.FPointSlicePool.Put(a.paramData.Samples, a.MemoryConsumptionTracker)
 	}
 	if a.Param != nil {
@@ -308,3 +308,9 @@ func (g groupSorter) Swap(i, j int) {
 	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
 	g.groups[i], g.groups[j] = g.groups[j], g.groups[i]
 }
+
+// emitParamAnnotationFunc is a function that emits the annotation for a scalar param created by generator.
+type emitParamAnnotationFunc func(param float64, generator paramAnnotationGenerator)
+
+// paramAnnotationGenerator is a function that returns an annotation for the given scalar and expression position.
+type paramAnnotationGenerator func(param float64, expressionPosition posrange.PositionRange) error

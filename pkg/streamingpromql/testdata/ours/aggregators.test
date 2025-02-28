@@ -216,24 +216,24 @@ load 1m
 # See: https://github.com/prometheus/prometheus/issues/14172
 
 # What I would expect
-# eval range from 0 to 4m step 1m  sum by (label) (single_histogram)
+# eval range from 0 to 4m step 1m sum by (label) (single_histogram)
 #	{label="value"}  0 1 {{count:4 sum:2 buckets:[1 2 1]}}            {{sum:2 count:4 buckets:[1 2 1]}}          2
 #	{label="value2"} 0 5 {{schema:1 count:14 sum:15 buckets:[4 6 4]}} {{schema:2 count:8 sum:4 buckets:[4 6 4]}} 10
 #
-# eval range from 0 to 4m step 1m  avg by (label) (single_histogram)
+# eval range from 0 to 4m step 1m avg by (label) (single_histogram)
 #	{label="value"}  0 1   {{count:4 sum:2 buckets:[1 2 1]}}            {{sum:2 count:4 buckets:[1 2 1]}}          2
 #	{label="value2"} 0 2.5 {{schema:1 count:7 sum:7.5 buckets:[2 3 2]}} {{schema:2 count:4 sum:2 buckets:[1 2 1]}} 5
 
 # What both engines return
-eval range from 0 to 4m step 1m  sum by (label) (single_histogram)
+eval range from 0 to 4m step 1m sum by (label) (single_histogram)
 	{label="value"}  0 1 1 1 2
 	{label="value2"} 0 5 5 5 10
 
-eval range from 0 to 4m step 1m  avg by (label) (single_histogram)
+eval range from 0 to 4m step 1m avg by (label) (single_histogram)
 	{label="value"}  0 1   1   1   2
 	{label="value2"} 0 2.5 2.5 2.5 5
 
-eval range from 0 to 4m step 1m  quantile by (label) (0.5, single_histogram)
+eval range from 0 to 4m step 1m quantile by (label) (0.5, single_histogram)
 	{label="value"}  0 1   1   1   2
 	{label="value2"} 0 2.5 2.5 2.5 5
 
@@ -246,13 +246,13 @@ load 1m
 
 # If a float is present, the histogram is ignored.
 # If a float comes after a histogram, a lookback'd float is used instead of the histogram (see: https://github.com/prometheus/prometheus/issues/14172)
-eval range from 0 to 5m step 1m  sum(single_histogram)
+eval range from 0 to 5m step 1m sum(single_histogram)
 	{} 0 1 1 5 8 {{sum:4 count:8 buckets:[2 4 2]}}
 
-eval range from 0 to 5m step 1m  avg(single_histogram)
+eval range from 0 to 5m step 1m avg(single_histogram)
 	{} 0 0.5 0.5 2.5 4 {{sum:2 count:4 buckets:[1 2 1]}}
 
-eval_info range from 0 to 5m step 1m  quantile(0.5, single_histogram)
+eval_info range from 0 to 5m step 1m quantile(0.5, single_histogram)
 	{} 0 0.5 0.5 2.5 4
 
 clear

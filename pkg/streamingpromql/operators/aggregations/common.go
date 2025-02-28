@@ -16,9 +16,10 @@ import (
 // AggregationGroup accumulates series that have been grouped together and computes the output series data.
 type AggregationGroup interface {
 	// AccumulateSeries takes in a series as part of the group
-	AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc, remainingSeriesToGroup uint) error
+	// remainingSeriesInGroup includes the current series (ie if data is the last series, then remainingSeriesInGroup is 1)
+	AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc, remainingSeriesInGroup uint) error
 	// ComputeOutputSeries does any final calculations and returns the grouped series data
-	ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationParamFunc types.EmitAnnotationParamFunc) (types.InstantVectorSeriesData, bool, error)
+	ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitParamAnnotationFunc emitParamAnnotationFunc) (types.InstantVectorSeriesData, bool, error)
 }
 
 type AggregationGroupFactory func() AggregationGroup

@@ -11,9 +11,3 @@ type EmitAnnotationFunc func(generator AnnotationGenerator)
 
 // AnnotationGenerator is a function that returns an annotation for the given metric name and expression position.
 type AnnotationGenerator func(metricName string, expressionPosition posrange.PositionRange) error
-
-// EmitAnnotationParamFunc is a function that emits the annotation for a scalar param created by generator.
-type EmitAnnotationParamFunc func(param float64, generator AnnotationParamGenerator)
-
-// AnnotationParamGenerator is a function that returns an annotation for the given scalar and expression position.
-type AnnotationParamGenerator func(param float64, expressionPosition posrange.PositionRange) error

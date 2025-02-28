@@ -20,25 +20,25 @@ import (
 )
 
 type QuantileAggregationGroup struct {
-	heaps []heap // A heap per point in time
+	qGroups []qGroup // A group per point in time
 }
 
-type heap struct {
-	points []float64 // All of the floats for this group series at a point in time
+type qGroup struct {
+	points []float64 // All of the floats for this group of series at a point in time
 }
 
 const maxExpectedQuantileGroups = 64 // There isn't much science to this
 
-var heapPool = types.NewLimitingBucketedPool(
-	pool.NewBucketedPool(maxExpectedQuantileGroups, func(size int) []heap {
-		return make([]heap, 0, size)
+var qGroupPool = types.NewLimitingBucketedPool(
+	pool.NewBucketedPool(maxExpectedQuantileGroups, func(size int) []qGroup {
+		return make([]qGroup, 0, size)
 	}),
-	uint64(unsafe.Sizeof(heap{})),
-	true,
+	uint64(unsafe.Sizeof(qGroup{})),
+	false,
 	nil,
 )
 
-func (q *QuantileAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc, remainingSeriesToGroup uint) error {
+func (q *QuantileAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc, remainingSeriesInGroup uint) error {
 	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 
 	if len(data.Histograms) > 0 {
@@ -53,52 +53,51 @@ func (q *QuantileAggregationGroup) AccumulateSeries(data types.InstantVectorSeri
 	}
 
 	var err error
-	if q.heaps == nil {
-		q.heaps, err = heapPool.Get(timeRange.StepCount, memoryConsumptionTracker)
+	if q.qGroups == nil {
+		q.qGroups, err = qGroupPool.Get(timeRange.StepCount, memoryConsumptionTracker)
 		if err != nil {
 			return err
 		}
-		q.heaps = q.heaps[:timeRange.StepCount]
+		q.qGroups = q.qGroups[:timeRange.StepCount]
 	}
 
 	for _, p := range data.Floats {
 		idx := timeRange.PointIndex(p.T)
 
-		if q.heaps[idx].points == nil {
-			q.heaps[idx].points, err = types.Float64SlicePool.Get(int(remainingSeriesToGroup), memoryConsumptionTracker)
+		if q.qGroups[idx].points == nil {
+			q.qGroups[idx].points, err = types.Float64SlicePool.Get(int(remainingSeriesInGroup), memoryConsumptionTracker)
 			if err != nil {
 				return err
 			}
 		}
-		q.heaps[idx].points = append(q.heaps[idx].points, p.F)
+		q.qGroups[idx].points = append(q.qGroups[idx].points, p.F)
 	}
 
 	return nil
 }
 
-func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationParamFunc types.EmitAnnotationParamFunc) (types.InstantVectorSeriesData, bool, error) {
-	hasMixedData := false
+func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitParamAnnotationFunc emitParamAnnotationFunc) (types.InstantVectorSeriesData, bool, error) {
 	quantilePoints, err := types.FPointSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 	if err != nil {
-		return types.InstantVectorSeriesData{}, hasMixedData, err
+		return types.InstantVectorSeriesData{}, false, err
 	}
 
-	for i, heap := range q.heaps {
-		if heap.points == nil {
+	for i, qGroup := range q.qGroups {
+		if qGroup.points == nil {
 			// No series have any points at this time step, so nothing to output
 			continue
 		}
 		p := param.Samples[i].F
 		if math.IsNaN(p) || p < 0 || p > 1 {
-			emitAnnotationParamFunc(p, annotations.NewInvalidQuantileWarning)
+			emitParamAnnotationFunc(p, annotations.NewInvalidQuantileWarning)
 		}
 		t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
-		f := functions.Quantile(p, heap.points)
+		f := functions.Quantile(p, qGroup.points)
 		quantilePoints = append(quantilePoints, promql.FPoint{T: t, F: f})
-		types.Float64SlicePool.Put(heap.points, memoryConsumptionTracker)
-		heap.points = nil
+		types.Float64SlicePool.Put(qGroup.points, memoryConsumptionTracker)
+		q.qGroups[i].points = nil
 	}
 
-	heapPool.Put(q.heaps, memoryConsumptionTracker)
-	return types.InstantVectorSeriesData{Floats: quantilePoints}, hasMixedData, nil
+	qGroupPool.Put(q.qGroups, memoryConsumptionTracker)
+	return types.InstantVectorSeriesData{Floats: quantilePoints}, false, nil
 }
