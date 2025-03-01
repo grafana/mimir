@@ -56,7 +56,7 @@ func NewSnapshotter(logger log.Logger, conf SnapshotterConfig, bl BlocksLoader) 
 }
 
 type BlocksLoader interface {
-	LoadedBlocks() map[ulid.ULID]struct{}
+	LoadedBlocks() []ulid.ULID
 }
 
 func (s *Snapshotter) persist(context.Context) error {
@@ -74,7 +74,7 @@ func (s *Snapshotter) PersistLoadedBlocks() error {
 
 	// Convert to the format we store on disk for backward compatibility
 	indexHeaderLastUsedTime := make(map[ulid.ULID]int64, len(loadedBlocks))
-	for blockID := range loadedBlocks {
+	for _, blockID := range loadedBlocks {
 		// We use a constant timestamp since we no longer care about the actual timestamp
 		indexHeaderLastUsedTime[blockID] = 1
 	}

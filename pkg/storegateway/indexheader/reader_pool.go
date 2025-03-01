@@ -152,15 +152,15 @@ func (p *ReaderPool) onLazyReaderClosed(r *LazyBinaryReader) {
 	delete(p.lazyReaders, r)
 }
 
-func (p *ReaderPool) LoadedBlocks() map[ulid.ULID]struct{} {
+func (p *ReaderPool) LoadedBlocks() []ulid.ULID {
 	p.lazyReadersMx.Lock()
 	defer p.lazyReadersMx.Unlock()
 
-	blocks := make(map[ulid.ULID]struct{}, len(p.lazyReaders))
+	blocks := make([]ulid.ULID, 0, len(p.lazyReaders))
 	for r := range p.lazyReaders {
 		usedAt := r.usedAt.Load()
 		if usedAt != 0 {
-			blocks[r.blockID] = struct{}{}
+			blocks = append(blocks, r.blockID)
 		}
 	}
 

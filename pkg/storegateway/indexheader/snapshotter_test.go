@@ -22,9 +22,9 @@ func TestSnapshotter_PersistAndRestoreLoadedBlocks(t *testing.T) {
 
 	testBlockID := ulid.MustNew(ulid.Now(), rand.Reader)
 
-	origBlocks := map[ulid.ULID]struct{}{testBlockID: {}}
+	origBlocks := []ulid.ULID{testBlockID}
 
-	testBlocksLoader := testBlocksLoaderFunc(func() map[ulid.ULID]struct{} { return origBlocks })
+	testBlocksLoader := testBlocksLoaderFunc(func() []ulid.ULID { return origBlocks })
 
 	config := SnapshotterConfig{
 		Path:   tmpDir,
@@ -44,7 +44,7 @@ func TestSnapshotter_PersistAndRestoreLoadedBlocks(t *testing.T) {
 	require.JSONEq(t, expected, string(data))
 
 	restoredBlocks, err := RestoreLoadedBlocks(config.Path)
-	require.Equal(t, origBlocks, restoredBlocks)
+	require.Equal(t, map[ulid.ULID]struct{}{testBlockID: {}}, restoredBlocks)
 	require.NoError(t, err)
 }
 
@@ -53,10 +53,8 @@ func TestSnapshotter_ChecksumOptimization(t *testing.T) {
 
 	firstBlockID := ulid.MustNew(ulid.Now(), rand.Reader)
 
-	origBlocks := map[ulid.ULID]struct{}{
-		firstBlockID: {},
-	}
-	testBlocksLoader := testBlocksLoaderFunc(func() map[ulid.ULID]struct{} { return origBlocks })
+	origBlocks := []ulid.ULID{firstBlockID}
+	testBlocksLoader := testBlocksLoaderFunc(func() []ulid.ULID { return origBlocks })
 
 	config := SnapshotterConfig{
 		Path:   tmpDir,
@@ -72,7 +70,7 @@ func TestSnapshotter_ChecksumOptimization(t *testing.T) {
 	// Verify the content of the file using RestoreLoadedBlocks
 	restoredBlocks, err := RestoreLoadedBlocks(config.Path)
 	require.NoError(t, err)
-	require.Equal(t, origBlocks, restoredBlocks, "Restored blocks should match original blocks")
+	require.Equal(t, map[ulid.ULID]struct{}{firstBlockID: {}}, restoredBlocks, "Restored blocks should match original blocks")
 
 	// Get file info after first write
 	persistedFile := filepath.Join(tmpDir, lazyLoadedHeadersListFileName)
@@ -98,17 +96,14 @@ func TestSnapshotter_ChecksumOptimization(t *testing.T) {
 	// Verify the content has not changed using RestoreLoadedBlocks
 	restoredBlocksAfterSecondPersist, err := RestoreLoadedBlocks(config.Path)
 	require.NoError(t, err)
-	require.Equal(t, origBlocks, restoredBlocksAfterSecondPersist, "Restored blocks should match original blocks")
+	require.Equal(t, map[ulid.ULID]struct{}{firstBlockID: {}}, restoredBlocksAfterSecondPersist, "Restored blocks should match original blocks")
 
 	// Now change the data and persist again
 	secondBlockID := ulid.MustNew(ulid.Now(), rand.Reader)
-	newBlocks := map[ulid.ULID]struct{}{
-		firstBlockID:  {},
-		secondBlockID: {},
-	}
+	newBlocks := []ulid.ULID{firstBlockID, secondBlockID}
 
 	// Create a new loader with updated data
-	updatedBlocksLoader := testBlocksLoaderFunc(func() map[ulid.ULID]struct{} { return newBlocks })
+	updatedBlocksLoader := testBlocksLoaderFunc(func() []ulid.ULID { return newBlocks })
 	s.bl = updatedBlocksLoader
 
 	// Wait a moment to ensure modification time would be different if file is written
@@ -129,17 +124,21 @@ func TestSnapshotter_ChecksumOptimization(t *testing.T) {
 	// Verify the content has changed using RestoreLoadedBlocks
 	restoredBlocksAfterThirdPersist, err := RestoreLoadedBlocks(config.Path)
 	require.NoError(t, err)
-	require.Equal(t, newBlocks, restoredBlocksAfterThirdPersist, "Restored blocks should match new blocks")
+	expectedBlocks := map[ulid.ULID]struct{}{
+		firstBlockID:  {},
+		secondBlockID: {},
+	}
+	require.Equal(t, expectedBlocks, restoredBlocksAfterThirdPersist, "Restored blocks should match new blocks")
 }
 
 func TestSnapshotter_StartStop(t *testing.T) {
 	t.Run("stop after start", func(t *testing.T) {
 		tmpDir := t.TempDir()
 
-		testBlocksLoader := testBlocksLoaderFunc(func() map[ulid.ULID]struct{} {
+		testBlocksLoader := testBlocksLoaderFunc(func() []ulid.ULID {
 			// We don't care about the content of the index header in this test.
-			return map[ulid.ULID]struct{}{
-				ulid.MustNew(ulid.Now(), rand.Reader): {},
+			return []ulid.ULID{
+				ulid.MustNew(ulid.Now(), rand.Reader),
 			}
 		})
 
@@ -160,8 +159,8 @@ func TestSnapshotter_StartStop(t *testing.T) {
 	})
 }
 
-type testBlocksLoaderFunc func() map[ulid.ULID]struct{}
+type testBlocksLoaderFunc func() []ulid.ULID
 
-func (f testBlocksLoaderFunc) LoadedBlocks() map[ulid.ULID]struct{} {
+func (f testBlocksLoaderFunc) LoadedBlocks() []ulid.ULID {
 	return f()
 }
