@@ -500,7 +500,9 @@ func (t *TCPTransport) writeWorker() {
 
 func (t *TCPTransport) writeTo(b []byte, addr string) error {
 	// Open connection, write packet header and data, data hash, close. Simple.
+	startTime := time.Now()
 	c, err := t.getConnection(addr, t.cfg.PacketDialTimeout)
+	level.Info(t.logger).Log("msg", "getConnection result", "addr", addr, "err", err, "elapsed_time", time.Since(startTime))
 	if err != nil {
 		return err
 	}
