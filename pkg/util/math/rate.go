@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	warmupSamples uint8 = 60
+	defaultWarmupSamples uint8 = 60
 )
 
 // EwmaRate tracks an exponentially weighted moving average of a per-second rate.
@@ -23,16 +23,26 @@ type EwmaRate struct {
 	alpha    float64
 	interval time.Duration
 
-	mutex    sync.RWMutex
-	lastRate float64
-	init     bool
-	count    uint8
+	mutex         sync.RWMutex
+	lastRate      float64
+	init          bool
+	count         uint8
+	warmupSamples uint8
 }
 
 func NewEWMARate(alpha float64, interval time.Duration) *EwmaRate {
 	return &EwmaRate{
-		alpha:    alpha,
-		interval: interval,
+		alpha:         alpha,
+		interval:      interval,
+		warmupSamples: defaultWarmupSamples,
+	}
+}
+
+func NewEWMARateWithWarmup(alpha float64, interval time.Duration, warmupSamples uint8) *EwmaRate {
+	return &EwmaRate{
+		alpha:         alpha,
+		interval:      interval,
+		warmupSamples: warmupSamples,
 	}
 }
 
@@ -42,7 +52,7 @@ func (r *EwmaRate) Rate() float64 {
 	defer r.mutex.RUnlock()
 
 	// until the first `warmupSamples` have been seen, the moving average is "not ready" to be queried
-	if r.count < warmupSamples {
+	if r.count < r.warmupSamples {
 		return 0.0
 	}
 
@@ -57,7 +67,7 @@ func (r *EwmaRate) Tick() {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	if r.count < warmupSamples {
+	if r.count < r.warmupSamples {
 		r.count++
 	}
 
