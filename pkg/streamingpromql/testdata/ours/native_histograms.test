@@ -152,22 +152,22 @@ eval range from 0 to 8m step 1m mixed_metric
   {__name__="mixed_metric"} 1 2 3 3 3 4 5 {{schema:0 sum:18 count:10 buckets:[3 4 3]}} {{schema:0 sum:18 count:10 buckets:[3 4 3]}}
 
 eval range from 0 to 8m step 1m histogram_avg(mixed_metric)
-{} _ _ _ _ _ _ _ 1.8 1.8
+  {} _ _ _ _ _ _ _ 1.8 1.8
 
 eval range from 0 to 8m step 1m histogram_count(mixed_metric)
-{} _ _ _ _ _ _ _ 10 10
+  {} _ _ _ _ _ _ _ 10 10
 
 eval range from 0 to 8m step 1m histogram_fraction(0, 1, mixed_metric)
-{} _ _ _ _ _ _ _ 0.3 0.3
+  {} _ _ _ _ _ _ _ 0.3 0.3
 
 eval range from 0 to 8m step 1m histogram_stddev(mixed_metric)
-{} _ _ _ _ _ _ _ 0.8574122997574659 0.8574122997574659
+  {} _ _ _ _ _ _ _ 0.8574122997574659 0.8574122997574659
 
 eval range from 0 to 8m step 1m histogram_stdvar(mixed_metric)
-{} _ _ _ _ _ _ _ 0.7351558517753866 0.7351558517753866
+  {} _ _ _ _ _ _ _ 0.7351558517753866 0.7351558517753866
 
 eval range from 0 to 8m step 1m histogram_sum(mixed_metric)
-{} _ _ _ _ _ _ _ 18 18
+  {} _ _ _ _ _ _ _ 18 18
 
 clear
 
