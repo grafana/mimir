@@ -25,7 +25,7 @@ type CountValues struct {
 	Inner                    types.InstantVectorOperator
 	LabelName                types.StringOperator
 	TimeRange                types.QueryTimeRange
-	Grouping                 []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
+	Grouping                 []string // If this is a 'without' aggregation, NewCountValues will ensure that this slice contains __name__.
 	Without                  bool
 	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
 
@@ -52,6 +52,12 @@ func NewCountValues(
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 	expressionPosition posrange.PositionRange,
 ) *CountValues {
+	if without {
+		grouping = append(grouping, labels.MetricName)
+	}
+
+	slices.Sort(grouping)
+
 	return &CountValues{
 		Inner:                    inner,
 		LabelName:                labelName,
@@ -146,11 +152,6 @@ func (c *CountValues) loadLabelName() error {
 		return fmt.Errorf("invalid label name %q for count_values", c.resolvedLabelName)
 	}
 
-	if c.Without {
-		c.Grouping = append(c.Grouping, labels.MetricName)
-	}
-
-	slices.Sort(c.Grouping)
 	return nil
 }
 
