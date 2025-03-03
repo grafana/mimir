@@ -91,6 +91,7 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 
 				// Check correctness of sparse index headers.
 				compareIndexToHeader(t, b, r2)
+				compareIndexToHeaderPostings(t, b, r2)
 			})
 		}
 	}

@@ -253,6 +253,42 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 	}
 }
 
+func compareIndexToHeaderPostings(t *testing.T, indexByteSlice index.ByteSlice, sbr *StreamBinaryReader) {
+
+	ir, err := index.NewReader(indexByteSlice, index.DecodePostingsRaw)
+	require.NoError(t, err)
+	defer func() {
+		_ = ir.Close()
+	}()
+
+	toc, err := index.NewTOCFromByteSlice(indexByteSlice)
+	require.NoError(t, err)
+
+	tblOffsetBounds := make(map[string][2]int64)
+	err = index.ReadPostingsOffsetTable(indexByteSlice, toc.PostingsTable, func(label []byte, _ []byte, _ uint64, offset int) error {
+		name := string(label)
+		off := int64(offset + 4) // 4B offset - store count on TOC
+		if v, ok := tblOffsetBounds[name]; ok {
+			v[1] = off
+			tblOffsetBounds[name] = v
+		} else {
+			tblOffsetBounds[name] = [2]int64{off, off}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	tbl := sbr.postingsOffsetTable.NewSparsePostingOffsetTable()
+
+	expLabelNames, err := ir.LabelNames(context.Background())
+	require.NoError(t, err)
+	for _, lname := range expLabelNames {
+		offsets := tbl.Postings[lname].Offsets
+		assert.Equal(t, offsets[0].TableOff, tblOffsetBounds[lname][0])
+		assert.Equal(t, offsets[len(offsets)-1].TableOff, tblOffsetBounds[lname][1])
+	}
+}
+
 func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerReader Reader) {
 	ctx := context.Background()
 
