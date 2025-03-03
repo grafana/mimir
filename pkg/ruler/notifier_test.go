@@ -24,7 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestBuildNotifierConfig(t *testing.T) {
@@ -387,7 +386,7 @@ func TestBuildNotifierConfig(t *testing.T) {
 						ClientID:     "oauth2-client-id",
 						ClientSecret: flagext.SecretWithValue("test"),
 						TokenURL:     "https://oauth2-token-endpoint.local/token",
-						EndpointParams: validation.NewLimitsMapWithData[string](
+						EndpointParams: flagext.NewLimitsMapWithData[string](
 							map[string]string{
 								"param1": "value1",
 								"param2": "value2",
@@ -551,12 +550,12 @@ func TestBuildNotifierConfig(t *testing.T) {
 func TestOAuth2Config_ValidateEndpointParams(t *testing.T) {
 	for name, tc := range map[string]struct {
 		args     []string
-		expected validation.LimitsMap[string]
+		expected flagext.LimitsMap[string]
 		error    string
 	}{
 		"basic test": {
 			args: []string{"-map-flag", "{\"param1\": \"value1\" }"},
-			expected: validation.NewLimitsMapWithData(map[string]string{
+			expected: flagext.NewLimitsMapWithData(map[string]string{
 				"param1": "value1",
 			}, nil),
 		},
@@ -566,7 +565,7 @@ func TestOAuth2Config_ValidateEndpointParams(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			v := validation.NewLimitsMap[string](nil)
+			v := flagext.NewLimitsMap[string](nil)
 
 			fs := flag.NewFlagSet("test", flag.ContinueOnError)
 			fs.SetOutput(&bytes.Buffer{}) // otherwise errors would go to stderr.

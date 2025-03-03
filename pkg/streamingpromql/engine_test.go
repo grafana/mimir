@@ -50,8 +50,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		`count_values("foo", metric{})`: "'count_values' aggregation with parameter",
-		"quantile(0.95, metric{})":      "'quantile' aggregation with parameter",
+		"quantile(0.95, metric{})": "'quantile' aggregation with parameter",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -2997,6 +2996,8 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 			expressions = append(expressions, fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 		}
+
+		expressions = append(expressions, fmt.Sprintf(`count_values("value", series{label="%s"})`, labelRegex))
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)

@@ -6,6 +6,20 @@ kedaAutoscaling:
   pollingInterval: 20
   customHeaders:
     X-Scope-OrgID: tenant
+  ignoreNullValues: true
+  unsafeSsl: false
+  toPromQLLabelSelector:
+    cluster: "my-cluster-name"
+  authentication:
+    enabled: true
+    authModes: "basic"
+    secretTargetRef:
+    - key: username
+      name: my-secret-name
+      parameter: username
+    - key: password
+      name: my-secret-name
+      parameter: password
 
 distributor:
   replicas: 5
