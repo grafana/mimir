@@ -763,9 +763,12 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 	// Check if this tenant can be skipped (Grafana suffix matching).
 	skippable := am.canSkipTenant(cfgs.Mimir.User)
 
+	// Check if the mimir config is non-empty and non-default.
+	isMimirConfigCustom := cfgs.Mimir.RawConfig != am.fallbackConfig && cfgs.Mimir.RawConfig != ""
+
 	// If Grafana config is not usable, skip if possible.
 	if !isGrafanaConfigUsable(cfgs.Grafana) {
-		if !skippable {
+		if !skippable || isMimirConfigCustom {
 			return cfg, true, nil
 		}
 
@@ -790,7 +793,7 @@ func (am *MultitenantAlertmanager) computeConfig(cfgs alertspb.AlertConfigDescs)
 		}
 	}
 
-	if cfgs.Mimir.RawConfig == am.fallbackConfig || cfgs.Mimir.RawConfig == "" {
+	if !isMimirConfigCustom {
 		level.Debug(am.logger).Log("msg", "using grafana config with the default globals", "user", cfgs.Mimir.User)
 		cfg, err := am.createUsableGrafanaConfig(cfgs.Grafana, am.fallbackConfig)
 		return cfg, true, err
