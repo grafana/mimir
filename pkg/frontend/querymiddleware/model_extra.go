@@ -733,6 +733,8 @@ type PrometheusLabelsResponse struct {
 	ErrorType string              `json:"errorType,omitempty"`
 	Error     string              `json:"error,omitempty"`
 	Headers   []*PrometheusHeader `json:"-"`
+	Warnings  []string            `json:"warnings,omitempty"`
+	Infos     []string            `json:"infos,omitempty"`
 }
 
 func (m *PrometheusLabelsResponse) GetHeaders() []*PrometheusHeader {
@@ -756,6 +758,8 @@ type PrometheusSeriesResponse struct {
 	ErrorType string              `json:"errorType,omitempty"`
 	Error     string              `json:"error,omitempty"`
 	Headers   []*PrometheusHeader `json:"-"`
+	Warnings  []string            `json:"warnings,omitempty"`
+	Infos     []string            `json:"infos,omitempty"`
 }
 
 func (m *PrometheusSeriesResponse) GetHeaders() []*PrometheusHeader {

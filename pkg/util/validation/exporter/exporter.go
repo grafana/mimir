@@ -192,7 +192,7 @@ func setupExportedMetrics(enabledMetrics *util.AllowedTenants, extraMetrics []Ex
 	}
 	if enabledMetrics.IsAllowed(ingestionArtificialDelay) {
 		exportedMetrics = append(exportedMetrics, ExportedMetric{ingestionArtificialDelay, func(limits *validation.Limits) float64 {
-			return float64(time.Duration(limits.IngestionArtificialDelay) / time.Second)
+			return time.Duration(limits.IngestionArtificialDelay).Seconds()
 		}})
 	}
 	if enabledMetrics.IsAllowed(maxGlobalSeriesPerUser) {

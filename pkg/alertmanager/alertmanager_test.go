@@ -622,7 +622,7 @@ route:
 	assert.Equal(t, "", result[1].Integrations[0].LastNotifyAttemptError)
 }
 
-func TestGrafanaAlertmanagerTemplates(t *testing.T) {
+func TestGrafanaAlertmanager(t *testing.T) {
 	am, err := New(&Config{
 		UserID:            "test",
 		Logger:            log.NewNopLogger(),
@@ -642,6 +642,8 @@ func TestGrafanaAlertmanagerTemplates(t *testing.T) {
 
 	// The webhook message should contain the executed Grafana template.
 	type notification struct {
+		*alertingTemplates.ExtendedData
+
 		Message string `json:"message"`
 	}
 	c := make(chan notification)
@@ -682,6 +684,9 @@ func TestGrafanaAlertmanagerTemplates(t *testing.T) {
 		Name:     "test",
 		Template: fmt.Sprintf(`{{ define "test" -}} %s {{- end }}`, expMessage),
 	}
+
+	expectedImageURL := "http://example.com/image.png"
+
 	require.NoError(t, am.ApplyConfig(cfg, []alertingTemplates.TemplateDefinition{testTemplate}, cfgRaw, &url.URL{}, nil))
 
 	now := time.Now()
@@ -689,6 +694,10 @@ func TestGrafanaAlertmanagerTemplates(t *testing.T) {
 		Alert: model.Alert{
 			Labels: model.LabelSet{
 				"alertname": model.LabelValue("test-alert"),
+			},
+			Annotations: model.LabelSet{
+				// Check that the image URL is included in the message.
+				alertingmodels.ImageURLAnnotation: model.LabelValue(expectedImageURL),
 			},
 			StartsAt: now.Add(-5 * time.Minute),
 			EndsAt:   now.Add(5 * time.Minute),
@@ -700,7 +709,7 @@ func TestGrafanaAlertmanagerTemplates(t *testing.T) {
 	require.Eventually(t, func() bool {
 		select {
 		case got := <-c:
-			return got.Message == expMessage
+			return got.Message == expMessage && got.Alerts[0].ImageURL == expectedImageURL
 		default:
 			return false
 		}

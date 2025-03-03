@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/alerting/receivers/discord"
 	"github.com/grafana/alerting/receivers/email"
 	"github.com/grafana/alerting/receivers/googlechat"
+	"github.com/grafana/alerting/receivers/jira"
 	"github.com/grafana/alerting/receivers/kafka"
 	"github.com/grafana/alerting/receivers/line"
 	"github.com/grafana/alerting/receivers/mqtt"
@@ -188,6 +189,7 @@ type GrafanaReceiverConfig struct {
 	DiscordConfigs      []*NotifierConfig[discord.Config]
 	EmailConfigs        []*NotifierConfig[email.Config]
 	GooglechatConfigs   []*NotifierConfig[googlechat.Config]
+	JiraConfigs         []*NotifierConfig[jira.Config]
 	KafkaConfigs        []*NotifierConfig[kafka.Config]
 	LineConfigs         []*NotifierConfig[line.Config]
 	OpsgenieConfigs     []*NotifierConfig[opsgenie.Config]
@@ -316,6 +318,12 @@ func parseNotifier(ctx context.Context, result *GrafanaReceiverConfig, receiver 
 			return err
 		}
 		result.GooglechatConfigs = append(result.GooglechatConfigs, newNotifierConfig(receiver, cfg))
+	case "jira":
+		cfg, err := jira.NewConfig(receiver.Settings, decryptFn)
+		if err != nil {
+			return err
+		}
+		result.JiraConfigs = append(result.JiraConfigs, newNotifierConfig(receiver, cfg))
 	case "kafka":
 		cfg, err := kafka.NewConfig(receiver.Settings, decryptFn)
 		if err != nil {

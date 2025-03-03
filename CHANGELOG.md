@@ -48,7 +48,7 @@
 * [ENHANCEMENT] Distributor, querier, ingester and store-gateway: Add support for `limit` parameter for label names and values requests. #10410
 * [ENHANCEMENT] Query-frontend: Allow adjustment of queries looking into the future to a maximum duration with experimental `-query-frontend.max-future-query-window` flag. #10547
 * [ENHANCEMENT] Ruler: Adds support for filtering results from rule status endpoint by `file[]`, `rule_group[]` and `rule_name[]`. #10589
-* [ENHANCEMENT] Query-frontend: Add option to "spin off" subqueries as actual range queries, so that they benefit from query acceleration techniques such as sharding, splitting and caching. To enable this, set the `-query-frontend.spin-off-instant-subqueries-to-url=<url>` option on the frontend and the `instant_queries_with_subquery_spin_off` per-tenant override with regular expressions matching the queries to enable. #10460 #10603 #10621
+* [ENHANCEMENT] Query-frontend: Add option to "spin off" subqueries as actual range queries, so that they benefit from query acceleration techniques such as sharding, splitting, and caching. To enable this feature, set the `-query-frontend.instant-queries-with-subquery-spin-off=<comma separated list>` option on the frontend or the `instant_queries_with_subquery_spin_off` per-tenant override with regular expressions matching the queries to enable. #10460 #10603 #10621 #10742
 * [ENHANCEMENT] Querier, ingester: The series API respects passed `limit` parameter. #10620 #10652
 * [ENHANCEMENT] Store-gateway: Add experimental settings under `-store-gateway.dynamic-replication` to allow more than the default of 3 store-gateways to own recent blocks. #10382 #10637
 * [ENHANCEMENT] Ingester: Add reactive concurrency limiters to protect push and read operations from overload. #10574
@@ -58,6 +58,12 @@
   * `go_cpu_classes_gc_total_cpu_seconds_total`
   * `go_cpu_classes_total_cpu_seconds_total`
   * `go_cpu_classes_idle_cpu_seconds_total`
+* [ENHANCEMENT] All: Add support for cluster validation in gRCP calls. When it is enabled, gRPC server verifies if a request coming from a gRPC client comes from an expected cluster. This validation can be configured by the following experimental configuration options: #10767
+  * `-server.cluster-validation.label`
+  * `-server.cluster-validation.grpc.enabled`
+  * `-server.cluster-validation.grpc.soft-validation`
+* [ENHANCEMENT] All: Add `cortex_client_request_invalid_cluster_validation_labels_total` metrics, that is used by Mimir's gRPC clients to track invalid cluster validations. #10767
+* [ENHANCEMENT] Ingester client: Add support to configure cluster validation for ingester clients. Failed cluster validations are tracked by `cortex_client_request_invalid_cluster_validation_labels_total` with label `client=ingester`. #10767
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 * [BUGFIX] Querier: fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #10154
 * [BUGFIX] Query-frontend and querier: show warning/info annotations in some cases where they were missing (if a lazy querier was used). #10277
@@ -76,6 +82,8 @@
 * [BUGFIX] Distributor: Fix panics in `DurationWithJitter` util functions when computed variance is zero. #10507
 * [BUGFIX] Ingester: Fixed a race condition in the `PostingsForMatchers` cache that may have infrequently returned expired cached postings. #10500
 * [BUGFIX] Distributor: Report partially converted OTLP requests with status 400 Bad Request. #10588
+* [BUGFIX] Ruler: fix issue where rule evaluations could be missed while shutting down a ruler instance if that instance owns many rule groups. prometheus/prometheus#15804 #10762
+* [BUGFIX] Ingester: Add additional check on reactive limiter queue sizes. #10722
 * [BUGFIX] Distributor: Apply ingestion rate limit after custom PushWrappers have run. This ensures that the `ingestion_rate` limit is properly applied against the same value recorded in the `cortex_distributor_received_samples_total` metric. #10754
 
 ### Mixin
@@ -87,7 +95,7 @@
 * [ENHANCEMENT] Dashboards: 'Writes' dashboard: show write requests broken down by request type. #10599
 * [ENHANCEMENT] Dashboards: clarify when query-frontend and query-scheduler dashboard panels are expected to show no data. #10624
 * [ENHANCEMENT] Alerts: Add warning alert `DistributorGcUsesTooMuchCpu`. #10641
-* [ENHANCEMENT] Dashboards: Add "Federation-frontend" dashboard for GEM. #10697
+* [ENHANCEMENT] Dashboards: Add "Federation-frontend" dashboard for GEM. #10697 #10736
 * [ENHANCEMENT] Alerts: Add "Federation-frontend" alert for remote clusters returning errors. #10698
 * [BUGFIX] Dashboards: fix how we switch between classic and native histograms. #10018
 * [BUGFIX] Alerts: Ignore cache errors performing `delete` operations since these are expected to fail when keys don't exist. #10287
@@ -97,7 +105,7 @@
 
 ### Jsonnet
 
-* [CHANGE] Update rollout-operator version to 0.22.0. #10229
+* [CHANGE] Update rollout-operator version to 0.23.0. #10229 #10750
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [CHANGE] Change multi-AZ deployments default toleration value from 'multi-az' to 'secondary-az', and make it configurable via the following settings: #10596
   * `_config.multi_zone_schedule_toleration` (default)
@@ -113,6 +121,7 @@
   * `querier_topology_spread_max_skew`
   * `ruler_topology_spread_max_skew`
   * `ruler_querier_topology_spread_max_skew`
+* [ENHANCEMENT] Validate the `$._config.shuffle_sharding.ingester_partitions_shard_size` value when partition shuffle sharding is enabled in the ingest-storage mode. #10746
 * [BUGFIX] Ports in container rollout-operator. #10273
 * [BUGFIX] When downscaling is enabled, the components must annotate `prepare-downscale-http-port` with the value set in `$._config.server_http_port`. #10367
 

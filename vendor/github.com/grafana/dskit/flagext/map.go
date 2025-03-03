@@ -1,6 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-
-package validation
+package flagext
 
 import (
 	"encoding/json"
@@ -65,7 +63,7 @@ func (m LimitsMap[T]) Clone() LimitsMap[T] {
 // UnmarshalYAML implements yaml.Unmarshaler.
 func (m LimitsMap[T]) UnmarshalYAML(value *yaml.Node) error {
 	newMap := make(map[string]T)
-	if err := value.DecodeWithOptions(newMap, yaml.DecodeOptions{KnownFields: true}); err != nil {
+	if err := value.Decode(newMap); err != nil {
 		return err
 	}
 	return m.updateMap(newMap)

@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"mime/multipart"
 	"strconv"
 	"strings"
@@ -81,7 +79,7 @@ type Notifier struct {
 
 type discordAttachment struct {
 	url       string
-	reader    io.ReadCloser
+	content   []byte
 	name      string
 	alertName string
 	state     model.AlertStatus
@@ -219,27 +217,28 @@ func (d Notifier) SendResolved() bool {
 
 func (d Notifier) constructAttachments(ctx context.Context, alerts []*types.Alert, embedQuota int) []discordAttachment {
 	attachments := make([]discordAttachment, 0, embedQuota)
-	embedsUsed := 0
-	for _, alert := range alerts {
-		// Check if the image limit has been reached at the start of each iteration.
-		if embedsUsed >= embedQuota {
-			d.log.Warn("Discord embed quota reached, not creating more attachments for this notification", "embedQuota", embedQuota)
-			break
-		}
-
-		attachment, err := d.getAttachment(ctx, alert)
-		if err != nil {
-			if errors.Is(err, images.ErrNoImageForAlert) {
-				// There's no image for this alert, continue.
-				continue
+	err := images.WithStoredImages(ctx, d.log, d.images,
+		func(index int, image images.Image) error {
+			// Check if the image limit has been reached at the start of each iteration.
+			if len(attachments) >= embedQuota {
+				d.log.Warn("Discord embed quota reached, not creating more attachments for this notification", "embedQuota", embedQuota)
+				return images.ErrImagesDone
 			}
-			d.log.Error("failed to create an attachment for Discord", "alert", alert, "error", err)
-			continue
-		}
 
-		// We got an attachment, either using the image URL or bytes.
-		attachments = append(attachments, attachment)
-		embedsUsed++
+			alert := alerts[index]
+			attachment, err := d.getAttachment(ctx, alert, image)
+			if err != nil {
+				d.log.Error("failed to create an attachment for Discord", "alert", alert, "error", err)
+				return nil
+			}
+
+			// We got an attachment, either using the image URL or bytes.
+			attachments = append(attachments, *attachment)
+			return nil
+		}, alerts...)
+	if err != nil {
+		// We still return the attachments we managed to create before reaching the error.
+		d.log.Warn("failed to create all image attachments for Discord notification", "error", err)
 	}
 
 	return attachments
@@ -247,38 +246,24 @@ func (d Notifier) constructAttachments(ctx context.Context, alerts []*types.Aler
 
 // getAttachment takes an alert and generates a Discord attachment containing an image for it.
 // If the image has no public URL, it uses the raw bytes for uploading directly to Discord.
-func (d Notifier) getAttachment(ctx context.Context, alert *types.Alert) (discordAttachment, error) {
-	attachment, err := d.getAttachmentFromURL(ctx, alert)
-	if errors.Is(err, images.ErrImagesNoURL) {
-		// There's an image but it has no public URL, use the bytes for the attachment.
-		return d.getAttachmentFromBytes(ctx, alert)
+func (d Notifier) getAttachment(ctx context.Context, alert *types.Alert, image images.Image) (*discordAttachment, error) {
+	if image.HasURL() {
+		return &discordAttachment{
+			url:       image.URL,
+			state:     alert.Status(),
+			alertName: alert.Name(),
+		}, nil
 	}
 
-	return attachment, err
-}
-
-func (d Notifier) getAttachmentFromURL(ctx context.Context, alert *types.Alert) (discordAttachment, error) {
-	url, err := d.images.GetImageURL(ctx, alert)
+	// There's an image but it has no public URL, use the bytes for the attachment.
+	r, err := image.RawData(ctx)
 	if err != nil {
-		return discordAttachment{}, err
+		return nil, err
 	}
-
-	return discordAttachment{
-		url:       url,
-		state:     alert.Status(),
-		alertName: alert.Name(),
-	}, nil
-}
-
-func (d Notifier) getAttachmentFromBytes(ctx context.Context, alert *types.Alert) (discordAttachment, error) {
-	r, name, err := d.images.GetRawImage(ctx, alert)
-	if err != nil {
-		return discordAttachment{}, err
-	}
-	return discordAttachment{
-		url:       "attachment://" + name,
-		name:      name,
-		reader:    r,
+	return &discordAttachment{
+		url:       "attachment://" + r.Name,
+		name:      r.Name,
+		content:   r.Content,
 		state:     alert.Status(),
 		alertName: alert.Name(),
 	}, nil
@@ -314,16 +299,12 @@ func (d Notifier) buildRequest(url string, body []byte, attachments []discordAtt
 	}
 
 	for _, a := range attachments {
-		if a.reader != nil { // We have an image to upload.
-			err = func() error {
-				defer func() { _ = a.reader.Close() }()
-				part, err := w.CreateFormFile("", a.name)
-				if err != nil {
-					return err
-				}
-				_, err = io.Copy(part, a.reader)
-				return err
-			}()
+		if len(a.content) > 0 { // We have an image to upload.
+			part, err := w.CreateFormFile("", a.name)
+			if err != nil {
+				return nil, err
+			}
+			_, err = part.Write(a.content)
 			if err != nil {
 				return nil, err
 			}

@@ -127,6 +127,7 @@ func (wn *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error
 		HTTPMethod: wn.settings.HTTPMethod,
 		HTTPHeader: headers,
 		TLSConfig:  tlsConfig,
+		HMACConfig: wn.settings.HMACConfig,
 	}
 
 	if err := wn.ns.SendWebhook(ctx, cmd); err != nil {

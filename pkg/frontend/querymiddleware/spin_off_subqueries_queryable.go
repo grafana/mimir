@@ -4,6 +4,8 @@ package querymiddleware
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -21,21 +23,27 @@ type spinOffSubqueriesQueryable struct {
 	annotationAccumulator *AnnotationAccumulator
 	responseHeaders       *responseHeadersTracker
 	handler               MetricsQueryHandler
-	upstreamRangeHandler  MetricsQueryHandler
+	rangeHandler          MetricsQueryHandler
 }
 
-func newSpinOffSubqueriesQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next MetricsQueryHandler, upstreamRangeHandler MetricsQueryHandler) *spinOffSubqueriesQueryable {
+func newSpinOffSubqueriesQueryable(req MetricsQueryRequest, annotationAccumulator *AnnotationAccumulator, next MetricsQueryHandler, rangeHandler MetricsQueryHandler) *spinOffSubqueriesQueryable {
 	return &spinOffSubqueriesQueryable{
 		req:                   req,
 		annotationAccumulator: annotationAccumulator,
 		handler:               next,
+		rangeHandler:          rangeHandler,
 		responseHeaders:       newResponseHeadersTracker(),
-		upstreamRangeHandler:  upstreamRangeHandler,
 	}
 }
 
 func (q *spinOffSubqueriesQueryable) Querier(_, _ int64) (storage.Querier, error) {
-	return &spinOffSubqueriesQuerier{req: q.req, annotationAccumulator: q.annotationAccumulator, handler: q.handler, responseHeaders: q.responseHeaders, upstreamRangeHandler: q.upstreamRangeHandler}, nil
+	return &spinOffSubqueriesQuerier{
+		req:                   q.req,
+		annotationAccumulator: q.annotationAccumulator,
+		handler:               q.handler,
+		rangeHandler:          q.rangeHandler,
+		responseHeaders:       q.responseHeaders,
+	}, nil
 }
 
 // getResponseHeaders returns the merged response headers received by the downstream
@@ -48,7 +56,7 @@ type spinOffSubqueriesQuerier struct {
 	req                   MetricsQueryRequest
 	annotationAccumulator *AnnotationAccumulator
 	handler               MetricsQueryHandler
-	upstreamRangeHandler  MetricsQueryHandler
+	rangeHandler          MetricsQueryHandler
 
 	// Keep track of response headers received when running embedded queries.
 	responseHeaders *responseHeadersTracker
@@ -76,6 +84,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
+
 		resp, err := q.handler.Do(ctx, downstreamReq)
 		if err != nil {
 			return storage.ErrSeriesSet(err)
@@ -148,6 +157,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 		// Split queries into multiple smaller queries if they have more than 11000 datapoints
 		rangeStart := alignedStart
 		var rangeQueries []MetricsQueryRequest
+		rangePath := strings.Replace(q.req.GetPath(), instantQueryPathSuffix, queryRangePathSuffix, 1)
 		for {
 			var rangeEnd int64
 			if remainingPoints := (alignedEnd - rangeStart) / step; remainingPoints > maxResolutionPoints {
@@ -155,12 +165,7 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 			} else {
 				rangeEnd = alignedEnd
 			}
-			headers := q.req.GetHeaders()
-			headers = append(headers,
-				&PrometheusHeader{Name: "X-Mimir-Spun-Off-Subquery", Values: []string{"true"}},
-				&PrometheusHeader{Name: "Content-Type", Values: []string{"application/x-www-form-urlencoded"}},
-			)
-			newRangeRequest := NewPrometheusRangeQueryRequest(queryRangePathSuffix, headers, rangeStart, rangeEnd, step, q.req.GetLookbackDelta(), queryExpr, q.req.GetOptions(), q.req.GetHints())
+			newRangeRequest := NewPrometheusRangeQueryRequest(rangePath, q.req.GetHeaders(), rangeStart, rangeEnd, step, q.req.GetLookbackDelta(), queryExpr, q.req.GetOptions(), q.req.GetHints())
 			rangeQueries = append(rangeQueries, newRangeRequest)
 			if rangeEnd == alignedEnd {
 				break
@@ -170,9 +175,9 @@ func (q *spinOffSubqueriesQuerier) Select(ctx context.Context, _ bool, hints *st
 
 		sets := make([]storage.SeriesSet, len(rangeQueries))
 		for idx, req := range rangeQueries {
-			resp, err := q.upstreamRangeHandler.Do(ctx, req)
+			resp, err := q.rangeHandler.Do(ctx, req)
 			if err != nil {
-				return storage.ErrSeriesSet(err)
+				return storage.ErrSeriesSet(fmt.Errorf("error running subquery: %w", err))
 			}
 			promRes, ok := resp.(*PrometheusResponse)
 			if !ok {

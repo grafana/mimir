@@ -755,6 +755,22 @@ grpc_tls_config:
 # (advanced) Base path to serve all API routes from (e.g. /v1/)
 # CLI flag: -server.path-prefix
 [http_path_prefix: <string> | default = ""]
+
+cluster_validation:
+  # (experimental) Optionally define server's cluster validation label.
+  # CLI flag: -server.cluster-validation.label
+  [label: <string> | default = ""]
+
+  grpc:
+    # (experimental) When enabled, cluster label validation will be executed.
+    # CLI flag: -server.cluster-validation.grpc.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) When enabled, soft cluster label validation will be
+    # executed. Can be enabled only together with
+    # server.cluster-validation.grpc.enabled
+    # CLI flag: -server.cluster-validation.grpc.soft-validation
+    [softvalidation: <boolean> | default = false]
 ```
 
 ### distributor
@@ -1854,12 +1870,6 @@ results_cache:
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
 
-# (experimental) If set, subqueries in instant queries are spun off as range
-# queries and sent to the given URL. This parameter also requires you to set
-# `instant_queries_with_subquery_spin_off` for the tenant.
-# CLI flag: -query-frontend.spin-off-instant-subqueries-to-url
-[spin_off_instant_subqueries_to_url: <string> | default = ""]
-
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
 # CLI flag: -query-frontend.query-result-response-format
@@ -2696,6 +2706,10 @@ alertmanager_client:
 # with UTF-8 strict mode.
 # CLI flag: -alertmanager.utf8-migration-logging-enabled
 [utf8_migration_logging: <boolean> | default = false]
+
+# (experimental) Enable pre-notification hooks.
+# CLI flag: -alertmanager.notify-hooks-enabled
+[enable_notify_hooks: <boolean> | default = false]
 ```
 
 ### alertmanager_storage
@@ -3748,7 +3762,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) List of regular expression patterns matching instant queries.
 # Subqueries within those instant queries will be spun off as range queries to
 # optimize their performance.
-[instant_queries_with_subquery_spin_off: <list of strings> | default = ]
+# CLI flag: -query-frontend.instant-queries-with-subquery-spin-off
+[instant_queries_with_subquery_spin_off: <string> | default = ""]
 
 # (experimental) Mutate incoming queries that look far into the future to only
 # look into the future by the set duration. 0 to disable.
@@ -4013,6 +4028,19 @@ The `limits` block configures default and per-tenant limits imposed by component
 # alerts will fail with a log message and metric increment. 0 = no limit.
 # CLI flag: -alertmanager.max-alerts-size-bytes
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
+
+# URL of a hook to invoke before a notification is sent. empty = no hook.
+# CLI flag: -alertmanager.notify-hook-url
+[alertmanager_notify_hook_url: <string> | default = ""]
+
+# List of receivers to enable notify hooks for. empty = all receivers.
+# CLI flag: -alertmanager.notify-hook-receivers
+[alertmanager_notify_hook_receivers: <string> | default = ""]
+
+# Maximum amount of time to wait for a hook to complete before timing out. 0 =
+# no timeout.
+# CLI flag: -alertmanager.notify-hook-timeout
+[alertmanager_notify_hook_timeout: <duration> | default = 30s]
 
 # (advanced) Whether to enable automatic suffixes to names of metrics ingested
 # through OTLP.

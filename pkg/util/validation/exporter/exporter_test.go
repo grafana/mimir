@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -55,6 +56,7 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 		"tenant-a": {
 			IngestionRate:                10,
 			IngestionBurstSize:           11,
+			IngestionArtificialDelay:     model.Duration(100 * time.Millisecond), // Not exported because not part of default metrics.
 			MaxGlobalSeriesPerUser:       12,
 			MaxGlobalSeriesPerMetric:     13,
 			MaxGlobalExemplarsPerUser:    14,
@@ -69,6 +71,7 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 	exporter, err := NewOverridesExporter(Config{EnabledMetrics: defaultEnabledMetricNames}, &validation.Limits{
 		IngestionRate:                22,
 		IngestionBurstSize:           23,
+		IngestionArtificialDelay:     model.Duration(200 * time.Millisecond), // Not exported because not part of default metrics.
 		MaxGlobalSeriesPerUser:       24,
 		MaxGlobalSeriesPerMetric:     25,
 		MaxGlobalExemplarsPerUser:    26,
@@ -119,6 +122,7 @@ cortex_limits_defaults{limit_name="ruler_max_rule_groups_per_tenant"} 32
 func TestOverridesExporter_withEnabledMetricsConfig(t *testing.T) {
 	tenantLimits := map[string]*validation.Limits{
 		"tenant-a": {
+			IngestionArtificialDelay:                   model.Duration(100 * time.Millisecond),
 			RequestRate:                                10,
 			RequestBurstSize:                           11,
 			MaxGlobalMetricsWithMetadataPerUser:        12,
@@ -132,6 +136,7 @@ func TestOverridesExporter_withEnabledMetricsConfig(t *testing.T) {
 
 	exporter, err := NewOverridesExporter(Config{
 		EnabledMetrics: []string{
+			ingestionArtificialDelay,
 			maxGlobalMetricsWithMetadataPerUser,
 			maxGlobalMetadataPerMetric,
 			requestRate,
@@ -142,6 +147,7 @@ func TestOverridesExporter_withEnabledMetricsConfig(t *testing.T) {
 			alertmanagerMaxAlertsSizeBytes,
 		},
 	}, &validation.Limits{
+		IngestionArtificialDelay:                   model.Duration(200 * time.Millisecond),
 		RequestRate:                                22,
 		RequestBurstSize:                           23,
 		MaxGlobalMetricsWithMetadataPerUser:        24,
@@ -155,6 +161,7 @@ func TestOverridesExporter_withEnabledMetricsConfig(t *testing.T) {
 	limitsMetrics := `
 # HELP cortex_limits_overrides Resource limit overrides applied to tenants
 # TYPE cortex_limits_overrides gauge
+cortex_limits_overrides{limit_name="ingestion_artificial_delay",user="tenant-a"} 0.1
 cortex_limits_overrides{limit_name="request_rate",user="tenant-a"} 10
 cortex_limits_overrides{limit_name="request_burst_size",user="tenant-a"} 11
 cortex_limits_overrides{limit_name="max_global_metadata_per_user",user="tenant-a"} 12
@@ -172,6 +179,7 @@ cortex_limits_overrides{limit_name="alertmanager_max_alerts_size_bytes",user="te
 	limitsMetrics = `
 # HELP cortex_limits_defaults Resource limit defaults for tenants without overrides
 # TYPE cortex_limits_defaults gauge
+cortex_limits_defaults{limit_name="ingestion_artificial_delay"} 0.2
 cortex_limits_defaults{limit_name="request_rate"} 22
 cortex_limits_defaults{limit_name="request_burst_size"} 23
 cortex_limits_defaults{limit_name="max_global_metadata_per_user"} 24
