@@ -510,6 +510,10 @@ storage:
   # system as object storage backend.
   # The CLI flags prefix for this block configuration is: common.storage
   [filesystem: <filesystem_storage_backend>]
+
+# (experimental) Optionally define gRPC client's cluster validation label.
+# CLI flag: -common.cluster-validation-label
+[cluster_validation_label: <string> | default = ""]
 ```
 
 ### server
@@ -2669,6 +2673,10 @@ alertmanager_client:
   # CLI flag: -alertmanager.alertmanager-client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
 
+  # (experimental) Optionally define gRPC client's cluster validation label.
+  # CLI flag: -alertmanager.alertmanager-client.cluster-validation-label
+  [cluster_validation_label: <string> | default = ""]
+
 # (advanced) The interval between persisting the current alertmanager state
 # (notification log and silences) to object storage. This is only used when
 # sharding is enabled. This state is read when all replicas for a shard can not
@@ -2927,6 +2935,10 @@ backoff_config:
 # if ConnectTimeout > 0.
 # CLI flag: -<prefix>.connect-backoff-max-delay
 [connect_backoff_max_delay: <duration> | default = 5s]
+
+# (experimental) Optionally define gRPC client's cluster validation label.
+# CLI flag: -<prefix>.cluster-validation-label
+[cluster_validation_label: <string> | default = ""]
 ```
 
 ### frontend_worker

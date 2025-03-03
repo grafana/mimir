@@ -38,8 +38,8 @@ func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, lo
 	reportGRPCStatusesOptions := []middleware.InstrumentationOption{middleware.ReportGRPCStatusOption}
 	unary, stream := grpcclient.Instrument(metrics.requestDuration, reportGRPCStatusesOptions...)
 	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor)
-	if cfg.ClusterValidationLabel != "" {
-		unary = append(unary, middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidationLabel, metrics.invalidClusterVerificationLabels, logger))
+	if cfg.GRPCClientConfig.ClusterValidationLabel != "" {
+		unary = append(unary, middleware.ClusterUnaryClientInterceptor(cfg.GRPCClientConfig.ClusterValidationLabel, metrics.invalidClusterVerificationLabels, logger))
 	}
 	stream = append(stream, querierapi.ReadConsistencyClientStreamInterceptor)
 
@@ -70,8 +70,7 @@ func (c *closableHealthAndIngesterClient) Close() error {
 
 // Config is the configuration struct for the ingester client
 type Config struct {
-	GRPCClientConfig       grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate with ingesters from distributors, queriers and rulers."`
-	ClusterValidationLabel string            `yaml:"-"`
+	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate with ingesters from distributors, queriers and rulers."`
 }
 
 // RegisterFlags registers configuration settings used by the ingester client config.

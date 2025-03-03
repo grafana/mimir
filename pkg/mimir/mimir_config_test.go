@@ -20,13 +20,14 @@ func TestCommonConfigCanBeExtended(t *testing.T) {
 		fs := flag.NewFlagSet("test", flag.PanicOnError)
 		cfg.RegisterFlags(fs, log.NewNopLogger())
 
-		args := []string{"-common.storage.backend", "s3"}
+		args := []string{"-common.storage.backend", "s3", "-common.cluster-validation-label", "cluster"}
 		require.NoError(t, fs.Parse(args))
 
 		require.NoError(t, mimir.InheritCommonFlagValues(log.NewNopLogger(), fs, cfg.MimirConfig.Common, &cfg.MimirConfig, &cfg))
 
-		// Value should be properly inherited.
+		// Values should be properly inherited.
 		require.Equal(t, "s3", cfg.CustomStorage.Backend)
+		require.Equal(t, "cluster", cfg.MimirConfig.IngesterClient.GRPCClientConfig.ClusterValidationLabel)
 
 		// Mimir's inheritance should still work.
 		require.Equal(t, "s3", cfg.MimirConfig.BlocksStorage.Bucket.Backend)
@@ -37,6 +38,7 @@ func TestCommonConfigCanBeExtended(t *testing.T) {
 common:
   storage:
     backend: s3
+  cluster_validation_label: cluster
 `
 
 		var cfg customExtendedConfig
@@ -46,8 +48,9 @@ common:
 		err := yaml.Unmarshal([]byte(commonYAMLConfig), &cfg)
 		require.NoError(t, err)
 
-		// Value should be properly inherited.
+		// Values should be properly inherited.
 		require.Equal(t, "s3", cfg.CustomStorage.Backend)
+		require.Equal(t, "cluster", cfg.MimirConfig.IngesterClient.GRPCClientConfig.ClusterValidationLabel)
 
 		// Mimir's inheritance should still work.
 		require.Equal(t, "s3", cfg.MimirConfig.BlocksStorage.Bucket.Backend)

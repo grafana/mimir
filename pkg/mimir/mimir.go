@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
@@ -222,6 +223,9 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
 			"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
 			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
+		},
+		ClusterValidationLabel: map[string]*grpcclient.Config{
+			"ingester_client": &c.IngesterClient.GRPCClientConfig,
 		},
 	}
 }
@@ -626,6 +630,29 @@ func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConf
 				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
 			}
 		}
+		if common.ClusterValidationLabel == "" {
+			// Nothing to inherit because origin was not set.
+			continue
+		}
+		for _, grpcClientConfig := range inheritance.ClusterValidationLabel {
+			if grpcClientConfig == nil {
+				continue
+			}
+			if grpcClientConfig.ClusterValidationLabel != "" {
+				// Can't inherit because destination was set.
+				continue
+			}
+			if common.ClusterValidationLabel == grpcClientConfig.ClusterValidationLabel {
+				// Already the same, no need to touch.
+				continue
+			}
+			level.Debug(log).Log(
+				"msg", "Inheriting flag value",
+				"flag_name", "cluster_value_label", "origin_value", common.ClusterValidationLabel,
+				"destination_value", grpcClientConfig.ClusterValidationLabel,
+			)
+			grpcClientConfig.ClusterValidationLabel = common.ClusterValidationLabel
+		}
 	}
 
 	return nil
@@ -663,16 +690,19 @@ func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.Registere
 }
 
 type CommonConfig struct {
-	Storage bucket.StorageBackendConfig `yaml:"storage"`
+	Storage                bucket.StorageBackendConfig `yaml:"storage"`
+	ClusterValidationLabel string                      `yaml:"cluster_validation_label" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
-	Storage map[string]*bucket.StorageBackendConfig
+	Storage                map[string]*bucket.StorageBackendConfig
+	ClusterValidationLabel map[string]*grpcclient.Config
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
+	f.StringVar(&c.ClusterValidationLabel, "common.cluster-validation-label", "", "Optionally define gRPC client's cluster validation label.")
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
