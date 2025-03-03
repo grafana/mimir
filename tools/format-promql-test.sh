@@ -11,6 +11,9 @@ fi
 # Ensure all lines except load, eval and clear commands and comments are indented
 sed -E "${EDIT_IN_PLACE[@]}" '/^(load|eval|clear|.*#)/! s/^[[:space:]]*/  /g' "$@"
 
+# Ensure load, eval and clear commands are not indented
+sed -E "${EDIT_IN_PLACE[@]}" 's/^[[:space:]]+(load|eval|clear)/\1/g' "$@"
+
 # Convert leading whitespace to two spaces
 sed -E "${EDIT_IN_PLACE[@]}" 's/^[[:space:]]+/  /g' "$@"
 
