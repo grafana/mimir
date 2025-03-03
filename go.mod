@@ -22,7 +22,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250213152722-e83d24ebed15
+	github.com/grafana/dskit v0.0.0-20250228172433-c35b68b89416
 	github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.11
@@ -221,7 +221,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
-	github.com/grafana/gomemcache v0.0.0-20241016125027-0a5bcc5aef40
+	github.com/grafana/gomemcache v0.0.0-20250228145437-da7b95fd2ac1
 	github.com/hashicorp/consul/api v1.31.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -298,7 +298,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20250227233049-0c8e28d13db8
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20250302213708-bd234c29eed4
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:

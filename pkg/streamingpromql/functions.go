@@ -551,7 +551,7 @@ func SortOperatorFactory(descending bool) InstantVectorFunctionOperatorFactory {
 
 // These functions return an instant-vector.
 var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
-	// Please keep this list sorted alphabetically.
+	//lint:sorted
 	"abs":                InstantVectorTransformationFunctionOperatorFactory("abs", functions.Abs),
 	"absent":             AbsentFunctionOperatorFactory,
 	"acos":               InstantVectorTransformationFunctionOperatorFactory("acos", functions.Acos),
@@ -569,10 +569,10 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"cos":                InstantVectorTransformationFunctionOperatorFactory("cos", functions.Cos),
 	"cosh":               InstantVectorTransformationFunctionOperatorFactory("cosh", functions.Cosh),
 	"count_over_time":    FunctionOverRangeVectorOperatorFactory("count_over_time", functions.CountOverTime),
-	"days_in_month":      TimeTransformationFunctionOperatorFactory("days_in_month", functions.DaysInMonth),
 	"day_of_month":       TimeTransformationFunctionOperatorFactory("day_of_month", functions.DayOfMonth),
 	"day_of_week":        TimeTransformationFunctionOperatorFactory("day_of_week", functions.DayOfWeek),
 	"day_of_year":        TimeTransformationFunctionOperatorFactory("day_of_year", functions.DayOfYear),
+	"days_in_month":      TimeTransformationFunctionOperatorFactory("days_in_month", functions.DaysInMonth),
 	"deg":                InstantVectorTransformationFunctionOperatorFactory("deg", functions.Deg),
 	"delta":              FunctionOverRangeVectorOperatorFactory("delta", functions.Delta),
 	"deriv":              FunctionOverRangeVectorOperatorFactory("deriv", functions.Deriv),

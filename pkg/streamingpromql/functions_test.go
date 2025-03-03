@@ -78,7 +78,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 	step := time.Minute
 
 	expressions := map[string]string{
-		// Please keep this list sorted alphabetically.
+		//lint:sorted
 		"abs":                `abs({__name__=~"float.*"})`,
 		"absent":             `<skip>`,
 		"acos":               `acos({__name__=~"float.*"})`,
@@ -96,10 +96,10 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"cos":                `cos({__name__=~"float.*"})`,
 		"cosh":               `cosh({__name__=~"float.*"})`,
 		"count_over_time":    `count_over_time({__name__=~"float.*"}[1m])`,
-		"days_in_month":      `days_in_month({__name__=~"float.*"})`,
 		"day_of_month":       `day_of_month({__name__=~"float.*"})`,
 		"day_of_week":        `day_of_week({__name__=~"float.*"})`,
 		"day_of_year":        `day_of_year({__name__=~"float.*"})`,
+		"days_in_month":      `days_in_month({__name__=~"float.*"})`,
 		"deg":                `deg({__name__=~"float.*"})`,
 		"delta":              `delta({__name__=~"float.*"}[1m])`,
 		"deriv":              `deriv({__name__=~"float.*"}[1m])`,

@@ -138,7 +138,8 @@ func TestReaderPool_LoadedBlocks(t *testing.T) {
 		lazyReaderEnabled: true,
 		lazyReaders:       map[*LazyBinaryReader]struct{}{&lb: {}},
 	}
-	require.Equal(t, map[ulid.ULID]int64{id: usedAt.UnixMilli()}, rp.LoadedBlocks())
+	loadedBlocks := rp.LoadedBlocks()
+	require.Equal(t, []ulid.ULID{id}, loadedBlocks)
 }
 
 func prepareReaderPool(t *testing.T) (context.Context, string, *filesystem.Bucket, ulid.ULID, *ReaderPoolMetrics) {

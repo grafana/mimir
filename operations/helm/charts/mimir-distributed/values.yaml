@@ -542,7 +542,25 @@ kedaAutoscaling:
   prometheusAddress: ""
   customHeaders: {}
   pollingInterval: 10
+  ignoreNullValues: true
+  unsafeSsl: false
 
+  # If your metrics are stored in a datasource with multiple mimir instances extra labels to filter the data are required to get the right metric.
+  toPromQLLabelSelector: {}
+  #  cluster: "my-cluster-name"
+
+  # --KEDA trigger authentication settings.
+  # ref: https://keda.sh/docs/2.16/scalers/pulsar/#authentication-parameters
+  authentication:
+    enabled: false
+    authModes: ""
+    secretTargetRef: []
+    # - key: username
+    #   name: my-secret-name
+    #   parameter: username
+    # - key: password
+    #   name: my-secret-name
+    #   parameter: password
 alertmanager:
   enabled: true
   # -- Total number of replicas for the alertmanager across all availability zones
@@ -2454,7 +2472,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.36-alpine
+    tag: 1.6.37-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -4074,6 +4092,10 @@ tokengenJob:
   extraEnvFrom: []
   annotations: {}
   initContainers: []
+  # -- Controls whether to store the generated admin token in a Kubernetes secret
+  storeTokenInSecret: false
+  # -- Name of the secret to store the admin token.
+  adminTokenSecret: "admin-token"
 
   # -- SecurityContext override for tokengenjob pods
   securityContext: {}
@@ -4087,6 +4109,17 @@ tokengenJob:
 
   # -- The name of the PriorityClass for tokenjobgen pods
   priorityClassName: null
+
+# -- kubetclImage is used in the enterprise provisioner and tokengen jobs
+kubectlImage:
+  # -- The Docker registry for the kubectl image
+  registry: docker.io
+  # -- The kubectl image repository
+  repository: bitnami/kubectl
+  # -- The kubectl image tag
+  tag: latest
+  # -- The kubectl image pull policy
+  pullPolicy: IfNotPresent
 
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.
