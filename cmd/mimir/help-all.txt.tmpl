@@ -3162,11 +3162,11 @@ Usage of ./cmd/mimir/mimir:
   -runtime-config.reload-period duration
     	How often to check runtime config files. (default 10s)
   -server.cluster-validation.grpc.enabled
-    	When enabled, cluster label validation will be executed.
+    	[experimental] When enabled, cluster label validation will be executed.
   -server.cluster-validation.grpc.soft-validation
-    	When enabled, soft cluster label validation will be executed. Can be enabled only together with server.cluster-validation.grpc.enabled
+    	[experimental] When enabled, soft cluster label validation will be executed. Can be enabled only together with server.cluster-validation.grpc.enabled
   -server.cluster-validation.label string
-    	Optionally define server's cluster validation label.
+    	[experimental] Optionally define server's cluster validation label.
   -server.graceful-shutdown-timeout duration
     	Timeout for graceful shutdowns (default 30s)
   -server.grpc-conn-limit int

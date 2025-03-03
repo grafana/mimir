@@ -58,7 +58,7 @@
   * `go_cpu_classes_gc_total_cpu_seconds_total`
   * `go_cpu_classes_total_cpu_seconds_total`
   * `go_cpu_classes_idle_cpu_seconds_total`
-* [ENHANCEMENT] All: Add support for cluster validation in gRCP calls. When it is enabled, gRPC server verifies if a request coming from a gRPC client comes from an expected cluster. This validation can be configured by the following configuration options: #10767
+* [ENHANCEMENT] All: Add support for cluster validation in gRCP calls. When it is enabled, gRPC server verifies if a request coming from a gRPC client comes from an expected cluster. This validation can be configured by the following experimental configuration options: #10767
   * `-server.cluster-validation.label`
   * `-server.cluster-validation.grpc.enabled`
   * `-server.cluster-validation.grpc.soft-validation`

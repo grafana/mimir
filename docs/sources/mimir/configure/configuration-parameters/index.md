@@ -757,17 +757,18 @@ grpc_tls_config:
 [http_path_prefix: <string> | default = ""]
 
 cluster_validation:
-  # Optionally define server's cluster validation label.
+  # (experimental) Optionally define server's cluster validation label.
   # CLI flag: -server.cluster-validation.label
   [label: <string> | default = ""]
 
   grpc:
-    # When enabled, cluster label validation will be executed.
+    # (experimental) When enabled, cluster label validation will be executed.
     # CLI flag: -server.cluster-validation.grpc.enabled
     [enabled: <boolean> | default = false]
 
-    # When enabled, soft cluster label validation will be executed. Can be
-    # enabled only together with server.cluster-validation.grpc.enabled
+    # (experimental) When enabled, soft cluster label validation will be
+    # executed. Can be enabled only together with
+    # server.cluster-validation.grpc.enabled
     # CLI flag: -server.cluster-validation.grpc.soft-validation
     [softvalidation: <boolean> | default = false]
 ```
