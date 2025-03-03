@@ -730,7 +730,8 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "server.cluster-validation.label",
-              "fieldType": "string"
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "block",
@@ -746,7 +747,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "server.cluster-validation.grpc.enabled",
-                  "fieldType": "boolean"
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -756,7 +758,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "server.cluster-validation.grpc.soft-validation",
-                  "fieldType": "boolean"
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
