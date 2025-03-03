@@ -40,14 +40,18 @@ spec:
     kind: Deployment
   triggers:
   - metadata:
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="citestns",quantile="0.5"}[1m]))
-      serverAddress: http://keda-autoscaling-values-mimir-nginx.citestns.svc:80/prometheus 
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="citestns",quantile="0.5",}[1m]))
+      serverAddress: http://keda-autoscaling-values-mimir-nginx.citestns.svc:80/prometheus
       threshold: "6"
+      ignoreNullValues: "true"
+      unsafeSsl: "false"
     name: cortex_querier_hpa_default
     type: prometheus
   - metadata:
-      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="citestns"}[1m]))
-      serverAddress: http://keda-autoscaling-values-mimir-nginx.citestns.svc:80/prometheus 
+      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="citestns",}[1m]))
+      serverAddress: http://keda-autoscaling-values-mimir-nginx.citestns.svc:80/prometheus
       threshold: "6"
+      ignoreNullValues: "true"
+      unsafeSsl: "false"
     name: cortex_querier_hpa_default_requests_duration
     type: prometheus

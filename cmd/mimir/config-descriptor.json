@@ -715,6 +715,56 @@
           "fieldFlag": "server.path-prefix",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "cluster_validation",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "label",
+              "required": false,
+              "desc": "Optionally define server's cluster validation label.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "server.cluster-validation.label",
+              "fieldType": "string"
+            },
+            {
+              "kind": "block",
+              "name": "grpc",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, cluster label validation will be executed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.grpc.enabled",
+                  "fieldType": "boolean"
+                },
+                {
+                  "kind": "field",
+                  "name": "softvalidation",
+                  "required": false,
+                  "desc": "When enabled, soft cluster label validation will be executed. Can be enabled only together with server.cluster-validation.grpc.enabled",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.grpc.soft-validation",
+                  "fieldType": "boolean"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

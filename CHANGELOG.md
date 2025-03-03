@@ -77,6 +77,8 @@
 * [BUGFIX] Distributor: Fix panics in `DurationWithJitter` util functions when computed variance is zero. #10507
 * [BUGFIX] Ingester: Fixed a race condition in the `PostingsForMatchers` cache that may have infrequently returned expired cached postings. #10500
 * [BUGFIX] Distributor: Report partially converted OTLP requests with status 400 Bad Request. #10588
+* [BUGFIX] Ruler: fix issue where rule evaluations could be missed while shutting down a ruler instance if that instance owns many rule groups. prometheus/prometheus#15804 #10762
+* [BUGFIX] Ingester: Add additional check on reactive limiter queue sizes. #10722
 
 ### Mixin
 
@@ -113,6 +115,7 @@
   * `querier_topology_spread_max_skew`
   * `ruler_topology_spread_max_skew`
   * `ruler_querier_topology_spread_max_skew`
+* [ENHANCEMENT] Validate the `$._config.shuffle_sharding.ingester_partitions_shard_size` value when partition shuffle sharding is enabled in the ingest-storage mode. #10746
 * [BUGFIX] Ports in container rollout-operator. #10273
 * [BUGFIX] When downscaling is enabled, the components must annotate `prepare-downscale-http-port` with the value set in `$._config.server_http_port`. #10367
 
