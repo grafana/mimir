@@ -3492,9 +3492,9 @@ func TestComputeConfig(t *testing.T) {
 				require.EqualError(t, err, test.expErr)
 				return
 			}
+			require.NoError(t, err)
 
 			require.True(t, startAM)
-			require.NoError(t, err)
 			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
 			require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
 			require.Equal(t, test.expHeaders, cfg.staticHeaders)
@@ -3506,13 +3506,9 @@ func TestComputeConfig(t *testing.T) {
 				require.EqualError(t, err, test.expErr)
 				return
 			}
-
-			if !test.expStartAM {
-				require.False(t, startAM)
-				return
-			}
-			require.True(t, startAM)
 			require.NoError(t, err)
+
+			require.Equal(t, test.expStartAM, startAM)
 			require.Equal(t, test.expCfg, cfg.AlertConfigDesc)
 			require.Equal(t, test.expURL, cfg.tmplExternalURL.String())
 			require.Equal(t, test.expHeaders, cfg.staticHeaders)
