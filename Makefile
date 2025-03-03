@@ -213,6 +213,8 @@ images: ## Print all image names.
 PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
 PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
 
+PROMQL_TESTS := $(shell find pkg/streamingpromql/testdata/ours pkg/streamingpromql/testdata/ours-only $(DONT_FIND) -type f -path '*.test' -print)
+
 # Generating OTLP translation code is automated.
 OTLP_GOS := $(shell find ./pkg/distributor/otlp/ -type f -name '*_generated.go' -print)
 
@@ -239,7 +241,7 @@ all: $(UPTODATE_FILES)
 test: protos
 test-with-race: protos
 mod-check: protos
-lint: lint-gh-action lint-packaging-scripts protos
+lint: lint-gh-action lint-packaging-scripts protos check-promql-tests
 mimir-build-image/$(UPTODATE): mimir-build-image/*
 
 # All the boiler plate for building golang follows:
@@ -270,7 +272,7 @@ GOVOLUMES=	-v mimir-go-cache:/go/cache \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:$(CONTAINER_MOUNT_OPTIONS)
 
-exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version: fetch-build-image
+exes $(EXES) $(EXES_RACE) protos $(PROTO_GOS) lint lint-gh-action lint-packaging-scripts test test-with-race cover shell mod-check check-protos doc format dist build-mixin format-mixin check-mixin-tests license check-license conftest-fmt check-conftest-fmt helm-conftest-test helm-conftest-quick-test conftest-verify check-helm-tests build-helm-tests print-go-version format-promql-tests check-promql-tests: fetch-build-image
 	@echo ">>>> Entering build container: $@"
 	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
@@ -495,6 +497,12 @@ mod-check: ## Check the go mod is clean and tidy.
 check-protos: ## Check the protobuf files are up to date.
 check-protos: clean-protos protos
 	@./tools/find-diff-or-untracked.sh $(PROTO_GOS) || (echo "Please rebuild protobuf code by running 'check-protos'" && false)
+
+format-promql-tests:
+	@./tools/format-promql-test.sh $(PROMQL_TESTS)
+
+check-promql-tests: format-promql-tests
+	@./tools/find-diff-or-untracked.sh $(PROMQL_TESTS) || (echo "Please format PromQL test files by running 'format-promql-tests'" && false)
 
 %.md : %.template
 	go run ./tools/doc-generator $< > $@

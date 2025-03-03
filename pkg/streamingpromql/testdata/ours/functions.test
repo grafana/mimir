@@ -301,18 +301,18 @@ clear
 # Otherwise they fail both engines.
 
 load 5m
-	metric_total{env="1"}		0 60 120
-	another_metric_total{env="1"}	60 120 180
+  metric_total{env="1"}		0 60 120
+  another_metric_total{env="1"}	60 120 180
 
 # Allows relabeling (to-be-dropped) __name__  via label_join.
 eval_fail instant at 10m label_join(rate({env="1"}[10m]), "my_name", "_", "__name__")
-	expected_fail_message vector cannot contain metrics with the same labelset
+  expected_fail_message vector cannot contain metrics with the same labelset
 #	{my_name="metric_total", env="1"} 0.2
 #	{my_name="another_metric_total", env="1"} 0.2
 
 # Allows preserving __name__ via label_join.
 eval_fail instant at 10m label_join(rate({env="1"}[10m]), "__name__", "_", "__name__", "env")
-	expected_fail_message vector cannot contain metrics with the same labelset
+  expected_fail_message vector cannot contain metrics with the same labelset
 #	metric_total_1{env="1"} 0.2
 #	another_metric_total_1{env="1"} 0.2
 
@@ -507,13 +507,13 @@ eval range from 0 to 60m step 5m clamp_max(series, scalar(maxes))
 
 # clamp ignores any histograms
 eval range from 0 to 15m step 5m clamp(mixed_metric, 2, 5)
-	{} _ 2 2 3
+  {} _ 2 2 3
 
 eval range from 0 to 15m step 5m clamp_min(mixed_metric, 2)
-	{} _ 2 2 3
+  {} _ 2 2 3
 
 eval range from 0 to 15m step 5m clamp_max(mixed_metric, 2)
-	{} _ 1 2 2
+  {} _ 1 2 2
 
 clear
 
@@ -543,7 +543,7 @@ eval range from 0 to 24m step 6m round(series, scalar(toNearest))
 
 # round ignores any histograms
 eval range from 0 to 18m step 6m round(mixed_metric)
-	{} _ 1 2 3
+  {} _ 1 2 3
 
 clear
 
@@ -751,7 +751,7 @@ clear
 
 # Test time-related functions.
 load 5m
-    histogram_sample {{schema:0 sum:1 count:1}}
+  histogram_sample {{schema:0 sum:1 count:1}}
 
 eval range from 0 to 7m step 1m year()
   {} 1970 1970 1970 1970 1970 1970 1970 1970
@@ -1079,9 +1079,9 @@ load 6m
   series{case="0a"} _x11
   series{case="0b"} _x11
   series{case="0"} 0x11
-  series{case="a"} _ 1 _ 1 _ 1 _ 1 _ 1 _ 
-  series{case="b"} _ _ 2 _ 2 _ 2 _ 2 _ 2 
-  series{case="c"} _ _ _ 3 _ _ _ 3 _ _ _ 
+  series{case="a"} _ 1 _ 1 _ 1 _ 1 _ 1 _
+  series{case="b"} _ _ 2 _ 2 _ 2 _ 2 _ 2
+  series{case="c"} _ _ _ 3 _ _ _ 3 _ _ _
 
 eval instant at 0m absent(series)
   # expected no result
@@ -1146,6 +1146,6 @@ eval range from 0s to 66m step 6m absent(histo{case="a"})
   {case="a"} 1
 
 eval range from 0s to 66m step 6m absent(histo{case=~"(0|a)"})
-  {} 1 
+  {} 1
 
 clear
