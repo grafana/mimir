@@ -73,7 +73,7 @@ spec:
             readOnlyRootFilesystem: true
           volumeMounts:
         - name: exporter
-          image: prom/memcached-exporter:v0.15.0
+          image: prom/memcached-exporter:v0.15.1
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 9150
