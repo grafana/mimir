@@ -20,3 +20,7 @@ sed -E "${EDIT_IN_PLACE[@]}" 's/^[[:space:]]+/  /g' "$@"
 
 # Strip trailing whitespace
 sed -E "${EDIT_IN_PLACE[@]}" 's/[[:space:]]+$//g' "$@"
+
+# Strip multiple consecutive blank lines
+# https://unix.stackexchange.com/a/216550/22142 explains the incantation below
+sed -E "${EDIT_IN_PLACE[@]}" '$!N;/^\n$/!P;D' "$@"
