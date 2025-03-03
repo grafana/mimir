@@ -5275,6 +5275,11 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -<prefix>.memcached.tls-min-version
 [tls_min_version: <string> | default = ""]
+
+# (experimental) Enable initial DNS lookup and background resolution on
+# memcached client creation.
+# CLI flag: -<prefix>.memcached.dns-initialization-enabled
+[dns_initialization_enabled: <boolean> | default = true]
 ```
 
 ### redis
