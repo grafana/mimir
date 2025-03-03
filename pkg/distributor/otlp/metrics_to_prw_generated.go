@@ -148,7 +148,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, settings, promName, logger); err != nil {
+					if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, metric, metric.Sum().AggregationTemporality(), settings, promName, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -160,7 +160,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName, logger); err != nil {
+					if err := c.addHistogramDataPoints(ctx, dataPoints, resource, metric.Histogram().AggregationTemporality(), settings, promName, logger); err != nil {
 						errs = multierr.Append(errs, err)
 						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 							return
@@ -176,6 +176,7 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 						ctx,
 						dataPoints,
 						resource,
+						metric.ExponentialHistogram().AggregationTemporality(),
 						settings,
 						promName,
 					)

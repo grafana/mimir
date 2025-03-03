@@ -235,11 +235,11 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 	case pmetric.MetricTypeGauge, pmetric.MetricTypeSummary:
 		return true
 	case pmetric.MetricTypeSum:
-		return metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative
+		return metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityCumulative || metric.Sum().AggregationTemporality() == pmetric.AggregationTemporalityDelta
 	case pmetric.MetricTypeHistogram:
-		return metric.Histogram().AggregationTemporality() == pmetric.AggregationTemporalityCumulative
+		return metric.Histogram().AggregationTemporality() == pmetric.AggregationTemporalityCumulative || metric.Histogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta
 	case pmetric.MetricTypeExponentialHistogram:
-		return metric.ExponentialHistogram().AggregationTemporality() == pmetric.AggregationTemporalityCumulative
+		return metric.ExponentialHistogram().AggregationTemporality() == pmetric.AggregationTemporalityCumulative || metric.ExponentialHistogram().AggregationTemporality() == pmetric.AggregationTemporalityDelta
 	}
 	return false
 }
@@ -252,7 +252,7 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, baseName string, logger *slog.Logger) error {
+	resource pcommon.Resource, temporality pmetric.AggregationTemporality, settings Settings, baseName string, logger *slog.Logger) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -263,6 +263,10 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 		startTimestampNs := pt.StartTimestamp()
 		startTimestampMs := convertTimeStamp(startTimestampNs)
 		baseLabels := createAttributes(resource, pt.Attributes(), settings, nil, false)
+
+		if temporality == pmetric.AggregationTemporalityDelta {
+			baseLabels = append(baseLabels, mimirpb.LabelAdapter{Name: "__type__", Value: "delta"})
+		}
 
 		// If the sum is unset, it indicates the _sum metric point should be
 		// omitted

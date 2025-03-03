@@ -69,7 +69,7 @@ func (c *MimirConverter) addGaugeNumberDataPoints(ctx context.Context, dataPoint
 }
 
 func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, logger *slog.Logger) error {
+	resource pcommon.Resource, metric pmetric.Metric, temporality pmetric.AggregationTemporality, settings Settings, name string, logger *slog.Logger) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -87,6 +87,10 @@ func (c *MimirConverter) addSumNumberDataPoints(ctx context.Context, dataPoints 
 			model.MetricNameLabel,
 			name,
 		)
+		if temporality == pmetric.AggregationTemporalityDelta {
+			lbls = append(lbls, mimirpb.LabelAdapter{Name: "__type__", Value: "delta"})
+		}
+
 		sample := &mimirpb.Sample{
 			// convert ns to ms
 			TimestampMs: timestamp,
