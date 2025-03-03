@@ -715,6 +715,59 @@
           "fieldFlag": "server.path-prefix",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "cluster_validation",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "label",
+              "required": false,
+              "desc": "Optionally define server's cluster validation label.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "server.cluster-validation.label",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "block",
+              "name": "grpc",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, cluster label validation will be executed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.grpc.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "softvalidation",
+                  "required": false,
+                  "desc": "When enabled, soft cluster label validation will be executed. Can be enabled only together with server.cluster-validation.grpc.enabled",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.grpc.soft-validation",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -6552,6 +6605,17 @@
                   "fieldFlag": "query-frontend.results-cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dns_initialization_enabled",
+                  "required": false,
+                  "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "query-frontend.results-cache.memcached.dns-initialization-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -8696,6 +8760,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_initialization_enabled",
+                      "required": false,
+                      "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-initialization-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -9259,6 +9334,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_initialization_enabled",
+                      "required": false,
+                      "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-initialization-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -9846,6 +9932,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_initialization_enabled",
+                      "required": false,
+                      "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-initialization-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -15166,6 +15263,17 @@
                   "fieldFlag": "ruler-storage.cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dns_initialization_enabled",
+                  "required": false,
+                  "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "ruler-storage.cache.memcached.dns-initialization-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,

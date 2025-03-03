@@ -755,6 +755,22 @@ grpc_tls_config:
 # (advanced) Base path to serve all API routes from (e.g. /v1/)
 # CLI flag: -server.path-prefix
 [http_path_prefix: <string> | default = ""]
+
+cluster_validation:
+  # (experimental) Optionally define server's cluster validation label.
+  # CLI flag: -server.cluster-validation.label
+  [label: <string> | default = ""]
+
+  grpc:
+    # (experimental) When enabled, cluster label validation will be executed.
+    # CLI flag: -server.cluster-validation.grpc.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) When enabled, soft cluster label validation will be
+    # executed. Can be enabled only together with
+    # server.cluster-validation.grpc.enabled
+    # CLI flag: -server.cluster-validation.grpc.soft-validation
+    [softvalidation: <boolean> | default = false]
 ```
 
 ### distributor
@@ -5266,6 +5282,11 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -<prefix>.memcached.tls-min-version
 [tls_min_version: <string> | default = ""]
+
+# (experimental) Enable initial DNS lookup and background resolution on
+# memcached client creation.
+# CLI flag: -<prefix>.memcached.dns-initialization-enabled
+[dns_initialization_enabled: <boolean> | default = true]
 ```
 
 ### redis
