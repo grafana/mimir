@@ -472,7 +472,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 		droppedNativeHistograms: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_dropped_native_histograms_total",
-			Help: "The total number of native histograms that were silently dropped.",
+			Help: "The total number of native histograms that were silently dropped because native histograms ingestion is disabled.",
 		}, []string{"user"}),
 
 		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, reasonTooManyHAClusters),
