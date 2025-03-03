@@ -198,6 +198,7 @@ type multitenantAlertmanagerMetrics struct {
 	grafanaStateSize              *prometheus.GaugeVec
 	lastReloadSuccessful          *prometheus.GaugeVec
 	lastReloadSuccessfulTimestamp *prometheus.GaugeVec
+	initializationsOnRequestTotal *prometheus.CounterVec
 	tenantsSkipped                prometheus.Gauge
 }
 
@@ -220,6 +221,12 @@ func newMultitenantAlertmanagerMetrics(reg prometheus.Registerer) *multitenantAl
 		Namespace: "cortex",
 		Name:      "alertmanager_config_last_reload_successful_seconds",
 		Help:      "Timestamp of the last successful configuration reload.",
+	}, []string{"user"})
+
+	m.initializationsOnRequestTotal = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Namespace: "cortex",
+		Name:      "alertmanager_initializations_on_request_total",
+		Help:      "Total number of on-request initializations for Alertmanagers that were previously skipped.",
 	}, []string{"user"})
 
 	m.tenantsSkipped = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
@@ -1079,6 +1086,7 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 		}
 
 		am.lastRequestTime.Store(userID, time.Now().Unix())
+		am.multitenantMetrics.initializationsOnRequestTotal.WithLabelValues(userID).Inc()
 		level.Debug(am.logger).Log("msg", "Alertmanager initialized after receiving request", "user", userID)
 		userAM.mux.ServeHTTP(w, req)
 		return
