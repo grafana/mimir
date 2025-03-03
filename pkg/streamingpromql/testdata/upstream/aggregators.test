@@ -402,43 +402,38 @@ load 5m
 	version{job="app-server", instance="2", group="canary"}		{{schema:0 sum:10 count:20 z_bucket_w:0.001 z_bucket:2 buckets:[1 2] n_buckets:[1 2]}}
 	version{job="app-server", instance="3", group="canary"}		{{schema:0 sum:10 count:20 z_bucket_w:0.001 z_bucket:2 buckets:[1 2] n_buckets:[1 2]}}
 
-# Unsupported by streaming engine.
-# eval instant at 1m count_values("version", version)
-# 	{version="6"} 5
-# 	{version="7"} 2
-# 	{version="8"} 2
-#     {version="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}"} 2
+eval instant at 1m count_values("version", version)
+	{version="6"} 5
+	{version="7"} 2
+	{version="8"} 2
+    {version="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}"} 2
 
-# Unsupported by streaming engine.
-# eval instant at 1m count_values(((("version"))), version)
-#     {version="6"} 5
-#     {version="7"} 2
-#     {version="8"} 2
-#     {version="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}"} 2
+eval instant at 1m count_values(((("version"))), version)
+    {version="6"} 5
+    {version="7"} 2
+    {version="8"} 2
+    {version="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}"} 2
 
-# Unsupported by streaming engine.
-# eval instant at 1m count_values without (instance)("version", version)
-# 	{job="api-server", group="production", version="6"} 3
-# 	{job="api-server", group="canary", version="8"} 2
-# 	{job="app-server", group="production", version="6"} 2
-# 	{job="app-server", group="canary", version="7"} 2
-#     {job="app-server", group="canary", version="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}"} 2
+eval instant at 1m count_values without (instance)("version", version)
+	{job="api-server", group="production", version="6"} 3
+	{job="api-server", group="canary", version="8"} 2
+	{job="app-server", group="production", version="6"} 2
+	{job="app-server", group="canary", version="7"} 2
+    {job="app-server", group="canary", version="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}"} 2
 
 # Overwrite label with output. Don't do this.
-# Unsupported by streaming engine.
-# eval instant at 1m count_values without (instance)("job", version)
-# 	{job="6", group="production"} 5
-# 	{job="8", group="canary"} 2
-# 	{job="7", group="canary"} 2
-#     {job="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}", group="canary"} 2
+eval instant at 1m count_values without (instance)("job", version)
+	{job="6", group="production"} 5
+	{job="8", group="canary"} 2
+	{job="7", group="canary"} 2
+    {job="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}", group="canary"} 2
 
 # Overwrite label with output. Don't do this.
-# Unsupported by streaming engine.
-# eval instant at 1m count_values by (job, group)("job", version)
-# 	{job="6", group="production"} 5
-# 	{job="8", group="canary"} 2
-# 	{job="7", group="canary"} 2
-#     {job="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}", group="canary"} 2
+eval instant at 1m count_values by (job, group)("job", version)
+	{job="6", group="production"} 5
+	{job="8", group="canary"} 2
+	{job="7", group="canary"} 2
+    {job="{count:20, sum:10, [-2,-1):2, [-1,-0.5):1, [-0.001,0.001]:2, (0.5,1]:1, (1,2]:2}", group="canary"} 2
 
 # Tests for quantile.
 clear
