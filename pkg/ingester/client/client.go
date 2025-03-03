@@ -39,7 +39,7 @@ func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, lo
 	unary, stream := grpcclient.Instrument(metrics.requestDuration, reportGRPCStatusesOptions...)
 	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor)
 	if cfg.ClusterValidationLabel != "" {
-		unary = append(unary, middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidationLabel, metrics.invalidClusterVerificationLabels, logger))
+		unary = append(unary, middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidationLabel, metrics.invalidClusterValidationLabels, logger))
 	}
 	stream = append(stream, querierapi.ReadConsistencyClientStreamInterceptor)
 

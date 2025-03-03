@@ -10,8 +10,8 @@ import (
 )
 
 type Metrics struct {
-	requestDuration                  *prometheus.HistogramVec
-	invalidClusterVerificationLabels *prometheus.CounterVec
+	requestDuration                *prometheus.HistogramVec
+	invalidClusterValidationLabels *prometheus.CounterVec
 }
 
 func NewMetrics(reg prometheus.Registerer) *Metrics {
@@ -22,6 +22,6 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Buckets: prometheus.ExponentialBuckets(0.001, 4, 8),
 		}, []string{"operation", "status_code"}),
 
-		invalidClusterVerificationLabels: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ingester", util.GRPCProtocol),
+		invalidClusterValidationLabels: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ingester", util.GRPCProtocol),
 	}
 }
