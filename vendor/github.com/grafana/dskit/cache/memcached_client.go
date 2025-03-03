@@ -124,6 +124,10 @@ type MemcachedClientConfig struct {
 
 	// TLS to use to connect to the Memcached server.
 	TLS dstls.ClientConfig `yaml:",inline"`
+
+	// DNSInitializationEnabled enables initial DNS lookup and background resolution on client creation.
+	// When false, Initialize() must be called manually.
+	DNSInitializationEnabled bool `yaml:"dns_initialization_enabled" category:"experimental"`
 }
 
 func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -141,6 +145,7 @@ func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.F
 	f.IntVar(&c.MaxItemSize, prefix+"max-item-size", 1024*1024, "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.")
 	f.BoolVar(&c.TLSEnabled, prefix+"tls-enabled", false, "Enable connecting to Memcached with TLS.")
 	c.TLS.RegisterFlagsWithPrefix(prefix, f)
+	f.BoolVar(&c.DNSInitializationEnabled, prefix+"dns-initialization-enabled", true, "Enable initial DNS lookup and background resolution on memcached client creation.")
 }
 
 func (c *MemcachedClientConfig) Validate() error {
@@ -235,7 +240,18 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	if reg != nil {
 		reg = prometheus.WrapRegistererWith(prometheus.Labels{labelCacheName: name}, reg)
 	}
-	return newMemcachedClient(logger, client, selector, config, reg, name)
+	mcClient, err := newMemcachedClient(logger, client, selector, config, reg, name)
+	if err != nil {
+		return nil, err
+	}
+
+	if config.DNSInitializationEnabled {
+		if err := mcClient.Initialize(); err != nil {
+			return nil, err
+		}
+	}
+
+	return mcClient, nil
 }
 
 func newMemcachedClient(
@@ -291,15 +307,17 @@ func newMemcachedClient(
 		func() float64 { return 1 },
 	)
 
-	// As soon as the client is created it must ensure that memcached server
-	// addresses are resolved, so we're going to trigger an initial addresses
-	// resolution here.
-	if err := c.resolveAddrs(); err != nil {
-		return nil, err
-	}
+	return c, nil
+}
+
+// Initialize will start the background DNS resolution periodically and do an initial DNS resolution.
+// The background resolution goroutine is started even if the initial resolution fails.
+func (c *MemcachedClient) Initialize() error {
+	// Start the background DNS resolution
 	go c.resolveAddrsLoop()
 
-	return c, nil
+	// Do initial DNS resolution
+	return c.resolveAddrs()
 }
 
 func (c *MemcachedClient) Stop() {
@@ -740,10 +758,10 @@ func (c *MemcachedClient) resolveAddrs() error {
 	if err := c.addressProvider.Resolve(ctx, c.config.Addresses); err != nil {
 		level.Error(c.logger).Log("msg", "failed to resolve addresses for memcached", "addresses", strings.Join(c.config.Addresses, ","), "err", err)
 	}
-	// Fail in case no server address is resolved.
+	// Return error in case no server address is resolved.
 	servers := c.addressProvider.Addresses()
 	if len(servers) == 0 {
-		return fmt.Errorf("no server address resolved for %s", c.name)
+		return fmt.Errorf("no memcached server addresses were resolved")
 	}
 
 	return c.selector.SetServers(servers...)
