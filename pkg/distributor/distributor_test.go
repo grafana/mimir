@@ -362,6 +362,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		"cortex_distributor_non_ha_samples_received_total",
 		"cortex_distributor_latest_seen_sample_timestamp_seconds",
 		"cortex_distributor_label_values_with_newlines_total",
+		"cortex_distributor_dropped_native_histograms_total",
 	}
 
 	d.receivedSamples.WithLabelValues("userA").Add(5)
@@ -377,11 +378,16 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.dedupedSamples.WithLabelValues("userA", "cluster1").Inc() // We cannot clean this metric
 	d.latestSeenSampleTimestampPerUser.WithLabelValues("userA").Set(1111)
 	d.labelValuesWithNewlinesPerUser.WithLabelValues("userA").Inc()
+	d.droppedNativeHistograms.WithLabelValues("userA").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_distributor_deduped_samples_total The total number of deduplicated samples.
 		# TYPE cortex_distributor_deduped_samples_total counter
 		cortex_distributor_deduped_samples_total{cluster="cluster1",user="userA"} 1
+
+		# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped because native histograms ingestion is disabled.
+    	# TYPE cortex_distributor_dropped_native_histograms_total counter
+    	cortex_distributor_dropped_native_histograms_total{user="userA"} 1
 
 		# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 		# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -428,6 +434,9 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_distributor_deduped_samples_total The total number of deduplicated samples.
 		# TYPE cortex_distributor_deduped_samples_total counter
+
+		# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped because native histograms ingestion is disabled.
+    	# TYPE cortex_distributor_dropped_native_histograms_total counter
 
 		# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 		# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -1463,6 +1472,56 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 				assert.Error(t, err)
 				assert.Nil(t, resp)
 				checkGRPCError(t, tc.expectedErr, expectedDetails, err)
+			}
+		})
+	}
+}
+
+func TestDistributor_Push_CountDroppedNativeHistograms(t *testing.T) {
+	tests := map[string]struct {
+		ingestionEnabled    bool
+		expectCounterExists bool
+	}{
+		"native histograms ingestion enabled": {
+			ingestionEnabled:    true,
+			expectCounterExists: false,
+		},
+		"native histograms ingestion disabled": {
+			ingestionEnabled:    false,
+			expectCounterExists: true,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "user")
+			req := makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, generateTestHistogram(0))
+
+			limits := prepareDefaultLimits()
+			limits.NativeHistogramsIngestionEnabled = tc.ingestionEnabled
+
+			ds, _, regs, _ := prepare(t, prepConfig{
+				numIngesters:    2,
+				happyIngesters:  2,
+				numDistributors: 1,
+				limits:          limits,
+			})
+
+			// Pre-condition check.
+			require.Len(t, ds, 1)
+			require.Len(t, regs, 1)
+
+			resp, err := ds[0].Push(ctx, req)
+			require.NoError(t, err)
+			require.Equal(t, emptyResponse, resp)
+			if tc.expectCounterExists {
+				assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+					# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped because native histograms ingestion is disabled.
+    				# TYPE cortex_distributor_dropped_native_histograms_total counter
+    				cortex_distributor_dropped_native_histograms_total{user="user"} 1
+				`), "cortex_distributor_dropped_native_histograms_total"))
+			} else {
+				assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(``), "cortex_distributor_dropped_native_histograms_total"))
 			}
 		})
 	}

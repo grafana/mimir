@@ -673,6 +673,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 	var allNames []string
 	for _, middlewares := range middlewaresByRequestType {
 		allNames = append(allNames, getMiddlewareNames(middlewares.instances)...)
+		allNames = append(allNames, middlewares.exceptions...)
 	}
 	slices.Sort(allNames)
 	allNames = slices.Compact(allNames)
