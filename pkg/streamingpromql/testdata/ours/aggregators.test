@@ -259,6 +259,7 @@ eval range from 0 to 5m step 1m sum(single_histogram)
 
 eval range from 0 to 5m step 1m avg(single_histogram)
   {} 0 0.5 0.5 2.5 4 {{sum:2 count:4 buckets:[1 2 1]}}
+
 eval range from 0 to 5m step 1m  sum(single_histogram)
   {} 0 1 1 5 8 {{sum:4 count:8 buckets:[2 4 2]}}
 
