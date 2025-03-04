@@ -39,8 +39,9 @@ type Aggregation struct {
 	metricNames        *operators.MetricNames
 	currentSeriesIndex int
 
-	expressionPosition posrange.PositionRange
-	emitAnnotationFunc types.EmitAnnotationFunc
+	expressionPosition      posrange.PositionRange
+	emitAnnotationFunc      types.EmitAnnotationFunc
+	emitParamAnnotationFunc emitParamAnnotationFunc
 
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
 	remainingGroups             []*group // One entry per group, in the order we want to return them
@@ -85,7 +86,8 @@ func NewAggregation(
 		aggregationGroupFactory:  opGroupFactory,
 	}
 
-	a.emitAnnotationFunc = a.emitAnnotation // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
+	a.emitAnnotationFunc = a.emitAnnotation           // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
+	a.emitParamAnnotationFunc = a.emitParamAnnotation // This is an optimisation to avoid creating the emitParamAnnotation instance on every usage.
 
 	return a, nil
 }
@@ -232,7 +234,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
-	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.paramData, a.TimeRange, a.MemoryConsumptionTracker, a.emitParamAnnotation)
+	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.paramData, a.TimeRange, a.MemoryConsumptionTracker, a.emitParamAnnotationFunc)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
