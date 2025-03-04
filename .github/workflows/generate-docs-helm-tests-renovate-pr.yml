@@ -38,12 +38,14 @@ jobs:
         id: token
         uses: actions/create-github-app-token@v1
         with:
-          app-id: ${{ env.APP_ID }}
-          private-key: ${{ env.PRIVATE_KEY }}
+          app-id: ${{ steps.get-secrets.outputs.APP_ID }}
+          private-key: ${{ steps.get-secrets.outputs.PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
+      # Store the token as an environment variable for later use
+      - name: Save token for next job
+        run: echo "APP_TOKEN=${{ steps.token.outputs.token }}" >> $GITHUB_ENV
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
-      app_token: ${{ steps.token.outputs.token }}
 
   lint_and_update:
     runs-on: ubuntu-latest
