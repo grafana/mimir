@@ -4,8 +4,6 @@ package usagetracker
 
 import (
 	"flag"
-	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -75,20 +73,4 @@ func NewPartitionRingLifecycler(cfg PartitionRingConfig, partitionID int32, inst
 
 func NewPartitionRingWatcher(partitionRingKV kv.Client, logger log.Logger, registerer prometheus.Registerer) *ring.PartitionRingWatcher {
 	return ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, partitionRingKV, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
-}
-
-// partitionIDFromInstanceID returns the partition ID from the instance ID.
-func partitionIDFromInstanceID(instanceID string) (int32, error) {
-	match := instanceIDRegexp.FindStringSubmatch(instanceID)
-	if len(match) == 0 {
-		return 0, fmt.Errorf("instance ID %s doesn't match regular expression %q", instanceID, instanceIDRegexp.String())
-	}
-
-	// Parse the instance sequence number.
-	seq, err := strconv.Atoi(match[1])
-	if err != nil {
-		return 0, fmt.Errorf("no sequence number in instance ID %s", instanceID)
-	}
-
-	return int32(seq), nil //nolint:gosec
 }

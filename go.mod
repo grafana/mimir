@@ -338,4 +338,4 @@ replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-202410091
 replace google.golang.org/grpc => google.golang.org/grpc v1.65.0
 
 // Vendoring the "usage-tracker" branch in dskit.
-replace github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20250303123813-4737df9e4f78
+replace github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20250304181946-ffeb72ecb162

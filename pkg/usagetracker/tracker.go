@@ -6,7 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"math/bits"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -75,7 +76,7 @@ func (c *Config) Validate() error {
 		return nil
 	}
 
-	if bits.OnesCount64(uint64(c.Partitions)) != 1 {
+	if !isPowerOfTwo(c.Partitions) {
 		return fmt.Errorf("invalid number of partitions %d, must be a power of 2", c.Partitions)
 	}
 
@@ -95,6 +96,8 @@ func (c *Config) Validate() error {
 type UsageTracker struct {
 	services.Service
 
+	instanceID int32
+
 	cfg        Config
 	bucket     objstore.InstrumentedBucket
 	overrides  *validation.Overrides
@@ -103,6 +106,7 @@ type UsageTracker struct {
 
 	// Partition and instance ring.
 	partitionKVClient  kv.Client
+	instanceRing       *ring.Ring
 	partitionRing      *ring.PartitionInstanceRing
 	instanceLifecycler *ring.BasicLifecycler
 
@@ -116,9 +120,10 @@ type UsageTracker struct {
 	subservicesWatcher *services.FailureWatcher
 }
 
-func NewUsageTracker(cfg Config, partitionRing *ring.PartitionInstanceRing, overrides *validation.Overrides, logger log.Logger, registerer prometheus.Registerer) (*UsageTracker, error) {
+func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.PartitionInstanceRing, overrides *validation.Overrides, logger log.Logger, registerer prometheus.Registerer) (*UsageTracker, error) {
 	t := &UsageTracker{
 		cfg:           cfg,
+		instanceRing:  instanceRing,
 		partitionRing: partitionRing,
 		overrides:     overrides,
 		logger:        logger,
@@ -129,6 +134,11 @@ func NewUsageTracker(cfg Config, partitionRing *ring.PartitionInstanceRing, over
 
 	// Init instance ring lifecycler.
 	var err error
+	t.instanceID, err = parseInstanceID(t.cfg.InstanceRing.InstanceID)
+	if err != nil {
+		return nil, errors.Wrap(err, "parsing instance ID")
+	}
+
 	t.instanceLifecycler, err = NewInstanceRingLifecycler(cfg.InstanceRing, logger, registerer)
 	if err != nil {
 		return nil, err
@@ -169,67 +179,124 @@ func (t *UsageTracker) start(ctx context.Context) error {
 }
 
 func (t *UsageTracker) run(ctx context.Context) error {
-	// prometheus.WrapRegistererWith(prometheus.Labels{"component": component}, reg)
-	partitionID, err := partitionIDFromInstanceID(t.cfg.InstanceRing.InstanceID)
-	if err != nil {
-		return errors.Wrap(err, "calculating usage-tracker partition ID")
-	}
-	p, err := newPartition(partitionID, t.cfg, t.partitionKVClient, t.partitionRing, t.eventsKafkaWriter, t.bucket, t, t.logger, t.registerer)
-	if err != nil {
-		return errors.Wrap(err, "unable to create partition")
-	}
-	if err := services.StartAndAwaitRunning(ctx, p); err != nil {
-		return errors.Wrap(err, "unable to start partition")
-	}
-	t.mtx.Lock()
-	t.partitions[partitionID] = p
-	t.mtx.Unlock()
-
-	partitionWatcher := services.NewFailureWatcher()
-	partitionWatcher.WatchService(p)
-
-	defer func() {
-		if err := services.StopAndAwaitTerminated(context.Background(), p); err != nil {
-			level.Error(t.logger).Log("msg", "failed to stop partition", "err", err)
+	for {
+		select {
+		case <-time.After(10 * time.Second):
+			if err := t.reconcilePartitions(ctx); err != nil {
+				return err
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-t.subservicesWatcher.Chan():
+			return errors.Wrap(err, "usage-tracker dependency failed")
 		}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-t.subservicesWatcher.Chan():
-		return errors.Wrap(err, "usage-tracker dependency failed")
-	case err := <-partitionWatcher.Chan():
-		return errors.Wrap(err, "partition failed")
 	}
+}
+
+func (t *UsageTracker) reconcilePartitions(ctx context.Context) error {
+	instancesServingPartitions := t.instancesServingPartitions()
+	start, end, err := instancePartitions(t.instanceID, instancesServingPartitions, int32(t.cfg.Partitions))
+	if err != nil {
+		level.Error(t.logger).Log("msg", "unable to calculate partitions, skipping reconcile", "err", err)
+		return nil
+	}
+	t.mtx.RLock()
+	current := int32(len(t.partitions))
+	t.mtx.RUnlock()
+	if current == end-start {
+		level.Debug(t.logger).Log("msg", "partitions already reconciled", "start", start, "end", end, "instance", t.instanceID, "serving_instances", instancesServingPartitions, "partitions", t.cfg.Partitions)
+		return nil
+	}
+
+	level.Info(t.logger).Log("msg", "serving partitions", "current", current, "new", end-start, "start", start, "end", end, "instance", t.instanceID, "serving_instances", instancesServingPartitions, "partitions", t.cfg.Partitions)
+
+	if current > end-start {
+		// We need to stop some partitions.
+		// TODO: do this in a more graceful way.
+		for partitionID := start + current; partitionID >= end; partitionID-- {
+			level.Info(t.logger).Log("msg", "stopping partition", "partition", partitionID)
+			t.mtx.Lock()
+			p, ok := t.partitions[partitionID]
+			t.mtx.Unlock()
+			if !ok {
+				level.Error(t.logger).Log("msg", "partition not found to stop, implementation error", "partition", partitionID)
+				continue
+			}
+			if err := services.StopAndAwaitTerminated(context.Background(), p); err != nil {
+				level.Error(t.logger).Log("msg", "unable to stop partition", "partition", partitionID, "err", err)
+				return errors.Wrapf(err, "unable to stop partition %d", p.partitionID)
+			}
+			t.mtx.Lock()
+			// TODO: don't delete yet, delete later.
+			delete(t.partitions, partitionID)
+			t.mtx.Unlock()
+		}
+	}
+
+	for partitionID := start + current; partitionID < end; partitionID++ {
+		level.Info(t.logger).Log("msg", "creating partition", "partition", partitionID)
+		p, err := newPartition(partitionID, t.cfg, t.partitionKVClient, t.partitionRing, t.eventsKafkaWriter, t.bucket, t, t.logger, t.registerer)
+		if err != nil {
+			return errors.Wrap(err, "unable to create partition")
+		}
+		level.Info(t.logger).Log("msg", "starting partition", "partition", partitionID)
+		if err := services.StartAndAwaitRunning(ctx, p); err != nil {
+			return errors.Wrap(err, "unable to start partition")
+		}
+		t.mtx.Lock()
+		t.partitions[partitionID] = p
+		t.mtx.Unlock()
+		level.Info(t.logger).Log("msg", "started partition", "partition", partitionID)
+	}
+
+	level.Info(t.logger).Log("msg", "partitions reconciled", "start", start, "end", end, "instance", t.instanceID, "serving_instances", instancesServingPartitions, "partitions", t.cfg.Partitions)
+	return nil
 }
 
 // stop implements services.StoppingFn.
 func (t *UsageTracker) stop(_ error) error {
+	errs := multierror.New()
 	// Stop dependencies.
-	err := services.StopAndAwaitTerminated(context.Background(), t.instanceLifecycler)
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+	for _, p := range t.partitions {
+		p.StopAsync()
+	}
+	for _, p := range t.partitions {
+		if err := services.StopAndAwaitTerminated(context.Background(), p); err != nil {
+			errs.Add(errors.Wrapf(err, "unable to stop partition %d", p.partitionID))
+		}
+	}
+
+	if err := services.StopAndAwaitTerminated(context.Background(), t.instanceLifecycler); err != nil {
+		errs.Add(errors.Wrap(err, "unable to stop instance lifecycler"))
+	}
 
 	// Close Kafka clients.
 	t.eventsKafkaWriter.Close()
 
-	return err
+	return errs.Err()
 }
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
 	t.mtx.RLock()
 	p, ok := t.partitions[req.Partition]
-	for _, p = range t.partitions {
-		break // take the first one
-	}
+	t.mtx.RUnlock()
 	if !ok {
-		return nil, errors.New("no partitions available")
+		return nil, fmt.Errorf("partition %d not found", req.Partition)
 	}
 	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
 	if err != nil {
 		return nil, err
 	}
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
+}
+
+// instancesServingPartitions returns the number of instances that are responsible for serving partitions.
+func (t *UsageTracker) instancesServingPartitions() int32 {
+	// This is the number of active instances that are not read-only, i.e. WriteableInstances in this zone.
+	return int32(t.instanceRing.WritableInstancesWithTokensInZoneCount(t.cfg.InstanceRing.InstanceZone))
 }
 
 func (t *UsageTracker) localSeriesLimit(userID string) uint64 {
@@ -263,4 +330,116 @@ func (p chanEventsPublisher) publishCreatedSeries(ctx context.Context, userID st
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// instancePartitions returns the the interval [start, end) of partitions that the instance is responsible for.
+func instancePartitions(instance, instances, partitions int32) (start, end int32, err error) {
+	if instance >= instances {
+		return 0, 0, fmt.Errorf("instance %d >= instances %d", instance, instances)
+	}
+	start = instancePartitionsStart(instance, partitions)
+	end = partitions
+	// I couldn't find a general formula for the end, so we just check the instances that steal ranges from us and find the one that starts earlier (if any).
+	for i := instance + 1; i < instances; i++ {
+		if thatInstanceStart := instancePartitionsStart(i, partitions); thatInstanceStart > start && thatInstanceStart < end {
+			end = thatInstanceStart
+		}
+	}
+	return start, end, nil
+}
+
+func instancePartitionsStart(instance, partitions int32) (start int32) {
+	// This is how 16 partitions are distributed across instanceIDs as the number of totalInstances grows:
+	//
+	//  0   1   2   3   4   5   6   7   8   9   0   1   2   3   4   5
+	//                                  0
+	//  [==============================================================)
+	//                  0               |               1
+	//  [==============================)[==============================)
+	//          0       |       2       |               1
+	//  [==============)[==============)[==============================)
+	//          0       |       2       |       1       |	    3
+	//  [==============)[==============)[==============)[==============)
+	//      0   |   4   |       2       |       1       |	    3
+	//  [======)[======)[==============)[==============================)
+	//      0   |   4   |   2   |   5   |       1       |	    3
+	//  [======)[======)[======)[======)[==============================)
+	//      0   |   4   |   2   |   5   |   1   |   6   |	    3
+	//  [======)[======)[======)[======)[======)[======================)
+	//      0   |   4   |   2   |   5   |   1   |   6   |   3   |   7
+	//  [======)[======)[======)[======)[======)[======)[======)[======)
+	//  etc.
+	//
+	// How to build this:
+	// Each instance starts at a shift which is half step plus the amount of steps since last power of two:
+	//  0   1   2   3   4   5   6   7   8   9   0   1   2   3   4   5
+	//                                  0
+	//  [==============================================================)
+	//
+	//  > We want to add 1,
+	//  1 is a power of two, so we divide the initial step of partitions*2 by 2,
+	//  step=partitions=16, shift=step/2=8
+	//  {-------------shift-------------} + 0 steps
+	//                  0               |               1
+	//  [==============================)[==============================)
+	//
+	//  > We want to add 2,
+	//  2 is a power of two, so we divide step by 2:
+	//  step=partitions/2=8, shift=step/4=4
+	//  {-----shift-----} + 0 steps
+	//          0       |       2       |               1
+	//  [==============)[==============)[==============================)
+	//
+	//  > We want to add 3,
+	//  3 is not a power of two so we don't update shift/step:
+	//  {-----shift-----}{---------- 1 step ------------}
+	//          0       |       2       |       1       |	    3
+	//  [==============)[==============)[==============)[==============)
+	//  etc.
+	//
+	// Let's now generate the code that does this.
+	// First we go with the start, this doesn't even depend on totalInstances:
+	if instance == 0 {
+		// Instance 0 is a special case in the formula, as we can't take log2(0)
+		// It always starts at 0.
+		start = 0
+	} else {
+		// For the rest, the start can be deduced from the example above.
+		previousPowerOf2 := int32(1) << log2(instance)
+		step := partitions / previousPowerOf2
+		shift := step / 2
+		start = shift + (instance-previousPowerOf2)*step
+	}
+
+	return start
+}
+
+func isPowerOfTwo(n int) bool {
+	return n > 0 && n&(n-1) == 0
+}
+
+// log2 calculates a simple int log2 of n, without doing any kind of bit hacks
+func log2(n int32) int32 {
+	var log int32
+	for n > 1 {
+		n >>= 1
+		log++
+	}
+	return log
+}
+
+// parseInstanceID returns the partition ID from the instance ID.
+func parseInstanceID(instanceID string) (int32, error) {
+	match := instanceIDRegexp.FindStringSubmatch(instanceID)
+	if len(match) == 0 {
+		return 0, fmt.Errorf("instance ID %s doesn't match regular expression %q", instanceID, instanceIDRegexp.String())
+	}
+
+	// Parse the instance sequence number.
+	seq, err := strconv.Atoi(match[1])
+	if err != nil {
+		return 0, fmt.Errorf("no sequence number in instance ID %s", instanceID)
+	}
+
+	return int32(seq), nil //nolint:gosec
 }

@@ -108,18 +108,26 @@ std.manifestYamlDoc({
   },
 
   usage_tracker:: {
-    'usage-tracker-zone-a-1': mimirService({
-      name: 'usage-tracker-zone-a-1',
+    'usage-tracker-zone-a-0': mimirService({
+      name: 'usage-tracker-zone-a-0',
       target: 'usage-tracker',
       publishedHttpPort: 8010,
       extraArguments: [
         '-usage-tracker.instance-ring.instance-availability-zone=zone-a',
       ],
     }),
-    'usage-tracker-zone-b-1': mimirService({
-      name: 'usage-tracker-zone-b-1',
+    'usage-tracker-zone-a-1': mimirService({
+      name: 'usage-tracker-zone-a-1',
       target: 'usage-tracker',
       publishedHttpPort: 8011,
+      extraArguments: [
+        '-usage-tracker.instance-ring.instance-availability-zone=zone-a',
+      ],
+    }),
+    'usage-tracker-zone-b-0': mimirService({
+      name: 'usage-tracker-zone-b-0',
+      target: 'usage-tracker',
+      publishedHttpPort: 8012,
       extraArguments: [
         '-usage-tracker.instance-ring.instance-availability-zone=zone-b',
       ],
