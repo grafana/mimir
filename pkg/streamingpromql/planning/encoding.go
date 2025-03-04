@@ -13,6 +13,7 @@ import (
 )
 
 func init() {
+	// TODO: register these encoders and decoders in the engine rather than globally to ensure they don't affect anything else
 	jsoniter.RegisterTypeEncoderFunc("planning.QueryPlan", encodeQueryPlan, func(_ unsafe.Pointer) bool { return false })
 	jsoniter.RegisterTypeDecoderFunc("planning.QueryPlan", decodeQueryPlan)
 
