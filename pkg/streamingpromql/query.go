@@ -198,6 +198,13 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 				if err != nil {
 					return nil, err
 				}
+			case parser.COUNT_VALUES:
+				param, err := q.convertToStringOperator(e.Param)
+				if err != nil {
+					return nil, err
+				}
+
+				return aggregations.NewCountValues(inner, param, timeRange, e.Grouping, e.Without, q.memoryConsumptionTracker, e.PosRange), nil
 			default:
 				return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' aggregation with parameter", e.Op))
 			}
@@ -352,7 +359,7 @@ func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeR
 		args[i] = a
 	}
 
-	return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, timeRange)
+	return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, timeRange, e.Args)
 }
 
 func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.QueryTimeRange) (types.RangeVectorOperator, error) {

@@ -270,10 +270,11 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	configFile, flags := cfg.setup(t, s)
 
 	flags = mergeFlags(flags, map[string]string{
-		"-query-frontend.cache-results":                     "true",
-		"-query-frontend.results-cache.backend":             "memcached",
-		"-query-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-query-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
+		"-query-frontend.cache-results":                          "true",
+		"-query-frontend.results-cache.backend":                  "memcached",
+		"-query-frontend.results-cache.memcached.addresses":      "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-query-frontend.query-stats-enabled":                    strconv.FormatBool(cfg.queryStatsEnabled),
+		"-query-frontend.instant-queries-with-subquery-spin-off": ".*",
 	})
 
 	// Start the query-scheduler if enabled.
@@ -396,6 +397,16 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			require.Len(t, result, 0)
 		}
 
+		if userID == 0 {
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(0), "cortex_frontend_spun_off_subqueries_total"))
+			result, err := c.Query("sum_over_time(((count(series_1) * count(series_1)) or vector(1))[6h:15m])", now)
+			require.NoError(t, err)
+			require.Len(t, result, 1)
+			require.Equal(t, result.(model.Vector)[0].Metric, model.Metric{})
+			require.Equal(t, result.(model.Vector)[0].Value, model.SampleValue(24)) // vector(1) for each step
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_frontend_spun_off_subqueries_total"))
+		}
+
 		for q := 0; q < numQueriesPerUser; q++ {
 			go func() {
 				defer wg.Done()
@@ -411,8 +422,10 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	wg.Wait()
 
 	// Compute the expected number of queries.
-	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 2
-	expectedIngesterQueriesCount := float64(numUsers * numQueriesPerUser) // The "time()" query and the query with time range < "query ingesters within" are not pushed down to ingesters.
+	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 3
+	// The "time()" query and the query with time range < "query ingesters within" are not pushed down to ingesters.
+	// +2 because the spun off subquery ends up as additional ingester queries.
+	expectedIngesterQueriesCount := float64(numUsers*numQueriesPerUser) + 2
 	if cfg.queryStatsEnabled {
 		expectedQueriesCount++
 		expectedIngesterQueriesCount++
@@ -442,7 +455,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(expectedQueriesCount), "cortex_ingest_storage_strong_consistency_requests_total"))
 
 		// We expect the offsets to be fetched by query-frontend and then propagated to ingesters.
-		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.Equals(expectedIngesterQueriesCount), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "true"))))
+		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(expectedIngesterQueriesCount), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "true"))))
 		require.NoError(t, ingester.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"cortex_ingest_storage_strong_consistency_requests_total"}, e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "with_offset", "false"))))
 	} else {
 		require.NoError(t, queryFrontend.WaitRemovedMetric("cortex_ingest_storage_strong_consistency_requests_total"))

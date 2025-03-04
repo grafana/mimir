@@ -6,6 +6,7 @@
 package validation
 
 import (
+	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -24,6 +25,6 @@ var allowedIntegrationNames = []string{
 }
 
 // NotificationRateLimitMap returns a map that can be used as a flag for setting notification rate limits.
-func NotificationRateLimitMap() LimitsMap[float64] {
-	return NewLimitsMap[float64](validateIntegrationLimit)
+func NotificationRateLimitMap() flagext.LimitsMap[float64] {
+	return flagext.NewLimitsMap[float64](validateIntegrationLimit)
 }

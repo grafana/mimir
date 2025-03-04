@@ -755,6 +755,22 @@ grpc_tls_config:
 # (advanced) Base path to serve all API routes from (e.g. /v1/)
 # CLI flag: -server.path-prefix
 [http_path_prefix: <string> | default = ""]
+
+cluster_validation:
+  # (experimental) Optionally define server's cluster validation label.
+  # CLI flag: -server.cluster-validation.label
+  [label: <string> | default = ""]
+
+  grpc:
+    # (experimental) When enabled, cluster label validation will be executed.
+    # CLI flag: -server.cluster-validation.grpc.enabled
+    [enabled: <boolean> | default = false]
+
+    # (experimental) When enabled, soft cluster label validation will be
+    # executed. Can be enabled only together with
+    # server.cluster-validation.grpc.enabled
+    # CLI flag: -server.cluster-validation.grpc.soft-validation
+    [softvalidation: <boolean> | default = false]
 ```
 
 ### distributor
@@ -1853,12 +1869,6 @@ results_cache:
 # active series queries.
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
-
-# (experimental) If set, subqueries in instant queries are spun off as range
-# queries and sent to the given URL. This parameter also requires you to set
-# `instant_queries_with_subquery_spin_off` for the tenant.
-# CLI flag: -query-frontend.spin-off-instant-subqueries-to-url
-[spin_off_instant_subqueries_to_url: <string> | default = ""]
 
 # Format to use when retrieving query results from queriers. Supported values:
 # json, protobuf
@@ -3752,7 +3762,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # (experimental) List of regular expression patterns matching instant queries.
 # Subqueries within those instant queries will be spun off as range queries to
 # optimize their performance.
-[instant_queries_with_subquery_spin_off: <list of strings> | default = ]
+# CLI flag: -query-frontend.instant-queries-with-subquery-spin-off
+[instant_queries_with_subquery_spin_off: <string> | default = ""]
 
 # (experimental) Mutate incoming queries that look far into the future to only
 # look into the future by the set duration. 0 to disable.
@@ -5264,6 +5275,11 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -<prefix>.memcached.tls-min-version
 [tls_min_version: <string> | default = ""]
+
+# (experimental) Enable initial DNS lookup and background resolution on
+# memcached client creation.
+# CLI flag: -<prefix>.memcached.dns-initialization-enabled
+[dns_initialization_enabled: <boolean> | default = true]
 ```
 
 ### redis

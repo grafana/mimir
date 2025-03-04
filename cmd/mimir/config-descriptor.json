@@ -715,6 +715,59 @@
           "fieldFlag": "server.path-prefix",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "cluster_validation",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "label",
+              "required": false,
+              "desc": "Optionally define server's cluster validation label.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "server.cluster-validation.label",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "block",
+              "name": "grpc",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, cluster label validation will be executed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.grpc.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "softvalidation",
+                  "required": false,
+                  "desc": "When enabled, soft cluster label validation will be executed. Can be enabled only together with server.cluster-validation.grpc.enabled",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.grpc.soft-validation",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -4712,8 +4765,9 @@
           "required": false,
           "desc": "List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.",
           "fieldValue": null,
-          "fieldDefaultValue": [],
-          "fieldType": "list of strings",
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.instant-queries-with-subquery-spin-off",
+          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
@@ -6551,6 +6605,17 @@
                   "fieldFlag": "query-frontend.results-cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dns_initialization_enabled",
+                  "required": false,
+                  "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "query-frontend.results-cache.memcached.dns-initialization-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -6961,17 +7026,6 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.use-active-series-decoder",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "spin_off_instant_subqueries_to_url",
-          "required": false,
-          "desc": "If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to set `instant_queries_with_subquery_spin_off` for the tenant.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "query-frontend.spin-off-instant-subqueries-to-url",
-          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
@@ -8706,6 +8760,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_initialization_enabled",
+                      "required": false,
+                      "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-initialization-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -9269,6 +9334,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_initialization_enabled",
+                      "required": false,
+                      "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-initialization-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -9856,6 +9932,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_initialization_enabled",
+                      "required": false,
+                      "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-initialization-enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -15165,6 +15252,17 @@
                   "fieldFlag": "ruler-storage.cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dns_initialization_enabled",
+                  "required": false,
+                  "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "ruler-storage.cache.memcached.dns-initialization-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,

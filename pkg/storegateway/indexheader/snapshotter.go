@@ -5,6 +5,7 @@ package indexheader
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -37,6 +38,11 @@ type Snapshotter struct {
 	conf   SnapshotterConfig
 
 	bl BlocksLoader
+
+	// lastChecksum stores the checksum of the last persisted JSON data
+	// to avoid writing the same data repeatedly, reducing IOPS.
+	// This is useful when running with many tenants on low-performance disks.
+	lastChecksum [sha256.Size]byte
 }
 
 func NewSnapshotter(logger log.Logger, conf SnapshotterConfig, bl BlocksLoader) *Snapshotter {
@@ -50,7 +56,7 @@ func NewSnapshotter(logger log.Logger, conf SnapshotterConfig, bl BlocksLoader) 
 }
 
 type BlocksLoader interface {
-	LoadedBlocks() map[ulid.ULID]int64
+	LoadedBlocks() []ulid.ULID
 }
 
 func (s *Snapshotter) persist(context.Context) error {
@@ -64,20 +70,42 @@ func (s *Snapshotter) persist(context.Context) error {
 }
 
 func (s *Snapshotter) PersistLoadedBlocks() error {
+	loadedBlocks := s.bl.LoadedBlocks()
+
+	// Convert to the format we store on disk for backward compatibility
+	indexHeaderLastUsedTime := make(map[ulid.ULID]int64, len(loadedBlocks))
+	for _, blockID := range loadedBlocks {
+		// We use a constant timestamp since we no longer care about the actual timestamp
+		indexHeaderLastUsedTime[blockID] = 1
+	}
+
 	snapshot := &indexHeadersSnapshot{
-		IndexHeaderLastUsedTime: s.bl.LoadedBlocks(),
+		IndexHeaderLastUsedTime: indexHeaderLastUsedTime,
 		UserID:                  s.conf.UserID,
 	}
+
 	data, err := json.Marshal(snapshot)
 	if err != nil {
 		return err
 	}
 
+	// The json marshalling is deterministic, so the checksum will be the same for the same map contents.
+	checksum := sha256.Sum256(data)
+	if checksum == s.lastChecksum {
+		level.Debug(s.logger).Log("msg", "skipping persistence of index headers snapshot as data hasn't changed", "user", s.conf.UserID)
+		return nil
+	}
+
 	finalPath := filepath.Join(s.conf.Path, lazyLoadedHeadersListFileName)
-	return atomicfs.CreateFile(finalPath, bytes.NewReader(data))
+	err = atomicfs.CreateFile(finalPath, bytes.NewReader(data))
+	if err == nil {
+		// Only update the checksum if the write was successful
+		s.lastChecksum = checksum
+	}
+	return err
 }
 
-func RestoreLoadedBlocks(directory string) (map[ulid.ULID]int64, error) {
+func RestoreLoadedBlocks(directory string) (map[ulid.ULID]struct{}, error) {
 	var (
 		snapshot indexHeadersSnapshot
 		multiErr = multierror.MultiError{}
@@ -99,11 +127,20 @@ func RestoreLoadedBlocks(directory string) (map[ulid.ULID]int64, error) {
 			multiErr.Add(fmt.Errorf("removing the lazy-loaded index-header snapshot: %w", err))
 		}
 	}
-	return snapshot.IndexHeaderLastUsedTime, multiErr.Err()
+
+	// Snapshots used to be stored with their last-used timestamp. But that wasn't used and lead to constant file churn, so we removed it.
+	result := make(map[ulid.ULID]struct{}, len(snapshot.IndexHeaderLastUsedTime))
+	for blockID := range snapshot.IndexHeaderLastUsedTime {
+		result[blockID] = struct{}{}
+	}
+
+	return result, multiErr.Err()
 }
 
 type indexHeadersSnapshot struct {
-	// IndexHeaderLastUsedTime is map of index header ulid.ULID to timestamp in millisecond.
+	// IndexHeaderLastUsedTime is map of index header ulid.ULID to the number 1.
+	// The number used to be the last-used timestamp of each block.
+	// We keep this format for backward compatibility, but we no longer care about the timestamps.
 	IndexHeaderLastUsedTime map[ulid.ULID]int64 `json:"index_header_last_used_time"`
 	UserID                  string              `json:"user_id"`
 }

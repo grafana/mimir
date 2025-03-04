@@ -193,7 +193,7 @@ type Limits struct {
 	AlignQueriesWithStep                   bool                   `yaml:"align_queries_with_step" json:"align_queries_with_step"`
 	EnabledPromQLExperimentalFunctions     flagext.StringSliceCSV `yaml:"enabled_promql_experimental_functions" json:"enabled_promql_experimental_functions" category:"experimental"`
 	Prom2RangeCompat                       bool                   `yaml:"prom2_range_compat" json:"prom2_range_compat" category:"experimental"`
-	InstantQueriesWithSubquerySpinOff      []string               `yaml:"instant_queries_with_subquery_spin_off" json:"instant_queries_with_subquery_spin_off" doc:"nocli|description=List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance." category:"experimental"`
+	InstantQueriesWithSubquerySpinOff      flagext.StringSliceCSV `yaml:"instant_queries_with_subquery_spin_off" json:"instant_queries_with_subquery_spin_off" category:"experimental"`
 	MaxFutureQueryWindow                   model.Duration         `yaml:"max_future_query_window" json:"max_future_query_window" category:"experimental"`
 
 	// Cardinality
@@ -216,8 +216,8 @@ type Limits struct {
 	RulerRecordingRulesEvaluationEnabled                  bool                   `yaml:"ruler_recording_rules_evaluation_enabled" json:"ruler_recording_rules_evaluation_enabled"`
 	RulerAlertingRulesEvaluationEnabled                   bool                   `yaml:"ruler_alerting_rules_evaluation_enabled" json:"ruler_alerting_rules_evaluation_enabled"`
 	RulerSyncRulesOnChangesEnabled                        bool                   `yaml:"ruler_sync_rules_on_changes_enabled" json:"ruler_sync_rules_on_changes_enabled" category:"advanced"`
-	RulerMaxRulesPerRuleGroupByNamespace                  LimitsMap[int]         `yaml:"ruler_max_rules_per_rule_group_by_namespace" json:"ruler_max_rules_per_rule_group_by_namespace" category:"experimental"`
-	RulerMaxRuleGroupsPerTenantByNamespace                LimitsMap[int]         `yaml:"ruler_max_rule_groups_per_tenant_by_namespace" json:"ruler_max_rule_groups_per_tenant_by_namespace" category:"experimental"`
+	RulerMaxRulesPerRuleGroupByNamespace                  flagext.LimitsMap[int] `yaml:"ruler_max_rules_per_rule_group_by_namespace" json:"ruler_max_rules_per_rule_group_by_namespace" category:"experimental"`
+	RulerMaxRuleGroupsPerTenantByNamespace                flagext.LimitsMap[int] `yaml:"ruler_max_rule_groups_per_tenant_by_namespace" json:"ruler_max_rule_groups_per_tenant_by_namespace" category:"experimental"`
 	RulerProtectedNamespaces                              flagext.StringSliceCSV `yaml:"ruler_protected_namespaces" json:"ruler_protected_namespaces" category:"experimental"`
 	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant int64                  `yaml:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" json:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" category:"experimental"`
 
@@ -246,8 +246,8 @@ type Limits struct {
 	AlertmanagerReceiversBlockCIDRNetworks     flagext.CIDRSliceCSV `yaml:"alertmanager_receivers_firewall_block_cidr_networks" json:"alertmanager_receivers_firewall_block_cidr_networks"`
 	AlertmanagerReceiversBlockPrivateAddresses bool                 `yaml:"alertmanager_receivers_firewall_block_private_addresses" json:"alertmanager_receivers_firewall_block_private_addresses"`
 
-	NotificationRateLimit               float64            `yaml:"alertmanager_notification_rate_limit" json:"alertmanager_notification_rate_limit"`
-	NotificationRateLimitPerIntegration LimitsMap[float64] `yaml:"alertmanager_notification_rate_limit_per_integration" json:"alertmanager_notification_rate_limit_per_integration"`
+	NotificationRateLimit               float64                    `yaml:"alertmanager_notification_rate_limit" json:"alertmanager_notification_rate_limit"`
+	NotificationRateLimitPerIntegration flagext.LimitsMap[float64] `yaml:"alertmanager_notification_rate_limit_per_integration" json:"alertmanager_notification_rate_limit_per_integration"`
 
 	AlertmanagerMaxGrafanaConfigSizeBytes      flagext.Bytes          `yaml:"alertmanager_max_grafana_config_size_bytes" json:"alertmanager_max_grafana_config_size_bytes"`
 	AlertmanagerMaxConfigSizeBytes             int                    `yaml:"alertmanager_max_config_size_bytes" json:"alertmanager_max_config_size_bytes"`
@@ -362,12 +362,12 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.RulerSyncRulesOnChangesEnabled, "ruler.sync-rules-on-changes-enabled", true, "True to enable a re-sync of the configured rule groups as soon as they're changed via ruler's config API. This re-sync is in addition of the periodic syncing. When enabled, it may take up to few tens of seconds before a configuration change triggers the re-sync.")
 	// Needs to be initialised to a value so that the documentation can pick up the default value of `{}` because this is set as JSON from the command-line.
 	if !l.RulerMaxRulesPerRuleGroupByNamespace.IsInitialized() {
-		l.RulerMaxRulesPerRuleGroupByNamespace = NewLimitsMap[int](nil)
+		l.RulerMaxRulesPerRuleGroupByNamespace = flagext.NewLimitsMap[int](nil)
 	}
 	f.Var(&l.RulerMaxRulesPerRuleGroupByNamespace, "ruler.max-rules-per-rule-group-by-namespace", "Maximum number of rules per rule group by namespace. Value is a map, where each key is the namespace and value is the number of rules allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rules specified has the same meaning as -ruler.max-rules-per-rule-group, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rules-per-rule-group.")
 
 	if !l.RulerMaxRuleGroupsPerTenantByNamespace.IsInitialized() {
-		l.RulerMaxRuleGroupsPerTenantByNamespace = NewLimitsMap[int](nil)
+		l.RulerMaxRuleGroupsPerTenantByNamespace = flagext.NewLimitsMap[int](nil)
 	}
 	f.Var(&l.RulerMaxRuleGroupsPerTenantByNamespace, "ruler.max-rule-groups-per-tenant-by-namespace", "Maximum number of rule groups per tenant by namespace. Value is a map, where each key is the namespace and value is the number of rule groups allowed in the namespace (int). On the command line, this map is given in a JSON format. The number of rule groups specified has the same meaning as -ruler.max-rule-groups-per-tenant, but only applies for the specific namespace. If specified, it supersedes -ruler.max-rule-groups-per-tenant.")
 	f.Var(&l.RulerProtectedNamespaces, "ruler.protected-namespaces", "List of namespaces that are protected from modification unless a special HTTP header is used. If a namespace is protected, it can only be read, not modified via the ruler's configuration API. The value is a list of strings, where each string is a namespace name. On the command line, this list is given as a comma-separated list.")
@@ -401,6 +401,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.EnabledPromQLExperimentalFunctions, "query-frontend.enabled-promql-experimental-functions", "Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.")
 	f.BoolVar(&l.Prom2RangeCompat, "query-frontend.prom2-range-compat", false, "Rewrite queries using the same range selector and resolution [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works with Prometheus 3.0 semantics")
 	f.Var(&l.MaxFutureQueryWindow, maxFutureQueryWindowFlag, "Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.")
+	f.Var(&l.InstantQueriesWithSubquerySpinOff, "query-frontend.instant-queries-with-subquery-spin-off", "List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
