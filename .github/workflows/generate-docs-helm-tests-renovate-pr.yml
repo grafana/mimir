@@ -38,8 +38,8 @@ jobs:
         id: token
         uses: actions/create-github-app-token@v1
         with:
-          app-id: ${{ steps.get-secrets.outputs.APP_ID }}
-          private-key: ${{ steps.get-secrets.outputs.PRIVATE_KEY }}
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
       # Store the token as an environment variable for later use
       - name: Save token for next job
