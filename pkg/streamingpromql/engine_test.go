@@ -50,7 +50,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"quantile(0.95, metric{})": "'quantile' aggregation with parameter",
+		"absent_over_time(nonexistent{}[1h])": "'absent_over_time' function",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
