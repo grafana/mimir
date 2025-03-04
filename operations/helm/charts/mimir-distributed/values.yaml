@@ -1180,7 +1180,7 @@ ingester:
         # If undefined or set to null (the default), no Annotation is set
         downscaleLeader: null
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
-        prepareDownscale: false
+        prepareDownscale: true
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-b
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -1199,9 +1199,9 @@ ingester:
         # -- downscaleLeader is an Annotation used by the rollout-operator
         # If defined, downscaleLeader: <downscaleLeader>
         # If undefined or set to null (the default), no Annotation is set
-        downscaleLeader: null
+        downscaleLeader: mimir-ingester-zone-a
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
-        prepareDownscale: false
+        prepareDownscale: true
       # -- Name of the zone, used in labels and selectors. Must follow Kubernetes naming restrictions: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
       - name: zone-c
         # -- nodeselector to restrict where pods of this zone can be placed. E.g.:
@@ -1220,9 +1220,9 @@ ingester:
         # -- downscaleLeader is an Annotation used by the rollout-operator
         # If defined, downscaleLeader: <downscaleLeader>
         # If undefined or set to null (the default), no Annotation is set
-        downscaleLeader: null
+        downscaleLeader: mimir-ingester-zone-b
         # -- prepareDownscale adds labels and annotations for the rollout-operator to prepare downscaling: https://github.com/grafana/rollout-operator#how-scaling-up-and-down-works
-        prepareDownscale: false
+        prepareDownscale: true
 
 overrides_exporter:
   enabled: true
