@@ -8,6 +8,7 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
@@ -20,6 +21,10 @@ func init() {
 
 	jsoniter.RegisterTypeEncoderFunc("labels.Matcher", encodeMatcher, func(_ unsafe.Pointer) bool { return false })
 	jsoniter.RegisterTypeDecoderFunc("labels.Matcher", decodeMatcher)
+
+	jsoniter.RegisterTypeEncoderFunc("parser.ItemType", encodeItemType, func(_ unsafe.Pointer) bool { return false })
+	jsoniter.RegisterTypeDecoderFunc("parser.ItemType", decodeItemType)
+	buildItemTypeMap()
 }
 
 func encodeQueryPlan(ptr unsafe.Pointer, stream *jsoniter.Stream) {
@@ -285,4 +290,33 @@ func decodeMatcher(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	}
 
 	*matcher = *m
+}
+
+var stringToItemType = map[string]parser.ItemType{}
+
+func buildItemTypeMap() {
+	for i, s := range parser.ItemTypeStr {
+		stringToItemType[s] = i
+	}
+}
+
+// Encode ItemTypes as strings, rather than their IDs, as the IDs are not guaranteed to be stable
+// and so upgrading Prometheus could cause backwards compatibility issues.
+func encodeItemType(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	itemType := (*parser.ItemType)(ptr)
+
+	stream.WriteString(itemType.String())
+}
+
+func decodeItemType(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
+	value := iter.ReadString()
+	t, ok := stringToItemType[value]
+
+	if !ok {
+		iter.ReportError("decodeItemType", fmt.Sprintf("unknown item type %q", value))
+		return
+	}
+
+	itemType := (*parser.ItemType)(ptr)
+	*itemType = t
 }
