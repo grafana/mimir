@@ -11,7 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
-
 	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util"
@@ -34,13 +33,17 @@ func TestCommonConfigCanBeExtended(t *testing.T) {
 
 		// Values should be properly inherited.
 		require.Equal(t, "s3", cfg.CustomStorage.Backend)
-		require.Equal(t, 1000000, cfg.CustomIngesterClient.GRPCClientConfig.MaxRecvMsgSize)
-		require.Equal(t, "cluster", cfg.CustomIngesterClient.GRPCClientConfig.ClusterValidationLabel)
+		require.Equal(t, 1000000, cfg.CustomGRPCClient.GRPCClientConfig.MaxRecvMsgSize)
+		require.Equal(t, "cluster", cfg.CustomGRPCClient.GRPCClientConfig.ClusterValidationLabel)
 
 		// Mimir's inheritance should still work.
 		require.Equal(t, "s3", cfg.MimirConfig.BlocksStorage.Bucket.Backend)
 		require.Equal(t, 1000000, cfg.MimirConfig.IngesterClient.GRPCClientConfig.MaxRecvMsgSize)
 		require.Equal(t, "cluster", cfg.MimirConfig.IngesterClient.GRPCClientConfig.ClusterValidationLabel)
+		require.Equal(t, 1000000, cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.MaxRecvMsgSize)
+		require.Equal(t, "cluster", cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.ClusterValidationLabel)
+		require.Equal(t, 1000000, cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.MaxRecvMsgSize)
+		require.Equal(t, "cluster", cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.ClusterValidationLabel)
 	})
 
 	t.Run("yaml inheritance", func(t *testing.T) {
@@ -62,26 +65,30 @@ common:
 
 		// Values should be properly inherited.
 		require.Equal(t, "s3", cfg.CustomStorage.Backend)
-		require.Equal(t, 1000000, cfg.CustomIngesterClient.GRPCClientConfig.MaxRecvMsgSize)
-		require.Equal(t, "cluster", cfg.CustomIngesterClient.GRPCClientConfig.ClusterValidationLabel)
+		require.Equal(t, 1000000, cfg.CustomGRPCClient.GRPCClientConfig.MaxRecvMsgSize)
+		require.Equal(t, "cluster", cfg.CustomGRPCClient.GRPCClientConfig.ClusterValidationLabel)
 
 		// Mimir's inheritance should still work.
 		require.Equal(t, "s3", cfg.MimirConfig.BlocksStorage.Bucket.Backend)
 		require.Equal(t, 1000000, cfg.MimirConfig.IngesterClient.GRPCClientConfig.MaxRecvMsgSize)
 		require.Equal(t, "cluster", cfg.MimirConfig.IngesterClient.GRPCClientConfig.ClusterValidationLabel)
+		require.Equal(t, 1000000, cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.MaxRecvMsgSize)
+		require.Equal(t, "cluster", cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.ClusterValidationLabel)
+		require.Equal(t, 1000000, cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.MaxRecvMsgSize)
+		require.Equal(t, "cluster", cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.ClusterValidationLabel)
 	})
 }
 
 type customExtendedConfig struct {
-	MimirConfig          mimir.Config           `yaml:",inline"`
-	CustomStorage        bucket.Config          `yaml:"custom_storage"`
-	CustomIngesterClient ingester_client.Config `yaml:"custom_ingester_client"`
+	MimirConfig      mimir.Config           `yaml:",inline"`
+	CustomStorage    bucket.Config          `yaml:"custom_storage"`
+	CustomGRPCClient ingester_client.Config `yaml:"custom_grpc_client"`
 }
 
 func (c *customExtendedConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.MimirConfig.RegisterFlags(f, logger)
 	c.CustomStorage.RegisterFlagsWithPrefix("custom-storage", f)
-	c.CustomIngesterClient.RegisterFlagsWithPrefix("custom-ingester-client", f)
+	c.CustomGRPCClient.RegisterFlagsWithPrefix("custom-ingester-client", f)
 }
 
 func (c *customExtendedConfig) CommonConfigInheritance() mimir.CommonConfigInheritance {
@@ -90,7 +97,7 @@ func (c *customExtendedConfig) CommonConfigInheritance() mimir.CommonConfigInher
 			"custom": &c.CustomStorage.StorageBackendConfig,
 		},
 		GRPCClient: map[string]*util.GRPCClientConfig{
-			"custom_grpc_client": &c.CustomIngesterClient.GRPCClientConfig,
+			"custom_grpc_client": &c.CustomGRPCClient.GRPCClientConfig,
 		},
 	}
 }
@@ -108,7 +115,7 @@ func TestMimirConfigCanBeInlined(t *testing.T) {
 	const commonYAMLConfig = `
 custom_storage:
   backend: s3
-custom_ingester_client:
+custom_grpc_client:
   grpc_client_config:
     max_recv_msg_size: 1000000
     cluster_validation_label: cluster
@@ -123,6 +130,6 @@ custom_ingester_client:
 
 	// Value should be properly set.
 	require.Equal(t, "s3", cfg.CustomStorage.Backend)
-	require.Equal(t, 1000000, cfg.CustomIngesterClient.GRPCClientConfig.MaxRecvMsgSize)
-	require.Equal(t, "cluster", cfg.CustomIngesterClient.GRPCClientConfig.ClusterValidationLabel)
+	require.Equal(t, 1000000, cfg.CustomGRPCClient.GRPCClientConfig.MaxRecvMsgSize)
+	require.Equal(t, "cluster", cfg.CustomGRPCClient.GRPCClientConfig.ClusterValidationLabel)
 }

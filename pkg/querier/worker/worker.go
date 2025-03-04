@@ -15,8 +15,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -24,17 +24,18 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 )
 
 type Config struct {
-	FrontendAddress                string            `yaml:"frontend_address"`
-	SchedulerAddress               string            `yaml:"scheduler_address"`
-	DNSLookupPeriod                time.Duration     `yaml:"dns_lookup_duration" category:"advanced"`
-	QuerierID                      string            `yaml:"id" category:"advanced"`
-	QueryFrontendGRPCClientConfig  grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the querier and the query-frontend."`
-	QuerySchedulerGRPCClientConfig grpcclient.Config `yaml:"query_scheduler_grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the querier and the query-scheduler."`
-	ResponseStreamingEnabled       bool              `yaml:"response_streaming_enabled" category:"experimental"`
+	FrontendAddress                string                `yaml:"frontend_address"`
+	SchedulerAddress               string                `yaml:"scheduler_address"`
+	DNSLookupPeriod                time.Duration         `yaml:"dns_lookup_duration" category:"advanced"`
+	QuerierID                      string                `yaml:"id" category:"advanced"`
+	QueryFrontendGRPCClientConfig  util.GRPCClientConfig `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the querier and the query-frontend."`
+	QuerySchedulerGRPCClientConfig util.GRPCClientConfig `yaml:"query_scheduler_grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the querier and the query-scheduler."`
+	ResponseStreamingEnabled       bool                  `yaml:"response_streaming_enabled" category:"experimental"`
 
 	// This configuration is injected internally.
 	MaxConcurrentRequests   int                       `yaml:"-"` // Must be same as passed to PromQL Engine.
@@ -105,7 +106,7 @@ type querierWorker struct {
 	*services.BasicService
 
 	maxConcurrentRequests int
-	grpcClientConfig      grpcclient.Config
+	grpcClientConfig      util.GRPCClientConfig
 	log                   log.Logger
 
 	processor processor
@@ -117,6 +118,8 @@ type querierWorker struct {
 	mu        sync.Mutex
 	managers  map[string]*processorManager
 	instances map[string]servicediscovery.Instance
+
+	invalidClusterValidation *prometheus.CounterVec
 }
 
 func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (services.Service, error) {
@@ -128,10 +131,13 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		cfg.QuerierID = hostname
 	}
 
-	var processor processor
-	var grpcCfg grpcclient.Config
-	var servs []services.Service
-	var factory serviceDiscoveryFactory
+	var (
+		processor    processor
+		grpcCfg      util.GRPCClientConfig
+		workerClient string
+		servs        []services.Service
+		factory      serviceDiscoveryFactory
+	)
 
 	switch {
 	case cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
@@ -142,6 +148,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		}
 
 		grpcCfg = cfg.QuerySchedulerGRPCClientConfig
+		workerClient = "query-scheduler-worker"
 		processor, servs = newSchedulerProcessor(cfg, handler, log, reg)
 
 	case cfg.FrontendAddress != "":
@@ -152,23 +159,26 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		}
 
 		grpcCfg = cfg.QueryFrontendGRPCClientConfig
+		workerClient = "query-frontend-worker"
 		processor = newFrontendProcessor(cfg, handler, log)
 
 	default:
 		return nil, errors.New("no query-scheduler or query-frontend address")
 	}
 
-	return newQuerierWorkerWithProcessor(grpcCfg, cfg.MaxConcurrentRequests, log, processor, factory, servs)
+	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, workerClient, util.GRPCProtocol)
+	return newQuerierWorkerWithProcessor(grpcCfg, cfg.MaxConcurrentRequests, log, processor, factory, servs, invalidClusterValidation)
 }
 
-func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, maxConcReq int, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service) (*querierWorker, error) {
+func newQuerierWorkerWithProcessor(grpcCfg util.GRPCClientConfig, maxConcReq int, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service, invalidClusterValidation *prometheus.CounterVec) (*querierWorker, error) {
 	f := &querierWorker{
-		grpcClientConfig:      grpcCfg,
-		maxConcurrentRequests: maxConcReq,
-		log:                   log,
-		managers:              map[string]*processorManager{},
-		instances:             map[string]servicediscovery.Instance{},
-		processor:             processor,
+		grpcClientConfig:         grpcCfg,
+		maxConcurrentRequests:    maxConcReq,
+		log:                      log,
+		managers:                 map[string]*processorManager{},
+		instances:                map[string]servicediscovery.Instance{},
+		processor:                processor,
+		invalidClusterValidation: invalidClusterValidation,
 	}
 
 	// There's no service discovery in some tests.
@@ -389,7 +399,11 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 
 func (w *querierWorker) connect(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	opts, err := w.grpcClientConfig.DialOption(nil, nil)
+	var unary []grpc.UnaryClientInterceptor
+	if w.grpcClientConfig.ClusterValidationLabel != "" {
+		unary = []grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(w.grpcClientConfig.ClusterValidationLabel, w.invalidClusterValidation, w.log)}
+	}
+	opts, err := w.grpcClientConfig.DialOption(unary, nil)
 
 	if err != nil {
 		return nil, err

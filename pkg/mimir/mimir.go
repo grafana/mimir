@@ -224,7 +224,9 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
 		},
 		GRPCClient: map[string]*util.GRPCClientConfig{
-			"ingester_client": &c.IngesterClient.GRPCClientConfig,
+			"ingester_client":                  &c.IngesterClient.GRPCClientConfig,
+			"frontend_worker_frontend_client":  &c.Worker.QueryFrontendGRPCClientConfig,
+			"frontend_worker_scheduler_client": &c.Worker.QuerySchedulerGRPCClientConfig,
 		},
 	}
 }

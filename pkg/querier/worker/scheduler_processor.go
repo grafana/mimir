@@ -57,7 +57,7 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 		streamResponse:   streamResponse,
 		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:        cfg.QuerierID,
-		grpcConfig:       cfg.QueryFrontendGRPCClientConfig,
+		grpcConfig:       cfg.QueryFrontendGRPCClientConfig.Config,
 		streamingEnabled: cfg.ResponseStreamingEnabled,
 
 		schedulerClientFactory: func(conn *grpc.ClientConn) schedulerpb.SchedulerForQuerierClient {
