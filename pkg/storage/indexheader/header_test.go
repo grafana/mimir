@@ -265,9 +265,12 @@ func compareIndexToHeaderPostings(t *testing.T, indexByteSlice index.ByteSlice, 
 	require.NoError(t, err)
 
 	tblOffsetBounds := make(map[string][2]int64)
+
+	// Read the postings offset table and record first and last offset for each label. Adjust offsets in ReadPostingsOffsetTable
+	// by 4B (int32 count of postings in table) to align with postings in index headers.
 	err = index.ReadPostingsOffsetTable(indexByteSlice, toc.PostingsTable, func(label []byte, _ []byte, _ uint64, offset int) error {
 		name := string(label)
-		off := int64(offset + 4) // 4B offset - store count on TOC
+		off := int64(offset + 4)
 		if v, ok := tblOffsetBounds[name]; ok {
 			v[1] = off
 			tblOffsetBounds[name] = v
