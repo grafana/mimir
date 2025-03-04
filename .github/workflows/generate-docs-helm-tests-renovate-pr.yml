@@ -13,11 +13,11 @@ permissions:
   id-token: write
 
 concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   prepare:
-    if: github.event.pull_request.user.login == 'renovate[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
