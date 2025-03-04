@@ -847,9 +847,9 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 			defer s.Close()
 
 			baseFlags := map[string]string{
-				"-distributor.ingestion-tenant-shard-size": "0",
-				"-ingester.ring.heartbeat-period":          "1s",
-				"-common.cluster-validation-label":         testCase.distributorClusterLabel,
+				"-distributor.ingestion-tenant-shard-size":     "0",
+				"-ingester.ring.heartbeat-period":              "1s",
+				"-common.grpc-client.cluster-validation-label": testCase.distributorClusterLabel,
 			}
 
 			flags := mergeFlags(

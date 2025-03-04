@@ -21,7 +21,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
@@ -224,7 +223,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
 			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
 		},
-		ClusterValidationLabel: map[string]*grpcclient.Config{
+		GRPCClient: map[string]*util.GRPCClientConfig{
 			"ingester_client": &c.IngesterClient.GRPCClientConfig,
 		},
 	}
@@ -603,10 +602,15 @@ func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) 
 		for name, loc := range inheritance.Storage {
 			specificStorageLocations[name] = loc
 		}
+		specificGRPCClientLocations := specificLocationsUnmarshaler{}
+		for name, loc := range inheritance.GRPCClient {
+			specificGRPCClientLocations[name] = loc
+		}
 
 		common := configWithCustomCommonUnmarshaler{
 			Common: &commonConfigUnmarshaler{
-				Storage: &specificStorageLocations,
+				Storage:    &specificStorageLocations,
+				GrpcClient: &specificGRPCClientLocations,
 			},
 		}
 
@@ -630,28 +634,10 @@ func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConf
 				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
 			}
 		}
-		if common.ClusterValidationLabel == "" {
-			// Nothing to inherit because origin was not set.
-			continue
-		}
-		for _, grpcClientConfig := range inheritance.ClusterValidationLabel {
-			if grpcClientConfig == nil {
-				continue
+		for desc, loc := range inheritance.GRPCClient {
+			if err := inheritFlags(log, common.GRPCClient.RegisteredFlags, loc.RegisteredFlags, setFlags); err != nil {
+				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
 			}
-			if grpcClientConfig.ClusterValidationLabel != "" {
-				// Can't inherit because destination was set.
-				continue
-			}
-			if common.ClusterValidationLabel == grpcClientConfig.ClusterValidationLabel {
-				// Already the same, no need to touch.
-				continue
-			}
-			level.Debug(log).Log(
-				"msg", "Inheriting flag value",
-				"flag_name", "cluster_value_label", "origin_value", common.ClusterValidationLabel,
-				"destination_value", grpcClientConfig.ClusterValidationLabel,
-			)
-			grpcClientConfig.ClusterValidationLabel = common.ClusterValidationLabel
 		}
 	}
 
@@ -690,19 +676,19 @@ func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.Registere
 }
 
 type CommonConfig struct {
-	Storage                bucket.StorageBackendConfig `yaml:"storage"`
-	ClusterValidationLabel string                      `yaml:"cluster_validation_label" category:"experimental"`
+	Storage    bucket.StorageBackendConfig `yaml:"storage"`
+	GRPCClient util.GRPCClientConfig       `yaml:"grpc_client" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
-	Storage                map[string]*bucket.StorageBackendConfig
-	ClusterValidationLabel map[string]*grpcclient.Config
+	Storage    map[string]*bucket.StorageBackendConfig
+	GRPCClient map[string]*util.GRPCClientConfig
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
-	f.StringVar(&c.ClusterValidationLabel, "common.cluster-validation-label", "", "Optionally define gRPC client's cluster validation label.")
+	c.GRPCClient.RegisterFlagsWithPrefix("common.grpc-client", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -717,7 +703,8 @@ type configWithCustomCommonUnmarshaler struct {
 
 // commonConfigUnmarshaler will unmarshal each field of the common config into specific locations.
 type commonConfigUnmarshaler struct {
-	Storage *specificLocationsUnmarshaler `yaml:"storage"`
+	Storage    *specificLocationsUnmarshaler `yaml:"storage"`
+	GrpcClient *specificLocationsUnmarshaler `yaml:"grpc_client"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.
