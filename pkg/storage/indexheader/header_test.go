@@ -352,15 +352,22 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		for _, v := range valOffsets {
 			ptr, err := headerReader.PostingsOffset(ctx, lname, v.LabelValue)
 			require.NoError(t, err)
-			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.LabelValue}], ptr)
-			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.LabelValue}], v.Off)
+			label := labels.Label{Name: lname, Value: v.LabelValue}
+			assert.Equal(t, expRanges[label], ptr)
+			assert.Equal(t, expRanges[label], v.Off)
+			delete(expRanges, label)
 		}
 	}
+
 	allPName, allPValue := index.AllPostingsKey()
 	ptr, err := headerReader.PostingsOffset(ctx, allPName, allPValue)
 	require.NoError(t, err)
-	require.Equal(t, expRanges[labels.Label{Name: "", Value: ""}].Start, ptr.Start)
-	require.Equal(t, expRanges[labels.Label{Name: "", Value: ""}].End, ptr.End)
+
+	emptyLabel := labels.Label{Name: "", Value: ""}
+	require.Equal(t, expRanges[emptyLabel].Start, ptr.Start)
+	require.Equal(t, expRanges[emptyLabel].End, ptr.End)
+	delete(expRanges, emptyLabel)
+	require.Empty(t, expRanges)
 }
 
 func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *block.Meta {
