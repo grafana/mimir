@@ -385,7 +385,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# TYPE cortex_distributor_deduped_samples_total counter
 		cortex_distributor_deduped_samples_total{cluster="cluster1",user="userA"} 1
 
-		# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped.
+		# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped because native histograms ingestion is disabled.
     	# TYPE cortex_distributor_dropped_native_histograms_total counter
     	cortex_distributor_dropped_native_histograms_total{user="userA"} 1
 
@@ -435,7 +435,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_deduped_samples_total The total number of deduplicated samples.
 		# TYPE cortex_distributor_deduped_samples_total counter
 
-		# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped.
+		# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped because native histograms ingestion is disabled.
     	# TYPE cortex_distributor_dropped_native_histograms_total counter
 
 		# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
@@ -1516,7 +1516,7 @@ func TestDistributor_Push_CountDroppedNativeHistograms(t *testing.T) {
 			require.Equal(t, emptyResponse, resp)
 			if tc.expectCounterExists {
 				assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
-					# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped.
+					# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped because native histograms ingestion is disabled.
     				# TYPE cortex_distributor_dropped_native_histograms_total counter
     				cortex_distributor_dropped_native_histograms_total{user="user"} 1
 				`), "cortex_distributor_dropped_native_histograms_total"))
