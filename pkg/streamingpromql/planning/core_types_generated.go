@@ -7,10 +7,10 @@ import (
 	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// TODO: actually generate all of this automatically
+// TODO: actually generate some / all of this automatically
+// TODO: tests for equality edge cases
 
 func (a *AggregateExpression) Type() string {
 	return "AggregateExpression"
@@ -74,21 +74,8 @@ func (b *BinaryExpression) Equals(other Node) bool {
 		b.Op == otherBinaryExpression.Op &&
 		b.LHS.Equals(otherBinaryExpression.LHS) &&
 		b.RHS.Equals(otherBinaryExpression.RHS) &&
-		vectorMatchingEquals(b.VectorMatching, otherBinaryExpression.VectorMatching) &&
+		b.VectorMatching.Equals(otherBinaryExpression.VectorMatching) &&
 		b.ReturnBool == otherBinaryExpression.ReturnBool
-}
-
-func vectorMatchingEquals(a, b *parser.VectorMatching) bool {
-	if a == nil && b == nil {
-		// Both are nil.
-		return true
-	}
-
-	return a != nil && b != nil &&
-		a.On == b.On &&
-		a.Card == b.Card &&
-		slices.Equal(a.MatchingLabels, b.MatchingLabels) &&
-		slices.Equal(a.Include, b.Include)
 }
 
 func (f *FunctionCall) Type() string {

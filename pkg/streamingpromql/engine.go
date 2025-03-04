@@ -68,8 +68,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		pedantic: opts.Pedantic,
 
 		jsonConfig: jsoniter.Config{
-			OnlyTaggedField: true,
-			EscapeHTML:      false,
+			EscapeHTML: false,
 		}.Froze(),
 	}, nil
 }
