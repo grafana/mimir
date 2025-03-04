@@ -436,7 +436,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	// Compute the expected number of queries.
 	expectedQueriesCount := float64(numUsers*numQueriesPerUser) + 4
 	// The "time()" query and the query with time range < "query ingesters within" are not pushed down to ingesters.
-	// +1 because one split query ends up as on the ingester.
+	// +1 because one split query ends up touching the ingester.
 	// +2 because the spun off subquery ends up as additional ingester queries.
 	expectedIngesterQueriesCount := float64(numUsers*numQueriesPerUser) + 3
 	if cfg.queryStatsEnabled {
