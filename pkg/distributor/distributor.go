@@ -152,6 +152,9 @@ type Distributor struct {
 	labelValuesWithNewlinesPerUser   *prometheus.CounterVec
 	hashCollisionCount               prometheus.Counter
 
+	// Metric for silently dropped native histogram samples
+	droppedNativeHistograms *prometheus.CounterVec
+
 	// Metrics for data rejected for hitting per-tenant limits
 	discardedSamplesTooManyHaClusters *prometheus.CounterVec
 	discardedSamplesRateLimited       *prometheus.CounterVec
@@ -467,6 +470,11 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help: "Total number of label values with newlines seen at ingestion time.",
 		}, []string{"user"}),
 
+		droppedNativeHistograms: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_dropped_native_histograms_total",
+			Help: "The total number of native histograms that were silently dropped because native histograms ingestion is disabled.",
+		}, []string{"user"}),
+
 		discardedSamplesTooManyHaClusters: validation.DiscardedSamplesCounter(reg, reasonTooManyHAClusters),
 		discardedSamplesRateLimited:       validation.DiscardedSamplesCounter(reg, reasonRateLimited),
 		discardedRequestsRateLimited:      validation.DiscardedRequestsCounter(reg, reasonRateLimited),
@@ -729,6 +737,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.labelValuesWithNewlinesPerUser.DeleteLabelValues(userID)
 
 	d.PushMetrics.deleteUserMetrics(userID)
+
+	d.droppedNativeHistograms.DeleteLabelValues(userID)
 
 	filter := prometheus.Labels{"user": userID}
 	d.dedupedSamples.DeletePartialMatch(filter)
@@ -1206,6 +1216,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		// Enforce the creation grace period on exemplars too.
 		maxExemplarTS := now.Add(d.limits.CreationGracePeriod(userID)).UnixMilli()
 
+		// Are we going to drop native histograms? If yes, let's count and report them.
+		countDroppedNativeHistograms := !d.limits.NativeHistogramsIngestionEnabled(userID)
+		var droppedNativeHistograms int
+
 		var firstPartialErr error
 		var removeIndexes []int
 		totalSamples, totalExemplars := 0, 0
@@ -1227,6 +1241,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			// Note that validateSeries may drop some data in ts.
 			shouldRemove, validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
 
+			if countDroppedNativeHistograms {
+				droppedNativeHistograms += len(ts.Histograms)
+			}
+
 			// Errors in validation are considered non-fatal, as one series in a request may contain
 			// invalid data but all the remaining series could be perfectly valid.
 			if validationErr != nil {
@@ -1243,6 +1261,10 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			validatedSamples += len(ts.Samples) + len(ts.Histograms)
 			validatedExemplars += len(ts.Exemplars)
 			labelValuesWithNewlines += d.labelValuesWithNewlines(ts.Labels)
+		}
+
+		if droppedNativeHistograms > 0 {
+			d.droppedNativeHistograms.WithLabelValues(userID).Add(float64(droppedNativeHistograms))
 		}
 
 		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
