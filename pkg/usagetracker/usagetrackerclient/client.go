@@ -189,6 +189,7 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 	// Prepare the request.
 	req := &usagetrackerpb.TrackSeriesRequest{
 		UserID:       userID,
+		Partition:    partitionID,
 		SeriesHashes: series,
 	}
 
