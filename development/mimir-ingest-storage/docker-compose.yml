@@ -435,6 +435,36 @@
       - "8080:8080"
     "volumes":
       - "../common/config:/etc/nginx/templates"
+  "usage-tracker-zone-a-0":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-a-0 -usage-tracker.instance-ring.instance-availability-zone=zone-a"
+    "depends_on":
+      "kafka_1":
+        "condition": "service_healthy"
+      "kafka_2":
+        "condition": "service_healthy"
+      "minio":
+        "condition": "service_started"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_REPORTER_MAX_QUEUE_SIZE=1000"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=usage-tracker"
+    "hostname": "usage-tracker-zone-a-0"
+    "image": "mimir"
+    "ports":
+      - "8010:8080"
+      - "11010:11010"
+    "volumes":
+      - "./config:/mimir/config"
+      - "./activity:/activity"
   "usage-tracker-zone-a-1":
     "build":
       "context": "."
@@ -460,19 +490,19 @@
     "hostname": "usage-tracker-zone-a-1"
     "image": "mimir"
     "ports":
-      - "8010:8080"
-      - "11010:11010"
+      - "8011:8080"
+      - "11011:11011"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
-  "usage-tracker-zone-b-1":
+  "usage-tracker-zone-b-0":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-b-1 -usage-tracker.instance-ring.instance-availability-zone=zone-b"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-b-0 -usage-tracker.instance-ring.instance-availability-zone=zone-b"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -487,11 +517,11 @@
       - "JAEGER_SAMPLER_PARAM=1"
       - "JAEGER_SAMPLER_TYPE=const"
       - "JAEGER_TAGS=app=usage-tracker"
-    "hostname": "usage-tracker-zone-b-1"
+    "hostname": "usage-tracker-zone-b-0"
     "image": "mimir"
     "ports":
-      - "8011:8080"
-      - "11011:11011"
+      - "8012:8080"
+      - "11012:11012"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"

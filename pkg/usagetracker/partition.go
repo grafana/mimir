@@ -77,11 +77,15 @@ func newPartition(
 		pendingCreatedSeriesMarshaledEvents: make(chan []byte, cfg.CreatedSeriesEventsMaxPending),
 	}
 
+	// In the partition ring lifecycler one owner can only have one partition, so we create a sub-owner for this partition, because we (may) own multiple partitions.
+	instanceID := fmt.Sprintf("%s/%d", cfg.InstanceRing.InstanceID, partitionID)
+
 	var err error
-	p.partitionLifecycler, err = NewPartitionRingLifecycler(cfg.PartitionRing, p.partitionID, cfg.InstanceRing.InstanceID, partitionKVClient, logger, registerer)
+	p.partitionLifecycler, err = NewPartitionRingLifecycler(cfg.PartitionRing, p.partitionID, instanceID, partitionKVClient, logger, registerer)
 	if err != nil {
 		return nil, err
 	}
+	p.partitionLifecycler.SetRemoveOwnerOnShutdown(true)
 
 	// Create Kafka reader for events storage.
 	p.eventsKafkaReader, err = ingest.NewKafkaReaderClient(p.cfg.EventsStorage.Reader, ingest.NewKafkaReaderClientMetrics(eventsKafkaReaderMetricsPrefix, "usage-tracker", p.registerer), p.logger)
