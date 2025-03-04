@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
@@ -28,7 +29,7 @@ func init() {
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
-func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, logger log.Logger) (promql.QueryEngine, error) {
+func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, logger log.Logger) (*Engine, error) {
 	lookbackDelta := opts.CommonOpts.LookbackDelta
 	if lookbackDelta == 0 {
 		lookbackDelta = defaultLookbackDelta
@@ -70,6 +71,11 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 
 		pedantic: opts.Pedantic,
+
+		jsonConfig: jsoniter.Config{
+			OnlyTaggedField: true,
+			EscapeHTML:      false,
+		}.Froze(),
 	}, nil
 }
 
@@ -89,6 +95,8 @@ type Engine struct {
 	// When operating in pedantic mode, we panic if memory consumption is > 0 after Query.Close()
 	// (indicating something was not returned to a pool).
 	pedantic bool
+
+	jsonConfig jsoniter.API
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
