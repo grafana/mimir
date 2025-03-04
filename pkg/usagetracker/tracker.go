@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math/bits"
 	"sync"
 	"time"
 
@@ -36,6 +37,8 @@ const (
 type Config struct {
 	Enabled bool `yaml:"enabled"`
 
+	Partitions int `yaml:"partitions"`
+
 	InstanceRing  InstanceRingConfig  `yaml:"instance_ring"`
 	PartitionRing PartitionRingConfig `yaml:"partition_ring"`
 
@@ -51,6 +54,8 @@ type Config struct {
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.Enabled, "usage-tracker.enabled", false, "True to enable the usage-tracker.")
+
+	f.IntVar(&c.Partitions, "usage-tracker.partitions", 64, "Number of partitions to use for the usage-tracker. This number isn't expected to change once usage-tracker is already being used.")
 
 	c.InstanceRing.RegisterFlags(f, logger)
 	c.PartitionRing.RegisterFlags(f)
@@ -68,6 +73,10 @@ func (c *Config) Validate() error {
 	// Skip validation if not enabled.
 	if !c.Enabled {
 		return nil
+	}
+
+	if bits.OnesCount64(uint64(c.Partitions)) != 1 {
+		return fmt.Errorf("invalid number of partitions %d, must be a power of 2", c.Partitions)
 	}
 
 	if err := c.EventsStorage.Validate(); err != nil {
