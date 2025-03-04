@@ -3,6 +3,7 @@
 package planning
 
 import (
+	"slices"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -11,9 +12,9 @@ import (
 )
 
 type AggregateExpression struct {
-	Op                 parser.ItemType `json:"op"`
-	Inner              Node
-	Param              Node
+	Op                 parser.ItemType        `json:"op"`
+	Inner              Node                   `json:"-"`
+	Param              Node                   `json:"-"`
 	Grouping           []string               `json:"grouping,omitempty"`
 	Without            bool                   `json:"without,omitempty"`
 	ExpressionPosition posrange.PositionRange `json:"expressionPosition"`
@@ -21,15 +22,44 @@ type AggregateExpression struct {
 
 type BinaryExpression struct {
 	Op             parser.ItemType `json:"op"`
-	LHS            Node
-	RHS            Node
-	VectorMatching *parser.VectorMatching `json:"vectorMatching,omitempty"` // TODO: own type?
-	ReturnBool     bool                   `json:"returnBool,omitempty"`
+	LHS            Node            `json:"-"`
+	RHS            Node            `json:"-"`
+	VectorMatching *VectorMatching `json:"vectorMatching,omitempty"`
+	ReturnBool     bool            `json:"returnBool,omitempty"`
+}
+
+// VectorMatching is the same as parser.VectorMatching, but with JSON tags so we can skip serializing fields with their default values.
+type VectorMatching struct {
+	Card           parser.VectorMatchCardinality `json:"card,omitempty"`
+	MatchingLabels []string                      `json:"matchingLabels,omitempty"`
+	On             bool                          `json:"on,omitempty"`
+	Include        []string                      `json:"include,omitempty"`
+}
+
+func (v *VectorMatching) Equals(other *VectorMatching) bool {
+	if v == nil && other == nil {
+		// Both are nil.
+		return true
+	}
+
+	return v != nil && other != nil &&
+		v.On == other.On &&
+		v.Card == other.Card &&
+		slices.Equal(v.MatchingLabels, other.MatchingLabels) &&
+		slices.Equal(v.Include, other.Include)
+}
+
+func (v *VectorMatching) AsParserType() *parser.VectorMatching {
+	return (*parser.VectorMatching)(v)
+}
+
+func VectorMatchingFromParserType(v *parser.VectorMatching) *VectorMatching {
+	return (*VectorMatching)(v)
 }
 
 type FunctionCall struct {
-	FunctionName       string `json:"functionName"`
-	Args               []Node
+	FunctionName       string                 `json:"functionName"`
+	Args               []Node                 `json:"-"`
 	ExpressionPosition posrange.PositionRange `json:"expressionPosition"`
 }
 
@@ -44,29 +74,29 @@ type StringLiteral struct {
 }
 
 type UnaryExpression struct {
-	Op                 parser.ItemType `json:"op,omitempty"`
-	Inner              Node
+	Op                 parser.ItemType        `json:"op,omitempty"`
+	Inner              Node                   `json:"-"`
 	ExpressionPosition posrange.PositionRange `json:"expressionPosition"`
 }
 
 type VectorSelector struct {
-	Matchers           []*labels.Matcher      `json:"matchers,omitempty"`  // TODO: will need custom serializer to ensure regexp is correctly populated
-	Timestamp          *int64                 `json:"timestamp,omitempty"` // TODO: check effect of omitempty if value is 0
+	Matchers           []*labels.Matcher      `json:"matchers,omitempty"`
+	Timestamp          *int64                 `json:"timestamp,omitempty"`
 	Offset             time.Duration          `json:"offset,omitempty"`
 	ExpressionPosition posrange.PositionRange `json:"expressionPosition"`
 }
 
 type MatrixSelector struct {
 	Matchers           []*labels.Matcher      `json:"matchers"`
-	Timestamp          *int64                 `json:"timestamp,omitempty"` // TODO: check effect of omitempty if value is 0
+	Timestamp          *int64                 `json:"timestamp,omitempty"`
 	Offset             time.Duration          `json:"offset,omitempty"`
 	Range              time.Duration          `json:"range,omitempty"`
 	ExpressionPosition posrange.PositionRange `json:"expressionPosition"`
 }
 
 type Subquery struct {
-	Inner              Node
-	Timestamp          *int64                 `json:"timestamp,omitempty"` // TODO: check effect of omitempty if value is 0
+	Inner              Node                   `json:"-"`
+	Timestamp          *int64                 `json:"timestamp,omitempty"`
 	Offset             time.Duration          `json:"offset,omitempty"`
 	Range              time.Duration          `json:"range,omitempty"`
 	Step               time.Duration          `json:"step,omitempty"`
