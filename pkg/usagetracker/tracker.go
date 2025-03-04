@@ -208,13 +208,12 @@ func (t *UsageTracker) stop(_ error) error {
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
-	var p *partition
 	t.mtx.RLock()
+	p, ok := t.partitions[req.Partition]
 	for _, p = range t.partitions {
 		break // take the first one
 	}
-	t.mtx.RUnlock()
-	if p == nil {
+	if !ok {
 		return nil, errors.New("no partitions available")
 	}
 	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())

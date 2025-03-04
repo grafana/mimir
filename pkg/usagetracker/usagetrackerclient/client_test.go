@@ -158,9 +158,11 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 
 		req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 	})
 
 	t.Run("should track series to usage-trackers running in the preferred zone if available (series are sharded to 1 partition)", func(t *testing.T) {
@@ -218,6 +220,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 	})
 
 	t.Run("should fallback to the other zone if a usage-tracker instance in the preferred zone is failing", func(t *testing.T) {
@@ -277,13 +280,16 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 
 		req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 
 		// Fallback.
 		req = instances["usage-tracker-zone-a-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 	})
 
 	t.Run("should return rejected series", func(t *testing.T) {
@@ -345,9 +351,11 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 
 		req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 	})
 
 	t.Run("should hedge requests to the other zone if a usage-tracker instance in the preferred zone is slow", func(t *testing.T) {
@@ -410,13 +418,16 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 
 		req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 
 		// Hedged request.
 		req = instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 	})
 
 	t.Run("should be a no-op if there are no series to track", func(t *testing.T) {
