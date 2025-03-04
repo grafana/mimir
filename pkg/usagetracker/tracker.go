@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -33,7 +34,8 @@ const (
 )
 
 type Config struct {
-	Enabled       bool                `yaml:"enabled"`
+	Enabled bool `yaml:"enabled"`
+
 	InstanceRing  InstanceRingConfig  `yaml:"instance_ring"`
 	PartitionRing PartitionRingConfig `yaml:"partition_ring"`
 
@@ -84,29 +86,24 @@ func (c *Config) Validate() error {
 type UsageTracker struct {
 	services.Service
 
-	store *trackerStore
-
 	cfg        Config
 	bucket     objstore.InstrumentedBucket
 	overrides  *validation.Overrides
 	logger     log.Logger
 	registerer prometheus.Registerer
 
-	partitionID int32
-
 	// Partition and instance ring.
-	partitionLifecycler *ring.PartitionInstanceLifecycler
-	partitionRing       *ring.PartitionInstanceRing
-	instanceLifecycler  *ring.BasicLifecycler
+	partitionKVClient  kv.Client
+	partitionRing      *ring.PartitionInstanceRing
+	instanceLifecycler *ring.BasicLifecycler
 
 	// Events storage (Kafka).
 	eventsKafkaWriter *kgo.Client
-	eventsKafkaReader *kgo.Client
 
-	pendingCreatedSeriesMarshaledEvents chan []byte
+	mtx        sync.RWMutex
+	partitions map[int32]*partition
 
 	// Dependencies.
-	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
 }
 
@@ -118,29 +115,18 @@ func NewUsageTracker(cfg Config, partitionRing *ring.PartitionInstanceRing, over
 		logger:        logger,
 		registerer:    registerer,
 
-		pendingCreatedSeriesMarshaledEvents: make(chan []byte, cfg.CreatedSeriesEventsMaxPending),
-	}
-
-	// Get the partition ID.
-	var err error
-	t.partitionID, err = partitionIDFromInstanceID(cfg.InstanceRing.InstanceID)
-	if err != nil {
-		return nil, errors.Wrap(err, "calculating usage-tracker partition ID")
+		partitions: make(map[int32]*partition, 64),
 	}
 
 	// Init instance ring lifecycler.
+	var err error
 	t.instanceLifecycler, err = NewInstanceRingLifecycler(cfg.InstanceRing, logger, registerer)
 	if err != nil {
 		return nil, err
 	}
 
 	// Init the partition ring lifecycler.
-	partitionKVClient, err := NewPartitionRingKVClient(cfg.PartitionRing, "lifecycler", logger, registerer)
-	if err != nil {
-		return nil, err
-	}
-
-	t.partitionLifecycler, err = NewPartitionRingLifecycler(cfg.PartitionRing, t.partitionID, cfg.InstanceRing.InstanceID, partitionKVClient, logger, registerer)
+	t.partitionKVClient, err = NewPartitionRingKVClient(cfg.PartitionRing, "lifecycler", logger, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -157,184 +143,81 @@ func NewUsageTracker(cfg Config, partitionRing *ring.PartitionInstanceRing, over
 		return nil, errors.Wrap(err, "failed to create Kafka writer client for usage-tracker")
 	}
 
-	// Create Kafka reader for events storage.
-	t.eventsKafkaReader, err = ingest.NewKafkaReaderClient(t.cfg.EventsStorage.Reader, ingest.NewKafkaReaderClientMetrics(eventsKafkaReaderMetricsPrefix, "usage-tracker", t.registerer), t.logger)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create Kafka reader client for usage-tracker")
-	}
-
-	eventsPublisher := chanEventsPublisher{events: t.pendingCreatedSeriesMarshaledEvents, logger: logger}
-	t.store = newTrackerStore(cfg.IdleTimeout, logger, t, eventsPublisher)
-	if err := registerer.Register(t.store); err != nil {
-		return nil, errors.Wrap(err, "unable to register usage-tracker store as Prometheus collector")
-	}
 	t.Service = services.NewBasicService(t.start, t.run, t.stop)
-
 	return t, nil
 }
 
 // start implements services.StartingFn.
 func (t *UsageTracker) start(ctx context.Context) error {
-	var err error
-
 	// Start dependencies.
-	if t.subservices, err = services.NewManager(t.instanceLifecycler, t.partitionLifecycler); err != nil {
-		return errors.Wrap(err, "unable to start usage-tracker dependencies")
-	}
-
 	t.subservicesWatcher = services.NewFailureWatcher()
-	t.subservicesWatcher.WatchManager(t.subservices)
-
-	if err = services.StartManagerAndAwaitHealthy(ctx, t.subservices); err != nil {
-		return errors.Wrap(err, "unable to start usage-tracker subservices")
+	t.subservicesWatcher.WatchService(t.instanceLifecycler)
+	if err := services.StartAndAwaitRunning(ctx, t.instanceLifecycler); err != nil {
+		return errors.Wrap(err, "unable to start instance lifecycler")
 	}
-
-	startConsumingEventsAtMillis := time.Now().Add(-t.cfg.IdleTimeout).UnixMilli()
-	t.eventsKafkaReader.AddConsumePartitions(map[string]map[int32]kgo.Offset{
-		t.cfg.EventsStorage.TopicName: {t.partitionID: kgo.NewOffset().AfterMilli(startConsumingEventsAtMillis)},
-	})
 
 	return nil
+}
+
+func (t *UsageTracker) run(ctx context.Context) error {
+	// prometheus.WrapRegistererWith(prometheus.Labels{"component": component}, reg)
+	partitionID, err := partitionIDFromInstanceID(t.cfg.InstanceRing.InstanceID)
+	if err != nil {
+		return errors.Wrap(err, "calculating usage-tracker partition ID")
+	}
+	p, err := newPartition(partitionID, t.cfg, t.partitionKVClient, t.partitionRing, t.eventsKafkaWriter, t.bucket, t, t.logger, t.registerer)
+	if err != nil {
+		return errors.Wrap(err, "unable to create partition")
+	}
+	if err := services.StartAndAwaitRunning(ctx, p); err != nil {
+		return errors.Wrap(err, "unable to start partition")
+	}
+	t.mtx.Lock()
+	t.partitions[partitionID] = p
+	t.mtx.Unlock()
+
+	partitionWatcher := services.NewFailureWatcher()
+	partitionWatcher.WatchService(p)
+
+	defer func() {
+		if err := services.StopAndAwaitTerminated(context.Background(), p); err != nil {
+			level.Error(t.logger).Log("msg", "failed to stop partition", "err", err)
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-t.subservicesWatcher.Chan():
+		return errors.Wrap(err, "usage-tracker dependency failed")
+	case err := <-partitionWatcher.Chan():
+		return errors.Wrap(err, "partition failed")
+	}
 }
 
 // stop implements services.StoppingFn.
 func (t *UsageTracker) stop(_ error) error {
 	// Stop dependencies.
-	if t.subservices != nil {
-		_ = services.StopManagerAndAwaitStopped(context.Background(), t.subservices)
-	}
+	err := services.StopAndAwaitTerminated(context.Background(), t.instanceLifecycler)
 
 	// Close Kafka clients.
 	t.eventsKafkaWriter.Close()
-	t.eventsKafkaReader.Close()
 
-	return nil
-}
-
-// run implements services.RunningFn.
-func (t *UsageTracker) run(ctx context.Context) error {
-	ticker := time.NewTicker(time.Minute)
-	defer ticker.Stop()
-
-	wg := &sync.WaitGroup{}
-	go t.consumeSeriesCreatedEvents(ctx, wg)
-	go t.publishSeriesCreatedEvents(ctx, wg)
-	defer wg.Wait()
-
-	for {
-		select {
-		case now := <-ticker.C:
-			t.store.cleanup(now)
-		case <-ctx.Done():
-			return nil
-		case err := <-t.subservicesWatcher.Chan():
-			return errors.Wrap(err, "usage-tracker dependency failed")
-		}
-	}
-}
-
-func (t *UsageTracker) consumeSeriesCreatedEvents(ctx context.Context, wg *sync.WaitGroup) {
-	wg.Add(1)
-	defer wg.Done()
-	for ctx.Err() == nil {
-		fetches := t.eventsKafkaReader.PollRecords(ctx, 0)
-		fetches.EachError(func(_ string, p int32, err error) {
-			if !errors.Is(err, context.Canceled) { // Ignore when we're shutting down.
-				// TODO: observability? Handle this?
-				level.Error(t.logger).Log("msg", "failed to fetch records", "partition", p, "err", err)
-			}
-		})
-		fetches.EachRecord(func(r *kgo.Record) {
-			var ev usagetrackerpb.SeriesCreatedEvent
-			if err := ev.Unmarshal(r.Value); err != nil {
-				level.Error(t.logger).Log("msg", "failed to unmarshal series created event", "err", err, "partition", r.Partition, "offset", r.Offset, "value_len", len(r.Value))
-				return
-			}
-			// TODO: maybe ignore our own events?
-			t.store.processCreatedSeriesEvent(ev.UserID, ev.SeriesHashes, time.Unix(ev.Timestamp, 0), time.Now())
-			level.Debug(t.logger).Log("msg", "processed series created event", "partition", r.Partition, "offset", r.Offset, "series", len(ev.SeriesHashes))
-		})
-	}
-}
-
-func (t *UsageTracker) publishSeriesCreatedEvents(ctx context.Context, wg *sync.WaitGroup) {
-	wg.Add(1)
-	defer wg.Done()
-
-	publish := make(chan []*kgo.Record)
-	defer close(publish)
-
-	for w := 0; w < t.cfg.CreatedSeriesEventsPublishConcurrency; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for batch := range publish {
-				level.Debug(t.logger).Log("msg", "producing batch of series created events", "size", len(batch), "partition", t.partitionID)
-				// TODO: maybe use a slightly longer-deadline context here, to avoid dropping the pending events from the queue?
-				res := t.eventsKafkaWriter.ProduceSync(ctx, batch...)
-				for _, r := range res {
-					if r.Err != nil {
-						// TODO: what should we do here?
-						level.Error(t.logger).Log("msg", "failed to publish series created event", "err", r.Err, "partition", t.partitionID)
-						continue
-					}
-					level.Debug(t.logger).Log("msg", "produced series created event", "partition", r.Record.Partition, "offset", r.Record.Offset)
-				}
-			}
-		}()
-	}
-
-	// empty timer with nil C chan
-	timer := new(time.Timer)
-	defer func() {
-		if timer.C != nil {
-			timer.Stop()
-		}
-	}()
-
-	var batch []*kgo.Record
-	var batchSize int
-	publishBatch := func() {
-		select {
-		case publish <- batch:
-		case <-ctx.Done():
-			return
-		}
-
-		batch = nil
-		batchSize = 0
-		timer.Stop()
-		timer.C = nil // Just in case timer already fired.
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-
-		case data := <-t.pendingCreatedSeriesMarshaledEvents:
-			if len(batch) == 0 {
-				timer = time.NewTimer(t.cfg.CreatedSeriesEventsBatchTTL)
-			}
-			level.Debug(t.logger).Log("msg", "batching series created event", "size", len(data), "partition", t.partitionID)
-			batch = append(batch, &kgo.Record{Topic: t.cfg.EventsStorage.TopicName, Value: data, Partition: t.partitionID})
-			batchSize += len(data)
-
-			if batchSize >= t.cfg.CreatedSeriesEventsMaxBatchSizeBytes {
-				level.Debug(t.logger).Log("msg", "publishing batch due to size", "size", batchSize, "partition", t.partitionID)
-				publishBatch()
-			}
-
-		case <-timer.C:
-			level.Debug(t.logger).Log("msg", "publishing batch due to TTL", "partition", t.partitionID)
-			publishBatch()
-		}
-	}
+	return err
 }
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
-	rejected, err := t.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
+	var p *partition
+	t.mtx.RLock()
+	for _, p = range t.partitions {
+		break // take the first one
+	}
+	t.mtx.RUnlock()
+	if p == nil {
+		return nil, errors.New("no partitions available")
+	}
+	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
 	if err != nil {
 		return nil, err
 	}
