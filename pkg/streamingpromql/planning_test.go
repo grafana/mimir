@@ -376,7 +376,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						"type": "UnaryExpression",
 						"details": {
-							"op": 57399,
+							"op": "-",
 							"expressionPosition": [0,12]
 						},
 						"children": [0]
@@ -403,7 +403,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						"type": "AggregateExpression",
 						"details": {
-							"op": 57414,
+							"op": "sum",
 							"expressionPosition": [0,16]
 						},
 						"children": [0]
@@ -430,7 +430,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						"type": "AggregateExpression",
 						"details": {
-							"op": 57414,
+							"op": "sum",
 							"grouping": ["foo"],
 							"expressionPosition": [0,26]
 						},
@@ -458,7 +458,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						"type": "AggregateExpression",
 						"details": {
-							"op": 57414,
+							"op": "sum",
 							"grouping": ["foo"],
 							"without": true,
 							"expressionPosition": [0,31]
@@ -494,7 +494,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						"type": "AggregateExpression",
 						"details": {
-							"op": 57415,
+							"op": "topk",
 							"expressionPosition": [0,20]
 						},
 						"children": [0,1]
@@ -526,7 +526,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						"type": "BinaryExpression",
 						"details": {
-							"op": 57383
+							"op": "+"
 						},
 						"children": [0,1]
 					}
@@ -559,7 +559,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						"type": "BinaryExpression",
 						"details": {
-							"op": 57395
+							"op": "*"
 						},
 						"children": [0,1]
 					}
@@ -592,7 +592,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						"type": "BinaryExpression",
 						"details": {
-							"op": 57388,
+							"op": ">",
 							"returnBool": true
 						},
 						"children": [0,1]
@@ -628,7 +628,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						"type": "BinaryExpression",
 						"details": {
-							"op": 57395,
+							"op": "*",
 							"vectorMatching": {}
 						},
 						"children": [0,1]
@@ -664,7 +664,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						"type": "BinaryExpression",
 						"details": {
-							"op": 57395,
+							"op": "*",
 							"vectorMatching": {
 								"matchingLabels": ["foo"],
 								"on": true
@@ -703,7 +703,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						"type": "BinaryExpression",
 						"details": {
-							"op": 57395,
+							"op": "*",
 							"vectorMatching": {
 								"matchingLabels": ["foo"]
 							}
@@ -741,7 +741,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 					{
 						"type": "BinaryExpression",
 						"details": {
-							"op": 57395,
+							"op": "*",
 							"vectorMatching": {
 								"card": 1,
 								"matchingLabels": ["foo"],
