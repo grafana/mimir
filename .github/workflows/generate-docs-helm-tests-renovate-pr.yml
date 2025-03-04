@@ -1,13 +1,13 @@
 name: Regenerate docs and helm tests
 
-# Configure trigger by pull request
+# configure trigger by pull request
 on:
   pull_request:
     types: [opened, synchronize]
     paths:
       - 'operations/helm/**'
 
-# These permissions are needed to assume roles from GitHub's OIDC.
+# These permissions are needed to assume roles from Github's OIDC.
 permissions:
   contents: read
   id-token: write
@@ -22,11 +22,9 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
       - name: Get build image from Makefile
         id: build_image_step
         run: echo "build_image=$(make print-build-image)" >> "$GITHUB_OUTPUT"
-
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
 
@@ -48,12 +46,6 @@ jobs:
           repo_secrets: |
             APP_ID=mimir-github-bot:app_id
             PRIVATE_KEY=mimir-github-bot:private_key
-
-      # Use the secrets, they will be obfuscated but that way we'll know they're accessible
-      - name: Echo secrets
-        run: |
-          echo "${{ env.APP_ID }}"
-          echo "${{ env.PRIVATE_KEY }}"
 
       # Generate GitHub App Token (Directly in the Job That Needs It)
       - name: Generate GitHub App Token
@@ -101,7 +93,7 @@ jobs:
         id: update_pr
         if: steps.check_updates.outputs.diff != '0'
         run: |
-          echo "Add commit for regenerating helm tests and docs"
-          git add operations/helm/
-          git commit -m "Update build with regenerated helm tests and docs"
-          git push
+            echo "Add commit for regenerating helm tests and docs"
+            git add operations/helm/
+            git commit -m "Update build with regenerated helm tests and docs"
+            git push
