@@ -400,6 +400,8 @@ func newQueryMiddlewares(
 			log,
 			registerer,
 		)
+
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), splitAndCacheMiddleware)
 	}
 
 	queryInstantMiddleware = append(queryInstantMiddleware,
