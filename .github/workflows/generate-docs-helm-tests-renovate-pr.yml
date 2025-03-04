@@ -30,7 +30,6 @@ jobs:
         id: get-secrets
         uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
         with:
-          vault_instance: dev
           repo_secrets: |
             APP_ID=mimir-github-bot:app_id
             PRIVATE_KEY=mimir-github-bot:private_key
@@ -44,8 +43,8 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v1
         with:
-          app-id: ${{ steps.get-secrets.outputs.APP_ID }}
-          private-key: ${{ steps.get-secrets.outputs.PRIVATE_KEY }}
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
