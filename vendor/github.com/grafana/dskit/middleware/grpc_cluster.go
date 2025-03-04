@@ -48,9 +48,9 @@ func handleClusterValidationError(err error, cluster string, method string, inva
 		details := stat.Details()
 		if len(details) == 1 {
 			if errDetails, ok := details[0].(*grpcutil.ErrorDetails); ok {
-				if errDetails.GetCause() == grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL {
+				if errDetails.GetCause() == grpcutil.WRONG_CLUSTER_VALIDATION_LABEL {
 					msg := fmt.Sprintf("request rejected by the server: %s", stat.Message())
-					level.Warn(logger).Log("msg", msg, "method", method, "clusterVerificationLabel", cluster)
+					level.Warn(logger).Log("msg", msg, "method", method, "clusterValidationLabel", cluster)
 					invalidCluster.WithLabelValues(method).Inc()
 					return grpcutil.Status(codes.Internal, msg).Err()
 				}
@@ -78,7 +78,7 @@ func ClusterUnaryServerInterceptor(cluster string, softValidation bool, logger l
 			level.Warn(logger).Log(msgs...)
 		}
 		if err != nil {
-			stat := grpcutil.Status(codes.FailedPrecondition, err.Error(), &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VERIFICATION_LABEL})
+			stat := grpcutil.Status(codes.FailedPrecondition, err.Error(), &grpcutil.ErrorDetails{Cause: grpcutil.WRONG_CLUSTER_VALIDATION_LABEL})
 			return nil, stat.Err()
 		}
 		return handler(ctx, req)
@@ -102,21 +102,21 @@ func checkClusterFromIncomingContext(ctx context.Context, method string, expecte
 		}
 		var wrongClusterErr error
 		if !softValidationEnabled {
-			wrongClusterErr = fmt.Errorf("rejected request with wrong cluster verification label %q - it should be %q", reqCluster, expectedCluster)
+			wrongClusterErr = fmt.Errorf("rejected request with wrong cluster validation label %q - it should be %q", reqCluster, expectedCluster)
 		}
-		return []any{"msg", "request with wrong cluster verification label", "method", method, "clusterVerificationLabel", expectedCluster, "requestClusterVerificationLabel", reqCluster, "softValidation", softValidationEnabled}, wrongClusterErr
+		return []any{"msg", "request with wrong cluster validation label", "method", method, "clusterValidationLabel", expectedCluster, "requestClusterValidationLabel", reqCluster, "softValidation", softValidationEnabled}, wrongClusterErr
 	}
 
-	if errors.Is(err, clusterutil.ErrNoClusterVerificationLabel) {
+	if errors.Is(err, clusterutil.ErrNoClusterValidationLabel) {
 		var emptyClusterErr error
 		if !softValidationEnabled {
-			emptyClusterErr = fmt.Errorf("rejected request with empty cluster verification label - it should be %q", expectedCluster)
+			emptyClusterErr = fmt.Errorf("rejected request with empty cluster validation label - it should be %q", expectedCluster)
 		}
-		return []any{"msg", "request with no cluster verification label", "method", method, "clusterVerificationLabel", expectedCluster, "softValidation", softValidationEnabled}, emptyClusterErr
+		return []any{"msg", "request with no cluster validation label", "method", method, "clusterValidationLabel", expectedCluster, "softValidation", softValidationEnabled}, emptyClusterErr
 	}
 	var rejectedRequestErr error
 	if !softValidationEnabled {
 		rejectedRequestErr = fmt.Errorf("rejected request: %w", err)
 	}
-	return []any{"msg", "detected error during cluster verification label extraction", "method", method, "clusterVerificationLabel", expectedCluster, "softValidation", softValidationEnabled, "err", err}, rejectedRequestErr
+	return []any{"msg", "detected error during cluster validation label extraction", "method", method, "clusterValidationLabel", expectedCluster, "softValidation", softValidationEnabled, "err", err}, rejectedRequestErr
 }

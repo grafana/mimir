@@ -253,6 +253,10 @@ The following features are currently experimental:
 - Server
   - [PROXY protocol](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt) support
     - `-server.proxy-protocol-enabled`
+  - Cross-cluster validation support for gRPC communications
+    - `-server.cluster-validation.label`
+    - `-server.cluster-validation.grpc.enabled`
+    - `-server.cluster-validation.grpc.soft-validation`
 - Kafka-based ingest storage
   - `-ingest-storage.*`
   - `-ingester.partition-ring.*`
