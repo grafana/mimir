@@ -34,6 +34,11 @@ jobs:
           repo_secrets: |
             APP_ID=mimir-github-bot:app_id
             PRIVATE_KEY=mimir-github-bot:private_key
+      # Use the secrets, they will be obfuscated but that way we'll know they're accessible
+      - name: Echo secrets
+        run: |
+          echo "${{ env.APP_ID }}"
+          echo "${{ env.PRIVATE_KEY }}"
       # Generate GitHub App Token
       - name: Generate GitHub App Token
         id: app-token
