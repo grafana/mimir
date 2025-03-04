@@ -33,14 +33,9 @@ jobs:
           repo_secrets: |
             APP_ID=mimir-github-bot:app_id
             PRIVATE_KEY=mimir-github-bot:private_key
-      # Use the secrets, they will be obfuscated but that way we'll know they're accessible
-      - name: Echo secrets
-        run: |
-          echo "${{ env.APP_ID }}"
-          echo "${{ env.PRIVATE_KEY }}"
       # Generate GitHub App Token
       - name: Generate GitHub App Token
-        id: app-token
+        id: token
         uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ env.APP_ID }}
@@ -48,6 +43,7 @@ jobs:
           owner: ${{ github.repository_owner }}
     outputs:
       build_image: ${{ steps.build_image_step.outputs.build_image }}
+      app_token: ${{ steps.token.outputs.token }}
 
   lint_and_update:
     runs-on: ubuntu-latest
@@ -59,7 +55,7 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ needs.prepare.outputs.app_token }}
 
       - name: Run Git Config
         run: |
