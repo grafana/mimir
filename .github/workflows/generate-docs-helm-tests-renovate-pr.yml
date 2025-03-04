@@ -49,13 +49,19 @@ jobs:
             APP_ID=mimir-github-bot:app_id
             PRIVATE_KEY=mimir-github-bot:private_key
 
+      # Use the secrets, they will be obfuscated but that way we'll know they're accessible
+      - name: Echo secrets
+        run: |
+          echo "${{ env.APP_ID }}"
+          echo "${{ env.PRIVATE_KEY }}"
+
       # Generate GitHub App Token (Directly in the Job That Needs It)
       - name: Generate GitHub App Token
         id: token
         uses: actions/create-github-app-token@v1
         with:
-          app-id: ${{ steps.get-secrets.outputs.APP_ID }}
-          private-key: ${{ steps.get-secrets.outputs.PRIVATE_KEY }}
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
       - name: Checkout Repository with App Token
