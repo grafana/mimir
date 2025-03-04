@@ -64,6 +64,7 @@ func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, 
 		)
 		if temporality == pmetric.AggregationTemporalityDelta {
 			lbls = append(lbls, mimirpb.LabelAdapter{Name: "__type__", Value: "delta"})
+			histogram.ResetHint = mimirpb.Histogram_GAUGE // needed so that new chunks aren't created for decreases in delta samples
 		}
 
 		ts, _ := c.getOrCreateTimeSeries(lbls)
