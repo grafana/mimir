@@ -4,16 +4,33 @@ on: pull_request_target
 permissions:
   pull-requests: write
   contents: write
+  id-token: write
 
 jobs:
   dependabot-reviewer:
     runs-on: ubuntu-latest
 
     if: ${{ github.event.pull_request.user.login == 'grafanabot' }}
-    
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Retrieve GitHub App Credentials from Vault
+        id: get-secrets
+        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
+        with:
+          repo_secrets: |
+            APP_ID=mimir-github-bot:app_id
+            PRIVATE_KEY=mimir-github-bot:private_key
+
+      - name: Generate GitHub App Token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
 
       - name: Approve and auto-merge
         id: auto-merge
