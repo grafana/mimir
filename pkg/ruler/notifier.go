@@ -15,7 +15,6 @@ import (
 
 	gklog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
@@ -142,7 +141,7 @@ func (rn *rulerNotifier) stop() {
 
 // Builds a Prometheus config.Config from a ruler.Config with just the required
 // options to configure notifications to Alertmanager.
-func buildNotifierConfig(rulerConfig *Config, resolver cache.AddressProvider, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
+func buildNotifierConfig(rulerConfig *Config, resolver AddressProvider, rmi discovery.RefreshMetricsManager) (*config.Config, error) {
 	if rulerConfig.AlertmanagerURL == "" {
 		// no AM URLs were provided, so we can just return a default config without errors
 		return &config.Config{}, nil

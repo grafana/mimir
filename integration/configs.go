@@ -64,13 +64,6 @@ receivers:
       - bar=baz
 receivers:
   - name: test
-inhibit_rules:
-  - source_matchers:
-    - baz=qux
-    target_matchers:
-    - qux=corge
-    equal:
-    - jorge
 `
 
 	mimirAlertmanagerUserUTF8ConfigYaml = `route:
@@ -82,13 +75,6 @@ inhibit_rules:
       - bar🙂=baz
 receivers:
   - name: test
-inhibit_rules:
-  - source_matchers:
-    - baz🙂=qux
-    target_matchers:
-    - qux🙂=corge
-    equal:
-    - jorge🙂
 `
 
 	mimirRulerUserConfigYaml = `groups:
