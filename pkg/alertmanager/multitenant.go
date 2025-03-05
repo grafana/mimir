@@ -1083,6 +1083,11 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 	if _, ok := am.lastRequestTime.Load(userID); ok {
 		userAM, err = am.startAlertmanager(req.Context(), userID)
 		if err != nil {
+			if errors.Is(err, errNotUploadingFallback) {
+				level.Warn(am.logger).Log("msg", "not initializing Alertmanager", "user", userID, "err", err)
+				http.Error(w, "Not initializing the Alertmanager", http.StatusNotAcceptable)
+				return
+			}
 			level.Error(am.logger).Log("msg", "unable to initialize the Alertmanager", "user", userID, "err", err)
 			http.Error(w, "Failed to initialize the Alertmanager", http.StatusInternalServerError)
 			return
