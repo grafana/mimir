@@ -405,8 +405,8 @@ func TestIngester_Push(t *testing.T) {
 		expectedErr               error
 		expectedIngested          model.Matrix
 		expectedMetadataIngested  []*mimirpb.MetricMetadata
-		expectedExemplarsIngested  []mimirpb.CustomTimeSeries
-		expectedExemplarsDropped   []mimirpb.CustomTimeSeries
+		expectedExemplarsIngested []mimirpb.CustomTimeSeries
+		expectedExemplarsDropped  []mimirpb.CustomTimeSeries
 		expectedMetrics           string
 		additionalMetrics         []string
 		disableActiveSeries       bool
