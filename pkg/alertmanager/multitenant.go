@@ -1081,7 +1081,7 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 
 	// If the Alertmanager initialization was skipped, start the Alertmanager.
 	if _, ok := am.lastRequestTime.Load(userID); ok {
-		userAM, err = am.startAlertmanager(req.Context(), userID)
+		userAM, err = am.startAlertmanager(userID)
 		if err != nil {
 			if errors.Is(err, errNotUploadingFallback) {
 				level.Warn(am.logger).Log("msg", "not initializing Alertmanager", "user", userID, "err", err)
@@ -1121,22 +1121,15 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 }
 
 // startAlertmanager will start the Alertmanager for a tenant, using the fallback configuration if no config is found.
-func (am *MultitenantAlertmanager) startAlertmanager(ctx context.Context, userID string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) startAlertmanager(userID string) (*Alertmanager, error) {
 	// Avoid starting the Alertmanager for tenants not owned by this instance.
 	if !am.isUserOwned(userID) {
+		am.lastRequestTime.Delete(userID)
 		return nil, errors.Wrap(errNotUploadingFallback, "user not owned by this instance")
 	}
 
-	cfg, err := am.store.GetAlertConfig(ctx, userID)
-	if err != nil {
-		if !errors.Is(err, alertspb.ErrNotFound) {
-			return nil, errors.Wrap(err, "failed to check for existing configuration")
-		}
-		cfg = alertspb.ToProto("", nil, userID)
-	}
-
 	amConfig := amConfig{
-		AlertConfigDesc: cfg,
+		AlertConfigDesc: alertspb.ToProto("", nil, userID),
 		tmplExternalURL: am.cfg.ExternalURL.URL,
 	}
 	if err := am.setConfig(amConfig); err != nil {
