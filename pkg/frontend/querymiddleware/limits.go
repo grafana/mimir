@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -250,6 +251,9 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	response, err := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 			if err := sem.Acquire(ctx, 1); err != nil {
+				if errors.Is(err, ctx.Err()) {
+					err = context.Cause(ctx)
+				}
 				return nil, fmt.Errorf("could not acquire work: %w", err)
 			}
 			defer sem.Release(1)
