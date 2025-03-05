@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"strconv"
 	"sync"
 	"time"
@@ -26,6 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -336,6 +338,59 @@ losingPartitions:
 		"unmarked_as_lost", unmarkedAsLost,
 	)
 	return nil
+}
+
+// PrepareInstanceRingDownscaleHandler prepares the instance ring entry for downscaling.
+// It can mark usage-tracker as read-only or set it back to read-write mode.
+//
+// Note that a usage-tracker in read-only mode doesn't mean it's in read-only,
+// it's just a signal for other instances to take ownership of its partitions.
+//
+// Following methods are supported:
+//
+//   - GET
+//     Returns timestamp when instance ring entry was switched to read-only mode, or 0, if ring entry is not in read-only mode.
+//
+//   - POST
+//     Switches the instance ring entry to read-only mode (if it isn't yet), and returns the timestamp when the switch to
+//     read-only mode happened.
+//
+//   - DELETE
+//     Sets ingester ring entry back to read-write mode.
+func (i *UsageTracker) PrepareInstanceRingDownscaleHandler(w http.ResponseWriter, r *http.Request) {
+	// Don't allow callers to change the shutdown configuration while we're in the middle
+	// of starting or shutting down.
+	if i.State() != services.Running {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPost:
+		// Calling this repeatedly doesn't update the read-only timestamp, if instance is already in read-only mode.
+		err := i.instanceLifecycler.ChangeReadOnlyState(r.Context(), true)
+		if err != nil {
+			level.Error(i.logger).Log("msg", "failed to set ingester to read-only mode in the ring", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+	case http.MethodDelete:
+		// Clear the read-only status.
+		err := i.instanceLifecycler.ChangeReadOnlyState(r.Context(), false)
+		if err != nil {
+			level.Error(i.logger).Log("msg", "failed to clear ingester's read-only mode", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	ro, rots := i.instanceLifecycler.GetReadOnlyState()
+	if ro {
+		util.WriteJSONResponse(w, map[string]any{"timestamp": rots.Unix()})
+	} else {
+		util.WriteJSONResponse(w, map[string]any{"timestamp": 0})
+	}
 }
 
 // stop implements services.StoppingFn.

@@ -508,6 +508,7 @@ func (a *API) RegisterOverridesExporter(oe *exporter.OverridesExporter) {
 
 func (a *API) RegisterUsageTracker(t *usagetracker.UsageTracker) {
 	usagetrackerpb.RegisterUsageTrackerServer(a.server.GRPC, t)
+	a.RegisterRoute("/usage-tracker/prepare-instance-ring-downscale", http.HandlerFunc(t.PrepareInstanceRingDownscaleHandler), false, true, "GET", "POST", "DELETE")
 }
 
 func (a *API) RegisterUsageTrackerInstanceRing(instanceRingHandler http.Handler) {
