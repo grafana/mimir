@@ -1724,6 +1724,25 @@ How to **investigate**:
 
 - Check the block-builder logs to see what its pods have been busy with. The block-builder logs the `start consuming` and `done consuming` log messages, that mark per-partition conume-cycles. These log records include the details about the cycle, the Kafka topic's offsets, etc. Troubleshoot based on that.
 
+Data recovery / temporary mitigation:
+
+While the block builder is still getting mature, ingester is likely still uploading blocks to a backup bucket (if you name your bucket as `*-blocks`, the backup bucket could be `*-ingester-blocks`).
+
+If the block builder permanently missed consuming some portion of the partition, or there is an ongoing issue preventing it from consuming, try the following.
+
+If there is a backup `*-ingester-blocks` bucket
+
+1. Firstly, reconfigure ingesters to upload blocks to the main `*-blocks` bucket.
+2. Use `copyblocks` tool from Mimir to copy over the blocks from the backup bucket `*-ingester-blocks` to the main `*-blocks` bucket for the duration block builder did not produce blocks. It is advised to have the start time for copying blocks to be few hours prior (maybe 4hrs) to when the issue started.
+3. Fix the issue in block builder. Let it catch up with the backlog. Once it catches up, you can switch back ingesters to the backup bucket.
+
+If there is no backup bucket that ingester is uploading to
+
+- Increase the retention of the Kafka topic to buy some time.
+- Spin up a new set of block builder with an older version with a **new kafka topic name**, so that it does not conflict with the existing block builders. Choose the last version where no issue was seen; in most cases it will be the version before the one that caused the alert.
+- If the `block-builder.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block builders start back far enough to cover the missing data.
+- If there is any corrupt data in the partition that is hard failing the block builder, then this solution will not work. Keep increasing the kafka topic retention until the issue is resolved and block builder has caught up.
+
 ### MimirBlockBuilderLagging
 
 This alert fires when the block-builder instances report a large number of unprocessed records in the Kafka partitions.
@@ -1740,6 +1759,8 @@ How to **investigate**:
 - Check if the per-partition lag, reported by the `cortex_blockbuilder_consumer_lag_records` metric, has been growing over the past hours.
 - Explore the block-builder logs for any errors reported while it processed the partition.
 
+Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
+
 ### MimirBlockBuilderCompactAndUploadFailed
 
 How it **works**:
@@ -1751,6 +1772,8 @@ How it **works**:
 How to **investigate**:
 
 - Explore the block-builder logs to check what errors are there.
+
+Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
 
 ## Errors catalog
 
