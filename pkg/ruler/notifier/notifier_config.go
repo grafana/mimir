@@ -20,7 +20,7 @@ var DefaultAlertmanagerClientConfig = AlertmanagerClientConfig{
 }
 
 type AlertmanagerClientConfig struct {
-	AlertmanagerURL string `yaml:"alertmanager_url"`
+	AlertmanagerURL string `yaml:"alertmanager_url" doc:"nocli"`
 	NotifierConfig  Config `yaml:",inline" json:",inline"`
 }
 

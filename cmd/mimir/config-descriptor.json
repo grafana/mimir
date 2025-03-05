@@ -5138,10 +5138,9 @@
               "kind": "field",
               "name": "alertmanager_url",
               "required": false,
-              "desc": "Per-tenant alertmanager client configuration. If not supplied, the tenant's notifications will be sent to the ruler-wide default.",
+              "desc": "",
               "fieldValue": null,
-              "fieldDefaultValue": "{\"AlertmanagerURL\":\"\",\"NotifierConfig\":{\"TLSEnabled\":false,\"TLS\":{\"CertPath\":\"\",\"KeyPath\":\"\",\"CAPath\":\"\",\"ServerName\":\"\",\"InsecureSkipVerify\":false,\"CipherSuites\":\"\",\"MinVersion\":\"\",\"Reader\":null},\"BasicAuth\":{\"Username\":\"\",\"Password\":{}},\"OAuth2\":{\"ClientID\":\"\",\"ClientSecret\":{},\"TokenURL\":\"\",\"Scopes\":null,\"EndpointParams\":{}},\"ProxyURL\":\"\"}}",
-              "fieldFlag": "ruler.alertmanager-client-config",
+              "fieldDefaultValue": "",
               "fieldType": "string"
             },
             {
