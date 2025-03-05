@@ -1,5 +1,5 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index c58e55a61d..3d3b15da3b 100644
+index 8d2f163db4..3d3b15da3b 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
 @@ -275,9 +275,6 @@ func (MetadataRW2_MetricType) EnumDescriptor() ([]byte, []int) {
@@ -113,7 +113,7 @@ index c58e55a61d..3d3b15da3b 100644
  				return err
  			}
  			iNdEx = postIndex
-@@ -7580,16 +7549,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
+@@ -7580,15 +7549,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
  	if iNdEx > l {
  		return io.ErrUnexpectedEOF
  	}
@@ -129,7 +129,7 @@ index c58e55a61d..3d3b15da3b 100644
  	return nil
  }
  func (m *WriteResponse) Unmarshal(dAtA []byte) error {
-@@ -7837,11 +7796,9 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
+@@ -7836,11 +7796,9 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -144,7 +144,7 @@ index c58e55a61d..3d3b15da3b 100644
  			}
  			iNdEx = postIndex
  		case 4:
-@@ -11150,10 +11107,6 @@ func (m *WriteRequestRW2) Unmarshal(dAtA []byte) error {
+@@ -11149,10 +11107,6 @@ func (m *WriteRequestRW2) Unmarshal(dAtA []byte) error {
  	return nil
  }
  func (m *TimeSeriesRW2) Unmarshal(dAtA []byte) error {
@@ -155,7 +155,7 @@ index c58e55a61d..3d3b15da3b 100644
  	l := len(dAtA)
  	iNdEx := 0
  	for iNdEx < l {
-@@ -11181,7 +11137,22 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
+@@ -11183,7 +11137,22 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
  		switch fieldNum {
  		case 1:
  			if wireType == 0 {
@@ -179,7 +179,7 @@ index c58e55a61d..3d3b15da3b 100644
  			} else if wireType == 2 {
  				var packedLen int
  				for shift := uint(0); ; shift += 7 {
-@@ -11219,14 +11187,9 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
+@@ -11218,14 +11187,9 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
  					}
  				}
  				elementCount = count
@@ -196,7 +196,7 @@ index c58e55a61d..3d3b15da3b 100644
  				for iNdEx < postIndex {
  					var v uint32
  					for shift := uint(0); ; shift += 7 {
-@@ -11243,27 +11206,7 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
+@@ -11242,27 +11206,7 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
  							break
  						}
  					}
@@ -225,7 +225,7 @@ index c58e55a61d..3d3b15da3b 100644
  				}
  			} else {
  				return fmt.Errorf("proto: wrong wireType = %d for field LabelsRefs", wireType)
-@@ -11365,11 +11308,9 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
+@@ -11364,11 +11308,9 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -240,7 +240,7 @@ index c58e55a61d..3d3b15da3b 100644
  			}
  			iNdEx = postIndex
  		case 5:
-@@ -11401,7 +11342,7 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
+@@ -11400,7 +11342,7 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
  			if postIndex > l {
  				return io.ErrUnexpectedEOF
  			}
@@ -249,7 +249,7 @@ index c58e55a61d..3d3b15da3b 100644
  				return err
  			}
  			iNdEx = postIndex
-@@ -11446,10 +11387,6 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
+@@ -11445,10 +11387,6 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
  	return nil
  }
  func (m *ExemplarRW2) Unmarshal(dAtA []byte) error {
@@ -260,7 +260,7 @@ index c58e55a61d..3d3b15da3b 100644
  	l := len(dAtA)
  	iNdEx := 0
  	for iNdEx < l {
-@@ -11480,7 +11417,22 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
+@@ -11479,7 +11417,22 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
  		switch fieldNum {
  		case 1:
  			if wireType == 0 {
@@ -284,7 +284,7 @@ index c58e55a61d..3d3b15da3b 100644
  			} else if wireType == 2 {
  				var packedLen int
  				for shift := uint(0); ; shift += 7 {
-@@ -11515,13 +11467,9 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
+@@ -11514,13 +11467,9 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
  					}
  				}
  				elementCount = count
@@ -300,7 +300,7 @@ index c58e55a61d..3d3b15da3b 100644
  				for iNdEx < postIndex {
  					var v uint32
  					for shift := uint(0); ; shift += 7 {
-@@ -11538,20 +11486,7 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
+@@ -11537,20 +11486,7 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
  							break
  						}
  					}
@@ -322,7 +322,7 @@ index c58e55a61d..3d3b15da3b 100644
  				}
  			} else {
  				return fmt.Errorf("proto: wrong wireType = %d for field LabelsRefs", wireType)
-@@ -11571,7 +11506,7 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
+@@ -11570,7 +11506,7 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
  			if wireType != 0 {
  				return fmt.Errorf("proto: wrong wireType = %d for field Timestamp", wireType)
  			}
@@ -331,7 +331,7 @@ index c58e55a61d..3d3b15da3b 100644
  			for shift := uint(0); ; shift += 7 {
  				if shift >= 64 {
  					return ErrIntOverflowMimir
-@@ -11581,7 +11516,7 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
+@@ -11580,7 +11516,7 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
  				}
  				b := dAtA[iNdEx]
  				iNdEx++
@@ -340,7 +340,7 @@ index c58e55a61d..3d3b15da3b 100644
  				if b < 0x80 {
  					break
  				}
-@@ -11608,16 +11543,6 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
+@@ -11607,16 +11543,6 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
  	return nil
  }
  func (m *MetadataRW2) Unmarshal(dAtA []byte) error {
@@ -357,7 +357,7 @@ index c58e55a61d..3d3b15da3b 100644
  	l := len(dAtA)
  	iNdEx := 0
  	for iNdEx < l {
-@@ -11650,7 +11575,7 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11649,7 +11575,7 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  			if wireType != 0 {
  				return fmt.Errorf("proto: wrong wireType = %d for field Type", wireType)
  			}
@@ -366,7 +366,7 @@ index c58e55a61d..3d3b15da3b 100644
  			for shift := uint(0); ; shift += 7 {
  				if shift >= 64 {
  					return ErrIntOverflowMimir
-@@ -11660,23 +11585,16 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11659,23 +11585,16 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  				}
  				b := dAtA[iNdEx]
  				iNdEx++
@@ -392,7 +392,7 @@ index c58e55a61d..3d3b15da3b 100644
  			for shift := uint(0); ; shift += 7 {
  				if shift >= 64 {
  					return ErrIntOverflowMimir
-@@ -11686,20 +11604,16 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11685,20 +11604,16 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  				}
  				b := dAtA[iNdEx]
  				iNdEx++
@@ -415,7 +415,7 @@ index c58e55a61d..3d3b15da3b 100644
  			for shift := uint(0); ; shift += 7 {
  				if shift >= 64 {
  					return ErrIntOverflowMimir
-@@ -11709,15 +11623,11 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11708,15 +11623,11 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  				}
  				b := dAtA[iNdEx]
  				iNdEx++
@@ -432,7 +432,7 @@ index c58e55a61d..3d3b15da3b 100644
  		default:
  			iNdEx = preIndex
  			skippy, err := skipMimir(dAtA[iNdEx:])
-@@ -11737,18 +11647,6 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11736,18 +11647,6 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  	if iNdEx > l {
  		return io.ErrUnexpectedEOF
  	}
