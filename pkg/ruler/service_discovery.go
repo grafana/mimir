@@ -42,7 +42,7 @@ type dnsServiceDiscovery struct {
 	host            string
 }
 
-func dnsSD(rulerConfig *Config, resolver AddressProvider, qType dns.QType, url *url.URL, rmi discovery.RefreshMetricsInstantiator) discovery.Config {
+func dnsSD(rulerConfig Config, resolver AddressProvider, qType dns.QType, url *url.URL, rmi discovery.RefreshMetricsInstantiator) discovery.Config {
 	return dnsServiceDiscovery{
 		resolver:        resolver,
 		refreshInterval: rulerConfig.AlertmanagerRefreshInterval,
