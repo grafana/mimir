@@ -4,11 +4,20 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"hash/fnv"
 
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/mimir/pkg/util"
 )
+
+var DefaultAlertmanagerClientConfig = AlertmanagerClientConfig{
+	NotifierConfig: Config{
+		OAuth2: OAuth2Config{
+			EndpointParams: flagext.NewLimitsMap[string](nil),
+		},
+	},
+}
 
 type AlertmanagerClientConfig struct {
 	AlertmanagerURL string `yaml:"alertmanager_url"`
@@ -30,6 +39,21 @@ func (acc *AlertmanagerClientConfig) Set(s string) error {
 	}
 	*acc = new
 	return nil
+}
+
+// Hash calculates a cryptographically weak, insecure hash of the configuration.
+func (acc *AlertmanagerClientConfig) Hash() uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(acc.String()))
+	return h.Sum64()
+}
+
+func (acc *AlertmanagerClientConfig) Equal(other AlertmanagerClientConfig) bool {
+	return acc.Hash() == other.Hash()
+}
+
+func (acc *AlertmanagerClientConfig) IsDefault() bool {
+	return acc.Equal(DefaultAlertmanagerClientConfig)
 }
 
 type Config struct {
