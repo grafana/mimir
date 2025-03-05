@@ -35,6 +35,9 @@ type DefaultMultiTenantManager struct {
 	cfg            Config
 	notifierCfg    *config.Config
 	managerFactory ManagerFactory
+	limits         RulesLimits
+	dnsResolver    AddressProvider
+	refreshMetrics discovery.RefreshMetricsManager
 
 	mapper *mapper
 
@@ -59,7 +62,7 @@ type DefaultMultiTenantManager struct {
 	rulerIsRunning atomic.Bool
 }
 
-func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider) (*DefaultMultiTenantManager, error) {
+func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg prometheus.Registerer, logger log.Logger, dnsResolver AddressProvider, limits RulesLimits) (*DefaultMultiTenantManager, error) {
 	refreshMetrics := discovery.NewRefreshMetrics(reg)
 	ncfg, err := buildNotifierConfig(cfg.AlertmanagerURL, cfg.Notifier, dnsResolver, cfg.NotificationTimeout, cfg.AlertmanagerRefreshInterval, refreshMetrics)
 	if err != nil {
@@ -75,6 +78,9 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 		cfg:                cfg,
 		notifierCfg:        ncfg,
 		managerFactory:     managerFactory,
+		limits:             limits,
+		dnsResolver:        dnsResolver,
+		refreshMetrics:     refreshMetrics,
 		notifiers:          map[string]*rulerNotifier{},
 		mapper:             newMapper(cfg.RulePath, logger),
 		userManagers:       map[string]RulesManager{},
@@ -317,8 +323,17 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 
 	n.run()
 
+	notifierCfg := r.notifierCfg
+	userSpecificCfg := r.limits.RulerAlertmanagerClientConfig(userID)
+	if !userSpecificCfg.IsDefault() {
+		notifierCfg, err = buildNotifierConfig(nil, r.dnsResolver, r.refreshMetrics)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// This should never fail, unless there's a programming mistake.
-	if err := n.applyConfig(r.notifierCfg); err != nil {
+	if err := n.applyConfig(notifierCfg); err != nil {
 		return nil, err
 	}
 
