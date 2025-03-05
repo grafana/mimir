@@ -1136,14 +1136,8 @@ func TestRulerAlertmanagerClientConfig(t *testing.T) {
 		expectedConfig notifier.AlertmanagerClientConfig
 	}{
 		"no override provided": {
-			baseYAML: ``,
-			expectedConfig: notifier.AlertmanagerClientConfig{
-				NotifierConfig: notifier.Config{
-					OAuth2: notifier.OAuth2Config{
-						EndpointParams: flagext.NewLimitsMap[string](nil),
-					},
-				},
-			},
+			baseYAML:       ``,
+			expectedConfig: notifier.DefaultAlertmanagerClientConfig,
 		},
 		"no user specific client config": {
 			baseYAML: `
@@ -1234,6 +1228,7 @@ user1:
 			require.NoError(t, err)
 
 			require.Equal(t, tt.expectedConfig, ov.RulerAlertmanagerClientConfig("user1"))
+			require.True(t, tt.expectedConfig.Equal(ov.RulerAlertmanagerClientConfig("user1")))
 		})
 	}
 }
