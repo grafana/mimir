@@ -2,6 +2,7 @@
 # Provenance-includes-location: https://github.com/cortexproject/cortex/build-image/Dockerfile
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
+# Testing workflow
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 as kustomize
 FROM alpine/helm:3.14.4 as helm
