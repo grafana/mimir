@@ -523,7 +523,7 @@ func (a *csAttempt) newStream() error {
 	}
 	a.transportStream = s
 	a.ctx = s.Context()
-	a.p = &parser{r: s, bufferPool: a.cs.cc.dopts.copts.BufferPool}
+	a.parser = &parser{r: s, bufferPool: a.cs.cc.dopts.copts.BufferPool}
 	return nil
 }
 
@@ -589,12 +589,12 @@ type replayOp struct {
 // csAttempt implements a single transport stream attempt within a
 // clientStream.
 type csAttempt struct {
-	ctx        context.Context
-	cs         *clientStream
-	t          transport.ClientTransport
-	s          *transport.ClientStream
-	p          *parser
-	pickResult balancer.PickResult
+	ctx             context.Context
+	cs              *clientStream
+	transport       transport.ClientTransport
+	transportStream *transport.ClientStream
+	parser          *parser
+	pickResult      balancer.PickResult
 
 	finished        bool
 	decompressorV0  Decompressor
@@ -910,7 +910,7 @@ func (cs *clientStream) SendMsg(m any) (err error) {
 	}
 
 	// load hdr, payload, data
-	hdr, data, payload, pf, err := prepareMsg(m, cs.codec, cs.cp, cs.comp, cs.cc.dopts.copts.BufferPool)
+	hdr, data, payload, pf, err := prepareMsg(m, cs.codec, cs.compressorV0, cs.compressorV1, cs.cc.dopts.copts.BufferPool)
 	if err != nil {
 		return err
 	}
@@ -998,7 +998,7 @@ func (cs *clientStream) CloseSend() error {
 	}
 	cs.sentLast = true
 	op := func(a *csAttempt) error {
-		a.s.Write(nil, nil, &transport.WriteOptions{Last: true})
+		a.transportStream.Write(nil, nil, &transport.WriteOptions{Last: true})
 		// Always return nil; io.EOF is the only error that might make sense
 		// instead, but there is no need to signal the client to call RecvMsg
 		// as the only use left for the stream after CloseSend is to call
@@ -1093,7 +1093,7 @@ func (a *csAttempt) sendMsg(m any, hdr []byte, payld mem.BufferSlice, dataLength
 		}
 		a.mu.Unlock()
 	}
-	if err := a.s.Write(hdr, payld, &transport.WriteOptions{Last: !cs.desc.ClientStreams}); err != nil {
+	if err := a.transportStream.Write(hdr, payld, &transport.WriteOptions{Last: !cs.desc.ClientStreams}); err != nil {
 		if !cs.desc.ClientStreams {
 			// For non-client-streaming RPCs, we return nil instead of EOF on error
 			// because the generated code requires it.  finish is not called; RecvMsg()
@@ -1133,7 +1133,7 @@ func (a *csAttempt) recvMsg(m any, payInfo *payloadInfo) (err error) {
 		// Only initialize this state once per stream.
 		a.decompressorSet = true
 	}
-	if err := recv(a.p, cs.codec, a.s, a.dc, m, *cs.callInfo.maxReceiveMessageSize, payInfo, a.decomp, false); err != nil {
+	if err := recv(a.parser, cs.codec, a.transportStream, a.decompressorV0, m, *cs.callInfo.maxReceiveMessageSize, payInfo, a.decompressorV1, false); err != nil {
 		if err == io.EOF {
 			if statusErr := a.transportStream.Status().Err(); statusErr != nil {
 				return statusErr
@@ -1166,8 +1166,8 @@ func (a *csAttempt) recvMsg(m any, payInfo *payloadInfo) (err error) {
 	}
 	// Special handling for non-server-stream rpcs.
 	// This recv expects EOF or errors, so we don't collect inPayload.
-	if err := recv(a.p, cs.codec, a.s, a.dc, m, *cs.callInfo.maxReceiveMessageSize, nil, a.decomp, false); err == io.EOF {
-		return a.s.Status().Err() // non-server streaming Recv returns nil on success
+	if err := recv(a.parser, cs.codec, a.transportStream, a.decompressorV0, m, *cs.callInfo.maxReceiveMessageSize, nil, a.decompressorV1, false); err == io.EOF {
+		return a.transportStream.Status().Err() // non-server streaming Recv returns nil on success
 	} else if err != nil {
 		return toRPCErr(err)
 	}
@@ -1186,9 +1186,9 @@ func (a *csAttempt) finish(err error) {
 		err = nil
 	}
 	var tr metadata.MD
-	if a.s != nil {
-		a.s.Close(err)
-		tr = a.s.Trailer()
+	if a.transportStream != nil {
+		a.transportStream.Close(err)
+		tr = a.transportStream.Trailer()
 	}
 
 	if a.pickResult.Done != nil {
@@ -1317,8 +1317,8 @@ func newNonRetryClientStream(ctx context.Context, desc *StreamDesc, method strin
 		err = toRPCErr(err)
 		return nil, err
 	}
-	as.s = s
-	as.p = &parser{r: s, bufferPool: ac.dopts.copts.BufferPool}
+	as.transportStream = s
+	as.parser = &parser{r: s, bufferPool: ac.dopts.copts.BufferPool}
 	ac.incrCallsStarted()
 	if desc != unaryStreamDesc {
 		// Listen on stream context to cleanup when the stream context is
@@ -1344,25 +1344,27 @@ func newNonRetryClientStream(ctx context.Context, desc *StreamDesc, method strin
 }
 
 type addrConnStream struct {
-	s         *transport.ClientStream
-	ac        *addrConn
-	callHdr   *transport.CallHdr
-	cancel    context.CancelFunc
-	opts      []CallOption
-	callInfo  *callInfo
-	t         transport.ClientTransport
-	ctx       context.Context
-	sentLast  bool
-	desc      *StreamDesc
-	codec     baseCodec
-	cp        Compressor
-	comp      encoding.Compressor
-	decompSet bool
-	dc        Decompressor
-	decomp    encoding.Compressor
-	p         *parser
-	mu        sync.Mutex
-	finished  bool
+	transportStream  *transport.ClientStream
+	ac               *addrConn
+	callHdr          *transport.CallHdr
+	cancel           context.CancelFunc
+	opts             []CallOption
+	callInfo         *callInfo
+	transport        transport.ClientTransport
+	ctx              context.Context
+	sentLast         bool
+	desc             *StreamDesc
+	codec            baseCodec
+	sendCompressorV0 Compressor
+	sendCompressorV1 encoding.Compressor
+	decompressorSet  bool
+	decompressorV0   Decompressor
+	decompressorV1   encoding.Compressor
+	parser           *parser
+
+	// mu guards finished and is held for the entire finish method.
+	mu       sync.Mutex
+	finished bool
 }
 
 func (as *addrConnStream) Header() (metadata.MD, error) {
@@ -1384,7 +1386,7 @@ func (as *addrConnStream) CloseSend() error {
 	}
 	as.sentLast = true
 
-	as.s.Write(nil, nil, &transport.WriteOptions{Last: true})
+	as.transportStream.Write(nil, nil, &transport.WriteOptions{Last: true})
 	// Always return nil; io.EOF is the only error that might make sense
 	// instead, but there is no need to signal the client to call RecvMsg
 	// as the only use left for the stream after CloseSend is to call
@@ -1415,7 +1417,7 @@ func (as *addrConnStream) SendMsg(m any) (err error) {
 	}
 
 	// load hdr, payload, data
-	hdr, data, payload, pf, err := prepareMsg(m, as.codec, as.cp, as.comp, as.ac.dopts.copts.BufferPool)
+	hdr, data, payload, pf, err := prepareMsg(m, as.codec, as.sendCompressorV0, as.sendCompressorV1, as.ac.dopts.copts.BufferPool)
 	if err != nil {
 		return err
 	}
@@ -1434,7 +1436,7 @@ func (as *addrConnStream) SendMsg(m any) (err error) {
 		return status.Errorf(codes.ResourceExhausted, "trying to send message larger than max (%d vs. %d)", payload.Len(), *as.callInfo.maxSendMessageSize)
 	}
 
-	if err := as.s.Write(hdr, payload, &transport.WriteOptions{Last: !as.desc.ClientStreams}); err != nil {
+	if err := as.transportStream.Write(hdr, payload, &transport.WriteOptions{Last: !as.desc.ClientStreams}); err != nil {
 		if !as.desc.ClientStreams {
 			// For non-client-streaming RPCs, we return nil instead of EOF on error
 			// because the generated code requires it.  finish is not called; RecvMsg()
@@ -1471,7 +1473,7 @@ func (as *addrConnStream) RecvMsg(m any) (err error) {
 		// Only initialize this state once per stream.
 		as.decompressorSet = true
 	}
-	if err := recv(as.p, as.codec, as.s, as.dc, m, *as.callInfo.maxReceiveMessageSize, nil, as.decomp, false); err != nil {
+	if err := recv(as.parser, as.codec, as.transportStream, as.decompressorV0, m, *as.callInfo.maxReceiveMessageSize, nil, as.decompressorV1, false); err != nil {
 		if err == io.EOF {
 			if statusErr := as.transportStream.Status().Err(); statusErr != nil {
 				return statusErr
@@ -1488,8 +1490,8 @@ func (as *addrConnStream) RecvMsg(m any) (err error) {
 
 	// Special handling for non-server-stream rpcs.
 	// This recv expects EOF or errors, so we don't collect inPayload.
-	if err := recv(as.p, as.codec, as.s, as.dc, m, *as.callInfo.maxReceiveMessageSize, nil, as.decomp, false); err == io.EOF {
-		return as.s.Status().Err() // non-server streaming Recv returns nil on success
+	if err := recv(as.parser, as.codec, as.transportStream, as.decompressorV0, m, *as.callInfo.maxReceiveMessageSize, nil, as.decompressorV1, false); err == io.EOF {
+		return as.transportStream.Status().Err() // non-server streaming Recv returns nil on success
 	} else if err != nil {
 		return toRPCErr(err)
 	}
@@ -1507,8 +1509,8 @@ func (as *addrConnStream) finish(err error) {
 		// Ending a stream with EOF indicates a success.
 		err = nil
 	}
-	if as.s != nil {
-		as.s.Close(err)
+	if as.transportStream != nil {
+		as.transportStream.Close(err)
 	}
 
 	if err != nil {
@@ -1683,7 +1685,7 @@ func (ss *serverStream) SendMsg(m any) (err error) {
 	}
 
 	// load hdr, payload, data
-	hdr, data, payload, pf, err := prepareMsg(m, ss.codec, ss.cp, ss.comp, ss.p.bufferPool)
+	hdr, data, payload, pf, err := prepareMsg(m, ss.codec, ss.compressorV0, ss.compressorV1, ss.p.bufferPool)
 	if err != nil {
 		return err
 	}
@@ -1764,7 +1766,7 @@ func (ss *serverStream) RecvMsg(m any) (err error) {
 		payInfo = &payloadInfo{}
 		defer payInfo.free()
 	}
-	if err := recv(ss.p, ss.codec, ss.s, ss.dc, m, ss.maxReceiveMessageSize, payInfo, ss.decomp, true); err != nil {
+	if err := recv(ss.p, ss.codec, ss.s, ss.decompressorV0, m, ss.maxReceiveMessageSize, payInfo, ss.decompressorV1, true); err != nil {
 		if err == io.EOF {
 			if len(ss.binlogs) != 0 {
 				chc := &binarylog.ClientHalfClose{}

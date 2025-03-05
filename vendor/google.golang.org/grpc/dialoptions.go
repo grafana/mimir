@@ -687,10 +687,12 @@ func defaultDialOptions() dialOptions {
 			UserAgent:       grpcUA,
 			BufferPool:      mem.DefaultBufferPool(),
 		},
-		bs:              internalbackoff.DefaultExponential,
-		idleTimeout:     30 * time.Minute,
-		defaultScheme:   "dns",
-		maxCallAttempts: defaultMaxCallAttempts,
+		bs:                       internalbackoff.DefaultExponential,
+		idleTimeout:              30 * time.Minute,
+		defaultScheme:            "dns",
+		maxCallAttempts:          defaultMaxCallAttempts,
+		useProxy:                 true,
+		enableLocalDNSResolution: false,
 	}
 }
 
