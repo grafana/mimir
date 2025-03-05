@@ -114,6 +114,9 @@ std.manifestYamlDoc({
       publishedHttpPort: 8010,
       extraArguments: [
         '-usage-tracker.instance-ring.instance-availability-zone=zone-a',
+        '-usage-tracker.partitions=8',
+        '-usage-tracker.partition-reconcile-interval=5s',
+        '-usage-tracker.lost-partitions-shutdown-grace-period=5s',
       ],
     }),
     'usage-tracker-zone-a-1': mimirService({
@@ -122,6 +125,9 @@ std.manifestYamlDoc({
       publishedHttpPort: 8011,
       extraArguments: [
         '-usage-tracker.instance-ring.instance-availability-zone=zone-a',
+        '-usage-tracker.partitions=8',
+        '-usage-tracker.partition-reconcile-interval=5s',
+        '-usage-tracker.lost-partitions-shutdown-grace-period=5s',
       ],
     }),
     'usage-tracker-zone-b-0': mimirService({
@@ -130,6 +136,9 @@ std.manifestYamlDoc({
       publishedHttpPort: 8012,
       extraArguments: [
         '-usage-tracker.instance-ring.instance-availability-zone=zone-b',
+        '-usage-tracker.partitions=8',
+        '-usage-tracker.partition-reconcile-interval=5s',
+        '-usage-tracker.lost-partitions-shutdown-grace-period=5s',
       ],
     }),
   },

@@ -3,7 +3,6 @@ package ring
 import (
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 )
 
@@ -34,9 +33,6 @@ type PartitionInstanceRing struct {
 	// In this case, instance IDs should have a suffix starting with a slash which will be removed before looking up
 	// the instance in the instancesRing.
 	multiplePartitions bool
-
-	// pickHighestZoneOwner instructs to the highest instance from each zone when building the replication set.
-	pickHighestZoneOwner bool
 }
 
 func NewPartitionInstanceRing(partitionsRingWatcher PartitionRingReader, instancesRing InstanceRingReader, heartbeatTimeout time.Duration) *PartitionInstanceRing {
@@ -53,7 +49,6 @@ func NewMultiPartitionInstanceRing(partitionsRingWatcher PartitionRingReader, in
 		instancesRing:        instancesRing,
 		heartbeatTimeout:     heartbeatTimeout,
 		multiplePartitions:   true,
-		pickHighestZoneOwner: true,
 	}
 }
 
@@ -81,7 +76,7 @@ func (r *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]
 	zonesBuffer := make([]string, 0, 3) // Pre-allocate buffer assuming 3 zones.
 
 	for partitionID := range partitionsRingDesc.Partitions {
-		replicationSet, err := r.getReplicationSetForPartitionAndOperation(partitionID, op, now, zonesBuffer)
+		replicationSet, err := r.getReplicationSetForPartitionAndOperation(partitionID, op, false, now, zonesBuffer)
 		if err != nil {
 			return nil, err
 		}
@@ -93,28 +88,24 @@ func (r *PartitionInstanceRing) GetReplicationSetsForOperation(op Operation) ([]
 
 // GetReplicationSetForPartitionAndOperation returns a ReplicationSet for the input partition. If the partition doesn't
 // exist or there are no healthy owners for the partition, an error is returned.
-func (r *PartitionInstanceRing) GetReplicationSetForPartitionAndOperation(partitionID int32, op Operation) (ReplicationSet, error) {
+// // pickHighestOwnerFromEachZone instructs to pick the highest instance from each zone when building the replication set.
+func (r *PartitionInstanceRing) GetReplicationSetForPartitionAndOperation(partitionID int32, op Operation, pickHighestOwnerFromEachZone bool) (ReplicationSet, error) {
 	var stackZonesBuffer [3]string // Pre-allocate buffer assuming 3 zones.
 
-	return r.getReplicationSetForPartitionAndOperation(partitionID, op, time.Now(), stackZonesBuffer[:])
+	return r.getReplicationSetForPartitionAndOperation(partitionID, op, pickHighestOwnerFromEachZone, time.Now(), stackZonesBuffer[:])
 }
 
-func (r *PartitionInstanceRing) getReplicationSetForPartitionAndOperation(partitionID int32, op Operation, now time.Time, zonesBuffer []string) (ReplicationSet, error) {
-	partitionsRing := r.PartitionRing()
-	ownerIDs := partitionsRing.PartitionOwnerIDs(partitionID)
-	instances := make([]InstanceDesc, 0, len(ownerIDs))
-
-	// Remove fake instance ID suffixes after slash `/`.
+func (r *PartitionInstanceRing) getReplicationSetForPartitionAndOperation(partitionID int32, op Operation, pickHighestOwnerFromEachZone bool, now time.Time, zonesBuffer []string) (ReplicationSet, error) {
+	const maxExpectedPartitionOwners = 16
+	var ownerIDs []string
+	var stackOwnerIDs [maxExpectedPartitionOwners]string
 	if r.multiplePartitions {
-		var stackOwnerIDs [16]string // Pre-allocate enough buffer to cover all needs
-		nonModifiableOwnerIDs := ownerIDs
-		ownerIDs = stackOwnerIDs[:0]
-		for _, ownerID := range nonModifiableOwnerIDs {
-			if p := strings.IndexByte(ownerID, '/'); p != -1 {
-				ownerID = ownerID[:p]
-			}
-		}
+		ownerIDs = r.PartitionRing().MultiPartitionOwnerIDs(partitionID, stackOwnerIDs[:0])
+	} else {
+		nonModifyableOwnerIDs := r.PartitionRing().PartitionOwnerIDs(partitionID)
+		ownerIDs = append(stackOwnerIDs[:0], nonModifyableOwnerIDs...)
 	}
+	instances := make([]InstanceDesc, 0, len(ownerIDs))
 
 	for _, instanceID := range ownerIDs {
 		instance, err := r.instancesRing.GetInstance(instanceID)
@@ -129,7 +120,9 @@ func (r *PartitionInstanceRing) getReplicationSetForPartitionAndOperation(partit
 		}
 
 		instances = append(instances, instance)
-		ownerIDs[len(instances)-1] = instanceID // Store this in the same position as the instance, so we don't have to parse again later.
+		// Store this in the same position as the instance, so we can use it to compare later.
+		// We only need this when r.pickHighestZoneOwner=true, but it's probably cheaper to do it than to check it.
+		ownerIDs[len(instances)-1] = instanceID
 	}
 
 	if len(instances) == 0 {
@@ -140,8 +133,8 @@ func (r *PartitionInstanceRing) getReplicationSetForPartitionAndOperation(partit
 	zonesBuffer = uniqueZonesFromInstances(instances, zonesBuffer[:0])
 	uniqueZones := len(zonesBuffer)
 
-	if r.pickHighestZoneOwner {
-		var stackAllInstances [16]InstanceDesc
+	if pickHighestOwnerFromEachZone {
+		var stackAllInstances [maxExpectedPartitionOwners]InstanceDesc
 		allInstances := append(stackAllInstances[:0], instances...)
 		instances = instances[:0] // Reset, this is what we're going to return.
 		for _, zone := range zonesBuffer {
