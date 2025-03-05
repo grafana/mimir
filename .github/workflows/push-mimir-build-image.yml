@@ -7,11 +7,6 @@ on:
     paths:
       - mimir-build-image/Dockerfile
 
-# These permissions are needed to assume roles from Github's OIDC.
-permissions:
-  contents: read
-  id-token: write
-
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -22,6 +17,7 @@ jobs:
     permissions:
       # Allow pushing to the GitHub repo for collaborators, forks should remain read-only
       contents: write
+      id-token: write
       # Allow PR modification for collaborators, forks should remain read-only
       pull-requests: write
     # We want to allow running github actions for all contributors, but don't want all contributors to be able to
