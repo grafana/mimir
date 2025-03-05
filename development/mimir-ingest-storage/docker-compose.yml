@@ -442,7 +442,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-a-0 -usage-tracker.instance-ring.instance-availability-zone=zone-a"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-a-0 -usage-tracker.instance-ring.instance-availability-zone=zone-a -usage-tracker.partitions=8 -usage-tracker.partition-reconcile-interval=5s -usage-tracker.lost-partitions-shutdown-grace-period=5s"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -472,7 +472,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-a-1 -usage-tracker.instance-ring.instance-availability-zone=zone-a"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-a-1 -usage-tracker.instance-ring.instance-availability-zone=zone-a -usage-tracker.partitions=8 -usage-tracker.partition-reconcile-interval=5s -usage-tracker.lost-partitions-shutdown-grace-period=5s"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"
@@ -502,7 +502,7 @@
     "command":
       - "sh"
       - "-c"
-      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-b-0 -usage-tracker.instance-ring.instance-availability-zone=zone-b"
+      - "exec ./mimir -config.file=./config/mimir.yaml -target=usage-tracker -activity-tracker.filepath=/activity/usage-tracker-zone-b-0 -usage-tracker.instance-ring.instance-availability-zone=zone-b -usage-tracker.partitions=8 -usage-tracker.partition-reconcile-interval=5s -usage-tracker.lost-partitions-shutdown-grace-period=5s"
     "depends_on":
       "kafka_1":
         "condition": "service_healthy"

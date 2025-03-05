@@ -60,7 +60,9 @@ func newPartition(
 	logger log.Logger,
 	registerer prometheus.Registerer,
 ) (*partition, error) {
+
 	registerer = prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.FormatInt(int64(partitionID), 10)}, registerer)
+	logger = log.With(logger, "partition", partitionID)
 
 	p := &partition{
 		cfg:           cfg,
@@ -161,13 +163,13 @@ func (p *partition) consumeSeriesCreatedEvents(ctx context.Context, wg *sync.Wai
 		fetches.EachError(func(_ string, part int32, err error) {
 			if !errors.Is(err, context.Canceled) { // Ignore when we're shutting down.
 				// TODO: observability? Handle this?
-				level.Error(p.logger).Log("msg", "failed to fetch records", "partition", part, "err", err)
+				level.Error(p.logger).Log("msg", "failed to fetch records", "fetch_partition", part, "err", err)
 			}
 		})
 		fetches.EachRecord(func(r *kgo.Record) {
 			var ev usagetrackerpb.SeriesCreatedEvent
 			if err := ev.Unmarshal(r.Value); err != nil {
-				level.Error(p.logger).Log("msg", "failed to unmarshal series created event", "err", err, "partition", r.Partition, "offset", r.Offset, "value_len", len(r.Value))
+				level.Error(p.logger).Log("msg", "failed to unmarshal series created event", "err", err, "record_partition", r.Partition, "offset", r.Offset, "value_len", len(r.Value))
 				return
 			}
 			// TODO: maybe ignore our own events?
@@ -189,13 +191,13 @@ func (p *partition) publishSeriesCreatedEvents(ctx context.Context, wg *sync.Wai
 		go func() {
 			defer wg.Done()
 			for batch := range publish {
-				level.Debug(p.logger).Log("msg", "producing batch of series created events", "size", len(batch), "partition", p.partitionID)
+				level.Debug(p.logger).Log("msg", "producing batch of series created events", "size", len(batch))
 				// TODO: maybe use a slightly longer-deadline context here, to avoid dropping the pending events from the queue?
 				res := p.eventsKafkaWriter.ProduceSync(ctx, batch...)
 				for _, r := range res {
 					if r.Err != nil {
 						// TODO: what should we do here?
-						level.Error(p.logger).Log("msg", "failed to publish series created event", "err", r.Err, "partition", p.partitionID)
+						level.Error(p.logger).Log("msg", "failed to publish series created event", "err", r.Err)
 						continue
 					}
 					level.Debug(p.logger).Log("msg", "produced series created event", "partition", r.Record.Partition, "offset", r.Record.Offset)
@@ -236,17 +238,17 @@ func (p *partition) publishSeriesCreatedEvents(ctx context.Context, wg *sync.Wai
 			if len(batch) == 0 {
 				timer = time.NewTimer(p.cfg.CreatedSeriesEventsBatchTTL)
 			}
-			level.Debug(p.logger).Log("msg", "batching series created event", "size", len(data), "partition", p.partitionID)
+			level.Debug(p.logger).Log("msg", "batching series created event", "size", len(data))
 			batch = append(batch, &kgo.Record{Topic: p.cfg.EventsStorage.TopicName, Value: data, Partition: p.partitionID})
 			batchSize += len(data)
 
 			if batchSize >= p.cfg.CreatedSeriesEventsMaxBatchSizeBytes {
-				level.Debug(p.logger).Log("msg", "publishing batch due to size", "size", batchSize, "partition", p.partitionID)
+				level.Debug(p.logger).Log("msg", "publishing batch due to size", "size", batchSize)
 				publishBatch()
 			}
 
 		case <-timer.C:
-			level.Debug(p.logger).Log("msg", "publishing batch due to TTL", "partition", p.partitionID)
+			level.Debug(p.logger).Log("msg", "publishing batch due to TTL")
 			publishBatch()
 		}
 	}

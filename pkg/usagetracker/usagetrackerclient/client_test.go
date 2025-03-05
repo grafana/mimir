@@ -82,7 +82,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		})
 
 		// Pre-condition check: all instances should be healthy.
-		set, err := instanceRing.GetAllHealthy(trackSeriesOp)
+		set, err := instanceRing.GetAllHealthy(TrackSeriesOp)
 		require.NoError(t, err)
 		require.Len(t, set.Instances, 4)
 

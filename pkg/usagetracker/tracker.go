@@ -24,6 +24,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -38,7 +39,10 @@ const (
 type Config struct {
 	Enabled bool `yaml:"enabled"`
 
-	Partitions int `yaml:"partitions"`
+	Partitions                        int           `yaml:"partitions"`
+	PartitionReconcileInterval        time.Duration `yaml:"partition_reconcile_interval"`
+	LostPartitionsShutdownGracePeriod time.Duration `yaml:"lost_partitions_shutdown_grace_period"`
+	MaxPartitionsToCreatePerReconcile int           `yaml:"max_partitions_to_create_per_reconcile"`
 
 	InstanceRing  InstanceRingConfig  `yaml:"instance_ring"`
 	PartitionRing PartitionRingConfig `yaml:"partition_ring"`
@@ -57,6 +61,9 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.Enabled, "usage-tracker.enabled", false, "True to enable the usage-tracker.")
 
 	f.IntVar(&c.Partitions, "usage-tracker.partitions", 64, "Number of partitions to use for the usage-tracker. This number isn't expected to change once usage-tracker is already being used.")
+	f.DurationVar(&c.PartitionReconcileInterval, "usage-tracker.partition-reconcile-interval", 10*time.Second, "Interval to reconcile partitions.")
+	f.DurationVar(&c.LostPartitionsShutdownGracePeriod, "usage-tracker.lost-partitions-shutdown-grace-period", 30*time.Second, "Time to wait beforeshutting down a partition that is no longer owned by this instance.")
+	f.IntVar(&c.MaxPartitionsToCreatePerReconcile, "usage-tracker.max-partitions-to-create-per-reconcile", 1, "Maximum number of partitions to create per reconcile interval. This avoids load avalanches and prevents shuffling when adding new instances.")
 
 	c.InstanceRing.RegisterFlags(f, logger)
 	c.PartitionRing.RegisterFlags(f)
@@ -116,6 +123,8 @@ type UsageTracker struct {
 	mtx        sync.RWMutex
 	partitions map[int32]*partition
 
+	lostPartitions map[int32]time.Time
+
 	// Dependencies.
 	subservicesWatcher *services.FailureWatcher
 }
@@ -129,7 +138,8 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Pa
 		logger:        logger,
 		registerer:    registerer,
 
-		partitions: make(map[int32]*partition, 64),
+		partitions:     make(map[int32]*partition, 64),
+		lostPartitions: make(map[int32]time.Time),
 	}
 
 	// Init instance ring lifecycler.
@@ -137,6 +147,10 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Pa
 	t.instanceID, err = parseInstanceID(t.cfg.InstanceRing.InstanceID)
 	if err != nil {
 		return nil, errors.Wrap(err, "parsing instance ID")
+	}
+
+	if int(t.instanceID) >= t.cfg.Partitions {
+		return nil, errors.Wrap(err, "instance ID is greater than the number of partitions")
 	}
 
 	t.instanceLifecycler, err = NewInstanceRingLifecycler(cfg.InstanceRing, logger, registerer)
@@ -179,9 +193,11 @@ func (t *UsageTracker) start(ctx context.Context) error {
 }
 
 func (t *UsageTracker) run(ctx context.Context) error {
+	// TODO: check here if all partitions already have owners, in which case we should reconcilePartitions immediately (no need to wait).
+	// If there are no owners yet, this is a cold start, so wait until all instances have joined the ring to avoid re-shuffling.
 	for {
 		select {
-		case <-time.After(10 * time.Second):
+		case <-time.After(t.cfg.PartitionReconcileInterval):
 			if err := t.reconcilePartitions(ctx); err != nil {
 				return err
 			}
@@ -194,62 +210,131 @@ func (t *UsageTracker) run(ctx context.Context) error {
 }
 
 func (t *UsageTracker) reconcilePartitions(ctx context.Context) error {
-	instancesServingPartitions := t.instancesServingPartitions()
-	start, end, err := instancePartitions(t.instanceID, instancesServingPartitions, int32(t.cfg.Partitions))
-	if err != nil {
-		level.Error(t.logger).Log("msg", "unable to calculate partitions, skipping reconcile", "err", err)
-		return nil
-	}
+	// We're going to hold the read lock for the whole function, as we're the only function that can write (we assume stop() can't be called because we're still running)
+	// We'll take the write mutex when we want to modify t.partitions.
 	t.mtx.RLock()
-	current := int32(len(t.partitions))
-	t.mtx.RUnlock()
-	if current == end-start {
-		level.Debug(t.logger).Log("msg", "partitions already reconciled", "start", start, "end", end, "instance", t.instanceID, "serving_instances", instancesServingPartitions, "partitions", t.cfg.Partitions)
-		return nil
+	defer t.mtx.RUnlock()
+	// locked will run f while write-locked
+	locked := func(f func()) {
+		t.mtx.RUnlock()
+		t.mtx.Lock()
+		f()
+		t.mtx.Unlock()
+		t.mtx.RLock()
 	}
 
-	level.Info(t.logger).Log("msg", "serving partitions", "current", current, "new", end-start, "start", start, "end", end, "instance", t.instanceID, "serving_instances", instancesServingPartitions, "partitions", t.cfg.Partitions)
+	logger := log.With(t.logger, "reconciliation_time", time.Now().UTC().Truncate(time.Second).Format(time.RFC3339))
+	totalInstances := t.instancesServingPartitions()
+	start, end, err := instancePartitions(t.instanceID, totalInstances, int32(t.cfg.Partitions))
+	if err != nil {
+		level.Error(logger).Log("msg", "unable to calculate partitions, skipping reconcile", "err", err)
+		return nil
+	}
+	current := int32(len(t.partitions))
 
-	if current > end-start {
-		// We need to stop some partitions.
-		// TODO: do this in a more graceful way.
-		for partitionID := start + current; partitionID >= end; partitionID-- {
-			level.Info(t.logger).Log("msg", "stopping partition", "partition", partitionID)
-			t.mtx.Lock()
-			p, ok := t.partitions[partitionID]
-			t.mtx.Unlock()
-			if !ok {
-				level.Error(t.logger).Log("msg", "partition not found to stop, implementation error", "partition", partitionID)
-				continue
-			}
-			if err := services.StopAndAwaitTerminated(context.Background(), p); err != nil {
-				level.Error(t.logger).Log("msg", "unable to stop partition", "partition", partitionID, "err", err)
-				return errors.Wrapf(err, "unable to stop partition %d", p.partitionID)
-			}
-			t.mtx.Lock()
-			// TODO: don't delete yet, delete later.
-			delete(t.partitions, partitionID)
-			t.mtx.Unlock()
+	level.Info(logger).Log("msg", "serving partitions", "current", current, "new", end-start, "start", start, "end", end, "instance", t.instanceID, "total_instances", totalInstances, "partitions", t.cfg.Partitions)
+
+	unmarkedAsLost := 0
+	for p, lostAt := range t.lostPartitions {
+		// We don't check whether p>=start because that should always be true: we never lose starting partitions.
+		if p < end {
+			level.Info(logger).Log("msg", "partition was previously lost but we own it again", "partition", p, "lost_at", lostAt)
+			delete(t.lostPartitions, p)
+			unmarkedAsLost++
 		}
 	}
 
-	for partitionID := start + current; partitionID < end; partitionID++ {
-		level.Info(t.logger).Log("msg", "creating partition", "partition", partitionID)
-		p, err := newPartition(partitionID, t.cfg, t.partitionKVClient, t.partitionRing, t.eventsKafkaWriter, t.bucket, t, t.logger, t.registerer)
+	// Stop the partitions that are not needed anymore.
+	// The only way to lose partitions is for a higher instance ID to take them.
+	// We should wait until the new instance has taken each one of the partitions before we delete them,
+	// and then we should wait a grace period to make sure distributors also know about the new ownership information.
+	// Okay, so how do we figure out that the new instance has taken the partitions?
+	// We'll get the replication set just like the client would do, and we check whether we still belong to it.
+	deleted := 0
+	markedAsLost := 0
+losingPartitions:
+	for pid, p := range t.partitions {
+		if pid < end {
+			continue
+		}
+
+		logger := log.With(logger, "action", "losing", "partition", pid)
+		if lostAt, ok := t.lostPartitions[pid]; ok {
+			// We have already lost this partition, check whether grace period has expired already.
+			if gracePeriodRemaining := t.cfg.LostPartitionsShutdownGracePeriod - time.Since(lostAt); gracePeriodRemaining > 0 {
+				level.Info(logger).Log("msg", "partition already marked as lost, still waiting grace period", "lost_at", lostAt, "grace_period_remaining", gracePeriodRemaining)
+				continue
+			}
+			level.Info(logger).Log("msg", "partition already marked as lost, grace period expired, shutting down")
+
+			// Delete it first, so it doesn't receive any requests while we're shutting it down.
+			locked(func() { delete(t.partitions, pid) })
+			delete(t.lostPartitions, pid)
+			if err := services.StopAndAwaitTerminated(context.Background(), p); err != nil {
+				level.Error(logger).Log("msg", "unable to stop partition", "err", err)
+				return errors.Wrapf(err, "unable to stop partition %d", pid)
+			}
+			deleted++
+			level.Info(logger).Log("msg", "partition stopped")
+			continue
+		}
+
+		replicationSet, err := t.partitionRing.GetReplicationSetForPartitionAndOperation(pid, usagetrackerclient.TrackSeriesOp, true)
+		if err != nil {
+			level.Error(logger).Log("msg", "unable to get replication set for partition", "err", err)
+			continue
+		}
+		for _, instance := range replicationSet.Instances {
+			if instance.Id == t.cfg.InstanceRing.InstanceID {
+				level.Info(logger).Log("msg", "we're still serving partition, not shutting down")
+				continue losingPartitions
+			}
+		}
+
+		level.Info(logger).Log("msg", "partition has a higher owner now, marking as lost and waiting grace period before shutting down")
+		t.lostPartitions[pid] = time.Now()
+		markedAsLost++
+	}
+
+	added := 0
+	skipped := 0
+	for pid := start; pid < end; pid++ {
+		if _, ok := t.partitions[pid]; ok {
+			// We already have this partition.
+			continue
+		}
+		if added >= t.cfg.MaxPartitionsToCreatePerReconcile {
+			skipped++
+			continue
+		}
+
+		logger := log.With(logger, "action", "adding", "partition", pid)
+
+		level.Info(logger).Log("msg", "creating new partition")
+		p, err := newPartition(pid, t.cfg, t.partitionKVClient, t.partitionRing, t.eventsKafkaWriter, t.bucket, t, t.logger, t.registerer)
 		if err != nil {
 			return errors.Wrap(err, "unable to create partition")
 		}
-		level.Info(t.logger).Log("msg", "starting partition", "partition", partitionID)
+		level.Info(logger).Log("msg", "starting partition")
 		if err := services.StartAndAwaitRunning(ctx, p); err != nil {
 			return errors.Wrap(err, "unable to start partition")
 		}
-		t.mtx.Lock()
-		t.partitions[partitionID] = p
-		t.mtx.Unlock()
-		level.Info(t.logger).Log("msg", "started partition", "partition", partitionID)
+		locked(func() { t.partitions[pid] = p })
+		level.Info(logger).Log("msg", "partition started")
+		added++
+	}
+	if skipped > 0 {
+		level.Info(logger).Log("msg", "max partitions to create reached, skipping the rest until next reconcile", "added", added, "skipped", skipped)
 	}
 
-	level.Info(t.logger).Log("msg", "partitions reconciled", "start", start, "end", end, "instance", t.instanceID, "serving_instances", instancesServingPartitions, "partitions", t.cfg.Partitions)
+	level.Info(logger).Log(
+		"msg", "partitions reconciled",
+		"start", start, "end", end,
+		"instance", t.instanceID, "total_instances", totalInstances, "partitions", t.cfg.Partitions,
+		"added", added, "skipped", skipped,
+		"marked_as_lost", markedAsLost, "deleted", deleted,
+		"unmarked_as_lost", unmarkedAsLost,
+	)
 	return nil
 }
 
