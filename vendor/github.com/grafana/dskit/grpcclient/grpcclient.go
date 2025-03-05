@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/dskit/clusterutil"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	grpcbackoff "google.golang.org/grpc/backoff"
@@ -14,6 +13,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcencoding/snappy"
