@@ -125,7 +125,11 @@ func compareExpectedAndActual(t *testing.T, expectedTs, actualTs int64, expected
 		}
 		// InEpsilon means the relative error (see https://en.wikipedia.org/wiki/Relative_error#Example) must be less than epsilon (here 1e-12).
 		// The relative error is calculated using: abs(actual-expected) / abs(expected)
-		require.InEpsilonf(t, expectedVal, actualVal, tolerance, "%s value at position %d with timestamp %d for series %s", sampleType, j, expectedTs, labels)
+		if math.IsInf(expectedVal, +1) || math.IsInf(expectedVal, -1) {
+			require.Equal(t, expectedVal, actualVal)
+		} else {
+			require.InEpsilonf(t, expectedVal, actualVal, tolerance, "%s value at position %d with timestamp %d for series %s", sampleType, j, expectedTs, labels)
+		}
 	}
 }
 
