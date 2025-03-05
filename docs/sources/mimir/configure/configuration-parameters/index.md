@@ -4977,8 +4977,8 @@ sharding_ring:
 # CLI flag: -compactor.max-lookback
 [max_lookback: <duration> | default = 0s]
 
-# (experimental) If enabled, the compactor constructs and uploads sparse
-# index headers to object storage during each compaction cycle. This allows
+# (experimental) If enabled, the compactor constructs and uploads sparse index
+# headers to object storage during each compaction cycle. This allows
 # store-gateway instances to use the sparse headers from object storage instead
 # of recreating them locally.
 # CLI flag: -compactor.upload-sparse-index-headers
