@@ -5129,6 +5129,188 @@
           "fieldCategory": "experimental"
         },
         {
+          "kind": "block",
+          "name": "ruler_alertmanager_client_config",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "alertmanager_url",
+              "required": false,
+              "desc": "Per-tenant alertmanager client configuration. If not supplied, the tenant's notifications will be sent to the ruler-wide default.",
+              "fieldValue": null,
+              "fieldDefaultValue": "{\"AlertmanagerURL\":\"\",\"NotifierConfig\":{\"TLSEnabled\":false,\"TLS\":{\"CertPath\":\"\",\"KeyPath\":\"\",\"CAPath\":\"\",\"ServerName\":\"\",\"InsecureSkipVerify\":false,\"CipherSuites\":\"\",\"MinVersion\":\"\",\"Reader\":null},\"BasicAuth\":{\"Username\":\"\",\"Password\":{}},\"OAuth2\":{\"ClientID\":\"\",\"ClientSecret\":{},\"TokenURL\":\"\",\"Scopes\":null,\"EndpointParams\":{}},\"ProxyURL\":\"\"}}",
+              "fieldFlag": "ruler.alertmanager-client-config",
+              "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "tls_enabled",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cert_path",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_key_path",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_ca_path",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_server_name",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_insecure_skip_verify",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_cipher_suites",
+              "required": false,
+              "desc": "Override the default cipher suite list (separated by commas). Allowed values:\n\nSecure Ciphers:\n- TLS_AES_128_GCM_SHA256\n- TLS_AES_256_GCM_SHA384\n- TLS_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA\n- TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n\nInsecure Ciphers:\n- TLS_RSA_WITH_RC4_128_SHA\n- TLS_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA\n- TLS_RSA_WITH_AES_256_CBC_SHA\n- TLS_RSA_WITH_AES_128_CBC_SHA256\n- TLS_RSA_WITH_AES_128_GCM_SHA256\n- TLS_RSA_WITH_AES_256_GCM_SHA384\n- TLS_ECDHE_ECDSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_RC4_128_SHA\n- TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA\n- TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256\n- TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256\n",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "tls_min_version",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "basic_auth_username",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string"
+            },
+            {
+              "kind": "block",
+              "name": "basic_auth_password",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "oauth2",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "client_id",
+                  "required": false,
+                  "desc": "",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "block",
+                  "name": "client_secret",
+                  "required": false,
+                  "desc": "",
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
+                },
+                {
+                  "kind": "field",
+                  "name": "token_url",
+                  "required": false,
+                  "desc": "",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "scopes",
+                  "required": false,
+                  "desc": "",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "endpoint_params",
+                  "required": false,
+                  "desc": "",
+                  "fieldValue": null,
+                  "fieldDefaultValue": {},
+                  "fieldType": "map of string to string",
+                  "fieldCategory": "advanced"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "proxy_url",
+              "required": false,
+              "desc": "",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
           "kind": "field",
           "name": "store_gateway_tenant_shard_size",
           "required": false,

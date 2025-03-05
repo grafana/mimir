@@ -3827,6 +3827,85 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.max-independent-rule-evaluation-concurrency-per-tenant
 [ruler_max_independent_rule_evaluation_concurrency_per_tenant: <int> | default = 4]
 
+ruler_alertmanager_client_config:
+  # Per-tenant alertmanager client configuration. If not supplied, the tenant's
+  # notifications will be sent to the ruler-wide default.
+  # CLI flag: -ruler.alertmanager-client-config
+  [alertmanager_url: <string> | default = "{\"AlertmanagerURL\":\"\",\"NotifierConfig\":{\"TLSEnabled\":false,\"TLS\":{\"CertPath\":\"\",\"KeyPath\":\"\",\"CAPath\":\"\",\"ServerName\":\"\",\"InsecureSkipVerify\":false,\"CipherSuites\":\"\",\"MinVersion\":\"\",\"Reader\":null},\"BasicAuth\":{\"Username\":\"\",\"Password\":{}},\"OAuth2\":{\"ClientID\":\"\",\"ClientSecret\":{},\"TokenURL\":\"\",\"Scopes\":null,\"EndpointParams\":{}},\"ProxyURL\":\"\"}}"]
+
+  # (advanced)
+  [tls_enabled: <boolean> | default = ]
+
+  # (advanced)
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced)
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced)
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced)
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced)
+  [tls_insecure_skip_verify: <boolean> | default = ]
+
+  # (advanced) Override the default cipher suite list (separated by commas).
+  # Allowed values:
+  #
+  # Secure Ciphers:
+  # - TLS_AES_128_GCM_SHA256
+  # - TLS_AES_256_GCM_SHA384
+  # - TLS_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+  #
+  # Insecure Ciphers:
+  # - TLS_RSA_WITH_RC4_128_SHA
+  # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  [tls_cipher_suites: <string> | default = ""]
+
+  # (advanced)
+  [tls_min_version: <string> | default = ""]
+
+  [basic_auth_username: <string> | default = ""]
+
+  basic_auth_password:
+
+  oauth2:
+    [client_id: <string> | default = ""]
+
+    client_secret:
+
+    [token_url: <string> | default = ""]
+
+    [scopes: <string> | default = ""]
+
+    # (advanced)
+    [endpoint_params: <map of string to string> | default = ]
+
+  # (advanced)
+  [proxy_url: <string> | default = ""]
+
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
 # 0 disables shuffle sharding for the tenant, that is all tenant blocks are
 # sharded across all store-gateway replicas.
