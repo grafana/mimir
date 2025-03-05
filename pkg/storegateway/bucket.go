@@ -296,6 +296,122 @@ func (s *BucketStore) Stats() BucketStoreStats {
 	}
 }
 
+// TenantIndexHeaderMap is a thread-safe nested map structure.
+// This type serves as a synchronized map[string]map[ulid.ULID]objstore.ObjectAttributes.
+// The objstore.ObjectAttributes are used to get the index header size.
+type TenantIndexHeaderMap struct {
+	blockIndexHeaderMap sync.Map // map[string]sync.Map
+}
+
+func (t *TenantIndexHeaderMap) String() string {
+	s := "TenantIndexHeaderMap: "
+	t.blockIndexHeaderMap.Range(func(key, value interface{}) bool {
+		tenantID := key.(string)
+		indexHeaders := value.(*sync.Map)
+		indexHeaders.Range(func(key, value interface{}) bool {
+			blockID := key.(ulid.ULID)
+			attrs := value.(objstore.ObjectAttributes)
+			s += fmt.Sprintf("tenantID: %s, blockID: %s, attrs: %v --- ", tenantID, blockID, attrs)
+			return true
+		})
+		return true
+	})
+	return s
+}
+
+func (t *TenantIndexHeaderMap) Contains(tenantID string, blockID ulid.ULID) bool {
+	indexHeadersVal, ok := t.blockIndexHeaderMap.Load(tenantID)
+	if !ok {
+		return false
+	}
+	indexHeaders := indexHeadersVal.(*sync.Map)
+	_, ok = indexHeaders.Load(blockID)
+	return ok
+}
+
+func (t *TenantIndexHeaderMap) Add(
+	tenantID string,
+	blockID ulid.ULID,
+	indexHeaderAttrs objstore.ObjectAttributes,
+) error {
+	indexHeadersVal, ok := t.blockIndexHeaderMap.Load(tenantID)
+	if !ok {
+		newIndexHeaders := &sync.Map{} // map[ulid.ULID]objstore.ObjectAttributes
+		newIndexHeaders.Store(blockID, indexHeaderAttrs)
+		t.blockIndexHeaderMap.Store(tenantID, newIndexHeaders)
+		return nil
+	}
+	indexHeaders := indexHeadersVal.(*sync.Map)
+	_, ok = indexHeaders.LoadOrStore(blockID, indexHeaderAttrs)
+	if ok {
+		// This should not ever happen.
+		return fmt.Errorf("block %s already exists in the set", blockID)
+	}
+	return nil
+}
+
+func (s *BucketStore) DiscoverIndexHeaders(ctx context.Context, tenantIndexHeaderMap *TenantIndexHeaderMap) error {
+	return s.discoverIndexHeaders(ctx, tenantIndexHeaderMap)
+}
+
+func (s *BucketStore) discoverIndexHeaders(ctx context.Context, tenantIndexHeaderMap *TenantIndexHeaderMap) error {
+	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
+	// For partial view allow adding new blocks at least.
+	if metaFetchErr != nil && metas == nil {
+		return metaFetchErr
+	}
+
+	errGroup, ctx := errgroup.WithContext(ctx)
+	blockc := make(chan *block.Meta)
+
+	for i := 0; i < s.blockSyncConcurrency; i++ {
+		errGroup.Go(func() error {
+			for meta := range blockc {
+				attrs, err := s.blockIndexHeaderAttrs(ctx, meta.ULID)
+				if err != nil {
+					return err
+				}
+				err = tenantIndexHeaderMap.Add(s.userID, meta.ULID, attrs)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+
+	for blockID, meta := range metas {
+		if tenantIndexHeaderMap.Contains(s.userID, blockID) {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+		case blockc <- meta:
+		}
+	}
+
+	close(blockc)
+	err := errGroup.Wait()
+	if err != nil {
+		return err
+	}
+
+	if metaFetchErr != nil {
+		return metaFetchErr
+	}
+
+	return nil
+}
+
+func (s *BucketStore) blockIndexHeaderAttrs(ctx context.Context, blockID ulid.ULID) (objstore.ObjectAttributes, error) {
+	indexFilepath := filepath.Join(blockID.String(), block.IndexFilename)
+	attrs, err := s.bkt.Attributes(ctx, indexFilepath)
+	if err != nil {
+		err = errors.Wrapf(err, "get object attributes of %s", indexFilepath)
+	}
+	return attrs, nil
+}
+
 // SyncBlocks synchronizes the stores state with the Bucket bucket.
 // It will reuse disk space as persistent cache based on s.dir param.
 func (s *BucketStore) SyncBlocks(ctx context.Context) error {
