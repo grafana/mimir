@@ -1,10 +1,10 @@
 module github.com/grafana/mimir
 
-go 1.22.11
+go 1.23.0
 
 // Please note that this directive is ignored when building with the Mimir build image,
 // that will always use its bundled toolchain.
-toolchain go1.23.6
+toolchain go1.24.1
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.5.0
@@ -46,9 +46,9 @@ require (
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.3.0
-	golang.org/x/crypto v0.32.0
+	golang.org/x/crypto v0.35.0
 	golang.org/x/net v0.34.0
-	golang.org/x/sync v0.10.0
+	golang.org/x/sync v0.11.0
 	golang.org/x/time v0.9.0
 	google.golang.org/grpc v1.70.0
 	gopkg.in/yaml.v2 v2.4.0
@@ -90,7 +90,7 @@ require (
 	go.opentelemetry.io/otel v1.33.0
 	go.opentelemetry.io/otel/trace v1.33.0
 	go.uber.org/multierr v1.11.0
-	golang.org/x/term v0.28.0
+	golang.org/x/term v0.29.0
 	google.golang.org/api v0.216.0
 	google.golang.org/protobuf v1.36.5
 	sigs.k8s.io/kustomize/kyaml v0.18.1
@@ -287,8 +287,8 @@ require (
 	golang.org/x/exp v0.0.0-20241215155358-4a5509556b9e // indirect
 	golang.org/x/mod v0.22.0 // indirect
 	golang.org/x/oauth2 v0.25.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/tools v0.28.0 // indirect
 	google.golang.org/genproto v0.0.0-20241113202542-65e8d215514f // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241216192217-9240e9c98484 // indirect
