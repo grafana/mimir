@@ -193,6 +193,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of times to backoff and retry before failing. (default 10)
   -alertmanager.alertmanager-client.cluster-validation-label string
     	[experimental] Optionally define gRPC client's cluster validation label.
+  -alertmanager.alertmanager-client.cluster-validation.label string
+    	[experimental] Optionally define client's cluster validation label.
   -alertmanager.alertmanager-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -alertmanager.alertmanager-client.connect-backoff-max-delay duration
@@ -989,52 +991,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine.
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
-  -common.grpc-client.backoff-max-period duration
-    	Maximum delay when backing off. (default 10s)
-  -common.grpc-client.backoff-min-period duration
-    	Minimum delay when backing off. (default 100ms)
-  -common.grpc-client.backoff-on-ratelimits
-    	Enable backoff and retry when we hit rate limits.
-  -common.grpc-client.backoff-retries int
-    	Number of times to backoff and retry before failing. (default 10)
-  -common.grpc-client.cluster-validation-label string
-    	[experimental] Optionally define gRPC client's cluster validation label.
-  -common.grpc-client.connect-backoff-base-delay duration
-    	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
-  -common.grpc-client.connect-backoff-max-delay duration
-    	Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0. (default 5s)
-  -common.grpc-client.connect-timeout duration
-    	The maximum amount of time to establish a connection. A value of 0 means default gRPC client connect timeout and backoff. (default 5s)
-  -common.grpc-client.grpc-client-rate-limit float
-    	Rate limit for gRPC client; 0 means disabled.
-  -common.grpc-client.grpc-client-rate-limit-burst int
-    	Rate limit burst for gRPC client.
-  -common.grpc-client.grpc-compression string
-    	Use compression when sending messages. Supported values are: 'gzip', 'snappy' and '' (disable compression)
-  -common.grpc-client.grpc-max-recv-msg-size int
-    	gRPC client max receive message size (bytes). (default 104857600)
-  -common.grpc-client.grpc-max-send-msg-size int
-    	gRPC client max send message size (bytes). (default 104857600)
-  -common.grpc-client.initial-connection-window-size value
-    	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
-  -common.grpc-client.initial-stream-window-size value
-    	[experimental] Initial stream window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
-  -common.grpc-client.tls-ca-path string
-    	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
-  -common.grpc-client.tls-cert-path string
-    	Path to the client certificate, which will be used for authenticating with the server. Also requires the key path to be configured.
-  -common.grpc-client.tls-cipher-suites string
-    	Override the default cipher suite list (separated by commas).
-  -common.grpc-client.tls-enabled
-    	Enable TLS in the gRPC client. This flag needs to be enabled when any other TLS flag is set. If set to false, insecure connection to gRPC server will be used.
-  -common.grpc-client.tls-insecure-skip-verify
-    	Skip validating server certificate.
-  -common.grpc-client.tls-key-path string
-    	Path to the key for the client certificate. Also requires the client certificate to be configured.
-  -common.grpc-client.tls-min-version string
-    	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
-  -common.grpc-client.tls-server-name string
-    	Override the expected name on the server certificate.
+  -common.client-cluster-validation.label string
+    	[experimental] Optionally define client's cluster validation label.
   -common.storage.azure.account-key string
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
@@ -1649,6 +1607,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of times to backoff and retry before failing. (default 10)
   -ingester.client.cluster-validation-label string
     	[experimental] Optionally define gRPC client's cluster validation label.
+  -ingester.client.cluster-validation.label string
+    	[experimental] Optionally define client's cluster validation label.
   -ingester.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ingester.client.connect-backoff-max-delay duration
@@ -2167,6 +2127,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of times to backoff and retry before failing. (default 10)
   -querier.frontend-client.cluster-validation-label string
     	[experimental] Optionally define gRPC client's cluster validation label.
+  -querier.frontend-client.cluster-validation.label string
+    	[experimental] Optionally define client's cluster validation label.
   -querier.frontend-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -querier.frontend-client.connect-backoff-max-delay duration
@@ -2277,6 +2239,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of times to backoff and retry before failing. (default 10)
   -querier.scheduler-client.cluster-validation-label string
     	[experimental] Optionally define gRPC client's cluster validation label.
+  -querier.scheduler-client.cluster-validation.label string
+    	[experimental] Optionally define client's cluster validation label.
   -querier.scheduler-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -querier.scheduler-client.connect-backoff-max-delay duration
@@ -2361,6 +2325,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of times to backoff and retry before failing. (default 10)
   -query-frontend.grpc-client-config.cluster-validation-label string
     	[experimental] Optionally define gRPC client's cluster validation label.
+  -query-frontend.grpc-client-config.cluster-validation.label string
+    	[experimental] Optionally define client's cluster validation label.
   -query-frontend.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -query-frontend.grpc-client-config.connect-backoff-max-delay duration
@@ -2579,6 +2545,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of times to backoff and retry before failing. (default 10)
   -query-scheduler.grpc-client-config.cluster-validation-label string
     	[experimental] Optionally define gRPC client's cluster validation label.
+  -query-scheduler.grpc-client-config.cluster-validation.label string
+    	[experimental] Optionally define client's cluster validation label.
   -query-scheduler.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -query-scheduler.grpc-client-config.connect-backoff-max-delay duration
@@ -3015,6 +2983,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of times to backoff and retry before failing. (default 10)
   -ruler.client.cluster-validation-label string
     	[experimental] Optionally define gRPC client's cluster validation label.
+  -ruler.client.cluster-validation.label string
+    	[experimental] Optionally define client's cluster validation label.
   -ruler.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ruler.client.connect-backoff-max-delay duration
@@ -3105,6 +3075,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of times to backoff and retry before failing. (default 10)
   -ruler.query-frontend.grpc-client-config.cluster-validation-label string
     	[experimental] Optionally define gRPC client's cluster validation label.
+  -ruler.query-frontend.grpc-client-config.cluster-validation.label string
+    	[experimental] Optionally define client's cluster validation label.
   -ruler.query-frontend.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ruler.query-frontend.grpc-client-config.connect-backoff-max-delay duration

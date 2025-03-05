@@ -59,7 +59,7 @@ func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, r
 		streamResponse:   streamResponse,
 		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:        cfg.QuerierID,
-		grpcConfig:       cfg.QueryFrontendGRPCClientConfig.Config,
+		grpcConfig:       cfg.QueryFrontendGRPCClientConfig,
 		streamingEnabled: cfg.ResponseStreamingEnabled,
 
 		schedulerClientFactory: func(conn *grpc.ClientConn) schedulerpb.SchedulerForQuerierClient {
@@ -440,8 +440,8 @@ func (w httpGrpcHeaderWriter) Set(key, val string) {
 
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
 	unary, stream := grpcclient.Instrument(sp.frontendClientRequestDuration)
-	if sp.grpcConfig.ClusterValidationLabel != "" {
-		unary = append(unary, middleware.ClusterUnaryClientInterceptor(sp.grpcConfig.ClusterValidationLabel, sp.invalidClusterValidation, sp.log))
+	if sp.grpcConfig.ClusterValidation.Label != "" {
+		unary = append(unary, middleware.ClusterUnaryClientInterceptor(sp.grpcConfig.ClusterValidation.Label, sp.invalidClusterValidation, sp.log))
 	}
 	opts, err := sp.grpcConfig.DialOption(unary, stream)
 	if err != nil {

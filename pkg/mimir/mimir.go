@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -223,10 +224,10 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
 			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
 		},
-		GRPCClient: map[string]*util.GRPCClientConfig{
-			"ingester_client":                  &c.IngesterClient.GRPCClientConfig,
-			"frontend_worker_frontend_client":  &c.Worker.QueryFrontendGRPCClientConfig,
-			"frontend_worker_scheduler_client": &c.Worker.QuerySchedulerGRPCClientConfig,
+		ClientClusterValidation: map[string]*clusterutil.ClientClusterValidationConfig{
+			"ingester_client":                  &c.IngesterClient.GRPCClientConfig.ClusterValidation,
+			"frontend_worker_frontend_client":  &c.Worker.QueryFrontendGRPCClientConfig.ClusterValidation,
+			"frontend_worker_scheduler_client": &c.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation,
 		},
 	}
 }
@@ -604,15 +605,15 @@ func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) 
 		for name, loc := range inheritance.Storage {
 			specificStorageLocations[name] = loc
 		}
-		specificGRPCClientLocations := specificLocationsUnmarshaler{}
-		for name, loc := range inheritance.GRPCClient {
-			specificGRPCClientLocations[name] = loc
+		specificClusterValidationLocations := specificLocationsUnmarshaler{}
+		for name, loc := range inheritance.ClientClusterValidation {
+			specificClusterValidationLocations[name] = loc
 		}
 
 		common := configWithCustomCommonUnmarshaler{
 			Common: &commonConfigUnmarshaler{
-				Storage:    &specificStorageLocations,
-				GrpcClient: &specificGRPCClientLocations,
+				Storage:                 &specificStorageLocations,
+				ClientClusterValidation: &specificClusterValidationLocations,
 			},
 		}
 
@@ -632,12 +633,12 @@ func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConf
 	for _, inh := range inheriters {
 		inheritance := inh.CommonConfigInheritance()
 		for desc, loc := range inheritance.Storage {
-			if err := inheritFlags(log, common.Storage.RegisteredFlags, loc.RegisteredFlags, setFlags); err != nil {
+			if err := inheritFlags(log, &common.Storage, loc, setFlags); err != nil {
 				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
 			}
 		}
-		for desc, loc := range inheritance.GRPCClient {
-			if err := inheritFlags(log, common.GRPCClient.RegisteredFlags, loc.RegisteredFlags, setFlags); err != nil {
+		for desc, loc := range inheritance.ClientClusterValidation {
+			if err := inheritFlags(log, &common.ClientClusterValidation, loc, setFlags); err != nil {
 				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
 			}
 		}
@@ -647,11 +648,13 @@ func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConf
 }
 
 // inheritFlags takes flags from the origin set and sets them to the equivalent flags in the dest set, unless those are already set.
-func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.RegisteredFlags, set map[string]bool) error {
-	for f, o := range orig.Flags {
-		d, ok := dest.Flags[f]
+func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flagext.RegisteredFlagsTracker, set map[string]bool) error {
+	origFlags := orig.GetRegisteredFlags()
+	destFlags := dest.GetRegisteredFlags()
+	for f, o := range origFlags.Flags {
+		d, ok := destFlags.Flags[f]
 		if !ok {
-			return fmt.Errorf("implementation error: flag %q was in flags prefixed with %q (%q) but was not in flags prefixed with %q (%q)", f, orig.Prefix, o.Name, dest.Prefix, d.Name)
+			return fmt.Errorf("implementation error: flag %q was in flags prefixed with %q (%q) but was not in flags prefixed with %q (%q)", f, origFlags.Prefix, o.Name, destFlags.Prefix, d.Name)
 		}
 		if !set[o.Name] {
 			// Nothing to inherit because origin was not set.
@@ -678,19 +681,19 @@ func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.Registere
 }
 
 type CommonConfig struct {
-	Storage    bucket.StorageBackendConfig `yaml:"storage"`
-	GRPCClient util.GRPCClientConfig       `yaml:"grpc_client" category:"experimental"`
+	Storage                 bucket.StorageBackendConfig               `yaml:"storage"`
+	ClientClusterValidation clusterutil.ClientClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
-	Storage    map[string]*bucket.StorageBackendConfig
-	GRPCClient map[string]*util.GRPCClientConfig
+	Storage                 map[string]*bucket.StorageBackendConfig
+	ClientClusterValidation map[string]*clusterutil.ClientClusterValidationConfig
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
-	c.GRPCClient.RegisterFlagsWithPrefix("common.grpc-client", f)
+	c.ClientClusterValidation.RegisterAndTrackFlagsWithPrefix("common.client-cluster-validation.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -705,8 +708,8 @@ type configWithCustomCommonUnmarshaler struct {
 
 // commonConfigUnmarshaler will unmarshal each field of the common config into specific locations.
 type commonConfigUnmarshaler struct {
-	Storage    *specificLocationsUnmarshaler `yaml:"storage"`
-	GrpcClient *specificLocationsUnmarshaler `yaml:"grpc_client"`
+	Storage                 *specificLocationsUnmarshaler `yaml:"storage"`
+	ClientClusterValidation *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.

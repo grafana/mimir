@@ -29,7 +29,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestFrontendProcessor_processQueriesOnSingleStream(t *testing.T) {
@@ -235,7 +234,7 @@ func prepareFrontendProcessor() (*frontendProcessor, *frontendProcessClientMock,
 	fp := newFrontendProcessor(
 		Config{
 			QuerierID:                     "test-querier-id",
-			QueryFrontendGRPCClientConfig: util.GRPCClientConfig{Config: grpcclient.Config{MaxSendMsgSize: 1}},
+			QueryFrontendGRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 1},
 		},
 		requestHandler, log.NewNopLogger(),
 	)

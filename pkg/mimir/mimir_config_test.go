@@ -7,13 +7,12 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestCommonConfigCanBeExtended(t *testing.T) {
@@ -24,8 +23,7 @@ func TestCommonConfigCanBeExtended(t *testing.T) {
 
 		args := []string{
 			"-common.storage.backend", "s3",
-			"-common.grpc-client.grpc-max-recv-msg-size", "1000000",
-			"-common.grpc-client.cluster-validation-label", "cluster",
+			"-common.client-cluster-validation.label", "client-cluster",
 		}
 		require.NoError(t, fs.Parse(args))
 
@@ -33,17 +31,13 @@ func TestCommonConfigCanBeExtended(t *testing.T) {
 
 		// Values should be properly inherited.
 		require.Equal(t, "s3", cfg.CustomStorage.Backend)
-		require.Equal(t, 1000000, cfg.CustomGRPCClient.GRPCClientConfig.MaxRecvMsgSize)
-		require.Equal(t, "cluster", cfg.CustomGRPCClient.GRPCClientConfig.ClusterValidationLabel)
+		require.Equal(t, "client-cluster", cfg.CustomClientClusterValidation.Label)
 
 		// Mimir's inheritance should still work.
 		require.Equal(t, "s3", cfg.MimirConfig.BlocksStorage.Bucket.Backend)
-		require.Equal(t, 1000000, cfg.MimirConfig.IngesterClient.GRPCClientConfig.MaxRecvMsgSize)
-		require.Equal(t, "cluster", cfg.MimirConfig.IngesterClient.GRPCClientConfig.ClusterValidationLabel)
-		require.Equal(t, 1000000, cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.MaxRecvMsgSize)
-		require.Equal(t, "cluster", cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.ClusterValidationLabel)
-		require.Equal(t, 1000000, cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.MaxRecvMsgSize)
-		require.Equal(t, "cluster", cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.ClusterValidationLabel)
+		require.Equal(t, "client-cluster", cfg.MimirConfig.IngesterClient.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "client-cluster", cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "client-cluster", cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation.Label)
 	})
 
 	t.Run("yaml inheritance", func(t *testing.T) {
@@ -51,9 +45,8 @@ func TestCommonConfigCanBeExtended(t *testing.T) {
 common:
   storage:
     backend: s3
-  grpc_client:
-    max_recv_msg_size: 1000000
-    cluster_validation_label: cluster
+  client_cluster_validation: 
+    label: client-cluster
 `
 
 		var cfg customExtendedConfig
@@ -65,30 +58,26 @@ common:
 
 		// Values should be properly inherited.
 		require.Equal(t, "s3", cfg.CustomStorage.Backend)
-		require.Equal(t, 1000000, cfg.CustomGRPCClient.GRPCClientConfig.MaxRecvMsgSize)
-		require.Equal(t, "cluster", cfg.CustomGRPCClient.GRPCClientConfig.ClusterValidationLabel)
+		require.Equal(t, "client-cluster", cfg.CustomClientClusterValidation.Label)
 
 		// Mimir's inheritance should still work.
 		require.Equal(t, "s3", cfg.MimirConfig.BlocksStorage.Bucket.Backend)
-		require.Equal(t, 1000000, cfg.MimirConfig.IngesterClient.GRPCClientConfig.MaxRecvMsgSize)
-		require.Equal(t, "cluster", cfg.MimirConfig.IngesterClient.GRPCClientConfig.ClusterValidationLabel)
-		require.Equal(t, 1000000, cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.MaxRecvMsgSize)
-		require.Equal(t, "cluster", cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.ClusterValidationLabel)
-		require.Equal(t, 1000000, cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.MaxRecvMsgSize)
-		require.Equal(t, "cluster", cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.ClusterValidationLabel)
+		require.Equal(t, "client-cluster", cfg.MimirConfig.IngesterClient.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "client-cluster", cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "client-cluster", cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation.Label)
 	})
 }
 
 type customExtendedConfig struct {
-	MimirConfig      mimir.Config           `yaml:",inline"`
-	CustomStorage    bucket.Config          `yaml:"custom_storage"`
-	CustomGRPCClient ingester_client.Config `yaml:"custom_grpc_client"`
+	MimirConfig                   mimir.Config                              `yaml:",inline"`
+	CustomStorage                 bucket.Config                             `yaml:"custom_storage"`
+	CustomClientClusterValidation clusterutil.ClientClusterValidationConfig `yaml:"custom_client_cluster_validation"`
 }
 
 func (c *customExtendedConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.MimirConfig.RegisterFlags(f, logger)
 	c.CustomStorage.RegisterFlagsWithPrefix("custom-storage", f)
-	c.CustomGRPCClient.RegisterFlagsWithPrefix("custom-ingester-client", f)
+	c.CustomClientClusterValidation.RegisterAndTrackFlagsWithPrefix("custom-client-cluster-validation", f)
 }
 
 func (c *customExtendedConfig) CommonConfigInheritance() mimir.CommonConfigInheritance {
@@ -96,8 +85,8 @@ func (c *customExtendedConfig) CommonConfigInheritance() mimir.CommonConfigInher
 		Storage: map[string]*bucket.StorageBackendConfig{
 			"custom": &c.CustomStorage.StorageBackendConfig,
 		},
-		GRPCClient: map[string]*util.GRPCClientConfig{
-			"custom_grpc_client": &c.CustomGRPCClient.GRPCClientConfig,
+		ClientClusterValidation: map[string]*clusterutil.ClientClusterValidationConfig{
+			"custom_client_cluster_validation": &c.CustomClientClusterValidation,
 		},
 	}
 }
@@ -115,10 +104,8 @@ func TestMimirConfigCanBeInlined(t *testing.T) {
 	const commonYAMLConfig = `
 custom_storage:
   backend: s3
-custom_grpc_client:
-  grpc_client_config:
-    max_recv_msg_size: 1000000
-    cluster_validation_label: cluster
+custom_client_cluster_validation:
+  label: client-cluster
 `
 
 	var cfg customExtendedConfig
@@ -130,6 +117,5 @@ custom_grpc_client:
 
 	// Value should be properly set.
 	require.Equal(t, "s3", cfg.CustomStorage.Backend)
-	require.Equal(t, 1000000, cfg.CustomGRPCClient.GRPCClientConfig.MaxRecvMsgSize)
-	require.Equal(t, "cluster", cfg.CustomGRPCClient.GRPCClientConfig.ClusterValidationLabel)
+	require.Equal(t, "client-cluster", cfg.CustomClientClusterValidation.Label)
 }

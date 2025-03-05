@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	grpcbackoff "google.golang.org/grpc/backoff"
@@ -45,6 +46,8 @@ type Config struct {
 
 	// CustomCompressors allows configuring custom compressors.
 	CustomCompressors []string `yaml:"-"`
+
+	ClusterValidation clusterutil.ClientClusterValidationConfig `yaml:"cluster_validation" category:"experimental"`
 
 	ClusterValidationLabel string `yaml:"cluster_validation_label" category:"experimental"`
 }
@@ -87,8 +90,8 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.ClusterValidationLabel, prefix+".cluster-validation-label", "", "Optionally define gRPC client's cluster validation label.")
 
 	cfg.BackoffConfig.RegisterFlagsWithPrefix(prefix, f)
-
 	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
+	cfg.ClusterValidation.RegisterAndTrackFlagsWithPrefix(prefix+".cluster-validation.", f)
 }
 
 func (cfg *Config) Validate() error {

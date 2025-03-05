@@ -32,7 +32,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -330,7 +329,7 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 }
 
 func TestCreateSchedulerProcessor(t *testing.T) {
-	conf := util.GRPCClientConfig{Config: grpcclient.Config{}}
+	conf := grpcclient.Config{}
 	flagext.DefaultValues(&conf)
 	conf.MaxSendMsgSize = 1 * 1024 * 1024
 
@@ -338,12 +337,12 @@ func TestCreateSchedulerProcessor(t *testing.T) {
 		SchedulerAddress:               "sched:12345",
 		QuerierID:                      "test",
 		QueryFrontendGRPCClientConfig:  conf,
-		QuerySchedulerGRPCClientConfig: util.GRPCClientConfig{Config: grpcclient.Config{MaxSendMsgSize: 5 * 1024}}, // schedulerProcessor should ignore this.
+		QuerySchedulerGRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 5 * 1024}, // schedulerProcessor should ignore this.
 		MaxConcurrentRequests:          5,
 	}, nil, nil, nil)
 
 	assert.Equal(t, 1*1024*1024, sp.maxMessageSize)
-	assert.Equal(t, conf.Config, sp.grpcConfig)
+	assert.Equal(t, conf, sp.grpcConfig)
 }
 
 func TestSchedulerProcessor_ResponseStream(t *testing.T) {
