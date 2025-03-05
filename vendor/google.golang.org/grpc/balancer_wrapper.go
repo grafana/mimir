@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/experimental/stats"
 	"google.golang.org/grpc/internal"
 	"google.golang.org/grpc/internal/balancer/gracefulswitch"
 	"google.golang.org/grpc/internal/channelz"
@@ -93,7 +94,6 @@ func newCCBalancerWrapper(cc *ClientConn) *ccBalancerWrapper {
 			CustomUserAgent: cc.dopts.copts.UserAgent,
 			ChannelzParent:  cc.channelz,
 			Target:          cc.parsedTarget,
-			MetricsRecorder: cc.metricsRecorderList,
 		},
 		serializer:       grpcsync.NewCallbackSerializer(ctx),
 		serializerCancel: cancel,
@@ -421,102 +421,6 @@ func (acbw *acBalancerWrapper) GetOrBuildProducer(pb balancer.ProducerBuilder) (
 		acbw.producersMu.Unlock()
 	}
 	return pData.producer, sync.OnceFunc(unref)
-}
-
-func (acbw *acBalancerWrapper) closeProducers() {
-	acbw.producersMu.Lock()
-	defer acbw.producersMu.Unlock()
-	for pb, pData := range acbw.producers {
-		pData.refs = 0
-		pData.close()
-		delete(acbw.producers, pb)
-	}
-}
-
-// healthProducerRegisterFn is a type alias for the health producer's function
-// for registering listeners.
-type healthProducerRegisterFn = func(context.Context, balancer.SubConn, string, func(balancer.SubConnState)) func()
-
-// healthListenerRegFn returns a function to register a listener for health
-// updates. If client side health checks are disabled, the registered listener
-// will get a single READY (raw connectivity state) update.
-//
-// Client side health checking is enabled when all the following
-// conditions are satisfied:
-// 1. Health checking is not disabled using the dial option.
-// 2. The health package is imported.
-// 3. The health check config is present in the service config.
-func (acbw *acBalancerWrapper) healthListenerRegFn() func(context.Context, func(balancer.SubConnState)) func() {
-	if acbw.ccb.cc.dopts.disableHealthCheck {
-		return noOpRegisterHealthListenerFn
-	}
-	regHealthLisFn := internal.RegisterClientHealthCheckListener
-	if regHealthLisFn == nil {
-		// The health package is not imported.
-		return noOpRegisterHealthListenerFn
-	}
-	cfg := acbw.ac.cc.healthCheckConfig()
-	if cfg == nil {
-		return noOpRegisterHealthListenerFn
-	}
-	return func(ctx context.Context, listener func(balancer.SubConnState)) func() {
-		return regHealthLisFn.(healthProducerRegisterFn)(ctx, acbw, cfg.ServiceName, listener)
-	}
-}
-
-// RegisterHealthListener accepts a health listener from the LB policy. It sends
-// updates to the health listener as long as the SubConn's connectivity state
-// doesn't change and a new health listener is not registered. To invalidate
-// the currently registered health listener, acbw updates the healthData. If a
-// nil listener is registered, the active health listener is dropped.
-func (acbw *acBalancerWrapper) RegisterHealthListener(listener func(balancer.SubConnState)) {
-	acbw.healthMu.Lock()
-	defer acbw.healthMu.Unlock()
-	acbw.healthData.closeHealthProducer()
-	// listeners should not be registered when the connectivity state
-	// isn't Ready. This may happen when the balancer registers a listener
-	// after the connectivityState is updated, but before it is notified
-	// of the update.
-	if acbw.healthData.connectivityState != connectivity.Ready {
-		return
-	}
-	// Replace the health data to stop sending updates to any previously
-	// registered health listeners.
-	hd := newHealthData(connectivity.Ready)
-	acbw.healthData = hd
-	if listener == nil {
-		return
-	}
-
-	registerFn := acbw.healthListenerRegFn()
-	acbw.ccb.serializer.TrySchedule(func(ctx context.Context) {
-		if ctx.Err() != nil || acbw.ccb.balancer == nil {
-			return
-		}
-		// Don't send updates if a new listener is registered.
-		acbw.healthMu.Lock()
-		defer acbw.healthMu.Unlock()
-		if acbw.healthData != hd {
-			return
-		}
-		// Serialize the health updates from the health producer with
-		// other calls into the LB policy.
-		listenerWrapper := func(scs balancer.SubConnState) {
-			acbw.ccb.serializer.TrySchedule(func(ctx context.Context) {
-				if ctx.Err() != nil || acbw.ccb.balancer == nil {
-					return
-				}
-				acbw.healthMu.Lock()
-				defer acbw.healthMu.Unlock()
-				if acbw.healthData != hd {
-					return
-				}
-				listener(scs)
-			})
-		}
-
-		hd.closeHealthProducer = registerFn(ctx, listenerWrapper)
-	})
 }
 
 func (acbw *acBalancerWrapper) closeProducers() {
