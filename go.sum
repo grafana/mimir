@@ -1274,8 +1274,8 @@ github.com/grafana/alerting v0.0.0-20250225150117-15e285d78df2 h1:kESrzm0FcRVLmG
 github.com/grafana/alerting v0.0.0-20250225150117-15e285d78df2/go.mod h1:hdGB3dSl8Ma9Rjo2YiAEAjMkZ5HiNJbNDqRKDefRZrM=
 github.com/grafana/dskit v0.0.0-20250303172748-fd4441b85237 h1:VZagYtPcmjgazfPAuWN7lER6mprG20r51+1eYPpATkw=
 github.com/grafana/dskit v0.0.0-20250303172748-fd4441b85237/go.mod h1:cu2zIOHhAgRaIDuECsERftSp1l7KHq1aX1jgihQCu0c=
-github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc h1:BW+LjKJDz0So5LI8UZfW5neWeKpSkWqhmGjQFzcFfLM=
-github.com/grafana/e2e v0.1.2-0.20240118170847-db90b84177fc/go.mod h1:JVmqPBe8A/pZWwRoJW5ZjyALeY5OXMzPl7LrVXOdZAI=
+github.com/grafana/e2e v0.1.2-0.20250306030804-b80b212be908 h1:l3pFNUs4heAhiXnMo0thaJQrNWeE4SgLqUOEUmZtC6A=
+github.com/grafana/e2e v0.1.2-0.20250306030804-b80b212be908/go.mod h1:JVmqPBe8A/pZWwRoJW5ZjyALeY5OXMzPl7LrVXOdZAI=
 github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937 h1:fwwnG/NcygoS6XbAaEyK2QzMXI/BZIEJvQ3CD+7XZm8=
 github.com/grafana/franz-go v0.0.0-20241009100846-782ba1442937/go.mod h1:NreRdJ2F7dziDY/m6VyspWd6sNxHKXdMZI42UfQ3GXM=
 github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce h1:WI1olbgS+sEl77qxEYbmt9TgRUz7iLqmjh8lYPpGlKQ=
