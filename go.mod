@@ -338,7 +338,7 @@ replace github.com/twmb/franz-go => github.com/grafana/franz-go v0.0.0-202410091
 replace google.golang.org/grpc => google.golang.org/grpc v1.65.0
 
 // Vendoring the "usage-tracker" branch in dskit.
-replace github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20250305150001-fbefe8b607dd
+replace github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20250306154027-ae4c5a242a16
 
 // Replacing client_golang with https://github.com/prometheus/client_golang/pull/1766
 replace github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.19.1-0.20250306102358-8cc8a0e0f08e
