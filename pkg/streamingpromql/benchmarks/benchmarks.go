@@ -279,7 +279,7 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr: "quantile(0.9, a_X)",
 		},
 		{
-			Expr: "quantile by (l) (0.1, b_X)",
+			Expr: "quantile by (le) (0.1, h_X)",
 		},
 		// Combinations.
 		{
