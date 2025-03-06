@@ -726,7 +726,7 @@
               "kind": "field",
               "name": "label",
               "required": false,
-              "desc": "Optionally define server's cluster validation label.",
+              "desc": "Optionally define the server's cluster validation label. When the validation is enabled, this value will be compared with the cluster validation label received through the requests.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "server.cluster-validation.label",
@@ -2411,7 +2411,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define client's cluster validation label.",
+                  "desc": "Optionally define the cluster validation label to be sent together with the requests by the clients.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "ingester.client.cluster-validation.label",
@@ -2421,17 +2421,6 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
-            },
-            {
-              "kind": "field",
-              "name": "cluster_validation_label",
-              "required": false,
-              "desc": "Optionally define gRPC client's cluster validation label.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "ingester.client.cluster-validation-label",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -5686,7 +5675,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define client's cluster validation label.",
+                  "desc": "Optionally define the cluster validation label to be sent together with the requests by the clients.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "querier.frontend-client.cluster-validation.label",
@@ -5696,17 +5685,6 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
-            },
-            {
-              "kind": "field",
-              "name": "cluster_validation_label",
-              "required": false,
-              "desc": "Optionally define gRPC client's cluster validation label.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "querier.frontend-client.cluster-validation-label",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -5980,7 +5958,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define client's cluster validation label.",
+                  "desc": "Optionally define the cluster validation label to be sent together with the requests by the clients.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "querier.scheduler-client.cluster-validation.label",
@@ -5990,17 +5968,6 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
-            },
-            {
-              "kind": "field",
-              "name": "cluster_validation_label",
-              "required": false,
-              "desc": "Optionally define gRPC client's cluster validation label.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "querier.scheduler-client.cluster-validation-label",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -6403,7 +6370,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define client's cluster validation label.",
+                  "desc": "Optionally define the cluster validation label to be sent together with the requests by the clients.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-frontend.grpc-client-config.cluster-validation.label",
@@ -6413,17 +6380,6 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
-            },
-            {
-              "kind": "field",
-              "name": "cluster_validation_label",
-              "required": false,
-              "desc": "Optionally define gRPC client's cluster validation label.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "query-frontend.grpc-client-config.cluster-validation-label",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -6725,12 +6681,12 @@
                 },
                 {
                   "kind": "field",
-                  "name": "dns_ignore_startup_failures",
+                  "name": "dns_initialization_enabled",
                   "required": false,
-                  "desc": "Allow client creation even if initial DNS resolution fails.",
+                  "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
                   "fieldValue": null,
-                  "fieldDefaultValue": false,
-                  "fieldFlag": "query-frontend.results-cache.memcached.dns-ignore-startup-failures",
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "query-frontend.results-cache.memcached.dns-initialization-enabled",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
                 }
@@ -8880,12 +8836,12 @@
                     },
                     {
                       "kind": "field",
-                      "name": "dns_ignore_startup_failures",
+                      "name": "dns_initialization_enabled",
                       "required": false,
-                      "desc": "Allow client creation even if initial DNS resolution fails.",
+                      "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures",
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-initialization-enabled",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
                     }
@@ -9454,12 +9410,12 @@
                     },
                     {
                       "kind": "field",
-                      "name": "dns_ignore_startup_failures",
+                      "name": "dns_initialization_enabled",
                       "required": false,
-                      "desc": "Allow client creation even if initial DNS resolution fails.",
+                      "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures",
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-initialization-enabled",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
                     }
@@ -10052,12 +10008,12 @@
                     },
                     {
                       "kind": "field",
-                      "name": "dns_ignore_startup_failures",
+                      "name": "dns_initialization_enabled",
                       "required": false,
-                      "desc": "Allow client creation even if initial DNS resolution fails.",
+                      "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
                       "fieldValue": null,
-                      "fieldDefaultValue": false,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures",
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-initialization-enabled",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
                     }
@@ -12919,7 +12875,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define client's cluster validation label.",
+                  "desc": "Optionally define the cluster validation label to be sent together with the requests by the clients.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "ruler.client.cluster-validation.label",
@@ -12929,17 +12885,6 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
-            },
-            {
-              "kind": "field",
-              "name": "cluster_validation_label",
-              "required": false,
-              "desc": "Optionally define gRPC client's cluster validation label.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "ruler.client.cluster-validation-label",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -13988,7 +13933,7 @@
                       "kind": "field",
                       "name": "label",
                       "required": false,
-                      "desc": "Optionally define client's cluster validation label.",
+                      "desc": "Optionally define the cluster validation label to be sent together with the requests by the clients.",
                       "fieldValue": null,
                       "fieldDefaultValue": "",
                       "fieldFlag": "ruler.query-frontend.grpc-client-config.cluster-validation.label",
@@ -13998,17 +13943,6 @@
                   ],
                   "fieldValue": null,
                   "fieldDefaultValue": null
-                },
-                {
-                  "kind": "field",
-                  "name": "cluster_validation_label",
-                  "required": false,
-                  "desc": "Optionally define gRPC client's cluster validation label.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": "",
-                  "fieldFlag": "ruler.query-frontend.grpc-client-config.cluster-validation-label",
-                  "fieldType": "string",
-                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -15436,12 +15370,12 @@
                 },
                 {
                   "kind": "field",
-                  "name": "dns_ignore_startup_failures",
+                  "name": "dns_initialization_enabled",
                   "required": false,
-                  "desc": "Allow client creation even if initial DNS resolution fails.",
+                  "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
                   "fieldValue": null,
-                  "fieldDefaultValue": false,
-                  "fieldFlag": "ruler-storage.cache.memcached.dns-ignore-startup-failures",
+                  "fieldDefaultValue": true,
+                  "fieldFlag": "ruler-storage.cache.memcached.dns-initialization-enabled",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
                 }
@@ -16608,7 +16542,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define client's cluster validation label.",
+                  "desc": "Optionally define the cluster validation label to be sent together with the requests by the clients.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "alertmanager.alertmanager-client.cluster-validation.label",
@@ -16618,17 +16552,6 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
-            },
-            {
-              "kind": "field",
-              "name": "cluster_validation_label",
-              "required": false,
-              "desc": "Optionally define gRPC client's cluster validation label.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "alertmanager.alertmanager-client.cluster-validation-label",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -18545,7 +18468,7 @@
                   "kind": "field",
                   "name": "label",
                   "required": false,
-                  "desc": "Optionally define client's cluster validation label.",
+                  "desc": "Optionally define the cluster validation label to be sent together with the requests by the clients.",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "query-scheduler.grpc-client-config.cluster-validation.label",
@@ -18555,17 +18478,6 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
-            },
-            {
-              "kind": "field",
-              "name": "cluster_validation_label",
-              "required": false,
-              "desc": "Optionally define gRPC client's cluster validation label.",
-              "fieldValue": null,
-              "fieldDefaultValue": "",
-              "fieldFlag": "query-scheduler.grpc-client-config.cluster-validation-label",
-              "fieldType": "string",
-              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -20549,7 +20461,7 @@
               "kind": "field",
               "name": "label",
               "required": false,
-              "desc": "Optionally define client's cluster validation label.",
+              "desc": "Optionally define the cluster validation label to be sent together with the requests by the clients.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "common.client-cluster-validation.label",

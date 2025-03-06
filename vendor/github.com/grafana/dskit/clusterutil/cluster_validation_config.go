@@ -13,7 +13,7 @@ type ClientClusterValidationConfig struct {
 }
 
 func (cfg *ClientClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define client's cluster validation label.")
+	f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define the cluster validation label to be sent together with the requests by the clients.")
 }
 
 func (cfg *ClientClusterValidationConfig) RegisterAndTrackFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -43,7 +43,7 @@ func (cfg *ClusterValidationConfig) RegisterAndTrackFlagsWithPrefix(prefix strin
 }
 
 func (cfg *ClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define server's cluster validation label.")
+	f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define the server's cluster validation label. When the validation is enabled, this value will be compared with the cluster validation label received through the requests.")
 	cfg.GRPC.RegisterFlagsWithPrefix(prefix+"grpc.", f)
 }
 
