@@ -274,7 +274,7 @@ func TestFilterRuleGroupsByNotEmptyUsers(t *testing.T) {
 func TestDefaultMultiTenantManager_NotifierConfiguration(t *testing.T) {
 	// We have two alertmanagers.
 	alertmanager1ReceivedRequest := make(chan struct{}, 2)
-	alertmanager1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	alertmanager1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		alertmanager1ReceivedRequest <- struct{}{}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -283,7 +283,7 @@ func TestDefaultMultiTenantManager_NotifierConfiguration(t *testing.T) {
 	}()
 
 	alertmanager2ReceivedRequest := make(chan struct{}, 2)
-	alertmanager2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	alertmanager2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		alertmanager2ReceivedRequest <- struct{}{}
 		w.WriteHeader(http.StatusOK)
 	}))
