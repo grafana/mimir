@@ -8,6 +8,7 @@ import (
 
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
+
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -33,11 +34,11 @@ func (acc *AlertmanagerClientConfig) String() string {
 }
 
 func (acc *AlertmanagerClientConfig) Set(s string) error {
-	new := AlertmanagerClientConfig{}
-	if err := json.Unmarshal([]byte(s), &new); err != nil {
+	cfg := AlertmanagerClientConfig{}
+	if err := json.Unmarshal([]byte(s), &cfg); err != nil {
 		return err
 	}
-	*acc = new
+	*acc = cfg
 	return nil
 }
 
