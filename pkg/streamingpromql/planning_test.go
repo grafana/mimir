@@ -873,7 +873,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			originalPlan, err := engine.NewQueryPlan(ctx, testCase.expr, testCase.timeRange)
+			originalPlan, err := engine.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			// Encode plan to JSON, confirm it matches what we expect
