@@ -29,6 +29,7 @@ type partition struct {
 	cfg        Config
 	logger     log.Logger
 	registerer prometheus.Registerer
+	collector  prometheus.Collector
 
 	partitionID int32
 
@@ -60,15 +61,14 @@ func newPartition(
 	logger log.Logger,
 	registerer prometheus.Registerer,
 ) (*partition, error) {
-
-	registerer = prometheus.WrapRegistererWith(prometheus.Labels{"partition": strconv.FormatInt(int64(partitionID), 10)}, registerer)
+	reg := prometheus.NewRegistry()
 	logger = log.With(logger, "partition", partitionID)
-
 	p := &partition{
 		cfg:           cfg,
 		partitionRing: partitionRing,
 		logger:        logger,
 		registerer:    registerer,
+		collector:     prometheus.WrapCollectorWith(prometheus.Labels{"partition": strconv.FormatInt(int64(partitionID), 10)}, reg),
 
 		partitionID: partitionID,
 
@@ -83,21 +83,21 @@ func newPartition(
 	instanceID := fmt.Sprintf("%s/%d", cfg.InstanceRing.InstanceID, partitionID)
 
 	var err error
-	p.partitionLifecycler, err = NewPartitionRingLifecycler(cfg.PartitionRing, p.partitionID, instanceID, partitionKVClient, logger, registerer)
+	p.partitionLifecycler, err = NewPartitionRingLifecycler(cfg.PartitionRing, p.partitionID, instanceID, partitionKVClient, logger, reg)
 	if err != nil {
 		return nil, err
 	}
 	p.partitionLifecycler.SetRemoveOwnerOnShutdown(true)
 
 	// Create Kafka reader for events storage.
-	p.eventsKafkaReader, err = ingest.NewKafkaReaderClient(p.cfg.EventsStorage.Reader, ingest.NewKafkaReaderClientMetrics(eventsKafkaReaderMetricsPrefix, "usage-tracker", p.registerer), p.logger)
+	p.eventsKafkaReader, err = ingest.NewKafkaReaderClient(p.cfg.EventsStorage.Reader, ingest.NewKafkaReaderClientMetrics(eventsKafkaReaderMetricsPrefix, "usage-tracker", reg), p.logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create Kafka reader client for usage-tracker")
 	}
 
 	eventsPublisher := chanEventsPublisher{events: p.pendingCreatedSeriesMarshaledEvents, logger: logger}
 	p.store = newTrackerStore(cfg.IdleTimeout, logger, lim, eventsPublisher)
-	if err := registerer.Register(p.store); err != nil {
+	if err := reg.Register(p.store); err != nil {
 		return nil, errors.Wrap(err, "unable to register usage-tracker store as Prometheus collector")
 	}
 	p.Service = services.NewBasicService(p.start, p.run, p.stop)
@@ -107,6 +107,10 @@ func newPartition(
 
 // start implements services.StartingFn.
 func (p *partition) start(ctx context.Context) error {
+	if err := p.registerer.Register(p.collector); err != nil {
+		return errors.Wrap(err, "unable to register usage-tracker partition collector as Prometheus collector")
+	}
+
 	startConsumingEventsAtMillis := time.Now().Add(-p.cfg.IdleTimeout).UnixMilli()
 	p.eventsKafkaReader.AddConsumePartitions(map[string]map[int32]kgo.Offset{
 		p.cfg.EventsStorage.TopicName: {p.partitionID: kgo.NewOffset().AfterMilli(startConsumingEventsAtMillis)},
@@ -146,7 +150,7 @@ func (p *partition) run(ctx context.Context) error {
 
 // stop implements services.StoppingFn.
 func (p *partition) stop(_ error) error {
-	p.registerer.Unregister(p.store)
+	p.registerer.Unregister(p.collector)
 	// Stop dependencies.
 	err := services.StopAndAwaitTerminated(context.Background(), p.partitionLifecycler)
 
