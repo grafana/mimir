@@ -17,7 +17,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -25,6 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/ruler/notifier"
 )
 
 func TestMain(m *testing.M) {
