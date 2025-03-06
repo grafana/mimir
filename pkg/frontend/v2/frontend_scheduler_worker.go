@@ -16,6 +16,7 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -58,7 +59,8 @@ type frontendSchedulerWorkers struct {
 	// Set to nil when stop is called... no more workers are created afterwards.
 	workers map[string]*frontendSchedulerWorker
 
-	enqueueDuration *prometheus.HistogramVec
+	enqueueDuration          *prometheus.HistogramVec
+	invalidClusterValidation *prometheus.CounterVec
 }
 
 func newFrontendSchedulerWorkers(
@@ -84,6 +86,7 @@ func newFrontendSchedulerWorkers(
 			// track 1ms latency too and removing any bucket bigger than 1s.
 			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
 		}, []string{schedulerAddressLabel}),
+		invalidClusterValidation: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "query-scheduler", util.GRPCProtocol),
 	}
 
 	var err error
@@ -219,7 +222,11 @@ func (f *frontendSchedulerWorkers) getWorkersCount() int {
 
 func (f *frontendSchedulerWorkers) connectToScheduler(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	opts, err := f.cfg.GRPCClientConfig.DialOption(nil, nil)
+	var unary []grpc.UnaryClientInterceptor
+	if f.cfg.GRPCClientConfig.ClusterValidation.Label != "" {
+		unary = []grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(f.cfg.GRPCClientConfig.ClusterValidation.Label, f.invalidClusterValidation, f.log)}
+	}
+	opts, err := f.cfg.GRPCClientConfig.DialOption(unary, nil)
 	if err != nil {
 		return nil, err
 	}
