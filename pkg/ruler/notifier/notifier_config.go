@@ -3,13 +3,13 @@
 package notifier
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
 	"hash/fnv"
 
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -28,7 +28,7 @@ type AlertmanagerClientConfig struct {
 }
 
 func (acc *AlertmanagerClientConfig) String() string {
-	out, err := json.Marshal(acc)
+	out, err := yaml.Marshal(acc)
 	if err != nil {
 		return fmt.Sprintf("failed to marshal: %v", err)
 	}
@@ -37,7 +37,7 @@ func (acc *AlertmanagerClientConfig) String() string {
 
 func (acc *AlertmanagerClientConfig) Set(s string) error {
 	cfg := AlertmanagerClientConfig{}
-	if err := json.Unmarshal([]byte(s), &cfg); err != nil {
+	if err := yaml.Unmarshal([]byte(s), &cfg); err != nil {
 		return err
 	}
 	*acc = cfg
