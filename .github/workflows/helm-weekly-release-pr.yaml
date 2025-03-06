@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: imjasonh/setup-crane@v0.4
 
-      - name: Retrieve GitHub App Credentials from Vault
+      - name: Retrieve GitHub App credentials from Vault
         id: get-secrets
         uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
         with:
