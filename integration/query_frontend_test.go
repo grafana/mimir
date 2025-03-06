@@ -372,7 +372,9 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			start := end.Add(-(30*24*time.Hour + 1*time.Hour)) // 30 days + 1 hour. Makes sure we can go above the max partial query length.
 			_, err = c.QueryRange("{instance=~\"hello.*\"}", start, end, time.Hour)
 			require.NoError(t, err)
-			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(31), "cortex_frontend_split_queries_total"))
+
+			// Depending on what time it is and how that aligns with midnight UTC, the query may be broken into 31 or 32 parts.
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Between(31, 32), "cortex_frontend_split_queries_total"))
 		}
 
 		// No need to repeat the test on start/end time rounding for each user.
