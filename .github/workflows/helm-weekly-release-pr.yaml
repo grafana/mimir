@@ -26,7 +26,7 @@ jobs:
             APP_ID=mimir-github-bot:app_id
             PRIVATE_KEY=mimir-github-bot:private_key
 
-      - name: Generate GitHub App Token
+      - name: Generate GitHub App token
         id: app-token
         uses: actions/create-github-app-token@v1
         with:
