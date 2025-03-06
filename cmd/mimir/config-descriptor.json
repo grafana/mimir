@@ -6597,12 +6597,12 @@
                 },
                 {
                   "kind": "field",
-                  "name": "dns_initialization_enabled",
+                  "name": "dns_ignore_startup_failures",
                   "required": false,
-                  "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                  "desc": "Allow client creation even if initial DNS resolution fails.",
                   "fieldValue": null,
-                  "fieldDefaultValue": true,
-                  "fieldFlag": "query-frontend.results-cache.memcached.dns-initialization-enabled",
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "query-frontend.results-cache.memcached.dns-ignore-startup-failures",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
                 }
@@ -8752,12 +8752,12 @@
                     },
                     {
                       "kind": "field",
-                      "name": "dns_initialization_enabled",
+                      "name": "dns_ignore_startup_failures",
                       "required": false,
-                      "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                      "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": true,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-initialization-enabled",
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
                     }
@@ -9326,12 +9326,12 @@
                     },
                     {
                       "kind": "field",
-                      "name": "dns_initialization_enabled",
+                      "name": "dns_ignore_startup_failures",
                       "required": false,
-                      "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                      "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": true,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-initialization-enabled",
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
                     }
@@ -9924,12 +9924,12 @@
                     },
                     {
                       "kind": "field",
-                      "name": "dns_initialization_enabled",
+                      "name": "dns_ignore_startup_failures",
                       "required": false,
-                      "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                      "desc": "Allow client creation even if initial DNS resolution fails.",
                       "fieldValue": null,
-                      "fieldDefaultValue": true,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-initialization-enabled",
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
                     }
@@ -15244,12 +15244,12 @@
                 },
                 {
                   "kind": "field",
-                  "name": "dns_initialization_enabled",
+                  "name": "dns_ignore_startup_failures",
                   "required": false,
-                  "desc": "Enable initial DNS lookup and background resolution on memcached client creation.",
+                  "desc": "Allow client creation even if initial DNS resolution fails.",
                   "fieldValue": null,
-                  "fieldDefaultValue": true,
-                  "fieldFlag": "ruler-storage.cache.memcached.dns-initialization-enabled",
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.cache.memcached.dns-ignore-startup-failures",
                   "fieldType": "boolean",
                   "fieldCategory": "experimental"
                 }
