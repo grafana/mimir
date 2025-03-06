@@ -230,6 +230,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"frontend_worker_scheduler_client": &c.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation,
 			"block_builder_scheduler_client":   &c.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation,
 			"frontend_query_scheduler_client":  &c.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation,
+			"querier_store_gateway_client":     &c.Querier.StoreGatewayClient.ClusterValidation,
 		},
 	}
 }
