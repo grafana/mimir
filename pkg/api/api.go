@@ -475,8 +475,10 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 // RegisterQueryFrontendHandler registers the Prometheus routes supported by the
 // Mimir querier service. Currently, this can not be registered simultaneously
 // with the Querier.
-func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler) {
+func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler, analysisHandler http.Handler) {
 	a.RegisterQueryAPI(h, buildInfoHandler)
+
+	a.RegisterRoute("/api/v1/analyze", analysisHandler, true, true, "POST")
 }
 
 func (a *API) RegisterQueryFrontend1(f *frontendv1.Frontend) {
