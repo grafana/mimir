@@ -29,6 +29,7 @@ import (
 	"go.uber.org/atomic"
 	"gopkg.in/yaml.v3"
 
+	rulernotifier "github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -270,6 +271,111 @@ func TestFilterRuleGroupsByNotEmptyUsers(t *testing.T) {
 	}
 }
 
+func TestDefaultMultiTenantManager_NotifierConfiguration(t *testing.T) {
+	// We have two alertmanagers.
+	alertmanager1ReceivedRequest := make(chan struct{}, 2)
+	alertmanager1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		alertmanager1ReceivedRequest <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer func() {
+		alertmanager1.Close()
+	}()
+
+	alertmanager2ReceivedRequest := make(chan struct{}, 2)
+	alertmanager2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		alertmanager2ReceivedRequest <- struct{}{}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer func() {
+		alertmanager2.Close()
+	}()
+
+	ctx := context.Background()
+	logger := testutil.NewTestingLogger(t)
+
+	// We have two users with rules.
+	const user1 = "user-1"
+	user1Group := createRuleGroup("group-1", user1, createRecordingRule("count:metric_1", "count(metric_1)"))
+
+	const user2 = "user-2"
+	user2Group := createRuleGroup("group-1", user2, createRecordingRule("count:metric_1", "count(metric_1)"))
+
+	// The ruler config points at alertmanager 1.
+	cfg := Config{
+		RulePath:                  t.TempDir(),
+		AlertmanagerURL:           alertmanager1.URL,
+		NotificationQueueCapacity: 1000,
+		NotificationTimeout:       10 * time.Second,
+	}
+
+	// user-2's tenant configuration is overriddent to point at alertmanager 2.
+	overrides := validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+		tenantLimits[user1] = validation.MockDefaultLimits()
+		tenantLimits[user2] = validation.MockDefaultLimits()
+		tenantLimits[user2].RulerAlertmanagerClientConfig = rulernotifier.AlertmanagerClientConfig{
+			AlertmanagerURL: alertmanager2.URL,
+		}
+	})
+
+	// Start a manager.
+	m, err := NewDefaultMultiTenantManager(cfg, managerMockFactory, nil, logger, nil, overrides)
+	require.NoError(t, err)
+	defer m.Stop()
+	m.SyncFullRuleGroups(ctx, map[string]rulespb.RuleGroupList{
+		user1: {user1Group},
+		user2: {user2Group},
+	})
+	m.Start()
+
+	t.Run("creating notifier with global alertmanager settings sends to correct alertmanager", func(t *testing.T) {
+		_ = assertManagerMockRunningForUser(t, m, user1)
+		userNotifier := assertNotifierRunningForUser(t, m, user1)
+		waitForAlertmanagerToBeDiscovered(t, userNotifier.notifier)
+
+		require.Equal(t, 1, len(userNotifier.notifier.Alertmanagers()))
+		require.Contains(t, userNotifier.notifier.Alertmanagers()[0].String(), alertmanager1.URL)
+
+		// Send an alert.
+		userNotifier.notifier.Send(&notifier.Alert{Labels: labels.FromStrings(labels.AlertName, "alert-1")})
+
+		// Wait for the Alertmanager to receive the request.
+		select {
+		case <-alertmanager1ReceivedRequest:
+			// We can continue.
+		case <-alertmanager2ReceivedRequest:
+			require.FailNow(t, "wrong alertmanager received the alert")
+		case <-time.After(time.Second):
+			require.FailNow(t, "gave up waiting for first notification request to be sent")
+		}
+	})
+
+	// Clear out anything potentially leftover
+	clearStructChannel(alertmanager1ReceivedRequest)
+	clearStructChannel(alertmanager2ReceivedRequest)
+
+	t.Run("creating notifier with tenant-overridden alertmanager settings sends to correct alertmanager", func(t *testing.T) {
+		_ = assertManagerMockRunningForUser(t, m, user2)
+		userNotifier := assertNotifierRunningForUser(t, m, user2)
+		waitForAlertmanagerToBeDiscovered(t, userNotifier.notifier)
+
+		require.Equal(t, 1, len(userNotifier.notifier.Alertmanagers()))
+		require.Contains(t, userNotifier.notifier.Alertmanagers()[0].String(), alertmanager2.URL)
+
+		// Send an alert.
+		userNotifier.notifier.Send(&notifier.Alert{Labels: labels.FromStrings(labels.AlertName, "alert-2")})
+		// Wait for the Alertmanager to receive the request.
+		select {
+		case <-alertmanager1ReceivedRequest:
+			require.FailNow(t, "wrong alertmanager received the alert")
+		case <-alertmanager2ReceivedRequest:
+			// We can continue.
+		case <-time.After(time.Second):
+			require.FailNow(t, "gave up waiting for first notification request to be sent")
+		}
+	})
+}
+
 func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t *testing.T) {
 	releaseReceiver := make(chan struct{})
 	receiverReceivedRequest := make(chan struct{}, 2)
@@ -378,6 +484,12 @@ func getManager(m *DefaultMultiTenantManager, user string) RulesManager {
 	return m.userManagers[user]
 }
 
+func getNotifier(m *DefaultMultiTenantManager, user string) *rulerNotifier {
+	m.notifiersMtx.Lock()
+	defer m.notifiersMtx.Unlock()
+	return m.notifiers[user]
+}
+
 func assertManagerMockRunningForUser(t *testing.T, m *DefaultMultiTenantManager, userID string) *managerMock {
 	t.Helper()
 
@@ -406,6 +518,13 @@ func assertManagerMockStopped(t *testing.T, m *managerMock) {
 	test.Poll(t, 1*time.Second, false, func() interface{} {
 		return m.running.Load()
 	})
+}
+
+func assertNotifierRunningForUser(t *testing.T, m *DefaultMultiTenantManager, userID string) *rulerNotifier {
+	t.Helper()
+	n := getNotifier(m, userID)
+	require.NotNil(t, n)
+	return n
 }
 
 func assertRuleGroupsMappedOnDisk(t *testing.T, m *DefaultMultiTenantManager, userID string, expectedRuleGroups rulespb.RuleGroupList) {
@@ -441,6 +560,12 @@ func assertRuleGroupsMappedOnDisk(t *testing.T, m *DefaultMultiTenantManager, us
 		assert.Equal(t, string(expectedYAML), string(content))
 
 		require.NoError(t, file.Close())
+	}
+}
+
+func clearStructChannel(ch chan struct{}) {
+	for len(ch) > 0 {
+		<-ch
 	}
 }
 
