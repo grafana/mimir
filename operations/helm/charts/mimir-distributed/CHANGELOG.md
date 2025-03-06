@@ -1,6 +1,5 @@
 # Changelog
 
-
 ## Deprecated features
 
 This section contains deprecated features and interfaces that the chart exposes. The deprecation policy of the chart is to
