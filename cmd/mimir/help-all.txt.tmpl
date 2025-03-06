@@ -439,8 +439,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
-  -blocks-storage.bucket-store.chunks-cache.memcached.dns-initialization-enabled
-    	[experimental] Enable initial DNS lookup and background resolution on memcached client creation. (default true)
+  -blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures
+    	[experimental] Allow client creation even if initial DNS resolution fails.
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency int
@@ -545,8 +545,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.index-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
-  -blocks-storage.bucket-store.index-cache.memcached.dns-initialization-enabled
-    	[experimental] Enable initial DNS lookup and background resolution on memcached client creation. (default true)
+  -blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures
+    	[experimental] Allow client creation even if initial DNS resolution fails.
   -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency int
@@ -669,8 +669,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
-  -blocks-storage.bucket-store.metadata-cache.memcached.dns-initialization-enabled
-    	[experimental] Enable initial DNS lookup and background resolution on memcached client creation. (default true)
+  -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures
+    	[experimental] Allow client creation even if initial DNS resolution fails.
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency int
@@ -2407,8 +2407,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -query-frontend.results-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
-  -query-frontend.results-cache.memcached.dns-initialization-enabled
-    	[experimental] Enable initial DNS lookup and background resolution on memcached client creation. (default true)
+  -query-frontend.results-cache.memcached.dns-ignore-startup-failures
+    	[experimental] Allow client creation even if initial DNS resolution fails.
   -query-frontend.results-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -query-frontend.results-cache.memcached.max-async-concurrency int
@@ -2675,8 +2675,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -ruler-storage.cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
-  -ruler-storage.cache.memcached.dns-initialization-enabled
-    	[experimental] Enable initial DNS lookup and background resolution on memcached client creation. (default true)
+  -ruler-storage.cache.memcached.dns-ignore-startup-failures
+    	[experimental] Allow client creation even if initial DNS resolution fails.
   -ruler-storage.cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -ruler-storage.cache.memcached.max-async-concurrency int
