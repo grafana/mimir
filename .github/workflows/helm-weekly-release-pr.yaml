@@ -6,12 +6,33 @@ on:
 
   workflow_dispatch: # for manual testing
 
+# These permissions are needed to assume roles from Github's OIDC.
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   weekly-release-pr:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: imjasonh/setup-crane@v0.4
+
+      - name: Retrieve GitHub App credentials from Vault
+        id: get-secrets
+        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
+        with:
+          repo_secrets: |
+            APP_ID=mimir-github-bot:app_id
+            PRIVATE_KEY=mimir-github-bot:private_key
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
 
       - name: Update/regenerate files
         id: update
@@ -20,7 +41,7 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
-          token: ${{ secrets.GH_BOT_ACCESS_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           title: Release mimir-distributed Helm chart ${{ steps.update.outputs.new_chart_version }}
           body: Automated PR created by [helm-weekly-release-pr.yaml](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-weekly-release-pr.yaml)
           commit-message: Update mimir-distributed chart to ${{ steps.update.outputs.new_chart_version }}
