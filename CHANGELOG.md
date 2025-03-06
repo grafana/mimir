@@ -84,6 +84,7 @@
 * [BUGFIX] Distributor: Report partially converted OTLP requests with status 400 Bad Request. #10588
 * [BUGFIX] Ruler: fix issue where rule evaluations could be missed while shutting down a ruler instance if that instance owns many rule groups. prometheus/prometheus#15804 #10762
 * [BUGFIX] Ingester: Add additional check on reactive limiter queue sizes. #10722
+* [BUGFIX] Distributor: Apply ingestion rate limit after custom PushWrappers have run. This ensures that the `ingestion_rate` limit is properly applied against the same value recorded in the `cortex_distributor_received_samples_total` metric. #10754
 
 ### Mixin
 
