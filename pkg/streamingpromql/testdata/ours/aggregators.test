@@ -700,3 +700,8 @@ eval range from 0 to 12m step 6m count_values by (idx) ("idx", series)
 # Once that fix is vendored into Mimir, we can remove the two (\\")? groups below.
 eval_fail instant at 0 count_values("a\xc5z", series)
   expected_fail_regexp invalid label name "(\\")?a\\(\\)?xc5z(\\")?"( for count_values)?
+
+clear
+
+# Quantile value warning is emitted even when no series are returned
+eval_warn range from 0 to 12m step 6m quantile(20, noseries)

@@ -237,7 +237,7 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			aggregator, err := NewAggregation(nil, nil, types.NewInstantQueryTimeRange(timestamp.Time(0)), testCase.grouping, testCase.without, parser.SUM, nil, nil, posrange.PositionRange{})
+			aggregator, err := NewAggregation(nil, types.NewInstantQueryTimeRange(timestamp.Time(0)), testCase.grouping, testCase.without, parser.SUM, nil, nil, posrange.PositionRange{})
 			require.NoError(t, err)
 			bytesFunc := aggregator.groupLabelsBytesFunc()
 			labelsFunc := aggregator.groupLabelsFunc()

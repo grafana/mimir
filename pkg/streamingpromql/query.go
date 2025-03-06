@@ -183,21 +183,30 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			return nil, err
 		}
 
-		var param types.ScalarOperator
 		if e.Param != nil {
 			switch e.Op {
 			case parser.TOPK, parser.BOTTOMK:
-				param, err = q.convertToScalarOperator(e.Param, timeRange)
+				param, err := q.convertToScalarOperator(e.Param, timeRange)
 				if err != nil {
 					return nil, err
 				}
 
 				return topkbottomk.New(inner, param, timeRange, e.Grouping, e.Without, e.Op == parser.TOPK, q.memoryConsumptionTracker, q.annotations, e.PosRange), nil
 			case parser.QUANTILE:
-				param, err = q.convertToScalarOperator(e.Param, timeRange)
+				param, err := q.convertToScalarOperator(e.Param, timeRange)
 				if err != nil {
 					return nil, err
 				}
+				return aggregations.NewQuantileAggregation(
+					inner,
+					param,
+					timeRange,
+					e.Grouping,
+					e.Without,
+					q.memoryConsumptionTracker,
+					q.annotations,
+					e.PosRange,
+				)
 			case parser.COUNT_VALUES:
 				param, err := q.convertToStringOperator(e.Param)
 				if err != nil {
@@ -212,7 +221,6 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 
 		return aggregations.NewAggregation(
 			inner,
-			param,
 			timeRange,
 			e.Grouping,
 			e.Without,

@@ -83,7 +83,7 @@ func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVector
 	return nil
 }
 
-func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ emitParamAnnotationFunc) (types.InstantVectorSeriesData, bool, error) {
+func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount := 0
 	for _, sc := range g.groupSeriesCounts {
 		if sc > 0 {

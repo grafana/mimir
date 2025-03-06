@@ -26,7 +26,6 @@ import (
 
 type Aggregation struct {
 	Inner                    types.InstantVectorOperator
-	Param                    types.ScalarOperator
 	TimeRange                types.QueryTimeRange
 	Grouping                 []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
 	Without                  bool
@@ -39,21 +38,22 @@ type Aggregation struct {
 	metricNames        *operators.MetricNames
 	currentSeriesIndex int
 
-	expressionPosition      posrange.PositionRange
-	emitAnnotationFunc      types.EmitAnnotationFunc
-	emitParamAnnotationFunc emitParamAnnotationFunc
+	expressionPosition posrange.PositionRange
+	emitAnnotationFunc types.EmitAnnotationFunc
 
 	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
 	remainingGroups             []*group // One entry per group, in the order we want to return them
 
 	haveEmittedMixedFloatsAndHistogramsWarning bool
 
-	paramData types.ScalarData
+	// If the aggregation has a parameter, its values are expected
+	// to be filled here by the wrapping operator.
+	// Currently only used by the quantile aggregation.
+	ParamData types.ScalarData
 }
 
 func NewAggregation(
 	inner types.InstantVectorOperator,
-	param types.ScalarOperator,
 	timeRange types.QueryTimeRange,
 	grouping []string,
 	without bool,
@@ -75,7 +75,6 @@ func NewAggregation(
 
 	a := &Aggregation{
 		Inner:                    inner,
-		Param:                    param,
 		TimeRange:                timeRange,
 		Grouping:                 grouping,
 		Without:                  without,
@@ -86,8 +85,7 @@ func NewAggregation(
 		aggregationGroupFactory:  opGroupFactory,
 	}
 
-	a.emitAnnotationFunc = a.emitAnnotation           // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
-	a.emitParamAnnotationFunc = a.emitParamAnnotation // This is an optimisation to avoid creating the emitParamAnnotation instance on every usage.
+	a.emitAnnotationFunc = a.emitAnnotation // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
 
 	return a, nil
 }
@@ -120,15 +118,6 @@ func (a *Aggregation) ExpressionPosition() posrange.PositionRange {
 }
 
 func (a *Aggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	// Pre-process any Scalar params
-	if a.Param != nil {
-		var err error
-		a.paramData, err = a.Param.GetValues(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	// Fetch the source series
 	innerSeries, err := a.Inner.SeriesMetadata(ctx)
 	if err != nil {
@@ -234,7 +223,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
-	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.paramData, a.TimeRange, a.MemoryConsumptionTracker, a.emitParamAnnotationFunc)
+	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.ParamData, a.TimeRange, a.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -279,17 +268,9 @@ func (a *Aggregation) emitAnnotation(generator types.AnnotationGenerator) {
 	a.Annotations.Add(generator(metricName, a.Inner.ExpressionPosition()))
 }
 
-func (a *Aggregation) emitParamAnnotation(param float64, generator paramAnnotationGenerator) {
-	a.Annotations.Add(generator(param, a.Param.ExpressionPosition()))
-}
-
 func (a *Aggregation) Close() {
-	if a.paramData.Samples != nil {
-		types.FPointSlicePool.Put(a.paramData.Samples, a.MemoryConsumptionTracker)
-	}
-	if a.Param != nil {
-		a.Param.Close()
-	}
+	// The wrapping operator is responsible for returning any a.ParamData slice
+	// since it is responsible for setting them up.
 	a.Inner.Close()
 }
 
@@ -310,9 +291,3 @@ func (g groupSorter) Swap(i, j int) {
 	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
 	g.groups[i], g.groups[j] = g.groups[j], g.groups[i]
 }
-
-// emitParamAnnotationFunc is a function that emits the annotation for a scalar param created by generator.
-type emitParamAnnotationFunc func(param float64, generator paramAnnotationGenerator)
-
-// paramAnnotationGenerator is a function that returns an annotation for the given scalar and expression position.
-type paramAnnotationGenerator func(param float64, expressionPosition posrange.PositionRange) error

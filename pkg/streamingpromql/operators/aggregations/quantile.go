@@ -6,10 +6,12 @@
 package aggregations
 
 import (
+	"context"
 	"math"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -18,6 +20,84 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
+
+// QuantileAggregation is a small wrapper around Aggregation to pre-process and validate
+// the quantile parameter and fill it into Aggregation.ParamData
+type QuantileAggregation struct {
+	Param                    types.ScalarOperator
+	Aggregation              *Aggregation
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	Annotations              *annotations.Annotations
+}
+
+func NewQuantileAggregation(
+	inner types.InstantVectorOperator,
+	param types.ScalarOperator,
+	timeRange types.QueryTimeRange,
+	grouping []string,
+	without bool,
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	annotations *annotations.Annotations,
+	expressionPosition posrange.PositionRange,
+) (*QuantileAggregation, error) {
+
+	a, err := NewAggregation(
+		inner,
+		timeRange,
+		grouping,
+		without,
+		parser.QUANTILE,
+		memoryConsumptionTracker,
+		annotations,
+		expressionPosition,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	q := &QuantileAggregation{
+		Aggregation:              a,
+		Param:                    param,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+		Annotations:              annotations,
+	}
+
+	return q, nil
+}
+
+func (q *QuantileAggregation) ExpressionPosition() posrange.PositionRange {
+	return q.Aggregation.ExpressionPosition()
+}
+
+func (q *QuantileAggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	var err error
+	q.Aggregation.ParamData, err = q.Param.GetValues(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Validate the parameter now so we only have to do it once for each group
+	for _, p := range q.Aggregation.ParamData.Samples {
+		if math.IsNaN(p.F) || p.F < 0 || p.F > 1 {
+			q.Annotations.Add(annotations.NewInvalidQuantileWarning(p.F, q.Param.ExpressionPosition()))
+		}
+	}
+
+	return q.Aggregation.SeriesMetadata(ctx)
+}
+
+func (q *QuantileAggregation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	return q.Aggregation.NextSeries(ctx)
+}
+
+func (q *QuantileAggregation) Close() {
+	if q.Aggregation.ParamData.Samples != nil {
+		types.FPointSlicePool.Put(q.Aggregation.ParamData.Samples, q.MemoryConsumptionTracker)
+	}
+	if q.Param != nil {
+		q.Param.Close()
+	}
+	q.Aggregation.Close()
+}
 
 type QuantileAggregationGroup struct {
 	qGroups []qGroup // A group per point in time
@@ -76,7 +156,7 @@ func (q *QuantileAggregationGroup) AccumulateSeries(data types.InstantVectorSeri
 	return nil
 }
 
-func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitParamAnnotationFunc emitParamAnnotationFunc) (types.InstantVectorSeriesData, bool, error) {
+func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	quantilePoints, err := types.FPointSlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, false, err
@@ -88,9 +168,6 @@ func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, t
 			continue
 		}
 		p := param.Samples[i].F
-		if math.IsNaN(p) || p < 0 || p > 1 {
-			emitParamAnnotationFunc(p, annotations.NewInvalidQuantileWarning)
-		}
 		t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
 		f := functions.Quantile(p, qGroup.points)
 		quantilePoints = append(quantilePoints, promql.FPoint{T: t, F: f})
