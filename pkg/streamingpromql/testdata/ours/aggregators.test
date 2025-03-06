@@ -703,5 +703,17 @@ eval_fail instant at 0 count_values("a\xc5z", series)
 
 clear
 
+load 6m
+  series{idx="1"}   1 2 3 4 5 6
+  series{idx="2"}   4 5 6 7 8 9
+  series{idx="3"}   7 8 Inf NaN -Inf
+
 # Quantile value warning is emitted even when no series are returned
 eval_warn range from 0 to 12m step 6m quantile(20, noseries)
+
+eval_warn range from 0 to 12m step 6m quantile(Inf, noseries)
+
+eval_warn range from 0 to 12m step 6m quantile(-Inf, noseries)
+
+eval range from 0 to 30m step 6m quantile(0.9, series)
+  {} 6.4 7.4 +Inf 6.4 7.4 8.7
