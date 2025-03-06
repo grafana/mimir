@@ -649,7 +649,7 @@ github.com/grafana/alerting/receivers/webex
 github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
-# github.com/grafana/dskit v0.0.0-20250306155806-fc58c4cc357f
+# github.com/grafana/dskit v0.0.0-20250306181019-1d71d91edc08
 ## explicit; go 1.21
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
