@@ -6,10 +6,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/require"
-
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAlertmanagerClientConfig(t *testing.T) {
@@ -295,6 +294,6 @@ func TestAlertmanagerClientConfig(t *testing.T) {
 
 type fakeSecretReader struct{}
 
-func (fsr *fakeSecretReader) ReadSecret(path string) ([]byte, error) {
+func (fsr *fakeSecretReader) ReadSecret(_ string) ([]byte, error) {
 	return []byte{}, nil
 }
