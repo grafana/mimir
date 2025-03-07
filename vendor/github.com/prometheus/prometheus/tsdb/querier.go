@@ -648,6 +648,10 @@ func (b *blockBaseSeriesSet) Next() bool {
 		// Check pending matchers before loading chunks
 		if len(b.pendingMatchers) > 0 {
 			b.builder.Overwrite(&tempLabels)
+			if tempLabels.Len() == 0 {
+				// There's a potential bug with stringlabels where Overwrite doesn't work as expected.
+				tempLabels = b.builder.Labels()
+			}
 			allMatch := true
 			for _, m := range b.pendingMatchers {
 				if !m.Matches(tempLabels.Get(m.Name)) {
