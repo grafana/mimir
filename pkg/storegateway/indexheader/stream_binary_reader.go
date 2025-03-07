@@ -9,8 +9,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/binary"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -184,6 +184,29 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 	return r, err
 }
 
+func decompressGzip(logger *spanlogger.SpanLogger, d []byte) ([]byte, error) {
+	// RFC1952 specifies that the last four bytes "contains the size of
+	// the original (uncompressed) input data modulo 2^32."
+	// And we're not expecting more than 2GB so don't worry about wraparound.
+	size := len(d)
+	if size < 4 { // Such a small message can't be decompressed.
+		return d, fmt.Errorf("compressed data too small: %q", d)
+	}
+	size = int(binary.LittleEndian.Uint32(d[size-4 : size]))
+
+	gzipReader, err := gzip.NewReader(bytes.NewReader(d))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sparse index-header gzip reader: %w", err)
+	}
+	defer runutil.CloseWithLogOnErr(logger, gzipReader, "close sparse index-header gzip reader")
+
+	// +MinRead so ReadFrom will not reallocate if size is correct.
+	buf := bytes.NewBuffer(make([]byte, 0, size+bytes.MinRead))
+	_, err = buf.ReadFrom(gzipReader)
+
+	return buf.Bytes(), err
+}
+
 // loadFromSparseIndexHeader load from sparse index-header on disk.
 func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger *spanlogger.SpanLogger, id ulid.ULID, sparseHeadersPath string, sparseData []byte, postingOffsetsInMemSampling int) (err error) {
 	start := time.Now()
@@ -194,14 +217,7 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger *spanlogger.SpanLo
 	level.Info(logger).Log("msg", "loading sparse index-header from disk", "id", id, "path", sparseHeadersPath)
 	sparseHeaders := &indexheaderpb.Sparse{}
 
-	gzipped := bytes.NewReader(sparseData)
-	gzipReader, err := gzip.NewReader(gzipped)
-	if err != nil {
-		return fmt.Errorf("failed to create sparse index-header gzip reader: %w", err)
-	}
-	defer runutil.CloseWithLogOnErr(logger, gzipReader, "close sparse index-header gzip reader")
-
-	sparseData, err = io.ReadAll(gzipReader)
+	sparseData, err = decompressGzip(logger, sparseData)
 	if err != nil {
 		return fmt.Errorf("failed to read sparse index-header: %w", err)
 	}
