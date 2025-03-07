@@ -50,7 +50,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"quantile(0.95, metric{})": "'quantile' aggregation with parameter",
+		"absent_over_time(nonexistent{}[1h])": "'absent_over_time' function",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -2057,6 +2057,11 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 }
 
 func TestAnnotations(t *testing.T) {
+	floatData := `
+		metric{type="float", series="1"} 0+1x3
+		metric{type="float", series="2"} 1+1x3
+	`
+
 	mixedFloatHistogramData := `
 		metric{type="float", series="1"} 0+1x3
 		metric{type="float", series="2"} 1+1x3
@@ -2070,14 +2075,14 @@ func TestAnnotations(t *testing.T) {
 		metric{series="custom-buckets-2"} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[2 3] buckets:[1 2 1]}}x3
 		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
 		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
-    `
+	`
 
 	nativeHistogramsWithResetHintsMix := `
 		metric{reset_hint="unknown"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
 		metric{reset_hint="gauge"} {{schema:0 sum:0 count:0 counter_reset_hint:gauge}}+{{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}x3
 		metric{reset_hint="gauge-unknown"} {{schema:0 sum:0 count:0 counter_reset_hint:gauge}} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
 		metric{reset_hint="unknown-gauge"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}x3
-    `
+	`
 
 	testCases := map[string]annotationTestCase{
 		"sum() with float and native histogram at same step": {
@@ -2342,6 +2347,21 @@ func TestAnnotations(t *testing.T) {
 			expectedInfoAnnotations: []string{
 				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "float_metric" (1:78)`,
 				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "other_float_metric" (1:105)`,
+			},
+		},
+
+		"quantile with mixed histograms": {
+			data: mixedFloatHistogramData,
+			expr: "quantile(0.9, metric)",
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in quantile aggregation (1:15)`,
+			},
+		},
+		"quantile with invalid param": {
+			data: floatData,
+			expr: "quantile(1.5, metric)",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: quantile value should be between 0 and 1, got 1.5 (1:10)`,
 			},
 		},
 	}
@@ -2996,6 +3016,10 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 			expressions = append(expressions, fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 		}
+		// NOTE(jhesketh): We do not test a changing quantile factor here as prometheus currently
+		// does not support it (https://github.com/prometheus/prometheus/issues/15971)
+		expressions = append(expressions, fmt.Sprintf(`quantile (0.9, series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`quantile by (group) (0.9, series{label=~"(%s)"})`, labelRegex))
 
 		expressions = append(expressions, fmt.Sprintf(`count_values("value", series{label="%s"})`, labelRegex))
 	}
