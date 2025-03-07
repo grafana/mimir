@@ -98,6 +98,9 @@ func (c *Config) Validate() error {
 	if c.IdleTimeout <= 0 || c.IdleTimeout > time.Hour {
 		return fmt.Errorf("invalid usage-tracker idle timeout %q, should be greater than 0 and less than 1 hour", c.IdleTimeout)
 	}
+	if c.EventsStorage.Writer.AutoCreateTopicEnabled && c.EventsStorage.Writer.AutoCreateTopicDefaultPartitions < c.Partitions {
+		return fmt.Errorf("number of configured partitions %d must be less or equal than the default number of partitions to be auto created %d for the Kafka topic", c.Partitions, c.EventsStorage.Writer.AutoCreateTopicDefaultPartitions)
+	}
 
 	return nil
 }
@@ -173,6 +176,11 @@ func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.Pa
 	t.bucket = bkt
 
 	// Create Kafka writer for events storage.
+	if t.cfg.EventsStorage.Writer.AutoCreateTopicEnabled {
+		if err := ingest.CreateTopic(t.cfg.EventsStorage.Writer, t.logger); err != nil {
+			return nil, errors.Wrap(err, "failed to create Kafka topic for usage-tracker events")
+		}
+	}
 	t.eventsKafkaWriter, err = ingest.NewKafkaWriterClient(t.cfg.EventsStorage.Writer, 20, t.logger, prometheus.WrapRegistererWithPrefix(eventsKafkaWriterMetricsPrefix, t.registerer))
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create Kafka writer client for usage-tracker")

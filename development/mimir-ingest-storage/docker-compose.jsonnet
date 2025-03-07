@@ -13,6 +13,7 @@ std.manifestYamlDoc({
     self.kafka_1 +
     self.kafka_2 +
     self.kafka_3 +
+    self.redpanda_console +
     self.jaeger +
     self.blockbuilder +
     self.blockbuilderscheduler +
@@ -114,9 +115,9 @@ std.manifestYamlDoc({
       publishedHttpPort: 8010,
       extraArguments: [
         '-usage-tracker.instance-ring.instance-availability-zone=zone-a',
-        '-usage-tracker.partitions=8',
-        '-usage-tracker.partition-reconcile-interval=5s',
-        '-usage-tracker.lost-partitions-shutdown-grace-period=5s',
+        '-usage-tracker.partitions=16',
+        '-usage-tracker.partition-reconcile-interval=10s',
+        '-usage-tracker.lost-partitions-shutdown-grace-period=30s',
       ],
     }),
     'usage-tracker-zone-a-1': mimirService({
@@ -125,9 +126,9 @@ std.manifestYamlDoc({
       publishedHttpPort: 8011,
       extraArguments: [
         '-usage-tracker.instance-ring.instance-availability-zone=zone-a',
-        '-usage-tracker.partitions=8',
-        '-usage-tracker.partition-reconcile-interval=5s',
-        '-usage-tracker.lost-partitions-shutdown-grace-period=5s',
+        '-usage-tracker.partitions=16',
+        '-usage-tracker.partition-reconcile-interval=10s',
+        '-usage-tracker.lost-partitions-shutdown-grace-period=30s',
       ],
     }),
     'usage-tracker-zone-b-0': mimirService({
@@ -136,9 +137,9 @@ std.manifestYamlDoc({
       publishedHttpPort: 8012,
       extraArguments: [
         '-usage-tracker.instance-ring.instance-availability-zone=zone-b',
-        '-usage-tracker.partitions=8',
-        '-usage-tracker.partition-reconcile-interval=5s',
-        '-usage-tracker.lost-partitions-shutdown-grace-period=5s',
+        '-usage-tracker.partitions=16',
+        '-usage-tracker.partition-reconcile-interval=10s',
+        '-usage-tracker.lost-partitions-shutdown-grace-period=30s',
       ],
     }),
   },
@@ -249,6 +250,17 @@ std.manifestYamlDoc({
         timeout: '1s',
         retries: '30',
       },
+    },
+  },
+  redpanda_console:: {
+    redpanda_console: {
+      image: 'docker.redpanda.com/redpandadata/console:v2.7.0',
+      environment: [
+        'KAFKA_BROKERS=kafka_1:9092,kafka_2:9092,kafka_3:9092',
+      ],
+      ports: [
+        '9080:8080',
+      ],
     },
   },
 
