@@ -132,7 +132,7 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 	orderedLables := slices.Clone(labels)
 	slices.Sort(orderedLables)
 
-	tracker = newActiveSeriesTracker(userID, orderedLables, maxCardinality, cooldownDuration, m.logger)
+	tracker = NewActiveSeriesTracker(userID, orderedLables, maxCardinality, cooldownDuration, m.logger)
 	m.activeTrackersByUserID[userID] = tracker
 	return tracker
 }
@@ -195,7 +195,7 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 
 	if !at.hasSameLabels(lbls) || at.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
 		m.atmtx.Lock()
-		at = newActiveSeriesTracker(userID, lbls, newMaxCardinality, newCooldownDuration, m.logger)
+		at = NewActiveSeriesTracker(userID, lbls, newMaxCardinality, newCooldownDuration, m.logger)
 		m.activeTrackersByUserID[userID] = at
 		m.atmtx.Unlock()
 	}

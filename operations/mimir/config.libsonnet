@@ -113,7 +113,7 @@
     memcached_frontend_replicas: 3,
     memcached_index_queries_replicas: 3,
     memcached_chunks_replicas: 3,
-    memcached_metadata_replicas: 1,
+    memcached_metadata_replicas: 3,
 
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 5,

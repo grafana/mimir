@@ -90,11 +90,11 @@ ingester:
 
 admin-cache:
   enabled: true
-  replicas: 2
+  replicas: 3
 
 chunks-cache:
   enabled: true
-  replicas: 2
+  replicas: 3
 
 index-cache:
   enabled: true
@@ -102,10 +102,11 @@ index-cache:
 
 metadata-cache:
   enabled: true
+  replicas: 3
 
 results-cache:
   enabled: true
-  replicas: 2
+  replicas: 3
 
 minio:
   enabled: false

@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"mime/multipart"
-	"os"
 	"strconv"
 	"strings"
 
@@ -216,32 +214,22 @@ func (pn *Notifier) writeImageParts(ctx context.Context, w *multipart.Writer, as
 	// Pushover supports at most one image attachment with a maximum size of pushoverMaxFileSize.
 	// If the image is larger than pushoverMaxFileSize then return an error.
 	err := images.WithStoredImages(ctx, pn.log, pn.images, func(_ int, image images.Image) error {
-		f, err := os.Open(image.Path)
+		raw, err := image.RawData(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to open the image: %w", err)
 		}
-		defer func() {
-			if err := f.Close(); err != nil {
-				pn.log.Error("failed to close the image", "file", image.Path)
-			}
-		}()
 
-		fileInfo, err := f.Stat()
-		if err != nil {
-			return fmt.Errorf("failed to stat the image: %w", err)
+		if len(raw.Content) > pushoverMaxFileSize {
+			return fmt.Errorf("image would exceeded maximum file size: %d", len(raw.Content))
 		}
 
-		if fileInfo.Size() > pushoverMaxFileSize {
-			return fmt.Errorf("image would exceeded maximum file size: %d", fileInfo.Size())
-		}
-
-		fw, err := w.CreateFormFile("attachment", image.Path)
+		fw, err := w.CreateFormFile("attachment", raw.Name)
 		if err != nil {
 			return fmt.Errorf("failed to create form file for the image: %w", err)
 		}
 
-		if _, err = io.Copy(fw, f); err != nil {
-			return fmt.Errorf("failed to copy the image to the form file: %w", err)
+		if _, err := fw.Write(raw.Content); err != nil {
+			return fmt.Errorf("failed to write the image to the form file: %w", err)
 		}
 
 		return images.ErrImagesDone

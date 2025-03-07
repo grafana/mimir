@@ -1,14 +1,36 @@
 name: Backport PR Creator
+
 on:
-  pull_request_target:
+  pull_request:
     types:
       - closed
       - labeled
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   main:
     runs-on: ubuntu-latest
+
     steps:
+      - name: Retrieve GitHub App credentials from Vault
+        id: get-secrets
+        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
+        with:
+          repo_secrets: |
+            APP_ID=mimir-github-bot:app_id
+            PRIVATE_KEY=mimir-github-bot:private_key
+
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       - name: Checkout Actions
         uses: actions/checkout@v4
         with:
@@ -17,11 +39,13 @@ jobs:
           # pin the version to before https://github.com/grafana/grafana-github-actions/pull/113 because
           # we don't want to have the same strict rules for PR labels
           ref: d284afd314ca3625c23595e9f62b52d215ead7ce
+
       - name: Install Actions
         run: npm install --production --prefix ./actions
+
       - name: Run backport
         uses: ./actions/backport
         with:
-          token: ${{secrets.GH_BOT_ACCESS_TOKEN}}
+          token: ${{ steps.app-token.outputs.token }}
           labelsToAdd: "backport"
           title: "[{{base}}] {{originalTitle}}"

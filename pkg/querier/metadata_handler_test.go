@@ -165,9 +165,9 @@ func TestMetadataHandler_Success(t *testing.T) {
 			d := &mockDistributor{}
 			d.On("MetricsMetadata", mock.Anything, mock.Anything).Return(
 				[]scrape.MetricMetadata{
-					{Metric: "alertmanager_dispatcher_aggregation_groups", Help: "Number of active aggregation groups", Type: "gauge", Unit: ""},
-					{Metric: "go_gc_duration_seconds", Help: "A summary of the pause duration of garbage collection cycles", Type: "summary", Unit: ""},
-					{Metric: "go_gc_duration_seconds", Help: "A summary of the pause duration of garbage collection cycles 2", Type: "summary", Unit: ""},
+					{MetricFamily: "alertmanager_dispatcher_aggregation_groups", Help: "Number of active aggregation groups", Type: "gauge", Unit: ""},
+					{MetricFamily: "go_gc_duration_seconds", Help: "A summary of the pause duration of garbage collection cycles", Type: "summary", Unit: ""},
+					{MetricFamily: "go_gc_duration_seconds", Help: "A summary of the pause duration of garbage collection cycles 2", Type: "summary", Unit: ""},
 				},
 				nil)
 

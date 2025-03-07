@@ -2,11 +2,8 @@ package email
 
 import (
 	"context"
-	"io"
 	"net/url"
-	"os"
 	"path"
-	"path/filepath"
 
 	"github.com/prometheus/alertmanager/types"
 
@@ -59,24 +56,26 @@ func (en *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 
 	// Extend alerts data with images, if available.
 	embeddedContents := make([]receivers.EmbeddedContent, 0)
-	_ = images.WithStoredImages(ctx, en.log, en.images,
+	err = images.WithStoredImages(ctx, en.log, en.images,
 		func(index int, image images.Image) error {
-			if len(image.URL) != 0 {
+			if image.HasURL() {
 				data.Alerts[index].ImageURL = image.URL
-			} else if len(image.Path) != 0 {
-				if b, err := readFile(image.Path); err == nil {
-					name := filepath.Base(image.Path)
-					data.Alerts[index].EmbeddedImage = name
+			} else {
+				if contents, err := image.RawData(ctx); err == nil {
+					data.Alerts[index].EmbeddedImage = contents.Name
 					embeddedContents = append(embeddedContents, receivers.EmbeddedContent{
-						Name:    name,
-						Content: b,
+						Name:    contents.Name,
+						Content: contents.Content,
 					})
 				} else {
-					en.log.Warn("failed to get image file for email attachment", "file", image.Path, "error", err)
+					en.log.Warn("failed to get image file for email attachment", "alert", alerts[index].String(), "error", err)
 				}
 			}
 			return nil
 		}, alerts...)
+	if err != nil {
+		en.log.Warn("failed to get all images for email", "error", err)
+	}
 
 	cmd := &receivers.SendEmailSettings{
 		Subject: subject,
@@ -111,17 +110,4 @@ func (en *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 
 func (en *Notifier) SendResolved() bool {
 	return !en.GetDisableResolveMessage()
-}
-
-func readFile(path string) ([]byte, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-
-	defer func() {
-		_ = f.Close()
-	}()
-
-	return io.ReadAll(f)
 }

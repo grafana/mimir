@@ -715,6 +715,59 @@
           "fieldFlag": "server.path-prefix",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "cluster_validation",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "label",
+              "required": false,
+              "desc": "Optionally define server's cluster validation label.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "server.cluster-validation.label",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "block",
+              "name": "grpc",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, cluster label validation will be executed.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.grpc.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "softvalidation",
+                  "required": false,
+                  "desc": "When enabled, soft cluster label validation will be executed. Can be enabled only together with server.cluster-validation.grpc.enabled",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.grpc.soft-validation",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -1959,17 +2012,6 @@
           "fieldFlag": "querier.lookback-delta",
           "fieldType": "duration",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "promql_experimental_functions_enabled",
-          "required": false,
-          "desc": "Enable experimental PromQL functions. This config option should be set on query-frontend too when query sharding is enabled.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "querier.promql-experimental-functions-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "block",
@@ -4723,19 +4765,9 @@
           "required": false,
           "desc": "List of regular expression patterns matching instant queries. Subqueries within those instant queries will be spun off as range queries to optimize their performance.",
           "fieldValue": null,
-          "fieldDefaultValue": [],
-          "fieldType": "list of strings",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "max_future_query_window",
-          "required": false,
-          "desc": "Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.max-future-query-window",
-          "fieldType": "duration",
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.instant-queries-with-subquery-spin-off",
+          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
@@ -5205,6 +5237,36 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "alertmanager.max-alerts-size-bytes",
           "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_notify_hook_url",
+          "required": false,
+          "desc": "URL of a hook to invoke before a notification is sent. empty = no hook.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "alertmanager.notify-hook-url",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_notify_hook_receivers",
+          "required": false,
+          "desc": "List of receivers to enable notify hooks for. empty = all receivers.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "alertmanager.notify-hook-receivers",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "alertmanager_notify_hook_timeout",
+          "required": false,
+          "desc": "Maximum amount of time to wait for a hook to complete before timing out. 0 = no timeout.",
+          "fieldValue": null,
+          "fieldDefaultValue": 30000000000,
+          "fieldFlag": "alertmanager.notify-hook-timeout",
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -6532,6 +6594,17 @@
                   "fieldFlag": "query-frontend.results-cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dns_ignore_startup_failures",
+                  "required": false,
+                  "desc": "Allow client creation even if initial DNS resolution fails.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "query-frontend.results-cache.memcached.dns-ignore-startup-failures",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -6913,17 +6986,6 @@
         },
         {
           "kind": "field",
-          "name": "block_promql_experimental_functions",
-          "required": false,
-          "desc": "True to control access to specific PromQL experimental functions per tenant.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "query-frontend.block-promql-experimental-functions",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "query_sharding_target_series_per_shard",
           "required": false,
           "desc": "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.",
@@ -6953,17 +7015,6 @@
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.use-active-series-decoder",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "spin_off_instant_subqueries_to_url",
-          "required": false,
-          "desc": "If set, subqueries in instant queries are spun off as range queries and sent to the given URL. This parameter also requires you to set `instant_queries_with_subquery_spin_off` for the tenant.",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldFlag": "query-frontend.spin-off-instant-subqueries-to-url",
-          "fieldType": "string",
           "fieldCategory": "experimental"
         },
         {
@@ -8698,6 +8749,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_ignore_startup_failures",
+                      "required": false,
+                      "desc": "Allow client creation even if initial DNS resolution fails.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -9261,6 +9323,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_ignore_startup_failures",
+                      "required": false,
+                      "desc": "Allow client creation even if initial DNS resolution fails.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -9848,6 +9921,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_ignore_startup_failures",
+                      "required": false,
+                      "desc": "Allow client creation even if initial DNS resolution fails.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -15157,6 +15241,17 @@
                   "fieldFlag": "ruler-storage.cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dns_ignore_startup_failures",
+                  "required": false,
+                  "desc": "Allow client creation even if initial DNS resolution fails.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.cache.memcached.dns-ignore-startup-failures",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -16367,6 +16462,17 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "alertmanager.utf8-migration-logging-enabled",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "enable_notify_hooks",
+          "required": false,
+          "desc": "Enable pre-notification hooks.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "alertmanager.notify-hooks-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
         }

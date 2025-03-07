@@ -34,7 +34,7 @@ image:
   # -- Grafana Mimir container image repository. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.repository'
   repository: grafana/mimir
   # -- Grafana Mimir container image tag. Note: for Grafana Enterprise Metrics use the value 'enterprise.image.tag'
-  tag: r330-61dfefa
+  tag: r332-c552abe
   # -- Container pull policy - shared between Grafana Mimir and Grafana Enterprise Metrics
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets - shared between Grafana Mimir and Grafana Enterprise Metrics
@@ -542,7 +542,25 @@ kedaAutoscaling:
   prometheusAddress: ""
   customHeaders: {}
   pollingInterval: 10
+  ignoreNullValues: true
+  unsafeSsl: false
 
+  # If your metrics are stored in a datasource with multiple mimir instances extra labels to filter the data are required to get the right metric.
+  toPromQLLabelSelector: {}
+  #  cluster: "my-cluster-name"
+
+  # --KEDA trigger authentication settings.
+  # ref: https://keda.sh/docs/2.16/scalers/pulsar/#authentication-parameters
+  authentication:
+    enabled: false
+    authModes: ""
+    secretTargetRef: []
+    # - key: username
+    #   name: my-secret-name
+    #   parameter: username
+    # - key: password
+    #   name: my-secret-name
+    #   parameter: password
 alertmanager:
   enabled: true
   # -- Total number of replicas for the alertmanager across all availability zones
@@ -843,11 +861,11 @@ distributor:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -1110,7 +1128,7 @@ ingester:
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-a
   #       storageClass: storage-class-us-central1-a
-  #     - name: zone-a
+  #     - name: zone-b
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-b
   #       storageClass: storage-class-us-central1-b
@@ -1296,11 +1314,11 @@ ruler:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -1425,11 +1443,11 @@ ruler_querier:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -1551,11 +1569,11 @@ ruler_query_frontend:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -1763,11 +1781,11 @@ querier:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -1902,11 +1920,11 @@ query_frontend:
   # according to top-level kedaAutoscaling.prometheusAddress (defaulting to metamonitoring remote-write destination).
   # Basic auth and extra HTTP headers from metaMonitoring are ignored, please use customHeaders.
   # The remote URL is used even if metamonitoring is disabled.
-  # See https://github.com/grafana/mimir/issues/7367 for more details on how to migrate to autoscaled resources without disruptions.
+  # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
   kedaAutoscaling:
     enabled: false
     # -- preserveReplicas gives you the option to migrate from non-autoscaled to autoscaled deployments without losing replicas. When set to true, the replica fields in the component will be left intact.
-    # For futher details see [helm: autoscaling migration procedure](https://github.com/grafana/mimir/issues/7367)
+    # For more details about migrating to autoscaling, refer to https://grafana.com/docs/helm-charts/mimir-distributed/latest/configure/configure-autoscaling/#migrate-existing-deployments
     preserveReplicas: false
     minReplicaCount: 1
     maxReplicaCount: 10
@@ -2263,7 +2281,7 @@ store_gateway:
   #     - name: zone-a
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-a
-  #     - name: zone-a
+  #     - name: zone-b
   #       nodeSelector:
   #         topology.kubernetes.io/zone: us-central1-b
   #     - name: zone-c
@@ -2471,7 +2489,7 @@ memcached:
     # -- Memcached Docker image repository
     repository: memcached
     # -- Memcached Docker image tag
-    tag: 1.6.36-alpine
+    tag: 1.6.37-alpine
     # -- Memcached Docker image pull policy
     pullPolicy: IfNotPresent
 
@@ -2494,7 +2512,7 @@ memcachedExporter:
 
   image:
     repository: prom/memcached-exporter
-    tag: v0.15.0
+    tag: v0.15.1
     pullPolicy: IfNotPresent
 
   resources:
@@ -4076,7 +4094,7 @@ enterprise:
     # -- Grafana Enterprise Metrics container image repository. Note: for Grafana Mimir use the value 'image.repository'
     repository: grafana/enterprise-metrics
     # -- Grafana Enterprise Metrics container image tag. Note: for Grafana Mimir use the value 'image.tag'
-    tag: r330-648cb08a
+    tag: r332-1cfa19f3
     # Note: pullPolicy and optional pullSecrets are set in toplevel 'image' section, not here
 
 # In order to use Grafana Enterprise Metrics features, you will need to provide the contents of your Grafana Enterprise Metrics
@@ -4097,6 +4115,10 @@ tokengenJob:
   extraEnvFrom: []
   annotations: {}
   initContainers: []
+  # -- Controls whether to store the generated admin token in a Kubernetes secret
+  storeTokenInSecret: false
+  # -- Name of the secret to store the admin token.
+  adminTokenSecret: "admin-token"
 
   # -- SecurityContext override for tokengenjob pods
   securityContext: {}
@@ -4110,6 +4132,17 @@ tokengenJob:
 
   # -- The name of the PriorityClass for tokenjobgen pods
   priorityClassName: null
+
+# -- kubetclImage is used in the enterprise provisioner and tokengen jobs
+kubectlImage:
+  # -- The Docker registry for the kubectl image
+  registry: docker.io
+  # -- The kubectl image repository
+  repository: bitnami/kubectl
+  # -- The kubectl image tag
+  tag: latest
+  # -- The kubectl image pull policy
+  pullPolicy: IfNotPresent
 
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.

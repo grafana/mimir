@@ -78,8 +78,9 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 	step := time.Minute
 
 	expressions := map[string]string{
-		// Please keep this list sorted alphabetically.
+		//lint:sorted
 		"abs":                `abs({__name__=~"float.*"})`,
+		"absent":             `<skip>`,
 		"acos":               `acos({__name__=~"float.*"})`,
 		"acosh":              `acosh({__name__=~"float.*"})`,
 		"asin":               `asin({__name__=~"float.*"})`,
@@ -95,10 +96,10 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"cos":                `cos({__name__=~"float.*"})`,
 		"cosh":               `cosh({__name__=~"float.*"})`,
 		"count_over_time":    `count_over_time({__name__=~"float.*"}[1m])`,
-		"days_in_month":      `days_in_month({__name__=~"float.*"})`,
 		"day_of_month":       `day_of_month({__name__=~"float.*"})`,
 		"day_of_week":        `day_of_week({__name__=~"float.*"})`,
 		"day_of_year":        `day_of_year({__name__=~"float.*"})`,
+		"days_in_month":      `days_in_month({__name__=~"float.*"})`,
 		"deg":                `deg({__name__=~"float.*"})`,
 		"delta":              `delta({__name__=~"float.*"}[1m])`,
 		"deriv":              `deriv({__name__=~"float.*"}[1m])`,
@@ -115,6 +116,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"idelta":             `idelta({__name__=~"float.*"}[1m])`,
 		"increase":           `increase({__name__=~"float.*"}[1m])`,
 		"irate":              `irate({__name__=~"float.*"}[1m])`,
+		"label_join":         `label_join({__name__=~"float.*"}, "__name__", "", "env")`,
 		"label_replace":      `label_replace({__name__=~"float.*"}, "__name__", "$1", "env", "(.*)")`,
 		"last_over_time":     `<skip>`, // last_over_time() doesn't drop the metric name, so this test doesn't apply.
 		"ln":                 `ln({__name__=~"float.*"})`,
@@ -126,6 +128,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"month":              `month({__name__=~"float.*"})`,
 		"predict_linear":     `predict_linear({__name__=~"float.*"}[1m], 30)`,
 		"present_over_time":  `present_over_time({__name__=~"float.*"}[1m])`,
+		"quantile_over_time": `quantile_over_time(0.5, {__name__=~"float.*"}[1m])`,
 		"rad":                `rad({__name__=~"float.*"})`,
 		"rate":               `rate({__name__=~"float.*"}[1m])`,
 		"resets":             `resets({__name__=~"float.*"}[1m])`,

@@ -424,7 +424,7 @@ clear
 
 # Tests for vector, time and timestamp.
 load 10s
-  metric 1 1
+  metric 1 1 {{schema:0 sum:1 count:1}}
 
 eval instant at 0s timestamp(metric)
   {} 0
@@ -441,34 +441,33 @@ eval instant at 10s timestamp(metric)
 eval instant at 10s timestamp(((metric)))
   {} 10
 
+eval instant at 20s timestamp(metric)
+  {} 20
+
 # Tests for label_join.
 load 5m
   testmetric{src="a",src1="b",src2="c",dst="original-destination-value"} 0
   testmetric{src="d",src1="e",src2="f",dst="original-destination-value"} 1
 
 # label_join joins all src values in order.
-# Unsupported by streaming engine.
-# eval instant at 0m label_join(testmetric, "dst", "-", "src", "src1", "src2")
-#   testmetric{src="a",src1="b",src2="c",dst="a-b-c"} 0
-#   testmetric{src="d",src1="e",src2="f",dst="d-e-f"} 1
+eval instant at 0m label_join(testmetric, "dst", "-", "src", "src1", "src2")
+  testmetric{src="a",src1="b",src2="c",dst="a-b-c"} 0
+  testmetric{src="d",src1="e",src2="f",dst="d-e-f"} 1
 
 # label_join treats non existent src labels as empty strings.
-# Unsupported by streaming engine.
-# eval instant at 0m label_join(testmetric, "dst", "-", "src", "src3", "src1")
-#   testmetric{src="a",src1="b",src2="c",dst="a--b"} 0
-#   testmetric{src="d",src1="e",src2="f",dst="d--e"} 1
+eval instant at 0m label_join(testmetric, "dst", "-", "src", "src3", "src1")
+  testmetric{src="a",src1="b",src2="c",dst="a--b"} 0
+  testmetric{src="d",src1="e",src2="f",dst="d--e"} 1
 
 # label_join overwrites the destination label even if the resulting dst label is empty string
-# Unsupported by streaming engine.
-# eval instant at 0m label_join(testmetric, "dst", "", "emptysrc", "emptysrc1", "emptysrc2")
-#   testmetric{src="a",src1="b",src2="c"} 0
-#   testmetric{src="d",src1="e",src2="f"} 1
+eval instant at 0m label_join(testmetric, "dst", "", "emptysrc", "emptysrc1", "emptysrc2")
+  testmetric{src="a",src1="b",src2="c"} 0
+  testmetric{src="d",src1="e",src2="f"} 1
 
 # test without src label for label_join
-# Unsupported by streaming engine.
-# eval instant at 0m label_join(testmetric, "dst", ", ")
-# 	  testmetric{src="a",src1="b",src2="c"} 0
-# 	  testmetric{src="d",src1="e",src2="f"} 1
+eval instant at 0m label_join(testmetric, "dst", ", ")
+	  testmetric{src="a",src1="b",src2="c"} 0
+	  testmetric{src="d",src1="e",src2="f"} 1
 
 # test without dst label for label_join
 load 5m
@@ -476,10 +475,9 @@ load 5m
   testmetric1{src="fizz",src1="buzz",src2="fizzbuzz"} 1
 
 # label_join creates dst label if not present.
-# Unsupported by streaming engine.
-# eval instant at 0m label_join(testmetric1, "dst", ", ", "src", "src1", "src2")
-#   testmetric1{src="foo",src1="bar",src2="foobar",dst="foo, bar, foobar"} 0
-#   testmetric1{src="fizz",src1="buzz",src2="fizzbuzz",dst="fizz, buzz, fizzbuzz"} 1
+eval instant at 0m label_join(testmetric1, "dst", ", ", "src", "src1", "src2")
+  testmetric1{src="foo",src1="bar",src2="foobar",dst="foo, bar, foobar"} 0
+  testmetric1{src="fizz",src1="buzz",src2="fizzbuzz",dst="fizz, buzz, fizzbuzz"} 1
 
 clear
 
@@ -502,6 +500,7 @@ load 5m
 	test_clamp{src="clamp-a"}	-50
 	test_clamp{src="clamp-b"}	0
 	test_clamp{src="clamp-c"}	100
+	test_clamp{src="histogram"} {{schema:0 sum:1 count:1}}
 
 eval instant at 0m clamp_max(test_clamp, 75)
 	{src="clamp-a"}	-50
@@ -834,6 +833,8 @@ load 10s
   metric9 -9.988465674311579e+307 -9.988465674311579e+307 -9.988465674311579e+307
   metric10 -9.988465674311579e+307 9.988465674311579e+307
   metric11 1 2 3 NaN NaN
+  metric12 1 2 3 {{schema:0 sum:1 count:1}} {{schema:0 sum:3 count:3}}
+  metric13 {{schema:0 sum:1 count:1}}x5
 
 eval instant at 55s avg_over_time(metric[1m])
   {} 3
@@ -940,6 +941,23 @@ eval instant at 1m avg_over_time(metric11[1m])
 eval instant at 1m sum_over_time(metric11[1m])/count_over_time(metric11[1m])
   {} NaN
 
+# Tests for samples with mix of floats and histograms.
+eval_warn instant at 1m sum_over_time(metric12[1m])
+	# no result.
+
+eval_warn instant at 1m avg_over_time(metric12[1m])
+	# no result.
+
+# Tests for samples with only histograms.
+eval instant at 1m sum_over_time(metric13[1m])
+	{} {{schema:0 sum:5 count:5}}
+
+eval instant at 1m avg_over_time(metric13[1m])
+	{} {{schema:0 sum:1 count:1}}
+
+eval instant at 1m sum_over_time(metric13[1m])/count_over_time(metric13[1m])
+	{} {{schema:0 sum:1 count:1}}
+
 # Test if very big intermediate values cause loss of detail.
 clear
 load 10s
@@ -1020,61 +1038,51 @@ load 10s
 	data_histogram{test="only histogram samples"} {{schema:0 sum:1 count:2}}x4
 	data_histogram{test="mix samples"} 0 1 2 {{schema:0 sum:1 count:2}}x2
 
-# Unsupported by streaming engine.
-# eval instant at 1m quantile_over_time(0, data[2m])
-# 	{test="two samples"} 0
-# 	{test="three samples"} 0
-# 	{test="uneven samples"} 0
+eval instant at 1m quantile_over_time(0, data[2m])
+	{test="two samples"} 0
+	{test="three samples"} 0
+	{test="uneven samples"} 0
 
-# Unsupported by streaming engine.
-# eval instant at 1m quantile_over_time(0.5, data[2m])
-# 	{test="two samples"} 0.5
-# 	{test="three samples"} 1
-# 	{test="uneven samples"} 1
+eval instant at 1m quantile_over_time(0.5, data[2m])
+	{test="two samples"} 0.5
+	{test="three samples"} 1
+	{test="uneven samples"} 1
 
-# Unsupported by streaming engine.
-# eval instant at 1m quantile_over_time(0.75, data[2m])
-# 	{test="two samples"} 0.75
-# 	{test="three samples"} 1.5
-# 	{test="uneven samples"} 2.5
+eval instant at 1m quantile_over_time(0.75, data[2m])
+	{test="two samples"} 0.75
+	{test="three samples"} 1.5
+	{test="uneven samples"} 2.5
 
-# Unsupported by streaming engine.
-# eval instant at 1m quantile_over_time(0.8, data[2m])
-# 	{test="two samples"} 0.8
-# 	{test="three samples"} 1.6
-# 	{test="uneven samples"} 2.8
+eval instant at 1m quantile_over_time(0.8, data[2m])
+	{test="two samples"} 0.8
+	{test="three samples"} 1.6
+	{test="uneven samples"} 2.8
 
-# Unsupported by streaming engine.
-# eval instant at 1m quantile_over_time(1, data[2m])
-# 	{test="two samples"} 1
-# 	{test="three samples"} 2
-# 	{test="uneven samples"} 4
+eval instant at 1m quantile_over_time(1, data[2m])
+	{test="two samples"} 1
+	{test="three samples"} 2
+	{test="uneven samples"} 4
 
-# Unsupported by streaming engine.
-# eval_warn instant at 1m quantile_over_time(-1, data[2m])
-# 	{test="two samples"} -Inf
-# 	{test="three samples"} -Inf
-# 	{test="uneven samples"} -Inf
+eval_warn instant at 1m quantile_over_time(-1, data[2m])
+	{test="two samples"} -Inf
+	{test="three samples"} -Inf
+	{test="uneven samples"} -Inf
 
-# Unsupported by streaming engine.
-# eval_warn instant at 1m quantile_over_time(2, data[2m])
-# 	{test="two samples"} +Inf
-# 	{test="three samples"} +Inf
-# 	{test="uneven samples"} +Inf
+eval_warn instant at 1m quantile_over_time(2, data[2m])
+	{test="two samples"} +Inf
+	{test="three samples"} +Inf
+	{test="uneven samples"} +Inf
 
-# Unsupported by streaming engine.
-# eval_warn instant at 1m (quantile_over_time(2, (data[2m])))
-# 	{test="two samples"} +Inf
-# 	{test="three samples"} +Inf
-# 	{test="uneven samples"} +Inf
+eval_warn instant at 1m (quantile_over_time(2, (data[2m])))
+	{test="two samples"} +Inf
+	{test="three samples"} +Inf
+	{test="uneven samples"} +Inf
 
-# Unsupported by streaming engine.
-# eval instant at 1m quantile_over_time(0.5, data_histogram{test="only histogram samples"}[2m])
-# 	#empty
+eval instant at 1m quantile_over_time(0.5, data_histogram{test="only histogram samples"}[2m])
+	#empty
 
-# Unsupported by streaming engine.
-# eval_info instant at 1m quantile_over_time(0.5, data_histogram{test="mix samples"}[2m])
-# 	{test="mix samples"} 1
+eval_info instant at 1m quantile_over_time(0.5, data_histogram{test="mix samples"}[2m])
+	{test="mix samples"} 1
 
 clear
 
@@ -1247,26 +1255,81 @@ eval instant at 1m count_over_time({__name__=~"data(_histogram)?"}[2m])
 
 clear
 
-# Test for absent()
-# Unsupported by streaming engine.
-# eval instant at 50m absent(nonexistent)
-# 	{} 1
+# Test for abs, ceil(), floor(), round().
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(nonexistent{job="testjob", instance="testinstance", method=~".x"})
-# 	{instance="testinstance", job="testjob"} 1
+load 5m
+	data{type="positive"} 2.5
+	data{type="whole"} 2
+	data{type="negative"} -2.5
+	data{type="nwhole"} -2
+	data{type="zero"} 0
+	data{type="nzero"} -0
+	data{type="inf"} +Inf
+	data{type="ninf"} -Inf
+	data{type="nan"} NaN
+	data{type="histogram"} {{schema:0 sum:1 count:1}}
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",foo="bar"})
-# 	{foo="bar"} 1
+eval instant at 0m abs(data)
+	{type="positive"} 2.5
+	{type="whole"} 2
+	{type="negative"} 2.5
+	{type="nwhole"} 2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} +Inf
+	{type="nan"} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",job="three",foo="bar"})
-# 	{foo="bar"} 1
+eval instant at 0m ceil(data)
+	{type="positive"} 3
+	{type="whole"} 2
+	{type="negative"} -2
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(nonexistent{job="testjob",job=~"testjob2",foo="bar"})
-# 	{foo="bar"} 1
+eval instant at 0m floor(data)
+	{type="positive"} 2
+	{type="whole"} 2
+	{type="negative"} -3
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
+
+eval instant at 0m round(data)
+	{type="positive"} 3
+	{type="whole"} 2
+	{type="negative"} -2
+	{type="nwhole"} -2
+	{type="zero"} 0
+	{type="nzero"} 0
+	{type="inf"} +Inf
+	{type="ninf"} -Inf
+	{type="nan"} NaN
+
+clear
+
+# Test for absent().
+eval instant at 50m absent(nonexistent)
+	{} 1
+
+eval instant at 50m absent(nonexistent{job="testjob", instance="testinstance", method=~".x"})
+	{instance="testinstance", job="testjob"} 1
+
+eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",foo="bar"})
+	{foo="bar"} 1
+
+eval instant at 50m absent(nonexistent{job="testjob",job="testjob2",job="three",foo="bar"})
+	{foo="bar"} 1
+
+eval instant at 50m absent(nonexistent{job="testjob",job=~"testjob2",foo="bar"})
+	{foo="bar"} 1
 
 clear
 
@@ -1275,43 +1338,33 @@ load 5m
 	http_requests{job="api-server", instance="0", group="production"}	0+10x10
 	http_requests_histogram{job="api-server", instance="0", group="production"} {{schema:0 sum:1 count:1}}x11
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(http_requests)
+eval instant at 50m absent(http_requests)
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(sum(http_requests))
+eval instant at 50m absent(sum(http_requests))
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(http_requests_histogram)
+eval instant at 50m absent(http_requests_histogram)
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(sum(http_requests_histogram))
+eval instant at 50m absent(sum(http_requests_histogram))
 
 clear
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
-# 	{} 1
+eval instant at 50m absent(sum(nonexistent{job="testjob", instance="testinstance"}))
+	{} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(max(nonexistant))
-# 	{} 1
+eval instant at 50m absent(max(nonexistant))
+	{} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(nonexistant > 1)
-# 	{} 1
+eval instant at 50m absent(nonexistant > 1)
+	{} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(a + b)
-# 	{} 1
+eval instant at 50m absent(a + b)
+	{} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(a and b)
-# 	{} 1
+eval instant at 50m absent(a and b)
+	{} 1
 
-# Unsupported by streaming engine.
-# eval instant at 50m absent(rate(nonexistant[5m]))
-# 	{} 1
+eval instant at 50m absent(rate(nonexistant[5m]))
+	{} 1
 
 clear
 
