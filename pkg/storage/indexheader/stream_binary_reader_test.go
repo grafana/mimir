@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -50,7 +50,7 @@ func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T)
 	require.NoError(t, err)
 
 	logger := spanlogger.FromContext(context.Background(), log.NewNopLogger())
-	err = r.loadFromSparseIndexHeader(logger, blockID, sparseHeadersPath, sparseData, 3)
+	err = r.loadFromSparseIndexHeader(logger, sparseData, 3)
 	require.NoError(t, err)
 }
 
@@ -91,6 +91,7 @@ func TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive(t *testing.T)
 
 				// Check correctness of sparse index headers.
 				compareIndexToHeader(t, b, r2)
+				compareIndexToHeaderPostings(t, b, r2)
 			})
 		}
 	}

@@ -33,6 +33,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util"
@@ -130,6 +131,11 @@ type Config struct {
 	// Allow downstream projects to customise the blocks compactor.
 	BlocksGrouperFactory   BlocksGrouperFactory   `yaml:"-"`
 	BlocksCompactorFactory BlocksCompactorFactory `yaml:"-"`
+
+	// Allow compactor to upload sparse-index-header files
+	UploadSparseIndexHeaders       bool               `yaml:"upload_sparse_index_headers" category:"experimental"`
+	SparseIndexHeadersSamplingRate int                `yaml:"-"`
+	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -158,6 +164,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.TenantCleanupDelay, "compactor.tenant-cleanup-delay", 6*time.Hour, "For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant.")
 	f.BoolVar(&cfg.NoBlocksFileCleanupEnabled, "compactor.no-blocks-file-cleanup-enabled", false, "If enabled, will delete the bucket-index, markers and debug files in the tenant bucket when there are no blocks left in the index.")
 	f.DurationVar(&cfg.MaxLookback, "compactor.max-lookback", 0*time.Second, "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.")
+	f.BoolVar(&cfg.UploadSparseIndexHeaders, "compactor.upload-sparse-index-headers", false, "If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.")
 
 	// compactor concurrency options
 	f.IntVar(&cfg.MaxOpeningBlocksConcurrency, "compactor.max-opening-blocks-concurrency", 1, "Number of goroutines opening blocks before compaction.")
@@ -834,6 +841,9 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.compactorCfg.CompactionWaitPeriod,
 		c.compactorCfg.BlockSyncConcurrency,
 		c.bucketCompactorMetrics,
+		c.compactorCfg.UploadSparseIndexHeaders,
+		c.compactorCfg.SparseIndexHeadersSamplingRate,
+		c.compactorCfg.SparseIndexHeadersConfig,
 	)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket compactor")

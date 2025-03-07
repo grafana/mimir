@@ -450,42 +450,36 @@ load 10s
 	data_histogram{test="histogram sample", point="c"} {{schema:2 count:4 sum:10 buckets:[1 0 0 0 1 0 0 1 1]}}
 	foo .8
 
-# Unsupported by streaming engine.
-# eval instant at 1m quantile without(point)(0.8, data)
-# 	{test="two samples"} 0.8
-# 	{test="three samples"} 1.6
-# 	{test="uneven samples"} 2.8
+eval instant at 1m quantile without(point)(0.8, data)
+	{test="two samples"} 0.8
+	{test="three samples"} 1.6
+	{test="uneven samples"} 2.8
 
 # The histogram is ignored here so the result doesn't change but it has an info annotation now.
-# Unsupported by streaming engine.
-# eval_info instant at 1m quantile without(point)(0.8, {__name__=~"data(_histogram)?"})
-#	{test="two samples"} 0.8
-#	{test="three samples"} 1.6
-#	{test="uneven samples"} 2.8
+eval_info instant at 1m quantile without(point)(0.8, {__name__=~"data(_histogram)?"})
+	{test="two samples"} 0.8
+	{test="three samples"} 1.6
+	{test="uneven samples"} 2.8
 
 # The histogram is ignored here so there is no result but it has an info annotation now.
-# Unsupported by streaming engine.
-# eval_info instant at 1m quantile(0.8, data_histogram)
+eval_info instant at 1m quantile(0.8, data_histogram)
 
 # Bug #5276.
-# Unsupported by streaming engine.
-# eval instant at 1m quantile without(point)(scalar(foo), data)
-# 	{test="two samples"} 0.8
-# 	{test="three samples"} 1.6
-# 	{test="uneven samples"} 2.8
+eval instant at 1m quantile without(point)(scalar(foo), data)
+	{test="two samples"} 0.8
+	{test="three samples"} 1.6
+	{test="uneven samples"} 2.8
 
 
-# Unsupported by streaming engine.
-# eval instant at 1m quantile without(point)((scalar(foo)), data)
-# 	{test="two samples"} 0.8
-# 	{test="three samples"} 1.6
-# 	{test="uneven samples"} 2.8
+eval instant at 1m quantile without(point)((scalar(foo)), data)
+	{test="two samples"} 0.8
+	{test="three samples"} 1.6
+	{test="uneven samples"} 2.8
 
-# Unsupported by streaming engine.
-# eval_warn instant at 1m quantile without(point)(NaN, data)
-#     {test="two samples"} NaN
-#     {test="three samples"} NaN
-#     {test="uneven samples"} NaN
+eval_warn instant at 1m quantile without(point)(NaN, data)
+    {test="two samples"} NaN
+    {test="three samples"} NaN
+    {test="uneven samples"} NaN
 
 # Tests for group.
 clear

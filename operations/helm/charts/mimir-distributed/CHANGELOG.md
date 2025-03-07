@@ -39,6 +39,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Individual mimir components can override their container images via the *.image values. The component's image definitions always override the values set in global `image` or `enterprise.image`. #10340
 * [ENHANCEMENT] Alertmanager, compactor, ingester, and store-gateway StatefulSets can configure their PVC template name via the corresponding *.persistentVolume.name values. #10376
 * [ENHANCEMENT] Set resources for smoke-test job. #10608
+* [ENHANCEMENT] All components can expose additional ports with their respective services via the *.service.extraPorts values. This allows exposing the containers that components declare in `extraContainers`. #10659
 * [BUGFIX] Create proper in-cluster remote URLs when gateway and nginx are disabled. #10625
 * [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
 

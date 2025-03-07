@@ -17,12 +17,19 @@ eval range from 0 to 4m step 1m sum(some_metric)
 eval range from 0 to 4m step 1m avg(some_metric)
   {} 0 2.5 5 7.5 10
 
+eval range from 0 to 4m step 1m quantile(0.5, some_metric)
+  {} 0 2.5 5 7.5 10
+
 # Range query, aggregating to multiple groups with 'by'.
 eval range from 0 to 4m step 1m sum by (env) (some_metric)
   {env="prod"} 0 3 6 9 12
   {env="test"} 0 7 14 21 28
 
 eval range from 0 to 4m step 1m avg by (env) (some_metric)
+  {env="prod"} 0 1.5 3 4.5 6
+  {env="test"} 0 3.5 7 10.5 14
+
+eval range from 0 to 4m step 1m quantile by (env) (0.5, some_metric)
   {env="prod"} 0 1.5 3 4.5 6
   {env="test"} 0 3.5 7 10.5 14
 
@@ -35,11 +42,18 @@ eval range from 0 to 4m step 1m avg without (env) (some_metric)
   {cluster="eu"} 0 2 4 6 8
   {cluster="us"} 0 3 6 9 12
 
+eval range from 0 to 4m step 1m quantile without (env) (0.5, some_metric)
+  {cluster="eu"} 0 2 4 6 8
+  {cluster="us"} 0 3 6 9 12
+
 # Range query, aggregating to a single group with 'without'.
 eval range from 0 to 4m step 1m sum without (env, cluster) (some_metric)
   {} 0 10 20 30 40
 
 eval range from 0 to 4m step 1m avg without (env, cluster) (some_metric)
+  {} 0 2.5 5 7.5 10
+
+eval range from 0 to 4m step 1m quantile without (env, cluster) (0.5, some_metric)
   {} 0 2.5 5 7.5 10
 
 # 'without' should always ignore the metric name.
@@ -48,6 +62,10 @@ eval range from 0 to 4m step 1m sum without(cluster) ({cluster="us"})
   {env="test"} 0 9 18 27 36
 
 eval range from 0 to 4m step 1m avg without(cluster) ({cluster="us"})
+  {env="prod"} 0 2 4 6 8
+  {env="test"} 0 4.5 9 13.5 18
+
+eval range from 0 to 4m step 1m quantile without(cluster) (0.5, {cluster="us"})
   {env="prod"} 0 2 4 6 8
   {env="test"} 0 4.5 9 13.5 18
 
@@ -80,6 +98,13 @@ eval range from 0 to 4m step 1m avg without(env) (some_metric)
   {cluster="us", group="a", subgroup="1"} 0 4 8 12 16
   {cluster="us", group="a", subgroup="2"} 0 5.5 11 16.5 22
 
+eval range from 0 to 4m step 1m quantile without(env) (0.5, some_metric)
+  {cluster="eu", group="a", subgroup="1"} 0 1 2 3 4
+  {cluster="eu", group="a", subgroup="2"} 0 2 4 6 8
+  {cluster="eu", group="b", subgroup="1"} 0 3 6 9 12
+  {cluster="us", group="a", subgroup="1"} 0 4 8 12 16
+  {cluster="us", group="a", subgroup="2"} 0 5.5 11 16.5 22
+
 eval range from 0 to 4m step 1m sum without(env, cluster) (some_metric)
   {group="a", subgroup="1"} 0 5 10 15 20
   {group="a", subgroup="2"} 0 13 26 39 52
@@ -88,6 +113,11 @@ eval range from 0 to 4m step 1m sum without(env, cluster) (some_metric)
 eval range from 0 to 4m step 1m avg without(env, cluster) (some_metric)
   {group="a", subgroup="1"} 0 2.5 5 7.5 10
   {group="a", subgroup="2"} 0 4.333333333333333 8.666666666666666 13 17.333333333333332
+  {group="b", subgroup="1"} 0 3 6 9 12
+
+eval range from 0 to 4m step 1m quantile without(env, cluster) (0.5, some_metric)
+  {group="a", subgroup="1"} 0 2.5 5 7.5 10
+  {group="a", subgroup="2"} 0 5 10 15 20
   {group="b", subgroup="1"} 0 3 6 9 12
 
 # 'without' with duplicate labels to remove.
@@ -101,6 +131,11 @@ eval range from 0 to 4m step 1m avg without(env, cluster, env) (some_metric)
   {group="a", subgroup="2"} 0 4.333333333333333 8.666666666666666 13 17.333333333333332
   {group="b", subgroup="1"} 0 3 6 9 12
 
+eval range from 0 to 4m step 1m quantile without(env, cluster, env) (0.5, some_metric)
+  {group="a", subgroup="1"} 0 2.5 5 7.5 10
+  {group="a", subgroup="2"} 0 5 10 15 20
+  {group="b", subgroup="1"} 0 3 6 9 12
+
 # 'by' with duplicate grouping labels.
 eval range from 0 to 4m step 1m sum by(env, cluster, env) (some_metric)
   {cluster="eu", env="prod"} 0 6 12 18 24
@@ -108,6 +143,11 @@ eval range from 0 to 4m step 1m sum by(env, cluster, env) (some_metric)
   {cluster="us", env="test"} 0 6 12 18 24
 
 eval range from 0 to 4m step 1m avg by(env, cluster, env) (some_metric)
+  {cluster="eu", env="prod"} 0 2 4 6 8
+  {cluster="us", env="prod"} 0 4.5 9 13.5 18
+  {cluster="us", env="test"} 0 6 12 18 24
+
+eval range from 0 to 4m step 1m quantile by(env, cluster, env) (0.5, some_metric)
   {cluster="eu", env="prod"} 0 2 4 6 8
   {cluster="us", env="prod"} 0 4.5 9 13.5 18
   {cluster="us", env="test"} 0 6 12 18 24
@@ -124,6 +164,9 @@ eval range from 1m to 1m30s step 1s sum(some_metric_with_staleness)
 eval range from 1m to 1m30s step 1s avg(some_metric_with_staleness)
   # Should return no results.
 
+eval range from 1m to 1m30s step 1s quantile(0.5, some_metric_with_staleness)
+  # Should return no results.
+
 clear
 
 # Test native histogram aggregations
@@ -137,6 +180,8 @@ eval instant at 0m sum(single_histogram)
 
 eval instant at 0m avg(single_histogram)
   {} {{schema:0 sum:5.666666666666667 count:6 buckets:[1.6666666666666667 4 0.33333333333333337]}}
+
+eval_info instant at 0m quantile(0.5, single_histogram)
 
 eval instant at 0m sum by (label) (single_histogram)
   {label="value"} {{schema:0 count:4 sum:2 buckets:[1 2 1]}}
@@ -171,20 +216,24 @@ load 1m
 # See: https://github.com/prometheus/prometheus/issues/14172
 
 # What I would expect
-# eval range from 0 to 4m step 1m  sum by (label) (single_histogram)
+# eval range from 0 to 4m step 1m sum by (label) (single_histogram)
 #	{label="value"}  0 1 {{count:4 sum:2 buckets:[1 2 1]}}            {{sum:2 count:4 buckets:[1 2 1]}}          2
 #	{label="value2"} 0 5 {{schema:1 count:14 sum:15 buckets:[4 6 4]}} {{schema:2 count:8 sum:4 buckets:[4 6 4]}} 10
 #
-# eval range from 0 to 4m step 1m  avg by (label) (single_histogram)
+# eval range from 0 to 4m step 1m avg by (label) (single_histogram)
 #	{label="value"}  0 1   {{count:4 sum:2 buckets:[1 2 1]}}            {{sum:2 count:4 buckets:[1 2 1]}}          2
 #	{label="value2"} 0 2.5 {{schema:1 count:7 sum:7.5 buckets:[2 3 2]}} {{schema:2 count:4 sum:2 buckets:[1 2 1]}} 5
 
 # What both engines return
-eval range from 0 to 4m step 1m  sum by (label) (single_histogram)
+eval range from 0 to 4m step 1m sum by (label) (single_histogram)
   {label="value"}  0 1 1 1 2
   {label="value2"} 0 5 5 5 10
 
-eval range from 0 to 4m step 1m  avg by (label) (single_histogram)
+eval range from 0 to 4m step 1m avg by (label) (single_histogram)
+  {label="value"}  0 1   1   1   2
+  {label="value2"} 0 2.5 2.5 2.5 5
+
+eval range from 0 to 4m step 1m quantile by (label) (0.5, single_histogram)
   {label="value"}  0 1   1   1   2
   {label="value2"} 0 2.5 2.5 2.5 5
 
@@ -197,11 +246,14 @@ load 1m
 
 # If a float is present, the histogram is ignored.
 # If a float comes after a histogram, a lookback'd float is used instead of the histogram (see: https://github.com/prometheus/prometheus/issues/14172)
-eval range from 0 to 5m step 1m  sum(single_histogram)
+eval range from 0 to 5m step 1m sum(single_histogram)
   {} 0 1 1 5 8 {{sum:4 count:8 buckets:[2 4 2]}}
 
-eval range from 0 to 5m step 1m  avg(single_histogram)
+eval range from 0 to 5m step 1m avg(single_histogram)
   {} 0 0.5 0.5 2.5 4 {{sum:2 count:4 buckets:[1 2 1]}}
+
+eval_info range from 0 to 5m step 1m quantile(0.5, single_histogram)
+  {} 0 0.5 0.5 2.5 4
 
 clear
 
@@ -215,6 +267,9 @@ eval_warn instant at 1m sum(single_histogram)
 
 eval_warn instant at 1m avg(single_histogram)
 
+eval_info instant at 1m quantile(0.5, single_histogram)
+  {} 3
+
 clear
 
 # Test a mix of float and histogram values at the same point
@@ -226,6 +281,9 @@ load 1m
 eval_warn instant at 1m sum(single_histogram)
 
 eval_warn instant at 1m avg(single_histogram)
+
+eval_info instant at 1m quantile(0.5, single_histogram)
+  {} 3
 
 clear
 
@@ -240,6 +298,9 @@ load 1m
 eval_warn instant at 1m sum(single_histogram)
 
 eval_warn instant at 1m avg(single_histogram)
+
+eval_info instant at 1m quantile(0.5, single_histogram)
+  {} 2
 
 clear
 
@@ -625,3 +686,26 @@ eval range from 0 to 12m step 6m count_values by (idx) ("idx", series)
 # Once that fix is vendored into Mimir, we can remove the two (\\")? groups below.
 eval_fail instant at 0 count_values("a\xc5z", series)
   expected_fail_regexp invalid label name "(\\")?a\\(\\)?xc5z(\\")?"( for count_values)?
+
+clear
+
+load 6m
+  series{idx="1"}   1 2 3 4 5 6
+  series{idx="2"}   4 5 6 7 8 9
+  series{idx="3"}   7 8 Inf NaN -Inf
+
+# Quantile value warning is emitted even when no series are returned
+eval_warn range from 0 to 12m step 6m quantile(20, noseries)
+
+eval_warn range from 0 to 12m step 6m quantile(Inf, noseries)
+
+eval_warn range from 0 to 12m step 6m quantile(-Inf, noseries)
+
+eval range from 0 to 30m step 6m quantile(0.9, series)
+  {} 6.4 7.4 +Inf 6.4 7.4 8.7
+
+eval range from 0 to 30m step 6m quantile(0, series)
+  {} 1 2 3 NaN -Inf 6
+
+eval range from 0 to 30m step 6m quantile(1, series)
+  {} 7 8 NaN 7 8 9

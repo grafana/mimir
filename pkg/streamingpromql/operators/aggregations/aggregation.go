@@ -45,6 +45,11 @@ type Aggregation struct {
 	remainingGroups             []*group // One entry per group, in the order we want to return them
 
 	haveEmittedMixedFloatsAndHistogramsWarning bool
+
+	// If the aggregation has a parameter, its values are expected
+	// to be filled here by the wrapping operator.
+	// Currently only used by the quantile aggregation.
+	ParamData types.ScalarData
 }
 
 func NewAggregation(
@@ -218,7 +223,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	// Construct the group and return it
-	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.TimeRange, a.MemoryConsumptionTracker)
+	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.ParamData, a.TimeRange, a.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -248,7 +253,7 @@ func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group
 
 		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		if err := thisSeriesGroup.aggregation.AccumulateSeries(s, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationFunc); err != nil {
+		if err := thisSeriesGroup.aggregation.AccumulateSeries(s, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationFunc, thisSeriesGroup.remainingSeriesCount); err != nil {
 			return err
 		}
 		thisSeriesGroup.remainingSeriesCount--
@@ -264,6 +269,8 @@ func (a *Aggregation) emitAnnotation(generator types.AnnotationGenerator) {
 }
 
 func (a *Aggregation) Close() {
+	// The wrapping operator is responsible for returning any a.ParamData slice
+	// since it is responsible for setting them up.
 	a.Inner.Close()
 }
 

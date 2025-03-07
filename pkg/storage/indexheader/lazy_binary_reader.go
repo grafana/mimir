@@ -24,8 +24,8 @@ import (
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 )
 
 var (
