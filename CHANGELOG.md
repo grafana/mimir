@@ -90,6 +90,7 @@
 
 ### Mixin
 
+* [CHANGE] Alerts: Only alert on errors performing cache operations if there are over 10 request/sec to avoid flapping. #10832
 * [FEATURE] Add compiled mixin for GEM installations in `operations/mimir-mixin-compiled-gem`. #10690
 * [ENHANCEMENT] Dashboards: clarify that the ingester and store-gateway panels on the 'Reads' dashboard show data from all query requests to that component, not just requests from the main query path (ie. requests from the ruler query path are included as well). #10598
 * [ENHANCEMENT] Dashboards: add ingester and store-gateway panels from the 'Reads' dashboard to the 'Remote ruler reads' dashboard as well. #10598
