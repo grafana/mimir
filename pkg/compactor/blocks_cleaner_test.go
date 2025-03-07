@@ -1544,6 +1544,7 @@ type mockConfigProvider struct {
 	userPartialBlockDelayInvalid map[string]bool
 	verifyChunks                 map[string]bool
 	perTenantInMemoryCache       map[string]int
+	maxLookback                  map[string]time.Duration
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -1558,6 +1559,7 @@ func newMockConfigProvider() *mockConfigProvider {
 		userPartialBlockDelayInvalid: make(map[string]bool),
 		verifyChunks:                 make(map[string]bool),
 		perTenantInMemoryCache:       make(map[string]int),
+		maxLookback:                  make(map[string]time.Duration),
 	}
 }
 
@@ -1623,6 +1625,13 @@ func (m *mockConfigProvider) S3SSEKMSKeyID(string) string {
 
 func (m *mockConfigProvider) S3SSEKMSEncryptionContext(string) string {
 	return ""
+}
+
+func (m *mockConfigProvider) CompactorMaxLookback(user string) time.Duration {
+	if result, ok := m.maxLookback[user]; ok {
+		return result
+	}
+	return 0
 }
 
 func (c *BlocksCleaner) runCleanupWithErr(ctx context.Context) error {

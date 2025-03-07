@@ -5073,6 +5073,17 @@
         },
         {
           "kind": "field",
+          "name": "compactor_max_lookback",
+          "required": false,
+          "desc": "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "compactor.max-lookback",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "s3_sse_type",
           "required": false,
           "desc": "S3 server-side encryption type. Required to enable server-side encryption overrides for a specific tenant. If not set, the default S3 client settings are used.",
@@ -11607,17 +11618,6 @@
           "fieldFlag": "compactor.compaction-jobs-order",
           "fieldType": "string",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "max_lookback",
-          "required": false,
-          "desc": "Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "compactor.max-lookback",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
