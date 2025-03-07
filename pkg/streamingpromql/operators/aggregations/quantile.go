@@ -65,10 +65,6 @@ func NewQuantileAggregation(
 	return q, nil
 }
 
-func (q *QuantileAggregation) ExpressionPosition() posrange.PositionRange {
-	return q.Aggregation.ExpressionPosition()
-}
-
 func (q *QuantileAggregation) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	var err error
 	q.Aggregation.ParamData, err = q.Param.GetValues(ctx)
@@ -97,6 +93,10 @@ func (q *QuantileAggregation) Close() {
 		q.Param.Close()
 	}
 	q.Aggregation.Close()
+}
+
+func (q *QuantileAggregation) ExpressionPosition() posrange.PositionRange {
+	return q.Aggregation.ExpressionPosition()
 }
 
 type QuantileAggregationGroup struct {

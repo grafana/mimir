@@ -237,14 +237,6 @@ eval range from 0 to 4m step 1m quantile by (label) (0.5, single_histogram)
   {label="value"}  0 1   1   1   2
   {label="value2"} 0 2.5 2.5 2.5 5
 
-eval range from 0 to 4m step 1m  sum by (label) (single_histogram)
-  {label="value"}  0 1 1 1 2
-  {label="value2"} 0 5 5 5 10
-
-eval range from 0 to 4m step 1m  avg by (label) (single_histogram)
-  {label="value"}  0 1   1   1   2
-  {label="value2"} 0 2.5 2.5 2.5 5
-
 clear
 
 # Test a mix of float and histogram values at the same point
@@ -258,12 +250,6 @@ eval range from 0 to 5m step 1m sum(single_histogram)
   {} 0 1 1 5 8 {{sum:4 count:8 buckets:[2 4 2]}}
 
 eval range from 0 to 5m step 1m avg(single_histogram)
-  {} 0 0.5 0.5 2.5 4 {{sum:2 count:4 buckets:[1 2 1]}}
-
-eval range from 0 to 5m step 1m  sum(single_histogram)
-  {} 0 1 1 5 8 {{sum:4 count:8 buckets:[2 4 2]}}
-
-eval range from 0 to 5m step 1m  avg(single_histogram)
   {} 0 0.5 0.5 2.5 4 {{sum:2 count:4 buckets:[1 2 1]}}
 
 eval_info range from 0 to 5m step 1m quantile(0.5, single_histogram)
@@ -717,3 +703,9 @@ eval_warn range from 0 to 12m step 6m quantile(-Inf, noseries)
 
 eval range from 0 to 30m step 6m quantile(0.9, series)
   {} 6.4 7.4 +Inf 6.4 7.4 8.7
+
+eval range from 0 to 30m step 6m quantile(0, series)
+  {} 1 2 3 NaN -Inf 6
+
+eval range from 0 to 30m step 6m quantile(1, series)
+  {} 7 8 NaN 7 8 9
