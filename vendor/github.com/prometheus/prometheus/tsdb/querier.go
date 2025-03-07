@@ -216,7 +216,7 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 		return (m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp) && m.Matches("")
 	}
 	var pendingMatchers []*labels.Matcher
-	if TryOptimizing {
+	if ctxAskedToDisable, _ := ctx.Value("disable_optimized_index_lookup").(bool); TryOptimizing && !ctxAskedToDisable {
 		p, err := planIndexLookup(ctx, ms, ix, isSubtractingMatcher)
 		if err == nil {
 			pendingMatchers = p.pendingMatchers()

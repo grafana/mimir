@@ -61,7 +61,7 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 	}
 
 	isNativeHistogram := request.GetType() == client.NATIVE_HISTOGRAM_SERIES
-	postings, err := getPostings(ctx, db, idx, matchers, isNativeHistogram)
+	postings, pendingMatchers, err := getPostings(ctx, db, idx, matchers, isNativeHistogram)
 	if err != nil {
 		return fmt.Errorf("error listing active series: %w", err)
 	}
@@ -79,7 +79,19 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 			}
 			return fmt.Errorf("error getting series: %w", err)
 		}
-		m := &mimirpb.Metric{Labels: mimirpb.FromLabelsToLabelAdapters(buf.Labels())}
+		lbsl := buf.Labels()
+		allMatch := true
+		for _, m := range pendingMatchers {
+			if !m.Matches(lbsl.Get(m.Name)) {
+				allMatch = false
+				break
+			}
+		}
+		if !allMatch {
+			continue
+		}
+
+		m := &mimirpb.Metric{Labels: mimirpb.FromLabelsToLabelAdapters(lbsl)}
 		mSize := m.Size()
 		if isNativeHistogram {
 			mSize += 8 // 8 bytes for the bucket count.
@@ -110,19 +122,19 @@ func (i *Ingester) ActiveSeries(request *client.ActiveSeriesRequest, stream clie
 	return nil
 }
 
-func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matchers []*labels.Matcher, isNativeHistogram bool) (activeseries.BucketCountPostings, error) {
+func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matchers []*labels.Matcher, isNativeHistogram bool) (activeseries.BucketCountPostings, []*labels.Matcher, error) {
 	if db.activeSeries == nil {
-		return nil, fmt.Errorf("active series tracker is not initialized")
+		return nil, nil, fmt.Errorf("active series tracker is not initialized")
 	}
 
 	shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
 	if err != nil {
-		return nil, fmt.Errorf("error removing shard matcher: %w", err)
+		return nil, nil, fmt.Errorf("error removing shard matcher: %w", err)
 	}
 
-	postings, err := tsdb.PostingsForMatchers(ctx, idx, matchers...)
+	postings, pendingMatchers, err := tsdb.PostingsForMatchers(ctx, idx, matchers...)
 	if err != nil {
-		return nil, fmt.Errorf("error getting postings: %w", err)
+		return nil, nil, fmt.Errorf("error getting postings: %w", err)
 	}
 
 	if shard != nil {
@@ -130,10 +142,10 @@ func getPostings(ctx context.Context, db *userTSDB, idx tsdb.IndexReader, matche
 	}
 
 	if isNativeHistogram {
-		return activeseries.NewNativeHistogramPostings(db.activeSeries, postings), nil
+		return activeseries.NewNativeHistogramPostings(db.activeSeries, postings), pendingMatchers, nil
 	}
 
-	return &ZeroBucketCountPostings{*activeseries.NewPostings(db.activeSeries, postings)}, nil
+	return &ZeroBucketCountPostings{*activeseries.NewPostings(db.activeSeries, postings)}, pendingMatchers, nil
 }
 
 // listActiveSeries is used for testing purposes, builds the whole array of active series in memory.
@@ -142,9 +154,13 @@ func listActiveSeries(ctx context.Context, db *userTSDB, matchers []*labels.Matc
 	if err != nil {
 		return nil, fmt.Errorf("error getting index: %w", err)
 	}
-	postings, err := getPostings(ctx, db, idx, matchers, false)
+	ctx = context.WithValue(ctx, "disable_optimized_index_lookup", true)
+	postings, pendingMatchers, err := getPostings(ctx, db, idx, matchers, false)
 	if err != nil {
 		return nil, err
+	}
+	if len(pendingMatchers) > 0 {
+		return nil, fmt.Errorf("pending matchers: %v", pendingMatchers)
 	}
 	return NewSeries(postings, idx), nil
 }
