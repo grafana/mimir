@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -200,6 +201,21 @@ func buildSeriesSpec(startOfDay time.Time) []*block.SeriesSpec {
 	}
 }
 
+type emptyStats struct {
+}
+
+func (e emptyStats) TotalSeries() int64 {
+	return 0
+}
+
+func (e emptyStats) LabelValuesCount(context.Context, string) (int64, error) {
+	return 0, fmt.Errorf("not implemented")
+}
+
+func (e emptyStats) LabelValuesCardinality(context.Context, string, ...string) (int64, error) {
+	return 0, fmt.Errorf("not implemented")
+}
+
 func listSeriesAndChunksFromBlock(t *testing.T, blockDir string) []*block.SeriesSpec {
 	blk, err := tsdb.OpenBlock(promslog.NewNopLogger(), blockDir, nil, nil)
 	require.NoError(t, err)
@@ -208,7 +224,7 @@ func listSeriesAndChunksFromBlock(t *testing.T, blockDir string) []*block.Series
 	defer require.NoError(t, chunkReader.Close())
 
 	allKey, allValue := index.AllPostingsKey()
-	r, err := index.NewFileReader(filepath.Join(blockDir, block.IndexFilename), index.DecodePostingsRaw)
+	r, err := index.NewFileReader(filepath.Join(blockDir, block.IndexFilename), index.DecodePostingsRaw, emptyStats{})
 	require.NoError(t, err)
 	defer runutil.CloseWithErrCapture(&err, r, "gather index issue file reader")
 	it, err := r.Postings(context.Background(), allKey, allValue)
