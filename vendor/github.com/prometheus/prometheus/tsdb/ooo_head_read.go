@@ -52,9 +52,10 @@ func (o mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator 
 
 func NewHeadAndOOOIndexReader(head *Head, inoMint, mint, maxt int64, lastGarbageCollectedMmapRef chunks.ChunkDiskMapperRef) *HeadAndOOOIndexReader {
 	hr := &headIndexReader{
-		head: head,
-		mint: mint,
-		maxt: maxt,
+		Statistics: head.postingsStats,
+		head:       head,
+		mint:       mint,
+		maxt:       maxt,
 	}
 	return &HeadAndOOOIndexReader{hr, inoMint, lastGarbageCollectedMmapRef}
 }
@@ -170,7 +171,7 @@ func getOOOSeriesChunks(s *memSeries, mint, maxt int64, lastGarbageCollectedMmap
 
 // PostingsForMatchers needs to be overridden so that the right IndexReader
 // implementation gets passed down to the PostingsForMatchers call.
-func (oh *HeadAndOOOIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+func (oh *HeadAndOOOIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, []*labels.Matcher, error) {
 	return oh.head.pfmc.PostingsForMatchers(ctx, oh, concurrent, ms...)
 }
 
@@ -294,6 +295,8 @@ func (cr *HeadAndOOOChunkReader) Close() error {
 }
 
 type OOOCompactionHead struct {
+	index.Statistics
+
 	head        *Head
 	lastMmapRef chunks.ChunkDiskMapperRef
 	lastWBLFile int
@@ -315,6 +318,7 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 		chunkRange: head.chunkRange.Load(),
 		mint:       math.MaxInt64,
 		maxt:       math.MinInt64,
+		Statistics: emptyStats{},
 	}
 
 	if head.wbl != nil {
@@ -325,7 +329,7 @@ func NewOOOCompactionHead(ctx context.Context, head *Head) (*OOOCompactionHead, 
 		ch.lastWBLFile = lastWBLFile
 	}
 
-	hr := headIndexReader{head: head, mint: ch.mint, maxt: ch.maxt}
+	hr := headIndexReader{head: head, mint: ch.mint, maxt: ch.maxt, Statistics: ch.Statistics}
 	n, v := index.AllPostingsKey()
 	// TODO: filter to series with OOO samples, before sorting.
 	p, err := hr.Postings(ctx, n, v)
@@ -440,7 +444,7 @@ func NewOOOCompactionHeadIndexReader(ch *OOOCompactionHead) IndexReader {
 }
 
 func (ir *OOOCompactionHeadIndexReader) Symbols() index.StringIter {
-	hr := headIndexReader{head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
+	hr := headIndexReader{head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt, Statistics: ir.ch.Statistics}
 	return hr.Symbols()
 }
 
@@ -466,17 +470,17 @@ func (ir *OOOCompactionHeadIndexReader) SortedPostings(p index.Postings) index.P
 }
 
 func (ir *OOOCompactionHeadIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
-	hr := headIndexReader{head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
+	hr := headIndexReader{Statistics: ir.ch.Statistics, head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
 	return hr.ShardedPostings(p, shardIndex, shardCount)
 }
 
 func (ir *OOOCompactionHeadIndexReader) LabelValuesFor(postings index.Postings, name string) storage.LabelValues {
-	hr := headIndexReader{head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
+	hr := headIndexReader{Statistics: ir.ch.Statistics, head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
 	return hr.LabelValuesFor(postings, name)
 }
 
 func (ir *OOOCompactionHeadIndexReader) LabelValuesExcluding(postings index.Postings, name string) storage.LabelValues {
-	hr := headIndexReader{head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
+	hr := headIndexReader{Statistics: ir.ch.Statistics, head: ir.ch.head, mint: ir.ch.mint, maxt: ir.ch.maxt}
 	return hr.LabelValuesExcluding(postings, name)
 }
 
@@ -508,8 +512,8 @@ func (ir *OOOCompactionHeadIndexReader) LabelValues(_ context.Context, name stri
 	return nil, errors.New("not implemented")
 }
 
-func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(_ context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	return nil, errors.New("not implemented")
+func (ir *OOOCompactionHeadIndexReader) PostingsForMatchers(_ context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, []*labels.Matcher, error) {
+	return nil, nil, errors.New("not implemented")
 }
 
 func (ir *OOOCompactionHeadIndexReader) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
@@ -526,6 +530,18 @@ func (ir *OOOCompactionHeadIndexReader) LabelNamesFor(ctx context.Context, posti
 
 func (ir *OOOCompactionHeadIndexReader) Close() error {
 	return nil
+}
+
+func (ir *OOOCompactionHeadIndexReader) TotalSeries() int64 {
+	return ir.ch.Statistics.TotalSeries()
+}
+
+func (ir *OOOCompactionHeadIndexReader) LabelValuesCount(ctx context.Context, name string) (int64, error) {
+	return ir.ch.Statistics.LabelValuesCount(ctx, name)
+}
+
+func (ir *OOOCompactionHeadIndexReader) LabelValuesCardinality(ctx context.Context, name string, values ...string) (int64, error) {
+	return ir.ch.Statistics.LabelValuesCardinality(ctx, name, values...)
 }
 
 // HeadAndOOOQuerier queries both the head and the out-of-order head.

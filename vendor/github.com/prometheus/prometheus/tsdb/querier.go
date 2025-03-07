@@ -123,7 +123,7 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 ) storage.SeriesSet {
 	disableTrimming := false
 	sharded := hints != nil && hints.ShardCount > 0
-	p, err := index.PostingsForMatchers(ctx, sharded, ms...)
+	p, pendingMatchers, err := index.PostingsForMatchers(ctx, sharded, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -140,11 +140,11 @@ func selectSeriesSet(ctx context.Context, sortSeries bool, hints *storage.Select
 		disableTrimming = hints.DisableTrimming
 		if hints.Func == "series" {
 			// When you're only looking up metadata (for example series API), you don't need to load any chunks.
-			return newBlockSeriesSet(index, newNopChunkReader(), tombstones, p, mint, maxt, disableTrimming)
+			return newBlockSeriesSet(index, newNopChunkReader(), tombstones, p, mint, maxt, disableTrimming, pendingMatchers)
 		}
 	}
 
-	return newBlockSeriesSet(index, chunks, tombstones, p, mint, maxt, disableTrimming)
+	return newBlockSeriesSet(index, chunks, tombstones, p, mint, maxt, disableTrimming, pendingMatchers)
 }
 
 // blockChunkQuerier provides chunk querying access to a single block database.
@@ -176,7 +176,7 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 		maxt = hints.End
 		disableTrimming = hints.DisableTrimming
 	}
-	p, err := index.PostingsForMatchers(ctx, sharded, ms...)
+	p, pendingMatchers, err := index.PostingsForMatchers(ctx, sharded, ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
@@ -186,18 +186,21 @@ func selectChunkSeriesSet(ctx context.Context, sortSeries bool, hints *storage.S
 	if sortSeries {
 		p = index.SortedPostings(p)
 	}
-	return NewBlockChunkSeriesSet(blockID, index, chunks, tombstones, p, mint, maxt, disableTrimming)
+
+	return NewBlockChunkSeriesSet(blockID, index, chunks, tombstones, p, mint, maxt, disableTrimming, pendingMatchers)
 }
+
+var TryOptimizing = true
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. The resulting postings are not ordered by series.
-func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
+// The returned pendingMatchers are matchers that have not been applied to the returned postings yet.
+func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, []*labels.Matcher, error) {
 	if len(ms) == 1 && ms[0].Name == "" && ms[0].Value == "" {
 		k, v := index.AllPostingsKey()
-		return ix.Postings(ctx, k, v)
+		p, err := ix.Postings(ctx, k, v)
+		return p, nil, err
 	}
-
-	var its, notIts []index.Postings
 	// See which label must be non-empty.
 	// Optimization for case like {l=~".", l!="1"}.
 	labelMustBeSet := make(map[string]bool, len(ms))
@@ -212,6 +215,22 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 		}
 		return (m.Type == labels.MatchNotEqual || m.Type == labels.MatchNotRegexp) && m.Matches("")
 	}
+	var pendingMatchers []*labels.Matcher
+	if TryOptimizing {
+		p, err := planIndexLookup(ctx, ms, ix, isSubtractingMatcher)
+		if err == nil {
+			pendingMatchers = p.pendingMatchers()
+			ms = p.indexMatchers()
+		}
+
+		if len(ms) == 0 {
+			k, v := index.AllPostingsKey()
+			p, err := ix.Postings(ctx, k, v)
+			return p, pendingMatchers, err
+		}
+	}
+	var its, notIts []index.Postings
+
 	hasSubtractingMatchers, hasIntersectingMatchers := false, false
 	for _, m := range ms {
 		if isSubtractingMatcher(m) {
@@ -228,7 +247,7 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 		k, v := index.AllPostingsKey()
 		allPostings, err := ix.Postings(ctx, k, v)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		its = append(its, allPostings)
 	}
@@ -248,24 +267,24 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 
 	for _, m := range ms {
 		if ctx.Err() != nil {
-			return nil, ctx.Err()
+			return nil, nil, ctx.Err()
 		}
 		switch {
 		case m.Name == "" && m.Value == "":
 			// We already handled the case at the top of the function,
 			// and it is unexpected to get all postings again here.
-			return nil, errors.New("unexpected all postings")
+			return nil, nil, errors.New("unexpected all postings")
 
 		case m.Type == labels.MatchRegexp && m.Value == ".*":
 			// .* regexp matches any string: do nothing.
 		case m.Type == labels.MatchNotRegexp && m.Value == ".*":
-			return index.EmptyPostings(), nil
+			return index.EmptyPostings(), nil, nil
 
 		case m.Type == labels.MatchRegexp && m.Value == ".+":
 			// .+ regexp matches any non-empty string: get postings for all label values.
 			it := ix.PostingsForAllLabelValues(ctx, m.Name)
 			if index.IsEmptyPostingsType(it) {
-				return index.EmptyPostings(), nil
+				return index.EmptyPostings(), nil, nil
 			}
 			its = append(its, it)
 		case m.Type == labels.MatchNotRegexp && m.Value == ".+":
@@ -282,12 +301,12 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 				// doesn't match empty, then subtract it out at the end.
 				inverse, err := m.Inverse()
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 
 				it, err := postingsForMatcher(ctx, ix, inverse)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				notIts = append(notIts, it)
 			case isNot && !matchesEmpty: // l!=""
@@ -295,25 +314,25 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 				// be empty we need to use inversePostingsForMatcher.
 				inverse, err := m.Inverse()
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 
 				it, err := inversePostingsForMatcher(ctx, ix, inverse)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				if index.IsEmptyPostingsType(it) {
-					return index.EmptyPostings(), nil
+					return index.EmptyPostings(), nil, nil
 				}
 				its = append(its, it)
 			default: // l="a", l=~"a|b", l=~"a.b", etc.
 				// Non-Not matcher, use normal postingsForMatcher.
 				it, err := postingsForMatcher(ctx, ix, m)
 				if err != nil {
-					return nil, err
+					return nil, nil, err
 				}
 				if index.IsEmptyPostingsType(it) {
-					return index.EmptyPostings(), nil
+					return index.EmptyPostings(), nil, nil
 				}
 				its = append(its, it)
 			}
@@ -324,7 +343,7 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 			// https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555
 			it, err := inversePostingsForMatcher(ctx, ix, m)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			notIts = append(notIts, it)
 		}
@@ -336,7 +355,7 @@ func PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, ms ...*lab
 		it = index.Without(it, n)
 	}
 
-	return it, nil
+	return it, pendingMatchers, nil
 }
 
 func postingsForMatcher(ctx context.Context, ix IndexPostingsReader, m *labels.Matcher) (index.Postings, error) {
@@ -432,10 +451,13 @@ func labelValuesWithMatchers(ctx context.Context, r IndexReader, name string, ma
 		return allValues, nil
 	}
 
-	p, err := r.PostingsForMatchers(ctx, false, matchers...)
+	p, pendingMatchers, err := r.PostingsForMatchers(ctx, false, matchers...)
 	if err != nil {
 		return nil, fmt.Errorf("fetching postings for matchers: %w", err)
 	}
+
+	// TODO dimitarvdimitrov handle pending matchers
+	_ = pendingMatchers
 
 	// Let's see if expanded postings for matchers have smaller cardinality than label values.
 	// Since computing label values from series is expensive, we apply a limit on number of expanded
@@ -567,10 +589,14 @@ func (p *prependPostings) Err() error {
 }
 
 func labelNamesWithMatchers(ctx context.Context, r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
-	p, err := r.PostingsForMatchers(ctx, false, matchers...)
+	p, pendingMatchers, err := r.PostingsForMatchers(ctx, false, matchers...)
 	if err != nil {
 		return nil, err
 	}
+
+	// TODO dimitarvdimitrov handle pending matchers
+	_ = pendingMatchers
+
 	return r.LabelNamesFor(ctx, p)
 }
 
@@ -593,6 +619,10 @@ type blockBaseSeriesSet struct {
 	index           IndexReader
 	chunks          ChunkReader
 	tombstones      tombstones.Reader
+	pendingMatchers []*labels.Matcher
+
+	closed bool
+
 	mint, maxt      int64
 	disableTrimming bool
 
@@ -604,6 +634,7 @@ type blockBaseSeriesSet struct {
 }
 
 func (b *blockBaseSeriesSet) Next() bool {
+	tempLabels := labels.Labels{}
 	for b.p.Next() {
 		if err := b.index.Series(b.p.At(), &b.builder, &b.bufChks); err != nil {
 			// Postings may be stale. Skip if no underlying series exists.
@@ -612,6 +643,21 @@ func (b *blockBaseSeriesSet) Next() bool {
 			}
 			b.err = fmt.Errorf("get series %d: %w", b.p.At(), err)
 			return false
+		}
+
+		// Check pending matchers before loading chunks
+		if len(b.pendingMatchers) > 0 {
+			b.builder.Overwrite(&tempLabels)
+			allMatch := true
+			for _, m := range b.pendingMatchers {
+				if !m.Matches(tempLabels.Get(m.Name)) {
+					allMatch = false
+					break
+				}
+			}
+			if !allMatch {
+				continue
+			}
 		}
 
 		if len(b.bufChks) == 0 {
@@ -1178,7 +1224,7 @@ type blockSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.SeriesSet {
+func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool, pendingMatchers []*labels.Matcher) *blockSeriesSet {
 	return &blockSeriesSet{
 		blockBaseSeriesSet{
 			index:           i,
@@ -1188,6 +1234,7 @@ func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p inde
 			mint:            mint,
 			maxt:            maxt,
 			disableTrimming: disableTrimming,
+			pendingMatchers: pendingMatchers,
 		},
 	}
 }
@@ -1208,7 +1255,7 @@ type blockChunkSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func NewBlockChunkSeriesSet(id ulid.ULID, i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.ChunkSeriesSet {
+func NewBlockChunkSeriesSet(id ulid.ULID, i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool, pendingMatchers []*labels.Matcher) storage.ChunkSeriesSet {
 	return &blockChunkSeriesSet{
 		blockBaseSeriesSet{
 			blockID:         id,
@@ -1219,6 +1266,7 @@ func NewBlockChunkSeriesSet(id ulid.ULID, i IndexReader, c ChunkReader, t tombst
 			mint:            mint,
 			maxt:            maxt,
 			disableTrimming: disableTrimming,
+			pendingMatchers: pendingMatchers,
 		},
 	}
 }
