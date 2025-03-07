@@ -784,16 +784,26 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 		require.NoError(t, err)
 
 		// Find all series in the block.
-		postings, err := indexReader.PostingsForMatchers(ctx, false, labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+"))
+		postings, pendingMatchers, err := indexReader.PostingsForMatchers(ctx, false, labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+"))
 		require.NoError(t, err)
 
 		builder := labels.NewScratchBuilder(1)
 		for postings.Next() {
 			// Symbolize the series labels.
 			require.NoError(t, indexReader.Series(postings.At(), &builder, nil))
+			seriesLabels := builder.Labels()
+			allMatch := true
+			for _, m := range pendingMatchers {
+				if !m.Matches(seriesLabels.Get(m.Name)) {
+					allMatch = false
+					break
+				}
+			}
+			if !allMatch {
+				continue
+			}
 
 			// Ensure the series below to the right shard.
-			seriesLabels := builder.Labels()
 			seriesID, err := strconv.Atoi(seriesLabels.Get("series_id"))
 			require.NoError(t, err)
 			assert.Contains(t, expectedSeriesIDs, seriesID, "series:", seriesLabels.String())
