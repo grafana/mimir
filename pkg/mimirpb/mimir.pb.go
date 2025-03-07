@@ -796,16 +796,16 @@ type isHistogram_ZeroCount interface {
 }
 
 type Histogram_CountInt struct {
-	CountInt uint64 `protobuf:"varint,1,opt,name=count_int,json=countInt,proto3,oneof"`
+	CountInt uint64 `protobuf:"varint,1,opt,name=count_int,json=countInt,proto3,oneof" json:"count_int,omitempty"`
 }
 type Histogram_CountFloat struct {
-	CountFloat float64 `protobuf:"fixed64,2,opt,name=count_float,json=countFloat,proto3,oneof"`
+	CountFloat float64 `protobuf:"fixed64,2,opt,name=count_float,json=countFloat,proto3,oneof" json:"count_float,omitempty"`
 }
 type Histogram_ZeroCountInt struct {
-	ZeroCountInt uint64 `protobuf:"varint,6,opt,name=zero_count_int,json=zeroCountInt,proto3,oneof"`
+	ZeroCountInt uint64 `protobuf:"varint,6,opt,name=zero_count_int,json=zeroCountInt,proto3,oneof" json:"zero_count_int,omitempty"`
 }
 type Histogram_ZeroCountFloat struct {
-	ZeroCountFloat float64 `protobuf:"fixed64,7,opt,name=zero_count_float,json=zeroCountFloat,proto3,oneof"`
+	ZeroCountFloat float64 `protobuf:"fixed64,7,opt,name=zero_count_float,json=zeroCountFloat,proto3,oneof" json:"zero_count_float,omitempty"`
 }
 
 func (*Histogram_CountInt) isHistogram_Count()           {}
@@ -1416,16 +1416,16 @@ type isQueryResponse_Data interface {
 }
 
 type QueryResponse_String_ struct {
-	String_ *StringData `protobuf:"bytes,4,opt,name=string,proto3,oneof"`
+	String_ *StringData `protobuf:"bytes,4,opt,name=string,proto3,oneof" json:"string,omitempty"`
 }
 type QueryResponse_Vector struct {
-	Vector *VectorData `protobuf:"bytes,5,opt,name=vector,proto3,oneof"`
+	Vector *VectorData `protobuf:"bytes,5,opt,name=vector,proto3,oneof" json:"vector,omitempty"`
 }
 type QueryResponse_Scalar struct {
-	Scalar *ScalarData `protobuf:"bytes,6,opt,name=scalar,proto3,oneof"`
+	Scalar *ScalarData `protobuf:"bytes,6,opt,name=scalar,proto3,oneof" json:"scalar,omitempty"`
 }
 type QueryResponse_Matrix struct {
-	Matrix *MatrixData `protobuf:"bytes,7,opt,name=matrix,proto3,oneof"`
+	Matrix *MatrixData `protobuf:"bytes,7,opt,name=matrix,proto3,oneof" json:"matrix,omitempty"`
 }
 
 func (*QueryResponse_String_) isQueryResponse_Data() {}
@@ -3247,23 +3247,23 @@ func (this *TimeSeries) GoString() string {
 	s = append(s, "&mimirpb.TimeSeries{")
 	s = append(s, "Labels: "+fmt.Sprintf("%#v", this.Labels)+",\n")
 	if this.Samples != nil {
-		vs := make([]*Sample, len(this.Samples))
+		vs := make([]Sample, len(this.Samples))
 		for i := range vs {
-			vs[i] = &this.Samples[i]
+			vs[i] = this.Samples[i]
 		}
 		s = append(s, "Samples: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	if this.Exemplars != nil {
-		vs := make([]*Exemplar, len(this.Exemplars))
+		vs := make([]Exemplar, len(this.Exemplars))
 		for i := range vs {
-			vs[i] = &this.Exemplars[i]
+			vs[i] = this.Exemplars[i]
 		}
 		s = append(s, "Exemplars: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	if this.Histograms != nil {
-		vs := make([]*Histogram, len(this.Histograms))
+		vs := make([]Histogram, len(this.Histograms))
 		for i := range vs {
-			vs[i] = &this.Histograms[i]
+			vs[i] = this.Histograms[i]
 		}
 		s = append(s, "Histograms: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -3343,18 +3343,18 @@ func (this *Histogram) GoString() string {
 		s = append(s, "ZeroCount: "+fmt.Sprintf("%#v", this.ZeroCount)+",\n")
 	}
 	if this.NegativeSpans != nil {
-		vs := make([]*BucketSpan, len(this.NegativeSpans))
+		vs := make([]BucketSpan, len(this.NegativeSpans))
 		for i := range vs {
-			vs[i] = &this.NegativeSpans[i]
+			vs[i] = this.NegativeSpans[i]
 		}
 		s = append(s, "NegativeSpans: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	s = append(s, "NegativeDeltas: "+fmt.Sprintf("%#v", this.NegativeDeltas)+",\n")
 	s = append(s, "NegativeCounts: "+fmt.Sprintf("%#v", this.NegativeCounts)+",\n")
 	if this.PositiveSpans != nil {
-		vs := make([]*BucketSpan, len(this.PositiveSpans))
+		vs := make([]BucketSpan, len(this.PositiveSpans))
 		for i := range vs {
-			vs[i] = &this.PositiveSpans[i]
+			vs[i] = this.PositiveSpans[i]
 		}
 		s = append(s, "PositiveSpans: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -3410,16 +3410,16 @@ func (this *FloatHistogram) GoString() string {
 	s = append(s, "Count: "+fmt.Sprintf("%#v", this.Count)+",\n")
 	s = append(s, "Sum: "+fmt.Sprintf("%#v", this.Sum)+",\n")
 	if this.PositiveSpans != nil {
-		vs := make([]*BucketSpan, len(this.PositiveSpans))
+		vs := make([]BucketSpan, len(this.PositiveSpans))
 		for i := range vs {
-			vs[i] = &this.PositiveSpans[i]
+			vs[i] = this.PositiveSpans[i]
 		}
 		s = append(s, "PositiveSpans: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	if this.NegativeSpans != nil {
-		vs := make([]*BucketSpan, len(this.NegativeSpans))
+		vs := make([]BucketSpan, len(this.NegativeSpans))
 		for i := range vs {
-			vs[i] = &this.NegativeSpans[i]
+			vs[i] = this.NegativeSpans[i]
 		}
 		s = append(s, "NegativeSpans: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -3560,16 +3560,16 @@ func (this *VectorData) GoString() string {
 	s := make([]string, 0, 6)
 	s = append(s, "&mimirpb.VectorData{")
 	if this.Samples != nil {
-		vs := make([]*VectorSample, len(this.Samples))
+		vs := make([]VectorSample, len(this.Samples))
 		for i := range vs {
-			vs[i] = &this.Samples[i]
+			vs[i] = this.Samples[i]
 		}
 		s = append(s, "Samples: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	if this.Histograms != nil {
-		vs := make([]*VectorHistogram, len(this.Histograms))
+		vs := make([]VectorHistogram, len(this.Histograms))
 		for i := range vs {
-			vs[i] = &this.Histograms[i]
+			vs[i] = this.Histograms[i]
 		}
 		s = append(s, "Histograms: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -3618,9 +3618,9 @@ func (this *MatrixData) GoString() string {
 	s := make([]string, 0, 5)
 	s = append(s, "&mimirpb.MatrixData{")
 	if this.Series != nil {
-		vs := make([]*MatrixSeries, len(this.Series))
+		vs := make([]MatrixSeries, len(this.Series))
 		for i := range vs {
-			vs[i] = &this.Series[i]
+			vs[i] = this.Series[i]
 		}
 		s = append(s, "Series: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -3635,16 +3635,16 @@ func (this *MatrixSeries) GoString() string {
 	s = append(s, "&mimirpb.MatrixSeries{")
 	s = append(s, "Metric: "+fmt.Sprintf("%#v", this.Metric)+",\n")
 	if this.Samples != nil {
-		vs := make([]*Sample, len(this.Samples))
+		vs := make([]Sample, len(this.Samples))
 		for i := range vs {
-			vs[i] = &this.Samples[i]
+			vs[i] = this.Samples[i]
 		}
 		s = append(s, "Samples: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	if this.Histograms != nil {
-		vs := make([]*FloatHistogramPair, len(this.Histograms))
+		vs := make([]FloatHistogramPair, len(this.Histograms))
 		for i := range vs {
-			vs[i] = &this.Histograms[i]
+			vs[i] = this.Histograms[i]
 		}
 		s = append(s, "Histograms: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -4229,7 +4229,8 @@ func (m *Histogram) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 }
 
 func (m *Histogram_CountInt) MarshalTo(dAtA []byte) (int, error) {
-	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
 func (m *Histogram_CountInt) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -4240,7 +4241,8 @@ func (m *Histogram_CountInt) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 func (m *Histogram_CountFloat) MarshalTo(dAtA []byte) (int, error) {
-	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
 func (m *Histogram_CountFloat) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -4252,7 +4254,8 @@ func (m *Histogram_CountFloat) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 func (m *Histogram_ZeroCountInt) MarshalTo(dAtA []byte) (int, error) {
-	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
 func (m *Histogram_ZeroCountInt) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -4263,7 +4266,8 @@ func (m *Histogram_ZeroCountInt) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 	return len(dAtA) - i, nil
 }
 func (m *Histogram_ZeroCountFloat) MarshalTo(dAtA []byte) (int, error) {
-	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
 func (m *Histogram_ZeroCountFloat) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -4667,7 +4671,8 @@ func (m *QueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 }
 
 func (m *QueryResponse_String_) MarshalTo(dAtA []byte) (int, error) {
-	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
 func (m *QueryResponse_String_) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -4687,7 +4692,8 @@ func (m *QueryResponse_String_) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 func (m *QueryResponse_Vector) MarshalTo(dAtA []byte) (int, error) {
-	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
 func (m *QueryResponse_Vector) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -4707,7 +4713,8 @@ func (m *QueryResponse_Vector) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 func (m *QueryResponse_Scalar) MarshalTo(dAtA []byte) (int, error) {
-	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
 func (m *QueryResponse_Scalar) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -4727,7 +4734,8 @@ func (m *QueryResponse_Scalar) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 func (m *QueryResponse_Matrix) MarshalTo(dAtA []byte) (int, error) {
-	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
 func (m *QueryResponse_Matrix) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -6316,10 +6324,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -6369,10 +6374,7 @@ func (m *WriteResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -6441,10 +6443,7 @@ func (m *ErrorDetails) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -6632,10 +6631,7 @@ func (m *TimeSeries) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -6753,10 +6749,7 @@ func (m *LabelPair) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -6836,10 +6829,7 @@ func (m *Sample) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -7004,10 +6994,7 @@ func (m *MetricMetadata) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -7091,10 +7078,7 @@ func (m *Metric) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -7208,10 +7192,7 @@ func (m *Exemplar) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -7736,10 +7717,7 @@ func (m *Histogram) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -8103,10 +8081,7 @@ func (m *FloatHistogram) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -8196,10 +8171,7 @@ func (m *BucketSpan) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -8304,10 +8276,7 @@ func (m *FloatHistogramPair) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -8413,10 +8382,7 @@ func (m *SampleHistogram) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -8518,10 +8484,7 @@ func (m *HistogramBucket) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -8626,10 +8589,7 @@ func (m *SampleHistogramPair) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -8953,10 +8913,7 @@ func (m *QueryResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -9057,10 +9014,7 @@ func (m *StringData) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -9178,10 +9132,7 @@ func (m *VectorData) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -9293,10 +9244,7 @@ func (m *VectorSample) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -9430,10 +9378,7 @@ func (m *VectorHistogram) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -9513,10 +9458,7 @@ func (m *ScalarData) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -9600,10 +9542,7 @@ func (m *MatrixData) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -9753,10 +9692,7 @@ func (m *MatrixSeries) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthMimir
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
@@ -9774,6 +9710,7 @@ func (m *MatrixSeries) Unmarshal(dAtA []byte) error {
 func skipMimir(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0
+	depth := 0
 	for iNdEx < l {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
@@ -9805,10 +9742,8 @@ func skipMimir(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
-			return iNdEx, nil
 		case 1:
 			iNdEx += 8
-			return iNdEx, nil
 		case 2:
 			var length int
 			for shift := uint(0); ; shift += 7 {
@@ -9829,55 +9764,30 @@ func skipMimir(dAtA []byte) (n int, err error) {
 				return 0, ErrInvalidLengthMimir
 			}
 			iNdEx += length
-			if iNdEx < 0 {
-				return 0, ErrInvalidLengthMimir
-			}
-			return iNdEx, nil
 		case 3:
-			for {
-				var innerWire uint64
-				var start int = iNdEx
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return 0, ErrIntOverflowMimir
-					}
-					if iNdEx >= l {
-						return 0, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					innerWire |= (uint64(b) & 0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				innerWireType := int(innerWire & 0x7)
-				if innerWireType == 4 {
-					break
-				}
-				next, err := skipMimir(dAtA[start:])
-				if err != nil {
-					return 0, err
-				}
-				iNdEx = start + next
-				if iNdEx < 0 {
-					return 0, ErrInvalidLengthMimir
-				}
-			}
-			return iNdEx, nil
+			depth++
 		case 4:
-			return iNdEx, nil
+			if depth == 0 {
+				return 0, ErrUnexpectedEndOfGroupMimir
+			}
+			depth--
 		case 5:
 			iNdEx += 4
-			return iNdEx, nil
 		default:
 			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
 		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthMimir
+		}
+		if depth == 0 {
+			return iNdEx, nil
+		}
 	}
-	panic("unreachable")
+	return 0, io.ErrUnexpectedEOF
 }
 
 var (
-	ErrInvalidLengthMimir = fmt.Errorf("proto: negative length found during unmarshaling")
-	ErrIntOverflowMimir   = fmt.Errorf("proto: integer overflow")
+	ErrInvalidLengthMimir        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowMimir          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupMimir = fmt.Errorf("proto: unexpected end of group")
 )
