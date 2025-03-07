@@ -1,4 +1,4 @@
-# `copyblocks`
+# copyblocks
 
 This program can copy Mimir blocks between two buckets.
 

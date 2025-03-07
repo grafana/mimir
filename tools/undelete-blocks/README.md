@@ -1,4 +1,4 @@
-# `undelete-blocks`
+# undelete-blocks
 
 This program is a disaster recovery tool that can restore deleted Mimir blocks in object storage.
 

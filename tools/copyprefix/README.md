@@ -1,4 +1,4 @@
-# `copyprefix`
+# copyprefix
 
 This program copies objects by prefix between two buckets. If your infrastructure is largely on a single object storage service their respective CLI tool may be more convenient to use.
 

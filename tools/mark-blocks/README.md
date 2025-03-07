@@ -1,4 +1,4 @@
-# `mark-blocks`
+# mark-blocks
 
 This program creates or removes markers for blocks.
 
