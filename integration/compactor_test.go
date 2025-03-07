@@ -6,6 +6,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path"
 	"path/filepath"
@@ -133,7 +134,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 		chkReader, err := chunks.NewDirReader(filepath.Join(outDir, blockID, block.ChunksDirname), nil)
 		require.NoError(t, err)
 
-		ixReader, err := index.NewFileReader(filepath.Join(outDir, blockID, block.IndexFilename), index.DecodePostingsRaw)
+		ixReader, err := index.NewFileReader(filepath.Join(outDir, blockID, block.IndexFilename), index.DecodePostingsRaw, emptyStats{})
 		require.NoError(t, err)
 
 		n, v := index.AllPostingsKey()
@@ -188,6 +189,21 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 	}
 
 	require.Equal(t, expectedSeries, compactedSeries)
+}
+
+type emptyStats struct {
+}
+
+func (e emptyStats) TotalSeries() int64 {
+	return 0
+}
+
+func (e emptyStats) LabelValuesCount(context.Context, string) (int64, error) {
+	return 0, fmt.Errorf("not implemented")
+}
+
+func (e emptyStats) LabelValuesCardinality(context.Context, string, ...string) (int64, error) {
+	return 0, fmt.Errorf("not implemented")
 }
 
 func isMarkedForDeletionDueToCompaction(t *testing.T, blockPath string) bool {
