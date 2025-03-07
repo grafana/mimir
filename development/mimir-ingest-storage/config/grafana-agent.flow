@@ -124,8 +124,8 @@ prometheus.scrape "metrics_local_mimir_read_write_mode_usage_tracker" {
         )
         forward_to      = [prometheus.remote_write.metrics_local.receiver]
         job_name        = "mimir-read-write-mode/usage-tracker"
-        scrape_interval = "5s"
-        scrape_timeout  = "5s"
+        scrape_interval = "1s"
+        scrape_timeout  = "1s"
 
         enable_protobuf_negotiation = true
         scrape_classic_histograms = true

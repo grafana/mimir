@@ -114,6 +114,8 @@ usage_tracker:
     writer:
       address: kafka_1:9092
       topic: usage-tracker-events
+      auto_create_topic_enabled: true
+      auto_create_topic_default_partitions: 64
     reader:
       address: kafka_1:9092
       topic: usage-tracker-events

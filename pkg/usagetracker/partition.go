@@ -113,7 +113,7 @@ func (p *partition) start(ctx context.Context) error {
 
 	startConsumingEventsAtMillis := time.Now().Add(-p.cfg.IdleTimeout).UnixMilli()
 	p.eventsKafkaReader.AddConsumePartitions(map[string]map[int32]kgo.Offset{
-		p.cfg.EventsStorage.TopicName: {p.partitionID: kgo.NewOffset().AfterMilli(startConsumingEventsAtMillis)},
+		p.cfg.EventsStorage.Writer.Topic: {p.partitionID: kgo.NewOffset().AfterMilli(startConsumingEventsAtMillis)},
 	})
 
 	// Do this only once ready
@@ -171,12 +171,18 @@ func (p *partition) consumeSeriesCreatedEvents(ctx context.Context, wg *sync.Wai
 			}
 		})
 		fetches.EachRecord(func(r *kgo.Record) {
+			for _, h := range r.Headers {
+				if string(h.Key) == "instance" && string(h.Value) == p.cfg.InstanceRing.InstanceID {
+					level.Debug(p.logger).Log("msg", "ignoring our own event", "partition", r.Partition, "offset", r.Offset)
+					return
+				}
+			}
 			var ev usagetrackerpb.SeriesCreatedEvent
 			if err := ev.Unmarshal(r.Value); err != nil {
 				level.Error(p.logger).Log("msg", "failed to unmarshal series created event", "err", err, "record_partition", r.Partition, "offset", r.Offset, "value_len", len(r.Value))
 				return
 			}
-			// TODO: maybe ignore our own events?
+
 			p.store.processCreatedSeriesEvent(ev.UserID, ev.SeriesHashes, time.Unix(ev.Timestamp, 0), time.Now())
 			level.Debug(p.logger).Log("msg", "processed series created event", "partition", r.Partition, "offset", r.Offset, "series", len(ev.SeriesHashes))
 		})
@@ -197,6 +203,7 @@ func (p *partition) publishSeriesCreatedEvents(ctx context.Context, wg *sync.Wai
 			for batch := range publish {
 				level.Debug(p.logger).Log("msg", "producing batch of series created events", "size", len(batch))
 				// TODO: maybe use a slightly longer-deadline context here, to avoid dropping the pending events from the queue?
+				// TODO: make sure we don't send the traceparent header here.
 				res := p.eventsKafkaWriter.ProduceSync(ctx, batch...)
 				for _, r := range res {
 					if r.Err != nil {
@@ -243,7 +250,14 @@ func (p *partition) publishSeriesCreatedEvents(ctx context.Context, wg *sync.Wai
 				timer = time.NewTimer(p.cfg.CreatedSeriesEventsBatchTTL)
 			}
 			level.Debug(p.logger).Log("msg", "batching series created event", "size", len(data))
-			batch = append(batch, &kgo.Record{Topic: p.cfg.EventsStorage.TopicName, Value: data, Partition: p.partitionID})
+			batch = append(batch, &kgo.Record{
+				Topic: p.cfg.EventsStorage.Writer.Topic,
+				Headers: []kgo.RecordHeader{
+					{Key: "instance", Value: []byte(p.cfg.InstanceRing.InstanceID)},
+				},
+				Value:     data,
+				Partition: p.partitionID,
+			})
 			batchSize += len(data)
 
 			if batchSize >= p.cfg.CreatedSeriesEventsMaxBatchSizeBytes {
