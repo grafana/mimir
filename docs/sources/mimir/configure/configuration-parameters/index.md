@@ -3932,6 +3932,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -compactor.block-upload-max-block-size-bytes
 [compactor_block_upload_max_block_size_bytes: <int> | default = 0]
 
+# (experimental) Blocks uploaded before the lookback aren't considered in
+# compactor cycles. If set, this value should be larger than all values in
+# `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all
+# blocks are considered regardless of their upload time.
+# CLI flag: -compactor.max-lookback
+[compactor_max_lookback: <duration> | default = 0s]
+
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings
 # are used.
@@ -4964,13 +4971,6 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
-
-# (experimental) Blocks uploaded before the lookback aren't considered in
-# compactor cycles. If set, this value should be larger than all values in
-# `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all
-# blocks are considered regardless of their upload time.
-# CLI flag: -compactor.max-lookback
-[max_lookback: <duration> | default = 0s]
 
 # (experimental) If enabled, the compactor constructs and uploads sparse index
 # headers to object storage during each compaction cycle. This allows
