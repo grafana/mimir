@@ -2138,12 +2138,21 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	var postingsForMatchersFn func(context.Context, tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error)
 	switch req.GetCountMethod() {
 	case client.IN_MEMORY:
-		postingsForMatchersFn = tsdb.PostingsForMatchers
+		postingsForMatchersFn = func(ctx context.Context, reader tsdb.IndexPostingsReader, matcher ...*labels.Matcher) (index.Postings, error) {
+			postings, pendingMatchers, err := tsdb.PostingsForMatchers(context.WithValue(ctx, "disable_optimized_index_lookup", true), reader, matcher...)
+			if len(pendingMatchers) > 0 {
+				return nil, fmt.Errorf("unsupported pending matchers %v", pendingMatchers)
+			}
+			return postings, err
+		}
 	case client.ACTIVE:
 		postingsForMatchersFn = func(ctx context.Context, ix tsdb.IndexPostingsReader, ms ...*labels.Matcher) (index.Postings, error) {
-			postings, err := tsdb.PostingsForMatchers(ctx, ix, ms...)
+			postings, pendingMatchers, err := tsdb.PostingsForMatchers(context.WithValue(ctx, "disable_optimized_index_lookup", true), ix, ms...)
 			if err != nil {
 				return nil, err
+			}
+			if len(pendingMatchers) > 0 {
+				return nil, fmt.Errorf("unsupported pending matchers %v", pendingMatchers)
 			}
 			return activeseries.NewPostings(db.activeSeries, postings), nil
 		}

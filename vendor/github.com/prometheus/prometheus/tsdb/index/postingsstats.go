@@ -14,8 +14,13 @@
 package index
 
 import (
+	"context"
+	"fmt"
 	"math"
 	"slices"
+	"unsafe"
+
+	"github.com/tylertreat/BoomFilters"
 )
 
 // Stat holds values for a single cardinality statistic.
@@ -73,4 +78,68 @@ func (m *maxHeap) get() []Stat {
 		}
 	})
 	return m.Items
+}
+
+type labelValueSketch struct {
+	s              *boom.CountMinSketch
+	distinctValues int64
+}
+
+type LabelValuesSketches struct {
+	labelNames map[string]labelValueSketch
+}
+
+func (l LabelValuesSketches) LabelValuesCount(ctx context.Context, name string) (int64, error) {
+	s, ok := l.labelNames[name]
+	if !ok {
+		return 0, fmt.Errorf("no sketch found for label %q", name)
+	}
+	return int64(s.distinctValues), nil
+}
+
+func (l LabelValuesSketches) LabelValuesCardinality(ctx context.Context, name string, values ...string) (int64, error) {
+	valueSketch, ok := l.labelNames[name]
+	if !ok {
+		return 0, fmt.Errorf("no sketch found for label %q", name)
+	}
+	totalCount := 0
+	if len(values) == 0 {
+		return int64(valueSketch.s.TotalCount()), nil
+	}
+	for _, value := range values {
+		valBytes := yoloBytes(value)
+		totalCount += int(valueSketch.s.Count(valBytes))
+	}
+	return int64(totalCount), nil
+}
+
+func yoloBytes(s string) []byte {
+	return *(*[]byte)(unsafe.Pointer(&s))
+}
+
+func (p *MemPostings) LabelValuesSketches() LabelValuesSketches {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	sketches := LabelValuesSketches{}
+
+	sketches.labelNames = make(map[string]labelValueSketch, len(p.m))
+
+	for name, m := range p.m {
+		if name == "" {
+			continue
+		}
+		sketch := labelValueSketch{
+			s:              boom.NewCountMinSketch(0.01, 0.01),
+			distinctValues: int64(len(m)),
+		}
+		for value, postings := range m {
+			valBytes := yoloBytes(value)
+			for range postings {
+				sketch.s.Add(valBytes)
+			}
+		}
+		sketches.labelNames[name] = sketch
+	}
+	return sketches
 }

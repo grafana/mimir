@@ -238,9 +238,13 @@ func analyzeBlockForGaps(ctx context.Context, cfg config, blockDir string, match
 	}
 	defer idx.Close()
 
-	p, err := idx.PostingsForMatchers(ctx, true, matchers...)
+	p, pendingMatchers, err := idx.PostingsForMatchers(ctx, true, matchers...)
 	if err != nil {
 		return blockStats, err
+	}
+	if len(pendingMatchers) > 0 {
+		// TODO dimitarvdimitrov fix this
+		return blockStats, fmt.Errorf("didn't expect pending matchers: %v", pendingMatchers)
 	}
 
 	var builder labels.ScratchBuilder

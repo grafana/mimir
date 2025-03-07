@@ -129,10 +129,25 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 
 }
 
+type emptyStats struct {
+}
+
+func (e emptyStats) TotalSeries() int64 {
+	return 0
+}
+
+func (e emptyStats) LabelValuesCount(context.Context, string) (int64, error) {
+	return 0, fmt.Errorf("not implemented")
+}
+
+func (e emptyStats) LabelValuesCardinality(context.Context, string, ...string) (int64, error) {
+	return 0, fmt.Errorf("not implemented")
+}
+
 func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerReader Reader) {
 	ctx := context.Background()
 
-	indexReader, err := index.NewReader(indexByteSlice, index.DecodePostingsRaw)
+	indexReader, err := index.NewReader(indexByteSlice, index.DecodePostingsRaw, emptyStats{})
 	require.NoError(t, err)
 	defer func() { _ = indexReader.Close() }()
 

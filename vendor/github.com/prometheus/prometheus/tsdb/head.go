@@ -100,8 +100,9 @@ type Head struct {
 	deleted    map[chunks.HeadSeriesRef]int // Deleted series, and what WAL segment they must be kept until.
 
 	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
-	postings *index.MemPostings // Postings lists for terms.
-	pfmc     *PostingsForMatchersCache
+	postings      *index.MemPostings // Postings lists for terms.
+	pfmc          *PostingsForMatchersCache
+	postingsStats index.Statistics
 
 	tombstones *tombstones.MemTombstones
 
@@ -300,6 +301,12 @@ func NewHead(r prometheus.Registerer, l *slog.Logger, wal, wbl *wlog.WL, opts *H
 		secondaryHashFunc: shf,
 		pfmc:              NewPostingsForMatchersCache(opts.PostingsForMatchersCacheTTL, opts.PostingsForMatchersCacheMaxItems, opts.PostingsForMatchersCacheMaxBytes, opts.PostingsForMatchersCacheForce, opts.PostingsForMatchersCacheMetrics),
 	}
+	h.postingsStats = &reloadableStats{source: func() index.Statistics {
+		return completeStatistics{
+			numSeries:           int64(h.numSeries.Load()),
+			LabelValuesSketches: h.postings.LabelValuesSketches(),
+		}
+	}}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
 	}
@@ -370,6 +377,7 @@ func (h *Head) resetInMemoryState() error {
 	h.maxOOOTime.Store(math.MinInt64)
 	h.lastWALTruncationTime.Store(math.MinInt64)
 	h.lastMemoryTruncationTime.Store(math.MinInt64)
+
 	return nil
 }
 
@@ -1540,10 +1548,11 @@ func (h *Head) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Match
 
 	ir := h.indexRange(mint, maxt)
 
-	p, err := ir.PostingsForMatchers(ctx, false, ms...)
+	p, _, err := ir.PostingsForMatchers(ctx, false, ms...)
 	if err != nil {
 		return fmt.Errorf("select series: %w", err)
 	}
+	// TODO dimitarvdimitrov handle pending matchers
 
 	var stones []tombstones.Stone
 	for p.Next() {
@@ -2449,6 +2458,15 @@ func (h *Head) ForEachSecondaryHash(fn func(ref []chunks.HeadSeriesRef, secondar
 			fn(slices.slice1, slices.slice2)
 		}
 	}
+}
+
+type completeStatistics struct {
+	numSeries int64 // TODO dimitarvdimitrov change this throughout to be uint64
+	index.LabelValuesSketches
+}
+
+func (c completeStatistics) TotalSeries() int64 {
+	return c.numSeries
 }
 
 type pairOfSlices[T1, T2 any] struct {

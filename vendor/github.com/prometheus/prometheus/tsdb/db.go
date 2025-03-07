@@ -359,6 +359,7 @@ type DB struct {
 	blockQuerierFunc BlockQuerierFunc
 
 	blockChunkQuerierFunc BlockChunkQuerierFunc
+	stats                 index.Statistics
 }
 
 type dbMetrics struct {
@@ -710,7 +711,8 @@ func (db *DBReadOnly) Blocks() ([]BlockReader, error) {
 		return nil, ErrClosed
 	default:
 	}
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce, NewPostingsForMatchersCacheMetrics(nil))
+	// TODO dimitarvdimitrov propagate this so utils also benefit from stats
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, nil, nil, DefaultPostingsDecoderFactory, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce, NewPostingsForMatchersCacheMetrics(nil), emptyStats{})
 	if err != nil {
 		return nil, err
 	}
@@ -1065,6 +1067,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 		return nil, err
 	}
 	db.head.writeNotified = db.writeNotified
+	db.stats = db.head.postingsStats
 
 	// Register metrics after assigning the head block.
 	db.metrics = newDBMetrics(db, r)
@@ -1117,6 +1120,10 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 	}
 
 	go db.run(ctx)
+
+	// load statistics before we return
+	// TODO dimitarvdimitrov find a more normal way
+	_ = db.stats.TotalSeries()
 
 	return db, nil
 }
@@ -1694,7 +1701,7 @@ func (db *DB) reloadBlocks() (err error) {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
-	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory, db.opts.SeriesHashCache, db.opts.BlockPostingsForMatchersCacheTTL, db.opts.BlockPostingsForMatchersCacheMaxItems, db.opts.BlockPostingsForMatchersCacheMaxBytes, db.opts.BlockPostingsForMatchersCacheForce, db.opts.BlockPostingsForMatchersCacheMetrics)
+	loadable, corrupted, err := openBlocks(db.logger, db.dir, db.blocks, db.chunkPool, db.opts.PostingsDecoderFactory, db.opts.SeriesHashCache, db.opts.BlockPostingsForMatchersCacheTTL, db.opts.BlockPostingsForMatchersCacheMaxItems, db.opts.BlockPostingsForMatchersCacheMaxBytes, db.opts.BlockPostingsForMatchersCacheForce, db.opts.BlockPostingsForMatchersCacheMetrics, db.stats)
 	if err != nil {
 		return err
 	}
@@ -1789,7 +1796,20 @@ func (db *DB) reloadBlocks() (err error) {
 	return nil
 }
 
-func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, cache *hashcache.SeriesHashCache, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool, postingsCacheMetrics *PostingsForMatchersCacheMetrics) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
+func openBlocks(
+	l *slog.Logger,
+	dir string,
+	loaded []*Block,
+	chunkPool chunkenc.Pool,
+	postingsDecoderFactory PostingsDecoderFactory,
+	cache *hashcache.SeriesHashCache,
+	postingsCacheTTL time.Duration,
+	postingsCacheMaxItems int,
+	postingsCacheMaxBytes int64,
+	postingsCacheForce bool,
+	postingsCacheMetrics *PostingsForMatchersCacheMetrics,
+	stats index.Statistics,
+) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
 	bDirs, err := blockDirs(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("find blocks: %w", err)
@@ -1811,7 +1831,7 @@ func openBlocks(l *slog.Logger, dir string, loaded []*Block, chunkPool chunkenc.
 				cacheProvider = cache.GetBlockCacheProvider(meta.ULID.String())
 			}
 
-			block, err = OpenBlockWithOptions(l, bDir, chunkPool, postingsDecoderFactory, cacheProvider, postingsCacheTTL, postingsCacheMaxItems, postingsCacheMaxBytes, postingsCacheForce, postingsCacheMetrics)
+			block, err = OpenBlockWithOptions(l, bDir, chunkPool, postingsDecoderFactory, cacheProvider, postingsCacheTTL, postingsCacheMaxItems, postingsCacheMaxBytes, postingsCacheForce, postingsCacheMetrics, stats)
 			if err != nil {
 				corrupted[meta.ULID] = err
 				continue
@@ -2435,6 +2455,36 @@ func (db *DB) SetWriteNotified(wn wlog.WriteNotified) {
 	db.writeNotified = wn
 	// It's possible we already created the head struct, so we should also set the WN for that.
 	db.head.writeNotified = wn
+}
+
+type reloadableStats struct {
+	lastReload time.Time
+	source     func() index.Statistics
+
+	stats index.Statistics
+}
+
+func (r *reloadableStats) TotalSeries() int64 {
+	r.ensureLoaded()
+	return r.stats.TotalSeries()
+}
+
+func (r *reloadableStats) LabelValuesCount(ctx context.Context, name string) (int64, error) {
+	r.ensureLoaded()
+	return r.stats.LabelValuesCount(ctx, name)
+}
+
+func (r *reloadableStats) LabelValuesCardinality(ctx context.Context, name string, values ...string) (int64, error) {
+	r.ensureLoaded()
+	return r.stats.LabelValuesCardinality(ctx, name, values...)
+}
+
+func (r *reloadableStats) ensureLoaded() {
+	// TODO dimitarvdimitrov make this reload in the background, we don't want to do it on the hot path
+	if time.Since(r.lastReload) > time.Hour || r.stats == nil {
+		r.stats = r.source()
+		r.lastReload = time.Now()
+	}
 }
 
 func isBlockDir(fi fs.DirEntry) bool {

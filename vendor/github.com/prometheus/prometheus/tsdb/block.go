@@ -62,6 +62,8 @@ type IndexWriter interface {
 
 // IndexReader provides reading access of serialized index data.
 type IndexReader interface {
+	index.Statistics
+
 	// Symbols return an iterator over sorted string symbols that may occur in
 	// series' labels and indices. It is not safe to use the returned strings
 	// beyond the lifetime of the index reader.
@@ -91,7 +93,8 @@ type IndexReader interface {
 	// The resulting postings are not ordered by series.
 	// If concurrent hint is set to true, call will be optimized for a (most likely) concurrent call with same matchers,
 	// avoiding same calculations twice, however this implementation may lead to a worse performance when called once.
-	PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error)
+	// The returned pendingMatchers are matchers that have not been applied to the returned postings yet.
+	PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, []*labels.Matcher, error)
 
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
@@ -340,14 +343,29 @@ type Block struct {
 	numBytesMeta      int64
 }
 
+type emptyStats struct {
+}
+
+func (e emptyStats) TotalSeries() int64 {
+	return 0
+}
+
+func (e emptyStats) LabelValuesCount(ctx context.Context, name string) (int64, error) {
+	return 0, errors.New("statistics not propagated")
+}
+
+func (e emptyStats) LabelValuesCardinality(ctx context.Context, name string, values ...string) (int64, error) {
+	return 0, errors.New("statistics not propagated")
+}
+
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
 func OpenBlock(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory) (pb *Block, err error) {
-	return OpenBlockWithOptions(logger, dir, pool, postingsDecoderFactory, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce, NewPostingsForMatchersCacheMetrics(nil))
+	return OpenBlockWithOptions(logger, dir, pool, postingsDecoderFactory, nil, DefaultPostingsForMatchersCacheTTL, DefaultPostingsForMatchersCacheMaxItems, DefaultPostingsForMatchersCacheMaxBytes, DefaultPostingsForMatchersCacheForce, NewPostingsForMatchersCacheMetrics(nil), emptyStats{})
 }
 
 // OpenBlockWithOptions is like OpenBlock but allows to pass a cache provider and sharding function.
-func OpenBlockWithOptions(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, cache index.ReaderCacheProvider, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool, postingsCacheMetrics *PostingsForMatchersCacheMetrics) (pb *Block, err error) {
+func OpenBlockWithOptions(logger *slog.Logger, dir string, pool chunkenc.Pool, postingsDecoderFactory PostingsDecoderFactory, cache index.ReaderCacheProvider, postingsCacheTTL time.Duration, postingsCacheMaxItems int, postingsCacheMaxBytes int64, postingsCacheForce bool, postingsCacheMetrics *PostingsForMatchersCacheMetrics, stats index.Statistics) (pb *Block, err error) {
 	if logger == nil {
 		logger = promslog.NewNopLogger()
 	}
@@ -372,7 +390,7 @@ func OpenBlockWithOptions(logger *slog.Logger, dir string, pool chunkenc.Pool, p
 	if postingsDecoderFactory != nil {
 		decoder = postingsDecoderFactory(meta)
 	}
-	indexReader, err := index.NewFileReaderWithOptions(filepath.Join(dir, indexFilename), decoder, cache)
+	indexReader, err := index.NewFileReaderWithOptions(filepath.Join(dir, indexFilename), decoder, cache, stats)
 	if err != nil {
 		return nil, err
 	}
@@ -496,6 +514,18 @@ type blockIndexReader struct {
 	b  *Block
 }
 
+func (r blockIndexReader) TotalSeries() int64 {
+	return r.ir.TotalSeries()
+}
+
+func (r blockIndexReader) LabelValuesCount(ctx context.Context, name string) (int64, error) {
+	return r.ir.LabelValuesCount(ctx, name)
+}
+
+func (r blockIndexReader) LabelValuesCardinality(ctx context.Context, name string, values ...string) (int64, error) {
+	return r.ir.LabelValuesCardinality(ctx, name, values...)
+}
+
 func (r blockIndexReader) Symbols() index.StringIter {
 	return r.ir.Symbols()
 }
@@ -554,8 +584,10 @@ func (r blockIndexReader) PostingsForAllLabelValues(ctx context.Context, name st
 	return r.ir.PostingsForAllLabelValues(ctx, name)
 }
 
-func (r blockIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
-	return r.ir.PostingsForMatchers(ctx, concurrent, ms...)
+func (r blockIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, []*labels.Matcher, error) {
+	// For now, we're not implementing any pending matchers, returning an empty slice
+	p, pendingMatchers, err := PostingsForMatchers(ctx, r, ms...)
+	return p, pendingMatchers, err
 }
 
 func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
@@ -629,10 +661,12 @@ func (pb *Block) Delete(ctx context.Context, mint, maxt int64, ms ...*labels.Mat
 		return ErrClosing
 	}
 
-	p, err := pb.indexr.PostingsForMatchers(ctx, false, ms...)
+	p, _, err := pb.indexr.PostingsForMatchers(ctx, false, ms...)
 	if err != nil {
 		return fmt.Errorf("select series: %w", err)
 	}
+
+	// TODO dimitarvdimitrov handle pending matchers
 
 	ir := pb.indexr
 

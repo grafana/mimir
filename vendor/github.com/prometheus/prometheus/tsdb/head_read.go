@@ -41,10 +41,12 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 	if hmin := h.MinTime(); hmin > mint {
 		mint = hmin
 	}
-	return &headIndexReader{head: h, mint: mint, maxt: maxt}
+	return &headIndexReader{head: h, mint: mint, maxt: maxt, Statistics: h.postingsStats}
 }
 
 type headIndexReader struct {
+	index.Statistics
+
 	head       *Head
 	mint, maxt int64
 }
@@ -114,7 +116,7 @@ func (h *headIndexReader) PostingsForAllLabelValues(ctx context.Context, name st
 	return h.head.postings.PostingsForAllLabelValues(ctx, name)
 }
 
-func (h *headIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+func (h *headIndexReader) PostingsForMatchers(ctx context.Context, concurrent bool, ms ...*labels.Matcher) (index.Postings, []*labels.Matcher, error) {
 	return h.head.pfmc.PostingsForMatchers(ctx, h, concurrent, ms...)
 }
 

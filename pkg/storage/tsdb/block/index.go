@@ -210,6 +210,21 @@ func (n *minMaxSumInt64) Avg() int64 {
 	return n.sum / n.cnt
 }
 
+type emptyStats struct {
+}
+
+func (e emptyStats) TotalSeries() int64 {
+	return 0
+}
+
+func (e emptyStats) LabelValuesCount(context.Context, string) (int64, error) {
+	return 0, fmt.Errorf("not implemented")
+}
+
+func (e emptyStats) LabelValuesCardinality(context.Context, string, ...string) (int64, error) {
+	return 0, fmt.Errorf("not implemented")
+}
+
 // GatherBlockHealthStats returns useful counters as well as outsider chunks (chunks outside of block time range) that
 // helps to assess index and optionally chunk health.
 // It considers https://github.com/prometheus/tsdb/issues/347 as something that Thanos can handle.
@@ -218,7 +233,8 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 	indexFn := filepath.Join(blockDir, IndexFilename)
 	chunkDir := filepath.Join(blockDir, ChunksDirname)
 	// index reader
-	r, err := index.NewFileReader(indexFn, index.DecodePostingsRaw)
+	// TODO dimitarvdimitrov do we need to fix this?
+	r, err := index.NewFileReader(indexFn, index.DecodePostingsRaw, emptyStats{})
 	if err != nil {
 		return stats, errors.Wrap(err, "open index file")
 	}

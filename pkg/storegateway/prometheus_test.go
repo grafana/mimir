@@ -38,10 +38,12 @@ func queryPromSeriesChunkMetas(t testing.TB, series labels.Labels, block promtsd
 	series.Range(func(l labels.Label) {
 		matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, l.Name, l.Value))
 	})
-	postings, err := promReader.PostingsForMatchers(ctx, false, matchers...)
+	ctx = context.WithValue(ctx, "disable_optimized_index_lookup", true)
+	postings, pendingMatchers, err := promReader.PostingsForMatchers(ctx, false, matchers...)
 	if err != nil {
 		require.NoError(t, err)
 	}
+	require.Empty(t, pendingMatchers)
 
 	if !postings.Next() {
 		require.Truef(t, false, "selecting from prometheus returned no series for %s", util.MatchersStringer(matchers))
