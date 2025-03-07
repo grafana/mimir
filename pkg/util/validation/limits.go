@@ -910,7 +910,8 @@ func (o *Overrides) EvaluationDelay(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).RulerEvaluationDelay)
 }
 
-// CompactorMaxLookback returns the max lookback period for the compactor. Blocks uploaded prior to the lookback period aren't processed in compaction cycles.
+// CompactorMaxLookback returns the duration of the compactor lookback period, blocks uploaded before the lookback period aren't
+// considered in compactor cycles
 func (o *Overrides) CompactorMaxLookback(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).CompactorMaxLookback)
 }
