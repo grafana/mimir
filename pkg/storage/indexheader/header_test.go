@@ -129,6 +129,169 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 
 }
 
+func Test_DownsampleSparseIndexHeader(t *testing.T) {
+	tests := map[string]struct {
+		protoRate         int
+		inMemSamplingRate int
+		expected          map[string]int
+	}{
+		"downsample_1_to_32": {
+			protoRate:         1,
+			inMemSamplingRate: 32,
+			expected: map[string]int{
+				"__name__":            4,
+				"":                    1,
+				"__blockgen_target__": 4,
+			},
+		},
+		"downsample_4_to_16": {
+			protoRate:         4,
+			inMemSamplingRate: 16,
+			expected: map[string]int{
+				"__name__":            7,
+				"":                    1,
+				"__blockgen_target__": 7,
+			},
+		},
+		"downsample_8_to_24": {
+			protoRate:         8,
+			inMemSamplingRate: 24,
+			expected: map[string]int{
+				"__name__":            5,
+				"":                    1,
+				"__blockgen_target__": 5,
+			},
+		},
+		"downsample_17_to_51": {
+			protoRate:         17,
+			inMemSamplingRate: 51,
+			expected: map[string]int{
+				"__name__":            3,
+				"":                    1,
+				"__blockgen_target__": 3,
+			},
+		},
+		"noop_on_same_sampling_rate": {
+			protoRate:         32,
+			inMemSamplingRate: 32,
+		},
+		"rebuild_proto_sampling_rate_not_divisible": {
+			protoRate:         8,
+			inMemSamplingRate: 20,
+		},
+		"rebuild_cannot_upsample_from_proto_48_to_32": {
+			protoRate:         48,
+			inMemSamplingRate: 32,
+		},
+		"rebuild_cannot_upsample_from_proto_64_to_32": {
+			protoRate:         64,
+			inMemSamplingRate: 32,
+		},
+		"downsample_to_low_frequency": {
+			protoRate:         4,
+			inMemSamplingRate: 16384,
+			expected: map[string]int{
+				"__name__":            2,
+				"":                    1,
+				"__blockgen_target__": 2,
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			m, err := block.ReadMetaFromDir("./testdata/index_format_v2")
+			require.NoError(t, err)
+
+			tmpDir := t.TempDir()
+			test.Copy(t, "./testdata/index_format_v2", filepath.Join(tmpDir, m.ULID.String()))
+
+			bkt, err := filesystem.NewBucket(tmpDir)
+			require.NoError(t, err)
+
+			ctx := context.Background()
+			noopMetrics := NewStreamBinaryReaderMetrics(nil)
+
+			// write a sparse index-header file to disk
+			br1, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, m.ULID, tt.protoRate, noopMetrics, Config{})
+			require.NoError(t, err)
+			require.Equal(t, tt.protoRate, br1.postingsOffsetTable.PostingOffsetInMemSampling())
+
+			origLabelNames, err := br1.postingsOffsetTable.LabelNames()
+			require.NoError(t, err)
+
+			// a second call to NewStreamBinaryReader loads the previously written sparse index-header and downsamples
+			// the header from tt.protoRate to tt.inMemSamplingRate entries for each posting
+			br2, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), bkt, tmpDir, m.ULID, tt.inMemSamplingRate, noopMetrics, Config{})
+			require.NoError(t, err)
+			require.Equal(t, tt.inMemSamplingRate, br2.postingsOffsetTable.PostingOffsetInMemSampling())
+
+			downsampleLabelNames, err := br2.postingsOffsetTable.LabelNames()
+			require.NoError(t, err)
+
+			// label names are equal between original and downsampled sparse index-headers
+			require.ElementsMatch(t, downsampleLabelNames, origLabelNames)
+
+			origIdxpbTbl := br1.postingsOffsetTable.NewSparsePostingOffsetTable()
+			downsampleIdxpbTbl := br2.postingsOffsetTable.NewSparsePostingOffsetTable()
+
+			for name, vals := range origIdxpbTbl.Postings {
+				downsampledOffsets := downsampleIdxpbTbl.Postings[name].Offsets
+				// downsampled postings are a subset of the original sparse index-header postings
+				if (tt.inMemSamplingRate > tt.protoRate) && (tt.inMemSamplingRate%tt.protoRate == 0) {
+					require.Equal(t, tt.expected[name], len(downsampledOffsets))
+					require.Subset(t, vals.Offsets, downsampledOffsets, "downsampled offsets not a subset of original for name '%s'", name)
+
+					require.Equal(t, downsampledOffsets[0], vals.Offsets[0], "downsampled offsets do not contain first value for name '%s'", name)
+					require.Equal(t, downsampledOffsets[len(downsampledOffsets)-1], vals.Offsets[len(vals.Offsets)-1], "downsampled offsets do not contain last value for name '%s'", name)
+				}
+
+				// check first and last entry from the original postings in downsampled set
+				require.NotZero(t, downsampleIdxpbTbl.Postings[name].LastValOffset)
+			}
+		})
+	}
+}
+
+func compareIndexToHeaderPostings(t *testing.T, indexByteSlice index.ByteSlice, sbr *StreamBinaryReader) {
+
+	ir, err := index.NewReader(indexByteSlice, index.DecodePostingsRaw)
+	require.NoError(t, err)
+	defer func() {
+		_ = ir.Close()
+	}()
+
+	toc, err := index.NewTOCFromByteSlice(indexByteSlice)
+	require.NoError(t, err)
+
+	tblOffsetBounds := make(map[string][2]int64)
+
+	// Read the postings offset table and record first and last offset for each label. Adjust offsets in ReadPostingsOffsetTable
+	// by 4B (int32 count of postings in table) to align with postings in index headers.
+	err = index.ReadPostingsOffsetTable(indexByteSlice, toc.PostingsTable, func(label []byte, _ []byte, _ uint64, offset int) error {
+		name := string(label)
+		off := int64(offset + 4)
+		if v, ok := tblOffsetBounds[name]; ok {
+			v[1] = off
+			tblOffsetBounds[name] = v
+		} else {
+			tblOffsetBounds[name] = [2]int64{off, off}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	tbl := sbr.postingsOffsetTable.NewSparsePostingOffsetTable()
+
+	expLabelNames, err := ir.LabelNames(context.Background())
+	require.NoError(t, err)
+	for _, lname := range expLabelNames {
+		offsets := tbl.Postings[lname].Offsets
+		assert.Equal(t, offsets[0].TableOff, tblOffsetBounds[lname][0])
+		assert.Equal(t, offsets[len(offsets)-1].TableOff, tblOffsetBounds[lname][1])
+	}
+}
+
 func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerReader Reader) {
 	ctx := context.Background()
 
@@ -192,15 +355,22 @@ func compareIndexToHeader(t *testing.T, indexByteSlice index.ByteSlice, headerRe
 		for _, v := range valOffsets {
 			ptr, err := headerReader.PostingsOffset(ctx, lname, v.LabelValue)
 			require.NoError(t, err)
-			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.LabelValue}], ptr)
-			assert.Equal(t, expRanges[labels.Label{Name: lname, Value: v.LabelValue}], v.Off)
+			label := labels.Label{Name: lname, Value: v.LabelValue}
+			assert.Equal(t, expRanges[label], ptr)
+			assert.Equal(t, expRanges[label], v.Off)
+			delete(expRanges, label)
 		}
 	}
+
 	allPName, allPValue := index.AllPostingsKey()
 	ptr, err := headerReader.PostingsOffset(ctx, allPName, allPValue)
 	require.NoError(t, err)
-	require.Equal(t, expRanges[labels.Label{Name: "", Value: ""}].Start, ptr.Start)
-	require.Equal(t, expRanges[labels.Label{Name: "", Value: ""}].End, ptr.End)
+
+	emptyLabel := labels.Label{Name: "", Value: ""}
+	require.Equal(t, expRanges[emptyLabel].Start, ptr.Start)
+	require.Equal(t, expRanges[emptyLabel].End, ptr.End)
+	delete(expRanges, emptyLabel)
+	require.Empty(t, expRanges)
 }
 
 func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *block.Meta {

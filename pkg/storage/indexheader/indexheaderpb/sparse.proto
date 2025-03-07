@@ -26,6 +26,7 @@ message Symbols {
 message PostingOffsetTable {
 	// Postings is a map of label names -> PostingValueOffsets
 	map<string, PostingValueOffsets> postings = 1;
+	int64 postingOffsetInMemorySampling = 2;
 }
 
 // PostingValueOffsets stores a list of the first, last, and every 32nd (config default) PostingOffset for this label name.

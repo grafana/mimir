@@ -37,6 +37,7 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -240,7 +241,10 @@ func TestGroupCompactE2E(t *testing.T) {
 		planner := NewSplitAndMergePlanner([]int64{1000, 3000})
 		grouper := NewSplitAndMergeGrouper("user-1", []int64{1000, 3000}, 0, 0, logger)
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, prometheus.NewPedanticRegistry())
-		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 4, metrics)
+		cfg := indexheader.Config{VerifyOnLoad: true}
+		bComp, err := NewBucketCompactor(
+			logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 4, metrics, true, 32, cfg,
+		)
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.
@@ -371,6 +375,21 @@ func TestGroupCompactE2E(t *testing.T) {
 			}
 
 			others[defaultGroupKey(meta.Thanos.Downsample.Resolution, labels.FromMap(meta.Thanos.Labels))] = meta
+			return nil
+		}))
+
+		// expect the blocks that are compacted to have sparse-index-headers in object storage.
+		require.NoError(t, bkt.Iter(ctx, "", func(n string) error {
+			id, ok := block.IsBlockDir(n)
+			if !ok {
+				return nil
+			}
+
+			if _, ok := others[id.String()]; ok {
+				p := path.Join(id.String(), block.SparseIndexHeaderFilename)
+				exists, _ := bkt.Exists(ctx, p)
+				assert.True(t, exists, "expected sparse index headers not found %s", p)
+			}
 			return nil
 		}))
 

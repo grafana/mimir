@@ -17,8 +17,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 
-	streamencoding "github.com/grafana/mimir/pkg/storegateway/indexheader/encoding"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader/indexheaderpb"
+	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
+	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 )
 
 const (
@@ -43,6 +43,10 @@ type PostingOffsetTable interface {
 	LabelNames() ([]string, error)
 
 	NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable)
+
+	// PostingOffsetInMemSampling returns the inverse of the fraction of postings held in memory. A lower value indicates
+	// postings are sample more frequently.
+	PostingOffsetInMemSampling() int
 }
 
 // PostingListOffset contains the start and end offset of a posting list.
@@ -234,18 +238,42 @@ func NewPostingOffsetTableFromSparseHeader(factory *streamencoding.DecbufFactory
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
 	}
 
-	for sName, sOffsets := range postingsOffsetTable.Postings {
-		t.postings[sName] = &postingValueOffsets{
-			offsets: make([]postingOffset, len(sOffsets.Offsets)),
-		}
-
-		for i, sPostingOff := range sOffsets.Offsets {
-			t.postings[sName].offsets[i] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
-		}
-
-		t.postings[sName].lastValOffset = sOffsets.LastValOffset
+	pbSampling := int(postingsOffsetTable.GetPostingOffsetInMemorySampling())
+	if pbSampling == 0 {
+		return nil, fmt.Errorf("sparse index-header sampling rate not set")
 	}
 
+	if pbSampling > postingOffsetsInMemSampling {
+		return nil, fmt.Errorf("sparse index-header sampling rate exceeds in-mem-sampling rate")
+	}
+
+	// if the sampling rate in the sparse index-header is set lower (more frequent) than
+	// the configured postingOffsetsInMemSampling we downsample to the configured rate
+	step, ok := stepSize(pbSampling, postingOffsetsInMemSampling)
+	if !ok {
+		return nil, fmt.Errorf("sparse index-header sampling rate not compatible with in-mem-sampling rate")
+	}
+
+	for sName, sOffsets := range postingsOffsetTable.Postings {
+
+		olen := len(sOffsets.Offsets)
+		downsampledLen := (olen + step - 1) / step
+		if (olen > 1) && (downsampledLen == 1) {
+			downsampledLen++
+		}
+
+		t.postings[sName] = &postingValueOffsets{offsets: make([]postingOffset, downsampledLen)}
+		for i, sPostingOff := range sOffsets.Offsets {
+			if i%step == 0 {
+				t.postings[sName].offsets[i/step] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
+			}
+
+			if i == olen-1 {
+				t.postings[sName].offsets[downsampledLen-1] = postingOffset{value: sPostingOff.Value, tableOff: int(sPostingOff.TableOff)}
+			}
+		}
+		t.postings[sName].lastValOffset = sOffsets.LastValOffset
+	}
 	return &t, err
 }
 
@@ -328,6 +356,10 @@ func (t *PostingOffsetTableV1) LabelNames() ([]string, error) {
 	slices.Sort(labelNames)
 
 	return labelNames, nil
+}
+
+func (t *PostingOffsetTableV1) PostingOffsetInMemSampling() int {
+	return 0
 }
 
 func (t *PostingOffsetTableV1) NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable) {
@@ -608,10 +640,18 @@ func (t *PostingOffsetTableV2) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
+func (t *PostingOffsetTableV2) PostingOffsetInMemSampling() int {
+	if t != nil {
+		return t.postingOffsetsInMemSampling
+	}
+	return 0
+}
+
 // NewSparsePostingOffsetTable loads all postings offset table data into a sparse index-header to be persisted to disk
 func (t *PostingOffsetTableV2) NewSparsePostingOffsetTable() (table *indexheaderpb.PostingOffsetTable) {
 	sparseHeaders := &indexheaderpb.PostingOffsetTable{
-		Postings: make(map[string]*indexheaderpb.PostingValueOffsets, len(t.postings)),
+		Postings:                      make(map[string]*indexheaderpb.PostingValueOffsets, len(t.postings)),
+		PostingOffsetInMemorySampling: int64(t.postingOffsetsInMemSampling),
 	}
 
 	for name, offsets := range t.postings {
@@ -639,4 +679,11 @@ func skipNAndName(d *streamencoding.Decbuf, buf *int) {
 		return
 	}
 	d.Skip(*buf)
+}
+
+func stepSize(cur, tgt int) (int, bool) {
+	if cur > tgt || cur <= 0 || tgt <= 0 || tgt%cur != 0 {
+		return 0, false
+	}
+	return tgt / cur, true
 }
