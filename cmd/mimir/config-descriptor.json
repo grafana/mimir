@@ -730,7 +730,8 @@
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "server.cluster-validation.label",
-              "fieldType": "string"
+              "fieldType": "string",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "block",
@@ -746,7 +747,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "server.cluster-validation.grpc.enabled",
-                  "fieldType": "boolean"
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 },
                 {
                   "kind": "field",
@@ -756,7 +758,8 @@
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "server.cluster-validation.grpc.soft-validation",
-                  "fieldType": "boolean"
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -4769,17 +4772,6 @@
         },
         {
           "kind": "field",
-          "name": "max_future_query_window",
-          "required": false,
-          "desc": "Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "query-frontend.max-future-query-window",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "cardinality_analysis_enabled",
           "required": false,
           "desc": "Enables endpoints used for cardinality analysis.",
@@ -6602,6 +6594,17 @@
                   "fieldFlag": "query-frontend.results-cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dns_ignore_startup_failures",
+                  "required": false,
+                  "desc": "Allow client creation even if initial DNS resolution fails.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "query-frontend.results-cache.memcached.dns-ignore-startup-failures",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -8746,6 +8749,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_ignore_startup_failures",
+                      "required": false,
+                      "desc": "Allow client creation even if initial DNS resolution fails.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -9309,6 +9323,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_ignore_startup_failures",
+                      "required": false,
+                      "desc": "Allow client creation even if initial DNS resolution fails.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -9896,6 +9921,17 @@
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "dns_ignore_startup_failures",
+                      "required": false,
+                      "desc": "Allow client creation even if initial DNS resolution fails.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": false,
+                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -11581,6 +11617,17 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "compactor.max-lookback",
           "fieldType": "duration",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "upload_sparse_index_headers",
+          "required": false,
+          "desc": "If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "compactor.upload-sparse-index-headers",
+          "fieldType": "boolean",
           "fieldCategory": "experimental"
         }
       ],
@@ -15205,6 +15252,17 @@
                   "fieldFlag": "ruler-storage.cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "dns_ignore_startup_failures",
+                  "required": false,
+                  "desc": "Allow client creation even if initial DNS resolution fails.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "ruler-storage.cache.memcached.dns-ignore-startup-failures",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,

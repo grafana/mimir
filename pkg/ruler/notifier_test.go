@@ -190,8 +190,8 @@ func TestBuildNotifierConfig(t *testing.T) {
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
 								dnsServiceDiscovery{
-									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
-									QType: dns.SRV,
+									host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									qType: dns.SRV,
 								},
 							},
 						},
@@ -247,9 +247,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
 								dnsServiceDiscovery{
-									Host:            "alertmanager.mimir.svc.cluster.local:8080",
-									RefreshInterval: time.Second,
-									QType:           dns.A,
+									host:            "alertmanager.mimir.svc.cluster.local:8080",
+									refreshInterval: time.Second,
+									qType:           dns.A,
 								},
 							},
 						},
@@ -259,9 +259,9 @@ func TestBuildNotifierConfig(t *testing.T) {
 							PathPrefix: "/am",
 							ServiceDiscoveryConfigs: discovery.Configs{
 								dnsServiceDiscovery{
-									Host:            "_http._tcp.alertmanager2.mimir.svc.cluster.local",
-									RefreshInterval: time.Second,
-									QType:           dns.SRV,
+									host:            "_http._tcp.alertmanager2.mimir.svc.cluster.local",
+									refreshInterval: time.Second,
+									qType:           dns.SRV,
 								},
 							},
 						},
@@ -292,8 +292,8 @@ func TestBuildNotifierConfig(t *testing.T) {
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
 								dnsServiceDiscovery{
-									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
-									QType: dns.SRV,
+									host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									qType: dns.SRV,
 								},
 							},
 						},
@@ -329,8 +329,8 @@ func TestBuildNotifierConfig(t *testing.T) {
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
 								dnsServiceDiscovery{
-									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
-									QType: dns.SRV,
+									host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									qType: dns.SRV,
 								},
 							},
 						},
@@ -368,8 +368,8 @@ func TestBuildNotifierConfig(t *testing.T) {
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
 								dnsServiceDiscovery{
-									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
-									QType: dns.SRV,
+									host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									qType: dns.SRV,
 								},
 							},
 						},
@@ -413,8 +413,8 @@ func TestBuildNotifierConfig(t *testing.T) {
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
 								dnsServiceDiscovery{
-									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
-									QType: dns.SRV,
+									host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									qType: dns.SRV,
 								},
 							},
 						},
@@ -459,8 +459,8 @@ func TestBuildNotifierConfig(t *testing.T) {
 							PathPrefix: "/alertmanager",
 							ServiceDiscoveryConfigs: discovery.Configs{
 								dnsServiceDiscovery{
-									Host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
-									QType: dns.SRV,
+									host:  "_http._tcp.alertmanager-0.default.svc.cluster.local",
+									qType: dns.SRV,
 								},
 							},
 						},

@@ -5,12 +5,11 @@ local filename = 'federation-frontend.json';
   [filename]:
     ($.dashboard('Federation-frontend') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
-    .addTemplate(
+    .addMultiTemplate(
       'remote_cluster',
       'cortex_federation_frontend_cluster_remote_latency_seconds',
       'remote_cluster',
       hide=2,
-      includeAll=true,
     )
     .addRow(
       $.row('Overview')

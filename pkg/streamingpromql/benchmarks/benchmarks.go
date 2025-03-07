@@ -258,10 +258,14 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "avg by (l)(nh_X)",
 		},
-		//{
-		//	Expr: "count_values('value', h_X)",
-		//  Steps: 100,
-		//},
+		{
+			Expr:  "count_values('value', h_X)", // Every sample has a different value, so this expression will produce X * 100 output series.
+			Steps: 100,
+		},
+		{
+			Expr:  "count_values('value', h_X * 0)", // Every sample has the same value (0), so this expression will produce 1 series.
+			Steps: 100,
+		},
 		{
 			Expr: "topk(1, a_X)",
 		},
@@ -270,6 +274,12 @@ func TestCases(metricSizes []int) []BenchCase {
 		},
 		{
 			Expr: "topk by (le) (5, h_X)",
+		},
+		{
+			Expr: "quantile(0.9, a_X)",
+		},
+		{
+			Expr: "quantile by (le) (0.1, h_X)",
 		},
 		// Combinations.
 		{

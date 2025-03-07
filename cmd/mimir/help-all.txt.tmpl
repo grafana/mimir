@@ -439,6 +439,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures
+    	[experimental] Allow client creation even if initial DNS resolution fails.
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency int
@@ -543,6 +545,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.index-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures
+    	[experimental] Allow client creation even if initial DNS resolution fails.
   -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency int
@@ -665,6 +669,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures
+    	[experimental] Allow client creation even if initial DNS resolution fails.
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency int
@@ -1291,6 +1297,8 @@ Usage of ./cmd/mimir/mimir:
     	Number of symbols flushers used when doing split compaction. (default 1)
   -compactor.tenant-cleanup-delay duration
     	For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant. (default 6h0m0s)
+  -compactor.upload-sparse-index-headers
+    	[experimental] If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.
   -config.expand-env
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
@@ -2353,8 +2361,6 @@ Usage of ./cmd/mimir/mimir:
     	Max body size for downstream prometheus. (default 10485760)
   -query-frontend.max-cache-freshness duration
     	Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux. (default 10m)
-  -query-frontend.max-future-query-window duration
-    	[experimental] Mutate incoming queries that look far into the future to only look into the future by the set duration. 0 to disable.
   -query-frontend.max-queriers-per-tenant int
     	Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.
   -query-frontend.max-query-expression-size-bytes int
@@ -2403,6 +2409,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -query-frontend.results-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -query-frontend.results-cache.memcached.dns-ignore-startup-failures
+    	[experimental] Allow client creation even if initial DNS resolution fails.
   -query-frontend.results-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -query-frontend.results-cache.memcached.max-async-concurrency int
@@ -2669,6 +2677,8 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -ruler-storage.cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
+  -ruler-storage.cache.memcached.dns-ignore-startup-failures
+    	[experimental] Allow client creation even if initial DNS resolution fails.
   -ruler-storage.cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -ruler-storage.cache.memcached.max-async-concurrency int
@@ -3162,11 +3172,11 @@ Usage of ./cmd/mimir/mimir:
   -runtime-config.reload-period duration
     	How often to check runtime config files. (default 10s)
   -server.cluster-validation.grpc.enabled
-    	When enabled, cluster label validation will be executed.
+    	[experimental] When enabled, cluster label validation will be executed.
   -server.cluster-validation.grpc.soft-validation
-    	When enabled, soft cluster label validation will be executed. Can be enabled only together with server.cluster-validation.grpc.enabled
+    	[experimental] When enabled, soft cluster label validation will be executed. Can be enabled only together with server.cluster-validation.grpc.enabled
   -server.cluster-validation.label string
-    	Optionally define server's cluster validation label.
+    	[experimental] Optionally define server's cluster validation label.
   -server.graceful-shutdown-timeout duration
     	Timeout for graceful shutdowns (default 30s)
   -server.grpc-conn-limit int

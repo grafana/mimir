@@ -757,17 +757,18 @@ grpc_tls_config:
 [http_path_prefix: <string> | default = ""]
 
 cluster_validation:
-  # Optionally define server's cluster validation label.
+  # (experimental) Optionally define server's cluster validation label.
   # CLI flag: -server.cluster-validation.label
   [label: <string> | default = ""]
 
   grpc:
-    # When enabled, cluster label validation will be executed.
+    # (experimental) When enabled, cluster label validation will be executed.
     # CLI flag: -server.cluster-validation.grpc.enabled
     [enabled: <boolean> | default = false]
 
-    # When enabled, soft cluster label validation will be executed. Can be
-    # enabled only together with server.cluster-validation.grpc.enabled
+    # (experimental) When enabled, soft cluster label validation will be
+    # executed. Can be enabled only together with
+    # server.cluster-validation.grpc.enabled
     # CLI flag: -server.cluster-validation.grpc.soft-validation
     [softvalidation: <boolean> | default = false]
 ```
@@ -3764,11 +3765,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.instant-queries-with-subquery-spin-off
 [instant_queries_with_subquery_spin_off: <string> | default = ""]
 
-# (experimental) Mutate incoming queries that look far into the future to only
-# look into the future by the set duration. 0 to disable.
-# CLI flag: -query-frontend.max-future-query-window
-[max_future_query_window: <duration> | default = 0s]
-
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
 [cardinality_analysis_enabled: <boolean> | default = false]
@@ -4975,6 +4971,13 @@ sharding_ring:
 # blocks are considered regardless of their upload time.
 # CLI flag: -compactor.max-lookback
 [max_lookback: <duration> | default = 0s]
+
+# (experimental) If enabled, the compactor constructs and uploads sparse index
+# headers to object storage during each compaction cycle. This allows
+# store-gateway instances to use the sparse headers from object storage instead
+# of recreating them locally.
+# CLI flag: -compactor.upload-sparse-index-headers
+[upload_sparse_index_headers: <boolean> | default = false]
 ```
 
 ### store_gateway
@@ -5274,6 +5277,10 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -<prefix>.memcached.tls-min-version
 [tls_min_version: <string> | default = ""]
+
+# (experimental) Allow client creation even if initial DNS resolution fails.
+# CLI flag: -<prefix>.memcached.dns-ignore-startup-failures
+[dns_ignore_startup_failures: <boolean> | default = false]
 ```
 
 ### redis
