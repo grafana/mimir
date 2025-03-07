@@ -341,8 +341,8 @@ eval_fail instant at 0m label_replace(series, "export", "$1", "label", "[.*")
   expected_fail_message invalid regular expression in label_replace(): [.*
 
 # Invalid destination label name
-eval_fail instant at 0m label_replace(series, "(export)", "$1", "label", "(.*)")
-  expected_fail_message invalid destination label name in label_replace(): (export)
+eval_fail instant at 0m label_replace(series, "\xff", "$1", "label", "(.*)")
+  expected_fail_regexp invalid destination label name in label_replace\(\): .*
 
 # Make sure label name exists after it was dropped
 eval instant at 0m label_replace(floor(series), "__name__", "$1", "label", "(.*)")
