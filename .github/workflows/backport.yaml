@@ -15,6 +15,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Check if PR has a label containing the word backport, exit if not
+        run: |
+          LABELS=$(jq -r '.pull_request.labels[].name' "$GITHUB_EVENT_PATH")
+          echo "$LABELS" | grep -iq "backport" || exit 0
+
+      - name: Check if PR comes from a fork, comment and exit if that's the case
+        run: |
+          IS_FORK=$(jq -r '.pull_request.head.repo.fork' "$GITHUB_EVENT_PATH")
+          if [[ "$IS_FORK" == "true" ]]; then
+            COMMENT=":warning: This PR comes from a fork and cannot be backported automatically. Please ask a Mimir maintainer for assistance."
+            gh pr comment "${{ github.repository }}#${{ github.event.pull_request.number }}" --body "$COMMENT"
+            exit 0
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Retrieve GitHub App credentials from Vault
         id: get-secrets
         uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
