@@ -55,7 +55,11 @@ func (s *Sort) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, erro
 			return nil, err
 		}
 
-		pointCount := len(d.Floats) + len(d.Histograms)
+		// sort() and sort_desc() ignore histograms.
+		types.HPointSlicePool.Put(d.Histograms, s.MemoryConsumptionTracker)
+		d.Histograms = nil
+
+		pointCount := len(d.Floats)
 
 		if pointCount > 1 {
 			return nil, fmt.Errorf("expected series %v to have at most one point, but it had %v", allSeries[idx], pointCount)
@@ -134,10 +138,6 @@ func getValueForSorting(allData []types.InstantVectorSeriesData, seriesIdx int) 
 
 	if len(series.Floats) == 1 {
 		return series.Floats[0].F
-	}
-
-	if len(series.Histograms) == 1 {
-		return series.Histograms[0].H.Sum
 	}
 
 	return 0 // The value we use for empty series doesn't matter, as long as we're consistent: we'll still return an empty set of data in NextSeries().
