@@ -136,10 +136,6 @@ Grafana Cloud automatically promotes the following OTel resource attributes to l
 
 Contact support to disable this setting or to update this list.
 
-{{< admonition type="note" >}}
-Some of these labels are mutually exclusive. If you don't need a particular label, you can aggregate it using Adaptive Metrics. For more information about Adaptive Metrics, refer to [Reduce metrics costs via Adaptive Metrics](https://grafana.com/docs/grafana-cloud/cost-management-and-billing/adaptive-telemetry/adaptive-metrics/).
-{{< /admonition >}}
-
 Mimir stores additional OTel resource attributes in a separate series called `target_info`, which you can query using a join query or the Prometheus `info()` function. Refer to [Functions](https://prometheus.io/docs/prometheus/latest/querying/functions/) in the Prometheus documentation for more information.
 
 To learn more about OpenTelemetry resource attributes, refer to [Resources](https://opentelemetry.io/docs/languages/js/resources/) in the OpenTelemetry documentation.
