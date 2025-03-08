@@ -42,6 +42,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] All components can expose additional ports with their respective services via the *.service.extraPorts values. This allows exposing the containers that components declare in `extraContainers`. #10659
 * [BUGFIX] Create proper in-cluster remote URLs when gateway and nginx are disabled. #10625
 * [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
+* [ENHANCEMENT] Add values for setting annotations and labels for rollout-operator. #6733
 
 ## 5.6.0
 
