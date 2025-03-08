@@ -32,6 +32,7 @@ var (
 	ruleCommand           commands.RuleCommand
 	backfillCommand       commands.BackfillCommand
 	runtimeConfigCommand  commands.RuntimeConfigCommand
+	blockSubsetCommand    commands.BlockSubsetCommand
 )
 
 func main() {
@@ -52,6 +53,7 @@ func main() {
 	remoteReadCommand.Register(app, envVars)
 	ruleCommand.Register(app, envVars, prometheus.DefaultRegisterer)
 	runtimeConfigCommand.Register(app)
+	blockSubsetCommand.Register(app)
 
 	app.Command("version", "Get the version of the mimirtool CLI").Action(func(*kingpin.ParseContext) error {
 		fmt.Fprintln(os.Stdout, mimirversion.Print("Mimirtool"))
