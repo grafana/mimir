@@ -111,7 +111,9 @@ service:
 
 OpenTelemetry metrics use resource attributes to describe the set of characteristics associated with a given resource, or entity, producing telemetry data. For example, a host resource might have multiple attributes, including an ID, an image, and a type.
 
-To optimize the storage of and ability to query this data, Mimir automatically assigns the following OTel resource attributes as labels at the time of ingestion, with periods (`.`) replaced by underscores (`_`):
+To optimize the storage of and ability to query this data, you can configure Mimir to promote specified OTel resource attributes to labels at the time of ingestion, with periods (`.`) replaced by underscores (`_`).
+
+Grafana Cloud automatically promotes the following OTel resource attributes to labels:
 
 - `service.instance.id`
 - `service.name`
@@ -132,7 +134,7 @@ To optimize the storage of and ability to query this data, Mimir automatically a
 - `k8s.replicaset.name`
 - `k8s.statefulset.name`
 
-If you are using Grafana Cloud, contact support to disable this setting or to update this list.
+Contact support to disable this setting or to update this list.
 
 {{< admonition type="note" >}}
 Some of these labels are mutually exclusive. If you don't need a particular label, you can aggregate it using Adaptive Metrics. For more information about Adaptive Metrics, refer to [Reduce metrics costs via Adaptive Metrics](https://grafana.com/docs/grafana-cloud/cost-management-and-billing/adaptive-telemetry/adaptive-metrics/).
