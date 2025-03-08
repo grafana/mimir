@@ -231,7 +231,13 @@ func prepareFrontendProcessor() (*frontendProcessor, *frontendProcessClientMock,
 
 	requestHandler := &requestHandlerMock{}
 
-	fp := newFrontendProcessor(Config{QuerierID: "test-querier-id", QueryFrontendGRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 1}}, requestHandler, log.NewNopLogger())
+	fp := newFrontendProcessor(
+		Config{
+			QuerierID:                     "test-querier-id",
+			QueryFrontendGRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 1},
+		},
+		requestHandler, log.NewNopLogger(),
+	)
 	fp.frontendClientFactory = func(_ *grpc.ClientConn) frontendv1pb.FrontendClient {
 		return frontendClient
 	}

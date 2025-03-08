@@ -70,9 +70,6 @@ var categoryOverrides = map[string]Category{
 	"server.register-instrumentation":                   Advanced,
 	"server.log-request-at-info-level-enabled":          Advanced,
 	"server.proxy-protocol-enabled":                     Experimental,
-	"server.cluster-validation.label":                   Experimental,
-	"server.cluster-validation.grpc.enabled":            Experimental,
-	"server.cluster-validation.grpc.soft-validation":    Experimental,
 
 	// Defined in grafana/dskit/cache.RedisClientConfig. Deprecated in 2.14 and
 	// scheduled to be removed in a future release.

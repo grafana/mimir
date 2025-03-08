@@ -510,6 +510,12 @@ storage:
   # system as object storage backend.
   # The CLI flags prefix for this block configuration is: common.storage
   [filesystem: <filesystem_storage_backend>]
+
+client_cluster_validation:
+  # (experimental) Optionally define the cluster validation label to be sent
+  # together with the requests by the clients.
+  # CLI flag: -common.client-cluster-validation.label
+  [label: <string> | default = ""]
 ```
 
 ### server
@@ -757,7 +763,9 @@ grpc_tls_config:
 [http_path_prefix: <string> | default = ""]
 
 cluster_validation:
-  # (experimental) Optionally define server's cluster validation label.
+  # (experimental) Optionally define the server's cluster validation label. When
+  # the validation is enabled, this value will be compared with the cluster
+  # validation label received through the requests.
   # CLI flag: -server.cluster-validation.label
   [label: <string> | default = ""]
 
@@ -770,7 +778,7 @@ cluster_validation:
     # executed. Can be enabled only together with
     # server.cluster-validation.grpc.enabled
     # CLI flag: -server.cluster-validation.grpc.soft-validation
-    [softvalidation: <boolean> | default = false]
+    [soft_validation: <boolean> | default = false]
 ```
 
 ### distributor
@@ -1582,6 +1590,12 @@ store_gateway_client:
   # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   # CLI flag: -querier.store-gateway-client.tls-min-version
   [tls_min_version: <string> | default = ""]
+
+  cluster_validation:
+    # (experimental) Optionally define the cluster validation label to be sent
+    # together with the requests by the clients.
+    # CLI flag: -querier.store-gateway-client.cluster-validation.label
+    [label: <string> | default = ""]
 
 # (advanced) Fetch in-memory series from the minimum set of required ingesters,
 # selecting only ingesters which may have received series since
@@ -2669,6 +2683,12 @@ alertmanager_client:
   # CLI flag: -alertmanager.alertmanager-client.connect-backoff-max-delay
   [connect_backoff_max_delay: <duration> | default = 5s]
 
+  cluster_validation:
+    # (experimental) Optionally define the cluster validation label to be sent
+    # together with the requests by the clients.
+    # CLI flag: -alertmanager.alertmanager-client.cluster-validation.label
+    [label: <string> | default = ""]
+
 # (advanced) The interval between persisting the current alertmanager state
 # (notification log and silences) to object storage. This is only used when
 # sharding is enabled. This state is read when all replicas for a shard can not
@@ -2927,6 +2947,12 @@ backoff_config:
 # if ConnectTimeout > 0.
 # CLI flag: -<prefix>.connect-backoff-max-delay
 [connect_backoff_max_delay: <duration> | default = 5s]
+
+cluster_validation:
+  # (experimental) Optionally define the cluster validation label to be sent
+  # together with the requests by the clients.
+  # CLI flag: -<prefix>.cluster-validation.label
+  [label: <string> | default = ""]
 ```
 
 ### frontend_worker

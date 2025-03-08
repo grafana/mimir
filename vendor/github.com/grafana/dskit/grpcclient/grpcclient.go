@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcencoding/snappy"
@@ -45,6 +46,8 @@ type Config struct {
 
 	// CustomCompressors allows configuring custom compressors.
 	CustomCompressors []string `yaml:"-"`
+
+	ClusterValidation clusterutil.ClientClusterValidationConfig `yaml:"cluster_validation" category:"experimental"`
 }
 
 // RegisterFlags registers flags.
@@ -84,8 +87,8 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.ConnectBackoffMaxDelay, prefix+".connect-backoff-max-delay", 5*time.Second, "Maximum backoff delay when establishing a connection. Only relevant if ConnectTimeout > 0.")
 
 	cfg.BackoffConfig.RegisterFlagsWithPrefix(prefix, f)
-
 	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
+	cfg.ClusterValidation.RegisterAndTrackFlagsWithPrefix(prefix+".cluster-validation.", f)
 }
 
 func (cfg *Config) Validate() error {
