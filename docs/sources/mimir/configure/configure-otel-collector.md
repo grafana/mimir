@@ -109,7 +109,7 @@ service:
 
 ## Work with default OpenTelemetry labels
 
-OpenTelemetry metrics use resource attributes to describe the set of characteristics associated with a given resource, or entity producing telemetry data. For example, a host resource might have multiple attributes, including an ID, an image, and a type.
+OpenTelemetry metrics use resource attributes to describe the set of characteristics associated with a given resource, or entity, producing telemetry data. For example, a host resource might have multiple attributes, including an ID, an image, and a type.
 
 To optimize the storage of and ability to query this data, Mimir automatically assigns the following OTel resource attributes as labels at the time of ingestion, with periods (`.`) replaced by underscores (`_`):
 
