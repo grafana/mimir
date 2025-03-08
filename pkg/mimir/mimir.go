@@ -233,6 +233,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"querier_store_gateway_client":     &c.Querier.StoreGatewayClient.ClusterValidation,
 			"scheduler_query_frontend_client":  &c.QueryScheduler.GRPCClientConfig.ClusterValidation,
 			"ruler_client":                     &c.Ruler.ClientTLSConfig.ClusterValidation,
+			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
 		},
 	}
 }
