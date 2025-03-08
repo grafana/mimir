@@ -371,15 +371,16 @@ func TestMarkForNoCompact(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	for _, tcase := range []struct {
-		name      string
-		preUpload func(t testing.TB, id ulid.ULID, bkt objstore.Bucket)
-
+		name         string
+		preUpload    func(t testing.TB, id ulid.ULID, bkt objstore.Bucket)
 		blocksMarked int
+		expectedErr  func(id ulid.ULID) error
 	}{
 		{
 			name:         "block marked",
 			preUpload:    func(testing.TB, ulid.ULID, objstore.Bucket) {},
 			blocksMarked: 1,
+			expectedErr:  func(_ ulid.ULID) error { return nil },
 		},
 		{
 			name: "block with no-compact mark already, expected log and no metric increment",
@@ -393,6 +394,10 @@ func TestMarkForNoCompact(t *testing.T) {
 				require.NoError(t, bkt.Upload(ctx, path.Join(id.String(), NoCompactMarkFilename), bytes.NewReader(m)))
 			},
 			blocksMarked: 0,
+			expectedErr: func(id ulid.ULID) error {
+				return ErrMarkerExists{
+					message: fmt.Sprintf("requested to mark for no compaction, but file %s already exists in bucket", path.Join(id.String(), NoCompactMarkFilename))}
+			},
 		},
 	} {
 		t.Run(tcase.name, func(t *testing.T) {
@@ -407,8 +412,7 @@ func TestMarkForNoCompact(t *testing.T) {
 
 			c := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 			err = MarkForNoCompact(ctx, log.NewNopLogger(), bkt, id, ManualNoCompactReason, "", c)
-			require.NoError(t, err)
-			require.Equal(t, float64(tcase.blocksMarked), promtest.ToFloat64(c))
+			require.Equal(t, tcase.expectedErr(id), err)
 		})
 	}
 }
@@ -440,6 +444,16 @@ func TestUnMarkForNoCompact(t *testing.T) {
 		},
 		"unmark non-existing block should fail": {
 			setupTest: func(testing.TB, ulid.ULID, objstore.Bucket) {},
+			expectedError: func(id ulid.ULID) error {
+				return errors.Errorf("deletion of no-compaction marker for block %s has failed: inmem: object not found", id.String())
+			},
+		},
+		"unmark block with no no-compact marker should fail": {
+			setupTest: func(t testing.TB, id ulid.ULID, bkt objstore.Bucket) {
+				// upload blocks
+				err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, id.String()), nil)
+				require.NoError(t, err)
+			},
 			expectedError: func(id ulid.ULID) error {
 				return errors.Errorf("deletion of no-compaction marker for block %s has failed: inmem: object not found", id.String())
 			},
