@@ -135,7 +135,7 @@ Grafana Cloud automatically promotes the following OTel resource attributes to l
 - `k8s.statefulset.name`
 
 {{< admonition type="note" >}}
-To disable this setting or to update this list, contact support.
+To disable this setting or to update this list, contact Grafana Labs Support.
 {{< /admonition >}}
 
 Mimir stores additional OTel resource attributes in a separate series called `target_info`, which you can query using a join query or the Prometheus `info()` function. Refer to [Functions](https://prometheus.io/docs/prometheus/latest/querying/functions/) in the Prometheus documentation for more information.
