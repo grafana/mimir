@@ -197,7 +197,7 @@ func TestDistributor_Push(t *testing.T) {
 			happyIngesters:       3,
 			samples:              samplesIn{num: 25, startTimestampMs: 123456789000},
 			metadata:             5,
-			expectedGRPCError:    status.New(codes.ResourceExhausted, newIngestionRateLimitedError(20, 20).Error()),
+			expectedGRPCError:    status.New(codes.ResourceExhausted, newIngestionBurstSizeLimitedError(20, 55).Error()),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED},
 			metricNames:          []string{lastSeenTimestamp},
 			expectedMetrics: `
