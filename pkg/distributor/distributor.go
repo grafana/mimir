@@ -1311,6 +1311,12 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			d.discardedExemplarsRateLimited.WithLabelValues(userID).Add(float64(validatedExemplars))
 			d.discardedMetadataRateLimited.WithLabelValues(userID).Add(float64(validatedMetadata))
 
+			// Determine whether limiter burst size was exceeded.
+			limiterBurst := d.ingestionRateLimiter.Burst(now, userID)
+			if totalN > limiterBurst {
+				return newIngestionBurstSizeLimitedError(limiterBurst, totalN)
+			}
+
 			burstSize := d.limits.IngestionBurstSize(userID)
 			if d.limits.IngestionBurstFactor(userID) > 0 {
 				burstSize = int(d.limits.IngestionRate(userID) * d.limits.IngestionBurstFactor(userID))
