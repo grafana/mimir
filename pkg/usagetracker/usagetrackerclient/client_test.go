@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package usagetrackerclient
+package usagetrackerclient_test
 
 import (
 	"context"
@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/usagetracker"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 )
 
@@ -82,7 +83,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		})
 
 		// Pre-condition check: all instances should be healthy.
-		set, err := instanceRing.GetAllHealthy(trackSeriesOp)
+		set, err := instanceRing.GetAllHealthy(usagetrackerclient.TrackSeriesOp)
 		require.NoError(t, err)
 		require.Len(t, set.Instances, 4)
 
@@ -117,7 +118,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
 
-		clientCfg.clientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
 			mock, ok := instances[instance.Id]
 			if ok {
 				return mock, nil
@@ -126,7 +127,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -158,9 +159,11 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 
 		req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 	})
 
 	t.Run("should track series to usage-trackers running in the preferred zone if available (series are sharded to 1 partition)", func(t *testing.T) {
@@ -179,7 +182,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
 
-		clientCfg.clientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
 			mock, ok := instances[instance.Id]
 			if ok {
 				return mock, nil
@@ -188,7 +191,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -218,6 +221,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 	})
 
 	t.Run("should fallback to the other zone if a usage-tracker instance in the preferred zone is failing", func(t *testing.T) {
@@ -236,7 +240,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
 
-		clientCfg.clientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
 			mock, ok := instances[instance.Id]
 			if ok {
 				return mock, nil
@@ -245,7 +249,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -277,13 +281,16 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 
 		req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 
 		// Fallback.
 		req = instances["usage-tracker-zone-a-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 	})
 
 	t.Run("should return rejected series", func(t *testing.T) {
@@ -318,7 +325,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
 
-		clientCfg.clientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
 			mock, ok := instances[instance.Id]
 			if ok {
 				return mock, nil
@@ -327,7 +334,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -345,9 +352,11 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 
 		req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 	})
 
 	t.Run("should hedge requests to the other zone if a usage-tracker instance in the preferred zone is slow", func(t *testing.T) {
@@ -383,7 +392,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			"usage-tracker-zone-b-2": newUsageTrackerMockWithSuccessfulResponse(),
 		}
 
-		clientCfg.clientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
 			mock, ok := instances[instance.Id]
 			if ok {
 				return mock, nil
@@ -392,7 +401,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -410,13 +419,16 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 
 		req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series4Partition2, series5Partition2}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(2), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 
 		// Hedged request.
 		req = instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, req.(*usagetrackerpb.TrackSeriesRequest).SeriesHashes)
+		require.Equal(t, int32(1), req.(*usagetrackerpb.TrackSeriesRequest).Partition)
 	})
 
 	t.Run("should be a no-op if there are no series to track", func(t *testing.T) {
@@ -436,7 +448,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			"usage-tracker-zone-b-2": newUsageTrackerMockWithSuccessfulResponse(),
 		}
 
-		clientCfg.clientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
 			mock, ok := instances[instance.Id]
 			if ok {
 				return mock, nil
@@ -445,7 +457,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -457,8 +469,8 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 	})
 }
 
-func createTestClientConfig() Config {
-	cfg := Config{}
+func createTestClientConfig() usagetrackerclient.Config {
+	cfg := usagetrackerclient.Config{}
 	flagext.DefaultValues(&cfg)
 
 	// No hedging in tests by default.

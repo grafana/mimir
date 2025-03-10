@@ -1167,7 +1167,7 @@ func (t *Mimir) initUsageTrackerPartitionRing() (services.Service, error) {
 	}
 
 	partitionRingWatcher := usagetracker.NewPartitionRingWatcher(partitionKVClient, util_log.Logger, t.Registerer)
-	t.UsageTrackerPartitionRing = ring.NewPartitionInstanceRing(partitionRingWatcher, t.UsageTrackerInstanceRing, t.Cfg.UsageTracker.InstanceRing.HeartbeatTimeout)
+	t.UsageTrackerPartitionRing = ring.NewMultiPartitionInstanceRing(partitionRingWatcher, t.UsageTrackerInstanceRing, t.Cfg.UsageTracker.InstanceRing.HeartbeatTimeout)
 
 	// Expose a web page to view the partitions ring state.
 	t.API.RegisterUsageTrackerPartitionRing(
@@ -1185,7 +1185,7 @@ func (t *Mimir) initUsageTracker() (services.Service, error) {
 	t.Cfg.UsageTracker.InstanceRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	var err error
-	t.UsageTracker, err = usagetracker.NewUsageTracker(t.Cfg.UsageTracker, t.UsageTrackerPartitionRing, t.Overrides, util_log.Logger, t.Registerer)
+	t.UsageTracker, err = usagetracker.NewUsageTracker(t.Cfg.UsageTracker, t.UsageTrackerInstanceRing, t.UsageTrackerPartitionRing, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
 		return nil, err
 	}

@@ -26,7 +26,7 @@ import (
 
 var (
 	// The ring operation used to track series.
-	trackSeriesOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+	TrackSeriesOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 )
 
 type Config struct {
@@ -38,7 +38,7 @@ type Config struct {
 	TLS        tls.ClientConfig `yaml:",inline"`
 
 	// Allow to inject custom client factory in tests.
-	clientFactory client.PoolFactory `yaml:"-"`
+	ClientFactory client.PoolFactory `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -136,7 +136,7 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 		keys[i] = uint32(hash)
 	}
 
-	err := ring.DoBatchWithOptions(ctx, trackSeriesOp, partitionBatchRing, keys,
+	err := ring.DoBatchWithOptions(ctx, TrackSeriesOp, partitionBatchRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
 			// The partition ID is stored in the ring.InstanceDesc.Id.
 			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
@@ -181,7 +181,7 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 
 func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID string, partitionID int32, series []uint64) ([]uint64, error) {
 	// Get the usage-tracker instances for the input partition.
-	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, trackSeriesOp)
+	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp, true)
 	if err != nil {
 		return nil, err
 	}
@@ -189,6 +189,7 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 	// Prepare the request.
 	req := &usagetrackerpb.TrackSeriesRequest{
 		UserID:       userID,
+		Partition:    partitionID,
 		SeriesHashes: series,
 	}
 

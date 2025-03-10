@@ -19,8 +19,11 @@ message TrackSeriesRequest {
   // The tenant owning the series.
   string userID = 1;
 
+  // Partition that this series belong to.
+  int32 partition = 2;
+
   // The hashes of the series to track.
-  repeated uint64 seriesHashes = 2;
+  repeated uint64 seriesHashes = 3;
 }
 
 message TrackSeriesResponse {
