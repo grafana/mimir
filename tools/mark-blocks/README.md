@@ -25,9 +25,9 @@ Run `go build` in this directory to build the program. Then, use an example belo
 
 ```bash
 ./mark-blocks \
-  --tenant <tenant>
-  --blocks <blocks>
-  --mark-type <mark-type>
+  --tenant <tenant> \
+  --blocks <blocks> \
+  --mark-type <mark-type> \
   --backend gcs \
   --gcs.bucket-name <bucket name> \
   --dry-run
@@ -37,9 +37,9 @@ Run `go build` in this directory to build the program. Then, use an example belo
 
 ```bash
 ./mark-blocks \
-  --tenant <tenant>
-  --blocks <blocks>
-  --mark-type <mark-type>
+  --tenant <tenant> \
+  --blocks <blocks> \
+  --mark-type <mark-type> \
   --backend azure \
   --azure.container-name <container name> \
   --azure.account-name <account name> \
@@ -51,9 +51,9 @@ Run `go build` in this directory to build the program. Then, use an example belo
 
 ```bash
 ./mark-blocks\
-  --tenant <tenant>
-  --blocks <blocks>
-  --mark-type <mark-type>
+  --tenant <tenant> \
+  --blocks <blocks> \
+  --mark-type <mark-type> \
   --backend s3 \
   --s3.bucket-name <bucket name> \
   --s3.access-key-id <access key id> \
