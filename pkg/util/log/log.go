@@ -63,11 +63,16 @@ const (
 	errorLevel
 )
 
-type leveledLogger interface {
-	level() logLevel
+type privateLevelDetector struct {
+	string
+	logLevel
 }
 
-var _ leveledLogger = levelFilter{}
+func (x *privateLevelDetector) String() string {
+	return x.string
+}
+
+var _ log.Logger = levelFilter{}
 
 // Pass through Logger and implement the DebugEnabled interface that spanlogger looks for.
 type levelFilter struct {
@@ -93,8 +98,15 @@ func newFilter(logger log.Logger, lvl dslog.Level) log.Logger {
 	}
 }
 
-func (f levelFilter) level() logLevel {
-	return f.lvl
+// If we are called with a special magic struct, use it to pass back the logging level.
+func (f levelFilter) Log(keyvals ...interface{}) error {
+	if len(keyvals) > 0 {
+		if x, ok := keyvals[len(keyvals)-1].(*privateLevelDetector); ok {
+			x.logLevel = f.lvl
+			return nil
+		}
+	}
+	return f.Logger.Log(keyvals...)
 }
 
 func (f *levelFilter) DebugEnabled() bool {
