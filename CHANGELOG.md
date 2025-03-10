@@ -63,7 +63,16 @@
   * `-server.cluster-validation.grpc.enabled`
   * `-server.cluster-validation.grpc.soft-validation`
 * [ENHANCEMENT] All: Add `cortex_client_request_invalid_cluster_validation_labels_total` metrics, that is used by Mimir's gRPC clients to track invalid cluster validations. #10767
-* [ENHANCEMENT] Ingester client: Add support to configure cluster validation for ingester clients. Failed cluster validations are tracked by `cortex_client_request_invalid_cluster_validation_labels_total` with label `client=ingester`. #10767
+* [ENHANCEMENT] gRPC clients: add support to configure the cluster validation label to be sent together with the requests, via an experimental common configuration `-common.client-cluster-validation.label`. When set, this configuration will be inherited by the following gRPC clients: #10788
+  * ingester clients, used for communications between the distributors, queriers or rulers and the ingesters,
+  * store-gateway clients, used for communications between the queriers and the store-gateways,
+  * query-frontened clients, used for communications between the queriers and the query-frontends,
+  * query-frontened clients, used for communications between the query-schedulers and the query-frontends,
+  * query-frontened clients, used for communications between the rulers and the query-frontends,
+  * query-scheduler clients, used for communications between the queriers and the query-schedulers,
+  * query-scheduler clients, used for communications between the frontend-queriers and the query-schedulers,
+  * ruler clients, used for communications between different ruler instances,
+  * block-builder-scheduler clients, used for communications between the block-builders and the block-builder-schedulers.
 * [ENHANCEMENT] Add experimental metric `cortex_distributor_dropped_native_histograms_total` to measure native histograms silently dropped when native histograms are disabled for a tenant. #10760
 * [ENCHACEMENT] Compactor: Add experimental `-compactor.upload-sparse-index-headers` option. When enabled, the compactor will attempt to upload sparse index headers to object storage. This prevents latency spikes after adding store-gateway replicas. #10684
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185

@@ -22,7 +22,7 @@ func (cfg *ClientClusterValidationConfig) RegisterAndTrackFlagsWithPrefix(prefix
 	})
 }
 
-func (cfg *ClientClusterValidationConfig) GetRegisteredFlags() flagext.RegisteredFlags {
+func (cfg *ClientClusterValidationConfig) RegisteredFlags() flagext.RegisteredFlags {
 	return cfg.registeredFlags
 }
 
@@ -47,7 +47,7 @@ func (cfg *ClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *fl
 	cfg.GRPC.RegisterFlagsWithPrefix(prefix+"grpc.", f)
 }
 
-func (cfg *ClusterValidationConfig) GetRegisteredFlags() flagext.RegisteredFlags {
+func (cfg *ClusterValidationConfig) RegisteredFlags() flagext.RegisteredFlags {
 	return cfg.registeredFlags
 }
 

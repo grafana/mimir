@@ -655,8 +655,8 @@ func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConf
 
 // inheritFlags takes flags from the origin set and sets them to the equivalent flags in the dest set, unless those are already set.
 func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flagext.RegisteredFlagsTracker, set map[string]bool) error {
-	origFlags := orig.GetRegisteredFlags()
-	destFlags := dest.GetRegisteredFlags()
+	origFlags := orig.RegisteredFlags()
+	destFlags := dest.RegisteredFlags()
 	for f, o := range origFlags.Flags {
 		d, ok := destFlags.Flags[f]
 		if !ok {
