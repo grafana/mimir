@@ -12,6 +12,8 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor/internal/putil/pslice"
 )
 
+var maxBuckets = 160
+
 func (dp Number) Add(in Number) Number {
 	switch in.ValueType() {
 	case pmetric.NumberDataPointValueTypeDouble:
@@ -74,6 +76,21 @@ func (dp ExpHistogram) Add(in ExpHistogram) ExpHistogram {
 		expo.Downscale(hi.Positive(), from, to)
 		expo.Downscale(hi.Negative(), from, to)
 		hi.SetScale(lo.Scale())
+	}
+
+	// Downscale if an expected number of buckets after the merge is too large.
+	from := expo.Scale(dp.Scale())
+	to := max(
+		expo.Limit(maxBuckets, from, dp.Positive(), in.Positive()),
+		expo.Limit(maxBuckets, from, dp.Negative(), in.Negative()),
+	)
+	if from != to {
+		expo.Downscale(dp.Positive(), from, to)
+		expo.Downscale(dp.Negative(), from, to)
+		expo.Downscale(in.Positive(), from, to)
+		expo.Downscale(in.Negative(), from, to)
+		dp.SetScale(int32(to))
+		in.SetScale(int32(to))
 	}
 
 	if dp.ZeroThreshold() != in.ZeroThreshold() {
