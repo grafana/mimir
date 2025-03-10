@@ -66,8 +66,7 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 			return nil, fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr)
 		}
 		dst := dstLabelOp.GetValue()
-		// TODO(jhesketh): Use UTF-8 validation (model.LabelName(src).IsValid()) when https://github.com/prometheus/prometheus/pull/15974 is vendored in.
-		if !model.LabelNameRE.MatchString(dst) {
+		if !model.LabelName(dst).IsValid() {
 			return nil, fmt.Errorf("invalid destination label name in label_replace(): %s", dst)
 		}
 		repl := replacementOp.GetValue()

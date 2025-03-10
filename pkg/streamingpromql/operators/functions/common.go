@@ -48,6 +48,12 @@ func FloatTransformationDropHistogramsFunc(transform func(f float64) float64) In
 	}
 }
 
+func DropHistograms(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
+	seriesData.Histograms = nil
+	return seriesData, nil
+}
+
 func PassthroughData(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	return seriesData, nil
 }

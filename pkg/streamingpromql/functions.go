@@ -541,8 +541,9 @@ func SortOperatorFactory(descending bool) InstantVectorFunctionOperatorFactory {
 		}
 
 		if timeRange.StepCount != 1 {
-			// If this is a range query, sort / sort_desc have no effect, so we might as well just skip straight to the inner operator.
-			return inner, nil
+			// If this is a range query, sort / sort_desc does not reorder series, but does drop all histograms like it would for an instant query.
+			f := functions.FunctionOverInstantVectorDefinition{SeriesDataFunc: functions.DropHistograms}
+			return functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
 		}
 
 		return functions.NewSort(inner, descending, memoryConsumptionTracker, expressionPosition), nil
