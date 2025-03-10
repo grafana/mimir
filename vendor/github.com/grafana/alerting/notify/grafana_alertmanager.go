@@ -716,7 +716,7 @@ func (am *GrafanaAlertmanager) ApplyConfig(cfg Configuration) (err error) {
 	var receivers []*nfstatus.Receiver
 	activeReceivers := GetActiveReceiversMap(am.route)
 	for name := range integrationsMap {
-		stage := am.createReceiverStage(name, nfstatus.GetIntegrations(integrationsMap[name]), am.waitFunc, am.notificationLog, am.pipelineAndStateTimestampsMismatchAction)
+		stage := am.createReceiverStage(name, nfstatus.GetIntegrations(integrationsMap[name]), am.notificationLog, am.pipelineAndStateTimestampsMismatchAction)
 		routingStage[name] = notify.MultiStage{meshStage, silencingStage, timeMuteStage, inhibitionStage, stage}
 		_, isActive := activeReceivers[name]
 
@@ -883,7 +883,7 @@ func (e AlertValidationError) Error() string {
 }
 
 // createReceiverStage creates a pipeline of stages for a receiver.
-func (am *GrafanaAlertmanager) createReceiverStage(name string, integrations []*notify.Integration, wait func() time.Duration, notificationLog notify.NotificationLog, act stages.Action) notify.Stage {
+func (am *GrafanaAlertmanager) createReceiverStage(name string, integrations []*notify.Integration, notificationLog notify.NotificationLog, act stages.Action) notify.Stage {
 	var fs notify.FanoutStage
 	for i := range integrations {
 		recv := &nflogpb.Receiver{
@@ -892,7 +892,7 @@ func (am *GrafanaAlertmanager) createReceiverStage(name string, integrations []*
 			Idx:         uint32(integrations[i].Index()),
 		}
 		var s notify.MultiStage
-		s = append(s, notify.NewWaitStage(wait))
+		s = append(s, stages.NewWaitStage(am.peer, am.peerTimeout))
 		s = append(s, notify.NewDedupStage(integrations[i], notificationLog, recv))
 		stage := stages.NewPipelineAndStateTimestampCoordinationStage(notificationLog, recv, act)
 		if stage != nil {
