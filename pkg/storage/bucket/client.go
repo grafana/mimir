@@ -73,7 +73,7 @@ type StorageBackendConfig struct {
 	ExtraBackends []string `yaml:"-"`
 
 	// Used to keep track of the flag names registered in this config, to be able to overwrite them later properly.
-	RegisteredFlags flagext.RegisteredFlags `yaml:"-"`
+	TrackedRegisteredFlags flagext.RegisteredFlags `yaml:"-"`
 }
 
 // Returns the supportedBackends for the package and any custom backends injected into the config.
@@ -87,7 +87,7 @@ func (cfg *StorageBackendConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *StorageBackendConfig) RegisterFlagsWithPrefixAndDefaultDirectory(prefix, dir string, f *flag.FlagSet) {
-	cfg.RegisteredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
+	cfg.TrackedRegisteredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
 		cfg.S3.RegisterFlagsWithPrefix(prefix, f)
 		cfg.GCS.RegisterFlagsWithPrefix(prefix, f)
 		cfg.Azure.RegisterFlagsWithPrefix(prefix, f)
@@ -102,8 +102,8 @@ func (cfg *StorageBackendConfig) RegisterFlagsWithPrefix(prefix string, f *flag.
 	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "", f)
 }
 
-func (cfg *StorageBackendConfig) GetRegisteredFlags() flagext.RegisteredFlags {
-	return cfg.RegisteredFlags
+func (cfg *StorageBackendConfig) RegisteredFlags() flagext.RegisteredFlags {
+	return cfg.TrackedRegisteredFlags
 }
 
 func (cfg *StorageBackendConfig) Validate() error {

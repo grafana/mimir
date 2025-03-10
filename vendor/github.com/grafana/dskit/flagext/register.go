@@ -57,7 +57,7 @@ func DefaultValues(rs ...interface{}) {
 
 // RegisteredFlagsTracker is an interface that allows to extract RegisteredFlags.
 type RegisteredFlagsTracker interface {
-	GetRegisteredFlags() RegisteredFlags
+	RegisteredFlags() RegisteredFlags
 }
 
 // RegisteredFlags contains the flags registered by some config.
