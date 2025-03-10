@@ -7,6 +7,7 @@ package querier
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"testing"
 	"time"
@@ -1120,11 +1121,132 @@ func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 			delta := float64(5000)
 			require.Len(t, distributor.Calls, 1)
 			assert.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
-			assert.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
 			gotStartMillis := int64(distributor.Calls[0].Arguments.Get(1).(model.Time))
 			assert.InDeltaf(t, util.TimeToMillis(testData.expectedMetadataStartTime), gotStartMillis, delta, "expected start %s, got %s", testData.expectedMetadataStartTime.UTC(), util.TimeFromMillis(gotStartMillis).UTC())
 			gotEndMillis := int64(distributor.Calls[0].Arguments.Get(2).(model.Time))
 			assert.InDeltaf(t, util.TimeToMillis(testData.expectedMetadataEndTime), gotEndMillis, delta, "expected end %s, got %s", testData.expectedMetadataEndTime.UTC(), util.TimeFromMillis(gotEndMillis).UTC())
+		})
+	}
+}
+
+func TestQuerier_ValidateQuery_MaxSeriesQueryLimit(t *testing.T) {
+	const thirtyDays = 30 * 24 * time.Hour
+
+	now := time.Now()
+
+	tests := map[string]struct {
+		maxSeriesQueryLimit int
+		query               string
+		queryStartTime      time.Time
+		queryEndTime        time.Time
+		queryLimit          int
+		expectedLimit       int
+		expectedWarning     error
+	}{
+		"should not manipulate limit for a query when limit is not enforced": {
+			maxSeriesQueryLimit: 0,
+			query:               "rate(foo[29d])",
+			queryStartTime:      now.Add(-time.Hour),
+			queryEndTime:        now,
+			queryLimit:          1000,
+			expectedLimit:       1000,
+			expectedWarning:     nil,
+		},
+		"should not manipulate limit for a query without a limit when not enforced": {
+			maxSeriesQueryLimit: 0,
+			query:               "rate(foo[29d])",
+			queryStartTime:      now.Add(-time.Hour),
+			queryEndTime:        now,
+			queryLimit:          0,
+			expectedLimit:       0,
+			expectedWarning:     nil,
+		},
+		"should manipulate limit for a query when enforced": {
+			maxSeriesQueryLimit: 1000,
+			query:               "rate(foo[29d])",
+			queryStartTime:      now.Add(-time.Hour),
+			queryEndTime:        now,
+			queryLimit:          1_000_000,
+			expectedLimit:       1000,
+			expectedWarning:     NewMaxSeriesQueryLimitError(1_000_000, 1000),
+		},
+		"should manipulate limit for a query without a limit when enforced": {
+			maxSeriesQueryLimit: 1000,
+			query:               "rate(foo[29d])",
+			queryStartTime:      now.Add(-time.Hour),
+			queryEndTime:        now,
+			queryLimit:          0,
+			expectedLimit:       1000,
+			expectedWarning:     NewMaxSeriesQueryLimitError(0, 1000),
+		},
+		"should not manipulate limit for a query with limit smaller than what is enforced": {
+			maxSeriesQueryLimit: 1000,
+			query:               "rate(foo[29d])",
+			queryStartTime:      now.Add(-time.Hour),
+			queryEndTime:        now,
+			queryLimit:          100,
+			expectedLimit:       100,
+			expectedWarning:     nil,
+		},
+		"should not manipulate limit for a query with limit equal to what is enforced": {
+			maxSeriesQueryLimit: 100,
+			query:               "rate(foo[29d])",
+			queryStartTime:      now.Add(-time.Hour),
+			queryEndTime:        now,
+			queryLimit:          100,
+			expectedLimit:       100,
+			expectedWarning:     nil,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "test")
+
+			var cfg Config
+			flagext.DefaultValues(&cfg)
+
+			limits := defaultLimitsConfig()
+			limits.MaxQueryLookback = model.Duration(thirtyDays * 2)
+			limits.MaxSeriesQueryLimit = testData.maxSeriesQueryLimit
+			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
+			overrides, err := validation.NewOverrides(limits, nil)
+			require.NoError(t, err)
+
+			distributor := &mockDistributor{}
+			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
+
+			queryable, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil)
+			require.NoError(t, err)
+
+			q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+			require.NoError(t, err)
+
+			hints := &storage.SelectHints{
+				Start: util.TimeToMillis(testData.queryStartTime),
+				End:   util.TimeToMillis(testData.queryEndTime),
+				Limit: testData.queryLimit,
+				Func:  "series",
+			}
+			matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
+
+			set := q.Select(ctx, false, hints, matcher)
+			require.False(t, set.Next()) // Expected to be empty.
+			require.NoError(t, set.Err())
+
+			// Assert on the warning about enforced limit.
+			gotWarnings := set.Warnings().AsErrors()
+			if testData.expectedWarning != nil {
+				require.EqualError(t, stderrors.Join(gotWarnings...), testData.expectedWarning.Error())
+			} else {
+				require.Empty(t, gotWarnings)
+			}
+
+			// Assert on the limit of the actual executed query.
+			require.Len(t, distributor.Calls, 1)
+			assert.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
+			gotHints := distributor.Calls[0].Arguments.Get(3).(*storage.SelectHints)
+			require.Equal(t, testData.expectedLimit, gotHints.Limit)
 		})
 	}
 }

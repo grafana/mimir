@@ -4554,6 +4554,16 @@
         },
         {
           "kind": "field",
+          "name": "max_series_query_limit",
+          "required": false,
+          "desc": "Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-series-query-limit",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "max_cache_freshness",
           "required": false,
           "desc": "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.",
