@@ -246,7 +246,7 @@ How to **investigate**:
       - If queries are waiting in queue
         - Consider scaling up number of queriers if they're not auto-scaled; if auto-scaled, check auto-scaling parameters
       - If queries are not waiting in queue
-        - Consider [enabling query sharding]({{< relref "../../references/architecture/query-sharding#how-to-enable-query-sharding" >}}) if not already enabled, to increase query parallelism
+        - Consider [enabling query sharding](../../references/architecture/query-sharding/#how-to-enable-query-sharding) if not already enabled, to increase query parallelism
         - If query sharding already enabled, consider increasing total number of query shards (`query_sharding_total_shards`) for tenants submitting slow queries, so their queries can be further parallelized
   - **`ingester`**
     - Check if ingesters are not overloaded. If they are and you can scale up ingesters vertically, that may be the best action. If that's not possible, scaling horizontally can help as well, but it can take several hours for ingesters to fully redistribute their series.
@@ -513,7 +513,7 @@ Choose one of three options:
 
 - Increase the shard size of one or more tenants to match the number of ingester replicas.
 - Set the shard size of one or more tenants to `0`; this will shard the given tenant’s requests across all ingesters.
-- [Decrease the number of ingester replicas]({{< relref "../run-production-environment/scaling-out#scaling-down-ingesters" >}}) to match the highest number of shards per tenant.
+- [Decrease the number of ingester replicas](../run-production-environment/scaling-out/#scaling-down-ingesters) to match the highest number of shards per tenant.
 
 ### MimirRulerInstanceHasNoRuleGroups
 
@@ -521,7 +521,7 @@ This alert fires when a ruler instance doesn't own any rule groups and is theref
 
 How it **works**:
 
-- When [ruler shuffle sharding]({{< relref "../../configure/configure-shuffle-sharding#ruler-shuffle-sharding" >}}) is enabled, a single tenant's rule groups are sharded across a subset of ruler instances, with a given rule group always being evaluated on a single ruler.
+- When [ruler shuffle sharding](../../configure/configure-shuffle-sharding/#ruler-shuffle-sharding) is enabled, a single tenant's rule groups are sharded across a subset of ruler instances, with a given rule group always being evaluated on a single ruler.
 - The parameters `-ruler.tenant-shard-size` or `ruler_tenant_shard_size` control how many ruler instances a tenant's rule groups are sharded across.
 - When the overall number of rule groups or the tenant's shard size is lower than the number of ruler replicas, some replicas might not be assigned any rule group to evaluate and remain idle.
 
@@ -623,13 +623,13 @@ How to **investigate**:
         ```
         ./tools/markblocks/markblocks -backend gcs -gcs.bucket-name <bucket> -mark no-compact -tenant <tenant-id> -details "Result block exceeds symbol table maximum size" <block-1> <block-2>...
         ```
-    - Further reading: [Compaction algorithm]({{< relref "../../references/architecture/components/compactor#compaction-algorithm" >}}).
+    - Further reading: [Compaction algorithm](../../references/architecture/components/compactor/#compaction-algorithm).
   - Compactor network disk unresponsive:
     - **How to detect**: A telltale sign is having many cores of sustained kernel-mode CPU usage by the compactor process. Check the metric `rate(container_cpu_system_seconds_total{pod="<pod>"}[$__rate_interval])` for the affected pod.
     - **What it means**: The compactor process has frozen because it's blocked on kernel-mode flushes to an unresponsive network block storage device.
     - **How to mitigate**: Unknown. This typically self-resolves after ten to twenty minutes.
 
-- Check the [Compactor Dashboard]({{< relref "../monitor-grafana-mimir/dashboards/compactor" >}}) and set it to view the last 7 days.
+- Check the [Compactor Dashboard](../monitor-grafana-mimir/dashboards/compactor/) and set it to view the last 7 days.
 
   - Compactor has fallen behind:
     - **How to detect**:
@@ -637,7 +637,7 @@ How to **investigate**:
       - Also check the `Average blocks / tenant` panel - what is the trend? A tenant should not have a steadily increasing number of blocks. A pattern of growth followed by compaction is normal. Total block counts can also be examined but these depend on the age of the tenants in the cluster and sharding settings. Values from <1200 blocks upward could be normal. 50K blocks would generally not be normal.
     - **What it means**: Compaction likely was failing for some reason in the past and now there is too much work to catch up at the current configuration and scaling level. This can also result in long-term queries failing as the store-gateways fail to handle the much larger number of smaller blocks than expected.
     - **How to mitigate**: Reconfigure and modify the compactor settings and resources for more scalability:
-      - Ensure your compactors are at least sized according to the [Planning capacity]({{< relref "../run-production-environment/planning-capacity#compactor" >}}) page and you have the recommended number of replicas.
+      - Ensure your compactors are at least sized according to the [Planning capacity](../run-production-environment/planning-capacity/#compactor) page and you have the recommended number of replicas.
       - Set `-compactor.split-groups` and `-compactor.split-and-merge-shards` to a value that is 1 for every 8M active series you have - rounded to the closest even number. So, if you have 100M series - `100/8 = 12.5` = value of `12`.
       - Allow the compactor to run for some hours and see if the runs begin to succeed and the `Average blocks / tenant` starts to decrease.
       - If you encounter any Compactor resource issues, add CPU/Memory as needed temporarily, then scale back later.
@@ -1175,7 +1175,7 @@ How it **works**:
 
 - HPA's can be configured to autoscale Mimir components based on custom metrics fetched from Prometheus via the KEDA custom metrics API server
 - HPA periodically queries updated metrics and updates the number of desired replicas based on that
-- Refer to [Mimir's Autoscaling documentation]({{< relref "../../set-up/jsonnet/configure-autoscaling" >}}) and the upstream [HPA documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for more information.
+- Refer to [Mimir's Autoscaling documentation](../../set-up/jsonnet/configure-autoscaling/) and the upstream [HPA documentation](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/) for more information.
 
 How to **investigate**:
 
@@ -1287,7 +1287,7 @@ How it **works**:
 
 How to **investigate**:
 
-- Check the [hash ring web page]({{< relref "../../references/http-api#ingesters-ring-status" >}}) for the component for which the alert has fired, and look for unexpected instances in the list.
+- Check the [hash ring web page](../../references/http-api/#ingesters-ring-status) for the component for which the alert has fired, and look for unexpected instances in the list.
 - Consider manually forgetting unexpected instances in an `Unhealthy` state.
 - Ensure all the registered instances in the ring belong to the Mimir cluster for which the alert fired.
 
@@ -1374,7 +1374,7 @@ How it **works**:
   - The sharding algorithm is designed to try to evenly balance the number of blocks per store-gateway replica, but not their size. This means that in case of a tenant with uneven blocks sizes, some store-gateways may use more disk than others even if the number of blocks assigned to each replicas are perfectly balanced.
   - The sharding algorithm can achieve a fair balance of the number of blocks between store-gateway replicas only on a large number of blocks. This means that in case of a Mimir cluster with a small number of blocks, these may not be evenly balanced between replicas. Currently, a perfect (or even very good) balance between store-gateway replicas is nearly impossible to achieve.
   - When store-gateway shuffle sharding is in use for a given tenant and the tenant's shard size is smaller than the number of store-gateway replicas, the tenant's blocks are sharded only across a subset of replicas. Shuffle sharding can cause an imbalance in store-gateway disk utilization.
-- The store-gateway uses the volume to store the [index-header]({{< relref "../../references/architecture/binary-index-header.md" >}}) of each owned block.
+- The store-gateway uses the volume to store the [index-header](../../references/architecture/binary-index-header/) of each owned block.
 
 How to **investigate** and **fix** it:
 
@@ -2338,7 +2338,7 @@ How to **fix** it:
 
 ### err-mimir-tenant-too-many-ha-clusters
 
-This error occurs when a distributor rejects a write request because the number of [high-availability (HA) clusters]({{< relref "../../configure/configure-high-availability-deduplication" >}}) has hit the configured limit for this tenant.
+This error occurs when a distributor rejects a write request because the number of [high-availability (HA) clusters](../../configure/configure-high-availability-deduplication/) has hit the configured limit for this tenant.
 
 How it **works**:
 
@@ -2378,7 +2378,7 @@ Common **causes**:
 
 - Your code has a single target that exposes the same time series multiple times, or multiple targets with identical labels.
 - System time of your Prometheus instance has been shifted backwards. If this was a mistake, fix the system time back to normal. Otherwise, wait until the system time catches up to the time it was changed. To measure the clock skew of a target node, you could use timex metrics, like `node_timex_maxerror_seconds` and `node_timex_estimated_error_seconds`
-- You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication]({{< relref "../../configure/configure-high-availability-deduplication" >}}).
+- You are running multiple Prometheus instances pushing the same metrics and [your high-availability tracker is not properly configured for deduplication](../../configure/configure-high-availability-deduplication/).
 - Prometheus relabelling has been configured and it causes series to clash after the relabelling. Check the error message for information about which series has received a sample out of order.
 - A Prometheus instance was restarted, and it pushed all data from its Write-Ahead Log to remote write upon restart, some of which has already been pushed and ingested. This is normal and can be ignored.
 - Prometheus and Mimir have the same recording rule, which generates the exact same series in both places and causes either the remote write or the rule evaluation to fail randomly, depending on timing.
@@ -2423,7 +2423,7 @@ How it **works**:
 - Mimir has been designed to guarantee query results correctness and never return partial query results. Either a query succeeds returning fully consistent results or it fails.
 - Queriers, and rulers running with the "internal" evaluation mode, run a consistency check to ensure all expected blocks have been queried from the long-term storage via the store-gateways.
 - If any expected block has not been queried via the store-gateways, then the query fails with this error.
-- See [Anatomy of a query request]({{< relref "../../references/architecture/components/querier#anatomy-of-a-query-request" >}}) to learn more.
+- See [Anatomy of a query request](../../references/architecture/components/querier/#anatomy-of-a-query-request) to learn more.
 
 How to **fix** it:
 
