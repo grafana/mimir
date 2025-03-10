@@ -129,7 +129,7 @@ type ingestionRateLimitedError struct {
 	burst int
 }
 
-// newIngestionRateLimitedError creates an ingestionRateLimitedError error containing the given error message.
+// newIngestionRateLimitedError creates an ingestionRateLimitedError error containing the given rate and burst size limits.
 func newIngestionRateLimitedError(limit float64, burst int) ingestionRateLimitedError {
 	return ingestionRateLimitedError{
 		limit: limit,
@@ -154,7 +154,7 @@ type ingestionBurstSizeLimitedError struct {
 	items int
 }
 
-// newIngestionBurstSizeLimitedError creates an ingestionBurstSizeLimitedError error containing the given error message.
+// newIngestionBurstSizeLimitedError creates an ingestionBurstSizeLimitedError error containing the given burst size limit and number of items.
 func newIngestionBurstSizeLimitedError(burst, items int) ingestionBurstSizeLimitedError {
 	return ingestionBurstSizeLimitedError{
 		burst: burst,
