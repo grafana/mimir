@@ -19,6 +19,7 @@ package nflog
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -377,7 +378,7 @@ func stateKey(k string, r *pb.Receiver) string {
 	return fmt.Sprintf("%s:%s", k, receiverKey(r))
 }
 
-func (l *Log) Log(r *pb.Receiver, gkey string, firingAlerts, resolvedAlerts []uint64, expiry time.Duration) error {
+func (l *Log) Log(r *pb.Receiver, gkey string, firingAlerts, resolvedAlerts []uint64, expiry time.Duration, pipelineTime time.Time) error {
 	// Write all st with the same timestamp.
 	now := l.now()
 	key := stateKey(gkey, r)
@@ -405,9 +406,12 @@ func (l *Log) Log(r *pb.Receiver, gkey string, firingAlerts, resolvedAlerts []ui
 			Timestamp:      now,
 			FiringAlerts:   firingAlerts,
 			ResolvedAlerts: resolvedAlerts,
+			PipelineTime:   pipelineTime,
 		},
 		ExpiresAt: expiresAt,
 	}
+	mrsh, _ := json.MarshalIndent(e, "", "\t")
+	l.logger.Log("msg", "broadcasting entry", "entry", string(mrsh))
 
 	b, err := marshalMeshEntry(e)
 	if err != nil {
@@ -527,6 +531,9 @@ func (l *Log) Merge(b []byte) error {
 	now := l.now()
 
 	for _, e := range st {
+		mrsh, _ := json.MarshalIndent(e, "", "\t")
+		l.logger.Log("msg", "merging entry", "entry", string(mrsh))
+
 		if merged := l.st.merge(e, now); merged && !cluster.OversizedMessage(b) {
 			// If this is the first we've seen the message and it's
 			// not oversized, gossip it to other nodes. We don't
