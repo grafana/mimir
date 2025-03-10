@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/pkg/errors"
@@ -21,9 +23,10 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/util"
 )
 
-func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer) client.PoolFactory {
+func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Registerer, logger log.Logger) client.PoolFactory {
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Namespace:   "cortex",
 		Name:        "storegateway_client_request_duration_seconds",
@@ -32,13 +35,19 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 		ConstLabels: prometheus.Labels{"client": "querier"},
 	}, []string{"operation", "status_code"})
 
+	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "store-gateway", util.GRPCProtocol)
+
 	return client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
-		return dialStoreGatewayClient(clientCfg, inst, requestDuration)
+		return dialStoreGatewayClient(clientCfg, inst, requestDuration, invalidClusterValidation, logger)
 	})
 }
 
-func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec) (*storeGatewayClient, error) {
-	opts, err := clientCfg.DialOption(grpcclient.Instrument(requestDuration))
+func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*storeGatewayClient, error) {
+	unary, stream := grpcclient.Instrument(requestDuration)
+	if clientCfg.ClusterValidation.Label != "" {
+		unary = append(unary, middleware.ClusterUnaryClientInterceptor(clientCfg.ClusterValidation.Label, invalidClusterValidation, logger))
+	}
+	opts, err := clientCfg.DialOption(unary, stream)
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +94,7 @@ func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConf
 		BackoffOnRatelimits: false,
 		TLSEnabled:          clientConfig.TLSEnabled,
 		TLS:                 clientConfig.TLS,
+		ClusterValidation:   clientConfig.ClusterValidation,
 	}
 	poolCfg := client.PoolConfig{
 		CheckInterval:      10 * time.Second,
@@ -99,15 +109,17 @@ func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConf
 		ConstLabels: map[string]string{"client": "querier"},
 	})
 
-	return client.NewPool("store-gateway", poolCfg, discovery, newStoreGatewayClientFactory(clientCfg, reg), clientsCount, logger)
+	return client.NewPool("store-gateway", poolCfg, discovery, newStoreGatewayClientFactory(clientCfg, reg, logger), clientsCount, logger)
 }
 
 type ClientConfig struct {
-	TLSEnabled bool             `yaml:"tls_enabled" category:"advanced"`
-	TLS        tls.ClientConfig `yaml:",inline"`
+	TLSEnabled        bool                                      `yaml:"tls_enabled" category:"advanced"`
+	TLS               tls.ClientConfig                          `yaml:",inline"`
+	ClusterValidation clusterutil.ClientClusterValidationConfig `yaml:"cluster_validation"`
 }
 
 func (cfg *ClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.TLSEnabled, prefix+".tls-enabled", cfg.TLSEnabled, "Enable TLS for gRPC client connecting to store-gateway.")
 	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
+	cfg.ClusterValidation.RegisterAndTrackFlagsWithPrefix(prefix+".cluster-validation.", f)
 }

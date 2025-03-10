@@ -5,6 +5,8 @@ package blockbuilder
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type blockBuilderMetrics struct {
@@ -13,6 +15,7 @@ type blockBuilderMetrics struct {
 	fetchErrors              *prometheus.CounterVec
 	consumerLagRecords       *prometheus.GaugeVec
 	blockCounts              *prometheus.CounterVec
+	invalidClusterValidation *prometheus.CounterVec
 }
 
 func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
@@ -49,6 +52,7 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 		Help: "Total number of blocks produced for specific block ranges (next, current, previous).",
 	}, []string{"block_time"})
 
+	m.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "block-builder-scheduler", util.GRPCProtocol)
 	return m
 }
 
