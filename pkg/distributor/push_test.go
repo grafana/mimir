@@ -8,6 +8,7 @@ package distributor
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -1224,7 +1225,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 					{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
 					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
 				},
-				Body: mustMarshalStatus(t, 415, "unsupported content type: , supported: [application/json, application/x-protobuf]"),
+				Body: protoMarshalStatus(t, 415, "unsupported content type: , supported: [application/json, application/x-protobuf]"),
 			},
 			expectedGrpcErrorMessage: "rpc error: code = Code(415) desc = unsupported content type: , supported: [application/json, application/x-protobuf]",
 		},
@@ -1239,12 +1240,30 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 			},
 			expectedResponse: &httpgrpc.HTTPResponse{Code: 400,
 				Headers: []*httpgrpc.Header{
+					{Key: "Content-Type", Values: []string{"application/json"}},
+					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
+				},
+				Body: jsonMarshalStatus(t, 400, "ReadObjectCB: expect { or n, but found i, error found in #1 byte of ...|invalid|..., bigger context ...|invalid|..."),
+			},
+			expectedGrpcErrorMessage: "rpc error: code = Code(400) desc = ReadObjectCB: expect { or n, but found i, error found in #1 byte of ...|invalid|..., bigger context ...|invalid|...",
+		},
+		"invalid protobuf request returns 400": {
+			request: &httpgrpc.HTTPRequest{
+				Method: "POST",
+				Headers: []*httpgrpc.Header{
+					{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
+				},
+				Url:  "/otlp",
+				Body: []byte("invalid"),
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{Code: 400,
+				Headers: []*httpgrpc.Header{
 					{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
 					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
 				},
-				Body: mustMarshalStatus(t, 400, "ReadObjectCB: expect { or n, but found i, error found in #1 byte of ...|invalid|..., bigger context ...|invalid|..."),
+				Body: protoMarshalStatus(t, 400, "unexpected EOF"),
 			},
-			expectedGrpcErrorMessage: "rpc error: code = Code(400) desc = ReadObjectCB: expect { or n, but found i, error found in #1 byte of ...|invalid|..., bigger context ...|invalid|...",
+			expectedGrpcErrorMessage: "rpc error: code = Code(400) desc = unexpected EOF",
 		},
 		"invalid JSON with non-utf8 characters request returns 400": {
 			request: &httpgrpc.HTTPRequest{
@@ -1258,10 +1277,10 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 			},
 			expectedResponse: &httpgrpc.HTTPResponse{Code: 400,
 				Headers: []*httpgrpc.Header{
-					{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
+					{Key: "Content-Type", Values: []string{"application/json"}},
 					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
 				},
-				Body: mustMarshalStatus(t, 400, "ReadObjectCB: expect { or n, but found \ufffd, error found in #2 byte of ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011co|..., bigger context ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011container.runtime\u0012\u0008\n\u0006docker\n'\n\u0012container.h|..."),
+				Body: jsonMarshalStatus(t, 400, "ReadObjectCB: expect { or n, but found \ufffd, error found in #2 byte of ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011co|..., bigger context ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011container.runtime\u0012\u0008\n\u0006docker\n'\n\u0012container.h|..."),
 			},
 			expectedGrpcErrorMessage: "rpc error: code = Code(400) desc = ReadObjectCB: expect { or n, but found \ufffd, error found in #2 byte of ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011co|..., bigger context ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011container.runtime\u0012\u0008\n\u0006docker\n'\n\u0012container.h|...",
 		},
@@ -1306,15 +1325,15 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 					{Key: "Content-Type", Values: []string{"application/json"}},
 				},
 				Url: "/otlp",
-				// This is simple OTLP request, with "report_server_error".
+				// This is a simple OTLP request, with "report_server_error".
 				Body: []byte(`{"resourceMetrics": [{"scopeMetrics": [{"metrics": [{"name": "report_server_error", "gauge": {"dataPoints": [{"timeUnixNano": "1679912463340000000", "asDouble": 10.66}]}}]}]}]}`),
 			},
 			expectedResponse: &httpgrpc.HTTPResponse{Code: 503,
 				Headers: []*httpgrpc.Header{
-					{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
+					{Key: "Content-Type", Values: []string{"application/json"}},
 					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
 				},
-				Body: mustMarshalStatus(t, codes.Internal, "some random push error"),
+				Body: jsonMarshalStatus(t, codes.Internal, "some random push error"),
 			},
 			expectedGrpcErrorMessage: "rpc error: code = Code(503) desc = some random push error",
 		},
@@ -1377,8 +1396,16 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 	}
 }
 
-func mustMarshalStatus(t *testing.T, code codes.Code, msg string) []byte {
+func protoMarshalStatus(t *testing.T, code codes.Code, msg string) []byte {
+	t.Helper()
 	bytes, err := status.New(code, msg).Proto().Marshal()
+	require.NoError(t, err)
+	return bytes
+}
+
+func jsonMarshalStatus(t *testing.T, code codes.Code, msg string) []byte {
+	t.Helper()
+	bytes, err := json.Marshal(status.New(code, msg).Proto())
 	require.NoError(t, err)
 	return bytes
 }

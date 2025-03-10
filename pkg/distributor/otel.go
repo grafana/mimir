@@ -137,7 +137,7 @@ func OTLPHandler(
 
 		if errors.Is(pushErr, context.Canceled) {
 			level.Warn(logger).Log("msg", "push request canceled", "err", pushErr)
-			writeErrorToHTTPResponseBody(r.Context(), w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
+			writeErrorToHTTPResponseBody(r, w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
 			return
 		}
 		var (
@@ -164,7 +164,7 @@ func OTLPHandler(
 			level.Error(logger).Log(msgs...)
 		}
 		addHeaders(w, pushErr, r, httpCode, retryCfg)
-		writeErrorToHTTPResponseBody(r.Context(), w, httpCode, grpcCode, errorMsg, logger)
+		writeErrorToHTTPResponseBody(r, w, httpCode, grpcCode, errorMsg, logger)
 	})
 }
 
@@ -356,25 +356,42 @@ func httpRetryableToOTLPRetryable(httpStatusCode int) int {
 
 // writeErrorToHTTPResponseBody converts the given error into a gRPC status and marshals it into a byte slice, in order to be written to the response body.
 // See doc https://opentelemetry.io/docs/specs/otlp/#failures-1.
-func writeErrorToHTTPResponseBody(reqCtx context.Context, w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
+func writeErrorToHTTPResponseBody(r *http.Request, w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
 	validUTF8Msg := validUTF8Message(msg)
-	w.Header().Set("Content-Type", pbContentType)
+	contentType := r.Header.Get("Content-Type")
+	if contentType == "" {
+		// Default to protobuf encoding.
+		contentType = "application/x-protobuf"
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	if server.IsHandledByHttpgrpcServer(reqCtx) {
+	if server.IsHandledByHttpgrpcServer(r.Context()) {
 		w.Header().Set(server.ErrorMessageHeaderKey, validUTF8Msg) // If httpgrpc Server wants to convert this HTTP response into error, use this error message, instead of using response body.
 	}
 	w.WriteHeader(httpCode)
 
-	respBytes, err := proto.Marshal(status.New(grpcCode, validUTF8Msg).Proto())
-	if err != nil {
-		level.Error(logger).Log("msg", "otlp response marshal failed", "err", err)
-		writeResponseFailedBody, _ := proto.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
-		_, _ = w.Write(writeResponseFailedBody)
-		return
+	var respBytes []byte
+	var err error
+	st := status.New(grpcCode, validUTF8Msg).Proto()
+	if contentType == jsonContentType {
+		respBytes, err = json.Marshal(st)
+		if err != nil {
+			level.Error(logger).Log("msg", "otlp response marshal failed", "err", err)
+			writeResponseFailedBody, _ := json.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
+			_, _ = w.Write(writeResponseFailedBody)
+			return
+		}
+	} else {
+		respBytes, err = st.Marshal()
+		if err != nil {
+			level.Error(logger).Log("msg", "otlp response marshal failed", "err", err)
+			writeResponseFailedBody, _ := proto.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
+			_, _ = w.Write(writeResponseFailedBody)
+			return
+		}
 	}
 
-	_, err = w.Write(respBytes)
-	if err != nil {
+	if _, err := w.Write(respBytes); err != nil {
 		level.Error(logger).Log("msg", "write error to otlp response failed", "err", err)
 	}
 }
