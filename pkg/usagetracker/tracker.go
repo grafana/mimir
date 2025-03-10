@@ -488,7 +488,7 @@ func instancePartitions(instance, instances, partitions int32) (start, end int32
 	start = instancePartitionsStart(instance, partitions)
 	end = partitions
 	// I couldn't find a general formula for the end, so we just check the instances that steal ranges from us and find the one that starts earlier (if any).
-	for i := instance + 1; i < instances; i++ {
+	for i := int32(0); i < instances; i++ {
 		if thatInstanceStart := instancePartitionsStart(i, partitions); thatInstanceStart > start && thatInstanceStart < end {
 			end = thatInstanceStart
 		}
