@@ -45,10 +45,6 @@ func NewAbsentOverTime(
 	}
 }
 
-func (a *AbsentOverTime) ExpressionPosition() posrange.PositionRange {
-	return a.expressionPosition
-}
-
 func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
 	innerMetadata, err := a.inner.SeriesMetadata(ctx)
 	if err != nil {
@@ -116,6 +112,10 @@ func (a *AbsentOverTime) NextSeries(_ context.Context) (types.InstantVectorSerie
 	}
 	return output, nil
 
+}
+
+func (a *AbsentOverTime) ExpressionPosition() posrange.PositionRange {
+	return a.expressionPosition
 }
 
 func (a *AbsentOverTime) Close() {
