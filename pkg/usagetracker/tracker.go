@@ -365,10 +365,10 @@ losingPartitions:
 //
 //   - DELETE
 //     Sets ingester ring entry back to read-write mode.
-func (i *UsageTracker) PrepareInstanceRingDownscaleHandler(w http.ResponseWriter, r *http.Request) {
+func (t *UsageTracker) PrepareInstanceRingDownscaleHandler(w http.ResponseWriter, r *http.Request) {
 	// Don't allow callers to change the shutdown configuration while we're in the middle
 	// of starting or shutting down.
-	if i.State() != services.Running {
+	if t.State() != services.Running {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
@@ -376,24 +376,24 @@ func (i *UsageTracker) PrepareInstanceRingDownscaleHandler(w http.ResponseWriter
 	switch r.Method {
 	case http.MethodPost:
 		// Calling this repeatedly doesn't update the read-only timestamp, if instance is already in read-only mode.
-		err := i.instanceLifecycler.ChangeReadOnlyState(r.Context(), true)
+		err := t.instanceLifecycler.ChangeReadOnlyState(r.Context(), true)
 		if err != nil {
-			level.Error(i.logger).Log("msg", "failed to set ingester to read-only mode in the ring", "err", err)
+			level.Error(t.logger).Log("msg", "failed to set ingester to read-only mode in the ring", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 	case http.MethodDelete:
 		// Clear the read-only status.
-		err := i.instanceLifecycler.ChangeReadOnlyState(r.Context(), false)
+		err := t.instanceLifecycler.ChangeReadOnlyState(r.Context(), false)
 		if err != nil {
-			level.Error(i.logger).Log("msg", "failed to clear ingester's read-only mode", "err", err)
+			level.Error(t.logger).Log("msg", "failed to clear ingester's read-only mode", "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
 
-	ro, rots := i.instanceLifecycler.GetReadOnlyState()
+	ro, rots := t.instanceLifecycler.GetReadOnlyState()
 	if ro {
 		util.WriteJSONResponse(w, map[string]any{"timestamp": rots.Unix()})
 	} else {
