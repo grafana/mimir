@@ -13,7 +13,7 @@ weight: 20
 
 The Alertmanager resources dashboard shows CPU, memory, disk and networking metrics for the Alertmanager.
 
-This dashboard requires [additional resources metrics]({{< relref "../../requirements#additional-resources-metrics" >}}).
+This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
 
 ## Example
 
