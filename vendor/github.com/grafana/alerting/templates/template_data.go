@@ -30,6 +30,11 @@ type Data = template.Data
 
 var newTemplate = template.New
 
+var (
+	// Provides current time. Can be overwritten in tests.
+	timeNow = time.Now
+)
+
 type TemplateDefinition struct {
 	// Name of the template. Used to identify the template in the UI and when testing.
 	Name string
@@ -226,7 +231,23 @@ func generateDashboardURL(alert template.Alert, baseURL url.URL) *url.URL {
 		return nil
 	}
 
-	return baseURL.JoinPath("/d/", dashboardUID)
+	dashboardURL := baseURL.JoinPath("/d/", dashboardUID)
+
+	if !alert.StartsAt.IsZero() {
+		// Set reasonable from/to time range for the dashboard.
+		from := alert.StartsAt.Add(-time.Hour).UnixMilli()
+		to := alert.EndsAt.UnixMilli()
+		if alert.EndsAt.IsZero() {
+			to = timeNow().UnixMilli() // Firing alerts have a sanitized EndsAt time of zero, so use current time.
+		}
+
+		q := dashboardURL.Query()
+		q.Set("from", fmt.Sprintf("%d", from))
+		q.Set("to", fmt.Sprintf("%d", to))
+		dashboardURL.RawQuery = q.Encode()
+	}
+
+	return dashboardURL
 }
 
 // generatePanelURL generates a URL to the attached dashboard panel for a given alert in Grafana. Returns a new URL.
