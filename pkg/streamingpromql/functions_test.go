@@ -81,6 +81,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		//lint:sorted
 		"abs":                `abs({__name__=~"float.*"})`,
 		"absent":             `<skip>`,
+		"absent_over_time":   `<skip>`,
 		"acos":               `acos({__name__=~"float.*"})`,
 		"acosh":              `acosh({__name__=~"float.*"})`,
 		"asin":               `asin({__name__=~"float.*"})`,
