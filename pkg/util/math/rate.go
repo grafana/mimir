@@ -12,6 +12,10 @@ import (
 	"go.uber.org/atomic"
 )
 
+const (
+	defaultWarmupSamples uint8 = 60
+)
+
 // EwmaRate tracks an exponentially weighted moving average of a per-second rate.
 type EwmaRate struct {
 	newEvents atomic.Int64
@@ -19,15 +23,26 @@ type EwmaRate struct {
 	alpha    float64
 	interval time.Duration
 
-	mutex    sync.RWMutex
-	lastRate float64
-	init     bool
+	mutex         sync.RWMutex
+	lastRate      float64
+	init          bool
+	count         uint8
+	warmupSamples uint8
 }
 
 func NewEWMARate(alpha float64, interval time.Duration) *EwmaRate {
 	return &EwmaRate{
-		alpha:    alpha,
-		interval: interval,
+		alpha:         alpha,
+		interval:      interval,
+		warmupSamples: defaultWarmupSamples,
+	}
+}
+
+func NewEWMARateWithWarmup(alpha float64, interval time.Duration, warmupSamples uint8) *EwmaRate {
+	return &EwmaRate{
+		alpha:         alpha,
+		interval:      interval,
+		warmupSamples: warmupSamples,
 	}
 }
 
@@ -35,6 +50,12 @@ func NewEWMARate(alpha float64, interval time.Duration) *EwmaRate {
 func (r *EwmaRate) Rate() float64 {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
+
+	// until the first `warmupSamples` have been seen, the moving average is "not ready" to be queried
+	if r.count < r.warmupSamples {
+		return 0.0
+	}
+
 	return r.lastRate
 }
 
@@ -45,6 +66,10 @@ func (r *EwmaRate) Tick() {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
+	if r.count < r.warmupSamples {
+		r.count++
+	}
 
 	if r.init {
 		r.lastRate += r.alpha * (instantRate - r.lastRate)
