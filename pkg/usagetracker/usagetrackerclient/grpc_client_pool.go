@@ -45,8 +45,8 @@ func newUsageTrackerClientPool(discovery client.PoolServiceDiscovery, clientName
 	})
 
 	var factory client.PoolFactory
-	if clientConfig.clientFactory != nil {
-		factory = clientConfig.clientFactory
+	if clientConfig.ClientFactory != nil {
+		factory = clientConfig.ClientFactory
 	} else {
 		factory = newUsageTrackerClientFactory(clientName, clientCfg, registerer)
 	}
