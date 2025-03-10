@@ -119,11 +119,11 @@ func OTLPHandler(
 				// https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md#otlphttp-response.
 				var expResp colmetricpb.ExportMetricsServiceResponse
 				contentType := r.Header.Get("Content-Type")
-				if contentType == "application/json" {
+				if contentType == jsonContentType {
 					w.Header().Set("Content-Type", contentType)
 					data, _ := json.Marshal(&expResp)
 					_, _ = w.Write([]byte(data))
-				} else if contentType == "application/x-protobuf" {
+				} else if contentType == pbContentType {
 					w.Header().Set("Content-Type", contentType)
 					data, _ := proto.Marshal(&expResp)
 					_, _ = w.Write(data)
@@ -358,7 +358,7 @@ func httpRetryableToOTLPRetryable(httpStatusCode int) int {
 // See doc https://opentelemetry.io/docs/specs/otlp/#failures-1.
 func writeErrorToHTTPResponseBody(reqCtx context.Context, w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
 	validUTF8Msg := validUTF8Message(msg)
-	w.Header().Set("Content-Type", "application/x-protobuf")
+	w.Header().Set("Content-Type", pbContentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if server.IsHandledByHttpgrpcServer(reqCtx) {
 		w.Header().Set(server.ErrorMessageHeaderKey, validUTF8Msg) // If httpgrpc Server wants to convert this HTTP response into error, use this error message, instead of using response body.

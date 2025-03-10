@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/concurrency"
@@ -36,6 +37,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -1208,6 +1210,8 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 		expectedGrpcErrorMessage string
 	}
 
+	emptyReqProto, err := proto.Marshal(&colmetricpb.ExportMetricsServiceRequest{})
+	require.NoError(t, err)
 	testcases := map[string]testCase{
 		"missing content type returns 415": {
 			request: &httpgrpc.HTTPRequest{
@@ -1278,6 +1282,23 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 			},
 			expectedGrpcErrorMessage: "", // No error expected
 		},
+		"empty protobuf is good request, with 200 status code": {
+			request: &httpgrpc.HTTPRequest{
+				Method: "POST",
+				Headers: []*httpgrpc.Header{
+					{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
+				},
+				Url:  "/otlp",
+				Body: emptyReqProto,
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{Code: 200,
+				Headers: []*httpgrpc.Header{
+					{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
+				},
+				Body: nil,
+			},
+			expectedGrpcErrorMessage: "", // No error expected
+		},
 		"trigger 5xx error by sending special metric": {
 			request: &httpgrpc.HTTPRequest{
 				Method: "POST",
@@ -1306,7 +1327,6 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 		t.Run(fmt.Sprintf("grpc: %s", name), func(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "test")
 			resp, err := hc.Handle(ctx, tc.request)
-
 			if err != nil {
 				require.EqualError(t, err, tc.expectedGrpcErrorMessage)
 
