@@ -91,7 +91,7 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 	return metadata, nil
 }
 
-func (a *AbsentOverTime) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (a *AbsentOverTime) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {
 	output := types.InstantVectorSeriesData{}
 
 	var err error
