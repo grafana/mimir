@@ -19,10 +19,7 @@ import (
 // AbsentOverTime performs a rate calculation over a range vector.
 type AbsentOverTime struct {
 	inner                    types.RangeVectorOperator
-	ScalarArgs               []types.ScalarOperator
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
-
-	rangeSeconds float64
 
 	expressionPosition posrange.PositionRange
 	timeRange          types.QueryTimeRange
@@ -58,8 +55,6 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 		return nil, err
 	}
 	defer types.PutSeriesMetadataSlice(innerMetadata)
-
-	a.rangeSeconds = a.inner.Range().Seconds()
 
 	a.presence, err = types.BoolSlicePool.Get(a.timeRange.StepCount, a.memoryConsumptionTracker)
 	if err != nil {
