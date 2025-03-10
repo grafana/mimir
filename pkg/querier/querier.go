@@ -387,11 +387,12 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 		return storage.ErrSeriesSet(NewMaxQueryLengthError(endTime.Sub(startTime), maxQueryLength))
 	}
 
-	// If the original request didn't have a limit but the limit was enforced, annotate the resulting series set with a warning.
-	if sp.Limit == 0 && sp.Limit != limit {
+	// If the requested limit was enforced, annotate the resulting series set with a warning.
+	if limit > 0 && sp.Limit != limit {
+		origLimit := sp.Limit
 		defer func() {
 			var warning annotations.Annotations
-			warning.Add(errors.New("results may be truncated due to limit"))
+			warning.Add(NewMaxSeriesQueryLimitError(origLimit, limit))
 			set = series.NewSeriesSetWithWarnings(set, warning)
 		}()
 	}
