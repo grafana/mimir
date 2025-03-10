@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +31,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
+	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"go.uber.org/multierr"
 	"google.golang.org/grpc/codes"
 
@@ -109,43 +111,60 @@ func OTLPHandler(
 
 		pushErr := push(ctx, req)
 		if pushErr == nil {
-			// Push was successful, but OTLP converter left out some samples. We let the client know about it by replying with 4xx (and an insight log).
 			if otlpErr := otlpConverter.Err(); otlpErr != nil {
+				// Push was successful, but OTLP converter left out some samples. We let the client know about it by replying with 4xx (and an insight log).
 				pushErr = httpgrpc.Error(http.StatusBadRequest, otlpErr.Error())
-			}
-		}
-		if pushErr != nil {
-			if errors.Is(pushErr, context.Canceled) {
-				level.Warn(logger).Log("msg", "push request canceled", "err", pushErr)
-				writeErrorToHTTPResponseBody(r.Context(), w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
+			} else {
+				// Respond as per spec:
+				// https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md#otlphttp-response.
+				var expResp colmetricpb.ExportMetricsServiceResponse
+				contentType := r.Header.Get("Content-Type")
+				if contentType == "application/json" {
+					w.Header().Set("Content-Type", contentType)
+					data, _ := json.Marshal(&expResp)
+					_, _ = w.Write([]byte(data))
+				} else if contentType == "application/x-protobuf" {
+					w.Header().Set("Content-Type", contentType)
+					data, _ := proto.Marshal(&expResp)
+					_, _ = w.Write(data)
+				} else {
+					level.Warn(logger).Log("msg", "unrecognized Content-Type request header", "content_type", contentType)
+				}
+
 				return
 			}
-			var (
-				httpCode int
-				grpcCode codes.Code
-				errorMsg string
-			)
-			if st, ok := grpcutil.ErrorToStatus(pushErr); ok {
-				// This code is needed for a correct handling of errors returned by the supplier function.
-				// These errors are created by using the httpgrpc package.
-				httpCode = httpRetryableToOTLPRetryable(int(st.Code()))
-				grpcCode = st.Code()
-				errorMsg = st.Message()
-			} else {
-				grpcCode, httpCode = toOtlpGRPCHTTPStatus(pushErr)
-				errorMsg = pushErr.Error()
-			}
-			if httpCode != 202 {
-				// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
-				msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", pushErr}
-				if httpCode/100 == 4 {
-					msgs = append(msgs, "insight", true)
-				}
-				level.Error(logger).Log(msgs...)
-			}
-			addHeaders(w, pushErr, r, httpCode, retryCfg)
-			writeErrorToHTTPResponseBody(r.Context(), w, httpCode, grpcCode, errorMsg, logger)
 		}
+
+		if errors.Is(pushErr, context.Canceled) {
+			level.Warn(logger).Log("msg", "push request canceled", "err", pushErr)
+			writeErrorToHTTPResponseBody(r.Context(), w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
+			return
+		}
+		var (
+			httpCode int
+			grpcCode codes.Code
+			errorMsg string
+		)
+		if st, ok := grpcutil.ErrorToStatus(pushErr); ok {
+			// This code is needed for a correct handling of errors returned by the supplier function.
+			// These errors are created by using the httpgrpc package.
+			httpCode = httpRetryableToOTLPRetryable(int(st.Code()))
+			grpcCode = st.Code()
+			errorMsg = st.Message()
+		} else {
+			grpcCode, httpCode = toOtlpGRPCHTTPStatus(pushErr)
+			errorMsg = pushErr.Error()
+		}
+		if httpCode != 202 {
+			// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
+			msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", pushErr}
+			if httpCode/100 == 4 {
+				msgs = append(msgs, "insight", true)
+			}
+			level.Error(logger).Log(msgs...)
+		}
+		addHeaders(w, pushErr, r, httpCode, retryCfg)
+		writeErrorToHTTPResponseBody(r.Context(), w, httpCode, grpcCode, errorMsg, logger)
 	})
 }
 
@@ -336,7 +355,7 @@ func httpRetryableToOTLPRetryable(httpStatusCode int) int {
 }
 
 // writeErrorToHTTPResponseBody converts the given error into a gRPC status and marshals it into a byte slice, in order to be written to the response body.
-// See doc https://opentelemetry.io/docs/specs/otlp/#failures-1
+// See doc https://opentelemetry.io/docs/specs/otlp/#failures-1.
 func writeErrorToHTTPResponseBody(reqCtx context.Context, w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
 	validUTF8Msg := validUTF8Message(msg)
 	w.Header().Set("Content-Type", "application/x-protobuf")
