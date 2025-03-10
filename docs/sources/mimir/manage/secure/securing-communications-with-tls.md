@@ -150,8 +150,8 @@ Each of the components listed above support the following TLS configuration opti
 - `*.tls-enabled=<boolean>`: Enable TLS in the client.
 - `*.tls-server-name=<string>`: Override the expected name on the server certificate.
 - `*.tls-insecure-skip-verify=<boolean>`: Skip validating the server certificate.
-- `*.tls-cipher-suites=<string>`: Comma-separated list of accepted cipher suites. For the list of supported cipher suites, refer to [Grafana Mimir configuration parameters]({{< relref "../../configure/configuration-parameters" >}}).
-- `*.tls-min-version=<string>`: Minimum TLS version required. For the list of supported versions, refer to [Grafana Mimir configuration parameters]({{< relref "../../configure/configuration-parameters" >}}).
+- `*.tls-cipher-suites=<string>`: Comma-separated list of accepted cipher suites. For the list of supported cipher suites, refer to [Grafana Mimir configuration parameters](../../../configure/configuration-parameters/).
+- `*.tls-min-version=<string>`: Minimum TLS version required. For the list of supported versions, refer to [Grafana Mimir configuration parameters](../../../configure/configuration-parameters/).
 - `*.tls-cert-path=<string>`: Path to the client certificate.
 - `*.tls-key-path=<string>`: Path to the key for the client certificate.
 - `*.tls-ca-path=<string>`: Path to the CA certificates to validate server certificate against.
