@@ -1148,7 +1148,7 @@ eval range from 0s to 66m step 6m absent(histo{case="a"})
 eval range from 0s to 66m step 6m absent(histo{case=~"(0|a)"})
   {} 1
 
-# test absent_over_time() 
+# test absent_over_time()
 eval instant at 0m absent_over_time(series[10m])
   # expected no result
 
