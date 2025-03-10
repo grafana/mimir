@@ -178,7 +178,7 @@ Additionally, if backend results comparison is configured, two native histograms
 
 ### Ruler remote operational mode test
 
-When the ruler is configured with the [remote evaluation mode]({{< relref "../../references/architecture/components/ruler" >}}) you can use the query-tee to compare rule evaluations too.
+When the ruler is configured with the [remote evaluation mode](../../../references/architecture/components/ruler/) you can use the query-tee to compare rule evaluations too.
 To test ruler evaluations with query-tee, set the `-ruler.query-frontend.address` CLI flag or its respective YAML configuration parameter for the ruler with query-tee's gRPC address:
 
 ```

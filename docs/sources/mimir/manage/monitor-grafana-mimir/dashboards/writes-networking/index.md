@@ -14,7 +14,7 @@ weight: 190
 The Writes networking dashboard shows receive/transmit bandwidth, inflight requests, and TCP connections.
 The dashboard isolates each service on the write path into its own section and displays the order in which a write request flows.
 
-This dashboard requires [additional resources metrics]({{< relref "../../requirements#additional-resources-metrics" >}}).
+This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
 
 ## Example
 
