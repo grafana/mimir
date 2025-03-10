@@ -235,7 +235,10 @@ func TestGroupCompactE2E(t *testing.T) {
 		sy, err := newMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
 		require.NoError(t, err)
 
-		comp, err := tsdb.NewLeveledCompactor(ctx, reg, util_log.SlogFromGoKit(logger), []int64{1000, 3000}, nil, nil)
+		comp, err := tsdb.NewLeveledCompactorWithOptions(ctx, reg, util_log.SlogFromGoKit(logger), []int64{1000, 3000}, nil, tsdb.LeveledCompactorOptions{
+			EnableOverlappingCompaction: true,
+			CacheAllSymbols:             false,
+		})
 		require.NoError(t, err)
 
 		planner := NewSplitAndMergePlanner([]int64{1000, 3000})
@@ -609,7 +612,7 @@ func createEmptyBlock(dir string, mint, maxt int64, extLset labels.Labels, resol
 		return ulid.ULID{}, errors.Wrap(err, "close index")
 	}
 
-	w, err := index.NewWriter(context.Background(), path.Join(dir, uid.String(), "index"))
+	w, err := index.NewWriter(context.Background(), path.Join(dir, uid.String(), "index"), false)
 	if err != nil {
 		return ulid.ULID{}, errors.Wrap(err, "new index")
 	}
@@ -711,7 +714,10 @@ func createBlockWithOptions(
 	if err := g.Wait(); err != nil {
 		return id, err
 	}
-	c, err := tsdb.NewLeveledCompactor(ctx, nil, promslog.NewNopLogger(), []int64{maxt - mint}, nil, nil)
+	c, err := tsdb.NewLeveledCompactorWithOptions(ctx, nil, promslog.NewNopLogger(), []int64{maxt - mint}, nil, tsdb.LeveledCompactorOptions{
+		EnableOverlappingCompaction: true,
+		CacheAllSymbols:             false,
+	})
 	if err != nil {
 		return id, errors.Wrap(err, "create compactor")
 	}

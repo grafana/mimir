@@ -133,7 +133,7 @@ func GenerateBlockFromSpec(storageDir string, specs SeriesSpecs) (_ *Meta, retur
 	}
 
 	// Write index.
-	indexw, err := index.NewWriter(context.Background(), filepath.Join(blockDir, "index"))
+	indexw, err := index.NewWriter(context.Background(), filepath.Join(blockDir, "index"), false)
 	if err != nil {
 		return nil, err
 	}
@@ -273,7 +273,10 @@ func CreateBlock(
 	if err := g.Wait(); err != nil {
 		return id, err
 	}
-	c, err := tsdb.NewLeveledCompactor(ctx, nil, promslog.NewNopLogger(), []int64{maxt - mint}, nil, nil)
+	c, err := tsdb.NewLeveledCompactorWithOptions(ctx, nil, promslog.NewNopLogger(), []int64{maxt - mint}, nil, tsdb.LeveledCompactorOptions{
+		EnableOverlappingCompaction: true,
+		CacheAllSymbols:             false,
+	})
 	if err != nil {
 		return id, errors.Wrap(err, "create compactor")
 	}

@@ -52,7 +52,7 @@ func TestRewrite(t *testing.T) {
 	}
 
 	require.NoError(t, os.MkdirAll(filepath.Join(tmpDir, m.ULID.String()), os.ModePerm))
-	iw, err := index.NewWriter(ctx, filepath.Join(tmpDir, m.ULID.String(), IndexFilename))
+	iw, err := index.NewWriter(ctx, filepath.Join(tmpDir, m.ULID.String(), IndexFilename), false)
 	require.NoError(t, err)
 	defer iw.Close()
 

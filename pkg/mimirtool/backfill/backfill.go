@@ -78,7 +78,7 @@ func CreateBlocks(input IteratorCreator, mint, maxt int64, maxSamplesInAppender 
 	blockDuration := tsdb.DefaultBlockDuration
 	mint = blockDuration * (mint / blockDuration)
 
-	db, err := tsdb.OpenDBReadOnly(outputDir, "", nil)
+	db, err := tsdb.OpenDBReadOnly(outputDir, "", false, nil)
 	if err != nil {
 		return err
 	}
@@ -93,7 +93,7 @@ func CreateBlocks(input IteratorCreator, mint, maxt int64, maxSamplesInAppender 
 
 	for t := mint; t <= maxt; t = t + blockDuration/2 {
 		err := func() error {
-			w, err := tsdb.NewBlockWriter(promslog.NewNopLogger(), outputDir, blockDuration)
+			w, err := tsdb.NewBlockWriter(promslog.NewNopLogger(), outputDir, blockDuration, false)
 			if err != nil {
 				return errors.Wrap(err, "block writer")
 			}

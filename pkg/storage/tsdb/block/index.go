@@ -449,7 +449,7 @@ func Repair(ctx context.Context, logger log.Logger, dir string, id ulid.ULID, so
 	}
 	defer runutil.CloseWithErrCapture(&err, chunkw, "repair chunk writer")
 
-	indexw, err := index.NewWriter(ctx, filepath.Join(resdir, IndexFilename))
+	indexw, err := index.NewWriter(ctx, filepath.Join(resdir, IndexFilename), false)
 	if err != nil {
 		return resid, errors.Wrap(err, "open index writer")
 	}
