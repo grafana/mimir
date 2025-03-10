@@ -12,6 +12,6 @@ weight: 30
 
 # Configure Grafana Mimir
 
-Grafana Mimir's flexibility is achieved through configuration.
+Tune the Grafana Mimir configuration to suit your environment.
 
 {{< section menuTitle="true" >}}
