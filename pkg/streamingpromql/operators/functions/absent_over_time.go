@@ -18,13 +18,13 @@ import (
 
 // AbsentOverTime performs a rate calculation over a range vector.
 type AbsentOverTime struct {
+	timeRange                types.QueryTimeRange
+	argExpressions           parser.Expr
 	inner                    types.RangeVectorOperator
+	expressionPosition       posrange.PositionRange
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
-
-	expressionPosition posrange.PositionRange
-	timeRange          types.QueryTimeRange
-	presence           []bool
-	argExpressions     parser.Expr
+	presence                 []bool
+	exhausted                bool
 }
 
 var _ types.InstantVectorOperator = &AbsentOverTime{}
@@ -37,9 +37,9 @@ func NewAbsentOverTime(
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 ) *AbsentOverTime {
 	return &AbsentOverTime{
+		timeRange:                timeRange,
 		inner:                    inner,
 		argExpressions:           argExpressions,
-		timeRange:                timeRange,
 		expressionPosition:       expressionPosition,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
@@ -93,6 +93,11 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 
 func (a *AbsentOverTime) NextSeries(_ context.Context) (types.InstantVectorSeriesData, error) {
 	output := types.InstantVectorSeriesData{}
+	if a.exhausted {
+		return output, types.EOS
+	}
+
+	a.exhausted = true
 
 	var err error
 	for step := range a.timeRange.StepCount {
