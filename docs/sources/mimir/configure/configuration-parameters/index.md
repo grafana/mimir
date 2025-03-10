@@ -3932,13 +3932,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -compactor.block-upload-max-block-size-bytes
 [compactor_block_upload_max_block_size_bytes: <int> | default = 0]
 
-# (experimental) Blocks uploaded before the lookback aren't considered in
-# compactor cycles. If set, this value should be larger than all values in
-# `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all
-# blocks are considered regardless of their upload time.
-# CLI flag: -compactor.max-lookback
-[compactor_max_lookback: <duration> | default = 0s]
-
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings
 # are used.
@@ -4972,6 +4965,13 @@ sharding_ring:
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 
+# (experimental) Blocks uploaded before the lookback aren't considered in
+# compactor cycles. If set, this value should be larger than all values in
+# `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all
+# blocks are considered regardless of their upload time.
+# CLI flag: -compactor.max-lookback
+[max_lookback: <duration> | default = 0s]
+
 # (experimental) If enabled, the compactor constructs and uploads sparse index
 # headers to object storage during each compaction cycle. This allows
 # store-gateway instances to use the sparse headers from object storage instead
@@ -5509,8 +5509,8 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 
 # (experimental) The S3 storage class to use, not set by default. Details can be
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
-# STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING,
-# GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE
+# STANDARD, REDUCED_REDUNDANCY, GLACIER, STANDARD_IA, ONEZONE_IA,
+# INTELLIGENT_TIERING, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE
 # CLI flag: -<prefix>.s3.storage-class
 [storage_class: <string> | default = ""]
 
