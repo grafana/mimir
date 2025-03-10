@@ -38,7 +38,7 @@ type Config struct {
 	TLS        tls.ClientConfig `yaml:",inline"`
 
 	// Allow to inject custom client factory in tests.
-	clientFactory client.PoolFactory `yaml:"-"`
+	ClientFactory client.PoolFactory `yaml:"-"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {

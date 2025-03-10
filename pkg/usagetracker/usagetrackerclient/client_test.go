@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package usagetrackerclient
+package usagetrackerclient_test
 
 import (
 	"context"
@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/usagetracker"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 )
 
@@ -82,7 +83,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		})
 
 		// Pre-condition check: all instances should be healthy.
-		set, err := instanceRing.GetAllHealthy(TrackSeriesOp)
+		set, err := instanceRing.GetAllHealthy(usagetrackerclient.TrackSeriesOp)
 		require.NoError(t, err)
 		require.Len(t, set.Instances, 4)
 
@@ -117,7 +118,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
 
-		clientCfg.clientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
 			mock, ok := instances[instance.Id]
 			if ok {
 				return mock, nil
@@ -126,7 +127,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -181,7 +182,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
 
-		clientCfg.clientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
 			mock, ok := instances[instance.Id]
 			if ok {
 				return mock, nil
@@ -190,7 +191,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -239,7 +240,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
 
-		clientCfg.clientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
 			mock, ok := instances[instance.Id]
 			if ok {
 				return mock, nil
@@ -248,7 +249,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -324,7 +325,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		clientCfg := createTestClientConfig()
 		clientCfg.PreferAvailabilityZone = "zone-b"
 
-		clientCfg.clientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
 			mock, ok := instances[instance.Id]
 			if ok {
 				return mock, nil
@@ -333,7 +334,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -391,7 +392,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			"usage-tracker-zone-b-2": newUsageTrackerMockWithSuccessfulResponse(),
 		}
 
-		clientCfg.clientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
 			mock, ok := instances[instance.Id]
 			if ok {
 				return mock, nil
@@ -400,7 +401,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -447,7 +448,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			"usage-tracker-zone-b-2": newUsageTrackerMockWithSuccessfulResponse(),
 		}
 
-		clientCfg.clientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
 			mock, ok := instances[instance.Id]
 			if ok {
 				return mock, nil
@@ -456,7 +457,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, logger, registerer)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -468,8 +469,8 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 	})
 }
 
-func createTestClientConfig() Config {
-	cfg := Config{}
+func createTestClientConfig() usagetrackerclient.Config {
+	cfg := usagetrackerclient.Config{}
 	flagext.DefaultValues(&cfg)
 
 	// No hedging in tests by default.
