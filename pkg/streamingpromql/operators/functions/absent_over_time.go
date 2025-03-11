@@ -97,7 +97,6 @@ func (a *AbsentOverTime) NextSeries(_ context.Context) (types.InstantVectorSerie
 
 	var err error
 	for step := range a.timeRange.StepCount {
-		t := a.timeRange.IndexTime(int64(step))
 		if a.presence[step] {
 			continue
 		}
@@ -108,6 +107,8 @@ func (a *AbsentOverTime) NextSeries(_ context.Context) (types.InstantVectorSerie
 				return output, err
 			}
 		}
+
+		t := a.timeRange.IndexTime(int64(step))
 		output.Floats = append(output.Floats, promql.FPoint{T: t, F: 1})
 	}
 	return output, nil
