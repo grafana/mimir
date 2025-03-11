@@ -1058,6 +1058,8 @@ load 6m
   series{case="a"} _ 1 _ 1 _ 1 _ 1 _ 1 _
   series{case="b"} _ _ 2 _ 2 _ 2 _ 2 _ 2
   series{case="c"} _ _ _ 3 _ _ _ 3 _ _ _
+  histo{case="0"} _x11
+  histo{case="a"} _ {{schema:0 sum:1 count:1}}x10
 
 eval instant at 0m absent(series)
   # expected no result
@@ -1100,11 +1102,6 @@ eval range from 0s to 66m step 6m absent(series > Inf)
 
 eval range from 0s to 66m step 6m absent(non_existent_metric)
   {} 1x11
-
-# test absent() with histogram
-load 6m
-  histo{case="0"} _x11
-  histo{case="a"} _ {{schema:0 sum:1 count:1}}x10
 
 eval instant at 0m absent(histo)
   {} 1
@@ -1166,11 +1163,6 @@ eval range from 0s to 66m step 6m absent_over_time((series > Inf)[10m:1m])
 
 eval range from 0s to 66m step 6m absent_over_time(non_existent_metric[10m])
   {} 1x11
-
-# test absent_over_time() with histogram
-load 6m
-  histo{case="0"} _x11
-  histo{case="a"} _ {{schema:0 sum:1 count:1}}x10
 
 eval instant at 0m absent_over_time(histo[10m])
   {} 1
