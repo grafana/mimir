@@ -2527,6 +2527,124 @@ func TestDeltaAnnotations(t *testing.T) {
 			},
 		},
 	}
+
+	runAnnotationTests(t, testCases)
+}
+
+func TestIrateIdeltaAnnotations(t *testing.T) {
+	irateData := `
+		metric{series="floats"} 1 2
+		metric{series="nh"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}}
+		metric{series="mixed-float-nh"} 10 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1]}}
+		metric{series="mixed-exponential-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 12] buckets:[1]}}
+		metric{series="nh-first-gauge"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}
+		metric{series="nh-second-gauge"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}
+	`
+
+	ideltaData := `
+		metric{series="floats"} 1 2
+		metric{series="nh"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}
+		metric{series="mixed-float-nh"} 10 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
+		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}
+		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 12] buckets:[1] counter_reset_hint:gauge}}
+		metric{series="nh-first-not-gauge"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}
+		metric{series="nh-second-not-gauge"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}
+	`
+
+	testCases := map[string]annotationTestCase{
+		"irate() over series with only floats": {
+			data:                       irateData,
+			expr:                       `irate(metric{series="floats"}[1m1s])`,
+			expectedWarningAnnotations: []string{},
+		},
+		"irate() over series with only native histograms": {
+			data:                       irateData,
+			expr:                       `irate(metric{series="nh"}[1m1s])`,
+			expectedWarningAnnotations: []string{},
+		},
+		"irate() over series with mixed floats and native histograms": {
+			data: irateData,
+			expr: `irate(metric{series="mixed-float-nh"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: encountered a mix of histograms and floats for metric name "metric" (1:7)`,
+			},
+		},
+		// In the case where irate() is run over a metric with both exponential and custom buckets,
+		// the change in schema counts as a reset and so we'll just return the last point with no annotation.
+		"irate() over metric with incompatible schema": {
+			data:                       irateData,
+			expr:                       `irate(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
+			expectedWarningAnnotations: []string{},
+		},
+		// Similar to the case above: change in bucket layout counts as a reset, so we won't return an annotation.
+		"irate() over metric with incompatible custom buckets": {
+			data:                       irateData,
+			expr:                       `irate(metric{series="incompatible-custom-buckets"}[1m1s])`,
+			expectedWarningAnnotations: []string{},
+		},
+		"irate() over metric with first point not being a counter native histogram": {
+			data: irateData,
+			expr: `irate(metric{series="nh-first-gauge"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: this native histogram metric is not a counter: "metric" (1:7)`,
+			},
+		},
+		"irate() over metric with second point not being a counter native histogram": {
+			data: irateData,
+			expr: `irate(metric{series="nh-second-gauge"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: this native histogram metric is not a counter: "metric" (1:7)`,
+			},
+		},
+
+		"idelta() over series with only floats": {
+			data:                       ideltaData,
+			expr:                       `idelta(metric{series="floats"}[1m1s])`,
+			expectedWarningAnnotations: []string{},
+		},
+		"idelta() over series with only native histograms": {
+			data:                       ideltaData,
+			expr:                       `idelta(metric{series="nh"}[1m1s])`,
+			expectedWarningAnnotations: []string{},
+		},
+		"idelta() over series with mixed floats and native histograms": {
+			data: ideltaData,
+			expr: `idelta(metric{series="mixed-float-nh"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: encountered a mix of histograms and floats for metric name "metric" (1:8)`,
+			},
+		},
+		"idelta() over metric with incompatible schema": {
+			data: ideltaData,
+			expr: `idelta(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:8)`,
+			},
+		},
+		"idelta() over metric with incompatible custom buckets": {
+			data: ideltaData,
+			expr: `idelta(metric{series="incompatible-custom-buckets"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:8)`,
+			},
+		},
+		"idelta() over metric with first point not being a gauge native histogram": {
+			data: ideltaData,
+			expr: `idelta(metric{series="nh-first-not-gauge"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: this native histogram metric is not a gauge: "metric" (1:8)`,
+			},
+		},
+		"idelta() over metric with second point not being a gauge native histogram": {
+			data: ideltaData,
+			expr: `idelta(metric{series="nh-second-not-gauge"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: this native histogram metric is not a gauge: "metric" (1:8)`,
+			},
+		},
+	}
+
 	runAnnotationTests(t, testCases)
 }
 

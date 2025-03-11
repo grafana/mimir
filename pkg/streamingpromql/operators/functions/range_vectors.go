@@ -576,65 +576,150 @@ func linearRegression(head, tail []promql.FPoint, interceptTime int64) (slope, i
 }
 
 var Irate = FunctionOverRangeVectorDefinition{
-	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               irateIdelta(true),
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       irateIdelta(true),
+	NeedsSeriesNamesForAnnotations: true,
 }
 
 var Idelta = FunctionOverRangeVectorDefinition{
-	SeriesMetadataFunction: DropSeriesName,
-	StepFunc:               irateIdelta(false),
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       irateIdelta(false),
+	NeedsSeriesNamesForAnnotations: true,
 }
 
 func irateIdelta(isRate bool) RangeVectorStepFunction {
-	return func(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
-		// Histograms are ignored
-		fHead, fTail := step.Floats.UnsafePoints()
-
-		lenTail := len(fTail)
-		lenHead := len(fHead)
-
+	return func(step *types.RangeVectorStepData, _ float64, _ []types.ScalarData, _ types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 		// We need at least two samples to calculate irate or idelta
-		if lenHead+lenTail < 2 {
+		floatCount := step.Floats.Count()
+		histogramCount := step.Histograms.Count()
+
+		if floatCount+histogramCount < 2 {
 			return 0, false, nil, nil
 		}
 
-		var lastSample promql.FPoint
-		var previousSample promql.FPoint
-
-		// If tail has more than two samples, we should use the last two samples from tail.
-		// If tail has only one sample, the last sample is from the tail and the previous sample is last point in the head.
-		// Otherwise, last two samples are all in the head.
-		if lenTail >= 2 {
-			lastSample = fTail[lenTail-1]
-			previousSample = fTail[lenTail-2]
-		} else if lenTail == 1 {
-			lastSample = fTail[0]
-			previousSample = fHead[lenHead-1]
-		} else {
-			lastSample = fHead[lenHead-1]
-			previousSample = fHead[lenHead-2]
-		}
-
-		var resultValue float64
-		if isRate && lastSample.F < previousSample.F {
-			// Counter reset.
-			resultValue = lastSample.F
-		} else {
-			resultValue = lastSample.F - previousSample.F
-		}
-
-		sampledInterval := lastSample.T - previousSample.T
-		if sampledInterval == 0 {
-			// Avoid dividing by 0.
+		if floatCount < 2 && histogramCount < 2 {
+			// Only two points are a float and a histogram.
+			emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 			return 0, false, nil, nil
 		}
 
-		if isRate {
-			// Convert to per-second.
-			resultValue /= float64(sampledInterval) / 1000
+		var useHistograms bool
+		lastFloat, haveFloats := step.Floats.Last()
+		lastHistogram, haveHistograms := step.Histograms.Last()
+
+		if !haveHistograms {
+			// Easy case: only have floats, and we know we have at least two of them.
+			useHistograms = false
+		} else if !haveFloats {
+			// Easy case: only have histograms, and we know we have at least two of them.
+			useHistograms = true
+		} else if lastFloat.T > lastHistogram.T {
+			// We have a mixture of histograms and floats, and the last float sample is later than the last histogram.
+			// Check that the last two samples of any kind are both floats, and if so, use them to compute the result.
+			if floatCount < 2 {
+				emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+				return 0, false, nil, nil
+			}
+
+			secondLastFloat := step.Floats.PointAt(floatCount - 2)
+			if secondLastFloat.T < lastHistogram.T {
+				emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+				return 0, false, nil, nil
+			}
+
+			useHistograms = false
+		} else {
+			// Same as above, but using histograms to compute the final result.
+			if histogramCount < 2 {
+				emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+				return 0, false, nil, nil
+			}
+
+			secondLastHistogram := step.Histograms.PointAt(histogramCount - 2)
+			if secondLastHistogram.T < lastFloat.T {
+				emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+				return 0, false, nil, nil
+			}
+
+			useHistograms = true
 		}
-		return resultValue, true, nil, nil
+
+		if useHistograms {
+			lastSample := step.Histograms.PointAt(histogramCount - 1)
+			secondLastSample := step.Histograms.PointAt(histogramCount - 2)
+
+			value, err := histogramIrateIdelta(isRate, lastSample, secondLastSample, emitAnnotation)
+			return 0, false, value, err
+		}
+
+		// Use floats.
+		lastSample := step.Floats.PointAt(floatCount - 1)
+		secondLastSample := step.Floats.PointAt(floatCount - 2)
+
+		value, ok := floatIrateIdelta(isRate, lastSample, secondLastSample)
+		return value, ok, nil, nil
 	}
+}
+
+func floatIrateIdelta(isRate bool, lastSample, secondLastSample promql.FPoint) (float64, bool) {
+	var resultValue float64
+
+	if isRate && lastSample.F < secondLastSample.F {
+		// Counter reset.
+		resultValue = lastSample.F
+	} else {
+		resultValue = lastSample.F - secondLastSample.F
+	}
+
+	sampledInterval := lastSample.T - secondLastSample.T
+	if sampledInterval == 0 {
+		// Avoid dividing by 0.
+		return 0, false
+	}
+
+	if isRate {
+		// Convert to per-second.
+		resultValue /= float64(sampledInterval) / 1000
+	}
+
+	return resultValue, true
+}
+
+func histogramIrateIdelta(isRate bool, lastSample, secondLastSample promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+	resultValue := lastSample.H.Copy()
+
+	if isRate && (lastSample.H.CounterResetHint == histogram.GaugeType || secondLastSample.H.CounterResetHint == histogram.GaugeType) {
+		emitAnnotation(annotations.NewNativeHistogramNotCounterWarning)
+	}
+
+	if !isRate && (lastSample.H.CounterResetHint != histogram.GaugeType || secondLastSample.H.CounterResetHint != histogram.GaugeType) {
+		emitAnnotation(annotations.NewNativeHistogramNotGaugeWarning)
+	}
+
+	if !isRate || !lastSample.H.DetectReset(secondLastSample.H) {
+		_, err := resultValue.Sub(secondLastSample.H)
+		if err != nil {
+			// Convert the error to an annotation, if we can.
+			err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+			return nil, err
+		}
+	}
+
+	resultValue.CounterResetHint = histogram.GaugeType
+	resultValue.Compact(0)
+
+	sampledInterval := lastSample.T - secondLastSample.T
+	if sampledInterval == 0 {
+		// Avoid dividing by 0.
+		return nil, nil
+	}
+
+	if isRate {
+		// Convert to per-second.
+		resultValue.Div(float64(sampledInterval) / 1000)
+	}
+
+	return resultValue, nil
 }
 
 var StddevOverTime = FunctionOverRangeVectorDefinition{
