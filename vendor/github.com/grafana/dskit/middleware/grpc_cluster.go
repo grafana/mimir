@@ -16,16 +16,23 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
+// InvalidClusterValidationReporter is called by ClusterUnaryClientInterceptor to report the cluster validation issues
+// back to the caller. Its parameters are the error message explaining the reason for a bad cluster validation,
+// the involved cluster, and the method that triggered the validation.
+type InvalidClusterValidationReporter func(errorMsg string, cluster string, method string)
+
+// NoOpInvalidClusterValidationReporter in an InvalidClusterValidationReporter that reports nothing.
+var NoOpInvalidClusterValidationReporter InvalidClusterValidationReporter = func(string, string, string) {}
+
 // ClusterUnaryClientInterceptor propagates the given cluster label to gRPC metadata, before calling the next invoker.
-// If an empty cluster label, or a nil onInvalidCluster function are provided, ClusterUnaryClientInterceptor panics.
-// In case of an error related to the cluster label validation, onInvalidCluster function is called, and the error is returned.
-// The given onInvalidCluster function is supposed to contain 3 parameters, which are respectively the error message,
-// the cluster and the method, and represents what should be executed in case of an invalid cluster validation.
-func ClusterUnaryClientInterceptor(cluster string, onInvalidCluster func(string, string, string)) grpc.UnaryClientInterceptor {
-	validateClusterClientInterceptorInputParameters(cluster, onInvalidCluster)
+// If an empty cluster label, or a nil InvalidClusterValidationReporter are provided, ClusterUnaryClientInterceptor panics.
+// In case of an error related to the cluster label validation, InvalidClusterValidationReporter is called, and the error
+// is returned.
+func ClusterUnaryClientInterceptor(cluster string, invalidClusterValidationReporter InvalidClusterValidationReporter) grpc.UnaryClientInterceptor {
+	validateClusterClientInterceptorInputParameters(cluster, invalidClusterValidationReporter)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		ctx = clusterutil.PutClusterIntoOutgoingContext(ctx, cluster)
-		return handleClusterValidationError(invoker(ctx, method, req, reply, cc, opts...), cluster, method, onInvalidCluster)
+		return handleClusterValidationError(invoker(ctx, method, req, reply, cc, opts...), cluster, method, invalidClusterValidationReporter)
 	}
 }
 
@@ -38,7 +45,7 @@ func validateClusterClientInterceptorInputParameters(cluster string, onInvalidCl
 	}
 }
 
-func handleClusterValidationError(err error, cluster string, method string, onInvalidCluster func(string, string, string)) error {
+func handleClusterValidationError(err error, cluster string, method string, invalidClusterValidationReporter InvalidClusterValidationReporter) error {
 	if err == nil {
 		return nil
 	}
@@ -48,8 +55,7 @@ func handleClusterValidationError(err error, cluster string, method string, onIn
 			if errDetails, ok := details[0].(*grpcutil.ErrorDetails); ok {
 				if errDetails.GetCause() == grpcutil.WRONG_CLUSTER_VALIDATION_LABEL {
 					msg := fmt.Sprintf("request rejected by the server: %s", stat.Message())
-					onInvalidCluster(msg, cluster, method)
-
+					invalidClusterValidationReporter(msg, cluster, method)
 					return grpcutil.Status(codes.Internal, msg).Err()
 				}
 			}

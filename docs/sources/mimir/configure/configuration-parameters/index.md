@@ -512,8 +512,7 @@ storage:
   [filesystem: <filesystem_storage_backend>]
 
 client_cluster_validation:
-  # (experimental) Optionally define the cluster validation label to be sent
-  # together with the requests by the clients.
+  # (experimental) Optionally define the cluster validation label.
   # CLI flag: -common.client-cluster-validation.label
   [label: <string> | default = ""]
 ```
@@ -763,14 +762,14 @@ grpc_tls_config:
 [http_path_prefix: <string> | default = ""]
 
 cluster_validation:
-  # (experimental) Optionally define the server's cluster validation label. When
-  # the validation is enabled, this value will be compared with the cluster
-  # validation label received through the requests.
+  # (experimental) Optionally define the cluster validation label.
   # CLI flag: -server.cluster-validation.label
   [label: <string> | default = ""]
 
   grpc:
-    # (experimental) When enabled, cluster label validation will be executed.
+    # (experimental) When enabled, cluster label validation will be executed:
+    # configured cluster validation label will be compared with the cluster
+    # validation label received through the requests.
     # CLI flag: -server.cluster-validation.grpc.enabled
     [enabled: <boolean> | default = false]
 
@@ -1592,8 +1591,7 @@ store_gateway_client:
   [tls_min_version: <string> | default = ""]
 
   cluster_validation:
-    # (experimental) Optionally define the cluster validation label to be sent
-    # together with the requests by the clients.
+    # (experimental) Optionally define the cluster validation label.
     # CLI flag: -querier.store-gateway-client.cluster-validation.label
     [label: <string> | default = ""]
 
@@ -2684,8 +2682,7 @@ alertmanager_client:
   [connect_backoff_max_delay: <duration> | default = 5s]
 
   cluster_validation:
-    # (experimental) Optionally define the cluster validation label to be sent
-    # together with the requests by the clients.
+    # (experimental) Optionally define the cluster validation label.
     # CLI flag: -alertmanager.alertmanager-client.cluster-validation.label
     [label: <string> | default = ""]
 
@@ -2949,8 +2946,7 @@ backoff_config:
 [connect_backoff_max_delay: <duration> | default = 5s]
 
 cluster_validation:
-  # (experimental) Optionally define the cluster validation label to be sent
-  # together with the requests by the clients.
+  # (experimental) Optionally define the cluster validation label.
   # CLI flag: -<prefix>.cluster-validation.label
   [label: <string> | default = ""]
 ```

@@ -41,7 +41,7 @@ func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, lo
 	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor)
 	stream = append(stream, querierapi.ReadConsistencyClientStreamInterceptor)
 
-	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream, util.NewOnInvalidCluster(metrics.invalidClusterVerificationLabels, logger))
+	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(metrics.invalidClusterVerificationLabels, logger))
 	if err != nil {
 		return nil, err
 	}

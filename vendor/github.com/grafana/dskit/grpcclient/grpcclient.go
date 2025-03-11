@@ -2,7 +2,6 @@ package grpcclient
 
 import (
 	"flag"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -114,11 +113,12 @@ func (cfg *Config) CallOptions() []grpc.CallOption {
 }
 
 // DialOption returns the config as a grpc.DialOptions. The passed interceptors wrap around the configured middleware.
-// onInvalidCluster function is required to be non-nil, and it is executed in case of an invalid cluster validation,
-// when the latter is enabled.
-func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor, onInvalidCluster func(errorMsg string, cluster string, method string)) ([]grpc.DialOption, error) {
-	if onInvalidCluster == nil {
-		return nil, fmt.Errorf("onInvalidCluster must not be nil")
+// It requires an InvalidClusterValidationReporter for reporting the cluster validation issues back to the caller,
+// if cluster validation is enabled.
+// If a nil InvalidClusterValidationReporter is provided, a NoOpInvalidClusterValidationReporter is used.
+func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor, invalidClusterValidationReporter middleware.InvalidClusterValidationReporter) ([]grpc.DialOption, error) {
+	if invalidClusterValidationReporter == nil {
+		invalidClusterValidationReporter = middleware.NoOpInvalidClusterValidationReporter
 	}
 	var opts []grpc.DialOption
 	tlsOpts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
@@ -139,7 +139,7 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 	}
 
 	if cfg.ClusterValidation.Label != "" {
-		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidation.Label, onInvalidCluster)}, unaryClientInterceptors...)
+		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidation.Label, invalidClusterValidationReporter)}, unaryClientInterceptors...)
 	}
 
 	if cfg.ConnectTimeout > 0 {

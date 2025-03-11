@@ -43,7 +43,7 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 
 func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*storeGatewayClient, error) {
 	unary, stream := grpcclient.Instrument(requestDuration)
-	opts, err := clientCfg.DialOption(unary, stream, util.NewOnInvalidCluster(invalidClusterValidation, logger))
+	opts, err := clientCfg.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(invalidClusterValidation, logger))
 	if err != nil {
 		return nil, err
 	}

@@ -129,7 +129,7 @@ func newWithSchedulerClient(
 
 func (b *BlockBuilder) makeSchedulerClient() (schedulerpb.SchedulerClient, *grpc.ClientConn, error) {
 	unary := []grpc.UnaryClientInterceptor{otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())}
-	dialOpts, err := b.cfg.SchedulerConfig.GRPCClientConfig.DialOption(unary, nil, util.NewOnInvalidCluster(b.blockBuilderMetrics.invalidClusterValidation, b.logger))
+	dialOpts, err := b.cfg.SchedulerConfig.GRPCClientConfig.DialOption(unary, nil, util.NewInvalidClusterValidationReporter(b.blockBuilderMetrics.invalidClusterValidation, b.logger))
 	if err != nil {
 		return nil, nil, err
 	}
