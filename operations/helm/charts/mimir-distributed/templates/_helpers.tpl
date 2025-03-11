@@ -184,23 +184,23 @@ Alertmanager cluster bind address
 {{- end -}}
 
 {{- define "mimir.chunksCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-chunks-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "chunks-cache").port }}
+dns+{{ template "mimir.fullname" . }}-chunks-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "chunks-cache").port }}
 {{- end -}}
 
 {{- define "mimir.indexCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-index-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "index-cache").port }}
+dns+{{ template "mimir.fullname" . }}-index-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "index-cache").port }}
 {{- end -}}
 
 {{- define "mimir.metadataCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-metadata-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "metadata-cache").port }}
+dns+{{ template "mimir.fullname" . }}-metadata-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "metadata-cache").port }}
 {{- end -}}
 
 {{- define "mimir.resultsCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-results-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "results-cache").port }}
+dns+{{ template "mimir.fullname" . }}-results-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "results-cache").port }}
 {{- end -}}
 
 {{- define "mimir.adminCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-admin-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "admin-cache").port }}
+dns+{{ template "mimir.fullname" . }}-admin-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "admin-cache").port }}
 {{- end -}}
 
 {{/*
