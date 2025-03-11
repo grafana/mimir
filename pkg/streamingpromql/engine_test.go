@@ -2252,21 +2252,6 @@ func TestAnnotations(t *testing.T) {
 			},
 		},
 
-		"binary operation between native histograms with exponential and custom buckets": {
-			data: nativeHistogramsWithCustomBucketsData,
-			expr: `metric{series="exponential-buckets"} + ignoring(series) metric{series="custom-buckets-1"}`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "" (1:1)`,
-			},
-		},
-		"binary operation between native histograms with incompatible custom buckets": {
-			data: nativeHistogramsWithCustomBucketsData,
-			expr: `metric{series="custom-buckets-1"} + ignoring(series) metric{series="custom-buckets-2"}`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "" (1:1)`,
-			},
-		},
-
 		"topk() with only floats": {
 			data: mixedFloatHistogramData,
 			expr: `topk(1, metric{type="float"})`,
@@ -2702,24 +2687,31 @@ func TestBinaryOperationAnnotations(t *testing.T) {
 	metric{type="float", series="2"} 1+1x3
 	metric{type="histogram", series="1"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
 	metric{type="histogram", series="2"} {{schema:0 sum:1 count:1 buckets:[1]}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+	metric{type="histogram-custom-buckets", series="1"} {{schema:-53 sum:0 count:0 custom_values:[5 10]}}+{{schema:-53 sum:5 count:4 buckets:[1 2 1] custom_values:[5 10]}}x3
+	metric{type="histogram-custom-buckets", series="2"} {{schema:-53 sum:1 count:1 buckets:[1] custom_values:[5 10]}}+{{schema:-53 sum:5 count:4 buckets:[1 2 1] custom_values:[5 10]}}x3
+	metric{type="histogram-custom-buckets-other-layout", series="1"} {{schema:-53 sum:0 count:0 custom_values:[5 12]}}+{{schema:-53 sum:5 count:4 buckets:[1 2 1] custom_values:[5 12]}}x3
+	metric{type="histogram-custom-buckets-other-layout", series="2"} {{schema:-53 sum:1 count:1 buckets:[1] custom_values:[5 12]}}+{{schema:-53 sum:5 count:4 buckets:[1 2 1] custom_values:[5 12]}}x3
 `
 
 	testCases := map[string]annotationTestCase{}
 	binaryOperations := map[string]struct {
-		floatHistogramSupported     bool
-		histogramFloatSupported     bool
-		histogramHistogramSupported bool
-		supportsBool                bool
+		floatHistogramSupported              bool
+		histogramFloatSupported              bool
+		histogramHistogramSupported          bool
+		supportsBool                         bool
+		emitsWarningOnIncompatibleHistograms bool
 	}{
 		"+": {
-			floatHistogramSupported:     false,
-			histogramFloatSupported:     false,
-			histogramHistogramSupported: true,
+			floatHistogramSupported:              false,
+			histogramFloatSupported:              false,
+			histogramHistogramSupported:          true,
+			emitsWarningOnIncompatibleHistograms: true,
 		},
 		"-": {
-			floatHistogramSupported:     false,
-			histogramFloatSupported:     false,
-			histogramHistogramSupported: true,
+			floatHistogramSupported:              false,
+			histogramFloatSupported:              false,
+			histogramHistogramSupported:          true,
+			emitsWarningOnIncompatibleHistograms: true,
 		},
 		"*": {
 			floatHistogramSupported:     true,
@@ -2784,7 +2776,7 @@ func TestBinaryOperationAnnotations(t *testing.T) {
 		},
 	}
 
-	addBinopTestCase := func(op string, name string, expr string, left string, right string, supported bool) {
+	addIncompatibleTypesTestCase := func(op string, name string, expr string, left string, right string, supported bool) {
 		testCase := annotationTestCase{
 			data: mixedFloatHistogramData,
 			expr: expr,
@@ -2792,6 +2784,19 @@ func TestBinaryOperationAnnotations(t *testing.T) {
 
 		if !supported {
 			testCase.expectedInfoAnnotations = []string{fmt.Sprintf(`PromQL info: incompatible sample types encountered for binary operator "%v": %v %v %v (1:1)`, op, left, op, right)}
+		}
+
+		testCases[name] = testCase
+	}
+
+	addIncompatibleLayoutTestCase := func(op string, name string, expr string, shouldEmitAnnotation bool) {
+		testCase := annotationTestCase{
+			data: mixedFloatHistogramData,
+			expr: expr,
+		}
+
+		if shouldEmitAnnotation {
+			testCase.expectedWarningAnnotations = []string{fmt.Sprintf(`PromQL warning: incompatible bucket layout encountered for binary operator %v (1:1)`, op)}
 		}
 
 		testCases[name] = testCase
@@ -2811,14 +2816,19 @@ func TestBinaryOperationAnnotations(t *testing.T) {
 		}
 
 		for _, expr := range expressions {
-			addBinopTestCase(op, fmt.Sprintf("binary %v between a scalar on the left side and a histogram on the right", expr), fmt.Sprintf(`2 %v metric{type="histogram"}`, expr), "float", "histogram", binop.floatHistogramSupported)
-			addBinopTestCase(op, fmt.Sprintf("binary %v between a histogram on the left side and a scalar on the right", expr), fmt.Sprintf(`metric{type="histogram"} %v 2`, expr), "histogram", "float", binop.histogramFloatSupported)
+			addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between a scalar on the left side and a histogram on the right", expr), fmt.Sprintf(`2 %v metric{type="histogram"}`, expr), "float", "histogram", binop.floatHistogramSupported)
+			addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between a histogram on the left side and a scalar on the right", expr), fmt.Sprintf(`metric{type="histogram"} %v 2`, expr), "histogram", "float", binop.histogramFloatSupported)
 
 			for cardinalityName, cardinalityModifier := range cardinalities {
-				addBinopTestCase(op, fmt.Sprintf("binary %v between two floats with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="float"} %v ignoring(type) %v metric{type="float"}`, expr, cardinalityModifier), "float", "float", true)
-				addBinopTestCase(op, fmt.Sprintf("binary %v between a float on the left side and a histogram on the right with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="float"} %v ignoring(type) %v metric{type="histogram"}`, expr, cardinalityModifier), "float", "histogram", binop.floatHistogramSupported)
-				addBinopTestCase(op, fmt.Sprintf("binary %v between a histogram on the left side and a float on the right with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="float"}`, expr, cardinalityModifier), "histogram", "float", binop.histogramFloatSupported)
-				addBinopTestCase(op, fmt.Sprintf("binary %v between two histograms with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="histogram"}`, expr, cardinalityModifier), "histogram", "histogram", binop.histogramHistogramSupported)
+				addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between two floats with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="float"} %v ignoring(type) %v metric{type="float"}`, expr, cardinalityModifier), "float", "float", true)
+				addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between a float on the left side and a histogram on the right with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="float"} %v ignoring(type) %v metric{type="histogram"}`, expr, cardinalityModifier), "float", "histogram", binop.floatHistogramSupported)
+				addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between a histogram on the left side and a float on the right with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="float"}`, expr, cardinalityModifier), "histogram", "float", binop.histogramFloatSupported)
+				addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between two histograms with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="histogram"}`, expr, cardinalityModifier), "histogram", "histogram", binop.histogramHistogramSupported)
+
+				if binop.histogramHistogramSupported {
+					addIncompatibleLayoutTestCase(op, fmt.Sprintf("binary %v between histograms with exponential and custom buckets with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="histogram-custom-buckets"}`, expr, cardinalityModifier), binop.emitsWarningOnIncompatibleHistograms)
+					addIncompatibleLayoutTestCase(op, fmt.Sprintf("binary %v between histograms with incompatible custom bucket schemas with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram-custom-buckets"} %v ignoring(type) %v metric{type="histogram-custom-buckets-other-layout"}`, expr, cardinalityModifier), binop.emitsWarningOnIncompatibleHistograms)
+				}
 			}
 		}
 	}
