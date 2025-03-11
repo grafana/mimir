@@ -690,8 +690,10 @@ func (am *MultitenantAlertmanager) syncConfigs(ctx context.Context, cfgMap map[s
 			continue
 		}
 
-		if err := am.syncStates(ctx, cfg); err != nil {
-			level.Error(am.logger).Log("msg", "error syncing states", "err", err, "user", user)
+		if am.cfg.GrafanaAlertmanagerCompatibilityEnabled {
+			if err := am.syncStates(ctx, cfg); err != nil {
+				level.Error(am.logger).Log("msg", "error syncing states", "err", err, "user", user)
+			}
 		}
 
 		if err := am.setConfig(cfg); err != nil {
