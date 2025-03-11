@@ -123,12 +123,10 @@ func OTLPHandler(
 					w.Header().Set("Content-Type", contentType)
 					data, _ := json.Marshal(&expResp)
 					_, _ = w.Write([]byte(data))
-				} else if contentType == pbContentType {
+				} else {
 					w.Header().Set("Content-Type", contentType)
 					data, _ := proto.Marshal(&expResp)
 					_, _ = w.Write(data)
-				} else {
-					level.Warn(logger).Log("msg", "unrecognized Content-Type request header", "content_type", contentType)
 				}
 
 				return
