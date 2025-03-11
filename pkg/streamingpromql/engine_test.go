@@ -2008,6 +2008,7 @@ type annotationTestCase struct {
 	expectedWarningAnnotations         []string
 	expectedInfoAnnotations            []string
 	skipComparisonWithPrometheusReason string
+	instantEvaluationTimestamp         *time.Time
 }
 
 func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
@@ -2038,7 +2039,13 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 					return engine.NewRangeQuery(context.Background(), store, nil, testCase.expr, startT, endT, step)
 				},
 				"instant": func(engine promql.QueryEngine) (promql.Query, error) {
-					return engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, startT)
+					t := startT
+
+					if testCase.instantEvaluationTimestamp != nil {
+						t = *testCase.instantEvaluationTimestamp
+					}
+
+					return engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, t)
 				},
 			}
 
@@ -2456,20 +2463,27 @@ func TestRateIncreaseAnnotations(t *testing.T) {
 			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:%d)`, position)},
 		}
 
+		// We ignore the first sample if it's incompatible with the second, so we need to run the two test cases below
+		// at a time range where we'll get at least three points in the range.
+		incompatibleSchemaEvaluationTimestamp := timestamp.Time(0).Add(2 * time.Minute)
+
 		testCases[fmt.Sprintf("%s() over native histograms with both exponential and custom buckets", function)] = annotationTestCase{
-			data: nativeHistogramsWithCustomBucketsData,
-			expr: fmt.Sprintf(`%s(metric{series="mixed-exponential-custom-buckets"}[1m1s])`, function),
+			data:                       nativeHistogramsWithCustomBucketsData,
+			expr:                       fmt.Sprintf(`%s(metric{series="mixed-exponential-custom-buckets"}[2m1s])`, function),
+			instantEvaluationTimestamp: &incompatibleSchemaEvaluationTimestamp,
 			expectedWarningAnnotations: []string{
 				fmt.Sprintf(`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:%d)`, position),
 			},
 		}
 		testCases[fmt.Sprintf("%s() over native histograms with incompatible custom buckets", function)] = annotationTestCase{
-			data: nativeHistogramsWithCustomBucketsData,
-			expr: fmt.Sprintf(`%s(metric{series="incompatible-custom-buckets"}[1m1s])`, function),
+			data:                       nativeHistogramsWithCustomBucketsData,
+			expr:                       fmt.Sprintf(`%s(metric{series="incompatible-custom-buckets"}[2m1s])`, function),
+			instantEvaluationTimestamp: &incompatibleSchemaEvaluationTimestamp,
 			expectedWarningAnnotations: []string{
 				fmt.Sprintf(`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:%d)`, position),
 			},
 		}
+
 		testCases[fmt.Sprintf("%s() over metric without counter suffix with single float or histogram in range", function)] = annotationTestCase{
 			data: `
 				series 3 1 {{schema:3 sum:12 count:7 buckets:[2 2 3]}}

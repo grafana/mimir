@@ -656,7 +656,7 @@ load 1m
   metric{case="all nh"} {{schema:3 sum:0 count:0 buckets:[1 2 1]}} {{schema:3 sum:0 count:0 buckets:[1 2 1]}}
   metric{case="all nhcb"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
 
-eval range from 0 to 8m step 1m idelta(metric[3m1s])
+eval_warn range from 0 to 8m step 1m idelta(metric[3m1s])
   {case="2 floats"} _ 4 4 4
   {case="2 floats and nh last sample"} _ 4
   {case="2 floats and nh middle sample"} _ _ 4 4
@@ -677,7 +677,7 @@ eval range from 0 to 8m step 1m idelta(metric[3m1s])
   {case="all nh"} _ {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}}
   {case="all nhcb"} _ {{schema:-53 count:-3 sum:14 custom_values:[5 10] buckets:[-1 -2] counter_reset_hint:gauge}} {{schema:-53 count:13 sum:-12 custom_values:[5 10] buckets:[7 6] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}}
 
-eval range from 0 to 8m step 1m irate(metric[3m1s])
+eval_warn range from 0 to 8m step 1m irate(metric[3m1s])
   {case="2 floats"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
   {case="2 floats and nh last sample"} _ 0.06666666666666667
   {case="2 floats and nh middle sample"} _ _ 0.03333333333333333 0.03333333333333333
