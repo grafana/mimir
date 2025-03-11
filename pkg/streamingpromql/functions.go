@@ -98,7 +98,7 @@ func AbsentFunctionOperatorFactory(args []types.Operator, memoryConsumptionTrack
 
 func AbsentOverTimeFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange, argExpressions parser.Expressions) (types.InstantVectorOperator, error) {
 	functionName := "absent_over_time"
-	if len(args) != 1 && len(argExpressions) != 1 {
+	if len(args) != 1 || len(argExpressions) != 1 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", functionName, len(args))
 	}
