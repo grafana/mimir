@@ -562,14 +562,14 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 }
 
 func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.SchedulerRequest, requestErr error) {
-	unary := []grpc.UnaryClientInterceptor{
-		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
-		middleware.ClientUserHeaderInterceptor,
-	}
-	if s.cfg.GRPCClientConfig.ClusterValidation.Label != "" {
-		unary = append(unary, middleware.ClusterUnaryClientInterceptor(s.cfg.GRPCClientConfig.ClusterValidation.Label, s.invalidClusterValidation, s.log))
-	}
-	opts, err := s.cfg.GRPCClientConfig.DialOption(unary, nil)
+	opts, err := s.cfg.GRPCClientConfig.DialOption(
+		[]grpc.UnaryClientInterceptor{
+			otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+			middleware.ClientUserHeaderInterceptor,
+		},
+		nil,
+		util.NewOnInvalidCluster(s.invalidClusterValidation, s.log),
+	)
 	if err != nil {
 		level.Warn(s.log).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 		return

@@ -10,7 +10,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
@@ -75,10 +74,7 @@ func newRulerClientFactory(clientCfg grpcclient.Config, reg prometheus.Registere
 
 func dialRulerClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*rulerExtendedClient, error) {
 	unary, stream := grpcclient.Instrument(requestDuration)
-	if clientCfg.ClusterValidation.Label != "" {
-		unary = append(unary, middleware.ClusterUnaryClientInterceptor(clientCfg.ClusterValidation.Label, invalidClusterValidation, logger))
-	}
-	opts, err := clientCfg.DialOption(unary, stream)
+	opts, err := clientCfg.DialOption(unary, stream, util.NewOnInvalidCluster(invalidClusterValidation, logger))
 	if err != nil {
 		return nil, err
 	}

@@ -13,7 +13,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
@@ -31,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -129,10 +129,7 @@ func newWithSchedulerClient(
 
 func (b *BlockBuilder) makeSchedulerClient() (schedulerpb.SchedulerClient, *grpc.ClientConn, error) {
 	unary := []grpc.UnaryClientInterceptor{otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())}
-	if b.cfg.SchedulerConfig.GRPCClientConfig.ClusterValidation.Label != "" {
-		unary = append(unary, middleware.ClusterUnaryClientInterceptor(b.cfg.SchedulerConfig.GRPCClientConfig.ClusterValidation.Label, b.blockBuilderMetrics.invalidClusterValidation, b.logger))
-	}
-	dialOpts, err := b.cfg.SchedulerConfig.GRPCClientConfig.DialOption(unary, nil)
+	dialOpts, err := b.cfg.SchedulerConfig.GRPCClientConfig.DialOption(unary, nil, util.NewOnInvalidCluster(b.blockBuilderMetrics.invalidClusterValidation, b.logger))
 	if err != nil {
 		return nil, nil, err
 	}

@@ -3,6 +3,8 @@
 package util
 
 import (
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -25,4 +27,15 @@ func NewRequestInvalidClusterValidationLabelsTotalCounter(reg prometheus.Registe
 			protocolLabel: protocol,
 		},
 	}, []string{methodLabel})
+}
+
+func NewOnInvalidCluster(invalidClusterValidations *prometheus.CounterVec, logger log.Logger) func(string, string, string) {
+	return func(msg string, cluster string, method string) {
+		level.Warn(logger).Log("msg", msg, "method", method, "clusterValidationLabel", cluster)
+		invalidClusterValidations.WithLabelValues(method).Inc()
+	}
+}
+
+func EmptyInvalidCluster() func(string, string, string) {
+	return func(string, string, string) {}
 }

@@ -445,7 +445,7 @@ func TestFrontendProcessor(t *testing.T) {
 				tc.customizeConfig(&cfg)
 			}
 
-			dialOpts, err := cfg.QueryFrontendGRPCClientConfig.DialOption(nil, nil)
+			dialOpts, err := cfg.QueryFrontendGRPCClientConfig.DialOption(nil, nil, func(string, string, string) {})
 			require.NoError(t, err)
 			dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 

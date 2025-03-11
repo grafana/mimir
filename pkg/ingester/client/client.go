@@ -17,6 +17,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 )
 
@@ -38,12 +39,9 @@ func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, lo
 	reportGRPCStatusesOptions := []middleware.InstrumentationOption{middleware.ReportGRPCStatusOption}
 	unary, stream := grpcclient.Instrument(metrics.requestDuration, reportGRPCStatusesOptions...)
 	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor)
-	if cfg.GRPCClientConfig.ClusterValidation.Label != "" {
-		unary = append(unary, middleware.ClusterUnaryClientInterceptor(cfg.GRPCClientConfig.ClusterValidation.Label, metrics.invalidClusterVerificationLabels, logger))
-	}
 	stream = append(stream, querierapi.ReadConsistencyClientStreamInterceptor)
 
-	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream)
+	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream, util.NewOnInvalidCluster(metrics.invalidClusterVerificationLabels, logger))
 	if err != nil {
 		return nil, err
 	}

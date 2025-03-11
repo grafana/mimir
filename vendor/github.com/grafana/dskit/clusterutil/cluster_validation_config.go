@@ -7,47 +7,39 @@ import (
 	"github.com/grafana/dskit/flagext"
 )
 
-type ClientClusterValidationConfig struct {
+type ClusterValidationConfig struct {
 	Label           string                  `yaml:"label" category:"experimental"`
 	registeredFlags flagext.RegisteredFlags `yaml:"-"`
 }
 
-func (cfg *ClientClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define the cluster validation label to be sent together with the requests by the clients.")
-}
-
-func (cfg *ClientClusterValidationConfig) RegisterAndTrackFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
-		cfg.RegisterFlagsWithPrefix(prefix, f)
-	})
-}
-
-func (cfg *ClientClusterValidationConfig) RegisteredFlags() flagext.RegisteredFlags {
-	return cfg.registeredFlags
-}
-
-type ClusterValidationConfig struct {
-	Label           string                          `yaml:"label" category:"experimental"`
-	GRPC            ClusterValidationProtocolConfig `yaml:"grpc" category:"experimental"`
-	registeredFlags flagext.RegisteredFlags         `yaml:"-"`
-}
-
-func (cfg *ClusterValidationConfig) Validate() error {
-	return cfg.GRPC.Validate("grpc", cfg.Label)
-}
-
-func (cfg *ClusterValidationConfig) RegisterAndTrackFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
-		cfg.RegisterFlagsWithPrefix(prefix, f)
-	})
-}
-
 func (cfg *ClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define the server's cluster validation label. When the validation is enabled, this value will be compared with the cluster validation label received through the requests.")
-	cfg.GRPC.RegisterFlagsWithPrefix(prefix+"grpc.", f)
+	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
+		f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define the cluster validation label.")
+	})
 }
 
 func (cfg *ClusterValidationConfig) RegisteredFlags() flagext.RegisteredFlags {
+	return cfg.registeredFlags
+}
+
+type ServerClusterValidationConfig struct {
+	ClusterValidationConfig `yaml:",inline"`
+	GRPC                    ClusterValidationProtocolConfig `yaml:"grpc" category:"experimental"`
+	registeredFlags         flagext.RegisteredFlags         `yaml:"-"`
+}
+
+func (cfg *ServerClusterValidationConfig) Validate() error {
+	return cfg.GRPC.Validate("grpc", cfg.Label)
+}
+
+func (cfg *ServerClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
+		cfg.ClusterValidationConfig.RegisterFlagsWithPrefix(prefix, f)
+		cfg.GRPC.RegisterFlagsWithPrefix(prefix+"grpc.", f)
+	})
+}
+
+func (cfg *ServerClusterValidationConfig) RegisteredFlags() flagext.RegisteredFlags {
 	return cfg.registeredFlags
 }
 
@@ -74,5 +66,5 @@ func (cfg *ClusterValidationProtocolConfig) RegisterFlagsWithPrefix(prefix strin
 	softValidationFlag := prefix + "soft-validation"
 	enabledFlag := prefix + "enabled"
 	f.BoolVar(&cfg.SoftValidation, softValidationFlag, false, fmt.Sprintf("When enabled, soft cluster label validation will be executed. Can be enabled only together with %s", enabledFlag))
-	f.BoolVar(&cfg.Enabled, enabledFlag, false, "When enabled, cluster label validation will be executed.")
+	f.BoolVar(&cfg.Enabled, enabledFlag, false, "When enabled, cluster label validation will be executed: configured cluster validation label will be compared with the cluster validation label received through the requests.")
 }

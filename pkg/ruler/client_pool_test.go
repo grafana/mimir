@@ -75,76 +75,76 @@ func Test_newRulerClientFactory(t *testing.T) {
 
 func TestClientPool_ClusterValidation(t *testing.T) {
 	testCases := map[string]struct {
-		serverClusterValidation clusterutil.ClusterValidationConfig
-		clientClusterValidation clusterutil.ClientClusterValidationConfig
+		serverClusterValidation clusterutil.ServerClusterValidationConfig
+		clientClusterValidation clusterutil.ClusterValidationConfig
 		expectedError           *status.Status
 	}{
 		"if server and client have equal cluster validation labels and cluster validation is disabled no error is returned": {
-			serverClusterValidation: clusterutil.ClusterValidationConfig{
-				Label: "cluster",
-				GRPC:  clusterutil.ClusterValidationProtocolConfig{Enabled: false},
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "cluster"},
+				GRPC:                    clusterutil.ClusterValidationProtocolConfig{Enabled: false},
 			},
-			clientClusterValidation: clusterutil.ClientClusterValidationConfig{Label: "cluster"},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{Label: "cluster"},
 			expectedError:           nil,
 		},
 		"if server and client have different cluster validation labels and cluster validation is disabled no error is returned": {
-			serverClusterValidation: clusterutil.ClusterValidationConfig{
-				Label: "server-cluster",
-				GRPC:  clusterutil.ClusterValidationProtocolConfig{Enabled: false},
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "server-cluster"},
+				GRPC:                    clusterutil.ClusterValidationProtocolConfig{Enabled: false},
 			},
-			clientClusterValidation: clusterutil.ClientClusterValidationConfig{Label: "client-cluster"},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{Label: "client-cluster"},
 			expectedError:           nil,
 		},
 		"if server and client have equal cluster validation labels and cluster validation is enabled no error is returned": {
-			serverClusterValidation: clusterutil.ClusterValidationConfig{
-				Label: "cluster",
-				GRPC:  clusterutil.ClusterValidationProtocolConfig{Enabled: true},
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "cluster"},
+				GRPC:                    clusterutil.ClusterValidationProtocolConfig{Enabled: true},
 			},
-			clientClusterValidation: clusterutil.ClientClusterValidationConfig{Label: "cluster"},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{Label: "cluster"},
 			expectedError:           nil,
 		},
 		"if server and client have different cluster validation labels and soft cluster validation is enabled no error is returned": {
-			serverClusterValidation: clusterutil.ClusterValidationConfig{
-				Label: "server-cluster",
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "server-cluster"},
 				GRPC: clusterutil.ClusterValidationProtocolConfig{
 					Enabled:        true,
 					SoftValidation: true,
 				},
 			},
-			clientClusterValidation: clusterutil.ClientClusterValidationConfig{Label: "client-cluster"},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{Label: "client-cluster"},
 			expectedError:           nil,
 		},
 		"if server and client have different cluster validation labels and cluster validation is enabled an error is returned": {
-			serverClusterValidation: clusterutil.ClusterValidationConfig{
-				Label: "server-cluster",
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "server-cluster"},
 				GRPC: clusterutil.ClusterValidationProtocolConfig{
 					Enabled:        true,
 					SoftValidation: false,
 				},
 			},
-			clientClusterValidation: clusterutil.ClientClusterValidationConfig{Label: "client-cluster"},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{Label: "client-cluster"},
 			expectedError:           grpcutil.Status(codes.Internal, `request rejected by the server: rejected request with wrong cluster validation label "client-cluster" - it should be "server-cluster"`),
 		},
 		"if client has no cluster validation label and soft cluster validation is enabled no error is returned": {
-			serverClusterValidation: clusterutil.ClusterValidationConfig{
-				Label: "server-cluster",
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "server-cluster"},
 				GRPC: clusterutil.ClusterValidationProtocolConfig{
 					Enabled:        true,
 					SoftValidation: true,
 				},
 			},
-			clientClusterValidation: clusterutil.ClientClusterValidationConfig{},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{},
 			expectedError:           nil,
 		},
 		"if client has no cluster validation label and cluster validation is enabled an error is returned": {
-			serverClusterValidation: clusterutil.ClusterValidationConfig{
-				Label: "server-cluster",
+			serverClusterValidation: clusterutil.ServerClusterValidationConfig{
+				ClusterValidationConfig: clusterutil.ClusterValidationConfig{Label: "server-cluster"},
 				GRPC: clusterutil.ClusterValidationProtocolConfig{
 					Enabled:        true,
 					SoftValidation: false,
 				},
 			},
-			clientClusterValidation: clusterutil.ClientClusterValidationConfig{},
+			clientClusterValidation: clusterutil.ClusterValidationConfig{},
 			expectedError:           grpcutil.Status(codes.FailedPrecondition, `rejected request with empty cluster validation label - it should be "server-cluster"`),
 		},
 	}

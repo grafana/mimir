@@ -2,6 +2,7 @@ package grpcclient
 
 import (
 	"flag"
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcencoding/snappy"
+	"github.com/grafana/dskit/middleware"
 )
 
 // Config for a gRPC client.
@@ -47,7 +49,7 @@ type Config struct {
 	// CustomCompressors allows configuring custom compressors.
 	CustomCompressors []string `yaml:"-"`
 
-	ClusterValidation clusterutil.ClientClusterValidationConfig `yaml:"cluster_validation" category:"experimental"`
+	ClusterValidation clusterutil.ClusterValidationConfig `yaml:"cluster_validation" category:"experimental"`
 }
 
 // RegisterFlags registers flags.
@@ -88,7 +90,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 
 	cfg.BackoffConfig.RegisterFlagsWithPrefix(prefix, f)
 	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
-	cfg.ClusterValidation.RegisterAndTrackFlagsWithPrefix(prefix+".cluster-validation.", f)
+	cfg.ClusterValidation.RegisterFlagsWithPrefix(prefix+".cluster-validation.", f)
 }
 
 func (cfg *Config) Validate() error {
@@ -111,9 +113,13 @@ func (cfg *Config) CallOptions() []grpc.CallOption {
 	return opts
 }
 
-// DialOption returns the config as a grpc.DialOptions. The passed inceptors
-// wrap around the configured middleware.
-func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor) ([]grpc.DialOption, error) {
+// DialOption returns the config as a grpc.DialOptions. The passed interceptors wrap around the configured middleware.
+// onInvalidCluster function is required to be non-nil, and it is executed in case of an invalid cluster validation,
+// when the latter is enabled.
+func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientInterceptor, streamClientInterceptors []grpc.StreamClientInterceptor, onInvalidCluster func(errorMsg string, cluster string, method string)) ([]grpc.DialOption, error) {
+	if onInvalidCluster == nil {
+		return nil, fmt.Errorf("onInvalidCluster must not be nil")
+	}
 	var opts []grpc.DialOption
 	tlsOpts, err := cfg.TLS.GetGRPCDialOptions(cfg.TLSEnabled)
 	if err != nil {
@@ -130,6 +136,10 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 
 	if cfg.RateLimit > 0 {
 		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{NewRateLimiter(cfg)}, unaryClientInterceptors...)
+	}
+
+	if cfg.ClusterValidation.Label != "" {
+		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidation.Label, onInvalidCluster)}, unaryClientInterceptors...)
 	}
 
 	if cfg.ConnectTimeout > 0 {

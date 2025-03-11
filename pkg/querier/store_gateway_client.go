@@ -13,7 +13,6 @@ import (
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/grpcclient"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/pkg/errors"
@@ -44,10 +43,7 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 
 func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*storeGatewayClient, error) {
 	unary, stream := grpcclient.Instrument(requestDuration)
-	if clientCfg.ClusterValidation.Label != "" {
-		unary = append(unary, middleware.ClusterUnaryClientInterceptor(clientCfg.ClusterValidation.Label, invalidClusterValidation, logger))
-	}
-	opts, err := clientCfg.DialOption(unary, stream)
+	opts, err := clientCfg.DialOption(unary, stream, util.NewOnInvalidCluster(invalidClusterValidation, logger))
 	if err != nil {
 		return nil, err
 	}
@@ -113,13 +109,13 @@ func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConf
 }
 
 type ClientConfig struct {
-	TLSEnabled        bool                                      `yaml:"tls_enabled" category:"advanced"`
-	TLS               tls.ClientConfig                          `yaml:",inline"`
-	ClusterValidation clusterutil.ClientClusterValidationConfig `yaml:"cluster_validation"`
+	TLSEnabled        bool                                `yaml:"tls_enabled" category:"advanced"`
+	TLS               tls.ClientConfig                    `yaml:",inline"`
+	ClusterValidation clusterutil.ClusterValidationConfig `yaml:"cluster_validation"`
 }
 
 func (cfg *ClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.TLSEnabled, prefix+".tls-enabled", cfg.TLSEnabled, "Enable TLS for gRPC client connecting to store-gateway.")
 	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
-	cfg.ClusterValidation.RegisterAndTrackFlagsWithPrefix(prefix+".cluster-validation.", f)
+	cfg.ClusterValidation.RegisterFlagsWithPrefix(prefix+".cluster-validation.", f)
 }

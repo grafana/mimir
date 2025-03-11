@@ -24,6 +24,7 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestWrapContextError(t *testing.T) {
@@ -396,7 +397,7 @@ func prepareTest(t *testing.T) (dskitserver.FakeServerServer, dskitserver.FakeSe
 	clientCfg := grpcclient.Config{}
 	flagext.DefaultValues(&clientCfg)
 
-	opts, err := clientCfg.DialOption(nil, nil)
+	opts, err := clientCfg.DialOption(nil, nil, util.EmptyInvalidCluster())
 	require.NoError(t, err)
 
 	cc, err := grpc.NewClient(listener.Addr().String(), opts...)

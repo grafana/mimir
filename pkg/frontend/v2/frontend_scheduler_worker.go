@@ -16,7 +16,6 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -222,11 +221,7 @@ func (f *frontendSchedulerWorkers) getWorkersCount() int {
 
 func (f *frontendSchedulerWorkers) connectToScheduler(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	var unary []grpc.UnaryClientInterceptor
-	if f.cfg.GRPCClientConfig.ClusterValidation.Label != "" {
-		unary = []grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(f.cfg.GRPCClientConfig.ClusterValidation.Label, f.invalidClusterValidation, f.log)}
-	}
-	opts, err := f.cfg.GRPCClientConfig.DialOption(unary, nil)
+	opts, err := f.cfg.GRPCClientConfig.DialOption(nil, nil, util.NewOnInvalidCluster(f.invalidClusterValidation, f.log))
 	if err != nil {
 		return nil, err
 	}

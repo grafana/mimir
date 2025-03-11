@@ -81,15 +81,15 @@ common:
 }
 
 type customExtendedConfig struct {
-	MimirConfig                   mimir.Config                              `yaml:",inline"`
-	CustomStorage                 bucket.Config                             `yaml:"custom_storage"`
-	CustomClientClusterValidation clusterutil.ClientClusterValidationConfig `yaml:"custom_client_cluster_validation"`
+	MimirConfig                   mimir.Config                        `yaml:",inline"`
+	CustomStorage                 bucket.Config                       `yaml:"custom_storage"`
+	CustomClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"custom_client_cluster_validation"`
 }
 
 func (c *customExtendedConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.MimirConfig.RegisterFlags(f, logger)
 	c.CustomStorage.RegisterFlagsWithPrefix("custom-storage", f)
-	c.CustomClientClusterValidation.RegisterAndTrackFlagsWithPrefix("custom-client-cluster-validation", f)
+	c.CustomClientClusterValidation.RegisterFlagsWithPrefix("custom-client-cluster-validation", f)
 }
 
 func (c *customExtendedConfig) CommonConfigInheritance() mimir.CommonConfigInheritance {
@@ -97,7 +97,7 @@ func (c *customExtendedConfig) CommonConfigInheritance() mimir.CommonConfigInher
 		Storage: map[string]*bucket.StorageBackendConfig{
 			"custom": &c.CustomStorage.StorageBackendConfig,
 		},
-		ClientClusterValidation: map[string]*clusterutil.ClientClusterValidationConfig{
+		ClientClusterValidation: map[string]*clusterutil.ClusterValidationConfig{
 			"custom_client_cluster_validation": &c.CustomClientClusterValidation,
 		},
 	}

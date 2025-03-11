@@ -224,7 +224,7 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
 			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
 		},
-		ClientClusterValidation: map[string]*clusterutil.ClientClusterValidationConfig{
+		ClientClusterValidation: map[string]*clusterutil.ClusterValidationConfig{
 			"ingester_client":                  &c.IngesterClient.GRPCClientConfig.ClusterValidation,
 			"frontend_worker_frontend_client":  &c.Worker.QueryFrontendGRPCClientConfig.ClusterValidation,
 			"frontend_worker_scheduler_client": &c.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation,
@@ -687,19 +687,19 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 }
 
 type CommonConfig struct {
-	Storage                 bucket.StorageBackendConfig               `yaml:"storage"`
-	ClientClusterValidation clusterutil.ClientClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
+	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
+	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
 	Storage                 map[string]*bucket.StorageBackendConfig
-	ClientClusterValidation map[string]*clusterutil.ClientClusterValidationConfig
+	ClientClusterValidation map[string]*clusterutil.ClusterValidationConfig
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
-	c.ClientClusterValidation.RegisterAndTrackFlagsWithPrefix("common.client-cluster-validation.", f)
+	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.

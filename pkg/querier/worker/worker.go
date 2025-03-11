@@ -17,7 +17,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -400,11 +399,7 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 
 func (w *querierWorker) connect(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	var unary []grpc.UnaryClientInterceptor
-	if w.grpcClientConfig.ClusterValidation.Label != "" {
-		unary = []grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(w.grpcClientConfig.ClusterValidation.Label, w.invalidClusterValidation, w.log)}
-	}
-	opts, err := w.grpcClientConfig.DialOption(unary, nil)
+	opts, err := w.grpcClientConfig.DialOption(nil, nil, util.NewOnInvalidCluster(w.invalidClusterValidation, w.log))
 
 	if err != nil {
 		return nil, err

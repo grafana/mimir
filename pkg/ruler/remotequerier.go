@@ -99,15 +99,14 @@ func (c *QueryFrontendConfig) Validate() error {
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
 func DialQueryFrontend(cfg QueryFrontendConfig, reg prometheus.Registerer, logger log.Logger) (httpgrpc.HTTPClient, error) {
 	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ruler-query-frontend", util.GRPCProtocol)
-
-	unary := []grpc.UnaryClientInterceptor{
-		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
-		middleware.ClientUserHeaderInterceptor,
-	}
-	if cfg.GRPCClientConfig.ClusterValidation.Label != "" {
-		unary = append(unary, middleware.ClusterUnaryClientInterceptor(cfg.GRPCClientConfig.ClusterValidation.Label, invalidClusterValidation, logger))
-	}
-	opts, err := cfg.GRPCClientConfig.DialOption(unary, nil)
+	opts, err := cfg.GRPCClientConfig.DialOption(
+		[]grpc.UnaryClientInterceptor{
+			otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+			middleware.ClientUserHeaderInterceptor,
+		},
+		nil,
+		util.NewOnInvalidCluster(invalidClusterValidation, logger),
+	)
 	if err != nil {
 		return nil, err
 	}
