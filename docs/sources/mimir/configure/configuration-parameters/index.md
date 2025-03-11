@@ -4055,7 +4055,13 @@ The `limits` block configures default and per-tenant limits imposed by component
 [otel_created_timestamp_zero_ingestion_enabled: <boolean> | default = false]
 
 # (experimental) Optionally specify OTel resource attributes to promote to
-# labels.
+# labels. Coma separated list of resource attributes.
+# Example: "service.instance.id, service.name, service.namespace,
+# service.version, cloud.availability_zone, cloud.region, container.name,
+# deployment.environment, deployment.environment.name, k8s.cluster.name,
+# k8s.container.name, k8s.cronjob.name, k8s.daemonset.name,
+# k8s.deployment.name, k8s.job.name, k8s.namespace.name, k8s.pod.name,
+# k8s.replicaset.name, k8s.statefulset.name".
 # CLI flag: -distributor.otel-promote-resource-attributes
 [promote_otel_resource_attributes: <string> | default = ""]
 
