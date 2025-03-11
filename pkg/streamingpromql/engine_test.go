@@ -51,6 +51,7 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	// Aliasing holt_winters call
 	promql.FunctionCalls["holt_winters"] = promql.FunctionCalls["double_exponential_smoothing"]
 	parser.Functions["holt_winters"] = parser.Functions["double_exponential_smoothing"]
+	// Disable experimental so that parser will parse it without the updating experiemental flag
 	parser.Functions["holt_winters"].Experimental = false
 
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
