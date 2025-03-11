@@ -18,13 +18,14 @@ import (
 
 // AbsentOverTime performs a rate calculation over a range vector.
 type AbsentOverTime struct {
-	timeRange                types.QueryTimeRange
-	argExpressions           parser.Expr
-	inner                    types.RangeVectorOperator
-	expressionPosition       posrange.PositionRange
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
-	presence                 []bool
-	exhausted                bool
+	TimeRange                types.QueryTimeRange
+	ArgExpressions           parser.Expr
+	Inner                    types.RangeVectorOperator
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+
+	expressionPosition posrange.PositionRange
+	presence           []bool
+	exhausted          bool
 }
 
 var _ types.InstantVectorOperator = &AbsentOverTime{}
@@ -33,45 +34,45 @@ func NewAbsentOverTime(
 	inner types.RangeVectorOperator,
 	argExpressions parser.Expr,
 	timeRange types.QueryTimeRange,
-	expressionPosition posrange.PositionRange,
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
+	expressionPosition posrange.PositionRange,
 ) *AbsentOverTime {
 	return &AbsentOverTime{
-		timeRange:                timeRange,
-		inner:                    inner,
-		argExpressions:           argExpressions,
+		TimeRange:                timeRange,
+		Inner:                    inner,
+		ArgExpressions:           argExpressions,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
-		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
 }
 
 func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := a.inner.SeriesMetadata(ctx)
+	innerMetadata, err := a.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer types.PutSeriesMetadataSlice(innerMetadata)
 
-	a.presence, err = types.BoolSlicePool.Get(a.timeRange.StepCount, a.memoryConsumptionTracker)
+	a.presence, err = types.BoolSlicePool.Get(a.TimeRange.StepCount, a.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
 	// Initialize presence slice
-	a.presence = a.presence[:a.timeRange.StepCount]
+	a.presence = a.presence[:a.TimeRange.StepCount]
 
 	metadata := types.GetSeriesMetadataSlice(1)
 	metadata = append(metadata, types.SeriesMetadata{
-		Labels: createLabelsForAbsentFunction(a.argExpressions),
+		Labels: createLabelsForAbsentFunction(a.ArgExpressions),
 	})
 
 	for range innerMetadata {
-		err := a.inner.NextSeries(ctx)
+		err := a.Inner.NextSeries(ctx)
 		if err != nil {
 			return nil, err
 		}
 		for {
-			step, err := a.inner.NextStepSamples()
+			step, err := a.Inner.NextStepSamples()
 			// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 			if err == types.EOS {
 				break
@@ -79,11 +80,10 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 				return nil, err
 			}
 			if step.Floats.Any() || step.Histograms.Any() {
-				a.presence[a.timeRange.PointIndex(step.StepT)] = true
+				a.presence[a.TimeRange.PointIndex(step.StepT)] = true
 			}
 		}
 	}
-
 	return metadata, nil
 }
 
@@ -92,27 +92,25 @@ func (a *AbsentOverTime) NextSeries(_ context.Context) (types.InstantVectorSerie
 	if a.exhausted {
 		return output, types.EOS
 	}
-
 	a.exhausted = true
 
 	var err error
-	for step := range a.timeRange.StepCount {
+	for step := range a.TimeRange.StepCount {
 		if a.presence[step] {
 			continue
 		}
 
 		if output.Floats == nil {
-			output.Floats, err = types.FPointSlicePool.Get(a.timeRange.StepCount, a.memoryConsumptionTracker)
+			output.Floats, err = types.FPointSlicePool.Get(a.TimeRange.StepCount, a.MemoryConsumptionTracker)
 			if err != nil {
 				return output, err
 			}
 		}
 
-		t := a.timeRange.IndexTime(int64(step))
+		t := a.TimeRange.IndexTime(int64(step))
 		output.Floats = append(output.Floats, promql.FPoint{T: t, F: 1})
 	}
 	return output, nil
-
 }
 
 func (a *AbsentOverTime) ExpressionPosition() posrange.PositionRange {
@@ -120,6 +118,6 @@ func (a *AbsentOverTime) ExpressionPosition() posrange.PositionRange {
 }
 
 func (a *AbsentOverTime) Close() {
-	a.inner.Close()
-	types.BoolSlicePool.Put(a.presence, a.memoryConsumptionTracker)
+	a.Inner.Close()
+	types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
 }
