@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
@@ -47,9 +48,19 @@ func init() {
 func TestUnsupportedPromQLFeatures(t *testing.T) {
 	features := EnableAllFeatures
 
+	// Aliasing holt_winters call
+	promql.FunctionCalls["holt_winters"] = promql.FunctionCalls["double_exponential_smoothing"]
+	parser.Functions["holt_winters"] = parser.Functions["double_exponential_smoothing"]
+	parser.Functions["holt_winters"].Experimental = false
+
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
-	unsupportedExpressions := map[string]string{}
+	unsupportedExpressions := map[string]string{
+		// expected error for holt_winters is the same as double_exponential_smoothing because mimir just aliasing it as above
+		"holt_winters(metric{}[1h], 1, 1)": "'double_exponential_smoothing' function",
+
+		"double_exponential_smoothing(metric{}[1h], 1, 1)": "'double_exponential_smoothing' function",
+	}
 
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
