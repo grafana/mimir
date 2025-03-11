@@ -71,16 +71,13 @@ func (a *AbsentOverTime) SeriesMetadata(ctx context.Context) ([]types.SeriesMeta
 		if err != nil {
 			return nil, err
 		}
-		for {
+		for stepIdx := range a.TimeRange.StepCount {
 			step, err := a.Inner.NextStepSamples()
-			// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
-			if err == types.EOS {
-				break
-			} else if err != nil {
+			if err != nil {
 				return nil, err
 			}
 			if step.Floats.Any() || step.Histograms.Any() {
-				a.presence[a.TimeRange.PointIndex(step.StepT)] = true
+				a.presence[stepIdx] = true
 			}
 		}
 	}
