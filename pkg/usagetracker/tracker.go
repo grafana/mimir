@@ -323,11 +323,11 @@ losingPartitions:
 		level.Info(logger).Log("msg", "creating new partition")
 		p, err := newPartition(pid, t.cfg, t.partitionKVClient, t.partitionRing, t.eventsKafkaWriter, t.bucket, t, t.logger, t.registerer)
 		if err != nil {
-			return errors.Wrap(err, "unable to create partition")
+			return errors.Wrapf(err, "unable to create partition %d", pid)
 		}
 		level.Info(logger).Log("msg", "starting partition")
 		if err := services.StartAndAwaitRunning(ctx, p); err != nil {
-			return errors.Wrap(err, "unable to start partition")
+			return errors.Wrapf(err, "unable to start partition %d ", pid)
 		}
 		locked(func() { t.partitions[pid] = p })
 		level.Info(logger).Log("msg", "partition started")
