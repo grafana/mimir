@@ -3,6 +3,7 @@
 package binops
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -18,7 +19,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -182,6 +182,10 @@ func filterSeries(data types.InstantVectorSeriesData, mask []bool, desiredMaskVa
 // If lH is not nil, this indicates that the left side was a histogram, and similarly for the right side and rH.
 func emitIncompatibleTypesAnnotation(a *annotations.Annotations, op parser.ItemType, lH *histogram.FloatHistogram, rH *histogram.FloatHistogram, expressionPosition posrange.PositionRange) {
 	a.Add(annotations.NewIncompatibleTypesInBinOpInfo(sampleTypeDescription(lH), op.String(), sampleTypeDescription(rH), expressionPosition))
+}
+
+func emitIncompatibleBucketLayoutAnnotation(a *annotations.Annotations, op parser.ItemType, expressionPosition posrange.PositionRange) {
+	a.Add(annotations.NewIncompatibleBucketLayoutInBinOpWarning(op.String(), expressionPosition))
 }
 
 func sampleTypeDescription(h *histogram.FloatHistogram) string {
@@ -363,7 +367,11 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH, takeOwnershipOfLeft, takeOwnershipOfRight)
 
 		if err != nil {
-			err = functions.NativeHistogramErrorToAnnotation(err, e.emitAnnotation)
+			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) || errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+				emitIncompatibleBucketLayoutAnnotation(e.annotations, e.op, e.expressionPosition)
+				err = nil
+			}
+
 			if err != nil {
 				return err
 			}
@@ -426,10 +434,6 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 		Floats:     fPoints,
 		Histograms: hPoints,
 	}, nil
-}
-
-func (e *vectorVectorBinaryOperationEvaluator) emitAnnotation(generator types.AnnotationGenerator) {
-	e.annotations.Add(generator("", e.expressionPosition))
 }
 
 type binaryOperationFunc func(

@@ -341,8 +341,8 @@ eval_fail instant at 0m label_replace(series, "export", "$1", "label", "[.*")
   expected_fail_message invalid regular expression in label_replace(): [.*
 
 # Invalid destination label name
-eval_fail instant at 0m label_replace(series, "(export)", "$1", "label", "(.*)")
-  expected_fail_message invalid destination label name in label_replace(): (export)
+eval_fail instant at 0m label_replace(series, "\xff", "$1", "label", "(.*)")
+  expected_fail_regexp invalid destination label name in label_replace\(\): .*
 
 # Make sure label name exists after it was dropped
 eval instant at 0m label_replace(floor(series), "__name__", "$1", "label", "(.*)")
@@ -656,11 +656,11 @@ load 1m
   metric{case="all nh"} {{schema:3 sum:0 count:0 buckets:[1 2 1]}} {{schema:3 sum:0 count:0 buckets:[1 2 1]}}
   metric{case="all nhcb"} {{schema:-53 sum:1 count:5 custom_values:[5 10] buckets:[1 4]}} {{schema:-53 sum:15 count:2 custom_values:[5 10] buckets:[0 2]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[7 8]}} {{schema:-53 sum:3 count:15 custom_values:[5 10] buckets:[0 0]}}
 
-eval range from 0 to 8m step 1m idelta(metric[3m1s])
+eval_warn range from 0 to 8m step 1m idelta(metric[3m1s])
   {case="2 floats"} _ 4 4 4
-  {case="2 floats and nh last sample"} _ 4 4 4
+  {case="2 floats and nh last sample"} _ 4
   {case="2 floats and nh middle sample"} _ _ 4 4
-  {case="2 floats and nhcb last sample"} _ 4 4 4
+  {case="2 floats and nhcb last sample"} _ 4
   {case="2 floats and nhcb middle sample"} _ _ 4 4
   {case="2 floats with Inf 2 middle samples"} _ Inf NaN -Inf -Inf -Inf
   {case="2 floats with Inf last sample"} _ 4 Inf Inf Inf
@@ -674,29 +674,35 @@ eval range from 0 to 8m step 1m idelta(metric[3m1s])
   {case="all Inf"} _ NaN NaN NaN NaN NaN
   {case="all NaN"} _ NaN NaN NaN NaN NaN
   {case="all floats with reset"} _ 6 -6 6 -6 6 -6 6 6
+  {case="all nh"} _ {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}}
+  {case="all nhcb"} _ {{schema:-53 count:-3 sum:14 custom_values:[5 10] buckets:[-1 -2] counter_reset_hint:gauge}} {{schema:-53 count:13 sum:-12 custom_values:[5 10] buckets:[7 6] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}}
 
-eval range from 0 to 8m step 1m irate(metric[3m1s])
+eval_warn range from 0 to 8m step 1m irate(metric{case!="2 floats with NaN 2 middle samples", case!="2 floats with NaN middle sample"}[3m1s])
   {case="2 floats"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
-  {case="2 floats and nh last sample"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
+  {case="2 floats and nh last sample"} _ 0.06666666666666667
   {case="2 floats and nh middle sample"} _ _ 0.03333333333333333 0.03333333333333333
-  {case="2 floats and nhcb last sample"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
+  {case="2 floats and nhcb last sample"} _ 0.06666666666666667
   {case="2 floats and nhcb middle sample"} _ _ 0.03333333333333333 0.03333333333333333
   {case="2 floats with Inf 2 middle samples"} _ Inf NaN 0.08333333333333333 0.08333333333333333 0.08333333333333333
   {case="2 floats with Inf last sample"} _ 0.06666666666666667 Inf Inf Inf
   {case="2 floats with Inf middle sample"} _ Inf 0.08333333333333333 0.08333333333333333 0.08333333333333333
-  {case="2 floats with NaN 2 middle samples"} _ NaN NaN NaN NaN NaN
   {case="2 floats with NaN last sample"} _ 0.06666666666666667 NaN NaN NaN
-  {case="2 floats with NaN middle sample"} _ NaN NaN NaN NaN
   {case="2 floats with missing last sample"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
   {case="2 floats with missing middle sample"} _ _ 0.03333333333333333 0.03333333333333333
   {case="2 floats with missing 2 middle samples"} _ _ _ 0.022222222222222223
   {case="all Inf"} _ NaN NaN NaN NaN NaN
   {case="all NaN"} _ NaN NaN NaN NaN NaN
   {case="all floats with reset"} _ 0.1 0.016666666666666666 0.1 0.016666666666666666 0.1 0.016666666666666666 0.1 0.1
+  {case="all nh"} _ {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}}
+  {case="all nhcb"} _ {{schema:-53 count:0.03333333333333333 sum:0.25 custom_values:[5 10] buckets:[0 0.03333333333333333] counter_reset_hint:gauge}} {{schema:-53 count:0.21666666666666667 sum:-0.2 custom_values:[5 10] buckets:[0.11666666666666667 0.1] counter_reset_hint:gauge}} {{schema:-53 count:0.25 sum:0.05 custom_values:[5 10] buckets:[0 0] counter_reset_hint:gauge}} {{schema:-53 count:0.25 sum:0.05 custom_values:[5 10] buckets:[0 0] counter_reset_hint:gauge}} {{schema:-53 count:0.25 sum:0.05 custom_values:[5 10] buckets:[0 0] counter_reset_hint:gauge}}
+# These cases currently fails with Prometheus' engine due to https://github.com/prometheus/prometheus/pull/16199.
+# Once that PR is vendored into Mimir, remove this test and re-enable the corresponding test case in ours/functions.test.
+# {case="2 floats with NaN middle sample"} _ NaN NaN NaN NaN
+# {case="2 floats with NaN 2 middle samples"} _ NaN NaN NaN NaN NaN
 
 clear
 
-# Testing irate and idelta
+# Testing delta
 # nh stands for native histogram
 # nhcb stands for native histogram custom bucket
 load 1m
@@ -935,26 +941,14 @@ load 1m
   test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}}
 
 # Sorting of identical values is not stable, so we exclude those from these test cases and check them below.
-eval_ordered instant at 1m sort(test_metric{case!~".*(NaN|Inf)"})
-  test_metric{case="histogram 2"} {{count:20 sum:5}}
-  test_metric{case="float 1"}     10
-  test_metric{case="histogram 1"} {{count:0 sum:12}}
-  test_metric{case="float 2"}     15
-
-eval_ordered instant at 1m sort_desc(test_metric{case!~".*(NaN|Inf)"})
-  test_metric{case="float 2"}     15
-  test_metric{case="histogram 1"} {{count:0 sum:12}}
-  test_metric{case="float 1"}     10
-  test_metric{case="histogram 2"} {{count:20 sum:5}}
-
-eval_ordered instant at 1m sort(test_metric{case=~"float.*"})
+eval_ordered instant at 1m sort(test_metric)
   test_metric{case="float with -Inf"} -Inf
   test_metric{case="float 1"}         10
   test_metric{case="float 2"}         15
   test_metric{case="float with +Inf"} +Inf
   test_metric{case="float with NaN"}  NaN
 
-eval_ordered instant at 1m sort_desc(test_metric{case=~"float.*"})
+eval_ordered instant at 1m sort_desc(test_metric)
   test_metric{case="float with +Inf"} +Inf
   test_metric{case="float 2"}         15
   test_metric{case="float 1"}         10
@@ -962,36 +956,23 @@ eval_ordered instant at 1m sort_desc(test_metric{case=~"float.*"})
   test_metric{case="float with NaN"}  NaN
 
 eval_ordered instant at 1m sort(test_metric{case=~"histogram.*"})
-  test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}}
-  test_metric{case="histogram 2"}         {{count:20 sum:5}}
-  test_metric{case="histogram 1"}         {{count:0 sum:12}}
-  test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}}
-  test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}}
+  # Returns no results: sort() ignores histograms.
 
 eval_ordered instant at 1m sort_desc(test_metric{case=~"histogram.*"})
-  test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}}
-  test_metric{case="histogram 1"}         {{count:0 sum:12}}
-  test_metric{case="histogram 2"}         {{count:20 sum:5}}
-  test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}}
-  test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}}
+  # Returns no results: sort_desc() ignores histograms.
 
 # Test the case where some series have no sample at all.
 eval_ordered instant at 1m sort(test_metric{case=~"float.*"} > 11)
   test_metric{case="float 2"}         15
   test_metric{case="float with +Inf"} +Inf
 
-# sort / sort_desc do nothing for range queries.
+# sort / sort_desc do nothing except drop histograms for range queries.
 eval range from 0 to 4m step 1m sort(test_metric)
   test_metric{case="float 1"}             0+10x4
   test_metric{case="float 2"}             0+15x4
   test_metric{case="float with NaN"}      NaN NaN NaN NaN NaN
   test_metric{case="float with +Inf"}     +Inf +Inf +Inf +Inf +Inf
   test_metric{case="float with -Inf"}     -Inf -Inf -Inf -Inf -Inf
-  test_metric{case="histogram 1"}         {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}}
-  test_metric{case="histogram 2"}         {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}}
-  test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}}
-  test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}}
-  test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}}
 
 eval range from 0 to 4m step 1m sort_desc(test_metric)
   test_metric{case="float 1"}             0+10x4
@@ -999,11 +980,6 @@ eval range from 0 to 4m step 1m sort_desc(test_metric)
   test_metric{case="float with NaN"}      NaN NaN NaN NaN NaN
   test_metric{case="float with +Inf"}     +Inf +Inf +Inf +Inf +Inf
   test_metric{case="float with -Inf"}     -Inf -Inf -Inf -Inf -Inf
-  test_metric{case="histogram 1"}         {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}} {{count:0 sum:12}}
-  test_metric{case="histogram 2"}         {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}} {{count:20 sum:5}}
-  test_metric{case="histogram with NaN"}  {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}} {{count:0 sum:NaN}}
-  test_metric{case="histogram with +Inf"} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}} {{count:0 sum:Inf}}
-  test_metric{case="histogram with -Inf"} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}} {{count:0 sum:-Inf}}
 
 clear
 
