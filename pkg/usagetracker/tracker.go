@@ -125,8 +125,8 @@ type UsageTracker struct {
 	// Events storage (Kafka).
 	eventsKafkaWriter *kgo.Client
 
-	mtx        sync.RWMutex
-	partitions map[int32]*partition
+	partitionsMtx sync.RWMutex
+	partitions    map[int32]*partition
 
 	lostPartitions map[int32]time.Time
 
@@ -222,15 +222,15 @@ func (t *UsageTracker) run(ctx context.Context) error {
 func (t *UsageTracker) reconcilePartitions(ctx context.Context) error {
 	// We're going to hold the read lock for the whole function, as we're the only function that can write (we assume stop() can't be called because we're still running)
 	// We'll take the write mutex when we want to modify t.partitions.
-	t.mtx.RLock()
-	defer t.mtx.RUnlock()
+	t.partitionsMtx.RLock()
+	defer t.partitionsMtx.RUnlock()
 	// locked will run f while write-locked
 	locked := func(f func()) {
-		t.mtx.RUnlock()
-		t.mtx.Lock()
+		t.partitionsMtx.RUnlock()
+		t.partitionsMtx.Lock()
 		f()
-		t.mtx.Unlock()
-		t.mtx.RLock()
+		t.partitionsMtx.Unlock()
+		t.partitionsMtx.RLock()
 	}
 
 	logger := log.With(t.logger, "reconciliation_time", time.Now().UTC().Truncate(time.Second).Format(time.RFC3339))
@@ -405,8 +405,8 @@ func (t *UsageTracker) PrepareInstanceRingDownscaleHandler(w http.ResponseWriter
 func (t *UsageTracker) stop(_ error) error {
 	errs := multierror.New()
 	// Stop dependencies.
-	t.mtx.RLock()
-	defer t.mtx.RUnlock()
+	t.partitionsMtx.RLock()
+	defer t.partitionsMtx.RUnlock()
 	for _, p := range t.partitions {
 		p.StopAsync()
 	}
@@ -428,9 +428,9 @@ func (t *UsageTracker) stop(_ error) error {
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
-	t.mtx.RLock()
+	t.partitionsMtx.RLock()
 	p, ok := t.partitions[req.Partition]
-	t.mtx.RUnlock()
+	t.partitionsMtx.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("partition %d not found", req.Partition)
 	}
