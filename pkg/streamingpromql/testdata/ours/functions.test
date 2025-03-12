@@ -1049,7 +1049,7 @@ eval range from 1m to 3m step 1m quantile_over_time(scalar(quantile), metric[1m1
 
 clear
 
-# absent() tests
+# absent() and absent_over_time() tests
 load 6m
   series{case="-"} _x11
   series{case="0a"} _x11
@@ -1058,6 +1058,8 @@ load 6m
   series{case="a"} _ 1 _ 1 _ 1 _ 1 _ 1 _
   series{case="b"} _ _ 2 _ 2 _ 2 _ 2 _ 2
   series{case="c"} _ _ _ 3 _ _ _ 3 _ _ _
+  histo{case="0"} _x11
+  histo{case="a"} _ {{schema:0 sum:1 count:1}}x10
 
 eval instant at 0m absent(series)
   # expected no result
@@ -1101,11 +1103,6 @@ eval range from 0s to 66m step 6m absent(series > Inf)
 eval range from 0s to 66m step 6m absent(non_existent_metric)
   {} 1x11
 
-# test absent() with histogram
-load 6m
-  histo{case="0"} _x11
-  histo{case="a"} _ {{schema:0 sum:1 count:1}}x10
-
 eval instant at 0m absent(histo)
   {} 1
 
@@ -1122,6 +1119,67 @@ eval range from 0s to 66m step 6m absent(histo{case="a"})
   {case="a"} 1
 
 eval range from 0s to 66m step 6m absent(histo{case=~"(0|a)"})
+  {} 1
+
+# test absent_over_time()
+eval instant at 0m absent_over_time(series[10m])
+  # expected no result
+
+eval instant at 0m absent_over_time((series > Inf)[10m:1m])
+  {} 1
+
+eval instant at 0m absent_over_time(series{case="-"}[10m])
+  {case="-"} 1
+
+eval instant at 0m absent_over_time(series{case="a"}[10m])
+  {case="a"} 1
+
+eval instant at 8m absent_over_time(series{case="a"}[10m])
+  # expected no result
+
+eval instant at 0m absent_over_time(series{case=~"(a|b)"}[10m])
+  {} 1
+
+eval instant at 8m absent_over_time(series{case=~"(a|b)"}[10m])
+  # expected no result
+
+eval range from 0s to 66m step 6m absent_over_time(series[10m])
+  # expected no result
+
+eval range from 0s to 66m step 6m absent_over_time(series{case="-"}[10m])
+  {case="-"} 1x11
+
+eval range from 0s to 66m step 6m absent_over_time(series{case="0"}[10m])
+  # expected no result
+
+eval range from 0s to 66m step 6m absent_over_time(series{case=~"(a|b)"}[10m])
+  {} 1 _ _ _ _ _ _ _ _ _ _ _
+
+eval range from 0s to 66m step 6m absent_over_time(series{case=~"(0a|0b)"}[10m])
+  {} 1x11
+
+eval range from 0s to 66m step 6m absent_over_time((series > Inf)[10m:1m])
+  {} 1x11
+
+eval range from 0s to 66m step 6m absent_over_time(non_existent_metric[10m])
+  {} 1x11
+
+eval instant at 0m absent_over_time(histo[10m])
+  {} 1
+
+eval instant at 6m absent_over_time(histo[10m])
+  # expected no result
+
+eval range from 0s to 66m step 6m absent_over_time(histo[10m])
+  {} 1
+
+eval range from 0s to 66m step 6m absent_over_time(histo{case="0"}[10m])
+  {case="0"} 1x11
+
+eval range from 0s to 66m step 6m absent_over_time(histo{case="a"}[10m])
+  {case="a"} 1
+
+eval range from 0s to 66m step 6m absent_over_time(histo{case=~"(0|a)"}[10m])
   {} 1
 
 clear

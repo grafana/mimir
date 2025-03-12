@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
@@ -47,10 +48,13 @@ func init() {
 func TestUnsupportedPromQLFeatures(t *testing.T) {
 	features := EnableAllFeatures
 
+	// Disable experimental so that parser will parse it without the updating experiemental flag
+	parser.Functions["double_exponential_smoothing"].Experimental = false
+
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"absent_over_time(nonexistent{}[1h])": "'absent_over_time' function",
+		"double_exponential_smoothing(metric{}[1h], 1, 1)": "'double_exponential_smoothing' function",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {

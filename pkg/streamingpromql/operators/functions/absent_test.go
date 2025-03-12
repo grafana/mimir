@@ -16,11 +16,11 @@ func TestAbsent_NextSeries_ExhaustedCondition(t *testing.T) {
 	memTracker := limiting.NewMemoryConsumptionTracker(0, nil)
 
 	a := &Absent{
-		timeRange: types.QueryTimeRange{
+		TimeRange: types.QueryTimeRange{
 			StepCount: 1,
 		},
+		MemoryConsumptionTracker: memTracker,
 		presence:                 []bool{false}, // Single false value to generate one point
-		memoryConsumptionTracker: memTracker,
 	}
 
 	t.Run("first call should return data", func(t *testing.T) {
