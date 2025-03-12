@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 )
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
@@ -90,7 +91,15 @@ type Engine struct {
 	// (indicating something was not returned to a pool).
 	pedantic bool
 
-	jsonConfig jsoniter.API
+	astOptimizers []optimize.ASTOptimizer
+	jsonConfig    jsoniter.API
+}
+
+// RegisterASTOptimizer registers an AST optimizer used with this engine.
+//
+// This method is not thread-safe and must not be called concurrently with any other method on this type.
+func (e *Engine) RegisterASTOptimizer(o optimize.ASTOptimizer) {
+	e.astOptimizers = append(e.astOptimizers, o)
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {

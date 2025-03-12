@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"net/http"
 	"strconv"
 	"time"
@@ -836,6 +837,8 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	queryMetrics := stats.NewQueryMetrics(t.Registerer)
 	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, t.Registerer)
 	streamingEngine, err := streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, util_log.Logger)
+	streamingEngine.RegisterASTOptimizer(&ast.ConstantCollapse{})
+
 	analysisHandler := frontend.AnalysisHandler(streamingEngine)
 
 	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler, analysisHandler)
