@@ -254,7 +254,7 @@ func (b *BlockBuilder) runningStandaloneMode(ctx context.Context) error {
 	// Examples for interval=1h, buffer=15m:
 	//   (1) current time is 14:12, cycle end is 13:15
 	//   (2) current time is 14:17, cycle end is 14:15
-	cycleEndTime := cycleEndAtStartup(time.Now(), b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
+	cycleEndTime := cycleEndBefore(time.Now(), b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
 	var waitDur time.Duration
 	for {
 		select {
@@ -277,11 +277,20 @@ func (b *BlockBuilder) runningStandaloneMode(ctx context.Context) error {
 	}
 }
 
-// cycleEndAtStartup returns the timestamp of the last cycleEnd that is <=t.
-func cycleEndAtStartup(t time.Time, interval, buffer time.Duration) time.Time {
+// cycleEndBefore returns the timestamp of the last cycleEnd that is <=t.
+func cycleEndBefore(t time.Time, interval, buffer time.Duration) time.Time {
 	cycleEnd := t.Truncate(interval).Add(buffer)
 	if cycleEnd.After(t) {
 		cycleEnd = cycleEnd.Add(-interval)
+	}
+	return cycleEnd
+}
+
+// cycleEndAfter returns the timestamp of the first cycleEnd that is >=t.
+func cycleEndAfter(t time.Time, interval, buffer time.Duration) time.Time {
+	cycleEnd := t.Truncate(interval).Add(buffer)
+	if cycleEnd.Before(t) {
+		cycleEnd = cycleEnd.Add(interval)
 	}
 	return cycleEnd
 }
@@ -450,13 +459,37 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, st
 	for !sectionEndTime.After(cycleEndTime) {
 		logger := log.With(logger, "section_end", sectionEndTime, "offset", state.Commit.At)
 		state, err = b.consumePartitionSection(ctx, logger, builder, partition, state, sectionEndTime, cycleEndOffset)
-		if err != nil {
+		if err == nil {
+			sectionEndTime = sectionEndTime.Add(b.cfg.ConsumeInterval)
+			continue
+		}
+
+		var recInFutureErr *errFirstRecordInFuture
+		if !errors.As(err, &recInFutureErr) {
 			return PartitionState{}, fmt.Errorf("consume partition %d: %w", partition, err)
 		}
-		sectionEndTime = sectionEndTime.Add(b.cfg.ConsumeInterval)
+		err = nil
+
+		// The first record in the partition has a timestamp greater than the section end time.
+		// It is possible this was an idle partition that suddenly became active. Instead of trying every interval since
+		// the last commit, we shortcut to the min of first record time or the cycle end time.
+		sectionEndTime = cycleEndAfter(recInFutureErr.recordTs, b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
+		if sectionEndTime.After(cycleEndTime) {
+			sectionEndTime = cycleEndTime
+		}
 	}
 
 	return state, nil
+}
+
+// errFirstRecordInFuture is returned when the first record in the partition has a timestamp greater than the section end time.
+// It contains the timestamp of the first record.
+type errFirstRecordInFuture struct {
+	recordTs time.Time
+}
+
+func (e errFirstRecordInFuture) Error() string {
+	return fmt.Sprintf("first record in the partition has a timestamp greater than the section end time: %s", e.recordTs.UTC().String())
 }
 
 func (b *BlockBuilder) consumePartitionSection(
@@ -592,7 +625,7 @@ consumerLoop:
 	// No records were processed for this cycle.
 	if lastRec == nil {
 		level.Info(logger).Log("msg", "nothing to commit due to first record has a timestamp greater than this section end", "first_rec_offset", firstRec.Offset, "first_rec_ts", firstRec.Timestamp)
-		return state, nil
+		return state, &errFirstRecordInFuture{recordTs: firstRec.Timestamp}
 	}
 
 	// All samples in all records were processed. We can commit the last record's offset.
