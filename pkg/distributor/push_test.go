@@ -1296,6 +1296,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 			expectedResponse: &httpgrpc.HTTPResponse{Code: 200,
 				Headers: []*httpgrpc.Header{
 					{Key: "Content-Type", Values: []string{"application/json"}},
+					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
 				},
 				Body: []byte("{}"),
 			},
@@ -1313,6 +1314,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 			expectedResponse: &httpgrpc.HTTPResponse{Code: 200,
 				Headers: []*httpgrpc.Header{
 					{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
+					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
 				},
 				Body: nil,
 			},

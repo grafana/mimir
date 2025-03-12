@@ -115,20 +115,18 @@ func OTLPHandler(
 				// Push was successful, but OTLP converter left out some samples. We let the client know about it by replying with 4xx (and an insight log).
 				pushErr = httpgrpc.Error(http.StatusBadRequest, otlpErr.Error())
 			} else {
-				// Respond as per spec:
-				// https://github.com/open-telemetry/opentelemetry-proto/blob/main/docs/specification.md#otlphttp-response.
-				var expResp colmetricpb.ExportMetricsServiceResponse
-				contentType := r.Header.Get("Content-Type")
-				if contentType == jsonContentType {
-					w.Header().Set("Content-Type", contentType)
-					data, _ := json.Marshal(&expResp)
-					_, _ = w.Write(data)
-				} else {
-					w.Header().Set("Content-Type", pbContentType)
-					data, _ := proto.Marshal(&expResp)
-					_, _ = w.Write(data)
-				}
+				writeOTLPResponse(r, w, http.StatusOK, func(contentType string) ([]byte, error) {
+					// Respond as per spec:
+					// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
+					var expResp colmetricpb.ExportMetricsServiceResponse
+					if contentType == jsonContentType {
+						body, err := json.Marshal(&expResp)
+						return body, errors.Wrap(err, "marshalling ExportMetricsServiceResponse to JSON")
+					}
 
+					body, err := proto.Marshal(&expResp)
+					return body, errors.Wrap(err, "marshalling ExportMetricsServiceResponse to protobuf")
+				}, logger)
 				return
 			}
 		}
@@ -356,41 +354,53 @@ func httpRetryableToOTLPRetryable(httpStatusCode int) int {
 // See doc https://opentelemetry.io/docs/specs/otlp/#failures-1.
 func writeErrorToHTTPResponseBody(r *http.Request, w http.ResponseWriter, httpCode int, grpcCode codes.Code, msg string, logger log.Logger) {
 	validUTF8Msg := validUTF8Message(msg)
-	contentType := r.Header.Get("Content-Type")
-	if contentType == "" {
-		// Default to protobuf encoding.
-		contentType = "application/x-protobuf"
-	}
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if server.IsHandledByHttpgrpcServer(r.Context()) {
 		w.Header().Set(server.ErrorMessageHeaderKey, validUTF8Msg) // If httpgrpc Server wants to convert this HTTP response into error, use this error message, instead of using response body.
 	}
-	w.WriteHeader(httpCode)
 
-	var respBytes []byte
-	var err error
-	st := status.New(grpcCode, validUTF8Msg).Proto()
-	if contentType == jsonContentType {
-		respBytes, err = json.Marshal(st)
-		if err != nil {
-			level.Error(logger).Log("msg", "otlp response marshal failed", "err", err)
-			writeResponseFailedBody, _ := json.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
-			_, _ = w.Write(writeResponseFailedBody)
-			return
+	writeOTLPResponse(r, w, httpCode, func(contentType string) ([]byte, error) {
+		st := status.New(grpcCode, validUTF8Msg).Proto()
+		if contentType == jsonContentType {
+			body, err := json.Marshal(st)
+			if err != nil {
+				level.Error(logger).Log("msg", "failed to marshal body to JSON", "err", err)
+				body, err = json.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
+			}
+			return body, errors.Wrap(err, "marshalling Status to JSON")
 		}
-	} else {
-		respBytes, err = st.Marshal()
+
+		body, err := st.Marshal()
 		if err != nil {
-			level.Error(logger).Log("msg", "otlp response marshal failed", "err", err)
-			writeResponseFailedBody, _ := proto.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
-			_, _ = w.Write(writeResponseFailedBody)
-			return
+			level.Error(logger).Log("msg", "failed to marshal body to protobuf", "err", err)
+			body, err = proto.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
 		}
+		return body, errors.Wrap(err, "marshalling Status to protobuf")
+	}, logger)
+}
+
+func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, marshaler func(contentType string) ([]byte, error), logger log.Logger) {
+	contentType := r.Header.Get("Content-Type")
+	switch contentType {
+	case jsonContentType, pbContentType:
+	default:
+		// Default to protobuf encoding.
+		contentType = pbContentType
 	}
 
-	if _, err := w.Write(respBytes); err != nil {
-		level.Error(logger).Log("msg", "write error to otlp response failed", "err", err)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	body, err := marshaler(contentType)
+	if err != nil {
+		level.Error(logger).Log("msg", "OTLP response marshal failed", "err", err, "content_type", contentType)
+
+		contentType = "text/plain"
+		httpCode = http.StatusInternalServerError
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.WriteHeader(httpCode)
+	if _, err := w.Write(body); err != nil {
+		level.Error(logger).Log("msg", "failed to write OTLP error response", "err", err, "content_type", contentType)
 	}
 }
 
