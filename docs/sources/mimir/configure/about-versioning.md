@@ -260,7 +260,7 @@ The following features are currently experimental:
     - `-server.cluster-validation.grpc.enabled`
     - `-server.cluster-validation.grpc.soft-validation`
 - gRPC clients
-  - Cross-cluster validation support for gRPC communication: 
+  - Cross-cluster validation support for gRPC communication:
     - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
     - Invalid cluster validations are tracked via the `cortex_client_request_invalid_cluster_validation_labels_total` metrics.
 - Kafka-based ingest storage
