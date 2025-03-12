@@ -74,7 +74,7 @@ func newRulerClientFactory(clientCfg grpcclient.Config, reg prometheus.Registere
 
 func dialRulerClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*rulerExtendedClient, error) {
 	unary, stream := grpcclient.Instrument(requestDuration)
-	opts, err := clientCfg.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(invalidClusterValidation, logger))
+	opts, err := clientCfg.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(clientCfg.ClusterValidation.Label, invalidClusterValidation, logger))
 	if err != nil {
 		return nil, err
 	}

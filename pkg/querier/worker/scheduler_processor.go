@@ -439,7 +439,7 @@ func (w httpGrpcHeaderWriter) Set(key, val string) {
 
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
 	unary, stream := grpcclient.Instrument(sp.frontendClientRequestDuration)
-	opts, err := sp.grpcConfig.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(sp.invalidClusterValidation, sp.log))
+	opts, err := sp.grpcConfig.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(sp.grpcConfig.ClusterValidation.Label, sp.invalidClusterValidation, sp.log))
 	if err != nil {
 		return nil, err
 	}

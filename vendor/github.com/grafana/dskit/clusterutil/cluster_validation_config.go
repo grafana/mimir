@@ -65,6 +65,6 @@ func (cfg *ClusterValidationProtocolConfig) Validate(prefix string, label string
 func (cfg *ClusterValidationProtocolConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	softValidationFlag := prefix + "soft-validation"
 	enabledFlag := prefix + "enabled"
-	f.BoolVar(&cfg.SoftValidation, softValidationFlag, false, fmt.Sprintf("When enabled, soft cluster label validation will be executed. Can be enabled only together with %s", enabledFlag))
-	f.BoolVar(&cfg.Enabled, enabledFlag, false, "When enabled, cluster label validation will be executed: configured cluster validation label will be compared with the cluster validation label received through the requests.")
+	f.BoolVar(&cfg.SoftValidation, softValidationFlag, false, fmt.Sprintf("When enabled, soft cluster label validation is executed. Can be enabled only together with %s", enabledFlag))
+	f.BoolVar(&cfg.Enabled, enabledFlag, false, "When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.")
 }

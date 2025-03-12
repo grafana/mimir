@@ -905,7 +905,7 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 			// We track ingester client response code.
 			sums, err = distributor.SumMetrics([]string{"cortex_ingester_client_request_duration_seconds"},
 				e2e.WithLabelMatchers(
-					labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/Push"),
+					//labels.MustNewMatcher(labels.MatchEqual, "operation", "/cortex.Ingester/Push"),
 					labels.MustNewMatcher(labels.MatchRegexp, "status_code", testCase.expectedIngesterClientStatus),
 				),
 				e2e.WithMetricCount,

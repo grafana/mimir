@@ -30,8 +30,8 @@ func NewRequestInvalidClusterValidationLabelsTotalCounter(reg prometheus.Registe
 	}, []string{methodLabel})
 }
 
-func NewInvalidClusterValidationReporter(invalidClusterValidations *prometheus.CounterVec, logger log.Logger) middleware.InvalidClusterValidationReporter {
-	return func(msg string, cluster string, method string) {
+func NewInvalidClusterValidationReporter(cluster string, invalidClusterValidations *prometheus.CounterVec, logger log.Logger) middleware.InvalidClusterValidationReporter {
+	return func(msg string, method string) {
 		level.Warn(logger).Log("msg", msg, "method", method, "clusterValidationLabel", cluster)
 		invalidClusterValidations.WithLabelValues(method).Inc()
 	}

@@ -568,7 +568,7 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.Sched
 			middleware.ClientUserHeaderInterceptor,
 		},
 		nil,
-		util.NewInvalidClusterValidationReporter(s.invalidClusterValidation, s.log),
+		util.NewInvalidClusterValidationReporter(s.cfg.GRPCClientConfig.ClusterValidation.Label, s.invalidClusterValidation, s.log),
 	)
 	if err != nil {
 		level.Warn(s.log).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)

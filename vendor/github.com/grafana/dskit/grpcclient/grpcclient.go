@@ -20,6 +20,9 @@ import (
 	"github.com/grafana/dskit/middleware"
 )
 
+// grpcWithChainUnaryInterceptor helps to ensure that the requested order of interceptors is preserved.
+var grpcWithChainUnaryInterceptor = grpc.WithChainUnaryInterceptor
+
 // Config for a gRPC client.
 type Config struct {
 	MaxRecvMsgSize  int     `yaml:"max_recv_msg_size" category:"advanced"`
@@ -49,6 +52,9 @@ type Config struct {
 	CustomCompressors []string `yaml:"-"`
 
 	ClusterValidation clusterutil.ClusterValidationConfig `yaml:"cluster_validation" category:"experimental"`
+
+	// clusterUnaryClientInterceptor is needed for testing purposes.
+	clusterUnaryClientInterceptor grpc.UnaryClientInterceptor `yaml:"-"`
 }
 
 // RegisterFlags registers flags.
@@ -138,8 +144,11 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{NewRateLimiter(cfg)}, unaryClientInterceptors...)
 	}
 
+	// If cluster validation is enabled, ClusterUnaryClientInterceptor must be the last UnaryClientInterceptor
+	// to wrap the real call.
 	if cfg.ClusterValidation.Label != "" {
-		unaryClientInterceptors = append([]grpc.UnaryClientInterceptor{middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidation.Label, invalidClusterValidationReporter)}, unaryClientInterceptors...)
+		cfg.clusterUnaryClientInterceptor = middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidation.Label, invalidClusterValidationReporter)
+		unaryClientInterceptors = append(unaryClientInterceptors, cfg.clusterUnaryClientInterceptor)
 	}
 
 	if cfg.ConnectTimeout > 0 {
@@ -175,7 +184,7 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 	return append(
 		opts,
 		grpc.WithDefaultCallOptions(cfg.CallOptions()...),
-		grpc.WithChainUnaryInterceptor(unaryClientInterceptors...),
+		grpcWithChainUnaryInterceptor(unaryClientInterceptors...),
 		grpc.WithChainStreamInterceptor(streamClientInterceptors...),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                time.Second * 20,

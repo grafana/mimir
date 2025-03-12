@@ -105,7 +105,7 @@ func DialQueryFrontend(cfg QueryFrontendConfig, reg prometheus.Registerer, logge
 			middleware.ClientUserHeaderInterceptor,
 		},
 		nil,
-		util.NewInvalidClusterValidationReporter(invalidClusterValidation, logger),
+		util.NewInvalidClusterValidationReporter(cfg.GRPCClientConfig.ClusterValidation.Label, invalidClusterValidation, logger),
 	)
 	if err != nil {
 		return nil, err
