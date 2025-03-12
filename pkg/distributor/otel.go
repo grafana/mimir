@@ -122,9 +122,9 @@ func OTLPHandler(
 				if contentType == jsonContentType {
 					w.Header().Set("Content-Type", contentType)
 					data, _ := json.Marshal(&expResp)
-					_, _ = w.Write([]byte(data))
+					_, _ = w.Write(data)
 				} else {
-					w.Header().Set("Content-Type", contentType)
+					w.Header().Set("Content-Type", pbContentType)
 					data, _ := proto.Marshal(&expResp)
 					_, _ = w.Write(data)
 				}
