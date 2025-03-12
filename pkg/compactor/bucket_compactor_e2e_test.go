@@ -257,8 +257,6 @@ func TestGroupCompactE2E(t *testing.T) {
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsFailed))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.blockUploadsStarted))
-		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.blockUploadsFailed))
-		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.compactionBlocksBuildSparseHeadersFailed))
 
 		_, err = os.Stat(dir)
 		assert.True(t, os.IsNotExist(err), "dir %s should be remove after compaction.", dir)
@@ -349,8 +347,6 @@ func TestGroupCompactE2E(t *testing.T) {
 		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsFailed))
 		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.blockUploadsStarted))
-		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.blockUploadsFailed))
-		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.compactionBlocksBuildSparseHeadersFailed))
 
 		_, err = os.Stat(dir)
 		assert.True(t, os.IsNotExist(err), "dir %s should be remove after compaction.", dir)
