@@ -13,9 +13,9 @@ weight: 30
 
 Mimir Jsonnet supports autoscaling for the following components:
 
-- [Ruler Querier]({{< relref "../../references/architecture/components/ruler" >}})
-- [Querier]({{< relref "../../references/architecture/components/querier" >}})
-- [Distributor]({{< relref "../../references/architecture/components/distributor" >}})
+- [Ruler Querier](../../../references/architecture/components/ruler/)
+- [Querier](../../../references/architecture/components/querier/)
+- [Distributor](../../../references/architecture/components/distributor/)
 
 Autoscaling, which is based on Prometheus metrics and [Kubernetes-based Event Driven Autoscaler (KEDA)](https://keda.sh), uses Kubernetes' Horizontal Pod Autoscaler (HPA).
 
@@ -65,7 +65,7 @@ However, if KEDA is not running successfully, there are consequences for Mimir a
 Use a [high availability](https://keda.sh/docs/latest/operate/cluster/#high-availability) KEDA configuration if autoscaling is critical for your use case.
 {{< /admonition >}}
 
-The [alert `MimirAutoscalerNotActive`]({{< relref "../../manage/monitor-grafana-mimir" >}}) fires if HPA is unable to scale the deployment for any reason (e.g. unable to scrape metrics from KEDA metrics API server).
+The [alert `MimirAutoscalerNotActive`](../../../manage/monitor-grafana-mimir/) fires if HPA is unable to scale the deployment for any reason (e.g. unable to scrape metrics from KEDA metrics API server).
 
 ## How Kubernetes HPA works
 
