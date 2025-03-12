@@ -222,7 +222,7 @@ type Limits struct {
 	RulerMaxRuleGroupsPerTenantByNamespace                flagext.LimitsMap[int]            `yaml:"ruler_max_rule_groups_per_tenant_by_namespace" json:"ruler_max_rule_groups_per_tenant_by_namespace" category:"experimental"`
 	RulerProtectedNamespaces                              flagext.StringSliceCSV            `yaml:"ruler_protected_namespaces" json:"ruler_protected_namespaces" category:"experimental"`
 	RulerMaxIndependentRuleEvaluationConcurrencyPerTenant int64                             `yaml:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" json:"ruler_max_independent_rule_evaluation_concurrency_per_tenant" category:"experimental"`
-	RulerAlertmanagerClientConfig                         notifier.AlertmanagerClientConfig `yaml:"ruler_alertmanager_client_config" json:"ruler_alertmanager_client_config" category:"experimental" doc:"nocli|description=Per-tenant alertmanager client configuration. If not supplied, the tenant's notifications will be sent to the ruler-wide default."`
+	RulerAlertmanagerClientConfig                         notifier.AlertmanagerClientConfig `yaml:"ruler_alertmanager_client_config" json:"ruler_alertmanager_client_config" category:"experimental" doc:"nocli|description=Per-tenant Alertmanager client configuration. If not supplied, the tenant's notifications are sent to the ruler-wide default."`
 
 	// Store-gateway.
 	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
@@ -386,7 +386,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	if !l.RulerAlertmanagerClientConfig.NotifierConfig.OAuth2.EndpointParams.IsInitialized() {
 		l.RulerAlertmanagerClientConfig.NotifierConfig.OAuth2.EndpointParams = flagext.NewLimitsMap[string](nil)
 	}
-	f.Var(&l.RulerAlertmanagerClientConfig, "ruler.alertmanager-client-config", "Per-tenant alertmanager client configuration. If not supplied, the tenant's notifications will be sent to the ruler-wide default.")
+	f.Var(&l.RulerAlertmanagerClientConfig, "ruler.alertmanager-client-config", "Per-tenant Alertmanager client configuration. If not supplied, the tenant's notifications are sent to the ruler-wide default.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. 0 to disable splitting.")

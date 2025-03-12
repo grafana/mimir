@@ -3827,8 +3827,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ruler.max-independent-rule-evaluation-concurrency-per-tenant
 [ruler_max_independent_rule_evaluation_concurrency_per_tenant: <int> | default = 4]
 
-# Per-tenant alertmanager client configuration. If not supplied, the tenant's
-# notifications will be sent to the ruler-wide default.
+# Per-tenant Alertmanager client configuration. If not supplied, the tenant's
+# notifications are sent to the ruler-wide default.
 ruler_alertmanager_client_config:
   [alertmanager_url: <string> | default = ""]
 
