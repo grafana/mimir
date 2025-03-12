@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/user"
@@ -434,7 +435,8 @@ func (w httpGrpcHeaderWriter) Set(key, val string) {
 }
 
 func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClient, error) {
-	opts, err := sp.grpcConfig.DialOption(grpcclient.Instrument(sp.frontendClientRequestDuration))
+	unary, stream := grpcclient.Instrument(sp.frontendClientRequestDuration)
+	opts, err := sp.grpcConfig.DialOption(unary, stream, middleware.NoOpInvalidClusterValidationReporter)
 	if err != nil {
 		return nil, err
 	}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/pkg/errors"
@@ -104,7 +105,8 @@ func (f *alertmanagerClientsPool) GetClientFor(addr string) (Client, error) {
 // dialAlertmanagerClient establishes a GRPC connection to an alertmanager that is aware of the the health of the server
 // and collects observations of request durations.
 func dialAlertmanagerClient(cfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec) (*alertmanagerClient, error) {
-	opts, err := cfg.DialOption(grpcclient.Instrument(requestDuration))
+	unary, stream := grpcclient.Instrument(requestDuration)
+	opts, err := cfg.DialOption(unary, stream, middleware.NoOpInvalidClusterValidationReporter)
 	if err != nil {
 		return nil, err
 	}

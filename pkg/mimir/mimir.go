@@ -622,7 +622,7 @@ func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConf
 	for _, inh := range inheriters {
 		inheritance := inh.CommonConfigInheritance()
 		for desc, loc := range inheritance.Storage {
-			if err := inheritFlags(log, common.Storage.RegisteredFlags, loc.RegisteredFlags, setFlags); err != nil {
+			if err := inheritFlags(log, &common.Storage, loc, setFlags); err != nil {
 				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
 			}
 		}
@@ -632,11 +632,13 @@ func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConf
 }
 
 // inheritFlags takes flags from the origin set and sets them to the equivalent flags in the dest set, unless those are already set.
-func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.RegisteredFlags, set map[string]bool) error {
-	for f, o := range orig.Flags {
-		d, ok := dest.Flags[f]
+func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flagext.RegisteredFlagsTracker, set map[string]bool) error {
+	origFlags := orig.RegisteredFlags()
+	destFlags := dest.RegisteredFlags()
+	for f, o := range origFlags.Flags {
+		d, ok := destFlags.Flags[f]
 		if !ok {
-			return fmt.Errorf("implementation error: flag %q was in flags prefixed with %q (%q) but was not in flags prefixed with %q (%q)", f, orig.Prefix, o.Name, dest.Prefix, d.Name)
+			return fmt.Errorf("implementation error: flag %q was in flags prefixed with %q (%q) but was not in flags prefixed with %q (%q)", f, origFlags.Prefix, o.Name, destFlags.Prefix, d.Name)
 		}
 		if !set[o.Name] {
 			// Nothing to inherit because origin was not set.

@@ -12,6 +12,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/pkg/errors"
@@ -38,7 +39,8 @@ func newStoreGatewayClientFactory(clientCfg grpcclient.Config, reg prometheus.Re
 }
 
 func dialStoreGatewayClient(clientCfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec) (*storeGatewayClient, error) {
-	opts, err := clientCfg.DialOption(grpcclient.Instrument(requestDuration))
+	unary, stream := grpcclient.Instrument(requestDuration)
+	opts, err := clientCfg.DialOption(unary, stream, middleware.NoOpInvalidClusterValidationReporter)
 	if err != nil {
 		return nil, err
 	}

@@ -96,10 +96,14 @@ func (c *QueryFrontendConfig) Validate() error {
 
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
 func DialQueryFrontend(cfg QueryFrontendConfig) (httpgrpc.HTTPClient, error) {
-	opts, err := cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
-		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
-		middleware.ClientUserHeaderInterceptor,
-	}, nil)
+	opts, err := cfg.GRPCClientConfig.DialOption(
+		[]grpc.UnaryClientInterceptor{
+			otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+			middleware.ClientUserHeaderInterceptor,
+		},
+		nil,
+		middleware.NoOpInvalidClusterValidationReporter,
+	)
 	if err != nil {
 		return nil, err
 	}
