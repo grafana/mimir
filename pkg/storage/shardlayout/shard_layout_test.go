@@ -60,18 +60,20 @@ func BenchmarkIndexHeaderPartitionSize(b *testing.B) {
 			//	fmt.Printf("\tFirst 5 Headers: %v\n", bin.IndexHeaders[:5])
 			//	fmt.Printf("\tLast  5 Headers: %v\n", bin.IndexHeaders[len(bin.IndexHeaders)-5:])
 			//}
-			totalBinStructSize := 0
-			totalBinCompressedStructSize := 0
-			for _, bin := range bins {
-				totalBinStructSize += bin.Size()
-				data, err := bin.Marshal()
-				if err != nil {
-					b.Fatal(err)
-				}
 
-				compressed := snappy.Encode(nil, data)
-				totalBinCompressedStructSize += len(compressed)
+			final := IndexHeaderPartitions{
+				Partitions:      bins,
+				TenantIDLookups: tenantIDLookupTable,
 			}
+
+			totalBinStructSize := final.Size()
+			data, err := final.Marshal()
+			if err != nil {
+				b.Fatal(err)
+			}
+
+			compressed := snappy.Encode(nil, data)
+			totalBinCompressedStructSize := len(compressed)
 
 			minBinSizePct := float64(minBinSize) / float64(testCase.cell.instanceSizeMiB)
 			maxBinSizePct := float64(maxBinSize) / float64(testCase.cell.instanceSizeMiB)
@@ -177,7 +179,7 @@ func loadIndexHeadersFromCSV(t testing.TB, filename string) ([]IndexHeaderMeta, 
 		}
 
 		blockID := filePathParts[len(filePathParts)-1]
-		convertedBlockIDBytes := int64(binary.BigEndian.Uint64([]byte(blockID)))
+		convertedBlockIDBytes := binary.BigEndian.Uint32([]byte(blockID))
 
 		tenantID := filePathParts[len(filePathParts)-2]
 		tenantIDRef := symbolsTable.Symbolize(tenantID)

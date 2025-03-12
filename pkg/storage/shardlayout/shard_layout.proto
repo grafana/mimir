@@ -17,7 +17,7 @@ option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 message IndexHeaderMeta  {
-    int64 BlockID  = 1;
+    uint32 BlockID  = 1;
     uint32 TenantIDRef = 2;
     int64 SizeMiB = 3;
 }
