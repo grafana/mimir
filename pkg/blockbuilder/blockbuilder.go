@@ -522,7 +522,8 @@ func (b *BlockBuilder) consumePartitionSection(
 
 		dur := time.Since(t)
 
-		if retErr != nil {
+		var temp *errFirstRecordInFuture
+		if retErr != nil && !errors.As(retErr, &temp) {
 			level.Error(logger).Log("msg", "partition consumption failed", "err", retErr, "duration", dur)
 			return
 		}
