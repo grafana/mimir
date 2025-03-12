@@ -39,7 +39,15 @@ func (e *Engine) NewQueryPlan(ctx context.Context, qs string, timeRange types.Qu
 		return nil, err
 	}
 
-	// TODO: apply AST optimisations
+	for _, o := range e.astOptimizers {
+		expr, err = runASTStage(o.Name(), observer, func() (parser.Expr, error) {
+			return o.Apply(ctx, expr)
+		})
+
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	observer.OnAllASTStagesComplete(expr)
 
