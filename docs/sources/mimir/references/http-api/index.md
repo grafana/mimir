@@ -22,7 +22,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 
 - **Microservices mode**: Each service exposes its own endpoints.
 - **Monolithic mode**: The Grafana Mimir instance exposes all API endpoints.
-- **Read-write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes]({{< relref "../architecture/deployment-modes" >}}) for the grouping of components.
+- **Read-write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes](../architecture/deployment-modes/) for the grouping of components.
 
 ## Endpoints
 
@@ -122,7 +122,7 @@ If you disable multi-tenancy, Grafana Mimir doesn't require any request to inclu
 
 Multi-tenancy can be enabled and disabled via the `-auth.multitenancy-enabled` flag or its respective YAML configuration option.
 
-For more information about authentication and authorization, refer to [Authentication and Authorization]({{< relref "../../manage/secure/authentication-and-authorization" >}}).
+For more information about authentication and authorization, refer to [Authentication and Authorization](../../manage/secure/authentication-and-authorization/).
 
 ## All services
 
@@ -184,7 +184,7 @@ This endpoint displays empty configuration flags, it exists only to be compatibl
 GET /runtime_config
 ```
 
-This endpoint displays the [runtime configuration]({{< relref "../../configure/about-runtime-configuration" >}}) currently applied to Grafana Mimir, in YAML format, including default values.
+This endpoint displays the [runtime configuration](../../configure/about-runtime-configuration/) currently applied to Grafana Mimir, in YAML format, including default values.
 The endpoint is only available if Grafana Mimir is configured with the `-runtime-config.file` option.
 
 #### Different modes
@@ -294,7 +294,7 @@ The endpoint is only available if Grafana Mimir is configured with the `-runtime
 
 ## Distributor
 
-The following endpoints relate to the [distributor]({{< relref "../architecture/components/distributor" >}}).
+The following endpoints relate to the [distributor](../architecture/components/distributor/).
 
 ### Remote write
 
@@ -366,7 +366,7 @@ This endpoint displays a web page with the current status of the HA tracker, inc
 
 ## Ingester
 
-The following endpoints relate to the [ingester]({{< relref "../architecture/components/ingester" >}}).
+The following endpoints relate to the [ingester](../architecture/components/ingester/).
 
 ### Flush chunks / blocks
 
@@ -522,7 +522,7 @@ Displays a web page with details about tenant's open TSDB on given ingester.
 
 ## Querier / Query-frontend
 
-The following endpoints are exposed both by the [querier]({{< relref "../architecture/components/querier" >}}) and [query-frontend]({{< relref "../architecture/components/query-frontend" >}}).
+The following endpoints are exposed both by the [querier](../architecture/components/querier/) and [query-frontend](../architecture/components/query-frontend/).
 
 ### Instant query
 
@@ -895,7 +895,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To list all rule groups from Mimir, use [`mimirtool rules list` command]({{< relref "../../manage/tools/mimirtool#list-rules" >}}).
+To list all rule groups from Mimir, use [`mimirtool rules list` command](../../manage/tools/mimirtool/#list-rules).
 {{< /admonition >}}
 
 **Example response**
@@ -996,7 +996,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To retrieve a single rule group from Mimir, use [`mimirtool rules get` command]({{< relref "../../manage/tools/mimirtool#get-rule-group" >}}) .
+To retrieve a single rule group from Mimir, use [`mimirtool rules get` command](../../manage/tools/mimirtool/#get-rule-group) .
 {{< /admonition >}}
 
 ### Set rule group
@@ -1016,7 +1016,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To load one or more rule groups into Mimir, use [`mimirtool rules load` command]({{< relref "../../manage/tools/mimirtool#load-rule-group" >}}) .
+To load one or more rule groups into Mimir, use [`mimirtool rules load` command](../../manage/tools/mimirtool/#load-rule-group) .
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
@@ -1051,7 +1051,7 @@ This endpoint can be disabled via the `-ruler.enable-api` CLI flag (or its respe
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To delete a rule group from Mimir, use [`mimirtool rules delete` command]({{< relref "../../manage/tools/mimirtool#delete-rule-group" >}}).
+To delete a rule group from Mimir, use [`mimirtool rules delete` command](../../manage/tools/mimirtool/#delete-rule-group).
 {{< /admonition >}}
 
 ### Delete namespace
@@ -1143,7 +1143,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command]({{< relref "../../manage/tools/mimirtool#get-alertmanager-configuration" >}}).
+To retrieve a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager get` command](../../manage/tools/mimirtool/#get-alertmanager-configuration).
 {{< /admonition >}}
 
 ### Set Alertmanager configuration
@@ -1163,7 +1163,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command]({{< relref "../../manage/tools/mimirtool#load-alertmanager-configuration" >}}).
+To load a tenant's Alertmanager configuration to Mimir, use [`mimirtool alertmanager load` command](../../manage/tools/mimirtool/#load-alertmanager-configuration).
 {{< /admonition >}}
 
 {{< admonition type="note" >}}
@@ -1208,7 +1208,7 @@ This endpoint can be enabled and disabled via the `-alertmanager.enable-api` CLI
 Requires [authentication](#authentication).
 
 {{< admonition type="note" >}}
-To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command]({{< relref "../../manage/tools/mimirtool#delete-alertmanager-configuration" >}}).
+To delete a tenant's Alertmanager configuration from Mimir, use [`mimirtool alertmanager delete` command](../../manage/tools/mimirtool/#delete-alertmanager-configuration).
 {{< /admonition >}}
 
 ## Store-gateway
