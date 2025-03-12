@@ -91,7 +91,24 @@ func AbsentFunctionOperatorFactory(args []types.Operator, memoryConsumptionTrack
 		return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", functionName, args[0])
 	}
 
-	var o types.InstantVectorOperator = functions.NewAbsent(inner, argExpressions[0], timeRange, expressionPosition, memoryConsumptionTracker)
+	var o types.InstantVectorOperator = functions.NewAbsent(inner, argExpressions[0], timeRange, memoryConsumptionTracker, expressionPosition)
+
+	return o, nil
+}
+
+func AbsentOverTimeFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange, argExpressions parser.Expressions) (types.InstantVectorOperator, error) {
+	functionName := "absent_over_time"
+	if len(args) != 1 || len(argExpressions) != 1 {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", functionName, len(args))
+	}
+
+	inner, ok := args[0].(types.RangeVectorOperator)
+	if !ok {
+		return nil, fmt.Errorf("expected a range vector argument for %s, got %T", functionName, args[0])
+	}
+
+	var o types.InstantVectorOperator = functions.NewAbsentOverTime(inner, argExpressions[0], timeRange, memoryConsumptionTracker, expressionPosition)
 
 	return o, nil
 }
@@ -541,8 +558,9 @@ func SortOperatorFactory(descending bool) InstantVectorFunctionOperatorFactory {
 		}
 
 		if timeRange.StepCount != 1 {
-			// If this is a range query, sort / sort_desc have no effect, so we might as well just skip straight to the inner operator.
-			return inner, nil
+			// If this is a range query, sort / sort_desc does not reorder series, but does drop all histograms like it would for an instant query.
+			f := functions.FunctionOverInstantVectorDefinition{SeriesDataFunc: functions.DropHistograms}
+			return functions.NewFunctionOverInstantVector(inner, nil, memoryConsumptionTracker, f, expressionPosition, timeRange), nil
 		}
 
 		return functions.NewSort(inner, descending, memoryConsumptionTracker, expressionPosition), nil
@@ -554,6 +572,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	//lint:sorted
 	"abs":                InstantVectorTransformationFunctionOperatorFactory("abs", functions.Abs),
 	"absent":             AbsentFunctionOperatorFactory,
+	"absent_over_time":   AbsentOverTimeFunctionOperatorFactory,
 	"acos":               InstantVectorTransformationFunctionOperatorFactory("acos", functions.Acos),
 	"acosh":              InstantVectorTransformationFunctionOperatorFactory("acosh", functions.Acosh),
 	"asin":               InstantVectorTransformationFunctionOperatorFactory("asin", functions.Asin),
