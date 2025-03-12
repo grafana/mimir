@@ -48,18 +48,12 @@ func init() {
 func TestUnsupportedPromQLFeatures(t *testing.T) {
 	features := EnableAllFeatures
 
-	// Aliasing holt_winters call
-	promql.FunctionCalls["holt_winters"] = promql.FunctionCalls["double_exponential_smoothing"]
-	parser.Functions["holt_winters"] = parser.Functions["double_exponential_smoothing"]
 	// Disable experimental so that parser will parse it without the updating experiemental flag
-	parser.Functions["holt_winters"].Experimental = false
+	parser.Functions["double_exponential_smoothing"].Experimental = false
 
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		// expected error for holt_winters is the same as double_exponential_smoothing because mimir just aliasing it as above
-		"holt_winters(metric{}[1h], 1, 1)": "'double_exponential_smoothing' function",
-
 		"double_exponential_smoothing(metric{}[1h], 1, 1)": "'double_exponential_smoothing' function",
 	}
 
