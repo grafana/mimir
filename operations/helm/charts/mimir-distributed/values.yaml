@@ -4152,6 +4152,8 @@ provisioner:
   provisionedSecretPrefix: null
   # -- Hook type(s) to customize when the job runs.  defaults to post-install
   hookType: "post-install"
+  # -- URL for the admin API service. Defaults to the admin API service URL from the enterprise gateway.
+  apiUrl: "{{ .Values.enterpriseGateway.proxy.admin_api.url }}"
   # -- Additional tenants to be created. Each tenant will get a read and write policy
   # and associated token. Tenant must have a name and a namespace for the secret containting
   # the token to be created in. For example
