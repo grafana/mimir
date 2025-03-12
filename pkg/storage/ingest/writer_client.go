@@ -3,6 +3,7 @@
 package ingest
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
 	"math"
@@ -77,6 +78,27 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgo.MaxBufferedRecords(math.MaxInt), // Use a high value to set it as unlimited, because the client doesn't support "0 as unlimited".
 		kgo.MaxBufferedBytes(0),
 	)
+
+	if kafkaCfg.ProducerUseZstdCompression {
+		opts = append(opts, kgo.ProducerBatchCompression(kgo.ZstdCompression(), kgo.SnappyCompression(), kgo.NoCompression()))
+	}
+	if kafkaCfg.ProducerUseGzipCompression {
+		opts = append(opts, kgo.ProducerBatchCompression(kgo.GzipCompression().WithLevel(gzip.DefaultCompression), kgo.SnappyCompression(), kgo.NoCompression()))
+	}
+	if kafkaCfg.ProducerUseGzipBestSpeedCompression {
+		opts = append(opts, kgo.ProducerBatchCompression(kgo.GzipCompression().WithLevel(gzip.BestSpeed), kgo.SnappyCompression(), kgo.NoCompression()))
+	}
+	if kafkaCfg.ProducerUseGzipBestCompressionCompression {
+		opts = append(opts, kgo.ProducerBatchCompression(kgo.GzipCompression().WithLevel(gzip.BestCompression), kgo.SnappyCompression(), kgo.NoCompression()))
+	}
+	if kafkaCfg.ProducerUseGzipHuffmanOnlyCompression {
+		// Including for posterity, this doesn't make sense for our use case.
+		opts = append(opts, kgo.ProducerBatchCompression(kgo.GzipCompression().WithLevel(gzip.HuffmanOnly), kgo.SnappyCompression(), kgo.NoCompression()))
+	}
+	if kafkaCfg.ProducerUseLZ4Compression > -1 {
+		// 0 == lz4.Fast, levels go 1-9 beyond this.
+		opts = append(opts, kgo.ProducerBatchCompression(kgo.Lz4Compression().WithLevel(kafkaCfg.ProducerUseLZ4Compression), kgo.SnappyCompression(), kgo.NoCompression()))
+	}
 
 	return kgo.NewClient(opts...)
 }
