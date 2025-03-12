@@ -10,7 +10,7 @@ In certain situations, you might want to control what queries are being sent to 
 might be intentionally or unintentionally expensive to run, and they might affect the overall stability or cost of running
 your service.
 
-You can block queries using [per-tenant overrides]({{< relref "./about-runtime-configuration" >}}):
+You can block queries using [per-tenant overrides](../about-runtime-configuration/):
 
 ```yaml
 overrides:
@@ -24,7 +24,7 @@ overrides:
         regex: true
 ```
 
-To set up runtime overrides, refer to [runtime configuration]({{< relref "./about-runtime-configuration" >}}).
+To set up runtime overrides, refer to [runtime configuration](../about-runtime-configuration/).
 
 {{% admonition type="note" %}}
 The order of patterns is preserved, so the first matching pattern will be used.
