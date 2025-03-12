@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package shardlayoutpb;
+
+option go_package = "shardlayoutpb";
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+
+// Do not generate XXX fields to reduce memory footprint.
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message IndexHeaderMeta  {
+    int64 BlockID  = 1;
+    uint32 TenantIDRef = 2;
+    int64 SizeMiB = 3;
+}
+
+message IndexHeaderPartition {
+  repeated IndexHeaderMeta IndexHeaders = 1 [(gogoproto.nullable) = false];
+  int64 TotalSizeMiB = 2;
+}
+
+message IndexHeaderPartitions {
+  repeated IndexHeaderPartition Partitions = 1 [(gogoproto.nullable) = false];
+  repeated uint32 TenantIDLookups = 3;
+}
