@@ -3528,7 +3528,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # with query-sharding enabled make sure to set
 # -query-frontend.query-result-response-format to 'protobuf'.
 # CLI flag: -ingester.native-histograms-ingestion-enabled
-[native_histograms_ingestion_enabled: <boolean> | default = false]
+[native_histograms_ingestion_enabled: <boolean> | default = true]
 
 # (experimental) Enable experimental out-of-order native histogram ingestion.
 # This only takes effect if the `-ingester.out-of-order-time-window` value is
