@@ -8,7 +8,7 @@ A new Grafana Mimir release is cut approximately once every quarter, at the begi
 The following table contains past releases and tentative dates for upcoming releases:
 
 | Version | Date       | Release shepherd   |
-| ------- | ---------- | ------------------ |
+| ------- |------------| ------------------ |
 | 2.0.0   | 2022-03-20 | Marco Pracucci     |
 | 2.1.0   | 2022-05-16 | Johanna Ratliff    |
 | 2.2.0   | 2022-06-27 | Oleg Zaytsev       |
@@ -24,7 +24,7 @@ The following table contains past releases and tentative dates for upcoming rele
 | 2.12.0  | 2024-03-11 | Yuri Nikolic       |
 | 2.13.0  | 2024-06-17 | Dimitar Dimitrov   |
 | 2.14.0  | 2024-10-07 | Vladimir Varankin  |
-| 2.15.0  | 2024-12-12 | Casie Chen         |
+| 2.15.0  | 2025-01-06 | Casie Chen         |
 | 2.16.0  | 2025-03-10 | _To be announced_  |
 
 ## Release shepherd responsibilities
