@@ -851,7 +851,7 @@ func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args
 
 	// Initial estimated trend is the difference between the first and second samples.
 	// First sample will always be in the head.
-	// If we have only one point in head, the sedon sample is the first index in tail.
+	// If we have only one point in head, the second sample is the first index in tail.
 	if len(fHead) == 1 {
 		estimatedTrend = fTail[0].F - fHead[0].F
 	} else {
