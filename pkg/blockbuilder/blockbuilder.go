@@ -13,7 +13,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
@@ -25,6 +24,8 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
+
+	"github.com/grafana/mimir/pkg/util"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -131,7 +132,7 @@ func (b *BlockBuilder) makeSchedulerClient() (schedulerpb.SchedulerClient, *grpc
 	dialOpts, err := b.cfg.SchedulerConfig.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())},
 		nil,
-		middleware.NoOpInvalidClusterValidationReporter,
+		util.NewInvalidClusterValidationReporter(b.cfg.SchedulerConfig.GRPCClientConfig.ClusterValidation.Label, b.blockBuilderMetrics.invalidClusterValidation, b.logger),
 	)
 	if err != nil {
 		return nil, nil, err

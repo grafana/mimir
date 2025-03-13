@@ -11,7 +11,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/pkg/errors"
@@ -19,6 +18,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/grafana/mimir/pkg/util"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
@@ -74,8 +75,10 @@ func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientC
 		Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
 	}, []string{"operation", "status_code"})
 
+	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "alertmanager", util.GRPCProtocol)
+
 	factory := client.PoolInstFunc(func(inst ring.InstanceDesc) (client.PoolClient, error) {
-		return dialAlertmanagerClient(amClientCfg.GRPCClientConfig, inst, requestDuration)
+		return dialAlertmanagerClient(amClientCfg.GRPCClientConfig, inst, requestDuration, invalidClusterValidation, logger)
 	})
 
 	poolCfg := client.PoolConfig{
@@ -104,9 +107,9 @@ func (f *alertmanagerClientsPool) GetClientFor(addr string) (Client, error) {
 
 // dialAlertmanagerClient establishes a GRPC connection to an alertmanager that is aware of the the health of the server
 // and collects observations of request durations.
-func dialAlertmanagerClient(cfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec) (*alertmanagerClient, error) {
+func dialAlertmanagerClient(cfg grpcclient.Config, inst ring.InstanceDesc, requestDuration *prometheus.HistogramVec, invalidClusterValidation *prometheus.CounterVec, logger log.Logger) (*alertmanagerClient, error) {
 	unary, stream := grpcclient.Instrument(requestDuration)
-	opts, err := cfg.DialOption(unary, stream, middleware.NoOpInvalidClusterValidationReporter)
+	opts, err := cfg.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(cfg.ClusterValidation.Label, invalidClusterValidation, logger))
 	if err != nil {
 		return nil, err
 	}

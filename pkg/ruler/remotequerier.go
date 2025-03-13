@@ -27,6 +27,7 @@ import (
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -36,6 +37,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
@@ -95,14 +97,15 @@ func (c *QueryFrontendConfig) Validate() error {
 }
 
 // DialQueryFrontend creates and initializes a new httpgrpc.HTTPClient taking a QueryFrontendConfig configuration.
-func DialQueryFrontend(cfg QueryFrontendConfig) (httpgrpc.HTTPClient, error) {
+func DialQueryFrontend(cfg QueryFrontendConfig, reg prometheus.Registerer, logger log.Logger) (httpgrpc.HTTPClient, error) {
+	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ruler-query-frontend", util.GRPCProtocol)
 	opts, err := cfg.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{
 			otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
 			middleware.ClientUserHeaderInterceptor,
 		},
 		nil,
-		middleware.NoOpInvalidClusterValidationReporter,
+		util.NewInvalidClusterValidationReporter(cfg.GRPCClientConfig.ClusterValidation.Label, invalidClusterValidation, logger),
 	)
 	if err != nil {
 		return nil, err

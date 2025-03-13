@@ -17,7 +17,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
-	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/servicediscovery"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
@@ -25,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 )
 
@@ -118,6 +118,8 @@ type querierWorker struct {
 	mu        sync.Mutex
 	managers  map[string]*processorManager
 	instances map[string]servicediscovery.Instance
+
+	invalidClusterValidation *prometheus.CounterVec
 }
 
 func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (services.Service, error) {
@@ -129,10 +131,13 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		cfg.QuerierID = hostname
 	}
 
-	var processor processor
-	var grpcCfg grpcclient.Config
-	var servs []services.Service
-	var factory serviceDiscoveryFactory
+	var (
+		processor    processor
+		grpcCfg      grpcclient.Config
+		workerClient string
+		servs        []services.Service
+		factory      serviceDiscoveryFactory
+	)
 
 	switch {
 	case cfg.SchedulerAddress != "" || cfg.QuerySchedulerDiscovery.Mode == schedulerdiscovery.ModeRing:
@@ -143,6 +148,7 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		}
 
 		grpcCfg = cfg.QuerySchedulerGRPCClientConfig
+		workerClient = "query-scheduler-worker"
 		processor, servs = newSchedulerProcessor(cfg, handler, log, reg)
 
 	case cfg.FrontendAddress != "":
@@ -153,23 +159,26 @@ func NewQuerierWorker(cfg Config, handler RequestHandler, log log.Logger, reg pr
 		}
 
 		grpcCfg = cfg.QueryFrontendGRPCClientConfig
+		workerClient = "query-frontend-worker"
 		processor = newFrontendProcessor(cfg, handler, log)
 
 	default:
 		return nil, errors.New("no query-scheduler or query-frontend address")
 	}
 
-	return newQuerierWorkerWithProcessor(grpcCfg, cfg.MaxConcurrentRequests, log, processor, factory, servs)
+	invalidClusterValidation := util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, workerClient, util.GRPCProtocol)
+	return newQuerierWorkerWithProcessor(grpcCfg, cfg.MaxConcurrentRequests, log, processor, factory, servs, invalidClusterValidation)
 }
 
-func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, maxConcReq int, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service) (*querierWorker, error) {
+func newQuerierWorkerWithProcessor(grpcCfg grpcclient.Config, maxConcReq int, log log.Logger, processor processor, newServiceDiscovery serviceDiscoveryFactory, servs []services.Service, invalidClusterValidation *prometheus.CounterVec) (*querierWorker, error) {
 	f := &querierWorker{
-		grpcClientConfig:      grpcCfg,
-		maxConcurrentRequests: maxConcReq,
-		log:                   log,
-		managers:              map[string]*processorManager{},
-		instances:             map[string]servicediscovery.Instance{},
-		processor:             processor,
+		grpcClientConfig:         grpcCfg,
+		maxConcurrentRequests:    maxConcReq,
+		log:                      log,
+		managers:                 map[string]*processorManager{},
+		instances:                map[string]servicediscovery.Instance{},
+		processor:                processor,
+		invalidClusterValidation: invalidClusterValidation,
 	}
 
 	// There's no service discovery in some tests.
@@ -390,7 +399,7 @@ func (w *querierWorker) getDesiredConcurrency() map[string]int {
 
 func (w *querierWorker) connect(ctx context.Context, address string) (*grpc.ClientConn, error) {
 	// Because we only use single long-running method, it doesn't make sense to inject user ID, send over tracing or add metrics.
-	opts, err := w.grpcClientConfig.DialOption(nil, nil, middleware.NoOpInvalidClusterValidationReporter)
+	opts, err := w.grpcClientConfig.DialOption(nil, nil, util.NewInvalidClusterValidationReporter(w.grpcClientConfig.ClusterValidation.Label, w.invalidClusterValidation, w.log))
 
 	if err != nil {
 		return nil, err

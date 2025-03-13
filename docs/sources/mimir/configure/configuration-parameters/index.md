@@ -1584,6 +1584,11 @@ store_gateway_client:
   # CLI flag: -querier.store-gateway-client.tls-min-version
   [tls_min_version: <string> | default = ""]
 
+  cluster_validation:
+    # (experimental) Optionally define the cluster validation label.
+    # CLI flag: -querier.store-gateway-client.cluster-validation.label
+    [label: <string> | default = ""]
+
 # (advanced) Fetch in-memory series from the minimum set of required ingesters,
 # selecting only ingesters which may have received series since
 # -querier.query-ingesters-within. If this setting is false or

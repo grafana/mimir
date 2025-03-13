@@ -883,7 +883,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	var queryFunc rules.QueryFunc
 
 	if t.Cfg.Ruler.QueryFrontend.Address != "" {
-		queryFrontendClient, err := ruler.DialQueryFrontend(t.Cfg.Ruler.QueryFrontend)
+		queryFrontendClient, err := ruler.DialQueryFrontend(t.Cfg.Ruler.QueryFrontend, t.Registerer, util_log.Logger)
 		if err != nil {
 			return nil, err
 		}
