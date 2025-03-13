@@ -1321,7 +1321,7 @@ func TestSubqueries(t *testing.T) {
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "floats"),
 					},
 					{
-						H:      &histogram.FloatHistogram{Count: 6, CounterResetHint: histogram.NotCounterReset},
+						H:      &histogram.FloatHistogram{Count: 6},
 						T:      30000,
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "histograms"),
 					},

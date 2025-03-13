@@ -266,7 +266,7 @@ The following features are currently experimental:
 ## Deprecated features
 
 Deprecated features are usable up until the release that indicates their removal.
-For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "./configuration-parameters#parameter-lifecycle" >}}).
+For details about what _deprecated_ means, see [Parameter lifecycle](../configuration-parameters/#parameter-lifecycle).
 
 The following features or configuration parameters are currently deprecated and will be **removed in a future release (to be announced)**:
 
