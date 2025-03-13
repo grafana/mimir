@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Ingester: Remove `-ingester.ooo-native-histograms-ingestion-enabled` flag. #10868
 * [CHANGE] Querier: pass context to queryable `IsApplicable` hook. #10451
 * [CHANGE] Distributor: OTLP and push handler replace all non-UTF8 characters with the unicode replacement character `\uFFFD` in error messages before propagating them. #10236
 * [CHANGE] Querier: pass query matchers to queryable `IsApplicable` hook. #10256

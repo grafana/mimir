@@ -942,13 +942,9 @@ func (i *Ingester) applyTSDBSettings() {
 		if i.limits.NativeHistogramsIngestionEnabled(userID) {
 			// there is not much overhead involved, so don't keep previous state, just overwrite the current setting
 			db.db.EnableNativeHistograms()
+			db.db.EnableOOONativeHistograms() //TODO: remove this when flag is removed from Prometheus
 		} else {
 			db.db.DisableNativeHistograms()
-		}
-		if i.limits.OOONativeHistogramsIngestionEnabled(userID) {
-			db.db.EnableOOONativeHistograms()
-		} else {
-			db.db.DisableOOONativeHistograms()
 		}
 	}
 }
@@ -2822,7 +2818,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheForce:    i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
 		BlockPostingsForMatchersCacheMetrics:  i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                i.limits.NativeHistogramsIngestionEnabled(userID),
-		EnableOOONativeHistograms:             i.limits.OOONativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                 secondaryTSDBHashFunctionForUser(userID),
 	}, nil)
 	if err != nil {
