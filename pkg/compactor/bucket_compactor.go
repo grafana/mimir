@@ -466,7 +466,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			if errors.As(err, &uploadErr) {
 				c.metrics.blockUploadsFailed.WithLabelValues(uploadErr.FileType()).Inc()
 			} else {
-				c.metrics.blockUploadsFailed.WithLabelValues("error").Inc()
+				c.metrics.blockUploadsFailed.WithLabelValues(string(block.FileTypeUnknown)).Inc()
 			}
 			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
 		}

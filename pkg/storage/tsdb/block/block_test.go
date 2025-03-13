@@ -516,7 +516,7 @@ func (eb errBucket) Upload(ctx context.Context, name string, r io.Reader) error 
 	}
 
 	if strings.HasSuffix(name, eb.failSuffix) {
-		return UploadError{cause: err, file: name}
+		return UploadError{cause: err, fileType: FileType(name)}
 	}
 	return nil
 }
