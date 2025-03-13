@@ -182,7 +182,7 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
 func TestUpstreamTestCases(t *testing.T) {
 	// Enable experimental functions testing
-	parser.EnableExperimentalFunctions = true
+	parser.Functions["double_exponential_smoothing"].Experimental = false
 
 	opts := NewTestEngineOpts()
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
