@@ -53,7 +53,7 @@ const (
 	FileTypeUnknown           FileType = "unknown"
 )
 
-// UploadError wraps an error with additional information identifying the type of the file that failed upload
+// UploadError wraps an error with additional information identifying the type of file that failed upload
 type UploadError struct {
 	cause    error
 	fileType FileType
