@@ -139,10 +139,10 @@ type isQueryResultStreamRequest_Data interface {
 }
 
 type QueryResultStreamRequest_Metadata struct {
-	Metadata *QueryResultMetadata `protobuf:"bytes,2,opt,name=metadata,proto3,oneof" json:"metadata,omitempty"`
+	Metadata *QueryResultMetadata `protobuf:"bytes,2,opt,name=metadata,proto3,oneof"`
 }
 type QueryResultStreamRequest_Body struct {
-	Body *QueryResultBody `protobuf:"bytes,3,opt,name=body,proto3,oneof" json:"body,omitempty"`
+	Body *QueryResultBody `protobuf:"bytes,3,opt,name=body,proto3,oneof"`
 }
 
 func (*QueryResultStreamRequest_Metadata) isQueryResultStreamRequest_Data() {}
@@ -886,8 +886,7 @@ func (m *QueryResultStreamRequest) MarshalToSizedBuffer(dAtA []byte) (int, error
 }
 
 func (m *QueryResultStreamRequest_Metadata) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
 }
 
 func (m *QueryResultStreamRequest_Metadata) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -907,8 +906,7 @@ func (m *QueryResultStreamRequest_Metadata) MarshalToSizedBuffer(dAtA []byte) (i
 	return len(dAtA) - i, nil
 }
 func (m *QueryResultStreamRequest_Body) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
 }
 
 func (m *QueryResultStreamRequest_Body) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -1367,7 +1365,10 @@ func (m *QueryResultRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthFrontend
 			}
 			if (iNdEx + skippy) > l {
@@ -1506,7 +1507,10 @@ func (m *QueryResultStreamRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthFrontend
 			}
 			if (iNdEx + skippy) > l {
@@ -1645,7 +1649,10 @@ func (m *QueryResultMetadata) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthFrontend
 			}
 			if (iNdEx + skippy) > l {
@@ -1729,7 +1736,10 @@ func (m *QueryResultBody) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthFrontend
 			}
 			if (iNdEx + skippy) > l {
@@ -1779,7 +1789,10 @@ func (m *QueryResultResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthFrontend
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthFrontend
 			}
 			if (iNdEx + skippy) > l {
@@ -1797,7 +1810,6 @@ func (m *QueryResultResponse) Unmarshal(dAtA []byte) error {
 func skipFrontend(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0
-	depth := 0
 	for iNdEx < l {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
@@ -1829,8 +1841,10 @@ func skipFrontend(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
+			return iNdEx, nil
 		case 1:
 			iNdEx += 8
+			return iNdEx, nil
 		case 2:
 			var length int
 			for shift := uint(0); ; shift += 7 {
@@ -1851,30 +1865,55 @@ func skipFrontend(dAtA []byte) (n int, err error) {
 				return 0, ErrInvalidLengthFrontend
 			}
 			iNdEx += length
-		case 3:
-			depth++
-		case 4:
-			if depth == 0 {
-				return 0, ErrUnexpectedEndOfGroupFrontend
+			if iNdEx < 0 {
+				return 0, ErrInvalidLengthFrontend
 			}
-			depth--
+			return iNdEx, nil
+		case 3:
+			for {
+				var innerWire uint64
+				var start int = iNdEx
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return 0, ErrIntOverflowFrontend
+					}
+					if iNdEx >= l {
+						return 0, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= (uint64(b) & 0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				innerWireType := int(innerWire & 0x7)
+				if innerWireType == 4 {
+					break
+				}
+				next, err := skipFrontend(dAtA[start:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx = start + next
+				if iNdEx < 0 {
+					return 0, ErrInvalidLengthFrontend
+				}
+			}
+			return iNdEx, nil
+		case 4:
+			return iNdEx, nil
 		case 5:
 			iNdEx += 4
+			return iNdEx, nil
 		default:
 			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
 		}
-		if iNdEx < 0 {
-			return 0, ErrInvalidLengthFrontend
-		}
-		if depth == 0 {
-			return iNdEx, nil
-		}
 	}
-	return 0, io.ErrUnexpectedEOF
+	panic("unreachable")
 }
 
 var (
-	ErrInvalidLengthFrontend        = fmt.Errorf("proto: negative length found during unmarshaling")
-	ErrIntOverflowFrontend          = fmt.Errorf("proto: integer overflow")
-	ErrUnexpectedEndOfGroupFrontend = fmt.Errorf("proto: unexpected end of group")
+	ErrInvalidLengthFrontend = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowFrontend   = fmt.Errorf("proto: integer overflow")
 )

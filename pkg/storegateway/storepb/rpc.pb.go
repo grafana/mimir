@@ -171,25 +171,25 @@ type isSeriesResponse_Result interface {
 }
 
 type SeriesResponse_Series struct {
-	Series *Series `protobuf:"bytes,1,opt,name=series,proto3,oneof" json:"series,omitempty"`
+	Series *Series `protobuf:"bytes,1,opt,name=series,proto3,oneof"`
 }
 type SeriesResponse_Warning struct {
-	Warning string `protobuf:"bytes,2,opt,name=warning,proto3,oneof" json:"warning,omitempty"`
+	Warning string `protobuf:"bytes,2,opt,name=warning,proto3,oneof"`
 }
 type SeriesResponse_Hints struct {
-	Hints *types.Any `protobuf:"bytes,3,opt,name=hints,proto3,oneof" json:"hints,omitempty"`
+	Hints *types.Any `protobuf:"bytes,3,opt,name=hints,proto3,oneof"`
 }
 type SeriesResponse_Stats struct {
-	Stats *Stats `protobuf:"bytes,4,opt,name=stats,proto3,oneof" json:"stats,omitempty"`
+	Stats *Stats `protobuf:"bytes,4,opt,name=stats,proto3,oneof"`
 }
 type SeriesResponse_StreamingSeries struct {
-	StreamingSeries *StreamingSeriesBatch `protobuf:"bytes,5,opt,name=streaming_series,json=streamingSeries,proto3,oneof" json:"streaming_series,omitempty"`
+	StreamingSeries *StreamingSeriesBatch `protobuf:"bytes,5,opt,name=streaming_series,json=streamingSeries,proto3,oneof"`
 }
 type SeriesResponse_StreamingChunks struct {
-	StreamingChunks *StreamingChunksBatch `protobuf:"bytes,6,opt,name=streaming_chunks,json=streamingChunks,proto3,oneof" json:"streaming_chunks,omitempty"`
+	StreamingChunks *StreamingChunksBatch `protobuf:"bytes,6,opt,name=streaming_chunks,json=streamingChunks,proto3,oneof"`
 }
 type SeriesResponse_StreamingChunksEstimate struct {
-	StreamingChunksEstimate *StreamingChunksEstimate `protobuf:"bytes,7,opt,name=streaming_chunks_estimate,json=streamingChunksEstimate,proto3,oneof" json:"streaming_chunks_estimate,omitempty"`
+	StreamingChunksEstimate *StreamingChunksEstimate `protobuf:"bytes,7,opt,name=streaming_chunks_estimate,json=streamingChunksEstimate,proto3,oneof"`
 }
 
 func (*SeriesResponse_Series) isSeriesResponse_Result()                  {}
@@ -941,9 +941,9 @@ func (this *SeriesRequest) GoString() string {
 	s = append(s, "MinTime: "+fmt.Sprintf("%#v", this.MinTime)+",\n")
 	s = append(s, "MaxTime: "+fmt.Sprintf("%#v", this.MaxTime)+",\n")
 	if this.Matchers != nil {
-		vs := make([]LabelMatcher, len(this.Matchers))
+		vs := make([]*LabelMatcher, len(this.Matchers))
 		for i := range vs {
-			vs[i] = this.Matchers[i]
+			vs[i] = &this.Matchers[i]
 		}
 		s = append(s, "Matchers: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -1045,9 +1045,9 @@ func (this *LabelNamesRequest) GoString() string {
 		s = append(s, "Hints: "+fmt.Sprintf("%#v", this.Hints)+",\n")
 	}
 	if this.Matchers != nil {
-		vs := make([]LabelMatcher, len(this.Matchers))
+		vs := make([]*LabelMatcher, len(this.Matchers))
 		for i := range vs {
-			vs[i] = this.Matchers[i]
+			vs[i] = &this.Matchers[i]
 		}
 		s = append(s, "Matchers: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -1082,9 +1082,9 @@ func (this *LabelValuesRequest) GoString() string {
 		s = append(s, "Hints: "+fmt.Sprintf("%#v", this.Hints)+",\n")
 	}
 	if this.Matchers != nil {
-		vs := make([]LabelMatcher, len(this.Matchers))
+		vs := make([]*LabelMatcher, len(this.Matchers))
 		for i := range vs {
-			vs[i] = this.Matchers[i]
+			vs[i] = &this.Matchers[i]
 		}
 		s = append(s, "Matchers: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -1251,8 +1251,7 @@ func (m *SeriesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 }
 
 func (m *SeriesResponse_Series) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
 }
 
 func (m *SeriesResponse_Series) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -1272,8 +1271,7 @@ func (m *SeriesResponse_Series) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 func (m *SeriesResponse_Warning) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
 }
 
 func (m *SeriesResponse_Warning) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -1286,8 +1284,7 @@ func (m *SeriesResponse_Warning) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 	return len(dAtA) - i, nil
 }
 func (m *SeriesResponse_Hints) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
 }
 
 func (m *SeriesResponse_Hints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -1307,8 +1304,7 @@ func (m *SeriesResponse_Hints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 func (m *SeriesResponse_Stats) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
 }
 
 func (m *SeriesResponse_Stats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -1328,8 +1324,7 @@ func (m *SeriesResponse_Stats) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 func (m *SeriesResponse_StreamingSeries) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
 }
 
 func (m *SeriesResponse_StreamingSeries) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -1349,8 +1344,7 @@ func (m *SeriesResponse_StreamingSeries) MarshalToSizedBuffer(dAtA []byte) (int,
 	return len(dAtA) - i, nil
 }
 func (m *SeriesResponse_StreamingChunks) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
 }
 
 func (m *SeriesResponse_StreamingChunks) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -1370,8 +1364,7 @@ func (m *SeriesResponse_StreamingChunks) MarshalToSizedBuffer(dAtA []byte) (int,
 	return len(dAtA) - i, nil
 }
 func (m *SeriesResponse_StreamingChunksEstimate) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
+	return m.MarshalToSizedBuffer(dAtA[:m.Size()])
 }
 
 func (m *SeriesResponse_StreamingChunksEstimate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
@@ -2258,7 +2251,10 @@ func (m *SeriesRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthRpc
 			}
 			if (iNdEx + skippy) > l {
@@ -2327,7 +2323,10 @@ func (m *Stats) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthRpc
 			}
 			if (iNdEx + skippy) > l {
@@ -2619,7 +2618,10 @@ func (m *SeriesResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthRpc
 			}
 			if (iNdEx + skippy) > l {
@@ -2796,7 +2798,10 @@ func (m *LabelNamesRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthRpc
 			}
 			if (iNdEx + skippy) > l {
@@ -2946,7 +2951,10 @@ func (m *LabelNamesResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthRpc
 			}
 			if (iNdEx + skippy) > l {
@@ -3155,7 +3163,10 @@ func (m *LabelValuesRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthRpc
 			}
 			if (iNdEx + skippy) > l {
@@ -3305,7 +3316,10 @@ func (m *LabelValuesResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthRpc
 			}
 			if (iNdEx + skippy) > l {
@@ -3323,7 +3337,6 @@ func (m *LabelValuesResponse) Unmarshal(dAtA []byte) error {
 func skipRpc(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0
-	depth := 0
 	for iNdEx < l {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
@@ -3355,8 +3368,10 @@ func skipRpc(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
+			return iNdEx, nil
 		case 1:
 			iNdEx += 8
+			return iNdEx, nil
 		case 2:
 			var length int
 			for shift := uint(0); ; shift += 7 {
@@ -3377,30 +3392,55 @@ func skipRpc(dAtA []byte) (n int, err error) {
 				return 0, ErrInvalidLengthRpc
 			}
 			iNdEx += length
-		case 3:
-			depth++
-		case 4:
-			if depth == 0 {
-				return 0, ErrUnexpectedEndOfGroupRpc
+			if iNdEx < 0 {
+				return 0, ErrInvalidLengthRpc
 			}
-			depth--
+			return iNdEx, nil
+		case 3:
+			for {
+				var innerWire uint64
+				var start int = iNdEx
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return 0, ErrIntOverflowRpc
+					}
+					if iNdEx >= l {
+						return 0, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= (uint64(b) & 0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				innerWireType := int(innerWire & 0x7)
+				if innerWireType == 4 {
+					break
+				}
+				next, err := skipRpc(dAtA[start:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx = start + next
+				if iNdEx < 0 {
+					return 0, ErrInvalidLengthRpc
+				}
+			}
+			return iNdEx, nil
+		case 4:
+			return iNdEx, nil
 		case 5:
 			iNdEx += 4
+			return iNdEx, nil
 		default:
 			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
 		}
-		if iNdEx < 0 {
-			return 0, ErrInvalidLengthRpc
-		}
-		if depth == 0 {
-			return iNdEx, nil
-		}
 	}
-	return 0, io.ErrUnexpectedEOF
+	panic("unreachable")
 }
 
 var (
-	ErrInvalidLengthRpc        = fmt.Errorf("proto: negative length found during unmarshaling")
-	ErrIntOverflowRpc          = fmt.Errorf("proto: integer overflow")
-	ErrUnexpectedEndOfGroupRpc = fmt.Errorf("proto: unexpected end of group")
+	ErrInvalidLengthRpc = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowRpc   = fmt.Errorf("proto: integer overflow")
 )

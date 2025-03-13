@@ -3089,9 +3089,9 @@ func (this *QueryResponse) GoString() string {
 	s := make([]string, 0, 5)
 	s = append(s, "&client.QueryResponse{")
 	if this.Timeseries != nil {
-		vs := make([]mimirpb.TimeSeries, len(this.Timeseries))
+		vs := make([]*mimirpb.TimeSeries, len(this.Timeseries))
 		for i := range vs {
-			vs[i] = this.Timeseries[i]
+			vs[i] = &this.Timeseries[i]
 		}
 		s = append(s, "Timeseries: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -3105,31 +3105,31 @@ func (this *QueryStreamResponse) GoString() string {
 	s := make([]string, 0, 9)
 	s = append(s, "&client.QueryStreamResponse{")
 	if this.Chunkseries != nil {
-		vs := make([]TimeSeriesChunk, len(this.Chunkseries))
+		vs := make([]*TimeSeriesChunk, len(this.Chunkseries))
 		for i := range vs {
-			vs[i] = this.Chunkseries[i]
+			vs[i] = &this.Chunkseries[i]
 		}
 		s = append(s, "Chunkseries: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	if this.Timeseries != nil {
-		vs := make([]mimirpb.TimeSeries, len(this.Timeseries))
+		vs := make([]*mimirpb.TimeSeries, len(this.Timeseries))
 		for i := range vs {
-			vs[i] = this.Timeseries[i]
+			vs[i] = &this.Timeseries[i]
 		}
 		s = append(s, "Timeseries: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	if this.StreamingSeries != nil {
-		vs := make([]QueryStreamSeries, len(this.StreamingSeries))
+		vs := make([]*QueryStreamSeries, len(this.StreamingSeries))
 		for i := range vs {
-			vs[i] = this.StreamingSeries[i]
+			vs[i] = &this.StreamingSeries[i]
 		}
 		s = append(s, "StreamingSeries: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	s = append(s, "IsEndOfSeriesStream: "+fmt.Sprintf("%#v", this.IsEndOfSeriesStream)+",\n")
 	if this.StreamingSeriesChunks != nil {
-		vs := make([]QueryStreamSeriesChunks, len(this.StreamingSeriesChunks))
+		vs := make([]*QueryStreamSeriesChunks, len(this.StreamingSeriesChunks))
 		for i := range vs {
-			vs[i] = this.StreamingSeriesChunks[i]
+			vs[i] = &this.StreamingSeriesChunks[i]
 		}
 		s = append(s, "StreamingSeriesChunks: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -3155,9 +3155,9 @@ func (this *QueryStreamSeriesChunks) GoString() string {
 	s = append(s, "&client.QueryStreamSeriesChunks{")
 	s = append(s, "SeriesIndex: "+fmt.Sprintf("%#v", this.SeriesIndex)+",\n")
 	if this.Chunks != nil {
-		vs := make([]Chunk, len(this.Chunks))
+		vs := make([]*Chunk, len(this.Chunks))
 		for i := range vs {
-			vs[i] = this.Chunks[i]
+			vs[i] = &this.Chunks[i]
 		}
 		s = append(s, "Chunks: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -3171,9 +3171,9 @@ func (this *ExemplarQueryResponse) GoString() string {
 	s := make([]string, 0, 5)
 	s = append(s, "&client.ExemplarQueryResponse{")
 	if this.Timeseries != nil {
-		vs := make([]mimirpb.TimeSeries, len(this.Timeseries))
+		vs := make([]*mimirpb.TimeSeries, len(this.Timeseries))
 		for i := range vs {
-			vs[i] = this.Timeseries[i]
+			vs[i] = &this.Timeseries[i]
 		}
 		s = append(s, "Timeseries: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -3353,9 +3353,9 @@ func (this *TimeSeriesChunk) GoString() string {
 	s = append(s, "UserId: "+fmt.Sprintf("%#v", this.UserId)+",\n")
 	s = append(s, "Labels: "+fmt.Sprintf("%#v", this.Labels)+",\n")
 	if this.Chunks != nil {
-		vs := make([]Chunk, len(this.Chunks))
+		vs := make([]*Chunk, len(this.Chunks))
 		for i := range vs {
-			vs[i] = this.Chunks[i]
+			vs[i] = &this.Chunks[i]
 		}
 		s = append(s, "Chunks: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -6562,7 +6562,10 @@ func (m *LabelNamesAndValuesRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -6646,7 +6649,10 @@ func (m *LabelNamesAndValuesResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -6760,7 +6766,10 @@ func (m *LabelValues) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -6895,7 +6904,10 @@ func (m *LabelValuesCardinalityRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -6979,7 +6991,10 @@ func (m *LabelValuesCardinalityResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -7157,7 +7172,7 @@ func (m *LabelValueSeriesCount) Unmarshal(dAtA []byte) error {
 					if err != nil {
 						return err
 					}
-					if (skippy < 0) || (iNdEx+skippy) < 0 {
+					if skippy < 0 {
 						return ErrInvalidLengthIngester
 					}
 					if (iNdEx + skippy) > postIndex {
@@ -7174,7 +7189,10 @@ func (m *LabelValueSeriesCount) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -7315,7 +7333,10 @@ func (m *QueryRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -7437,7 +7458,10 @@ func (m *ExemplarQueryRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -7540,7 +7564,10 @@ func (m *ActiveSeriesRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -7624,7 +7651,10 @@ func (m *QueryResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -7830,7 +7860,10 @@ func (m *QueryStreamResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -7933,7 +7966,10 @@ func (m *QueryStreamSeries) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -8036,7 +8072,10 @@ func (m *QueryStreamSeriesChunks) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -8120,7 +8159,10 @@ func (m *ExemplarQueryResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -8295,7 +8337,10 @@ func (m *LabelValuesRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -8377,7 +8422,10 @@ func (m *LabelValuesResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -8520,7 +8568,10 @@ func (m *LabelNamesRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -8602,7 +8653,10 @@ func (m *LabelNamesResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -8671,7 +8725,10 @@ func (m *UserStatsRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -8773,7 +8830,10 @@ func (m *UserStatsResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -8891,7 +8951,10 @@ func (m *UserIDStatsResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -8975,7 +9038,10 @@ func (m *UsersStatsResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -9116,7 +9182,10 @@ func (m *MetricsForLabelMatchersRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -9200,7 +9269,10 @@ func (m *MetricsForLabelMatchersResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -9324,7 +9396,10 @@ func (m *MetricsMetadataRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -9408,7 +9483,10 @@ func (m *MetricsMetadataResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -9568,7 +9646,10 @@ func (m *ActiveSeriesResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -9750,7 +9831,10 @@ func (m *TimeSeriesChunk) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -9890,7 +9974,10 @@ func (m *Chunk) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -9974,7 +10061,10 @@ func (m *LabelMatchers) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -10107,7 +10197,10 @@ func (m *LabelMatcher) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthIngester
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthIngester
 			}
 			if (iNdEx + skippy) > l {
@@ -10125,7 +10218,6 @@ func (m *LabelMatcher) Unmarshal(dAtA []byte) error {
 func skipIngester(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0
-	depth := 0
 	for iNdEx < l {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
@@ -10157,8 +10249,10 @@ func skipIngester(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
+			return iNdEx, nil
 		case 1:
 			iNdEx += 8
+			return iNdEx, nil
 		case 2:
 			var length int
 			for shift := uint(0); ; shift += 7 {
@@ -10179,30 +10273,55 @@ func skipIngester(dAtA []byte) (n int, err error) {
 				return 0, ErrInvalidLengthIngester
 			}
 			iNdEx += length
-		case 3:
-			depth++
-		case 4:
-			if depth == 0 {
-				return 0, ErrUnexpectedEndOfGroupIngester
+			if iNdEx < 0 {
+				return 0, ErrInvalidLengthIngester
 			}
-			depth--
+			return iNdEx, nil
+		case 3:
+			for {
+				var innerWire uint64
+				var start int = iNdEx
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return 0, ErrIntOverflowIngester
+					}
+					if iNdEx >= l {
+						return 0, io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					innerWire |= (uint64(b) & 0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				innerWireType := int(innerWire & 0x7)
+				if innerWireType == 4 {
+					break
+				}
+				next, err := skipIngester(dAtA[start:])
+				if err != nil {
+					return 0, err
+				}
+				iNdEx = start + next
+				if iNdEx < 0 {
+					return 0, ErrInvalidLengthIngester
+				}
+			}
+			return iNdEx, nil
+		case 4:
+			return iNdEx, nil
 		case 5:
 			iNdEx += 4
+			return iNdEx, nil
 		default:
 			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
 		}
-		if iNdEx < 0 {
-			return 0, ErrInvalidLengthIngester
-		}
-		if depth == 0 {
-			return iNdEx, nil
-		}
 	}
-	return 0, io.ErrUnexpectedEOF
+	panic("unreachable")
 }
 
 var (
-	ErrInvalidLengthIngester        = fmt.Errorf("proto: negative length found during unmarshaling")
-	ErrIntOverflowIngester          = fmt.Errorf("proto: integer overflow")
-	ErrUnexpectedEndOfGroupIngester = fmt.Errorf("proto: unexpected end of group")
+	ErrInvalidLengthIngester = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowIngester   = fmt.Errorf("proto: integer overflow")
 )
