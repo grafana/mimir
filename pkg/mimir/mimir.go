@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -222,6 +223,17 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
 			"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
 			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
+		},
+		ClientClusterValidation: map[string]*clusterutil.ClusterValidationConfig{
+			"ingester_client":                  &c.IngesterClient.GRPCClientConfig.ClusterValidation,
+			"frontend_worker_frontend_client":  &c.Worker.QueryFrontendGRPCClientConfig.ClusterValidation,
+			"frontend_worker_scheduler_client": &c.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation,
+			"block_builder_scheduler_client":   &c.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation,
+			"frontend_query_scheduler_client":  &c.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation,
+			"querier_store_gateway_client":     &c.Querier.StoreGatewayClient.ClusterValidation,
+			"scheduler_query_frontend_client":  &c.QueryScheduler.GRPCClientConfig.ClusterValidation,
+			"ruler_client":                     &c.Ruler.ClientTLSConfig.ClusterValidation,
+			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
 		},
 	}
 }
@@ -599,10 +611,15 @@ func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) 
 		for name, loc := range inheritance.Storage {
 			specificStorageLocations[name] = loc
 		}
+		specificClusterValidationLocations := specificLocationsUnmarshaler{}
+		for name, loc := range inheritance.ClientClusterValidation {
+			specificClusterValidationLocations[name] = loc
+		}
 
 		common := configWithCustomCommonUnmarshaler{
 			Common: &commonConfigUnmarshaler{
-				Storage: &specificStorageLocations,
+				Storage:                 &specificStorageLocations,
+				ClientClusterValidation: &specificClusterValidationLocations,
 			},
 		}
 
@@ -623,6 +640,11 @@ func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConf
 		inheritance := inh.CommonConfigInheritance()
 		for desc, loc := range inheritance.Storage {
 			if err := inheritFlags(log, &common.Storage, loc, setFlags); err != nil {
+				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
+			}
+		}
+		for desc, loc := range inheritance.ClientClusterValidation {
+			if err := inheritFlags(log, &common.ClientClusterValidation, loc, setFlags); err != nil {
 				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
 			}
 		}
@@ -665,16 +687,19 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 }
 
 type CommonConfig struct {
-	Storage bucket.StorageBackendConfig `yaml:"storage"`
+	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
+	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
-	Storage map[string]*bucket.StorageBackendConfig
+	Storage                 map[string]*bucket.StorageBackendConfig
+	ClientClusterValidation map[string]*clusterutil.ClusterValidationConfig
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
+	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -689,7 +714,8 @@ type configWithCustomCommonUnmarshaler struct {
 
 // commonConfigUnmarshaler will unmarshal each field of the common config into specific locations.
 type commonConfigUnmarshaler struct {
-	Storage *specificLocationsUnmarshaler `yaml:"storage"`
+	Storage                 *specificLocationsUnmarshaler `yaml:"storage"`
+	ClientClusterValidation *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.
