@@ -247,7 +247,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr9545-de5fc9e58f
+LATEST_BUILD_IMAGE_TAG ?= pr10862-ed5679aa83
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden

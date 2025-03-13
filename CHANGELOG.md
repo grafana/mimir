@@ -157,6 +157,17 @@
 * [CHANGE] `copyblocks`: Remove /pprof endpoint. #10329
 * [CHANGE] `mark-blocks`: Replace `markblocks` with added features including removing markers and reading block identifiers from a file. #10597
 
+## 2.15.1
+
+### Grafana Mimir
+
+* [BUGFIX] Update module github.com/golang/glog to v1.2.4 to address [CVE-2024-45339](https://nvd.nist.gov/vuln/detail/CVE-2024-45339). #10541
+* [BUGFIX] Update module github.com/go-jose/go-jose/v4 to v4.0.5 to address [CVE-2025-27144](https://nvd.nist.gov/vuln/detail/CVE-2025-27144). #10783
+* [BUGFIX] Update module golang.org/x/oauth2 to v0.27.0 to address [CVE-2025-22868](https://nvd.nist.gov/vuln/detail/CVE-2025-22868). #10803
+* [BUGFIX] Update module golang.org/x/crypto to v0.35.0 to address [CVE-2025-22869](https://nvd.nist.gov/vuln/detail/CVE-2025-22869). #10804
+* [BUGFIX] Upgrade Go to 1.23.7 to address [CVE-2024-45336](https://nvd.nist.gov/vuln/detail/CVE-2024-45336), [CVE-2024-45341](https://nvd.nist.gov/vuln/detail/CVE-2024-45341), and [CVE-2025-22866](https://nvd.nist.gov/vuln/detail/CVE-2025-22866). #10862
+
+
 ## 2.15.0
 
 ### Grafana Mimir
