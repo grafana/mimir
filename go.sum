@@ -1290,8 +1290,8 @@ github.com/grafana/mimir-prometheus v0.0.0-20250313034642-4c5f37509bce h1:75LWgF
 github.com/grafana/mimir-prometheus v0.0.0-20250313034642-4c5f37509bce/go.mod h1:9Hf/cSfGXNKRswdYnj10nTOt5LUmazcJO2tVsg02+Jo=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956 h1:em1oddjXL8c1tL0iFdtVtPloq2hRPen2MJQKoAWpxu0=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956/go.mod h1:qtI1ogk+2JhVPIXVc6q+NHziSmy2W5GbdQZFUHADCBU=
-github.com/grafana/prometheus-alertmanager v0.25.1-0.20250211112812-e32be5e2a455 h1:yidC1xzk4fedLZ/iXEqSJopkw3jPZPwoMqqzue4eFEA=
-github.com/grafana/prometheus-alertmanager v0.25.1-0.20250211112812-e32be5e2a455/go.mod h1:FGdGvhI40Dq+CTQaSzK9evuve774cgOUdGfVO04OXkw=
+github.com/grafana/prometheus-alertmanager v0.25.1-0.20250305143719-fa9fa7096626 h1:QsMYtDseSPq8hXvoNtA64unFiawJaE5kryizcMsVZWg=
+github.com/grafana/prometheus-alertmanager v0.25.1-0.20250305143719-fa9fa7096626/go.mod h1:FGdGvhI40Dq+CTQaSzK9evuve774cgOUdGfVO04OXkw=
 github.com/grafana/pyroscope-go/godeltaprof v0.1.8 h1:iwOtYXeeVSAeYefJNaxDytgjKtUuKQbJqgAIjlnicKg=
 github.com/grafana/pyroscope-go/godeltaprof v0.1.8/go.mod h1:2+l7K7twW49Ct4wFluZD3tZ6e0SjanjcUUBPVD/UuGU=
 github.com/grafana/regexp v0.0.0-20240531075221-3685f1377d7b h1:oMAq12GxTpwo9jxbnG/M4F/HdpwbibTaVoxNA0NZprY=
