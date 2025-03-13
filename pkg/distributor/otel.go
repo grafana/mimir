@@ -115,18 +115,10 @@ func OTLPHandler(
 				// Push was successful, but OTLP converter left out some samples. We let the client know about it by replying with 4xx (and an insight log).
 				pushErr = httpgrpc.Error(http.StatusBadRequest, otlpErr.Error())
 			} else {
-				writeOTLPResponse(r, w, http.StatusOK, func(contentType string) ([]byte, error) {
-					// Respond as per spec:
-					// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
-					var expResp colmetricpb.ExportMetricsServiceResponse
-					if contentType == jsonContentType {
-						body, err := json.Marshal(&expResp)
-						return body, errors.Wrap(err, "marshalling ExportMetricsServiceResponse to JSON")
-					}
-
-					body, err := proto.Marshal(&expResp)
-					return body, errors.Wrap(err, "marshalling ExportMetricsServiceResponse to protobuf")
-				}, logger)
+				// Respond as per spec:
+				// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
+				var expResp colmetricpb.ExportMetricsServiceResponse
+				writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
 				return
 			}
 		}
@@ -358,27 +350,11 @@ func writeErrorToHTTPResponseBody(r *http.Request, w http.ResponseWriter, httpCo
 		w.Header().Set(server.ErrorMessageHeaderKey, validUTF8Msg) // If httpgrpc Server wants to convert this HTTP response into error, use this error message, instead of using response body.
 	}
 
-	writeOTLPResponse(r, w, httpCode, func(contentType string) ([]byte, error) {
-		st := status.New(grpcCode, validUTF8Msg).Proto()
-		if contentType == jsonContentType {
-			body, err := json.Marshal(st)
-			if err != nil {
-				level.Error(logger).Log("msg", "failed to marshal body to JSON", "err", err)
-				body, err = json.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
-			}
-			return body, errors.Wrap(err, "marshalling Status to JSON")
-		}
-
-		body, err := st.Marshal()
-		if err != nil {
-			level.Error(logger).Log("msg", "failed to marshal body to protobuf", "err", err)
-			body, err = proto.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
-		}
-		return body, errors.Wrap(err, "marshalling Status to protobuf")
-	}, logger)
+	st := status.New(grpcCode, validUTF8Msg).Proto()
+	writeOTLPResponse(r, w, httpCode, st, logger)
 }
 
-func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, marshaler func(contentType string) ([]byte, error), logger log.Logger) {
+func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, payload proto.Message, logger log.Logger) {
 	contentType := r.Header.Get("Content-Type")
 	switch contentType {
 	case jsonContentType, pbContentType:
@@ -389,16 +365,36 @@ func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, mar
 
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
-	body, err := marshaler(contentType)
+	var body []byte
+	var err error
+	if contentType == jsonContentType {
+		body, err = json.Marshal(payload)
+		if err != nil {
+			httpCode = http.StatusInternalServerError
+			level.Error(logger).Log("msg", "failed to marshal payload to JSON", "err", err, "payload", payload)
+			body, err = json.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
+			err = errors.Wrapf(err, "marshalling %T to JSON", payload)
+		}
+	} else {
+		body, err = proto.Marshal(payload)
+		if err != nil {
+			httpCode = http.StatusInternalServerError
+			level.Error(logger).Log("msg", "failed to marshal payload to protobuf", "err", err, "payload", payload)
+			body, err = proto.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
+			err = errors.Wrapf(err, "marshalling %T to protobuf", payload)
+		}
+	}
 	if err != nil {
-		level.Error(logger).Log("msg", "OTLP response marshal failed", "err", err, "content_type", contentType)
-
+		level.Error(logger).Log("msg", "OTLP response marshal failed, responding without payload", "err", err, "content_type", contentType)
 		contentType = "text/plain"
-		httpCode = http.StatusInternalServerError
+		body = nil
 	}
 
 	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(httpCode)
+	if len(body) == 0 {
+		return
+	}
 	if _, err := w.Write(body); err != nil {
 		level.Error(logger).Log("msg", "failed to write OTLP error response", "err", err, "content_type", contentType)
 	}
