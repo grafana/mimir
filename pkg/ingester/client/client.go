@@ -17,6 +17,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 )
 
@@ -38,12 +39,9 @@ func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, lo
 	reportGRPCStatusesOptions := []middleware.InstrumentationOption{middleware.ReportGRPCStatusOption}
 	unary, stream := grpcclient.Instrument(metrics.requestDuration, reportGRPCStatusesOptions...)
 	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor)
-	if cfg.ClusterValidationLabel != "" {
-		unary = append(unary, middleware.ClusterUnaryClientInterceptor(cfg.ClusterValidationLabel, metrics.invalidClusterVerificationLabels, logger))
-	}
 	stream = append(stream, querierapi.ReadConsistencyClientStreamInterceptor)
 
-	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream)
+	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(cfg.GRPCClientConfig.ClusterValidation.Label, metrics.invalidClusterVerificationLabels, logger))
 	if err != nil {
 		return nil, err
 	}
@@ -70,14 +68,17 @@ func (c *closableHealthAndIngesterClient) Close() error {
 
 // Config is the configuration struct for the ingester client
 type Config struct {
-	GRPCClientConfig       grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate with ingesters from distributors, queriers and rulers."`
-	ClusterValidationLabel string            `yaml:"-"`
+	GRPCClientConfig grpcclient.Config `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate with ingesters from distributors, queriers and rulers."`
 }
 
 // RegisterFlags registers configuration settings used by the ingester client config.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix("ingester.client", f)
+}
+
+func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
-	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ingester.client", f)
+	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix, f)
 }
 
 func (cfg *Config) Validate() error {

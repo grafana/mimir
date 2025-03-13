@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -231,7 +232,13 @@ func prepareFrontendProcessor() (*frontendProcessor, *frontendProcessClientMock,
 
 	requestHandler := &requestHandlerMock{}
 
-	fp := newFrontendProcessor(Config{QuerierID: "test-querier-id", QueryFrontendGRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 1}}, requestHandler, log.NewNopLogger())
+	fp := newFrontendProcessor(
+		Config{
+			QuerierID:                     "test-querier-id",
+			QueryFrontendGRPCClientConfig: grpcclient.Config{MaxSendMsgSize: 1},
+		},
+		requestHandler, log.NewNopLogger(),
+	)
 	fp.frontendClientFactory = func(_ *grpc.ClientConn) frontendv1pb.FrontendClient {
 		return frontendClient
 	}
@@ -439,7 +446,7 @@ func TestFrontendProcessor(t *testing.T) {
 				tc.customizeConfig(&cfg)
 			}
 
-			dialOpts, err := cfg.QueryFrontendGRPCClientConfig.DialOption(nil, nil)
+			dialOpts, err := cfg.QueryFrontendGRPCClientConfig.DialOption(nil, nil, middleware.NoOpInvalidClusterValidationReporter)
 			require.NoError(t, err)
 			dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 

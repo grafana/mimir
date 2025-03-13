@@ -11,36 +11,41 @@ import (
 	"github.com/grafana/dskit/grpcutil"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
+// InvalidClusterValidationReporter is called by ClusterUnaryClientInterceptor to report the cluster validation issues
+// back to the caller. Its parameters are the error message explaining the reason for a bad cluster validation, and
+// the method that triggered the validation.
+type InvalidClusterValidationReporter func(errorMsg string, method string)
+
+// NoOpInvalidClusterValidationReporter in an InvalidClusterValidationReporter that reports nothing.
+var NoOpInvalidClusterValidationReporter InvalidClusterValidationReporter = func(string, string) {}
+
 // ClusterUnaryClientInterceptor propagates the given cluster label to gRPC metadata, before calling the next invoker.
-// If an empty cluster label, nil invalidCounter or nil logger are provided, ClusterUnaryClientInterceptor panics.
-// In case of an error related to the cluster label validation, the error is returned, and invalidCounter is incremented.
-func ClusterUnaryClientInterceptor(cluster string, invalidCluster *prometheus.CounterVec, logger log.Logger) grpc.UnaryClientInterceptor {
-	validateClusterClientInterceptorInputParameters(cluster, invalidCluster, logger)
+// If an empty cluster label, or a nil InvalidClusterValidationReporter are provided, ClusterUnaryClientInterceptor panics.
+// In case of an error related to the cluster label validation, InvalidClusterValidationReporter is called, and the error
+// is returned.
+func ClusterUnaryClientInterceptor(cluster string, invalidClusterValidationReporter InvalidClusterValidationReporter) grpc.UnaryClientInterceptor {
+	validateClusterClientInterceptorInputParameters(cluster, invalidClusterValidationReporter)
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		ctx = clusterutil.PutClusterIntoOutgoingContext(ctx, cluster)
-		return handleClusterValidationError(invoker(ctx, method, req, reply, cc, opts...), cluster, method, invalidCluster, logger)
+		return handleClusterValidationError(invoker(ctx, method, req, reply, cc, opts...), method, invalidClusterValidationReporter)
 	}
 }
 
-func validateClusterClientInterceptorInputParameters(cluster string, invalidCluster *prometheus.CounterVec, logger log.Logger) {
+func validateClusterClientInterceptorInputParameters(cluster string, invalidClusterValidationReporter InvalidClusterValidationReporter) {
 	if cluster == "" {
 		panic("no cluster label provided")
 	}
-	if invalidCluster == nil {
-		panic("no invalid cluster counter provided")
-	}
-	if logger == nil {
-		panic("no logger provided")
+	if invalidClusterValidationReporter == nil {
+		panic("no InvalidClusterValidationReporter provided")
 	}
 }
 
-func handleClusterValidationError(err error, cluster string, method string, invalidCluster *prometheus.CounterVec, logger log.Logger) error {
+func handleClusterValidationError(err error, method string, invalidClusterValidationReporter InvalidClusterValidationReporter) error {
 	if err == nil {
 		return nil
 	}
@@ -50,8 +55,7 @@ func handleClusterValidationError(err error, cluster string, method string, inva
 			if errDetails, ok := details[0].(*grpcutil.ErrorDetails); ok {
 				if errDetails.GetCause() == grpcutil.WRONG_CLUSTER_VALIDATION_LABEL {
 					msg := fmt.Sprintf("request rejected by the server: %s", stat.Message())
-					level.Warn(logger).Log("msg", msg, "method", method, "clusterValidationLabel", cluster)
-					invalidCluster.WithLabelValues(method).Inc()
+					invalidClusterValidationReporter(msg, method)
 					return grpcutil.Status(codes.Internal, msg).Err()
 				}
 			}

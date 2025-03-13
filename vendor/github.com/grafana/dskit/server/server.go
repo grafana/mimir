@@ -157,7 +157,7 @@ type Config struct {
 
 	Throughput Throughput `yaml:"-"`
 
-	ClusterValidation clusterutil.ClusterValidationConfig `yaml:"cluster_validation"`
+	ClusterValidation clusterutil.ServerClusterValidationConfig `yaml:"cluster_validation" category:"experimental"`
 }
 
 type Throughput struct {
@@ -221,7 +221,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ProxyProtocolEnabled, "server.proxy-protocol-enabled", false, "Enables PROXY protocol.")
 	f.DurationVar(&cfg.Throughput.LatencyCutoff, "server.throughput.latency-cutoff", 0, "Requests taking over the cutoff are be observed to measure throughput. Server-Timing header is used with specified unit as the indicator, for example 'Server-Timing: unit;val=8.2'. If set to 0, the throughput is not calculated.")
 	f.StringVar(&cfg.Throughput.Unit, "server.throughput.unit", "samples_processed", "Unit of the server throughput metric, for example 'processed_bytes' or 'samples_processed'. Observed values are gathered from the 'Server-Timing' header with the 'val' key. If set, it is appended to the request_server_throughput metric name.")
-	cfg.ClusterValidation.RegisterFlagsWithPrefix("server", f)
+	cfg.ClusterValidation.RegisterFlagsWithPrefix("server.cluster-validation.", f)
 }
 
 func (cfg *Config) Validate() error {
