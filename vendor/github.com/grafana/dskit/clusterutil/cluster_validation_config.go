@@ -3,26 +3,49 @@ package clusterutil
 import (
 	"flag"
 	"fmt"
+
+	"github.com/grafana/dskit/flagext"
 )
 
 type ClusterValidationConfig struct {
-	Label string
-	GRPC  ClusterValidationProtocolConfig
-}
-
-type ClusterValidationProtocolConfig struct {
-	Enabled        bool
-	SoftValidation bool
-}
-
-func (cfg *ClusterValidationConfig) Validate() error {
-	return cfg.GRPC.Validate("grpc", cfg.Label)
+	Label           string                  `yaml:"label" category:"experimental"`
+	registeredFlags flagext.RegisteredFlags `yaml:"-"`
 }
 
 func (cfg *ClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	clusterValidationPrefix := prefix + ".cluster-validation"
-	f.StringVar(&cfg.Label, clusterValidationPrefix+".label", "", "Optionally define server's cluster validation label.")
-	cfg.GRPC.RegisterFlagsWithPrefix(clusterValidationPrefix+".grpc", f)
+	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
+		f.StringVar(&cfg.Label, prefix+"label", "", "Optionally define the cluster validation label.")
+	})
+}
+
+func (cfg *ClusterValidationConfig) RegisteredFlags() flagext.RegisteredFlags {
+	return cfg.registeredFlags
+}
+
+type ServerClusterValidationConfig struct {
+	ClusterValidationConfig `yaml:",inline"`
+	GRPC                    ClusterValidationProtocolConfig `yaml:"grpc" category:"experimental"`
+	registeredFlags         flagext.RegisteredFlags         `yaml:"-"`
+}
+
+func (cfg *ServerClusterValidationConfig) Validate() error {
+	return cfg.GRPC.Validate("grpc", cfg.Label)
+}
+
+func (cfg *ServerClusterValidationConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.registeredFlags = flagext.TrackRegisteredFlags(prefix, f, func(prefix string, f *flag.FlagSet) {
+		cfg.ClusterValidationConfig.RegisterFlagsWithPrefix(prefix, f)
+		cfg.GRPC.RegisterFlagsWithPrefix(prefix+"grpc.", f)
+	})
+}
+
+func (cfg *ServerClusterValidationConfig) RegisteredFlags() flagext.RegisteredFlags {
+	return cfg.registeredFlags
+}
+
+type ClusterValidationProtocolConfig struct {
+	Enabled        bool `yaml:"enabled" category:"experimental"`
+	SoftValidation bool `yaml:"soft_validation" category:"experimental"`
 }
 
 func (cfg *ClusterValidationProtocolConfig) Validate(prefix string, label string) error {
@@ -40,8 +63,8 @@ func (cfg *ClusterValidationProtocolConfig) Validate(prefix string, label string
 }
 
 func (cfg *ClusterValidationProtocolConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	softValidationFlag := prefix + ".soft-validation"
-	enabledFlag := prefix + ".enabled"
-	f.BoolVar(&cfg.SoftValidation, softValidationFlag, false, fmt.Sprintf("When enabled, soft cluster label validation will be executed. Can be enabled only together with %s", enabledFlag))
-	f.BoolVar(&cfg.Enabled, enabledFlag, false, "When enabled, cluster label validation will be executed.")
+	softValidationFlag := prefix + "soft-validation"
+	enabledFlag := prefix + "enabled"
+	f.BoolVar(&cfg.SoftValidation, softValidationFlag, false, fmt.Sprintf("When enabled, soft cluster label validation is executed. Can be enabled only together with %s", enabledFlag))
+	f.BoolVar(&cfg.Enabled, enabledFlag, false, "When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.")
 }

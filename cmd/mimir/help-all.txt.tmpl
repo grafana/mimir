@@ -191,6 +191,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -alertmanager.alertmanager-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -alertmanager.alertmanager-client.cluster-validation.label string
+    	[experimental] Optionally define the cluster validation label.
   -alertmanager.alertmanager-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -alertmanager.alertmanager-client.connect-backoff-max-delay duration
@@ -1601,6 +1603,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -ingester.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -ingester.client.cluster-validation.label string
+    	[experimental] Optionally define the cluster validation label.
   -ingester.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ingester.client.connect-backoff-max-delay duration
@@ -2117,6 +2121,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -querier.frontend-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -querier.frontend-client.cluster-validation.label string
+    	[experimental] Optionally define the cluster validation label.
   -querier.frontend-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -querier.frontend-client.connect-backoff-max-delay duration
@@ -2227,6 +2233,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -querier.scheduler-client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -querier.scheduler-client.cluster-validation.label string
+    	[experimental] Optionally define the cluster validation label.
   -querier.scheduler-client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -querier.scheduler-client.connect-backoff-max-delay duration
@@ -2265,6 +2273,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -querier.shuffle-sharding-ingesters-enabled
     	Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -querier.query-ingesters-within. If this setting is false or -querier.query-ingesters-within is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled). (default true)
+  -querier.store-gateway-client.cluster-validation.label string
+    	[experimental] Optionally define the cluster validation label.
   -querier.store-gateway-client.tls-ca-path string
     	Path to the CA certificates to validate server certificate against. If not set, the host's root CA certificates are used.
   -querier.store-gateway-client.tls-cert-path string
@@ -2309,6 +2319,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -query-frontend.grpc-client-config.cluster-validation.label string
+    	[experimental] Optionally define the cluster validation label.
   -query-frontend.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -query-frontend.grpc-client-config.connect-backoff-max-delay duration
@@ -2523,6 +2535,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -query-scheduler.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -query-scheduler.grpc-client-config.cluster-validation.label string
+    	[experimental] Optionally define the cluster validation label.
   -query-scheduler.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -query-scheduler.grpc-client-config.connect-backoff-max-delay duration
@@ -2957,6 +2971,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -ruler.client.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -ruler.client.cluster-validation.label string
+    	[experimental] Optionally define the cluster validation label.
   -ruler.client.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ruler.client.connect-backoff-max-delay duration
@@ -3045,6 +3061,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable backoff and retry when we hit rate limits.
   -ruler.query-frontend.grpc-client-config.backoff-retries int
     	Number of times to backoff and retry before failing. (default 10)
+  -ruler.query-frontend.grpc-client-config.cluster-validation.label string
+    	[experimental] Optionally define the cluster validation label.
   -ruler.query-frontend.grpc-client-config.connect-backoff-base-delay duration
     	Initial backoff delay after first connection failure. Only relevant if ConnectTimeout > 0. (default 1s)
   -ruler.query-frontend.grpc-client-config.connect-backoff-max-delay duration
@@ -3174,11 +3192,11 @@ Usage of ./cmd/mimir/mimir:
   -runtime-config.reload-period duration
     	How often to check runtime config files. (default 10s)
   -server.cluster-validation.grpc.enabled
-    	[experimental] When enabled, cluster label validation will be executed.
+    	[experimental] When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.
   -server.cluster-validation.grpc.soft-validation
-    	[experimental] When enabled, soft cluster label validation will be executed. Can be enabled only together with server.cluster-validation.grpc.enabled
+    	[experimental] When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.grpc.enabled
   -server.cluster-validation.label string
-    	[experimental] Optionally define server's cluster validation label.
+    	[experimental] Optionally define the cluster validation label.
   -server.graceful-shutdown-timeout duration
     	Timeout for graceful shutdowns (default 30s)
   -server.grpc-conn-limit int

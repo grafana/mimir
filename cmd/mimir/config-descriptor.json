@@ -726,7 +726,7 @@
               "kind": "field",
               "name": "label",
               "required": false,
-              "desc": "Optionally define server's cluster validation label.",
+              "desc": "Optionally define the cluster validation label.",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "server.cluster-validation.label",
@@ -743,7 +743,7 @@
                   "kind": "field",
                   "name": "enabled",
                   "required": false,
-                  "desc": "When enabled, cluster label validation will be executed.",
+                  "desc": "When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "server.cluster-validation.grpc.enabled",
@@ -752,9 +752,9 @@
                 },
                 {
                   "kind": "field",
-                  "name": "softvalidation",
+                  "name": "soft_validation",
                   "required": false,
-                  "desc": "When enabled, soft cluster label validation will be executed. Can be enabled only together with server.cluster-validation.grpc.enabled",
+                  "desc": "When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.grpc.enabled",
                   "fieldValue": null,
                   "fieldDefaultValue": false,
                   "fieldFlag": "server.cluster-validation.grpc.soft-validation",
@@ -1868,6 +1868,27 @@
               "fieldFlag": "querier.store-gateway-client.tls-min-version",
               "fieldType": "string",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "querier.store-gateway-client.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -2400,6 +2421,27 @@
               "fieldFlag": "ingester.client.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ingester.client.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -5664,6 +5706,27 @@
               "fieldFlag": "querier.frontend-client.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "querier.frontend-client.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -5926,6 +5989,27 @@
               "fieldFlag": "querier.scheduler-client.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "querier.scheduler-client.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -6317,6 +6401,27 @@
               "fieldFlag": "query-frontend.grpc-client-config.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "query-frontend.grpc-client-config.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -12801,6 +12906,27 @@
               "fieldFlag": "ruler.client.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "ruler.client.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -13838,6 +13964,27 @@
                   "fieldFlag": "ruler.query-frontend.grpc-client-config.connect-backoff-max-delay",
                   "fieldType": "duration",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "cluster_validation",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "label",
+                      "required": false,
+                      "desc": "Optionally define the cluster validation label.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "",
+                      "fieldFlag": "ruler.query-frontend.grpc-client-config.cluster-validation.label",
+                      "fieldType": "string",
+                      "fieldCategory": "experimental"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
                 }
               ],
               "fieldValue": null,
@@ -16426,6 +16573,27 @@
               "fieldFlag": "alertmanager.alertmanager-client.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "alertmanager.alertmanager-client.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -18331,6 +18499,27 @@
               "fieldFlag": "query-scheduler.grpc-client-config.connect-backoff-max-delay",
               "fieldType": "duration",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "block",
+              "name": "cluster_validation",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "label",
+                  "required": false,
+                  "desc": "Optionally define the cluster validation label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "query-scheduler.grpc-client-config.cluster-validation.label",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
