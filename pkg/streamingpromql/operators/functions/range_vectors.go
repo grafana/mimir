@@ -815,3 +815,25 @@ func quantileOverTime(step *types.RangeVectorStepData, _ float64, args []types.S
 
 	return floats.Quantile(q, values), true, nil, nil
 }
+
+var DoubleExponentialSmoothing = FunctionOverRangeVectorDefinition{
+	SeriesMetadataFunction:         DropSeriesName,
+	StepFunc:                       doubleExponentialSmoothing,
+	NeedsSeriesNamesForAnnotations: true,
+}
+
+func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args []types.ScalarData, timeRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	fHead, fTail := step.Floats.UnsafePoints()
+
+	if step.Floats.Any() && step.Histograms.Any() {
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
+	}
+
+	if (len(fHead) + len(fTail)) < 2 {
+		return 0, false, nil, nil
+	}
+
+	// TODO: implement double exponential smoothing
+
+	return 0, true, nil, nil
+}
