@@ -47,7 +47,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/goleak v1.3.0
 	golang.org/x/crypto v0.35.0
-	golang.org/x/net v0.35.0
+	golang.org/x/net v0.36.0
 	golang.org/x/sync v0.11.0
 	golang.org/x/time v0.11.0
 	google.golang.org/grpc v1.70.0
@@ -299,7 +299,7 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20250307031102-9ba23e267c3d
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20250313034642-4c5f37509bce
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet:
@@ -326,7 +326,7 @@ replace github.com/opentracing-contrib/go-stdlib => github.com/grafana/opentraci
 replace github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 
 // Replacing prometheus/alertmanager with our fork.
-replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250211112812-e32be5e2a455
+replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250305143719-fa9fa7096626
 
 // Replacing with a fork commit based on v1.17.1 having cherry-picked the following PRs:
 // - https://github.com/grafana/franz-go/pull/1
