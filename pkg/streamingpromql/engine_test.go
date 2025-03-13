@@ -48,14 +48,9 @@ func init() {
 func TestUnsupportedPromQLFeatures(t *testing.T) {
 	features := EnableAllFeatures
 
-	// Disable experimental so that parser will parse it without the updating experiemental flag
-	parser.Functions["double_exponential_smoothing"].Experimental = false
-
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
-	unsupportedExpressions := map[string]string{
-		"double_exponential_smoothing(metric{}[1h], 1, 1)": "'double_exponential_smoothing' function",
-	}
+	unsupportedExpressions := map[string]string{}
 
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
