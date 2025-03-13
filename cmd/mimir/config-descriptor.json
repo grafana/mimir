@@ -4390,7 +4390,7 @@
           "required": false,
           "desc": "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "ingester.native-histograms-ingestion-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"

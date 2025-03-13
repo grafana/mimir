@@ -1666,7 +1666,7 @@ Usage of ./cmd/mimir/mimir:
   -ingester.metadata-retain-period duration
     	Period at which metadata we have not seen will remain in memory before being deleted. (default 10m0s)
   -ingester.native-histograms-ingestion-enabled
-    	[experimental] Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.
+    	[experimental] Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'. (default true)
   -ingester.ooo-native-histograms-ingestion-enabled
     	[experimental] Enable experimental out-of-order native histogram ingestion. This only takes effect if the `-ingester.out-of-order-time-window` value is greater than zero and if `-ingester.native-histograms-ingestion-enabled = true` (default true)
   -ingester.out-of-order-blocks-external-label-enabled
