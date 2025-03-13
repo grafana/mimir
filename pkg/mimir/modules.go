@@ -837,6 +837,11 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	queryMetrics := stats.NewQueryMetrics(t.Registerer)
 	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, t.Registerer)
 	streamingEngine, err := streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, util_log.Logger)
+	if err != nil {
+		return nil, err
+	}
+
+	streamingEngine.RegisterASTOptimizer(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimisations such as common subexpression elimination.
 	streamingEngine.RegisterASTOptimizer(&ast.ConstantCollapse{})
 
 	analysisHandler := frontend.AnalysisHandler(streamingEngine)
