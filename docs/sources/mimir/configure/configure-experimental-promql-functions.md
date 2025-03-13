@@ -16,7 +16,7 @@ limits:
   enabled_promql_experimental_functions: info,sort_by_label,sort_by_label_desc
 ```
 
-You can enable functions for specific tenants using [per-tenant overrides]({{< relref "./about-runtime-configuration" >}}):
+You can enable functions for specific tenants using [per-tenant overrides](../about-runtime-configuration/):
 
 ```yaml
 overrides:

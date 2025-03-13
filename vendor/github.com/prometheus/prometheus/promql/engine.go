@@ -1549,6 +1549,28 @@ func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr
 		VectorSelector: vs,
 	}
 	for _, s := range mat {
+		// Set any "NotCounterReset" and "CounterReset" hints in native
+		// histograms to "UnknownCounterReset" because we might
+		// otherwise miss a counter reset happening in samples not
+		// returned by the subquery, or we might over-detect counter
+		// resets if the sample with a counter reset is returned
+		// multiple times by a high-res subquery. This intentionally
+		// does not attempt to be clever (like detecting if we are
+		// really missing underlying samples or returning underlying
+		// samples multiple times) because subqueries on counters are
+		// inherently problematic WRT counter reset handling, so we
+		// cannot really solve the problem for good. We only want to
+		// avoid problems that happen due to the explicitly set counter
+		// reset hints and go back to the behavior we already know from
+		// float samples.
+		for i, hp := range s.Histograms {
+			switch hp.H.CounterResetHint {
+			case histogram.NotCounterReset, histogram.CounterReset:
+				h := *hp.H // Shallow copy is sufficient, we only change CounterResetHint.
+				h.CounterResetHint = histogram.UnknownCounterReset
+				s.Histograms[i].H = &h
+			}
+		}
 		vs.Series = append(vs.Series, NewStorageSeries(s))
 	}
 	return ms, mat.TotalSamples(), ws
@@ -2356,6 +2378,11 @@ func (ev *evaluator) matrixIterSlice(
 		if histograms != nil {
 			histograms = histograms[:0]
 		}
+	}
+
+	if mint == maxt {
+		// Empty range: return the empty slices.
+		return floats, histograms
 	}
 
 	soughtValueType := it.Seek(maxt)
@@ -3476,15 +3503,14 @@ func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotat
 	if err == nil {
 		return nil
 	}
-	metricName := ""
+	op := parser.ItemTypeStr[e.Op]
 	pos := e.PositionRange()
 	if errors.Is(err, annotations.PromQLInfo) || errors.Is(err, annotations.PromQLWarning) {
 		return annotations.New().Add(err)
 	}
-	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-		return annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
-	} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-		return annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
+	// TODO(NeerajGartia21): Test the exact annotation output once the testing framework can do so.
+	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) || errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+		return annotations.New().Add(annotations.NewIncompatibleBucketLayoutInBinOpWarning(op, pos))
 	}
 	return nil
 }
@@ -3550,11 +3576,11 @@ func formatDate(t time.Time) string {
 // unwrapParenExpr does the AST equivalent of removing parentheses around a expression.
 func unwrapParenExpr(e *parser.Expr) {
 	for {
-		if p, ok := (*e).(*parser.ParenExpr); ok {
-			*e = p.Expr
-		} else {
+		p, ok := (*e).(*parser.ParenExpr)
+		if !ok {
 			break
 		}
+		*e = p.Expr
 	}
 }
 

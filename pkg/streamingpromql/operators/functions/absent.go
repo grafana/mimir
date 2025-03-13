@@ -19,63 +19,63 @@ import (
 
 // Absent is an operator that implements the absent() function.
 type Absent struct {
-	timeRange                types.QueryTimeRange
-	argExpressions           parser.Expr
-	inner                    types.InstantVectorOperator
-	expressionPosition       posrange.PositionRange
-	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
-	presence                 []bool
-	exhausted                bool
+	TimeRange                types.QueryTimeRange
+	ArgExpressions           parser.Expr
+	Inner                    types.InstantVectorOperator
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+
+	expressionPosition posrange.PositionRange
+	presence           []bool
+	exhausted          bool
 }
 
 var _ types.InstantVectorOperator = &Absent{}
 
 // NewAbsent creates a new Absent.
-func NewAbsent(inner types.InstantVectorOperator, innerExpr parser.Expr, timeRange types.QueryTimeRange, expressionPosition posrange.PositionRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *Absent {
+func NewAbsent(inner types.InstantVectorOperator, innerExpr parser.Expr, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, expressionPosition posrange.PositionRange) *Absent {
 	return &Absent{
-		timeRange:                timeRange,
-		inner:                    inner,
-		argExpressions:           innerExpr,
+		TimeRange:                timeRange,
+		Inner:                    inner,
+		ArgExpressions:           innerExpr,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
-		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
 }
 
 func (a *Absent) SeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	innerMetadata, err := a.inner.SeriesMetadata(ctx)
+	innerMetadata, err := a.Inner.SeriesMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer types.PutSeriesMetadataSlice(innerMetadata)
 
-	a.presence, err = types.BoolSlicePool.Get(a.timeRange.StepCount, a.memoryConsumptionTracker)
+	a.presence, err = types.BoolSlicePool.Get(a.TimeRange.StepCount, a.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
 
 	// Initialize presence slice
-	a.presence = a.presence[:a.timeRange.StepCount]
+	a.presence = a.presence[:a.TimeRange.StepCount]
 
 	metadata := types.GetSeriesMetadataSlice(1)
 	metadata = append(metadata, types.SeriesMetadata{
-		Labels: createLabelsForAbsentFunction(a.argExpressions),
+		Labels: createLabelsForAbsentFunction(a.ArgExpressions),
 	})
 
 	for range innerMetadata {
-		series, err := a.inner.NextSeries(ctx)
+		series, err := a.Inner.NextSeries(ctx)
 		if err != nil {
 			return nil, err
 		}
 
 		for _, s := range series.Floats {
-			a.presence[a.timeRange.PointIndex(s.T)] = true
+			a.presence[a.TimeRange.PointIndex(s.T)] = true
 		}
 		for _, s := range series.Histograms {
-			a.presence[a.timeRange.PointIndex(s.T)] = true
+			a.presence[a.TimeRange.PointIndex(s.T)] = true
 		}
-		types.PutInstantVectorSeriesData(series, a.memoryConsumptionTracker)
+		types.PutInstantVectorSeriesData(series, a.MemoryConsumptionTracker)
 	}
-
 	return metadata, nil
 }
 
@@ -84,18 +84,17 @@ func (a *Absent) NextSeries(_ context.Context) (types.InstantVectorSeriesData, e
 	if a.exhausted {
 		return output, types.EOS
 	}
-
 	a.exhausted = true
 
 	var err error
-	for step := range a.timeRange.StepCount {
-		t := a.timeRange.IndexTime(int64(step))
+	for step := range a.TimeRange.StepCount {
+		t := a.TimeRange.IndexTime(int64(step))
 		if a.presence[step] {
 			continue
 		}
 
 		if output.Floats == nil {
-			output.Floats, err = types.FPointSlicePool.Get(a.timeRange.StepCount, a.memoryConsumptionTracker)
+			output.Floats, err = types.FPointSlicePool.Get(a.TimeRange.StepCount, a.MemoryConsumptionTracker)
 			if err != nil {
 				return output, err
 			}
@@ -110,8 +109,8 @@ func (a *Absent) ExpressionPosition() posrange.PositionRange {
 }
 
 func (a *Absent) Close() {
-	a.inner.Close()
-	types.BoolSlicePool.Put(a.presence, a.memoryConsumptionTracker)
+	a.Inner.Close()
+	types.BoolSlicePool.Put(a.presence, a.MemoryConsumptionTracker)
 }
 
 // createLabelsForAbsentFunction returns the labels that are uniquely and exactly matched

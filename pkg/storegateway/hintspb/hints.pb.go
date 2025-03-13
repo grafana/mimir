@@ -534,9 +534,9 @@ func (this *SeriesRequestHints) GoString() string {
 	s := make([]string, 0, 5)
 	s = append(s, "&hintspb.SeriesRequestHints{")
 	if this.BlockMatchers != nil {
-		vs := make([]*storepb.LabelMatcher, len(this.BlockMatchers))
+		vs := make([]storepb.LabelMatcher, len(this.BlockMatchers))
 		for i := range vs {
-			vs[i] = &this.BlockMatchers[i]
+			vs[i] = this.BlockMatchers[i]
 		}
 		s = append(s, "BlockMatchers: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -550,9 +550,9 @@ func (this *SeriesResponseHints) GoString() string {
 	s := make([]string, 0, 5)
 	s = append(s, "&hintspb.SeriesResponseHints{")
 	if this.QueriedBlocks != nil {
-		vs := make([]*Block, len(this.QueriedBlocks))
+		vs := make([]Block, len(this.QueriedBlocks))
 		for i := range vs {
-			vs[i] = &this.QueriedBlocks[i]
+			vs[i] = this.QueriedBlocks[i]
 		}
 		s = append(s, "QueriedBlocks: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -576,9 +576,9 @@ func (this *LabelNamesRequestHints) GoString() string {
 	s := make([]string, 0, 5)
 	s = append(s, "&hintspb.LabelNamesRequestHints{")
 	if this.BlockMatchers != nil {
-		vs := make([]*storepb.LabelMatcher, len(this.BlockMatchers))
+		vs := make([]storepb.LabelMatcher, len(this.BlockMatchers))
 		for i := range vs {
-			vs[i] = &this.BlockMatchers[i]
+			vs[i] = this.BlockMatchers[i]
 		}
 		s = append(s, "BlockMatchers: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -592,9 +592,9 @@ func (this *LabelNamesResponseHints) GoString() string {
 	s := make([]string, 0, 5)
 	s = append(s, "&hintspb.LabelNamesResponseHints{")
 	if this.QueriedBlocks != nil {
-		vs := make([]*Block, len(this.QueriedBlocks))
+		vs := make([]Block, len(this.QueriedBlocks))
 		for i := range vs {
-			vs[i] = &this.QueriedBlocks[i]
+			vs[i] = this.QueriedBlocks[i]
 		}
 		s = append(s, "QueriedBlocks: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -608,9 +608,9 @@ func (this *LabelValuesRequestHints) GoString() string {
 	s := make([]string, 0, 5)
 	s = append(s, "&hintspb.LabelValuesRequestHints{")
 	if this.BlockMatchers != nil {
-		vs := make([]*storepb.LabelMatcher, len(this.BlockMatchers))
+		vs := make([]storepb.LabelMatcher, len(this.BlockMatchers))
 		for i := range vs {
-			vs[i] = &this.BlockMatchers[i]
+			vs[i] = this.BlockMatchers[i]
 		}
 		s = append(s, "BlockMatchers: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -624,9 +624,9 @@ func (this *LabelValuesResponseHints) GoString() string {
 	s := make([]string, 0, 5)
 	s = append(s, "&hintspb.LabelValuesResponseHints{")
 	if this.QueriedBlocks != nil {
-		vs := make([]*Block, len(this.QueriedBlocks))
+		vs := make([]Block, len(this.QueriedBlocks))
 		for i := range vs {
-			vs[i] = &this.QueriedBlocks[i]
+			vs[i] = this.QueriedBlocks[i]
 		}
 		s = append(s, "QueriedBlocks: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -1190,10 +1190,7 @@ func (m *SeriesRequestHints) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthHints
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthHints
 			}
 			if (iNdEx + skippy) > l {
@@ -1277,10 +1274,7 @@ func (m *SeriesResponseHints) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthHints
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthHints
 			}
 			if (iNdEx + skippy) > l {
@@ -1362,10 +1356,7 @@ func (m *Block) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthHints
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthHints
 			}
 			if (iNdEx + skippy) > l {
@@ -1449,10 +1440,7 @@ func (m *LabelNamesRequestHints) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthHints
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthHints
 			}
 			if (iNdEx + skippy) > l {
@@ -1536,10 +1524,7 @@ func (m *LabelNamesResponseHints) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthHints
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthHints
 			}
 			if (iNdEx + skippy) > l {
@@ -1623,10 +1608,7 @@ func (m *LabelValuesRequestHints) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthHints
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthHints
 			}
 			if (iNdEx + skippy) > l {
@@ -1710,10 +1692,7 @@ func (m *LabelValuesResponseHints) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthHints
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthHints
 			}
 			if (iNdEx + skippy) > l {
@@ -1731,6 +1710,7 @@ func (m *LabelValuesResponseHints) Unmarshal(dAtA []byte) error {
 func skipHints(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0
+	depth := 0
 	for iNdEx < l {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
@@ -1762,10 +1742,8 @@ func skipHints(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
-			return iNdEx, nil
 		case 1:
 			iNdEx += 8
-			return iNdEx, nil
 		case 2:
 			var length int
 			for shift := uint(0); ; shift += 7 {
@@ -1786,55 +1764,30 @@ func skipHints(dAtA []byte) (n int, err error) {
 				return 0, ErrInvalidLengthHints
 			}
 			iNdEx += length
-			if iNdEx < 0 {
-				return 0, ErrInvalidLengthHints
-			}
-			return iNdEx, nil
 		case 3:
-			for {
-				var innerWire uint64
-				var start int = iNdEx
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return 0, ErrIntOverflowHints
-					}
-					if iNdEx >= l {
-						return 0, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					innerWire |= (uint64(b) & 0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				innerWireType := int(innerWire & 0x7)
-				if innerWireType == 4 {
-					break
-				}
-				next, err := skipHints(dAtA[start:])
-				if err != nil {
-					return 0, err
-				}
-				iNdEx = start + next
-				if iNdEx < 0 {
-					return 0, ErrInvalidLengthHints
-				}
-			}
-			return iNdEx, nil
+			depth++
 		case 4:
-			return iNdEx, nil
+			if depth == 0 {
+				return 0, ErrUnexpectedEndOfGroupHints
+			}
+			depth--
 		case 5:
 			iNdEx += 4
-			return iNdEx, nil
 		default:
 			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
 		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthHints
+		}
+		if depth == 0 {
+			return iNdEx, nil
+		}
 	}
-	panic("unreachable")
+	return 0, io.ErrUnexpectedEOF
 }
 
 var (
-	ErrInvalidLengthHints = fmt.Errorf("proto: negative length found during unmarshaling")
-	ErrIntOverflowHints   = fmt.Errorf("proto: integer overflow")
+	ErrInvalidLengthHints        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowHints          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupHints = fmt.Errorf("proto: unexpected end of group")
 )
