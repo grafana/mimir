@@ -6,6 +6,7 @@
 package functions
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -823,6 +824,18 @@ var DoubleExponentialSmoothing = FunctionOverRangeVectorDefinition{
 }
 
 func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args []types.ScalarData, timeRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	sfArg := args[0]
+	sf := sfArg.Samples[timeRange.PointIndex(step.StepT)].F
+	if sf <= 0 || sf >= 1 {
+		return 0, false, nil, fmt.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", sf)
+	}
+
+	tfArg := args[1]
+	tf := tfArg.Samples[timeRange.PointIndex(step.StepT)].F
+	if tf <= 0 || tf >= 1 {
+		return 0, false, nil, fmt.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", tf)
+	}
+
 	fHead, fTail := step.Floats.UnsafePoints()
 
 	if step.Floats.Any() && step.Histograms.Any() {
@@ -832,10 +845,6 @@ func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args
 	if (len(fHead) + len(fTail)) < 2 {
 		return 0, false, nil, nil
 	}
-	sfArg := args[0]
-	sf := sfArg.Samples[timeRange.PointIndex(step.StepT)].F
-	tfArg := args[1]
-	tf := tfArg.Samples[timeRange.PointIndex(step.StepT)].F
 
 	var s0, s1, b float64
 	// Set initial values.
