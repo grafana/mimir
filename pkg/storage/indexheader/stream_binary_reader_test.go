@@ -20,7 +20,6 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -155,7 +154,7 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 	require.NoError(t, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	// First, create a StreamBinaryReader to generate the sparse header file
-	origReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, tsdb.DefaultPostingOffsetInMemorySampling, NewStreamBinaryReaderMetrics(nil), Config{})
+	origReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(t, err)
 	require.NoError(t, origReader.Close())
 
