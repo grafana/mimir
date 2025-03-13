@@ -832,8 +832,49 @@ func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args
 	if (len(fHead) + len(fTail)) < 2 {
 		return 0, false, nil, nil
 	}
+	sfArg := args[0]
+	sf := sfArg.Samples[timeRange.PointIndex(step.StepT)].F
+	tfArg := args[1]
+	tf := tfArg.Samples[timeRange.PointIndex(step.StepT)].F
 
-	// TODO: implement double exponential smoothing
+	var s0, s1, b float64
+	// Set initial values.
+	s1 = fHead[0].F
+	b = fHead[1].F - fHead[0].F
 
-	return 0, true, nil, nil
+	accumulate := func(samples []promql.FPoint) (float64, float64) {
+		var x, y float64
+		for i := 1; i < len(samples); i++ {
+			// Scale the raw value against the smoothing factor.
+			x = sf * samples[i].F
+
+			// Scale the last smoothed value with the trend at this point.
+			b = calcTrendValue(i-1, tf, s0, s1, b)
+			y = (1 - sf) * (s1 + b)
+
+			s0, s1 = s1, x+y
+		}
+		return s0, s1
+	}
+	s0, s1 = accumulate(fHead)
+	s0, s1 = accumulate(fTail)
+
+	return s1, true, nil, nil
+}
+
+// Calculate the trend value at the given index i in raw data d.
+// This is somewhat analogous to the slope of the trend at the given index.
+// The argument "tf" is the trend factor.
+// The argument "s0" is the computed smoothed value.
+// The argument "s1" is the computed trend factor.
+// The argument "b" is the raw input value.
+func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
+	if i == 0 {
+		return b
+	}
+
+	x := tf * (s1 - s0)
+	y := (1 - tf) * b
+
+	return x + y
 }
