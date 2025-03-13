@@ -851,7 +851,7 @@ func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args
 	s1 = fHead[0].F
 	b = fHead[1].F - fHead[0].F
 
-	accumulate := func(samples []promql.FPoint) (float64, float64) {
+	accumulate := func(samples []promql.FPoint) {
 		var x, y float64
 		for i := 1; i < len(samples); i++ {
 			// Scale the raw value against the smoothing factor.
@@ -863,10 +863,9 @@ func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args
 
 			s0, s1 = s1, x+y
 		}
-		return s0, s1
 	}
-	s0, s1 = accumulate(fHead)
-	s0, s1 = accumulate(fTail)
+	accumulate(fHead)
+	accumulate(fTail)
 
 	return s1, true, nil, nil
 }
