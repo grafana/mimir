@@ -705,5 +705,9 @@ func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, me
 
 	var o types.InstantVectorOperator = NewFunctionOverRangeVector(inner, []types.ScalarOperator{smoothingFactor, trendFactor}, memoryConsumptionTracker, f, annotations, expressionPosition, timeRange)
 
+	if f.SeriesMetadataFunction.NeedsSeriesDeduplication {
+		o = operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
+	}
+
 	return o, nil
 }
