@@ -207,6 +207,9 @@ func TestUpstreamTestCases(t *testing.T) {
 }
 
 func TestOurTestCases(t *testing.T) {
+	// Enable experimental functions testing
+	parser.Functions["double_exponential_smoothing"].Experimental = false
+
 	opts := NewTestEngineOpts()
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
