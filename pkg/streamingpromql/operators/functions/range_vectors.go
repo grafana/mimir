@@ -824,16 +824,14 @@ var DoubleExponentialSmoothing = FunctionOverRangeVectorDefinition{
 }
 
 func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args []types.ScalarData, timeRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
-	sfArg := args[0]
-	sf := sfArg.Samples[timeRange.PointIndex(step.StepT)].F
-	if sf <= 0 || sf >= 1 {
-		return 0, false, nil, fmt.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", sf)
+	smoothingFactor := args[0].Samples[timeRange.PointIndex(step.StepT)].F
+	if smoothingFactor <= 0 || smoothingFactor >= 1 {
+		return 0, false, nil, fmt.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", smoothingFactor)
 	}
 
-	tfArg := args[1]
-	tf := tfArg.Samples[timeRange.PointIndex(step.StepT)].F
-	if tf <= 0 || tf >= 1 {
-		return 0, false, nil, fmt.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", tf)
+	trendFactor := args[1].Samples[timeRange.PointIndex(step.StepT)].F
+	if trendFactor <= 0 || trendFactor >= 1 {
+		return 0, false, nil, fmt.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", trendFactor)
 	}
 
 	fHead, fTail := step.Floats.UnsafePoints()
@@ -846,43 +844,59 @@ func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args
 		return 0, false, nil, nil
 	}
 
-	var s0, s1, b float64
-	// Set initial values.
-	s1 = fHead[0].F
-	b = fHead[1].F - fHead[0].F
+	var smooth0, smooth1, estimatedTrend float64
 
-	accumulate := func(samples []promql.FPoint) {
+	// Initial value of smooth1 is the first sample.
+	smooth1 = fHead[0].F
+
+	// Initial estimated trend is the difference between the first and second samples.
+	// First sample will always be in the head.
+	// If we have only one point in head, the sedon sample is the first index in tail.
+	if len(fHead) == 1 {
+		estimatedTrend = fTail[0].F - fHead[0].F
+	} else {
+		estimatedTrend = fHead[1].F - fHead[0].F
+	}
+
+	accumulate := func(samples []promql.FPoint, head bool) {
 		var x, y float64
-		for i := 1; i < len(samples); i++ {
+		var startLoop int
+
+		// We start looping from index 1 for head, but for tail,
+		// we are resuming the looping, hence we start just from 0
+		if head {
+			startLoop = 1
+		}
+		for i := startLoop; i < len(samples); i++ {
 			// Scale the raw value against the smoothing factor.
-			x = sf * samples[i].F
+			x = smoothingFactor * samples[i].F
 
 			// Scale the last smoothed value with the trend at this point.
-			b = calcTrendValue(i-1, tf, s0, s1, b)
-			y = (1 - sf) * (s1 + b)
+			estimatedTrend = calcTrendValue(head, i-1, trendFactor, smooth0, smooth1, estimatedTrend)
+			y = (1 - smoothingFactor) * (smooth1 + estimatedTrend)
 
-			s0, s1 = s1, x+y
+			smooth0, smooth1 = smooth1, x+y
 		}
 	}
-	accumulate(fHead)
-	accumulate(fTail)
+	accumulate(fHead, true)
+	accumulate(fTail, false)
 
-	return s1, true, nil, nil
+	return smooth1, true, nil, nil
 }
 
 // Calculate the trend value at the given index i in raw data d.
 // This is somewhat analogous to the slope of the trend at the given index.
-// The argument "tf" is the trend factor.
-// The argument "s0" is the computed smoothed value.
-// The argument "s1" is the computed trend factor.
-// The argument "b" is the raw input value.
-func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
-	if i == 0 {
-		return b
+// The argument "smooth0" is the computed smoothed value.
+// The argument "smooth1" is the computed trend factor.
+func calcTrendValue(head bool, i int, trendFactor, smooth0, smooth1, estimatedTrend float64) float64 {
+	// For first index and only in head
+	// the input value is not computed using tf yet
+	if i == 0 && head {
+		return estimatedTrend
 	}
 
-	x := tf * (s1 - s0)
-	y := (1 - tf) * b
+	x := trendFactor * (smooth1 - smooth0)
+	y := (1 - trendFactor) * estimatedTrend
 
 	return x + y
 }
