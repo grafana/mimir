@@ -700,7 +700,7 @@ func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, me
 	trendFactor, ok := args[2].(types.ScalarOperator)
 	if !ok {
 		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected third argument for %s to be a scalar, got %T", functionName, args[1])
+		return nil, fmt.Errorf("expected third argument for %s to be a scalar, got %T", functionName, args[2])
 	}
 
 	var o types.InstantVectorOperator = NewFunctionOverRangeVector(inner, []types.ScalarOperator{smoothingFactor, trendFactor}, memoryConsumptionTracker, f, annotations, expressionPosition, timeRange)
