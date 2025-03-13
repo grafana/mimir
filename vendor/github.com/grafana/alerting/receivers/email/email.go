@@ -3,9 +3,7 @@ package email
 import (
 	"context"
 	"net/url"
-	"os"
 	"path"
-	"path/filepath"
 
 	"github.com/prometheus/alertmanager/types"
 
@@ -57,22 +55,27 @@ func (en *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 	}
 
 	// Extend alerts data with images, if available.
-	var embeddedFiles []string
-	_ = images.WithStoredImages(ctx, en.log, en.images,
+	embeddedContents := make([]receivers.EmbeddedContent, 0)
+	err = images.WithStoredImages(ctx, en.log, en.images,
 		func(index int, image images.Image) error {
-			if len(image.URL) != 0 {
+			if image.HasURL() {
 				data.Alerts[index].ImageURL = image.URL
-			} else if len(image.Path) != 0 {
-				_, err := os.Stat(image.Path)
-				if err == nil {
-					data.Alerts[index].EmbeddedImage = filepath.Base(image.Path)
-					embeddedFiles = append(embeddedFiles, image.Path)
+			} else {
+				if contents, err := image.RawData(ctx); err == nil {
+					data.Alerts[index].EmbeddedImage = contents.Name
+					embeddedContents = append(embeddedContents, receivers.EmbeddedContent{
+						Name:    contents.Name,
+						Content: contents.Content,
+					})
 				} else {
-					en.log.Warn("failed to get image file for email attachment", "file", image.Path, "error", err)
+					en.log.Warn("failed to get image file for email attachment", "alert", alerts[index].String(), "error", err)
 				}
 			}
 			return nil
 		}, alerts...)
+	if err != nil {
+		en.log.Warn("failed to get all images for email", "error", err)
+	}
 
 	cmd := &receivers.SendEmailSettings{
 		Subject: subject,
@@ -88,10 +91,10 @@ func (en *Notifier) Notify(ctx context.Context, alerts ...*types.Alert) (bool, e
 			"RuleUrl":           ruleURL,
 			"AlertPageUrl":      alertPageURL,
 		},
-		EmbeddedFiles: embeddedFiles,
-		To:            en.settings.Addresses,
-		SingleEmail:   en.settings.SingleEmail,
-		Template:      "ng_alert_notification",
+		EmbeddedContents: embeddedContents,
+		To:               en.settings.Addresses,
+		SingleEmail:      en.settings.SingleEmail,
+		Template:         "ng_alert_notification",
 	}
 
 	if tmplErr != nil {

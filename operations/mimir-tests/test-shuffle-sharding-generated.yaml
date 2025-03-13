@@ -622,7 +622,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -875,7 +875,7 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
-        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist
@@ -1267,7 +1267,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.0
+        image: prom/memcached-exporter:v0.15.1
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1320,7 +1320,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.0
+        image: prom/memcached-exporter:v0.15.1
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1373,7 +1373,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.0
+        image: prom/memcached-exporter:v0.15.1
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1388,7 +1388,7 @@ metadata:
   name: memcached-metadata
   namespace: default
 spec:
-  replicas: 1
+  replicas: 3
   selector:
     matchLabels:
       name: memcached-metadata
@@ -1426,7 +1426,7 @@ spec:
       - args:
         - --memcached.address=localhost:11211
         - --web.listen-address=0.0.0.0:9150
-        image: prom/memcached-exporter:v0.15.0
+        image: prom/memcached-exporter:v0.15.1
         imagePullPolicy: IfNotPresent
         name: exporter
         ports:
@@ -1495,7 +1495,7 @@ spec:
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-listen-port=8080
         - -store-gateway.sharding-ring.heartbeat-period=1m
-        - -store-gateway.sharding-ring.heartbeat-timeout=4m
+        - -store-gateway.sharding-ring.heartbeat-timeout=10m
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=memberlist

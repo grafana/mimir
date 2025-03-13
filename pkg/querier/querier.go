@@ -6,6 +6,7 @@
 package querier
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -30,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
@@ -158,10 +160,11 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	opts, mqeOpts, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
+	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
 
-	// Experimental functions can only be enabled globally, and not on a per-engine basis.
-	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
+	// Experimental functions are always enabled globally for all engines. Access to them
+	// is controlled by an experimental functions middleware that reads per-tenant settings.
+	parser.EnableExperimentalFunctions = true
 
 	var eng promql.QueryEngine
 
@@ -316,8 +319,8 @@ func (mq multiQuerier) getQueriers(ctx context.Context, matchers ...*labels.Matc
 }
 
 // Select implements storage.Querier interface.
-// The bool passed is ignored because the series is always sorted.
-func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+// The bool passed is ignored because the series are always sorted.
+func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) (set storage.SeriesSet) {
 	spanLog, ctx := spanlogger.NewWithLogger(ctx, mq.logger, "querier.Select")
 	defer spanLog.Span.Finish()
 
@@ -341,29 +344,38 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	}
 	now := time.Now()
 
-	level.Debug(spanLog).Log("hint.func", sp.Func, "start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
-		util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
+	level.Debug(spanLog).Log(
+		"hint.func", sp.Func,
+		"start", util.TimeFromMillis(sp.Start).UTC().String(),
+		"end", util.TimeFromMillis(sp.End).UTC().String(),
+		"limit", sp.Limit, // Note that Prometheus does +1 to the original request's limit to emit a warning in the response (ref "toHintLimit" in web/api/v1/api.go).
+		"step", sp.Step,
+		"matchers", util.MatchersStringer(matchers),
+	)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 
-	// Validate query time range. Even if the time range has already been validated when we created
-	// the querier, we need to check it again here because the time range specified in hints may be
-	// different.
+	// Validate query parameters.
+	// Even if the time range has already been validated when we created the querier, we need to check it again here
+	// because the time range specified in hints may be different.
+	limit := sp.Limit
 	startMs, endMs, err := validateQueryTimeRange(userID, sp.Start, sp.End, now.UnixMilli(), mq.limits, spanLog)
 	if errors.Is(err, errEmptyTimeRange) {
 		return storage.NoopSeriesSet()
 	} else if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
-	if sp.Func == "series" { // Clamp max time range for series-only queries, before we check max length.
+	if sp.Func == "series" {
+		// Clamp max time range for series-only queries, before we check max length.
 		startMs = clampToMaxLabelQueryLength(spanLog, startMs, endMs, now.UnixMilli(), mq.limits.MaxLabelsQueryLength(userID).Milliseconds())
+		// Clamp the limit for series-only queries.
+		limit = clampToMaxSeriesQueryLimit(spanLog, limit, mq.limits.MaxSeriesQueryLimit(userID))
 	}
 
-	// The time range may have been manipulated during the validation,
-	// so we make sure changes are reflected back to hints.
+	// The query parameters may have been manipulated during the validation, so we make sure changes are reflected back to hints.
 	sp.Start = startMs
 	sp.End = endMs
 
@@ -374,6 +386,17 @@ func (mq multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHin
 	if maxQueryLength := mq.limits.MaxPartialQueryLength(userID); maxQueryLength > 0 && endTime.Sub(startTime) > maxQueryLength {
 		return storage.ErrSeriesSet(NewMaxQueryLengthError(endTime.Sub(startTime), maxQueryLength))
 	}
+
+	// If the requested limit was enforced, annotate the resulting series set with a warning.
+	if limit > 0 && sp.Limit != limit {
+		origLimit := sp.Limit
+		defer func() {
+			var warning annotations.Annotations
+			warning.Add(NewMaxSeriesQueryLimitError(origLimit, limit))
+			set = series.NewSeriesSetWithWarnings(set, warning)
+		}()
+	}
+	sp.Limit = limit
 
 	if len(queriers) == 1 {
 		return queriers[0].Select(ctx, true, sp, matchers...)
@@ -441,6 +464,24 @@ func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, 
 		}
 	}
 	return startMs
+}
+
+func clampToMaxSeriesQueryLimit(spanLog *spanlogger.SpanLogger, limit, maxSeriesQueryLimit int) int {
+	if maxSeriesQueryLimit == 0 {
+		// No request limit is enforced.
+		return limit
+	}
+
+	// Request limit is enforced.
+	newLimit := min(cmp.Or(limit, maxSeriesQueryLimit), maxSeriesQueryLimit)
+	if newLimit != limit {
+		spanLog.DebugLog(
+			"msg", "the request limit of the query has been manipulated because of the 'max-series-query-limit' setting",
+			"original", limit,
+			"updated", newLimit,
+		)
+	}
+	return newLimit
 }
 
 // LabelValues implements storage.Querier.

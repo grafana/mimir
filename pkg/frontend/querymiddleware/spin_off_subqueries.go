@@ -5,14 +5,10 @@ package querymiddleware
 import (
 	"context"
 	"errors"
-	"fmt"
-	"net/http"
-	"net/url"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
-	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
@@ -34,11 +30,11 @@ const (
 )
 
 type spinOffSubqueriesMiddleware struct {
-	next   MetricsQueryHandler
-	limits Limits
-	logger log.Logger
+	next      MetricsQueryHandler
+	rangeNext MetricsQueryHandler
+	limits    Limits
+	logger    log.Logger
 
-	rangeHandler    MetricsQueryHandler
 	engine          *promql.Engine
 	defaultStepFunc func(int64) int64
 
@@ -95,19 +91,23 @@ func newSpinOffSubqueriesMiddleware(
 	limits Limits,
 	logger log.Logger,
 	engine *promql.Engine,
-	rangeHandler MetricsQueryHandler,
 	registerer prometheus.Registerer,
+	rangeMiddleware MetricsQueryMiddleware,
 	defaultStepFunc func(int64) int64,
 ) MetricsQueryMiddleware {
 	metrics := newSpinOffSubqueriesMetrics(registerer)
-
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+		rangeNext := next
+		if rangeMiddleware != nil {
+			rangeNext = rangeMiddleware.Wrap(next)
+		}
+
 		return &spinOffSubqueriesMiddleware{
 			next:            next,
+			rangeNext:       rangeNext,
 			limits:          limits,
 			logger:          logger,
 			engine:          engine,
-			rangeHandler:    rangeHandler,
 			metrics:         metrics,
 			defaultStepFunc: defaultStepFunc,
 		}
@@ -214,7 +214,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 
 	annotationAccumulator := NewAnnotationAccumulator()
 
-	queryable := newSpinOffSubqueriesQueryable(req, annotationAccumulator, s.next, s.rangeHandler)
+	queryable := newSpinOffSubqueriesQueryable(req, annotationAccumulator, s.next, s.rangeNext)
 
 	qry, err := newQuery(ctx, req, s.engine, lazyquery.NewLazyQueryable(queryable))
 	if err != nil {
@@ -253,61 +253,4 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 		Warnings: warn,
 		Infos:    info,
 	}, nil
-}
-
-// spinOffQueryHandler is a query handler that takes a request and sends it to a remote endpoint.
-type spinOffQueryHandler struct {
-	codec         Codec
-	logger        log.Logger
-	rangeQueryURL *url.URL
-}
-
-func newSpinOffQueryHandler(codec Codec, logger log.Logger, sendURL string, maxRetries int, retryMiddlewareMetrics prometheus.Observer) (MetricsQueryHandler, error) {
-	rangeQueryURL, err := url.Parse(sendURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid spin-off URL: %w", err)
-	}
-	var handler MetricsQueryHandler = &spinOffQueryHandler{
-		codec:         codec,
-		logger:        logger,
-		rangeQueryURL: rangeQueryURL,
-	}
-
-	if maxRetries > 0 {
-		handler = newRetryMiddleware(logger, maxRetries, retryMiddlewareMetrics).Wrap(handler)
-	}
-
-	return handler, nil
-}
-
-func (s *spinOffQueryHandler) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
-	httpReq, err := s.codec.EncodeMetricsQueryRequest(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("error encoding request: %w", err)
-	}
-	httpReq.RequestURI = "" // Reset RequestURI to force URL to be used in the request.
-	// Override the URL with the configured range query URL.
-	httpReq.URL.Scheme = s.rangeQueryURL.Scheme
-	httpReq.URL.Host = s.rangeQueryURL.Host
-	httpReq.URL.Path = s.rangeQueryURL.Path
-
-	if err := user.InjectOrgIDIntoHTTPRequest(ctx, httpReq); err != nil {
-		return nil, fmt.Errorf("error injecting org ID into request: %v", err)
-	}
-
-	client := http.DefaultClient
-	resp, err := client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("error sending request: %v", err)
-	}
-	defer resp.Body.Close()
-	decoded, err := s.codec.DecodeMetricsQueryResponse(ctx, resp, req, s.logger)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding response: %v. Status: %s", err, resp.Status)
-	}
-	promRes, ok := decoded.(*PrometheusResponse)
-	if !ok {
-		return nil, fmt.Errorf("expected PrometheusResponse, got %T", decoded)
-	}
-	return promRes, nil
 }

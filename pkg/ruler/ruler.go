@@ -7,10 +7,12 @@ package ruler
 
 import (
 	"context"
+	_ "embed" // Used to embed html template
 	"encoding/base64"
 	"flag"
 	"fmt"
 	"hash/fnv"
+	"html/template"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -21,6 +23,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
@@ -1337,6 +1340,81 @@ func (r *Ruler) ListAllRules(w http.ResponseWriter, req *http.Request) {
 	}
 	close(iter)
 	<-done
+}
+
+//go:embed tenants.gohtml
+var tenantsPageHTML string
+var tenantsTemplate = template.Must(template.New("webpage").Parse(tenantsPageHTML))
+
+type tenantsPageContents struct {
+	Now     time.Time `json:"now"`
+	Tenants []string  `json:"tenants,omitempty"`
+}
+
+func (r *Ruler) ListAllUsers(w http.ResponseWriter, req *http.Request) {
+	logger := util_log.WithContext(req.Context(), r.logger)
+
+	// Disable caching when getting a list of users since this API is expected to be strongly consistent.
+	userIDs, err := r.store.ListAllUsers(req.Context(), rulestore.WithCacheDisabled())
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to list ruler users", "err", err)
+		http.Error(w, fmt.Sprintf("failed to list ruler users: %s", err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	util.RenderHTTPResponse(w, tenantsPageContents{
+		Now:     time.Now(),
+		Tenants: userIDs,
+	}, tenantsTemplate, req)
+}
+
+//go:embed rule_groups.gohtml
+var ruleGroupsPageHTML string
+var ruleGroupsPageTemplate = template.Must(template.New("webpage").Parse(ruleGroupsPageHTML))
+
+type ruleGroupsPageContents struct {
+	Now    time.Time       `json:"now"`
+	Tenant string          `json:"tenant,omitempty"`
+	Groups []ruleGroupData `json:"-"`
+}
+
+type ruleGroupData struct {
+	Name      string `json:"name,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+}
+
+func (r *Ruler) ListUserRuleGroups(w http.ResponseWriter, req *http.Request) {
+	logger := util_log.WithContext(req.Context(), r.logger)
+
+	vars := mux.Vars(req)
+	userID := vars["tenant"]
+	if userID == "" {
+		util.WriteTextResponse(w, "Tenant ID can't be empty")
+		return
+	}
+
+	// Disable any caching when getting list of all rule groups since listing results
+	// are cached and not invalidated and this API is expected to be strongly consistent.
+	rg, err := r.store.ListRuleGroupsForUserAndNamespace(req.Context(), userID, "", rulestore.WithCacheDisabled())
+	if err != nil {
+		level.Error(logger).Log("msg", "failed to list user rule groups", "user", userID, "err", err)
+		http.Error(w, fmt.Sprintf("failed to list user rule groups: %s", err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	groups := make([]ruleGroupData, 0, len(rg))
+	for _, g := range rg {
+		groups = append(groups, ruleGroupData{
+			Name:      g.GetName(),
+			Namespace: g.GetNamespace(),
+		})
+	}
+
+	util.RenderHTTPResponse(w, ruleGroupsPageContents{
+		Now:    time.Now(),
+		Tenant: userID,
+		Groups: groups,
+	}, ruleGroupsPageTemplate, req)
 }
 
 // NotifySyncRulesAsync enqueue a request to notify this and other rulers to reload the configuration

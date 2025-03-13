@@ -1517,6 +1517,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     querySchedulerJobName,
     querierJobName,
     queryRoutesRegex,
+    queryPathDescription,
     rowTitlePrefix='',
     showQueryCacheRow=false,
   )::
@@ -1534,32 +1535,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.query_frontend.requestsPerSecondMetric, $.jobSelector(queryFrontendJobName) + [utils.selector.re('route', queryRoutesRegex)])
       ),
-      local description = |||
-        <p>
-          The query scheduler is an optional service that moves
-          the internal queue from the query-frontend into a
-          separate component.
-          If this service is not deployed,
-          these panels will show "No data."
-        </p>
-      |||;
       $.row($.capitalize(rowTitlePrefix + 'query-scheduler'))
       .addPanel(
         local title = 'Requests / sec';
         $.timeseriesPanel(title) +
-        $.panelDescription(title, description) +
+        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher(querySchedulerJobName))
       )
       .addPanel(
         local title = 'Latency (Time in Queue)';
         $.timeseriesPanel(title) +
-        $.panelDescription(title, description) +
+        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher(querySchedulerJobName))
       )
       .addPanel(
         local title = 'Queue length';
         $.timeseriesPanel(title) +
-        $.panelDescription(title, description) +
+        $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.hiddenLegendQueryPanel(
           'sum(min_over_time(cortex_query_scheduler_queue_length{%s}[$__interval]))' % [$.jobMatcher(querySchedulerJobName)],
           'Queue length'
@@ -1574,11 +1566,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
       local description = |||
         <p>
-          The query scheduler creates subqueues
+          The query-scheduler creates subqueues
           broken out by which query components (ingester, store-gateway, or both)
           the querier is expected to fetch data from to service the query.
-
+        </p><p>
           Queries which have not had an expected query component determined are labeled 'unknown'.
+        </p><p>
+          If the query-scheduler is not deployed, these panels will show "No data."
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_queue_duration_seconds';
@@ -1635,14 +1629,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
       local description = |||
         <p>
-          The query scheduler tracks query requests inflight
+          The query-scheduler tracks query requests inflight
           between the scheduler and the connected queriers,
           broken out by which query component (ingester, store-gateway)
           the querier is expected to fetch data from to service the query.
-
+        </p><p>
           Queries which require data from both ingesters and store-gateways
           are counted in each category, so the sum of the two categories
           may exceed the true total number of queries inflight.
+        </p><p>
+          If the query-scheduler is not deployed, these panels will show "No data."
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_querier_inflight_requests';
@@ -1715,7 +1711,88 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(querierJobName), $.queries.read_http_routes_regex], ''
         )
       ),
-    ],
+    ] +
+    $.ingesterStoreGatewayReadsDashboardsRows(
+      'ingester',
+      $.queries.ingester.requestsPerSecondMetric,
+      $.queries.ingester.readRequestsPerSecondSelector,
+      $._config.job_names.ingester,
+      $._config.ingester_read_path_routes_regex,
+      $.queries.querier.ingesterClientRequestsPerSecondMetric,
+      std.asciiLower(rowTitlePrefix),
+      querierJobName,
+      queryPathDescription,
+    ) +
+    $.ingesterStoreGatewayReadsDashboardsRows(
+      'store-gateway',
+      $.queries.store_gateway.requestsPerSecondMetric,
+      $.queries.store_gateway.readRequestsPerSecondSelector,
+      $._config.job_names.store_gateway,
+      $._config.store_gateway_read_path_routes_regex,
+      $.queries.querier.storeGatewayClientRequestsPerSecondMetric,
+      std.asciiLower(rowTitlePrefix),
+      querierJobName,
+      queryPathDescription,
+    ),
+
+  ingesterStoreGatewayReadsDashboardsRows(
+    ingesterStoreGatewayComponentName,
+    ingesterStoreGatewayRequestsPerSecondMetric,
+    ingesterStoreGatewayRequestsPerSecondSelector,
+    ingesterStoreGatewayJobNames,
+    ingesterStoreGatewayRoutesRegex,
+    querierRequestsPerSecondMetric,
+    querierPrefix,
+    querierJobNames,
+    queryPathDescription,
+  ):: [
+    local description = 'This panel shows %(ingesterStoreGatewayComponentName)s query requests from all sources: the main query path, and the remote ruler query path, if in use. The data shown is as reported by %(ingesterStoreGatewayComponentName)ss.' % { ingesterStoreGatewayComponentName: ingesterStoreGatewayComponentName };
+
+    $.row($.capitalize(ingesterStoreGatewayComponentName + ' - query requests from all sources'))
+    .addPanel(
+      $.timeseriesPanel('Requests / sec') +
+      $.panelDescription('Requests / sec', description) +
+      $.qpsPanelNativeHistogram(ingesterStoreGatewayRequestsPerSecondMetric, ingesterStoreGatewayRequestsPerSecondSelector)
+    )
+    .addPanel(
+      $.timeseriesPanel('Latency') +
+      $.panelDescription('Latency', description) +
+      $.latencyRecordingRulePanelNativeHistogram(ingesterStoreGatewayRequestsPerSecondMetric, $.jobSelector(ingesterStoreGatewayJobNames) + [utils.selector.re('route', ingesterStoreGatewayRoutesRegex)])
+    )
+    .addPanel(
+      $.timeseriesPanel('Per %s %s p99 latency' % [ingesterStoreGatewayComponentName, $._config.per_instance_label]) +
+      $.panelDescription('Per %s %s p99 latency' % [ingesterStoreGatewayComponentName, $._config.per_instance_label], description) +
+      $.perInstanceLatencyPanelNativeHistogram(
+        '0.99',
+        ingesterStoreGatewayRequestsPerSecondMetric,
+        $.jobSelector(ingesterStoreGatewayJobNames) + [utils.selector.re('route', ingesterStoreGatewayRoutesRegex)],
+      ),
+    ),
+
+    local description = 'This panel shows %(ingesterStoreGatewayComponentName)s query requests from just the %(queryPathDescription)s. The data shown is as reported by %(querierPrefix)squeriers.' % {
+      ingesterStoreGatewayComponentName: ingesterStoreGatewayComponentName,
+      queryPathDescription: queryPathDescription,
+      querierPrefix: querierPrefix,
+    };
+    local selectors = $.jobSelector(querierJobNames) + [utils.selector.re('operation', ingesterStoreGatewayRoutesRegex)];
+
+    $.row($.capitalize(ingesterStoreGatewayComponentName + ' - query requests from this query path only'))
+    .addPanel(
+      $.timeseriesPanel('Requests / sec') +
+      $.panelDescription('Requests / sec', description) +
+      $.qpsPanelNativeHistogram(querierRequestsPerSecondMetric, utils.toPrometheusSelectorNaked(selectors))
+    )
+    .addPanel(
+      $.timeseriesPanel('Latency') +
+      $.panelDescription('Latency', description) +
+      $.latencyPanel(querierRequestsPerSecondMetric, utils.toPrometheusSelector(selectors))
+    )
+    .addPanel(
+      $.timeseriesPanel('Per querier %s p99 latency' % $._config.per_instance_label) +
+      $.panelDescription('Per querier %s p99 latency' % $._config.per_instance_label, description) +
+      $.perInstanceLatencyPanelNativeHistogram('0.99', querierRequestsPerSecondMetric, selectors),
+    ),
+  ],
 
   ingestStorageIngesterEndToEndLatencyWhenStartingPanel()::
     $.timeseriesPanel('Kafka end-to-end latency when starting') +
@@ -1982,4 +2059,26 @@ local utils = import 'mixin-utils/utils.libsonnet';
         for target in queryPanel.targets
       ],
     },
+
+  local querySchedulerDescription = 'The query-scheduler is an optional service that moves the internal queue from the query-frontend into a separate component.',
+
+  onlyRelevantIfQuerySchedulerEnabled(title):: $.panelDescription(
+    title,
+    |||
+      <p>
+        %s
+        If the query-scheduler is not deployed, these panels will show "No data."
+      </p>
+    ||| % querySchedulerDescription
+  ),
+
+  onlyRelevantIfQuerySchedulerDisabled(title):: $.panelDescription(
+    title,
+    |||
+      <p>
+      %s
+      If the query-scheduler is deployed, these panels will show "No data."
+      </p>
+    ||| % querySchedulerDescription
+  ),
 }

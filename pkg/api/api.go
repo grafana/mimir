@@ -340,6 +340,7 @@ func (a *API) RegisterIngester(i Ingester) {
 func (a *API) RegisterRuler(r *ruler.Ruler) {
 	a.indexPage.AddLinks(defaultWeight, "Ruler", []IndexPageLink{
 		{Desc: "Ring status", Path: "/ruler/ring"},
+		{Desc: "Ruler tenants", Path: "/ruler/tenants"},
 	})
 	a.RegisterRoute("/ruler/ring", r, false, true, "GET", "POST")
 
@@ -348,6 +349,10 @@ func (a *API) RegisterRuler(r *ruler.Ruler) {
 
 	// List all user rule groups
 	a.RegisterRoute("/ruler/rule_groups", http.HandlerFunc(r.ListAllRules), false, true, "GET")
+
+	// List all tenants with the rule groups
+	a.RegisterRoute("/ruler/tenants", http.HandlerFunc(r.ListAllUsers), false, true, "GET")
+	a.RegisterRoute("/ruler/tenant/{tenant}/rule_groups", http.HandlerFunc(r.ListUserRuleGroups), false, true, "GET")
 
 	ruler.RegisterRulerServer(a.server.GRPC, r)
 }

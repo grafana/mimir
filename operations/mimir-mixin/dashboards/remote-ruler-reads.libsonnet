@@ -44,7 +44,7 @@ local filename = 'mimir-remote-ruler-reads.json';
       querySchedulerJobName=$._config.job_names.ruler_query_scheduler,
       querierJobName=$._config.job_names.ruler_querier,
       queryRoutesRegex=$.queries.ruler_query_frontend_routes_regex,
-
+      queryPathDescription='ruler query path',
       rowTitlePrefix='Ruler-',
     ))
     .addRowIf(

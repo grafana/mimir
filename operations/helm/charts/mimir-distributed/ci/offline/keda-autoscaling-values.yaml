@@ -18,6 +18,7 @@ distributor:
     targetMemoryUtilizationPercentage: 80
 
 ruler:
+  remoteEvaluationDedicatedQueryPath: true
   kedaAutoscaling:
     enabled: true
     preserveReplicas: true
@@ -42,3 +43,20 @@ query_frontend:
     maxReplicaCount: 10
     targetCPUUtilizationPercentage: 80
     targetMemoryUtilizationPercentage: 80
+
+ruler_querier:
+  kedaAutoscaling:
+    enabled: true
+    preserveReplicas: true
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    querySchedulerInflightRequestsThreshold: 13
+
+ruler_query_frontend:
+  kedaAutoscaling:
+    enabled: true
+    minReplicaCount: 1
+    maxReplicaCount: 10
+    preserveReplicas: true
+    targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: 100

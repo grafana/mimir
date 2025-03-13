@@ -29,8 +29,10 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
+	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -394,11 +396,10 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
+
+	// update labels and verify all blocks
 	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
-
-		uploadedBlocks.Inc()
-
 		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
 
 		// When splitting is enabled, we need to inject the shard ID as an external label.
@@ -406,6 +407,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		if job.UseSplitting() {
 			newLabels[mimir_tsdb.CompactorShardIDExternalLabel] = sharding.FormatShardIDLabelValue(uint64(blockToUpload.shardIndex), uint64(job.SplittingShards()))
 		}
+		blocksToUpload[idx].labels = newLabels
 
 		newMeta, err := block.InjectThanosMeta(jobLogger, bdir, block.ThanosMeta{
 			Labels:       newLabels,
@@ -413,6 +415,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			Source:       block.CompactorSource,
 			SegmentFiles: block.GetSegmentFiles(bdir),
 		}, nil)
+
 		if err != nil {
 			return errors.Wrapf(err, "failed to finalize the block %s", bdir)
 		}
@@ -421,18 +424,47 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return errors.Wrap(err, "remove tombstones")
 		}
 
-		// Ensure the compacted block is valid.
 		if err := block.VerifyBlock(ctx, jobLogger, bdir, newMeta.MinTime, newMeta.MaxTime, false); err != nil {
 			return errors.Wrapf(err, "invalid result block %s", bdir)
 		}
+		return nil
+	})
+	if err != nil {
+		return false, nil, err
+	}
 
+	// Optionally build sparse-index-headers. Building sparse-index-headers is best effort, we do not skip uploading a
+	// compacted block if there's an error affecting sparse-index-headers.
+	if c.uploadSparseIndexHeaders {
+		// Create a bucket backed by the local compaction directory, allows calls to prepareSparseIndexHeader to
+		// construct sparse-index-headers without making requests to object storage.
+		fsbkt, err := filesystem.NewBucket(subDir)
+		if err != nil {
+			level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
+			return
+		}
+		_ = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
+			blockToUpload := blocksToUpload[idx]
+			err := prepareSparseIndexHeader(ctx, jobLogger, fsbkt, subDir, blockToUpload.ulid, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig)
+			if err != nil {
+				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
+			}
+			return nil
+		})
+	}
+
+	// upload all blocks
+	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
+		blockToUpload := blocksToUpload[idx]
+		uploadedBlocks.Inc()
+		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
 		begin := time.Now()
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil); err != nil {
 			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
 		}
 
 		elapsed := time.Since(begin)
-		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", blockToUpload.ulid, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(newLabels))
+		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", blockToUpload.ulid, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(blockToUpload.labels))
 		return nil
 	})
 	if err != nil {
@@ -457,8 +489,17 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return false, nil, errors.Wrapf(err, "mark old block for deletion from bucket")
 		}
 	}
-
 	return true, compIDs, nil
+}
+
+func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.Bucket, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
+	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
+	mets := indexheader.NewStreamBinaryReaderMetrics(nil)
+	br, err := indexheader.NewStreamBinaryReader(ctx, logger, bkt, dir, id, sampling, mets, cfg)
+	if err != nil {
+		return err
+	}
+	return br.Close()
 }
 
 // verifyCompactedBlocksTimeRanges does a full run over the compacted blocks
@@ -530,6 +571,7 @@ func convertCompactionResultToForEachJobs(compactedBlocks []ulid.ULID, splitJob 
 type ulidWithShardIndex struct {
 	ulid       ulid.ULID
 	shardIndex int
+	labels     map[string]string
 }
 
 // issue347Error is a type wrapper for errors that should invoke the repair process for broken block.
@@ -747,20 +789,23 @@ var ownAllJobs = func(*Job) (bool, error) {
 
 // BucketCompactor compacts blocks in a bucket.
 type BucketCompactor struct {
-	logger               log.Logger
-	sy                   *metaSyncer
-	grouper              Grouper
-	comp                 Compactor
-	planner              Planner
-	compactDir           string
-	bkt                  objstore.Bucket
-	concurrency          int
-	skipUnhealthyBlocks  bool
-	ownJob               ownCompactionJobFunc
-	sortJobs             JobsOrderFunc
-	waitPeriod           time.Duration
-	blockSyncConcurrency int
-	metrics              *BucketCompactorMetrics
+	logger                        log.Logger
+	sy                            *metaSyncer
+	grouper                       Grouper
+	comp                          Compactor
+	planner                       Planner
+	compactDir                    string
+	bkt                           objstore.Bucket
+	concurrency                   int
+	skipUnhealthyBlocks           bool
+	uploadSparseIndexHeaders      bool
+	sparseIndexHeaderSamplingRate int
+	sparseIndexHeaderconfig       indexheader.Config
+	ownJob                        ownCompactionJobFunc
+	sortJobs                      JobsOrderFunc
+	waitPeriod                    time.Duration
+	blockSyncConcurrency          int
+	metrics                       *BucketCompactorMetrics
 }
 
 // NewBucketCompactor creates a new bucket compactor.
@@ -779,25 +824,31 @@ func NewBucketCompactor(
 	waitPeriod time.Duration,
 	blockSyncConcurrency int,
 	metrics *BucketCompactorMetrics,
+	uploadSparseIndexHeaders bool,
+	sparseIndexHeaderSamplingRate int,
+	sparseIndexHeaderconfig indexheader.Config,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
 		return nil, errors.Errorf("invalid concurrency level (%d), concurrency level must be > 0", concurrency)
 	}
 	return &BucketCompactor{
-		logger:               logger,
-		sy:                   sy,
-		grouper:              grouper,
-		planner:              planner,
-		comp:                 comp,
-		compactDir:           compactDir,
-		bkt:                  bkt,
-		concurrency:          concurrency,
-		skipUnhealthyBlocks:  skipUnhealthyBlocks,
-		ownJob:               ownJob,
-		sortJobs:             sortJobs,
-		waitPeriod:           waitPeriod,
-		blockSyncConcurrency: blockSyncConcurrency,
-		metrics:              metrics,
+		logger:                        logger,
+		sy:                            sy,
+		grouper:                       grouper,
+		planner:                       planner,
+		comp:                          comp,
+		compactDir:                    compactDir,
+		bkt:                           bkt,
+		concurrency:                   concurrency,
+		skipUnhealthyBlocks:           skipUnhealthyBlocks,
+		ownJob:                        ownJob,
+		sortJobs:                      sortJobs,
+		waitPeriod:                    waitPeriod,
+		blockSyncConcurrency:          blockSyncConcurrency,
+		metrics:                       metrics,
+		uploadSparseIndexHeaders:      uploadSparseIndexHeaders,
+		sparseIndexHeaderSamplingRate: sparseIndexHeaderSamplingRate,
+		sparseIndexHeaderconfig:       sparseIndexHeaderconfig,
 	}, nil
 }
 

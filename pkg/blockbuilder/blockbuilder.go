@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/ingest"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -129,7 +130,9 @@ func newWithSchedulerClient(
 func (b *BlockBuilder) makeSchedulerClient() (schedulerpb.SchedulerClient, *grpc.ClientConn, error) {
 	dialOpts, err := b.cfg.SchedulerConfig.GRPCClientConfig.DialOption(
 		[]grpc.UnaryClientInterceptor{otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer())},
-		nil)
+		nil,
+		util.NewInvalidClusterValidationReporter(b.cfg.SchedulerConfig.GRPCClientConfig.ClusterValidation.Label, b.blockBuilderMetrics.invalidClusterValidation, b.logger),
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -250,17 +253,12 @@ func (b *BlockBuilder) stoppingStandaloneMode(_ error) error {
 // where we consume from statically assigned partitions.
 func (b *BlockBuilder) runningStandaloneMode(ctx context.Context) error {
 	// Do initial consumption on start using current time as the point up to which we are consuming.
-	// To avoid small blocks at startup, we consume until the <consume interval> boundary + buffer.
+	// The cycle end time on startup is the last consumption time w.r.t. the current time.
+	// Examples for interval=1h, buffer=15m:
+	//   (1) current time is 14:12, cycle end is 13:15
+	//   (2) current time is 14:17, cycle end is 14:15
 	cycleEndTime := cycleEndAtStartup(time.Now(), b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
-	err := b.nextConsumeCycle(ctx, cycleEndTime)
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil
-		}
-		return err
-	}
-
-	cycleEndTime, waitDur := nextCycleEnd(time.Now(), b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
+	var waitDur time.Duration
 	for {
 		select {
 		case <-time.After(waitDur):
@@ -282,8 +280,7 @@ func (b *BlockBuilder) runningStandaloneMode(ctx context.Context) error {
 	}
 }
 
-// cycleEndAtStartup returns the timestamp of the first cycleEnd relative to the start time t.
-// One cycle is a duration of one interval plus extra time buffer.
+// cycleEndAtStartup returns the timestamp of the last cycleEnd that is <=t.
 func cycleEndAtStartup(t time.Time, interval, buffer time.Duration) time.Time {
 	cycleEnd := t.Truncate(interval).Add(buffer)
 	if cycleEnd.After(t) {

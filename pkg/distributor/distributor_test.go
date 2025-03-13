@@ -197,7 +197,7 @@ func TestDistributor_Push(t *testing.T) {
 			happyIngesters:       3,
 			samples:              samplesIn{num: 25, startTimestampMs: 123456789000},
 			metadata:             5,
-			expectedGRPCError:    status.New(codes.ResourceExhausted, newIngestionRateLimitedError(20, 20).Error()),
+			expectedGRPCError:    status.New(codes.ResourceExhausted, newIngestionBurstSizeLimitedError(20, 55).Error()),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED},
 			metricNames:          []string{lastSeenTimestamp},
 			expectedMetrics: `
@@ -362,6 +362,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		"cortex_distributor_non_ha_samples_received_total",
 		"cortex_distributor_latest_seen_sample_timestamp_seconds",
 		"cortex_distributor_label_values_with_newlines_total",
+		"cortex_distributor_dropped_native_histograms_total",
 	}
 
 	d.receivedSamples.WithLabelValues("userA").Add(5)
@@ -377,11 +378,16 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.dedupedSamples.WithLabelValues("userA", "cluster1").Inc() // We cannot clean this metric
 	d.latestSeenSampleTimestampPerUser.WithLabelValues("userA").Set(1111)
 	d.labelValuesWithNewlinesPerUser.WithLabelValues("userA").Inc()
+	d.droppedNativeHistograms.WithLabelValues("userA").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_distributor_deduped_samples_total The total number of deduplicated samples.
 		# TYPE cortex_distributor_deduped_samples_total counter
 		cortex_distributor_deduped_samples_total{cluster="cluster1",user="userA"} 1
+
+		# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped because native histograms ingestion is disabled.
+    	# TYPE cortex_distributor_dropped_native_histograms_total counter
+    	cortex_distributor_dropped_native_histograms_total{user="userA"} 1
 
 		# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 		# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -428,6 +434,9 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_distributor_deduped_samples_total The total number of deduplicated samples.
 		# TYPE cortex_distributor_deduped_samples_total counter
+
+		# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped because native histograms ingestion is disabled.
+    	# TYPE cortex_distributor_dropped_native_histograms_total counter
 
 		# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 		# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -1468,6 +1477,56 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 	}
 }
 
+func TestDistributor_Push_CountDroppedNativeHistograms(t *testing.T) {
+	tests := map[string]struct {
+		ingestionEnabled    bool
+		expectCounterExists bool
+	}{
+		"native histograms ingestion enabled": {
+			ingestionEnabled:    true,
+			expectCounterExists: false,
+		},
+		"native histograms ingestion disabled": {
+			ingestionEnabled:    false,
+			expectCounterExists: true,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "user")
+			req := makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, generateTestHistogram(0))
+
+			limits := prepareDefaultLimits()
+			limits.NativeHistogramsIngestionEnabled = tc.ingestionEnabled
+
+			ds, _, regs, _ := prepare(t, prepConfig{
+				numIngesters:    2,
+				happyIngesters:  2,
+				numDistributors: 1,
+				limits:          limits,
+			})
+
+			// Pre-condition check.
+			require.Len(t, ds, 1)
+			require.Len(t, regs, 1)
+
+			resp, err := ds[0].Push(ctx, req)
+			require.NoError(t, err)
+			require.Equal(t, emptyResponse, resp)
+			if tc.expectCounterExists {
+				assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+					# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped because native histograms ingestion is disabled.
+    				# TYPE cortex_distributor_dropped_native_histograms_total counter
+    				cortex_distributor_dropped_native_histograms_total{user="user"} 1
+				`), "cortex_distributor_dropped_native_histograms_total"))
+			} else {
+				assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(``), "cortex_distributor_dropped_native_histograms_total"))
+			}
+		})
+	}
+}
+
 func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
 	labels := []string{labels.MetricName, "series", "job", "job", "service", "service"}
 
@@ -2415,6 +2474,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 	tests := map[string]struct {
 		shuffleShardSize  int
 		matchers          []*labels.Matcher
+		hints             *storage.SelectHints
 		maxSeriesPerQuery int
 		expectedResult    [][]mimirpb.LabelAdapter
 		expectedIngesters int
@@ -2424,6 +2484,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown"),
 			},
+			hints:             &storage.SelectHints{},
 			expectedResult:    nil,
 			expectedIngesters: numIngesters,
 		},
@@ -2431,6 +2492,18 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
+			hints: &storage.SelectHints{},
+			expectedResult: [][]mimirpb.LabelAdapter{
+				fixtures[0].lbls,
+				fixtures[1].lbls,
+			},
+			expectedIngesters: numIngesters,
+		},
+		"should filter metrics by matcher when no hints passed": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			hints: nil,
 			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[0].lbls,
 				fixtures[1].lbls,
@@ -2442,6 +2515,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 				mustNewMatcher(labels.MatchEqual, "status", "200"),
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
+			hints: &storage.SelectHints{},
 			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[0].lbls,
 			},
@@ -2451,6 +2525,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "fast_fingerprint_collision"),
 			},
+			hints: &storage.SelectHints{},
 			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[3].lbls,
 				fixtures[4].lbls,
@@ -2462,6 +2537,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
+			hints: &storage.SelectHints{},
 			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[0].lbls,
 				fixtures[1].lbls,
@@ -2472,8 +2548,33 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
+			hints:             &storage.SelectHints{},
 			maxSeriesPerQuery: 1,
 			expectedError:     validation.NewLimitError("the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-series-per-query, or contact your service administrator."),
+		},
+		"should error out if max series per query is reached before hint limit": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "test_.*"),
+			},
+			hints: &storage.SelectHints{
+				Limit: 2,
+			},
+			maxSeriesPerQuery: 1,
+			expectedError:     validation.NewLimitError("the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-series-per-query, or contact your service administrator."),
+		},
+		"should not return more metrics than hint limit": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			hints: &storage.SelectHints{
+				Limit: 1,
+			},
+			// For the case when the limit hint set the test checks that the returned metrics are in the subset of the expectedResult.
+			expectedResult: [][]mimirpb.LabelAdapter{
+				fixtures[0].lbls,
+				fixtures[1].lbls,
+			},
+			expectedIngesters: numIngesters,
 		},
 	}
 
@@ -2518,14 +2619,20 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					// Set up limiter
 					ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(testData.maxSeriesPerQuery, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
-					metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.matchers...)
+					metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.hints, testData.matchers...)
 					if testData.expectedError != nil {
 						require.ErrorIs(t, err, testData.expectedError)
 						return
 					}
-
 					require.NoError(t, err)
-					requireLabelAdaptersMatchLabels(t, testData.expectedResult, metrics)
+
+					if testData.hints == nil || testData.hints.Limit == 0 {
+						requireLabelAdaptersMatchLabels(t, testData.expectedResult, metrics)
+					} else {
+						// The order of ingester responses isn't guaranteed. Thus, we can only test that the distributor's response is in the subset of expectedResult.
+						require.Len(t, metrics, testData.hints.Limit)
+						requireLabelAdaptersContainLabels(t, testData.expectedResult, metrics)
+					}
 
 					// Check how many ingesters have been queried.
 					if ingestStorageEnabled {
@@ -2541,6 +2648,107 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					}
 				})
 			}
+		})
+	}
+}
+
+func TestDistributor_MetricsForLabelMatchers_adjustPushDownLimit(t *testing.T) {
+	const numIngesters = 10
+
+	now := model.Now()
+
+	fixtures := []struct {
+		lbls      []mimirpb.LabelAdapter
+		value     float64
+		timestamp int64
+	}{
+		{labelAdapters(labels.MetricName, "test_1", "status", "2xx"), 1, 100000},
+		{labelAdapters(labels.MetricName, "test_1", "status", "3xx"), 1, 110000},
+		{labelAdapters(labels.MetricName, "test_1", "status", "5xx"), 1, 120000},
+	}
+
+	tests := map[string]struct {
+		setupFunc     func(*prepConfig)
+		hints         *storage.SelectHints
+		expectedLimit int
+	}{
+		"should adjust push-down limit": {
+			hints: &storage.SelectHints{
+				Limit: 50,
+			},
+			expectedLimit: 17,
+		},
+		"should adjust push-down limit if shuffle shard size is set": {
+			setupFunc: func(testConfig *prepConfig) {
+				testConfig.shuffleShardSize = 6
+			},
+			hints: &storage.SelectHints{
+				Limit: 50,
+			},
+			expectedLimit: 25, // the pushed-down limit is divided between two shards (ingest_shard_size=6; RF=3)
+		},
+		"should adjust push-down limit if ingest-storage is enabled": {
+			setupFunc: func(testConfig *prepConfig) {
+				testConfig.ingestStorageEnabled = true
+			},
+			hints: &storage.SelectHints{
+				Limit: 50,
+			},
+			expectedLimit: 5, // the pushed-down limit is divided by the number of ingesters
+		},
+		"should adjust push-down limit if ingest-storage is enabled and partition shard size is set": {
+			setupFunc: func(testConfig *prepConfig) {
+				testConfig.ingestStorageEnabled = true
+				testConfig.limits = prepareDefaultLimits()
+				testConfig.limits.IngestionPartitionsTenantShardSize = 3
+			},
+			hints: &storage.SelectHints{
+				Limit: 50,
+			},
+			expectedLimit: 17, // the pushed-down limit is divided by number of partitions (ingest_shard_size=3)
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			testConfig := prepConfig{
+				numIngesters:    numIngesters,
+				happyIngesters:  numIngesters,
+				numDistributors: 1,
+			}
+			if testData.setupFunc != nil {
+				testData.setupFunc(&testConfig)
+			}
+
+			ds, ingesters, _, _ := prepare(t, testConfig)
+
+			// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+			ctx := user.InjectOrgID(context.Background(), "test")
+			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+
+			for _, series := range fixtures {
+				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+				_, err := ds[0].Push(ctx, req)
+				require.NoError(t, err)
+			}
+
+			// In this test, we only assert the side effect of limit's push-down. The behavior of matchers and the returned metrics are already tested above.
+			matchers := []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			}
+			_, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.hints, matchers...)
+			require.NoError(t, err)
+
+			var called bool
+			assertMockIngestersCalledFunc(ingesters, "MetricsForLabelMatchers", func(args ...any) {
+				require.Len(t, args, 2)
+				req := args[1].(*client.MetricsForLabelMatchersRequest)
+				require.EqualValues(t, testData.expectedLimit, req.Limit)
+				called = true
+			})
+			require.True(t, called)
 		})
 	}
 }
@@ -2707,6 +2915,23 @@ func requireLabelAdaptersMatchLabels(tb testing.TB, a [][]mimirpb.LabelAdapter, 
 	slices.SortFunc(bAsLabelAdapters, mimirpb.CompareLabelAdapters)
 
 	promtestutil.RequireEqual(tb, a, bAsLabelAdapters)
+}
+
+// Check that the LabelAdaptors contain the Labels. Assume LabelAdaptors are already sorted.
+func requireLabelAdaptersContainLabels(tb testing.TB, a [][]mimirpb.LabelAdapter, b []labels.Labels) {
+	tb.Helper()
+	if len(a) == 0 && len(b) == 0 {
+		return
+	}
+	bAsLabelAdapters := make([][]mimirpb.LabelAdapter, len(b))
+	for i, s := range b {
+		bAsLabelAdapters[i] = mimirpb.FromLabelsToLabelAdapters(s)
+	}
+	slices.SortFunc(bAsLabelAdapters, mimirpb.CompareLabelAdapters)
+
+	for _, bb := range bAsLabelAdapters {
+		require.Contains(tb, a, bb)
+	}
 }
 
 func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
@@ -3497,10 +3722,10 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 					expectedMetadata := make([]scrape.MetricMetadata, 0, len(req.Metadata))
 					for _, m := range req.Metadata {
 						expectedMetadata = append(expectedMetadata, scrape.MetricMetadata{
-							Metric: m.MetricFamilyName,
-							Type:   mimirpb.MetricMetadataMetricTypeToMetricType(m.Type),
-							Help:   m.Help,
-							Unit:   m.Unit,
+							MetricFamily: m.MetricFamilyName,
+							Type:         mimirpb.MetricMetadataMetricTypeToMetricType(m.Type),
+							Help:         m.Help,
+							Unit:         m.Unit,
 						})
 					}
 
@@ -6069,13 +6294,14 @@ type mockIngester struct {
 	sync.Mutex
 	client.IngesterClient
 	grpc_health_v1.HealthClient
-	happy                         bool
-	stats                         client.UsersStatsResponse
-	timeseries                    map[uint32]*mimirpb.PreallocTimeseries
-	metadata                      map[uint32]map[mimirpb.MetricMetadata]struct{}
-	queryDelay                    time.Duration
-	pushDelay                     time.Duration
-	calls                         map[string]int
+	happy      bool
+	stats      client.UsersStatsResponse
+	timeseries map[uint32]*mimirpb.PreallocTimeseries
+	metadata   map[uint32]map[mimirpb.MetricMetadata]struct{}
+	queryDelay time.Duration
+	pushDelay  time.Duration
+	// calls is a map from a methodName to list the method's invocations; each invocation is a list of the call's arguments.
+	calls                         map[string][][]any
 	zone                          string
 	labelNamesStreamResponseDelay time.Duration
 	timeOut                       bool
@@ -6166,7 +6392,7 @@ func (i *mockIngester) Close() error {
 }
 
 func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
-	i.trackCall("Push")
+	i.trackCall("Push", ctx, req)
 
 	time.Sleep(i.pushDelay)
 
@@ -6246,7 +6472,7 @@ func makeWireChunk(c chunk.EncodedChunk) client.Chunk {
 }
 
 func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest, _ ...grpc.CallOption) (client.Ingester_QueryStreamClient, error) {
-	i.trackCall("QueryStream")
+	i.trackCall("QueryStream", ctx, req)
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
@@ -6481,7 +6707,7 @@ func (i *mockIngester) QueryExemplars(ctx context.Context, req *client.ExemplarQ
 }
 
 func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest, _ ...grpc.CallOption) (*client.MetricsForLabelMatchersResponse, error) {
-	i.trackCall("MetricsForLabelMatchers")
+	i.trackCall("MetricsForLabelMatchers", ctx, req)
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
@@ -6494,7 +6720,7 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 		return nil, errFail
 	}
 
-	multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
+	hints, multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -6507,11 +6733,20 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 			}
 		}
 	}
+
+	// Always sort metrics by their labels to make testing simpler.
+	slices.SortFunc(response.Metric, func(m1, m2 *mimirpb.Metric) int {
+		return mimirpb.CompareLabelAdapters(m1.Labels, m2.Labels)
+	})
+
+	if hints != nil && hints.Limit > 0 && len(response.Metric) > hints.Limit {
+		response.Metric = response.Metric[:hints.Limit]
+	}
 	return &response, nil
 }
 
 func (i *mockIngester) LabelValues(ctx context.Context, req *client.LabelValuesRequest, _ ...grpc.CallOption) (*client.LabelValuesResponse, error) {
-	i.trackCall("LabelValues")
+	i.trackCall("LabelValues", ctx, req)
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
@@ -6565,7 +6800,7 @@ func (i *mockIngester) LabelValues(ctx context.Context, req *client.LabelValuesR
 }
 
 func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesRequest, _ ...grpc.CallOption) (*client.LabelNamesResponse, error) {
-	i.trackCall("LabelNames")
+	i.trackCall("LabelNames", ctx, req)
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
@@ -6683,7 +6918,7 @@ func (s *labelNamesAndValuesMockStream) Recv() (*client.LabelNamesAndValuesRespo
 }
 
 func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.LabelValuesCardinalityRequest, _ ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {
-	i.trackCall("LabelValuesCardinality")
+	i.trackCall("LabelValuesCardinality", ctx, req)
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
@@ -6757,7 +6992,7 @@ func (s *labelValuesCardinalityStream) Recv() (*client.LabelValuesCardinalityRes
 }
 
 func (i *mockIngester) ActiveSeries(ctx context.Context, req *client.ActiveSeriesRequest, _ ...grpc.CallOption) (client.Ingester_ActiveSeriesClient, error) {
-	i.trackCall("ActiveSeries")
+	i.trackCall("ActiveSeries", ctx, req)
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
@@ -6823,22 +7058,31 @@ func (s *activeSeriesStream) CloseSend() error {
 	return nil
 }
 
-func (i *mockIngester) trackCall(name string) {
+func (i *mockIngester) trackCall(name string, args ...any) {
 	i.Lock()
 	defer i.Unlock()
 
 	if i.calls == nil {
-		i.calls = map[string]int{}
+		i.calls = make(map[string][][]any)
 	}
 
-	i.calls[name]++
+	i.calls[name] = append(i.calls[name], args)
 }
 
 func (i *mockIngester) countCalls(name string) int {
 	i.Lock()
 	defer i.Unlock()
 
-	return i.calls[name]
+	return len(i.calls[name])
+}
+
+func (i *mockIngester) assertCalledFunc(name string, assertionFunc func(args ...any)) {
+	i.Lock()
+	defer i.Unlock()
+
+	for _, call := range i.calls[name] {
+		assertionFunc(call...)
+	}
 }
 
 func (i *mockIngester) enforceReadConsistency(ctx context.Context) error {
@@ -7196,6 +7440,12 @@ func countMockIngestersCalled(ingesters []*mockIngester, name string) int {
 		}
 	}
 	return count
+}
+
+func assertMockIngestersCalledFunc(ingesters []*mockIngester, name string, assertionFunc func(args ...any)) {
+	for _, i := range ingesters {
+		i.assertCalledFunc(name, assertionFunc)
+	}
 }
 
 // TestDistributor_MetricsWithRequestModifications tests that the distributor metrics are properly updated when

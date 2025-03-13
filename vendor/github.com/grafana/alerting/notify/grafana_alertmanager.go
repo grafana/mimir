@@ -1,7 +1,6 @@
 package notify
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -37,6 +36,7 @@ import (
 
 	"github.com/grafana/alerting/cluster"
 	"github.com/grafana/alerting/notify/nfstatus"
+	"github.com/grafana/alerting/notify/stages"
 
 	"github.com/grafana/alerting/models"
 	"github.com/grafana/alerting/templates"
@@ -108,6 +108,8 @@ type GrafanaAlertmanager struct {
 
 	// templates contains the template name -> template contents for each user-defined template.
 	templates []templates.TemplateDefinition
+	// controls whether instance runs pipeline.PipelineAndStateTimestampCoordinationStage and in what mode. The stage is run after notify.DedupStage
+	pipelineAndStateTimestampsMismatchAction stages.Action
 }
 
 // State represents any of the two 'states' of the alertmanager. Notification log or Silences.
@@ -173,6 +175,9 @@ type GrafanaAlertmanagerConfig struct {
 	Nflog    MaintenanceOptions
 
 	Limits Limits
+
+	// PipelineAndStateTimestampsMismatchAction defines the action to take when there's a mismatch in pipeline and state timestamps.
+	PipelineAndStateTimestampsMismatchAction stages.Action
 }
 
 func (c *GrafanaAlertmanagerConfig) Validate() error {
@@ -191,16 +196,17 @@ func (c *GrafanaAlertmanagerConfig) Validate() error {
 func NewGrafanaAlertmanager(tenantKey string, tenantID int64, config *GrafanaAlertmanagerConfig, peer ClusterPeer, logger log.Logger, m *GrafanaAlertmanagerMetrics) (*GrafanaAlertmanager, error) {
 	// TODO: Remove the context.
 	am := &GrafanaAlertmanager{
-		stopc:             make(chan struct{}),
-		logger:            log.With(logger, "component", "alertmanager", tenantKey, tenantID),
-		marker:            types.NewMarker(m.Registerer),
-		stageMetrics:      notify.NewMetrics(m.Registerer, featurecontrol.NoopFlags{}),
-		dispatcherMetrics: dispatch.NewDispatcherMetrics(false, m.Registerer),
-		peer:              peer,
-		peerTimeout:       config.PeerTimeout,
-		Metrics:           m,
-		tenantID:          tenantID,
-		externalURL:       config.ExternalURL,
+		stopc:                                    make(chan struct{}),
+		logger:                                   log.With(logger, "component", "alertmanager", tenantKey, tenantID),
+		marker:                                   types.NewMarker(m.Registerer),
+		stageMetrics:                             notify.NewMetrics(m.Registerer, featurecontrol.NoopFlags{}),
+		dispatcherMetrics:                        dispatch.NewDispatcherMetrics(false, m.Registerer),
+		peer:                                     peer,
+		peerTimeout:                              config.PeerTimeout,
+		Metrics:                                  m,
+		tenantID:                                 tenantID,
+		externalURL:                              config.ExternalURL,
+		pipelineAndStateTimestampsMismatchAction: config.PipelineAndStateTimestampsMismatchAction,
 	}
 
 	if err := config.Validate(); err != nil {
@@ -589,8 +595,7 @@ func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []
 	// Iterate over each definition in the template and evaluate it.
 	var results TestTemplatesResults
 	for _, def := range definitions {
-		var buf bytes.Buffer
-		err := newTextTmpl.ExecuteTemplate(&buf, def, data)
+		res, scope, err := testTemplateScopes(newTextTmpl, def, data)
 		if err != nil {
 			results.Errors = append(results.Errors, TestTemplatesErrorResult{
 				Name:  def,
@@ -599,8 +604,9 @@ func TestTemplate(ctx context.Context, c TestTemplatesConfigBodyParams, tmpls []
 			})
 		} else {
 			results.Results = append(results.Results, TestTemplatesResult{
-				Name: def,
-				Text: buf.String(),
+				Name:  def,
+				Text:  res,
+				Scope: scope,
 			})
 		}
 	}
@@ -710,7 +716,7 @@ func (am *GrafanaAlertmanager) ApplyConfig(cfg Configuration) (err error) {
 	var receivers []*nfstatus.Receiver
 	activeReceivers := GetActiveReceiversMap(am.route)
 	for name := range integrationsMap {
-		stage := am.createReceiverStage(name, nfstatus.GetIntegrations(integrationsMap[name]), am.waitFunc, am.notificationLog)
+		stage := am.createReceiverStage(name, nfstatus.GetIntegrations(integrationsMap[name]), am.notificationLog, am.pipelineAndStateTimestampsMismatchAction)
 		routingStage[name] = notify.MultiStage{meshStage, silencingStage, timeMuteStage, inhibitionStage, stage}
 		_, isActive := activeReceivers[name]
 
@@ -877,7 +883,7 @@ func (e AlertValidationError) Error() string {
 }
 
 // createReceiverStage creates a pipeline of stages for a receiver.
-func (am *GrafanaAlertmanager) createReceiverStage(name string, integrations []*notify.Integration, wait func() time.Duration, notificationLog notify.NotificationLog) notify.Stage {
+func (am *GrafanaAlertmanager) createReceiverStage(name string, integrations []*notify.Integration, notificationLog notify.NotificationLog, act stages.Action) notify.Stage {
 	var fs notify.FanoutStage
 	for i := range integrations {
 		recv := &nflogpb.Receiver{
@@ -886,8 +892,12 @@ func (am *GrafanaAlertmanager) createReceiverStage(name string, integrations []*
 			Idx:         uint32(integrations[i].Index()),
 		}
 		var s notify.MultiStage
-		s = append(s, notify.NewWaitStage(wait))
+		s = append(s, stages.NewWaitStage(am.peer, am.peerTimeout))
 		s = append(s, notify.NewDedupStage(integrations[i], notificationLog, recv))
+		stage := stages.NewPipelineAndStateTimestampCoordinationStage(notificationLog, recv, act)
+		if stage != nil {
+			s = append(s, stage)
+		}
 		s = append(s, notify.NewRetryStage(integrations[i], name, am.stageMetrics))
 		s = append(s, notify.NewSetNotifiesStage(notificationLog, recv))
 

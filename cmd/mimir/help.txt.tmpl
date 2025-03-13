@@ -105,6 +105,12 @@ Usage of ./cmd/mimir/mimir:
     	Per-tenant rate limit for sending notifications from Alertmanager in notifications/sec. 0 = rate limit disabled. Negative value = no notifications are allowed.
   -alertmanager.notification-rate-limit-per-integration value
     	Per-integration notification rate limits. Value is a map, where each key is integration name and value is a rate-limit (float). On command line, this map is given in JSON format. Rate limit has the same meaning as -alertmanager.notification-rate-limit, but only applies for specific integration. Allowed integration names: webhook, email, pagerduty, opsgenie, wechat, slack, victorops, pushover, sns, webex, telegram, discord, msteams. (default {})
+  -alertmanager.notify-hook-receivers comma-separated-list-of-strings
+    	List of receivers to enable notify hooks for. empty = all receivers.
+  -alertmanager.notify-hook-timeout duration
+    	Maximum amount of time to wait for a hook to complete before timing out. 0 = no timeout. (default 30s)
+  -alertmanager.notify-hook-url string
+    	URL of a hook to invoke before a notification is sent. empty = no hook.
   -alertmanager.receivers-firewall-block-cidr-networks comma-separated-list-of-strings
     	Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.
   -alertmanager.receivers-firewall-block-private-addresses
@@ -351,6 +357,8 @@ Usage of ./cmd/mimir/mimir:
     	Hostname and port of Consul. (default "localhost:8500")
   -distributor.ha-tracker.enable
     	Enable the distributors HA tracker so that it can accept samples from Prometheus HA replicas gracefully (requires labels).
+  -distributor.ha-tracker.enable-elected-replica-metric
+    	Enable the elected_replica_status metric, which shows the current elected replica. It is disabled by default due to the possible high cardinality of the metric.
   -distributor.ha-tracker.enable-for-all-users
     	Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.
   -distributor.ha-tracker.etcd.endpoints string
@@ -555,6 +563,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers. (default 14)
   -querier.max-samples int
     	Maximum number of samples a single query can load into memory. This config option should be set on query-frontend too when query sharding is enabled. (default 50000000)
+  -querier.max-series-query-limit int
+    	Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.
   -querier.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
   -querier.timeout duration

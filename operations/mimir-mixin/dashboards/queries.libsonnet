@@ -22,6 +22,7 @@ local filename = 'mimir-queries.json';
       $.row('Query-frontend')
       .addPanel(
         $.timeseriesPanel('Queue duration') +
+        $.onlyRelevantIfQuerySchedulerDisabled('Queue duration') +
         $.latencyPanel('cortex_query_frontend_queue_duration_seconds', '{$read_path_matcher}'),
       )
       .addPanel(
@@ -31,6 +32,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per %s)' % $._config.per_instance_label) +
+        $.onlyRelevantIfQuerySchedulerDisabled('Queue length') +
         $.queryPanel(
           'sum by(%s) (cortex_query_frontend_queue_length{$read_path_matcher})' % [$._config.per_instance_label],
           '{{%s}}' % $._config.per_instance_label
@@ -38,6 +40,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per user)') +
+        $.onlyRelevantIfQuerySchedulerDisabled('Queue length') +
         $.queryPanel(
           'sum by(user) (cortex_query_frontend_queue_length{$read_path_matcher}) > 0',
           '{{user}}'
@@ -49,10 +52,12 @@ local filename = 'mimir-queries.json';
       $.row('Query-scheduler')
       .addPanel(
         $.timeseriesPanel('Queue duration') +
+        $.onlyRelevantIfQuerySchedulerEnabled('Queue duration') +
         $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{$read_path_matcher}'),
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per %s)' % $._config.per_instance_label) +
+        $.onlyRelevantIfQuerySchedulerEnabled('Queue length') +
         $.queryPanel(
           'sum by(%s) (cortex_query_scheduler_queue_length{$read_path_matcher})' % [$._config.per_instance_label],
           '{{%s}}' % $._config.per_instance_label
@@ -60,6 +65,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per user)') +
+        $.onlyRelevantIfQuerySchedulerEnabled('Queue length') +
         $.queryPanel(
           'sum by(user) (cortex_query_scheduler_queue_length{$read_path_matcher}) > 0',
           '{{user}}'

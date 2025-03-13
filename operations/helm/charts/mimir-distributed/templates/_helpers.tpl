@@ -184,23 +184,23 @@ Alertmanager cluster bind address
 {{- end -}}
 
 {{- define "mimir.chunksCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-chunks-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "chunks-cache").port }}
+dns+{{ template "mimir.fullname" . }}-chunks-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "chunks-cache").port }}
 {{- end -}}
 
 {{- define "mimir.indexCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-index-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "index-cache").port }}
+dns+{{ template "mimir.fullname" . }}-index-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "index-cache").port }}
 {{- end -}}
 
 {{- define "mimir.metadataCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-metadata-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "metadata-cache").port }}
+dns+{{ template "mimir.fullname" . }}-metadata-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "metadata-cache").port }}
 {{- end -}}
 
 {{- define "mimir.resultsCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-results-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "results-cache").port }}
+dns+{{ template "mimir.fullname" . }}-results-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "results-cache").port }}
 {{- end -}}
 
 {{- define "mimir.adminCacheAddress" -}}
-dns+{{ template "mimir.fullname" . }}-admin-cache.{{ .Release.Namespace }}.svc:{{ (index .Values "admin-cache").port }}
+dns+{{ template "mimir.fullname" . }}-admin-cache.{{ .Release.Namespace }}.svc.{{ .Values.global.clusterDomain }}:{{ (index .Values "admin-cache").port }}
 {{- end -}}
 
 {{/*
@@ -549,11 +549,19 @@ Return if we should create a SecurityContextConstraints. Takes into account user
 {{- end -}}
 
 {{- define "mimir.remoteWriteUrl.inCluster" -}}
+{{- if or (eq (include "mimir.gateway.isEnabled" . ) "true") .Values.nginx.enabled -}}
 {{ include "mimir.gatewayUrl" . }}/api/v1/push
+{{- else -}}
+http://{{ template "mimir.fullname" . }}-distributor-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}/api/v1/push
+{{- end -}}
 {{- end -}}
 
 {{- define "mimir.remoteReadUrl.inCluster" -}}
+{{- if or (eq (include "mimir.gateway.isEnabled" . ) "true") .Values.nginx.enabled -}}
 {{ include "mimir.gatewayUrl" . }}{{ include "mimir.prometheusHttpPrefix" . }}
+{{- else -}}
+http://{{ template "mimir.fullname" . }}-query-frontend.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}{{ include "mimir.prometheusHttpPrefix" . }}
+{{- end -}}
 {{- end -}}
 
 {{/*
@@ -725,4 +733,11 @@ mimir.cpuToMilliCPU takes 1 argument
     {{- else -}}
         {{- $value_string | float64 | mulf 1000 | toString }}
     {{- end -}}
+{{- end -}}
+
+{{/*
+kubectl image reference
+*/}}
+{{- define "mimir.kubectlImage" -}}
+{{ .Values.kubectlImage.repository }}:{{ .Values.kubectlImage.tag }}
 {{- end -}}

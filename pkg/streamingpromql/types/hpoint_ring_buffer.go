@@ -323,6 +323,16 @@ func (v HPointRingBufferView) Any() bool {
 	return v.size != 0
 }
 
+// PointAt returns the point at index i in this ring buffer view.
+// It panics if i is outside the range of points in this view.
+func (v HPointRingBufferView) PointAt(i int) promql.HPoint {
+	if i >= v.size {
+		panic(fmt.Sprintf("PointAt(): out of range, requested index %v but have length %v", i, v.size))
+	}
+
+	return v.buffer.pointAt(i)
+}
+
 // These hooks exist so we can override them during unit tests.
 var getHPointSliceForRingBuffer = HPointSlicePool.Get
 var putHPointSliceForRingBuffer = HPointSlicePool.Put
