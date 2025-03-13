@@ -220,6 +220,15 @@
     // Used as the job prefix in alerts that select on job label (e.g. GossipMembersTooHigh, RingMembersMismatch). This can be set to a known namespace to prevent those alerts from firing incorrectly due to selecting similar metrics from Loki/Tempo.
     alert_job_prefix: '.*/',
 
+    alert_cluster_variable: '{{ $labels.%s }}' % $._config.per_cluster_label,
+
+    alert_instance_variable: '{{ $labels.%s }}' % $._config.per_instance_label,
+
+    alert_node_variable: '{{ $labels.%s }}' % $._config.per_cluster_label,
+
+    // The alertname is used to create a hyperlink to the runbooks. Currenlty we only have a single set of runbooks, so different products (e.g. GEM) should still use the same runbooks.
+    alert_product: $._config.product,
+
     // Whether alerts for experimental ingest storage are enabled.
     ingest_storage_enabled: true,
 

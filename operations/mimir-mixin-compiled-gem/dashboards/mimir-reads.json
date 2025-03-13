@@ -21,10 +21,11 @@
             "includeVars": true,
             "keepTime": true,
             "tags": [
-               "mimir"
+               "mimir",
+               "gem"
             ],
             "targetBlank": false,
-            "title": "Mimir dashboards",
+            "title": "GEM dashboards",
             "type": "dashboards"
          }
       ],
@@ -145,7 +146,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Range queries per second\nRate of range queries per second being made to\nMimir via the <tt>/prometheus</tt> API.\n\n",
+                  "description": "### Range queries per second\nRate of range queries per second being made to\nGEM via the <tt>/prometheus</tt> API.\n\n",
                   "fill": 1,
                   "format": "reqps",
                   "id": 3,
@@ -227,7 +228,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### \"Label names\" queries per second\nRate of \"label names\" endpoint queries per second being made to\nMimir via the <tt>/prometheus</tt> API.\n\n",
+                  "description": "### \"Label names\" queries per second\nRate of \"label names\" endpoint queries per second being made to\nGEM via the <tt>/prometheus</tt> API.\n\n",
                   "fill": 1,
                   "format": "reqps",
                   "id": 4,
@@ -309,7 +310,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### \"Label values\" queries per second\nRate of specific \"label values\" endpoint queries per second being made to\nMimir via the <tt>/prometheus</tt> API.\n\n",
+                  "description": "### \"Label values\" queries per second\nRate of specific \"label values\" endpoint queries per second being made to\nGEM via the <tt>/prometheus</tt> API.\n\n",
                   "fill": 1,
                   "format": "reqps",
                   "id": 5,
@@ -391,7 +392,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Series queries per second\nRate of series queries per second being made to\nMimir via the <tt>/prometheus</tt> API.\n\n",
+                  "description": "### Series queries per second\nRate of series queries per second being made to\nGEM via the <tt>/prometheus</tt> API.\n\n",
                   "fill": 1,
                   "format": "reqps",
                   "id": 6,
@@ -6193,7 +6194,8 @@
       "schemaVersion": 14,
       "style": "dark",
       "tags": [
-         "mimir"
+         "mimir",
+         "gem"
       ],
       "templating": {
          "list": [
@@ -6320,7 +6322,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "Mimir / Reads",
+      "title": "GEM / Reads",
       "uid": "e327503188913dc38ad571c647eef643",
       "version": 0
    }
