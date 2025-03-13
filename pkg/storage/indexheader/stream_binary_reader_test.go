@@ -3,8 +3,10 @@
 package indexheader
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,9 +16,11 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	promtestutil "github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -126,4 +130,92 @@ func TestStreamBinaryReader_LabelValuesOffsetsHonorsContextCancel(t *testing.T) 
 	_, err = r.LabelValuesOffsets(ctx, "a", "", func(string) bool { return true })
 	require.Error(t, err)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+// TestStreamBinaryReader_UsesSparseHeaderFromObjectStore tests if StreamBinaryReader uses
+// a sparse index header that's already present in the object store instead of recreating it.
+func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+
+	tmpDir := filepath.Join(t.TempDir(), "test-sparse-headers-from-objstore")
+	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, bkt.Close()) })
+
+	// Create block with sample data
+	blockID, err := block.CreateBlock(ctx, tmpDir, []labels.Labels{
+		labels.FromStrings("a", "1"),
+		labels.FromStrings("a", "2"),
+		labels.FromStrings("b", "3"),
+	}, 100, 0, 1000, labels.EmptyLabels())
+	require.NoError(t, err)
+
+	// Upload block to bucket
+	require.NoError(t, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, blockID.String()), nil))
+
+	// First, create a StreamBinaryReader to generate the sparse header file
+	origReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, tsdb.DefaultPostingOffsetInMemorySampling, NewStreamBinaryReaderMetrics(nil), Config{})
+	require.NoError(t, err)
+	require.NoError(t, origReader.Close())
+
+	// Get the generated sparse header file path
+	sparseHeadersPath := filepath.Join(tmpDir, blockID.String(), block.SparseIndexHeaderFilename)
+
+	// Read the sparse header file content and calculate its hash
+	sparseData, err := os.ReadFile(sparseHeadersPath)
+	require.NoError(t, err)
+	originalFileSize := len(sparseData)
+
+	// Delete the local sparse header file to ensure we'll need to get it from the object store
+	require.NoError(t, os.Remove(sparseHeadersPath))
+
+	// Delete the local block directory to ensure nothing is read from local disk
+	require.NoError(t, os.RemoveAll(filepath.Join(tmpDir, blockID.String())))
+
+	// Upload the sparse header directly to the object store
+	sparseHeaderObjPath := filepath.Join(blockID.String(), block.SparseIndexHeaderFilename)
+	require.NoError(t, bkt.Upload(ctx, sparseHeaderObjPath, bytes.NewReader(sparseData)))
+
+	// Create a bucket that can track downloads and verify content
+	trackedBkt := &trackedBucket{
+		BucketReader:     bkt,
+		expectedPath:     sparseHeaderObjPath,
+		fileSizeExpected: originalFileSize,
+	}
+
+	// Create a new StreamBinaryReader - it should use the sparse header from the object store
+	newReader, err := NewStreamBinaryReader(ctx, logger, trackedBkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	require.NoError(t, err)
+	defer newReader.Close()
+
+	// The sparse header file should have been downloaded from object store
+	require.True(t, trackedBkt.getWasCalled, "The sparse header file should have been requested from the bucket")
+	require.Equal(t, sparseHeaderObjPath, trackedBkt.downloadedPath, "The correct path should have been downloaded")
+
+	// Verify that the sparse header file exists locally
+	fileInfo, err := os.Stat(sparseHeadersPath)
+	require.NoError(t, err)
+	require.NotNil(t, fileInfo, "Sparse header file should exist locally after reading from object store")
+	require.Equal(t, int64(originalFileSize), fileInfo.Size(), "Downloaded file should have the same size as the original")
+
+	// Check that the reader is functional by performing a label names query
+	labelNames, err := newReader.LabelNames(ctx)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"a", "b"}, labelNames)
+}
+
+// trackedBucket wraps a BucketReader and tracks details about downloaded files
+type trackedBucket struct {
+	objstore.BucketReader
+	expectedPath     string
+	fileSizeExpected int
+	getWasCalled     bool
+	downloadedPath   string
+}
+
+func (b *trackedBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	b.getWasCalled = true
+	b.downloadedPath = name
+	return b.BucketReader.Get(ctx, name)
 }
