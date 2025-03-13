@@ -600,6 +600,21 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#EAB839",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "OK"
                            },
                            "properties": [
@@ -621,7 +636,7 @@
                               {
                                  "id": "color",
                                  "value": {
-                                    "fixedColor": "#A9A9A9",
+                                    "fixedColor": "#EAB839",
                                     "mode": "fixed"
                                  }
                               }
@@ -875,6 +890,21 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#EAB839",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "OK"
                            },
                            "properties": [
@@ -896,7 +926,7 @@
                               {
                                  "id": "color",
                                  "value": {
-                                    "fixedColor": "#A9A9A9",
+                                    "fixedColor": "#EAB839",
                                     "mode": "fixed"
                                  }
                               }
@@ -1408,6 +1438,21 @@
                         {
                            "matcher": {
                               "id": "byName",
+                              "options": "Canceled"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#EAB839",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
                               "options": "OK"
                            },
                            "properties": [
@@ -1429,7 +1474,7 @@
                               {
                                  "id": "color",
                                  "value": {
-                                    "fixedColor": "#A9A9A9",
+                                    "fixedColor": "#EAB839",
                                     "mode": "fixed"
                                  }
                               }
