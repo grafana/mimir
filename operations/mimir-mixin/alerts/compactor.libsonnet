@@ -155,7 +155,7 @@
         },
         // Alert if compactor has failed to build sparse-index headers.
         {
-          alert: $.alertName('MimirCompactorFailingToBuildSparseIndexHeaders'),
+          alert: $.alertName('CompactorFailingToBuildSparseIndexHeaders'),
           'for': '30m',
           expr: |||
             (sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (increase(cortex_compactor_build_sparse_headers_failures_total[5m])) > 0)
