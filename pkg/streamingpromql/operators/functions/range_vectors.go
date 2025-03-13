@@ -823,6 +823,14 @@ var DoubleExponentialSmoothing = FunctionOverRangeVectorDefinition{
 	NeedsSeriesNamesForAnnotations: true,
 }
 
+// doubleExponentialSmoothing is similar to a weighted moving average, where
+// historical data has exponentially less influence on the current data. It also
+// accounts for trends in data. The smoothing factor (0 < sf < 1) affects how
+// historical data will affect the current data. A lower smoothing factor
+// increases the influence of historical data. The trend factor (0 < tf < 1)
+// affects how trends in historical data will affect the current data. A higher
+// trend factor increases the influence. of trends. Algorithm taken from
+// https://en.wikipedia.org/wiki/Exponential_smoothing .
 func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args []types.ScalarData, timeRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	smoothingFactor := args[0].Samples[timeRange.PointIndex(step.StepT)].F
 	if smoothingFactor <= 0 || smoothingFactor >= 1 {
