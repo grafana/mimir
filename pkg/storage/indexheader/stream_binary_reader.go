@@ -217,6 +217,9 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 // tryDownloadSparseHeader attempts to download the sparse header from the object store.
 // It returns the sparse header data if successful, nil + error otherwise.
 func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, id ulid.ULID) ([]byte, error) {
+	if bkt == nil {
+		return nil, fmt.Errorf("bucket is nil")
+	}
 	sparseHeaderObjPath := filepath.Join(id.String(), block.SparseIndexHeaderFilename)
 
 	defer level.Info(logger).Log("msg", "downloaded sparse index-header from bucket")
