@@ -3491,8 +3491,6 @@ func TestMultitenantAlertmanager_ClusterValidation(t *testing.T) {
 				require.NoError(t, grpcServer.Serve(listener))
 			}()
 
-			// Create a client factory and query back the mocked service
-			// with different clients.
 			cfg := grpcclient.Config{}
 			flagext.DefaultValues(&cfg)
 			cfg.ClusterValidation = testCase.clientClusterValidation
@@ -3524,6 +3522,6 @@ type mockAlertmanagerServer struct {
 	alertmanagerpb.UnimplementedAlertmanagerServer
 }
 
-func (*mockAlertmanagerServer) HandleRequest(ctx context.Context, req *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
+func (*mockAlertmanagerServer) HandleRequest(context.Context, *httpgrpc.HTTPRequest) (*httpgrpc.HTTPResponse, error) {
 	return &httpgrpc.HTTPResponse{}, nil
 }
