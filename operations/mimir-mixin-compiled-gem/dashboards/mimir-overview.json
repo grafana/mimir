@@ -21,10 +21,11 @@
             "includeVars": true,
             "keepTime": true,
             "tags": [
-               "mimir"
+               "mimir",
+               "gem"
             ],
             "targetBlank": false,
-            "title": "Mimir dashboards",
+            "title": "GEM dashboards",
             "type": "dashboards"
          }
       ],
@@ -154,7 +155,7 @@
                   "id": 3,
                   "options": {
                      "alertInstanceLabelFilter": "cluster=~\"$cluster\", namespace=~\"$namespace\"",
-                     "alertName": "Mimir",
+                     "alertName": "GEM",
                      "dashboardAlerts": false,
                      "maxItems": 100,
                      "sortOrder": 3,
@@ -175,7 +176,7 @@
             "repeatIteration": null,
             "repeatRowId": null,
             "showTitle": true,
-            "title": "Mimir cluster health",
+            "title": "GEM cluster health",
             "titleSize": "h6"
          },
          {
@@ -1575,7 +1576,8 @@
       "schemaVersion": 14,
       "style": "dark",
       "tags": [
-         "mimir"
+         "mimir",
+         "gem"
       ],
       "templating": {
          "list": [
@@ -1702,7 +1704,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "Mimir / Overview",
+      "title": "GEM / Overview",
       "uid": "ffcd83628d7d4b5a03d1cafd159e6c9c",
       "version": 0
    }
