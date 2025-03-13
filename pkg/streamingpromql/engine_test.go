@@ -3077,6 +3077,9 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 }
 
 func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
+	// Enable experimental functions testing
+	parser.Functions["double_exponential_smoothing"].Experimental = false
+
 	t.Parallel()
 
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
@@ -3099,6 +3102,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 
 		expressions = append(expressions, fmt.Sprintf(`predict_linear(series{label=~"(%s)"}[1m], 30)`, labelRegex))
 		expressions = append(expressions, fmt.Sprintf(`quantile_over_time(scalar(series{label="i"}), series{label=~"(%s)"}[1m])`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`double_exponential_smoothing(series{label=~"(%s)"}[1m], 0.01, 0.1)`, labelRegex))
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
