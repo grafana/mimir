@@ -4,6 +4,8 @@
 
 ### Grafana Mimir
 
+* [ENHANCEMENT] Store-gateway: Download sparse headers uploaded by compactors. Compactors have to be configured with `-compactor.upload-sparse-index-headers=true` option. #10684
+
 ### Mixin
 
 ### Jsonnet
