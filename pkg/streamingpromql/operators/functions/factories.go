@@ -3,7 +3,6 @@
 package functions
 
 import (
-	"context"
 	"fmt"
 	"math"
 
@@ -698,31 +697,10 @@ func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, me
 		return nil, fmt.Errorf("expected second argument for %s to be a scalar, got %T", functionName, args[1])
 	}
 
-	// TODO: check if this is the right place and way to get the scalar arguments
-	var err error
-	smoothingFactorS, err := smoothingFactor.GetValues(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	smoothingFactorF := smoothingFactorS.Samples[timeRange.PointIndex(0)].F
-
-	// Check that the input parameters are valid.
-	if smoothingFactorF <= 0 || smoothingFactorF >= 1 {
-		return nil, fmt.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", smoothingFactorF)
-	}
-
 	trendFactor, ok := args[2].(types.ScalarOperator)
 	if !ok {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected third argument for %s to be a scalar, got %T", functionName, args[1])
-	}
-	trendFactorS, err := trendFactor.GetValues(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	trendFactorF := trendFactorS.Samples[timeRange.PointIndex(0)].F
-	if trendFactorF <= 0 || trendFactorF >= 1 {
-		return nil, fmt.Errorf("invalid trend factor. Expected: 0 < sf < 1, got: %f", trendFactorF)
 	}
 
 	var o types.InstantVectorOperator = NewFunctionOverRangeVector(inner, []types.ScalarOperator{smoothingFactor, trendFactor}, memoryConsumptionTracker, f, annotations, expressionPosition, timeRange)
