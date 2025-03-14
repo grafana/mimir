@@ -112,6 +112,7 @@
 * [BUGFIX] Dashboards: fix "Mimir / Rollout Progress" latency comparison when gateway is enabled. #10495
 * [BUGFIX] Dashboards: fix autoscaling panels when Mimir is deployed using Helm. #10473
 * [BUGFIX] Alerts: fix `MimirAutoscalerNotActive` alert. #10564
+* [BUGFIX] Dashboards: fix "Mimir / Tenants" legends for baremetal deployments.
 
 ### Jsonnet
 
