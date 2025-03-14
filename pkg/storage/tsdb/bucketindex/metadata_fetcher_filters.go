@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package indexheader
+package bucketindex
 
 import (
 	"context"
@@ -15,12 +15,11 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
 type MetadataFilterWithBucketIndex interface {
 	// FilterWithBucketIndex is like Thanos MetadataFilter.Filter() but it provides in input the bucket index too.
-	FilterWithBucketIndex(ctx context.Context, metas map[ulid.ULID]*block.Meta, idx *bucketindex.Index, synced block.GaugeVec) error
+	FilterWithBucketIndex(ctx context.Context, metas map[ulid.ULID]*block.Meta, idx *Index, synced block.GaugeVec) error
 }
 
 // IgnoreDeletionMarkFilter is like the Thanos IgnoreDeletionMarkFilter, but it also implements
@@ -57,7 +56,7 @@ func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.UL
 }
 
 // FilterWithBucketIndex implements MetadataFilterWithBucketIndex.
-func (f *IgnoreDeletionMarkFilter) FilterWithBucketIndex(_ context.Context, metas map[ulid.ULID]*block.Meta, idx *bucketindex.Index, synced block.GaugeVec) error {
+func (f *IgnoreDeletionMarkFilter) FilterWithBucketIndex(_ context.Context, metas map[ulid.ULID]*block.Meta, idx *Index, synced block.GaugeVec) error {
 	// Build a map of block deletion marks
 	marks := make(map[ulid.ULID]*block.DeletionMark, len(idx.BlockDeletionMarks))
 	for _, mark := range idx.BlockDeletionMarks {

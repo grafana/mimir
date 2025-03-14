@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package indexheader
+package bucketindex
 
 import (
 	"context"
@@ -18,7 +18,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
 const (
@@ -68,8 +67,8 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 	f.metrics.Syncs.Inc()
 
 	// Fetch the bucket index.
-	idx, err := bucketindex.ReadIndex(ctx, f.bkt, f.userID, f.cfgProvider, f.logger)
-	if errors.Is(err, bucketindex.ErrIndexNotFound) {
+	idx, err := ReadIndex(ctx, f.bkt, f.userID, f.cfgProvider, f.logger)
+	if errors.Is(err, ErrIndexNotFound) {
 		// This is a legit case happening when the first blocks of a tenant have recently been uploaded by ingesters
 		// and their bucket index has not been created yet.
 		f.metrics.Synced.WithLabelValues(noBucketIndex).Set(1)
@@ -77,7 +76,7 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 
 		return nil, nil, nil
 	}
-	if errors.Is(err, bucketindex.ErrIndexCorrupted) {
+	if errors.Is(err, ErrIndexCorrupted) {
 		// In case a single tenant bucket index is corrupted, we don't want the store-gateway to fail at startup
 		// because unable to fetch blocks metadata. We'll act as if the tenant has no bucket index, but the query
 		// will fail anyway in the querier (the querier fails in the querier if bucket index is corrupted).

@@ -16,9 +16,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -184,15 +184,15 @@ func (ihd *BucketIndexHeaderMetaDiscoverer) discoverForTenant(
 	tenantLogger := util_log.WithUserID(tenantID, ihd.logger)
 
 	indexHeaderMetaFetcherFilters := []block.MetadataFilter{
-		indexheader.NewMinTimeMetaFilter(ihd.cfg.BucketStore.IgnoreBlocksWithin),
-		indexheader.NewIgnoreDeletionMarkFilter(
+		bucketindex.NewMinTimeMetaFilter(ihd.cfg.BucketStore.IgnoreBlocksWithin),
+		bucketindex.NewIgnoreDeletionMarkFilter(
 			tenantLogger,
 			tenantBucketClient,
 			ihd.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay,
 			ihd.cfg.BucketStore.MetaSyncConcurrency),
 	}
 
-	indexHeaderMetaFetcher := indexheader.NewBucketIndexMetadataFetcher(
+	indexHeaderMetaFetcher := bucketindex.NewBucketIndexMetadataFetcher(
 		tenantID,
 		ihd.bucket,
 		ihd.limits,

@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package indexheader
+package bucketindex
 
 import (
 	"bytes"
@@ -24,7 +24,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
@@ -39,18 +38,18 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	logger := log.NewLogfmtLogger(logs)
 
 	// Create a bucket index.
-	block1 := &bucketindex.Block{ID: ulid.MustNew(1, nil)}
-	block2 := &bucketindex.Block{ID: ulid.MustNew(2, nil)}
-	block3 := &bucketindex.Block{ID: ulid.MustNew(3, nil)}
-	block4 := &bucketindex.Block{ID: ulid.MustNew(4, nil), MinTime: timestamp.FromTime(now.Add(-30 * time.Minute))} // Has most-recent data, to be ignored by MinTimeMetaFilter.
+	block1 := &Block{ID: ulid.MustNew(1, nil)}
+	block2 := &Block{ID: ulid.MustNew(2, nil)}
+	block3 := &Block{ID: ulid.MustNew(3, nil)}
+	block4 := &Block{ID: ulid.MustNew(4, nil), MinTime: timestamp.FromTime(now.Add(-30 * time.Minute))} // Has most-recent data, to be ignored by MinTimeMetaFilter.
 
-	mark1 := &bucketindex.BlockDeletionMark{ID: block1.ID, DeletionTime: now.Add(-time.Hour).Unix()}     // Below the ignore delay threshold.
-	mark2 := &bucketindex.BlockDeletionMark{ID: block2.ID, DeletionTime: now.Add(-3 * time.Hour).Unix()} // Above the ignore delay threshold.
+	mark1 := &BlockDeletionMark{ID: block1.ID, DeletionTime: now.Add(-time.Hour).Unix()}     // Below the ignore delay threshold.
+	mark2 := &BlockDeletionMark{ID: block2.ID, DeletionTime: now.Add(-3 * time.Hour).Unix()} // Above the ignore delay threshold.
 
-	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, &bucketindex.Index{
-		Version:            bucketindex.IndexVersion1,
-		Blocks:             bucketindex.Blocks{block1, block2, block3, block4},
-		BlockDeletionMarks: bucketindex.BlockDeletionMarks{mark1, mark2},
+	require.NoError(t, WriteIndex(ctx, bkt, userID, nil, &Index{
+		Version:            IndexVersion1,
+		Blocks:             Blocks{block1, block2, block3, block4},
+		BlockDeletionMarks: BlockDeletionMarks{mark1, mark2},
 		UpdatedAt:          now.Unix(),
 	}))
 
@@ -157,7 +156,7 @@ func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 	logger := log.NewLogfmtLogger(logs)
 
 	// Upload a corrupted bucket index.
-	require.NoError(t, bkt.Upload(ctx, path.Join(userID, bucketindex.IndexCompressedFilename), strings.NewReader("invalid}!")))
+	require.NoError(t, bkt.Upload(ctx, path.Join(userID, IndexCompressedFilename), strings.NewReader("invalid}!")))
 
 	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, nil, logger, reg, nil)
 	metas, partials, err := fetcher.Fetch(ctx)
