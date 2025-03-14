@@ -1,0 +1,29 @@
+{{- if and .Values.provisioner.enabled .Values.enterprise.enabled (not .Values.federation_frontend.disableOtherComponents) -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "provisioner") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "provisioner") | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+rules:
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "provisioner") }}
+  labels:
+    {{- include "mimir.labels" (dict "ctx" . "component" "provisioner") | nindent 4 }}
+  namespace: {{ .Release.Namespace | quote }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "provisioner") }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "mimir.resourceName" (dict "ctx" . "component" "provisioner") }}
+  namespace: {{ .Release.Namespace | quote }}
+{{- end -}} 
