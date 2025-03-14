@@ -34,16 +34,7 @@ func TestCommonConfigCanBeExtended(t *testing.T) {
 		require.Equal(t, "client-cluster", cfg.CustomClientClusterValidation.Label)
 
 		// Mimir's inheritance should still work.
-		require.Equal(t, "s3", cfg.MimirConfig.BlocksStorage.Bucket.Backend)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.IngesterClient.GRPCClientConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.Querier.StoreGatewayClient.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.QueryScheduler.GRPCClientConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.Ruler.ClientTLSConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation.Label)
+		checkAllClusterValidationLabels(t, cfg, "client-cluster")
 	})
 
 	t.Run("yaml inheritance", func(t *testing.T) {
@@ -67,16 +58,7 @@ common:
 		require.Equal(t, "client-cluster", cfg.CustomClientClusterValidation.Label)
 
 		// Mimir's inheritance should still work.
-		require.Equal(t, "s3", cfg.MimirConfig.BlocksStorage.Bucket.Backend)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.IngesterClient.GRPCClientConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.Querier.StoreGatewayClient.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.QueryScheduler.GRPCClientConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.Ruler.ClientTLSConfig.ClusterValidation.Label)
-		require.Equal(t, "client-cluster", cfg.MimirConfig.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation.Label)
+		checkAllClusterValidationLabels(t, cfg, "client-cluster")
 	})
 }
 
@@ -110,6 +92,7 @@ func TestDirectConfigOverwritesCommonConfig(t *testing.T) {
 		require.Equal(t, "common-cluster", cfg.MimirConfig.QueryScheduler.GRPCClientConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.ClientTLSConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation.Label)
 	})
 
 	t.Run("yaml inheritance", func(t *testing.T) {
@@ -146,6 +129,81 @@ querier:
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.QueryScheduler.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.ClientTLSConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation.Label)
+	})
+}
+
+func TestDirectConfigUnsetCommonConfig(t *testing.T) {
+	t.Run("flag inheritance", func(t *testing.T) {
+		var cfg customExtendedConfig
+		fs := flag.NewFlagSet("test", flag.PanicOnError)
+		cfg.RegisterFlags(fs, log.NewNopLogger())
+
+		args := []string{
+			"-ingester.client.cluster-validation.label", "",
+			"-common.client-cluster-validation.label", "common-cluster",
+			"-alertmanager.alertmanager-client.cluster-validation.label", "",
+		}
+		require.NoError(t, fs.Parse(args))
+
+		require.NoError(t, mimir.InheritCommonFlagValues(log.NewNopLogger(), fs, cfg.MimirConfig.Common, &cfg.MimirConfig, &cfg))
+
+		// common configuration is correctly set
+		require.Equal(t, "common-cluster", cfg.CustomClientClusterValidation.Label)
+
+		// overwritten configurations are correctly set
+		require.Equal(t, "", cfg.MimirConfig.IngesterClient.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "", cfg.MimirConfig.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation.Label)
+
+		// all other configurations correctly inherit the common configuration
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Querier.StoreGatewayClient.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.QueryScheduler.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.ClientTLSConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation.Label)
+	})
+
+	t.Run("yaml inheritance", func(t *testing.T) {
+		const commonYAMLConfig = `
+ingester_client:
+  grpc_client_config:
+    cluster_validation:
+      label: ''
+common:
+  client_cluster_validation:
+    label: common-cluster
+alertmanager:
+  alertmanager_client:
+    cluster_validation:
+      label: ''
+`
+
+		var cfg customExtendedConfig
+		fs := flag.NewFlagSet("test", flag.PanicOnError)
+		cfg.RegisterFlags(fs, log.NewNopLogger())
+
+		err := yaml.Unmarshal([]byte(commonYAMLConfig), &cfg)
+		require.NoError(t, err)
+
+		// common configuration is correctly set
+		require.Equal(t, "common-cluster", cfg.CustomClientClusterValidation.Label)
+
+		// unset configurations are empty
+		require.Equal(t, "", cfg.MimirConfig.IngesterClient.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "", cfg.MimirConfig.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation.Label)
+
+		// all other configurations correctly inherit the common configuration
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation.Label)
+		require.Equal(t, "common-cluster", cfg.MimirConfig.Querier.StoreGatewayClient.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.QueryScheduler.GRPCClientConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.ClientTLSConfig.ClusterValidation.Label)
 		require.Equal(t, "common-cluster", cfg.MimirConfig.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation.Label)
@@ -202,4 +260,17 @@ custom_client_cluster_validation:
 	// Value should be properly set.
 	require.Equal(t, "s3", cfg.CustomStorage.Backend)
 	require.Equal(t, "client-cluster", cfg.CustomClientClusterValidation.Label)
+}
+
+func checkAllClusterValidationLabels(t *testing.T, cfg customExtendedConfig, expectedValue string) {
+	require.Equal(t, expectedValue, cfg.MimirConfig.IngesterClient.GRPCClientConfig.ClusterValidation.Label)
+	require.Equal(t, expectedValue, cfg.MimirConfig.Worker.QueryFrontendGRPCClientConfig.ClusterValidation.Label)
+	require.Equal(t, expectedValue, cfg.MimirConfig.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation.Label)
+	require.Equal(t, expectedValue, cfg.MimirConfig.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation.Label)
+	require.Equal(t, expectedValue, cfg.MimirConfig.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation.Label)
+	require.Equal(t, expectedValue, cfg.MimirConfig.Querier.StoreGatewayClient.ClusterValidation.Label)
+	require.Equal(t, expectedValue, cfg.MimirConfig.QueryScheduler.GRPCClientConfig.ClusterValidation.Label)
+	require.Equal(t, expectedValue, cfg.MimirConfig.Ruler.ClientTLSConfig.ClusterValidation.Label)
+	require.Equal(t, expectedValue, cfg.MimirConfig.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation.Label)
+	require.Equal(t, expectedValue, cfg.MimirConfig.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation.Label)
 }
