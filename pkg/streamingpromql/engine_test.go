@@ -38,13 +38,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func init() {
 	types.EnableManglingReturnedSlices = true
-	// To test double_exponential_smoothing and holt_winters
-	promqlext.ExtendPromQL()
 }
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
