@@ -46,15 +46,18 @@ func init() {
 }
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
-	features := EnableAllFeatures
+	parser.Functions["info"].Experimental = false
+	parser.Functions["sort_by_label"].Experimental = false
+	parser.Functions["sort_by_label_desc"].Experimental = false
 
-	// Disable experimental so that parser will parse it without the updating experiemental flag
-	parser.Functions["double_exponential_smoothing"].Experimental = false
+	features := EnableAllFeatures
 
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"double_exponential_smoothing(metric{}[1h], 1, 1)": "'double_exponential_smoothing' function",
+		"info(metric{})":                       "'info' function",
+		`sort_by_label(metric{}, "test")`:      "'sort_by_label' function",
+		`sort_by_label_desc(metric{}, "test")`: "'sort_by_label_desc' function",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
@@ -2381,6 +2384,11 @@ func TestAnnotations(t *testing.T) {
 				`PromQL warning: quantile value should be between 0 and 1, got 1.5 (1:10)`,
 			},
 		},
+		"double_exponential_smoothing() with float and native histogram at same step": {
+			data:                    `some_metric 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
+			expr:                    "double_exponential_smoothing(some_metric[1m1s], 0.5, 0.5)",
+			expectedInfoAnnotations: []string{`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:30)`},
+		},
 	}
 
 	for _, f := range []string{"min_over_time", "max_over_time", "stddev_over_time", "stdvar_over_time"} {
@@ -3217,6 +3225,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 
 		expressions = append(expressions, fmt.Sprintf(`predict_linear(series{label=~"(%s)"}[1m], 30)`, labelRegex))
 		expressions = append(expressions, fmt.Sprintf(`quantile_over_time(scalar(series{label="i"}), series{label=~"(%s)"}[1m])`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`double_exponential_smoothing(series{label=~"(%s)"}[1m], 0.01, 0.1)`, labelRegex))
 	}
 
 	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
