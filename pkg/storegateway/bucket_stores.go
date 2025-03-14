@@ -30,10 +30,10 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/shardlayout"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -58,7 +58,7 @@ type BucketStores struct {
 	limits             *validation.Overrides
 	bucket             objstore.Bucket
 	bucketStoreMetrics *BucketStoreMetrics
-	metaFetcherMetrics *indexheader.MetadataFetcherMetrics
+	metaFetcherMetrics *bucketindex.MetadataFetcherMetrics
 	shardingStrategy   ShardingStrategy
 	syncBackoffConfig  backoff.Config
 
@@ -145,7 +145,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		allowedTenants:        allowedTenants,
 		stores:                map[string]*BucketStore{},
 		bucketStoreMetrics:    NewBucketStoreMetrics(reg),
-		metaFetcherMetrics:    indexheader.NewMetadataFetcherMetrics(logger),
+		metaFetcherMetrics:    bucketindex.NewMetadataFetcherMetrics(logger),
 		queryGate:             queryGate,
 		lazyLoadingGate:       lazyLoadingGate,
 		partitioners:          newGapBasedPartitioners(cfg.BucketStore.PartitionerMaxGapBytes, reg),
@@ -625,15 +625,15 @@ func (u *BucketStores) getOrCreateStoreNoShardingFilter(ctx context.Context, use
 
 	// The sharding strategy filter MUST be before the ones we create here (order matters).
 	filters := []block.MetadataFilter{
-		indexheader.NewMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
+		bucketindex.NewMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
 		// Use our own custom implementation.
-		indexheader.NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay, u.cfg.BucketStore.MetaSyncConcurrency),
+		bucketindex.NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay, u.cfg.BucketStore.MetaSyncConcurrency),
 		// The duplicate filter has been intentionally omitted because it could cause troubles with
 		// the consistency check done on the querier. The duplicate filter removes redundant blocks
 		// but if the store-gateway removes redundant blocks before the querier discovers them, the
 		// consistency check on the querier will fail.
 	}
-	fetcher := indexheader.NewBucketIndexMetadataFetcher(
+	fetcher := bucketindex.NewBucketIndexMetadataFetcher(
 		userID,
 		u.bucket,
 		u.limits,
@@ -705,15 +705,15 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 	// The sharding strategy filter MUST be before the ones we create here (order matters).
 	filters := []block.MetadataFilter{
 		NewShardingMetadataFilterAdapter(userID, u.shardingStrategy),
-		indexheader.NewMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
+		bucketindex.NewMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
 		// Use our own custom implementation.
-		indexheader.NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay, u.cfg.BucketStore.MetaSyncConcurrency),
+		bucketindex.NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay, u.cfg.BucketStore.MetaSyncConcurrency),
 		// The duplicate filter has been intentionally omitted because it could cause troubles with
 		// the consistency check done on the querier. The duplicate filter removes redundant blocks
 		// but if the store-gateway removes redundant blocks before the querier discovers them, the
 		// consistency check on the querier will fail.
 	}
-	fetcher := indexheader.NewBucketIndexMetadataFetcher(
+	fetcher := bucketindex.NewBucketIndexMetadataFetcher(
 		userID,
 		u.bucket,
 		u.limits,
