@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package functions
+package floats
 
 import (
 	"math"
@@ -17,6 +17,9 @@ import (
 // If q==NaN, NaN is returned.
 // If q<0, -Inf is returned.
 // If q>1, +Inf is returned.
+//
+// This is largely copied from github.com/prometheus/prometheus/promql/quantile.go
+// but modified to take a slice of float64's instead of their vectorByValueHeap.
 func Quantile(q float64, values []float64) float64 {
 	if len(values) == 0 || math.IsNaN(q) {
 		return math.NaN()

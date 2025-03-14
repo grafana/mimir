@@ -15,8 +15,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/floats"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
@@ -169,7 +169,7 @@ func (q *QuantileAggregationGroup) ComputeOutputSeries(param types.ScalarData, t
 		}
 		p := param.Samples[i].F
 		t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
-		f := functions.Quantile(p, qGroup.points)
+		f := floats.Quantile(p, qGroup.points)
 		quantilePoints = append(quantilePoints, promql.FPoint{T: t, F: f})
 		types.Float64SlicePool.Put(qGroup.points, memoryConsumptionTracker)
 		q.qGroups[i].points = nil
