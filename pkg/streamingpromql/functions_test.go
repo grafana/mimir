@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/stretchr/testify/require"
 
@@ -19,9 +18,6 @@ import (
 
 // This test ensures that all functions correctly merge series after dropping the metric name.
 func TestFunctionDeduplicateAndMerge(t *testing.T) {
-	// Enable experimental functions testing
-	parser.Functions["double_exponential_smoothing"].Experimental = false
-
 	data := `
 		load 30s
 			float_a{env="prod"}      _   0 1                       _ _   _ _   _ _   _ _   _ _   _ _
