@@ -23,7 +23,6 @@ import (
 )
 
 func init() {
-	// To test double_exponential_smoothing and holt_winters
 	promqlext.ExtendPromQL()
 }
 
