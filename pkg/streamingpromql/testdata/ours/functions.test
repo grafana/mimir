@@ -1187,7 +1187,7 @@ clear
 load 10s
   http_requests{job="api-server", instance="0", group="production"}	8000-10x1000
   http_requests{job="api-server", instance="1", group="production"}	0-20x1000
-  http_requests{job="api-server", instance="2", group="production"}	0-20x998 NaN Inf 
+  http_requests{job="api-server", instance="2", group="production"}	0-20x998 NaN Inf
   http_requests{job="api-server", instance="0", group="canary"}		0+30x1000 300-80x1000
   http_requests{job="api-server", instance="1", group="canary"}		0-40x1000 0+40x1000
   http_requests{job="api-server", instance="2", group="canary"}		0-40x1000 NaN NaN Inf Inf 0+40x1000
