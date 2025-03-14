@@ -797,7 +797,7 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 		blockUploadsFailed: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_compactor_block_uploads_failed_total",
 			Help: "Total number of block uploads failed.",
-		}, []string{"reason"}),
+		}, []string{"type"}),
 		blockUploadsDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_compactor_block_upload_duration_seconds",
 			Help:                            "Duration of successful block uploads.",

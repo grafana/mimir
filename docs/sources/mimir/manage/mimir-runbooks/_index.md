@@ -715,7 +715,7 @@ Where:
 
 ### MimirCompactorFailingToBuildSparseIndexHeaders
 
-This alert fires when `-compactor.upload-sparse-index-headers` is set to `true` but the compactor is failing to upload sparse index headers to object storage.
+This alert fires when `-compactor.upload-sparse-index-headers` is set to `true` but the compactor fails to build some sparse index headers.
 
 How to **investigate**:
 
