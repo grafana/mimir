@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package storegateway
+package bucketindex
 
 import (
 	"context"
@@ -15,12 +15,11 @@ import (
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
 type MetadataFilterWithBucketIndex interface {
 	// FilterWithBucketIndex is like Thanos MetadataFilter.Filter() but it provides in input the bucket index too.
-	FilterWithBucketIndex(ctx context.Context, metas map[ulid.ULID]*block.Meta, idx *bucketindex.Index, synced block.GaugeVec) error
+	FilterWithBucketIndex(ctx context.Context, metas map[ulid.ULID]*block.Meta, idx *Index, synced block.GaugeVec) error
 }
 
 // IgnoreDeletionMarkFilter is like the Thanos IgnoreDeletionMarkFilter, but it also implements
@@ -57,7 +56,7 @@ func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.UL
 }
 
 // FilterWithBucketIndex implements MetadataFilterWithBucketIndex.
-func (f *IgnoreDeletionMarkFilter) FilterWithBucketIndex(_ context.Context, metas map[ulid.ULID]*block.Meta, idx *bucketindex.Index, synced block.GaugeVec) error {
+func (f *IgnoreDeletionMarkFilter) FilterWithBucketIndex(_ context.Context, metas map[ulid.ULID]*block.Meta, idx *Index, synced block.GaugeVec) error {
 	// Build a map of block deletion marks
 	marks := make(map[ulid.ULID]*block.DeletionMark, len(idx.BlockDeletionMarks))
 	for _, mark := range idx.BlockDeletionMarks {
@@ -83,16 +82,16 @@ func (f *IgnoreDeletionMarkFilter) FilterWithBucketIndex(_ context.Context, meta
 
 const minTimeExcludedMeta = "min-time-excluded"
 
-// minTimeMetaFilter filters out blocks that contain the most recent data (based on block MinTime).
-type minTimeMetaFilter struct {
+// MinTimeMetaFilter filters out blocks that contain the most recent data (based on block MinTime).
+type MinTimeMetaFilter struct {
 	limit time.Duration
 }
 
-func newMinTimeMetaFilter(limit time.Duration) *minTimeMetaFilter {
-	return &minTimeMetaFilter{limit: limit}
+func NewMinTimeMetaFilter(limit time.Duration) *MinTimeMetaFilter {
+	return &MinTimeMetaFilter{limit: limit}
 }
 
-func (f *minTimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*block.Meta, synced block.GaugeVec) error {
+func (f *MinTimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*block.Meta, synced block.GaugeVec) error {
 	if f.limit <= 0 {
 		return nil
 	}

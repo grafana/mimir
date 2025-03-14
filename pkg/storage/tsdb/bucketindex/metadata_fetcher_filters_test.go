@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package storegateway
+package bucketindex
 
 import (
 	"bytes"
@@ -25,7 +25,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
-	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/extprom"
 )
@@ -70,14 +69,14 @@ func testIgnoreDeletionMarkFilter(t *testing.T, bucketIndexEnabled bool) {
 	require.NoError(t, userBkt.Upload(ctx, path.Join(ulid.MustNew(3, nil).String(), block.DeletionMarkFilename), bytes.NewBufferString("not a valid deletion-mark.json")))
 
 	// Create the bucket index if required.
-	var idx *bucketindex.Index
+	var idx *Index
 	if bucketIndexEnabled {
 		var err error
 
-		u := bucketindex.NewUpdater(bkt, userID, nil, 16, logger)
+		u := NewUpdater(bkt, userID, nil, 16, logger)
 		idx, _, err = u.UpdateIndex(ctx, nil)
 		require.NoError(t, err)
-		require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, idx))
+		require.NoError(t, WriteIndex(ctx, bkt, userID, nil, idx))
 	}
 
 	inputMetas := map[ulid.ULID]*block.Meta{
@@ -136,12 +135,12 @@ func TestTimeMetaFilter(t *testing.T) {
 	synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{Name: "synced"}, []string{"state"})
 
 	// Test negative limit.
-	f := newMinTimeMetaFilter(-10 * time.Minute)
+	f := NewMinTimeMetaFilter(-10 * time.Minute)
 	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
 	assert.Equal(t, inputMetas, inputMetas)
 	assert.Equal(t, 0.0, promtest.ToFloat64(synced.WithLabelValues(minTimeExcludedMeta)))
 
-	f = newMinTimeMetaFilter(limit)
+	f = NewMinTimeMetaFilter(limit)
 	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
 
 	assert.Equal(t, expectedMetas, inputMetas)
