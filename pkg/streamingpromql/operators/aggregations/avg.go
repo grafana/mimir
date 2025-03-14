@@ -33,7 +33,7 @@ type AvgAggregationGroup struct {
 	groupSeriesCounts []float64
 }
 
-func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc, _ uint) error {
+func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
 	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
 		// Nothing to do
@@ -54,7 +54,7 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 	if err != nil {
 		return err
 	}
-	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotationFunc)
+	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotation)
 	if err != nil {
 		return err
 	}
@@ -154,7 +154,7 @@ func (g *AvgAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 	return nil
 }
 
-func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc) error {
+func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc) error {
 	var err error
 	if len(data.Histograms) > 0 && g.histograms == nil {
 		// First series with histogram values for this group, populate it.
@@ -191,7 +191,7 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			g.histograms[outputIdx] = invalidCombinationOfHistograms
 			g.histogramPointCount--
 
-			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotationFunc); err != nil {
+			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotation); err != nil {
 				// Unknown error: we couldn't convert the error to an annotation. Give up.
 				return err
 			}
@@ -205,7 +205,7 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			g.histograms[outputIdx] = invalidCombinationOfHistograms
 			g.histogramPointCount--
 
-			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotationFunc); err != nil {
+			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotation); err != nil {
 				// Unknown error: we couldn't convert the error to an annotation. Give up.
 				return err
 			}

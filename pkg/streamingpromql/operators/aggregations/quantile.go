@@ -118,11 +118,11 @@ var qGroupPool = types.NewLimitingBucketedPool(
 	nil,
 )
 
-func (q *QuantileAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc, remainingSeriesInGroup uint) error {
+func (q *QuantileAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, remainingSeriesInGroup uint) error {
 	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 
 	if len(data.Histograms) > 0 {
-		emitAnnotationFunc(func(_ string, expressionPosition posrange.PositionRange) error {
+		emitAnnotation(func(_ string, expressionPosition posrange.PositionRange) error {
 			return annotations.NewHistogramIgnoredInAggregationInfo("quantile", expressionPosition)
 		})
 	}
