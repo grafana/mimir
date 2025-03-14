@@ -40,9 +40,7 @@ func (e *Engine) NewQueryPlan(ctx context.Context, qs string, timeRange types.Qu
 	}
 
 	for _, o := range e.astOptimizers {
-		expr, err = runASTStage(o.Name(), observer, func() (parser.Expr, error) {
-			return o.Apply(ctx, expr)
-		})
+		expr, err = runASTStage(o.Name(), observer, func() (parser.Expr, error) { return o.Apply(ctx, expr) })
 
 		if err != nil {
 			return nil, err
@@ -69,7 +67,13 @@ func (e *Engine) NewQueryPlan(ctx context.Context, qs string, timeRange types.Qu
 		return nil, err
 	}
 
-	// TODO: apply plan optimisations
+	for _, o := range e.planOptimizers {
+		plan, err = runPlanningStage(o.Name(), observer, func() (*planning.QueryPlan, error) { return o.Apply(ctx, plan) })
+
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	observer.OnAllPlanningStagesComplete(plan)
 
