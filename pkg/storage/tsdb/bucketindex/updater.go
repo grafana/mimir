@@ -257,12 +257,12 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 }
 
 func subdirIsEmpty(ctx context.Context, bkt objstore.Bucket, id string) bool {
-	var ct int
-	_ = bkt.Iter(ctx, id, func(name string) error {
-		ct++
+	empty := true
+	_ = bkt.Iter(ctx, id, func(_ string) error {
+		empty = false
 		return nil
 	})
-	return ct == 0
+	return empty
 }
 
 func (w *Updater) updateBlockDeletionMarkIndexEntry(ctx context.Context, id ulid.ULID) (*BlockDeletionMark, error) {
