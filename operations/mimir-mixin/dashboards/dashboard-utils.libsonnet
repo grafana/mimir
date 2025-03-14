@@ -235,8 +235,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       OK: $._colors.success,
       success: $._colors.success,
       'error': $._colors.failed,
-      cancel: $._colors.warning,
-      Canceled: $._colors.warning,
+      Canceled: '#A9A9A9',
     }) + {
       fieldConfig+: {
         defaults+: { unit: 'reqps' },
