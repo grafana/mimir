@@ -3,10 +3,6 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-// NOTE(jhesketh): This is copied from Prometheus as the functions are not
-// exported. They may be exported in the future:
-// https://github.com/prometheus/prometheus/pull/15190
-
 package functions
 
 import (
