@@ -83,8 +83,12 @@ func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, map[ulid
 		return nil, nil, err
 	}
 
+	// merge blocks with inconsistent deletion marks and partial blocks related to inaccessible meta.json,
+	// giving priority to errors from missing or corrupted meta.json.
 	for id, err := range updPartials {
-		partials[id] = err
+		if _, ok := partials[id]; !ok {
+			partials[id] = err
+		}
 	}
 
 	return &Index{
