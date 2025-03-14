@@ -50,7 +50,7 @@ spec:
           args:
             - -bootstrap-path=/bootstrap
             - -cluster-name={{ include "mimir.clusterName" $ }}
-            - -api-url={{ tpl $.Values.provisioner.apiUrl $ }}
+            - -api-url={{ $.Values.provisioner.apiUrl $ }}
             - -tenant={{ $tenant.name }}
             - -access-policy=write-{{ $tenant.name }}:{{ $tenant.name }}:metrics:write
             - -access-policy=read-{{ $tenant.name }}:{{ $tenant.name }}:metrics:read
@@ -113,7 +113,7 @@ spec:
       volumes:
         - name: admin-token
           secret:
-            secretName: {{ include "mimir.resourceName" (dict "ctx" . "component" "admin-token") }}
+            secretName: {{ .Values.tokengenJob.adminTokenSecret }}
         - name: bootstrap
           emptyDir: {}
 {{- end -}} 
