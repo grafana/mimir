@@ -42,7 +42,7 @@ func randomGranularPriority(priority Priority) int {
 type PriorityLimiter interface {
 	Metrics
 
-	// AcquirePermit attempts to acquire a permit, potentially blocking up to maxExecutionTime.
+	// AcquirePermit attempts to acquire a permit, potentially blocking based on the prioriter current rejection threshold.
 	// The request priority must be greater than the current priority threshold for admission.
 	AcquirePermit(ctx context.Context, priority Priority) (Permit, error)
 
