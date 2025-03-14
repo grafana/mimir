@@ -868,25 +868,21 @@ func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args
 
 	accumulate := func(samples []promql.FPoint, head bool) {
 		var x, y float64
-		var startLoop int
 
-		// We start looping from index 1 for head, but for tail,
-		// we are resuming the looping, hence we start just from 0
-		if head {
-			startLoop = 1
-		}
-		for i := startLoop; i < len(samples); i++ {
+		for i, sample := range samples {
 			// Scale the raw value against the smoothing factor.
-			x = smoothingFactor * samples[i].F
+			x = smoothingFactor * sample.F
 
-			// Scale the last smoothed value with the trend at this point.
-			estimatedTrend = calcTrendValue(head, i-1, trendFactor, smooth0, smooth1, estimatedTrend)
+			// Scale the last smoothed value for all samples except the first one in head.
+			if head && i != 0 || !head {
+				estimatedTrend = calcTrendValue(trendFactor, smooth0, smooth1, estimatedTrend)
+			}
 			y = (1 - smoothingFactor) * (smooth1 + estimatedTrend)
 
 			smooth0, smooth1 = smooth1, x+y
 		}
 	}
-	accumulate(fHead, true)
+	accumulate(fHead[1:], true)
 	accumulate(fTail, false)
 
 	return smooth1, true, nil, nil
@@ -896,13 +892,7 @@ func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args
 // This is somewhat analogous to the slope of the trend at the given index.
 // The argument "smooth0" is the computed smoothed value.
 // The argument "smooth1" is the computed trend factor.
-func calcTrendValue(head bool, i int, trendFactor, smooth0, smooth1, estimatedTrend float64) float64 {
-	// For first index and only in head
-	// the input value is not computed using tf yet
-	if i == 0 && head {
-		return estimatedTrend
-	}
-
+func calcTrendValue(trendFactor, smooth0, smooth1, estimatedTrend float64) float64 {
 	x := trendFactor * (smooth1 - smooth0)
 	y := (1 - trendFactor) * estimatedTrend
 
