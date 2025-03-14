@@ -1286,8 +1286,8 @@ github.com/grafana/gomemcache v0.0.0-20250228145437-da7b95fd2ac1 h1:vR5nELq+KtGO
 github.com/grafana/gomemcache v0.0.0-20250228145437-da7b95fd2ac1/go.mod h1:j/s0jkda4UXTemDs7Pgw/vMT06alWc42CHisvYac0qw=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe h1:yIXAAbLswn7VNWBIvM71O2QsgfgW9fRXZNR0DXe6pDU=
 github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe/go.mod h1:MS2lj3INKhZjWNqd3N0m3J+Jxf3DAOnAH9VT3Sh9MUE=
-github.com/grafana/mimir-prometheus v0.0.0-20250313034642-4c5f37509bce h1:75LWgFF0hBy7MGfp3ynutO65GM6KHZoBXhpARoKCEEs=
-github.com/grafana/mimir-prometheus v0.0.0-20250313034642-4c5f37509bce/go.mod h1:9Hf/cSfGXNKRswdYnj10nTOt5LUmazcJO2tVsg02+Jo=
+github.com/grafana/mimir-prometheus v0.0.0-20250320224809-ffb59452a2cc h1:D7LLr8WWJ5Dck1DYKOGv/+MAky1ar8Ueq7SNKLW5dj4=
+github.com/grafana/mimir-prometheus v0.0.0-20250320224809-ffb59452a2cc/go.mod h1:9Hf/cSfGXNKRswdYnj10nTOt5LUmazcJO2tVsg02+Jo=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956 h1:em1oddjXL8c1tL0iFdtVtPloq2hRPen2MJQKoAWpxu0=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956/go.mod h1:qtI1ogk+2JhVPIXVc6q+NHziSmy2W5GbdQZFUHADCBU=
 github.com/grafana/prometheus-alertmanager v0.25.1-0.20250305143719-fa9fa7096626 h1:QsMYtDseSPq8hXvoNtA64unFiawJaE5kryizcMsVZWg=
