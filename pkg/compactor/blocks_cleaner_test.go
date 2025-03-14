@@ -854,7 +854,11 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	))
 }
 
-func TestBlocksCleaner_ShouldRemovePartiallyDeletedMarkerOutsideDelayPeriod(t *testing.T) {
+func checkBlockDeletionMarker(t *testing.T, user string, cl objstore.Bucket, blockID ulid.ULID, deletionMarkerExists bool) {
+	checkBlock(t, user, cl, blockID, true, deletionMarkerExists)
+}
+
+func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithMarkerOutsideDelayPeriod(t *testing.T) {
 
 	deletionDelay := time.Hour
 	parentClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
@@ -865,10 +869,8 @@ func TestBlocksCleaner_ShouldRemovePartiallyDeletedMarkerOutsideDelayPeriod(t *t
 	}
 
 	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
-	block2 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
 
 	createDeletionMark(t, bucketClient, "user-1", block1, time.Now().Add(-deletionDelay).Add(-time.Minute))
-	createDeletionMark(t, bucketClient, "user-1", block2, time.Now().Add(-deletionDelay).Add(time.Minute))
 
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:                 deletionDelay,
@@ -889,44 +891,115 @@ func TestBlocksCleaner_ShouldRemovePartiallyDeletedMarkerOutsideDelayPeriod(t *t
 		require.NoError(t, err)
 	}
 
-	checkBlockDeletionMarker := func(t *testing.T, user string, cl objstore.Bucket, blockID ulid.ULID, deletionMarkerExists bool) {
-		checkBlock(t, user, cl, blockID, true, deletionMarkerExists)
-	}
-
-	// block1 and block2 are uploaded and marked for deletion. The parentClient and bucketClient are consistent across both blocks.
+	// blocks are uploaded and marked for deletion. The parentClient and bucketClient are consistent across all blocks.
 	checkBlockDeletionMarker(t, "user-1", parentClient, block1, true)
-	checkBlockDeletionMarker(t, "user-1", parentClient, block2, true)
 	checkBlockDeletionMarker(t, "user-1", bucketClient, block1, true)
-	checkBlockDeletionMarker(t, "user-1", bucketClient, block2, true)
 
-	// delete block1's marker in the parent but not the replicated global location. This mocks a partial delete of the deletion marker.
+	// delete block markers in the parent but not the replicated global location. This mocks a partial delete of the deletion marker.
+	// both clients show marker DNE, bucketClient returns false because wrapped parent client returns false.
 	makeInconsistentBlockDeletionMarkers(parentClient, "user-1", block1)
-
-	// check parentClient and bucketClient have diverged for block1. block1 is marked for deletion only in the global marker location.
-	// block2 is unchanged.
 	checkBlockDeletionMarker(t, "user-1", parentClient, block1, false)
-	checkBlockDeletionMarker(t, "user-1", parentClient, block2, true)
 	checkBlockDeletionMarker(t, "user-1", bucketClient, block1, false)
-	checkBlockDeletionMarker(t, "user-1", bucketClient, block2, true)
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
 
-	// check that cleaner.cleanUser makes the clients consistent again. block1 is marked for deletion and
-	// block2, which is not yet at the delay threshold, is not
+	// cleaner.cleanUser makes the clients consistent again. block1 is marked for deletion again
 	checkBlockDeletionMarker(t, "user-1", bucketClient, block1, true)
-	checkBlockDeletionMarker(t, "user-1", bucketClient, block2, true)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
 			# TYPE cortex_bucket_blocks_count gauge
-			cortex_bucket_blocks_count{user="user-1"} 2
+			cortex_bucket_blocks_count{user="user-1"} 1
 			# HELP cortex_bucket_blocks_marked_for_deletion_count Total number of blocks marked for deletion in the bucket.
 			# TYPE cortex_bucket_blocks_marked_for_deletion_count gauge
-			cortex_bucket_blocks_marked_for_deletion_count{user="user-1"} 1
+			cortex_bucket_blocks_marked_for_deletion_count{user="user-1"} 0
 			# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
 			# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
 			cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 1
+			cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
+			# HELP cortex_compactor_blocks_cleaned_total Total number of blocks deleted.
+           	# TYPE cortex_compactor_blocks_cleaned_total counter
+			cortex_compactor_blocks_cleaned_total 0
+			`),
+		"cortex_bucket_blocks_count",
+		"cortex_bucket_blocks_marked_for_deletion_count",
+		"cortex_compactor_blocks_marked_for_deletion_total",
+		"cortex_compactor_blocks_cleaned_total",
+	))
+}
+
+func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithGlobalMarkerPresent(t *testing.T) {
+
+	deletionDelay := time.Hour
+	parentClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient := block.BucketWithGlobalMarkers(parentClient)
+
+	ts := func(hours int) int64 {
+		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
+	}
+
+	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
+	createDeletionMark(t, bucketClient, "user-1", block1, time.Now().Add(-deletionDelay).Add(-time.Minute))
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:                 deletionDelay,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
+	}
+
+	ctx := context.Background()
+	logger := test.NewTestingLogger(t)
+	reg := prometheus.NewPedanticRegistry()
+	cfgProvider := newMockConfigProvider()
+	cfgProvider.userPartialBlockDelay["user-1"] = 1 * time.Nanosecond
+
+	// block is uploaded and marked for deletion. The parentClient and bucketClient are consistent
+	checkBlockDeletionMarker(t, "user-1", parentClient, block1, true)
+	checkBlockDeletionMarker(t, "user-1", bucketClient, block1, true)
+
+	// delete block in parent location, this mocks a delete of the bucket with failure to clean-up the global marker
+	err := parentClient.Delete(ctx, path.Join("user-1", block1.String()))
+	require.NoError(t, err)
+
+	// check parentClient and bucketClient have diverged
+	var foundBefore bool
+	err = bucketClient.Iter(ctx, "/user-1/markers/", func(name string) error {
+		if name == "/user-1/"+block.DeletionMarkFilepath(block1) {
+			foundBefore = true
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.True(t, foundBefore)
+	checkBlock(t, "user-1", parentClient, block1, false, false)
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
+
+	var foundAfter bool
+	// block should not be discoverable via global markers path
+	err = bucketClient.Iter(context.Background(), "/user-1/markers/", func(name string) error {
+		if name == "/user-1/"+block.DeletionMarkFilepath(block1) {
+			foundAfter = true
+		}
+		return nil
+	})
+	require.NoError(t, err)
+	require.False(t, foundAfter)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+			# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
+			# TYPE cortex_bucket_blocks_count gauge
+			cortex_bucket_blocks_count{user="user-1"} 0
+			# HELP cortex_bucket_blocks_marked_for_deletion_count Total number of blocks marked for deletion in the bucket.
+			# TYPE cortex_bucket_blocks_marked_for_deletion_count gauge
+			cortex_bucket_blocks_marked_for_deletion_count{user="user-1"} 0
+			# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
+			# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+			cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
 			cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
 			# HELP cortex_compactor_blocks_cleaned_total Total number of blocks deleted.
            	# TYPE cortex_compactor_blocks_cleaned_total counter
