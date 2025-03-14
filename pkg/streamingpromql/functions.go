@@ -711,11 +711,11 @@ func unaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperat
 	return operators.NewDeduplicateAndMerge(o, memoryConsumptionTracker)
 }
 
-func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange, argExpressions parser.Expressions) (types.InstantVectorOperator, error) {
+func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, annotations *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange, _ parser.Expressions) (types.InstantVectorOperator, error) {
 	f := functions.DoubleExponentialSmoothing
 
 	functionName := "double_exponential_smoothing"
-	if len(args) != 3 || len(argExpressions) != 3 {
+	if len(args) != 3 {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected exactly 3 arguments for %s, got %v", functionName, len(args))
 	}
