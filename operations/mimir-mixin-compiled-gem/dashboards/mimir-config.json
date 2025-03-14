@@ -21,10 +21,11 @@
             "includeVars": true,
             "keepTime": true,
             "tags": [
-               "mimir"
+               "mimir",
+               "gem"
             ],
             "targetBlank": false,
-            "title": "Mimir dashboards",
+            "title": "GEM dashboards",
             "type": "dashboards"
          }
       ],
@@ -154,7 +155,8 @@
       "schemaVersion": 14,
       "style": "dark",
       "tags": [
-         "mimir"
+         "mimir",
+         "gem"
       ],
       "templating": {
          "list": [
@@ -252,7 +254,7 @@
          ]
       },
       "timezone": "utc",
-      "title": "Mimir / Config",
+      "title": "GEM / Config",
       "uid": "5d9d0b4724c0f80d68467088ec61e003",
       "version": 0
    }
