@@ -888,7 +888,7 @@ func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args
 	return smooth1, true, nil, nil
 }
 
-// Calculate the trend value at the given index i.
+// Calculate the trend value.
 // This is somewhat analogous to the slope of the trend at the given index.
 // The argument "smooth0" is the computed smoothed value.
 // The argument "smooth1" is the computed trend factor.
