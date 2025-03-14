@@ -79,8 +79,8 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 		kgo.MaxBufferedBytes(0),
 	)
 
-	if kafkaCfg.ProducerUseZstdCompression {
-		opts = append(opts, kgo.ProducerBatchCompression(kgo.ZstdCompression(), kgo.SnappyCompression(), kgo.NoCompression()))
+	if kafkaCfg.ProducerUseZstdCompression > -1 {
+		opts = append(opts, kgo.ProducerBatchCompression(kgo.ZstdCompression().WithLevel(kafkaCfg.ProducerUseZstdCompression), kgo.SnappyCompression(), kgo.NoCompression()))
 	}
 	if kafkaCfg.ProducerUseGzipCompression {
 		opts = append(opts, kgo.ProducerBatchCompression(kgo.GzipCompression().WithLevel(gzip.DefaultCompression), kgo.SnappyCompression(), kgo.NoCompression()))
