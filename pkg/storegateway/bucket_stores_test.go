@@ -1075,3 +1075,18 @@ func (a alwaysSuccessfulAfterDelayGate) Start(_ context.Context) error {
 }
 
 func (a alwaysSuccessfulAfterDelayGate) Done() {}
+
+// noShardingStrategy is a no-op strategy. When this strategy is used, no tenant/block is filtered out.
+type noShardingStrategy struct{}
+
+func newNoShardingStrategy() *noShardingStrategy {
+	return &noShardingStrategy{}
+}
+
+func (s *noShardingStrategy) FilterUsers(_ context.Context, userIDs []string) ([]string, error) {
+	return userIDs, nil
+}
+
+func (s *noShardingStrategy) FilterBlocks(_ context.Context, _ string, _ map[ulid.ULID]*block.Meta, _ map[ulid.ULID]struct{}, _ block.GaugeVec) error {
+	return nil
+}

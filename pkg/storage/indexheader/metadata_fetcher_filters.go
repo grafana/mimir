@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package storegateway
+package indexheader
 
 import (
 	"context"
@@ -83,16 +83,16 @@ func (f *IgnoreDeletionMarkFilter) FilterWithBucketIndex(_ context.Context, meta
 
 const minTimeExcludedMeta = "min-time-excluded"
 
-// minTimeMetaFilter filters out blocks that contain the most recent data (based on block MinTime).
-type minTimeMetaFilter struct {
+// MinTimeMetaFilter filters out blocks that contain the most recent data (based on block MinTime).
+type MinTimeMetaFilter struct {
 	limit time.Duration
 }
 
-func newMinTimeMetaFilter(limit time.Duration) *minTimeMetaFilter {
-	return &minTimeMetaFilter{limit: limit}
+func NewMinTimeMetaFilter(limit time.Duration) *MinTimeMetaFilter {
+	return &MinTimeMetaFilter{limit: limit}
 }
 
-func (f *minTimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*block.Meta, synced block.GaugeVec) error {
+func (f *MinTimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*block.Meta, synced block.GaugeVec) error {
 	if f.limit <= 0 {
 		return nil
 	}

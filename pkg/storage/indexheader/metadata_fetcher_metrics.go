@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package storegateway
+package indexheader
 
 import (
 	"github.com/go-kit/log"
