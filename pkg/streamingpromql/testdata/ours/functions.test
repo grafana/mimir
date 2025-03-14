@@ -1208,4 +1208,10 @@ eval range from 0 to 20000s step 2000s holt_winters(http_requests[5000s], 0.01, 
   {job="api-server", instance="1", group="canary"} _ -8000 -16000 -24000 -32000 -40000 -6689.664952482304 10592.070195990285 23960 31960 39960
   {job="api-server", instance="2", group="canary"} _ -8000 -16000 -24000 -32000 -40000 NaN NaN 23800 31800 39800
 
+eval_fail instant at 0s double_exponential_smoothing(http_requests[5000s], 0, 0.1)
+  expected_fail_message invalid smoothing factor. Expected: 0 < sf < 1, got: 0.000000
+
+eval_fail instant at 0s double_exponential_smoothing(http_requests[5000s], 0.01, 0)
+  expected_fail_message invalid trend factor. Expected: 0 < tf < 1, got: 0.000000
+
 clear
