@@ -184,6 +184,10 @@ func (l *reactiveLimiter) AcquirePermit(ctx context.Context) (Permit, error) {
 	}, nil
 }
 
+func (l *reactiveLimiter) CanAcquirePermit() bool {
+	return !l.semaphore.IsFull()
+}
+
 func (l *reactiveLimiter) Limit() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
