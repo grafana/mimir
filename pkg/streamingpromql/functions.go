@@ -595,7 +595,7 @@ var instantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOpe
 	"deg":              InstantVectorTransformationFunctionOperatorFactory("deg", functions.Deg),
 	"delta":            FunctionOverRangeVectorOperatorFactory("delta", functions.Delta),
 	"deriv":            FunctionOverRangeVectorOperatorFactory("deriv", functions.Deriv),
-	// We are calling promqlext.ExtendPromQL() in astmapper package, therefore we don't need to register holt_winters separately here.
+	// We are calling promqlext.ExtendPromQL() in streamingpromql package's init(), therefore we don't need to register holt_winters separately here.
 	"double_exponential_smoothing": DoubleExponentialSmoothingFunctionOperatorFactory,
 	"exp":                          InstantVectorTransformationFunctionOperatorFactory("exp", functions.Exp),
 	"floor":                        InstantVectorTransformationFunctionOperatorFactory("floor", functions.Floor),
