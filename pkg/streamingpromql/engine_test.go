@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
@@ -45,11 +46,19 @@ func init() {
 }
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
+	parser.Functions["info"].Experimental = false
+	parser.Functions["sort_by_label"].Experimental = false
+	parser.Functions["sort_by_label_desc"].Experimental = false
+
 	features := EnableAllFeatures
 
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
-	unsupportedExpressions := map[string]string{}
+	unsupportedExpressions := map[string]string{
+		"info(metric{})":                       "'info' function",
+		`sort_by_label(metric{}, "test")`:      "'sort_by_label' function",
+		`sort_by_label_desc(metric{}, "test")`: "'sort_by_label_desc' function",
+	}
 
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
