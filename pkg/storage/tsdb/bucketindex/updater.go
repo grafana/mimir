@@ -231,7 +231,7 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 		if errors.Is(err, ErrBlockDeletionMarkNotFound) {
 			if isEmpty := isDirEmpty(ctx, w.bkt, id.String()); isEmpty {
 				// This could happen if the block is permanently deleted between the "list objects" and now.
-				//level.Warn(w.logger).Log("msg", "skipped missing block deletion mark when updating bucket index", "block", id.String())
+				level.Warn(w.logger).Log("msg", "skipped missing block deletion mark when updating bucket index", "block", id.String())
 				if err := w.bkt.Delete(ctx, block.DeletionMarkFilepath(id)); err != nil {
 					level.Warn(w.logger).Log("msg", "failed to clean stale global deletion mark", "block", id.String())
 				}
