@@ -138,13 +138,13 @@
                         {
                            "matcher": {
                               "id": "byName",
-                              "options": "OK"
+                              "options": "Canceled"
                            },
                            "properties": [
                               {
                                  "id": "color",
                                  "value": {
-                                    "fixedColor": "#7EB26D",
+                                    "fixedColor": "#A9A9A9",
                                     "mode": "fixed"
                                  }
                               }
@@ -153,13 +153,13 @@
                         {
                            "matcher": {
                               "id": "byName",
-                              "options": "cancel"
+                              "options": "OK"
                            },
                            "properties": [
                               {
                                  "id": "color",
                                  "value": {
-                                    "fixedColor": "#A9A9A9",
+                                    "fixedColor": "#7EB26D",
                                     "mode": "fixed"
                                  }
                               }
@@ -1097,13 +1097,13 @@
                         {
                            "matcher": {
                               "id": "byName",
-                              "options": "OK"
+                              "options": "Canceled"
                            },
                            "properties": [
                               {
                                  "id": "color",
                                  "value": {
-                                    "fixedColor": "#7EB26D",
+                                    "fixedColor": "#A9A9A9",
                                     "mode": "fixed"
                                  }
                               }
@@ -1112,13 +1112,13 @@
                         {
                            "matcher": {
                               "id": "byName",
-                              "options": "cancel"
+                              "options": "OK"
                            },
                            "properties": [
                               {
                                  "id": "color",
                                  "value": {
-                                    "fixedColor": "#A9A9A9",
+                                    "fixedColor": "#7EB26D",
                                     "mode": "fixed"
                                  }
                               }
