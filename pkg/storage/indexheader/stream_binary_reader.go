@@ -197,9 +197,8 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 		if err == nil {
 			tryWriteSparseHeadersToFile(logger, sparseHeadersPath, r)
 			return nil
-		} else {
-			level.Warn(logger).Log("msg", "failed to load sparse index-header from bucket; reconstructing", "err", err)
 		}
+		level.Warn(logger).Log("msg", "failed to load sparse index-header from bucket; reconstructing", "err", err)
 	} else {
 		level.Info(logger).Log("msg", "could not download sparse index-header from bucket; reconstructing from index-header", "err", err)
 	}
