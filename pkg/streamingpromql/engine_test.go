@@ -2259,6 +2259,11 @@ func TestAnnotations(t *testing.T) {
 				`PromQL warning: quantile value should be between 0 and 1, got 1.5 (1:10)`,
 			},
 		},
+		"double_exponential_smoothing() with float and native histogram at same step": {
+			data:                    `some_metric 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
+			expr:                    "double_exponential_smoothing(some_metric[1m1s], 0.5, 0.5)",
+			expectedInfoAnnotations: []string{`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:30)`},
+		},
 	}
 
 	for _, f := range []string{"min_over_time", "max_over_time", "stddev_over_time", "stdvar_over_time"} {
