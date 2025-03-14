@@ -245,6 +245,8 @@ The following features are currently experimental:
   - Customise write and read buffer size
     - `-<prefix>.memcached.write-buffer-size-bytes`
     - `-<prefix>.memcached.read-buffer-size-bytes`
+  - Alternate DNS service discovery backend
+    - `-<prefix>.memcached.addresses-provider`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
