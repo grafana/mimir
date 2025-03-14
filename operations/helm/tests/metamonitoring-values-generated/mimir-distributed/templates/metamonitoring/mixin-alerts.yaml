@@ -1213,7 +1213,7 @@ spec:
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuildernocycleprocessing
             expr: |
               max by(cluster, namespace, pod) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[60m]))) == 0
-            for: 20m
+            for: 60m
             labels:
               severity: critical
           - alert: MimirBlockBuilderLagging
