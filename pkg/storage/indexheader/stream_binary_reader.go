@@ -336,7 +336,7 @@ func writeSparseHeadersToFile(sparseHeadersPath string, reader *StreamBinaryRead
 // If it fails, it will log a warning.
 func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, reader *StreamBinaryReader) {
 	start := time.Now()
-	level.Info(logger).Log("msg", "writing sparse index-header to disk")
+	level.Debug(logger).Log("msg", "writing sparse index-header to disk")
 
 	err := writeSparseHeadersToFile(sparseHeadersPath, reader)
 
