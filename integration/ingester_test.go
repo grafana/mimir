@@ -860,7 +860,7 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 			distributorFlags := mergeFlags(
 				flags,
 				map[string]string{
-					"-server.cluster-validation.label": testCase.distributorClusterLabel,
+					"-ingester.client.cluster-validation.label": testCase.distributorClusterLabel,
 				},
 			)
 

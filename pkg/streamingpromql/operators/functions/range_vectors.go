@@ -813,5 +813,5 @@ func quantileOverTime(step *types.RangeVectorStepData, _ float64, args []types.S
 		values = append(values, p.F)
 	}
 
-	return Quantile(q, values), true, nil, nil
+	return floats.Quantile(q, values), true, nil, nil
 }
