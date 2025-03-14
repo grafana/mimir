@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package storegateway
+package indexheader
 
 import (
 	"bytes"
@@ -136,12 +136,12 @@ func TestTimeMetaFilter(t *testing.T) {
 	synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{Name: "synced"}, []string{"state"})
 
 	// Test negative limit.
-	f := newMinTimeMetaFilter(-10 * time.Minute)
+	f := NewMinTimeMetaFilter(-10 * time.Minute)
 	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
 	assert.Equal(t, inputMetas, inputMetas)
 	assert.Equal(t, 0.0, promtest.ToFloat64(synced.WithLabelValues(minTimeExcludedMeta)))
 
-	f = newMinTimeMetaFilter(limit)
+	f = NewMinTimeMetaFilter(limit)
 	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
 
 	assert.Equal(t, expectedMetas, inputMetas)

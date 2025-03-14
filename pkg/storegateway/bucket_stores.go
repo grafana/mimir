@@ -30,6 +30,8 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
+	"github.com/grafana/mimir/pkg/storage/shardlayout"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
@@ -49,12 +51,14 @@ const GrpcContextMetadataTenantID = "__org_id__"
 type BucketStores struct {
 	services.Service
 
+	indexHeaderDiscoverer shardlayout.IndexHeaderMetaDiscoverer
+
 	logger             log.Logger
 	cfg                tsdb.BlocksStorageConfig
 	limits             *validation.Overrides
 	bucket             objstore.Bucket
 	bucketStoreMetrics *BucketStoreMetrics
-	metaFetcherMetrics *MetadataFetcherMetrics
+	metaFetcherMetrics *indexheader.MetadataFetcherMetrics
 	shardingStrategy   ShardingStrategy
 	syncBackoffConfig  backoff.Config
 
@@ -118,20 +122,34 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		lazyLoadingGate = timeoutGate{delegate: lazyLoadingGate, timeout: cfg.BucketStore.IndexHeader.LazyLoadingConcurrencyQueueTimeout}
 	}
 
+	indexHeaderDiscoverer := shardlayout.NewBucketIndexHeaderMetaDiscoverer(
+		cachingBucket,
+		cfg,
+		backoff.Config{
+			MinBackoff: 1 * time.Second,
+			MaxBackoff: 10 * time.Second,
+			MaxRetries: 3,
+		},
+		allowedTenants,
+		logger,
+		reg,
+	)
+
 	u := &BucketStores{
-		logger:             logger,
-		cfg:                cfg,
-		limits:             limits,
-		bucket:             cachingBucket,
-		shardingStrategy:   shardingStrategy,
-		allowedTenants:     allowedTenants,
-		stores:             map[string]*BucketStore{},
-		bucketStoreMetrics: NewBucketStoreMetrics(reg),
-		metaFetcherMetrics: NewMetadataFetcherMetrics(logger),
-		queryGate:          queryGate,
-		lazyLoadingGate:    lazyLoadingGate,
-		partitioners:       newGapBasedPartitioners(cfg.BucketStore.PartitionerMaxGapBytes, reg),
-		seriesHashCache:    hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
+		indexHeaderDiscoverer: indexHeaderDiscoverer,
+		logger:                logger,
+		cfg:                   cfg,
+		limits:                limits,
+		bucket:                cachingBucket,
+		shardingStrategy:      shardingStrategy,
+		allowedTenants:        allowedTenants,
+		stores:                map[string]*BucketStore{},
+		bucketStoreMetrics:    NewBucketStoreMetrics(reg),
+		metaFetcherMetrics:    indexheader.NewMetadataFetcherMetrics(logger),
+		queryGate:             queryGate,
+		lazyLoadingGate:       lazyLoadingGate,
+		partitioners:          newGapBasedPartitioners(cfg.BucketStore.PartitionerMaxGapBytes, reg),
+		seriesHashCache:       hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
 		syncBackoffConfig: backoff.Config{
 			MinBackoff: 1 * time.Second,
 			MaxBackoff: 10 * time.Second,
@@ -192,14 +210,14 @@ func (u *BucketStores) stopBucketStores(error) error {
 
 // initialSync does an initial synchronization of blocks for all users.
 func (u *BucketStores) initialSync(ctx context.Context) error {
+	var err error
 	start := time.Now()
 	level.Info(u.logger).Log("msg", "discovering TSDB index headers for all users")
-	tenantBlockIndexHeaders, err := u.DiscoverAllIndexHeaders(ctx)
+	tenantBlockIndexHeaders, err := u.indexHeaderDiscoverer.Discover(ctx)
 	if err != nil {
 		level.Warn(u.logger).Log("msg", "failed to discover TSDB index headers", "err", err)
 		return fmt.Errorf("initial discovery with bucket: %w", err)
 	}
-
 	level.Info(u.logger).Log(
 		"msg", "successfully discovered TSDB index headers for all users",
 		"tenantBlockIndexHeaders", tenantBlockIndexHeaders.String(),
@@ -228,43 +246,6 @@ func (u *BucketStores) SyncBlocks(ctx context.Context) error {
 		return store.SyncBlocks(ctx)
 	}
 	return u.syncUsersBlocksWithRetries(ctx, f)
-}
-
-func (u *BucketStores) DiscoverAllIndexHeaders(ctx context.Context) (*TenantIndexHeaderMap, error) {
-	tenantBlockIndexHeaders := &TenantIndexHeaderMap{}
-	discoverFunc := func(ctx context.Context, store *BucketStore) error {
-		return store.DiscoverIndexHeaders(ctx, tenantBlockIndexHeaders)
-	}
-	err := u.discoverAllIndexHeadersWithRetries(ctx, discoverFunc)
-	return tenantBlockIndexHeaders, err
-}
-
-func (u *BucketStores) discoverAllIndexHeadersWithRetries(
-	ctx context.Context,
-	discoverFunc func(context.Context, *BucketStore) error,
-) error {
-	retries := backoff.New(ctx, u.syncBackoffConfig)
-
-	var lastErr error
-	for retries.Ongoing() {
-		userIDs, err := u.allowedUsers(ctx)
-		if err != nil {
-			retries.Wait()
-			continue
-		}
-		lastErr = u.discoverAllowedTenantsIndexHeaders(ctx, userIDs, discoverFunc)
-		if lastErr == nil {
-			return nil
-		}
-
-		retries.Wait()
-	}
-
-	if lastErr == nil {
-		return retries.Err()
-	}
-
-	return lastErr
 }
 
 func (u *BucketStores) syncUsersBlocksWithRetries(ctx context.Context, f func(context.Context, *BucketStore) error) error {
@@ -644,15 +625,15 @@ func (u *BucketStores) getOrCreateStoreNoShardingFilter(ctx context.Context, use
 
 	// The sharding strategy filter MUST be before the ones we create here (order matters).
 	filters := []block.MetadataFilter{
-		newMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
+		indexheader.NewMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
 		// Use our own custom implementation.
-		NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay, u.cfg.BucketStore.MetaSyncConcurrency),
+		indexheader.NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay, u.cfg.BucketStore.MetaSyncConcurrency),
 		// The duplicate filter has been intentionally omitted because it could cause troubles with
 		// the consistency check done on the querier. The duplicate filter removes redundant blocks
 		// but if the store-gateway removes redundant blocks before the querier discovers them, the
 		// consistency check on the querier will fail.
 	}
-	fetcher := NewBucketIndexMetadataFetcher(
+	fetcher := indexheader.NewBucketIndexMetadataFetcher(
 		userID,
 		u.bucket,
 		u.limits,
@@ -724,15 +705,15 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 	// The sharding strategy filter MUST be before the ones we create here (order matters).
 	filters := []block.MetadataFilter{
 		NewShardingMetadataFilterAdapter(userID, u.shardingStrategy),
-		newMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
+		indexheader.NewMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
 		// Use our own custom implementation.
-		NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay, u.cfg.BucketStore.MetaSyncConcurrency),
+		indexheader.NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksInStoreGatewayDelay, u.cfg.BucketStore.MetaSyncConcurrency),
 		// The duplicate filter has been intentionally omitted because it could cause troubles with
 		// the consistency check done on the querier. The duplicate filter removes redundant blocks
 		// but if the store-gateway removes redundant blocks before the querier discovers them, the
 		// consistency check on the querier will fail.
 	}
-	fetcher := NewBucketIndexMetadataFetcher(
+	fetcher := indexheader.NewBucketIndexMetadataFetcher(
 		userID,
 		u.bucket,
 		u.limits,

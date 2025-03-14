@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package storegateway
+package indexheader
 
 import (
 	"bytes"
@@ -42,7 +42,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	block1 := &bucketindex.Block{ID: ulid.MustNew(1, nil)}
 	block2 := &bucketindex.Block{ID: ulid.MustNew(2, nil)}
 	block3 := &bucketindex.Block{ID: ulid.MustNew(3, nil)}
-	block4 := &bucketindex.Block{ID: ulid.MustNew(4, nil), MinTime: timestamp.FromTime(now.Add(-30 * time.Minute))} // Has most-recent data, to be ignored by minTimeMetaFilter.
+	block4 := &bucketindex.Block{ID: ulid.MustNew(4, nil), MinTime: timestamp.FromTime(now.Add(-30 * time.Minute))} // Has most-recent data, to be ignored by MinTimeMetaFilter.
 
 	mark1 := &bucketindex.BlockDeletionMark{ID: block1.ID, DeletionTime: now.Add(-time.Hour).Unix()}     // Below the ignore delay threshold.
 	mark2 := &bucketindex.BlockDeletionMark{ID: block2.ID, DeletionTime: now.Add(-3 * time.Hour).Unix()} // Above the ignore delay threshold.
@@ -57,7 +57,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	// Create a metadata fetcher with filters.
 	filters := []block.MetadataFilter{
 		NewIgnoreDeletionMarkFilter(logger, bucket.NewUserBucketClient(userID, bkt, nil), 2*time.Hour, 1),
-		newMinTimeMetaFilter(1 * time.Hour),
+		NewMinTimeMetaFilter(1 * time.Hour),
 	}
 
 	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, nil, logger, reg, filters)
@@ -195,19 +195,4 @@ func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 		"blocks_meta_synced",
 		"blocks_meta_syncs_total",
 	))
-}
-
-// noShardingStrategy is a no-op strategy. When this strategy is used, no tenant/block is filtered out.
-type noShardingStrategy struct{}
-
-func newNoShardingStrategy() *noShardingStrategy {
-	return &noShardingStrategy{}
-}
-
-func (s *noShardingStrategy) FilterUsers(_ context.Context, userIDs []string) ([]string, error) {
-	return userIDs, nil
-}
-
-func (s *noShardingStrategy) FilterBlocks(_ context.Context, _ string, _ map[ulid.ULID]*block.Meta, _ map[ulid.ULID]struct{}, _ block.GaugeVec) error {
-	return nil
 }
