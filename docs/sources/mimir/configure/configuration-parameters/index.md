@@ -510,6 +510,11 @@ storage:
   # system as object storage backend.
   # The CLI flags prefix for this block configuration is: common.storage
   [filesystem: <filesystem_storage_backend>]
+
+client_cluster_validation:
+  # (experimental) Optionally define the cluster validation label.
+  # CLI flag: -common.client-cluster-validation.label
+  [label: <string> | default = ""]
 ```
 
 ### server

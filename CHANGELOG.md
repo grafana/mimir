@@ -64,9 +64,10 @@
   * `-server.cluster-validation.label`
   * `-server.cluster-validation.grpc.enabled`
   * `-server.cluster-validation.grpc.soft-validation`
-* [ENHANCEMENT] gRPC clients: Add experimental support to include the cluster validation label in gRPC metadata. The cluster validation label can be set via `-<grpc-client-config-path>.cluster-validation.label`. When cluster validation is enabled on gRPC server side, the cluster validation label from gRPC metadata is compared with gRPC server's cluster validation label. #10869
-* [ENHANCEMENT] All: Add `cortex_client_request_invalid_cluster_validation_labels_total` metrics, that is used by Mimir's gRPC clients to track invalid cluster validations. #10767
-* [ENHANCEMENT] Ingester client: Add support to configure cluster validation for ingester clients. Failed cluster validations are tracked by `cortex_client_request_invalid_cluster_validation_labels_total` with label `client=ingester`. #10767
+* [ENHANCEMENT] gRPC clients: Add experimental support to include the cluster validation label in gRPC metadata. When cluster validation is enabled on gRPC server side, the cluster validation label from gRPC metadata is compared with the gRPC server's cluster validation label. #10869 #10883
+  * By setting `-<grpc-client-config-path>.cluster-validation.label`, you configure the cluster validation label of _a single_ gRPC client, whose `grpcclient.Config` object is configurable through `-<grpc-client-config-path>`.
+  * By setting `-common.client-cluster-validation.label`, you configure the cluster validation label of _all_ gRPC clients.
+* [ENHANCEMENT] gRPC clients: Add `cortex_client_request_invalid_cluster_validation_labels_total` metrics, that are used by Mimir's gRPC clients to track invalid cluster validations. #10767
 * [ENHANCEMENT] Add experimental metric `cortex_distributor_dropped_native_histograms_total` to measure native histograms silently dropped when native histograms are disabled for a tenant. #10760
 * [ENHANCEMENT] Compactor: Add experimental `-compactor.upload-sparse-index-headers` option. When enabled, the compactor will attempt to upload sparse index headers to object storage. This prevents latency spikes after adding store-gateway replicas. #10684
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
