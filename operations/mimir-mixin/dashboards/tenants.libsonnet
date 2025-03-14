@@ -105,7 +105,7 @@ local filename = 'mimir-tenants.json';
           ],
           [
             'local limit ({{job}})',
-            '{{pod}}',
+            '{{%(per_instance_label)s}}' % $._config.per_instance_label,
           ],
         ) +
         $.showAllTooltip +
@@ -150,7 +150,7 @@ local filename = 'mimir-tenants.json';
           ],
           [
             'local limit ({{job}})',
-            '{{pod}}',
+            '{{%(per_instance_label)s}}' % $._config.per_instance_label,
           ],
         ) +
         $.showAllTooltip +
