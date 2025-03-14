@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
@@ -39,10 +38,13 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
+	"github.com/grafana/mimir/pkg/util/promqlext"
 )
 
 func init() {
 	types.EnableManglingReturnedSlices = true
+	// To test double_exponential_smoothing and holt_winters
+	promqlext.ExtendPromQL()
 }
 
 func TestUnsupportedPromQLFeatures(t *testing.T) {
@@ -181,9 +183,6 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 // Test cases that are not supported by the streaming engine are commented out (or, if the entire file is not supported, .disabled is appended to the file name).
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
 func TestUpstreamTestCases(t *testing.T) {
-	// Enable experimental functions testing
-	parser.Functions["double_exponential_smoothing"].Experimental = false
-
 	opts := NewTestEngineOpts()
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
@@ -207,9 +206,6 @@ func TestUpstreamTestCases(t *testing.T) {
 }
 
 func TestOurTestCases(t *testing.T) {
-	// Enable experimental functions testing
-	parser.Functions["double_exponential_smoothing"].Experimental = false
-
 	opts := NewTestEngineOpts()
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
@@ -3077,9 +3073,6 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 }
 
 func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
-	// Enable experimental functions testing
-	parser.Functions["double_exponential_smoothing"].Experimental = false
-
 	t.Parallel()
 
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
