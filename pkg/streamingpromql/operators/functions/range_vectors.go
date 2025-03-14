@@ -874,8 +874,8 @@ func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args
 			x = smoothingFactor * sample.F
 
 			// Scale the last smoothed value for all samples except the first one in head.
-			if head && i != 0 || !head {
-				estimatedTrend = calcTrendValue(trendFactor, smooth0, smooth1, estimatedTrend)
+			if head && i > 0 || !head {
+				estimatedTrend = trendFactor*(smooth1-smooth0) + (1-trendFactor)*estimatedTrend
 			}
 			y = (1 - smoothingFactor) * (smooth1 + estimatedTrend)
 
@@ -886,15 +886,4 @@ func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args
 	accumulate(fTail, false)
 
 	return smooth1, true, nil, nil
-}
-
-// Calculate the trend value.
-// This is somewhat analogous to the slope of the trend at the given index.
-// The argument "smooth0" is the computed smoothed value.
-// The argument "smooth1" is the computed trend factor.
-func calcTrendValue(trendFactor, smooth0, smooth1, estimatedTrend float64) float64 {
-	x := trendFactor * (smooth1 - smooth0)
-	y := (1 - trendFactor) * estimatedTrend
-
-	return x + y
 }
