@@ -459,23 +459,21 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, st
 	for !sectionEndTime.After(cycleEndTime) {
 		logger := log.With(logger, "section_end", sectionEndTime, "offset", state.Commit.At)
 		state, err = b.consumePartitionSection(ctx, logger, builder, partition, state, sectionEndTime, cycleEndOffset)
-		if err == nil {
+		if err != nil {
+			var recInFutureErr *errFirstRecordInFuture
+			if !errors.As(err, &recInFutureErr) {
+				return PartitionState{}, fmt.Errorf("consume partition %d: %w", partition, err)
+			}
+			// The first record in the partition has a timestamp greater than the section end time.
+			// It is possible this was an idle partition that suddenly became active. Instead of trying every interval since
+			// the last commit, we shortcut to the min of first record time or the cycle end time.
+			err = nil
+			sectionEndTime = cycleEndAfter(recInFutureErr.recordTs, b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
+			if sectionEndTime.After(cycleEndTime) {
+				sectionEndTime = cycleEndTime
+			}
+		} else {
 			sectionEndTime = sectionEndTime.Add(b.cfg.ConsumeInterval)
-			continue
-		}
-
-		var recInFutureErr *errFirstRecordInFuture
-		if !errors.As(err, &recInFutureErr) {
-			return PartitionState{}, fmt.Errorf("consume partition %d: %w", partition, err)
-		}
-		err = nil
-
-		// The first record in the partition has a timestamp greater than the section end time.
-		// It is possible this was an idle partition that suddenly became active. Instead of trying every interval since
-		// the last commit, we shortcut to the min of first record time or the cycle end time.
-		sectionEndTime = cycleEndAfter(recInFutureErr.recordTs, b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
-		if sectionEndTime.After(cycleEndTime) {
-			sectionEndTime = cycleEndTime
 		}
 	}
 
@@ -522,8 +520,7 @@ func (b *BlockBuilder) consumePartitionSection(
 
 		dur := time.Since(t)
 
-		var temp *errFirstRecordInFuture
-		if retErr != nil && !errors.As(retErr, &temp) {
+		if retErr != nil && !errors.Is(retErr, &errFirstRecordInFuture{}) {
 			level.Error(logger).Log("msg", "partition consumption failed", "err", retErr, "duration", dur)
 			return
 		}

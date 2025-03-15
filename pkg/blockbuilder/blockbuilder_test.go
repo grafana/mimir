@@ -1320,7 +1320,7 @@ func TestFastCatchupOnIdlePartition(t *testing.T) {
 	// The above cycle should try one consumption for the old commit point, then shortcut
 	// to the last 2h records. So we should not have more than 3-4 consumption attempts.
 	// Without the shortcut in place, it will run consumption 48-49 times, one for each hour.
-	consumptionAttempts := getSampleCountFromHistoramVector(t, bb.blockBuilderMetrics.processPartitionDuration)
+	consumptionAttempts := getSampleCountFromHistogramVector(t, bb.blockBuilderMetrics.processPartitionDuration)
 	require.GreaterOrEqual(t, consumptionAttempts, 3)
 	require.LessOrEqual(t, consumptionAttempts, 4)
 
@@ -1331,10 +1331,10 @@ func TestFastCatchupOnIdlePartition(t *testing.T) {
 	)
 }
 
-// getSampleCountFromHistoramVector gets the count field of histogram from the histogram vector.
+// getSampleCountFromHistogramVector gets the count field of histogram from the histogram vector.
 // The histogram vector must have only 1 histogram.
 // This function takes most of its code from promtest.ToFloat64() and adapts to our use case.
-func getSampleCountFromHistoramVector(t *testing.T, m *prometheus.HistogramVec) int {
+func getSampleCountFromHistogramVector(t *testing.T, m *prometheus.HistogramVec) int {
 	var (
 		metrics []prometheus.Metric
 		mChan   = make(chan prometheus.Metric)
