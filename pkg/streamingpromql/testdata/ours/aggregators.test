@@ -682,11 +682,6 @@ eval range from 0 to 12m step 6m count_values by (idx) ("idx", series)
   {idx="NaN"}  2 1 2
   {idx="1"}    2 1 _
 
-# Prometheus' engine quotes the label name twice: see https://github.com/prometheus/prometheus/pull/16054.
-# Once that fix is vendored into Mimir, we can remove the two (\\")? groups below.
-eval_fail instant at 0 count_values("a\xc5z", series)
-  expected_fail_regexp invalid label name "(\\")?a\\(\\)?xc5z(\\")?"( for count_values)?
-
 clear
 
 load 6m

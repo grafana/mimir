@@ -2346,7 +2346,6 @@ func TestAnnotations(t *testing.T) {
 			expectedInfoAnnotations: []string{
 				`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:20)`,
 			},
-			skipComparisonWithPrometheusReason: "Prometheus' engine emits the wrong annotation, see https://github.com/prometheus/prometheus/pull/16018",
 		},
 
 		"multiple annotations from different operators": {
