@@ -104,16 +104,6 @@ func (r *prioritizer) Calibrate() {
 		"blocked", totalQueued)
 }
 
-func computeRejectionRate(queueSize, rejectionThreshold, maxQueueSize int) float64 {
-	if queueSize <= rejectionThreshold {
-		return 0
-	}
-	if queueSize >= maxQueueSize {
-		return 1
-	}
-	return float64(queueSize-rejectionThreshold) / float64(maxQueueSize-rejectionThreshold)
-}
-
 func (r *prioritizer) recordPriority(priority int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
