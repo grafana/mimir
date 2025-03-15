@@ -12,9 +12,6 @@ type Ewma interface {
 
 	// Value gets the current value of the moving average.
 	Value() float64
-
-	// Set sets a value for the moving average.
-	Set(float64)
 }
 
 // NewEwma creates a new exponentially weighted moving average for the windowSize and warmupSamples.
@@ -50,14 +47,6 @@ func (e *ewma) Add(newValue float64) float64 {
 
 func (e *ewma) Value() float64 {
 	return e.value
-}
-
-func (e *ewma) Set(value float64) {
-	e.value = value
-	// Skip any incomplete warmup
-	if e.count < e.warmupSamples {
-		e.count = e.warmupSamples
-	}
 }
 
 // Smooth returns a value that is decreased by some portion of the oldValue, and increased by some portion of the
