@@ -305,7 +305,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			expectedReadConsistency: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "querier_wall_time;dur=0")
-				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=1.670167")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "bytes_processed;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "samples_processed;val=0")
 			},
@@ -342,7 +342,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "wall_time;dur=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "queue;dur=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_size;c=2")
-				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=1.906208")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "cache_hit;c=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "cache_miss;c=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "sharded;c=0")
