@@ -436,11 +436,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, activities)
 
-			// it checks headers when QueryStatsEnabled is true or X-Mimir-Response-Query-Stats is true.
-			if tt.assertHeaders != nil {
-				tt.assertHeaders(t, resp.Header())
-			}
-
+			tt.assertHeaders(t, resp.Header())
 			if tt.cfg.QueryStatsEnabled {
 				require.Len(t, logger.logMessages, 1)
 

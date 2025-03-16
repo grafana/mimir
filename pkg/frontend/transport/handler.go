@@ -259,7 +259,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var parts []string
 	if f.cfg.QueryStatsEnabled {
-		parts = getQueryStats(queryResponseTime, queryDetails.QuerierStats)
+		parts = getQueryStats(queryResponseTime, queryDetails)
 	}
 	if queryStatsHeaderNameOk && queryStatsHeaderNameOkErr == nil {
 		parts = append(parts, getResponseQueryStats(queryResponseTime, queryResponseSize, queryDetails)...)
@@ -490,10 +490,11 @@ func writeError(w http.ResponseWriter, err error) int {
 	return statusCode
 }
 
-func getQueryStats(queryResponseTime time.Duration, stats *querier_stats.Stats) []string {
-	if stats == nil {
+func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.QueryDetails) []string {
+	if details == nil {
 		return nil
 	}
+	stats := details.QuerierStats
 	parts := make([]string, 0)
 	parts = append(parts, statsValue("querier_wall_time", stats.LoadWallTime()))
 	parts = append(parts, statsValue("response_time", queryResponseTime))
