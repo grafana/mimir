@@ -25,15 +25,17 @@ import (
 )
 
 type IndexHeaderMetaDiscoverer interface {
-	Discover(context.Context) (*IndexHeaderMetaMap, error)
+	Discover(context.Context) error
 }
 
 type BucketIndexHeaderMetaDiscoverer struct {
-	bucket objstore.Bucket
-	// Keeps a bucket client for each tenant.
-	bucketClientsMu sync.RWMutex
+	// Discovered data; RWLock-protected map
+	IndexHeaderMetaMap *IndexHeaderMetaMap
+
+	// bucket clients
+	bucket          objstore.Bucket
+	bucketClientsMu sync.RWMutex // protect per-tenant bucket clients
 	bucketClients   map[string]objstore.InstrumentedBucket
-	//fetcher indexheader.BlockMetadataFetcher
 
 	// configs
 	cfg               tsdb.BlocksStorageConfig
@@ -41,6 +43,7 @@ type BucketIndexHeaderMetaDiscoverer struct {
 	allowedTenants    *util.AllowedTenants
 	limits            *validation.Overrides
 
+	// instrumentation
 	logger log.Logger
 	reg    prometheus.Registerer
 }
@@ -54,22 +57,23 @@ func NewBucketIndexHeaderMetaDiscoverer(
 	reg prometheus.Registerer,
 ) *BucketIndexHeaderMetaDiscoverer {
 	return &BucketIndexHeaderMetaDiscoverer{
+		IndexHeaderMetaMap: &IndexHeaderMetaMap{},
+
 		bucket:        bucket,
 		bucketClients: map[string]objstore.InstrumentedBucket{},
 
-		//fetcher:             fetcher,
 		cfg:               blocksStorageConfig,
 		syncBackoffConfig: syncBackoffConfig,
 		allowedTenants:    allowedTenants,
-		logger:            logger,
-		reg:               reg,
+
+		logger: logger,
+		reg:    reg,
 	}
 }
 
-func (ihd *BucketIndexHeaderMetaDiscoverer) Discover(ctx context.Context) (*IndexHeaderMetaMap, error) {
+func (ihd *BucketIndexHeaderMetaDiscoverer) Discover(ctx context.Context) error {
 	retries := backoff.New(ctx, ihd.syncBackoffConfig)
 
-	var indexHeaderMetaMap *IndexHeaderMetaMap
 	var lastErr error
 	for retries.Ongoing() {
 		tenantIDs, err := ihd.ListAllowedTenants(ctx)
@@ -77,29 +81,26 @@ func (ihd *BucketIndexHeaderMetaDiscoverer) Discover(ctx context.Context) (*Inde
 			retries.Wait()
 			continue
 		}
-		indexHeaderMetaMap, lastErr = ihd.discoverForTenants(ctx, tenantIDs)
+		lastErr = ihd.discoverForTenants(ctx, tenantIDs)
 		if lastErr == nil {
-			return indexHeaderMetaMap, nil
+			return nil
 		}
 
 		retries.Wait()
 	}
 
 	if lastErr == nil {
-		return indexHeaderMetaMap, retries.Err()
+		return retries.Err()
 	}
 
-	return indexHeaderMetaMap, lastErr
+	return lastErr
 }
 
-func (ihd *BucketIndexHeaderMetaDiscoverer) discoverForTenants(
-	ctx context.Context, tenantIDs []string,
-) (*IndexHeaderMetaMap, error) {
-	indexHeaderMetaMap := &IndexHeaderMetaMap{}
+func (ihd *BucketIndexHeaderMetaDiscoverer) discoverForTenants(ctx context.Context, tenantIDs []string) error {
 
 	tenantIDs, err := ihd.ListAllowedTenants(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	type tenantJob struct {
@@ -118,7 +119,7 @@ func (ihd *BucketIndexHeaderMetaDiscoverer) discoverForTenants(
 			defer tenantDiscoveryWaitGroup.Done()
 
 			for tenantJob := range tenantJobs {
-				err := ihd.discoverForTenant(ctx, tenantJob.tenantID, indexHeaderMetaMap)
+				err := ihd.discoverForTenant(ctx, tenantJob.tenantID)
 				if err != nil {
 					err = errors.Wrapf(
 						err, "failed to discover TSDB index header for user %s", tenantJob.tenantID,
@@ -139,47 +140,10 @@ func (ihd *BucketIndexHeaderMetaDiscoverer) discoverForTenants(
 	close(tenantJobs)
 	tenantDiscoveryWaitGroup.Wait()
 
-	return indexHeaderMetaMap, errs.Err()
-
-	//
-	//// Lazily create a bucket store for each new user found
-	//// and submit a sync tenantJob for each user.
-	//for _, userID := range allowedTenantIDs {
-	//	bs, err := u.getOrCreateStoreNoShardingFilter(ctx, userID)
-	//	if err != nil {
-	//		errsMx.Lock()
-	//		errs.Add(err)
-	//		errsMx.Unlock()
-	//
-	//		continue
-	//	}
-	//
-	//	select {
-	//	case tenantJobs <- tenantJob{tenantID: userID, store: bs}:
-	//		// Nothing to do. Will loop to push more tenantJobs.
-	//	case <-ctx.Done():
-	//		// Wait until all workers have done, so the goroutines leak detector doesn't
-	//		// report any issue. This is expected to be quick, considering the done ctx
-	//		// is used by the worker callback function too.
-	//		close(tenantJobs)
-	//		tenantDiscoveryWaitGroup.Wait()
-	//
-	//		return ctx.Err()
-	//	}
-	//}
-	//
-	//// Wait until all workers completed.
-	//close(tenantJobs)
-	//tenantDiscoveryWaitGroup.Wait()
-	//
-	////u.closeBucketStoreAndDeleteLocalFilesForExcludedTenants(UserIDs)
-	//
-	//return errs.Err()
+	return errs.Err()
 }
 
-func (ihd *BucketIndexHeaderMetaDiscoverer) discoverForTenant(
-	ctx context.Context, tenantID string, indexHeaderMetaMap *IndexHeaderMetaMap,
-) error {
+func (ihd *BucketIndexHeaderMetaDiscoverer) discoverForTenant(ctx context.Context, tenantID string) error {
 	tenantBucketClient := ihd.getOrCreateTenantBucketClient(tenantID)
 	tenantLogger := util_log.WithUserID(tenantID, ihd.logger)
 
@@ -219,7 +183,7 @@ func (ihd *BucketIndexHeaderMetaDiscoverer) discoverForTenant(
 					err = errors.Wrapf(err, "get object attributes of %s", indexFilepath)
 					return err
 				}
-				err = indexHeaderMetaMap.Add(tenantID, meta.ULID, attrs)
+				err = ihd.IndexHeaderMetaMap.Add(tenantID, meta.ULID, attrs)
 				if err != nil {
 					return err
 				}
@@ -229,7 +193,7 @@ func (ihd *BucketIndexHeaderMetaDiscoverer) discoverForTenant(
 	}
 
 	for blockID, meta := range metas {
-		if indexHeaderMetaMap.Contains(tenantID, blockID) {
+		if ihd.IndexHeaderMetaMap.Contains(tenantID, blockID) {
 			continue
 		}
 		select {
