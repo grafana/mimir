@@ -235,6 +235,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       OK: $._colors.success,
       success: $._colors.success,
       'error': $._colors.failed,
+      cancel: '#A9A9A9',
       Canceled: '#A9A9A9',
     }) + {
       fieldConfig+: {
@@ -253,6 +254,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       OK: $._colors.success,
       Success: $._colors.success,
       'error': $._colors.failed,
+      cancel: '#A9A9A9',
       Canceled: '#A9A9A9',
     }) + {
       fieldConfig+: {
