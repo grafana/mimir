@@ -251,7 +251,9 @@ func isRemoteWrite2(r *http.Request) (bool, error) {
 	}
 	parts := strings.Split(contentType, ";")
 	if parts[0] != appProtoContentType {
-		return false, fmt.Errorf("expected %v as the first (media) part, got %v content-type", appProtoContentType, contentType)
+		// We didn't use to check the content type so if someone wrote for
+		// example text/plain here, we'll accept and assume it is v1.
+		return false, nil
 	}
 
 	// Parse potential https://www.rfc-editor.org/rfc/rfc9110#parameter

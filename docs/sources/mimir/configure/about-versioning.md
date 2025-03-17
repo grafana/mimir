@@ -245,6 +245,8 @@ The following features are currently experimental:
   - Customise write and read buffer size
     - `-<prefix>.memcached.write-buffer-size-bytes`
     - `-<prefix>.memcached.read-buffer-size-bytes`
+  - Alternate DNS service discovery backend
+    - `-<prefix>.memcached.addresses-provider`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
@@ -262,6 +264,7 @@ The following features are currently experimental:
 - gRPC clients
   - Cross-cluster validation support for gRPC communication:
     - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
+    - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
     - Invalid cluster validations are tracked via the `cortex_client_request_invalid_cluster_validation_labels_total` metrics.
 - Kafka-based ingest storage
   - `-ingest-storage.*`
