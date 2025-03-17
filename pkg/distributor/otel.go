@@ -365,24 +365,13 @@ func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, pay
 
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
-	var body []byte
-	var err error
-	if contentType == jsonContentType {
-		body, err = json.Marshal(payload)
-		if err != nil {
-			httpCode = http.StatusInternalServerError
-			level.Error(logger).Log("msg", "failed to marshal payload to JSON", "err", err, "payload", payload)
-			body, err = json.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
-			err = errors.Wrapf(err, "marshalling %T to JSON", payload)
-		}
-	} else {
-		body, err = proto.Marshal(payload)
-		if err != nil {
-			httpCode = http.StatusInternalServerError
-			level.Error(logger).Log("msg", "failed to marshal payload to protobuf", "err", err, "payload", payload)
-			body, err = proto.Marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto())
-			err = errors.Wrapf(err, "marshalling %T to protobuf", payload)
-		}
+	body, _, err := marshal(payload, contentType)
+	if err != nil {
+		httpCode = http.StatusInternalServerError
+		level.Error(logger).Log("msg", "failed to marshal payload", "err", err, "payload", payload, "content_type", contentType)
+		var format string
+		body, format, err = marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto(), contentType)
+		err = errors.Wrapf(err, "marshalling %T to %s", payload, format)
 	}
 	if err != nil {
 		level.Error(logger).Log("msg", "OTLP response marshal failed, responding without payload", "err", err, "content_type", contentType)
@@ -398,6 +387,16 @@ func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, pay
 	if _, err := w.Write(body); err != nil {
 		level.Error(logger).Log("msg", "failed to write OTLP error response", "err", err, "content_type", contentType)
 	}
+}
+
+func marshal(payload proto.Message, contentType string) ([]byte, string, error) {
+	if contentType == jsonContentType {
+		data, err := json.Marshal(payload)
+		return data, "JSON", err
+	}
+
+	data, err := proto.Marshal(payload)
+	return data, "protobuf", err
 }
 
 // otlpProtoUnmarshaler implements proto.Message wrapping pmetricotlp.ExportRequest.
