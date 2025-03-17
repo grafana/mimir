@@ -156,7 +156,7 @@ If the table is empty, it means there is something wrong with the configuration.
 
 ### Distributor metrics
 
-If you have set up [metamonitoring]({{< relref "../monitor-system-health.md" >}}) or if you
+If you have set up [metamonitoring](../monitor-system-health/) or if you
 run GEM with built-in system monitoring,
 Mimir [distributor]
 exposes some metrics related to HA deduplication. The relevant metrics are those with `cortex_ha_tracker_` prefix.
