@@ -174,16 +174,16 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 		return
 	}
 
-	nhCount := atomic.NewInt64(0)
-	nhBucketNum := atomic.NewInt64(0)
+	nhCount := int64(0)
+	nhBucketNum := int64(0)
 	if nativeHistogramBucketNum >= 0 {
-		nhCount.Inc()
-		nhBucketNum.Add(int64(nativeHistogramBucketNum))
+		nhCount++
+		nhBucketNum+=int64(nativeHistogramBucketNum)
 	}
 	at.observed[string(buf.Bytes())] = asMetrics{
 		asCount:     atomic.NewInt64(1),
-		nhCount:     nhCount,
-		nhBucketNum: nhBucketNum,
+		nhCount:     atomic.NewInt64(nhCount),
+		nhBucketNum: atomic.NewInt64(nhBucketNum),
 	}
 }
 
