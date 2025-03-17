@@ -89,6 +89,7 @@ require (
 	go.opentelemetry.io/collector/pdata v1.24.0
 	go.opentelemetry.io/otel v1.34.0
 	go.opentelemetry.io/otel/trace v1.34.0
+	go.opentelemetry.io/proto/otlp v1.5.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/term v0.29.0
 	google.golang.org/api v0.219.0
@@ -122,6 +123,7 @@ require (
 	github.com/golang/glog v1.2.4 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.8 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.25.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7 // indirect
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
