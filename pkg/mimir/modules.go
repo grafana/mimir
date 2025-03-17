@@ -843,7 +843,7 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	}
 
 	streamingEngine.RegisterASTOptimizer(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimisations such as common subexpression elimination.
-	streamingEngine.RegisterASTOptimizer(&ast.ConstantCollapse{})
+	streamingEngine.RegisterASTOptimizer(&ast.CollapseConstants{})
 
 	streamingEngine.RegisterQueryPlanOptimizer(&plan.EliminateCommonSubexpressions{})
 
