@@ -10,18 +10,18 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-type ConstantCollapse struct{}
+type CollapseConstants struct{}
 
-func (c *ConstantCollapse) Name() string {
-	return "Constant collapse"
+func (c *CollapseConstants) Name() string {
+	return "Collapse constants"
 }
 
 // TODO: tests
-func (c *ConstantCollapse) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+func (c *CollapseConstants) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
 	return c.apply(expr), nil
 }
 
-func (c *ConstantCollapse) apply(expr parser.Expr) parser.Expr {
+func (c *CollapseConstants) apply(expr parser.Expr) parser.Expr {
 	switch expr := expr.(type) {
 	case *parser.BinaryExpr:
 		expr.LHS = c.apply(expr.LHS)
@@ -86,7 +86,7 @@ func (c *ConstantCollapse) apply(expr parser.Expr) parser.Expr {
 	}
 }
 
-func (c *ConstantCollapse) convertToConstant(lhs, rhs *parser.NumberLiteral, op parser.ItemType) (float64, bool) {
+func (c *CollapseConstants) convertToConstant(lhs, rhs *parser.NumberLiteral, op parser.ItemType) (float64, bool) {
 	switch op {
 	case parser.ADD:
 		return lhs.Val + rhs.Val, true
