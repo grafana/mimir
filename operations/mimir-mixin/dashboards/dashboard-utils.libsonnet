@@ -236,6 +236,26 @@ local utils = import 'mixin-utils/utils.libsonnet';
       success: $._colors.success,
       'error': $._colors.failed,
       cancel: '#A9A9A9',
+      Canceled: '#A9A9A9',
+    }) + {
+      fieldConfig+: {
+        defaults+: { unit: 'reqps' },
+      },
+    },
+
+  qpsPanelNativeHistogram(selector, statusLabelName='status_code')::
+    super.qpsPanelNativeHistogram(selector, statusLabelName) +
+    $.aliasColors({
+      '1xx': $._colors.warning,
+      '2xx': $._colors.success,
+      '3xx': '#6ED0E0',
+      '4xx': '#EF843C',
+      '5xx': $._colors.failed,
+      OK: $._colors.success,
+      Success: $._colors.success,
+      'error': $._colors.failed,
+      cancel: '#A9A9A9',
+      Canceled: '#A9A9A9',
     }) + {
       fieldConfig+: {
         defaults+: { unit: 'reqps' },
