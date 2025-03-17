@@ -303,7 +303,6 @@ func testCostAttributionUpdateSeries(t *testing.T, c *ActiveSeries, reg *prometh
     # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
     # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
     cortex_ingester_attributed_active_native_histogram_series{a="1",tenant="user5",tracker="cost-attribution"} 1
-    cortex_ingester_attributed_active_native_histogram_series{a="2",tenant="user5",tracker="cost-attribution"} 0
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
     cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
