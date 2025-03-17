@@ -16,11 +16,42 @@ func (d *EliminateCommonSubexpressions) Name() string {
 	return "Eliminate common subexpressions"
 }
 
+// TODO: tests
+// Some interesting test cases:
+//
+// # Duplicate expression
+// foo + foo
+//
+// # Duplicated many times
+// foo + foo + foo
+//
+// foo + foo + foo + bar + foo
+//
+// # Duplicated with aggregation
+// max(foo) - min(foo)
+//
+// # Duplicated aggregation
+// max(foo) + max(foo)
+//
+// # Multiple levels of duplication: a and sum(a)
+// a + sum(a) + sum(a)
+//
+// # Duplicated binary operations
+// (a - a) + (a - a)
+//
+// (a * b) + (a * b)
+//
+// (a - a) + (a - a) + (a * b) + (a * b)
+//
+// # Combinations of all of the above
+// b + b + sum(a) + sum(a) + sum(rate(foo[1m])) + max(rate(foo[1m])) + a
+
 func (d *EliminateCommonSubexpressions) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
 	// FIXME: there's certainly a more efficient way to do this
 	// FIXME: one easy improvement: alternative to Equals() (or parameter?) that doesn't consider children
 	// FIXME: need to consider selector time ranges when doing this (eg. if subqueries are involved)
 	// FIXME: handle duplicate binary expressions like (a + a) + (a + a) or (a + b) + (a + b)
+	// - may be able to handle parallel binops etc. by checking if expected child is still present: if not, then we've already discovered a duplicate as part of another group
 	// FIXME: handle nested duplication cases like min(a) + min(a) + max(a) + max(a)
 
 	// Figure out all the paths to leaves
@@ -121,10 +152,7 @@ func (d *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) []
 }
 
 func (d *EliminateCommonSubexpressions) applyDeduplication(group []*path) error {
-	// TODO: search upwards to find highest common point and insert deduplication there
-	// TODO: recursively apply deduplication after doing this
-	duplicatePathLength := 1 // 1 means only leaf is common to all, 2 means leaf + parent is common etc.
-
+	duplicatePathLength := d.findCommonSubexpressionLength(group, 1)
 	duplicate := &Duplicate{Inner: group[0].NodeAtOffsetFromLeaf(duplicatePathLength - 1)}
 
 	for _, path := range group {
@@ -135,7 +163,39 @@ func (d *EliminateCommonSubexpressions) applyDeduplication(group []*path) error 
 		}
 	}
 
+	// TODO: if we have more than two paths, recursively group and apply deduplication again in case there's another level of duplication
+
 	return nil
+}
+
+// findCommonSubexpressionLength returns the length of the common expression present at the end of each path
+// in group, starting at offset.
+// offset 0 means start from leaf of all paths.
+// If a non-zero offset is provided, then it is assumed all paths in group already have a common subexpression of length offset.
+func (d *EliminateCommonSubexpressions) findCommonSubexpressionLength(group []*path, offset int) int {
+	length := offset
+	firstPath := group[0]
+
+	for length < len(firstPath.nodes)-1 { // -1 to exclude root node (otherwise the longest common subexpression for "a + a" would be 2, not 1)
+		firstNode := firstPath.NodeAtOffsetFromLeaf(length)
+
+		for _, path := range group[1:] {
+			if length >= len(path.nodes) {
+				// We've reached the end of this path, so the longest common subexpression is the length of this path.
+				return length
+			}
+
+			otherNode := path.NodeAtOffsetFromLeaf(length)
+			if !firstNode.Equals(otherNode) {
+				// Nodes aren't the same, so the longest common subexpression is the length of the path not including the current node.
+				return length
+			}
+		}
+
+		length++
+	}
+
+	return length
 }
 
 func replaceChild(parent planning.Node, childIndex int, newChild planning.Node) error {
