@@ -16,7 +16,7 @@ import (
 	"go.uber.org/atomic"
 )
 
-type asMetrics struct {
+type asCounters struct {
 	asCount     *atomic.Int64
 	nhCount     *atomic.Int64
 	nhBucketNum *atomic.Int64
@@ -36,10 +36,10 @@ type ActiveSeriesTracker struct {
 	cooldownDuration time.Duration
 
 	observedMtx   sync.RWMutex
-	observed      map[string]asMetrics
+	observed      map[string]asCounters
 	overflowSince time.Time
 
-	overflowCounter asMetrics
+	overflowCounter asCounters
 }
 
 func NewActiveSeriesTracker(userID string, trackedLabels []string, limit int, cooldownDuration time.Duration, logger log.Logger) *ActiveSeriesTracker {
@@ -56,7 +56,7 @@ func NewActiveSeriesTracker(userID string, trackedLabels []string, limit int, co
 		userID:           userID,
 		labels:           trackedLabels,
 		maxCardinality:   limit,
-		observed:         make(map[string]asMetrics),
+		observed:         make(map[string]asCounters),
 		logger:           logger,
 		overflowLabels:   overflowLabels,
 		cooldownDuration: cooldownDuration,
@@ -74,7 +74,7 @@ func NewActiveSeriesTracker(userID string, trackedLabels []string, limit int, co
 	ast.activeNativeHistogramBucketsPerUserAttribution = prometheus.NewDesc("cortex_ingester_attributed_active_native_histogram_buckets",
 		"The total number of active native histogram buckets per user and attribution.", variableLabels[:len(variableLabels)-1],
 		prometheus.Labels{trackerLabel: defaultTrackerName})
-	ast.overflowCounter = asMetrics{
+	ast.overflowCounter = asCounters{
 		asCount:     atomic.NewInt64(0),
 		nhCount:     atomic.NewInt64(0),
 		nhBucketNum: atomic.NewInt64(0),
@@ -180,7 +180,7 @@ func (at *ActiveSeriesTracker) Increment(lbls labels.Labels, now time.Time, nati
 		nhCount++
 		nhBucketNum+=int64(nativeHistogramBucketNum)
 	}
-	at.observed[string(buf.Bytes())] = asMetrics{
+	at.observed[string(buf.Bytes())] = asCounters{
 		asCount:     atomic.NewInt64(1),
 		nhCount:     atomic.NewInt64(nhCount),
 		nhBucketNum: atomic.NewInt64(nhBucketNum),
