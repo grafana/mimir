@@ -657,7 +657,7 @@ func (q *batchingQueue) push() error {
 	q.metrics.flushTotal.Inc()
 
 	// By design, we expect the queue to always be drained by whoever uses it. So we don't worry
-	// whether this call could block. If it does, then it's a bug.
+	// whether this call could block *forever*. If it does, then it's a bug.
 	q.ch <- q.currentBatch
 	q.resetCurrentBatch()
 
