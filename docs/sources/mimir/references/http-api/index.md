@@ -592,6 +592,12 @@ Requires [authentication](#authentication).
 #### Headers
 
 - `Sharding-Control` - _optional_ - Integer value specifying how many shards to use for request execution.
+- `X-Mimir-Response-Query-Stats` - _optional_ - Boolean value specifying if the response must have query stats on the `Server-Timing` header.
+
+#### Response Headers
+- `Server-Timing` - _optional_ - Contains query execution stats if the `X-Mimir-Response-Query-Stats` header is set to `true`. 
+The content of the header is a comma-separated list of key-value pairs, where the key is the name of the metric and the value is the metric value.
+The contents of this header may change without notice. Example: `Server-Timing: encode;dur=0.041, series_count;c=31950, chunk_bytes;c=23791904, chunks_count;c=329964, index_bytes;c=28647863, series_fetched;c=29906, wall_time;dur=6259.888, queue;dur=0.020, response_size;c=118, response_time;dur=6267.381, cache_hit;c=0, cache_miss;c=0, sharded;c=0, split;c=0`
 
 #### Response format
 

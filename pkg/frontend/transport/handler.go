@@ -178,8 +178,8 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
-	queryStatsHeaderNameOk, queryStatsHeaderNameOkErr := strconv.ParseBool(r.Header.Get(responseQueryStatsHeaderName))
-	if f.cfg.QueryStatsEnabled || (queryStatsHeaderNameOk && queryStatsHeaderNameOkErr == nil) {
+	queryStatsHeaderNameOk, _ := strconv.ParseBool(r.Header.Get(responseQueryStatsHeaderName))
+	if f.cfg.QueryStatsEnabled || queryStatsHeaderNameOk {
 		var ctx context.Context
 		queryDetails, ctx = querymiddleware.ContextWithEmptyDetails(r.Context())
 		r = r.WithContext(ctx)
@@ -261,7 +261,7 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if f.cfg.QueryStatsEnabled {
 		parts = getQueryStats(queryResponseTime, queryDetails)
 	}
-	if queryStatsHeaderNameOk && queryStatsHeaderNameOkErr == nil {
+	if queryStatsHeaderNameOk {
 		parts = append(parts, getResponseQueryStats(queryResponseTime, queryResponseSize, queryDetails)...)
 	}
 	if len(parts) > 0 {
@@ -495,12 +495,12 @@ func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.Que
 		return nil
 	}
 	stats := details.QuerierStats
-	parts := make([]string, 0)
-	parts = append(parts, statsValue("querier_wall_time", stats.LoadWallTime()))
-	parts = append(parts, statsValue("response_time", queryResponseTime))
-	parts = append(parts, statsValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes()))
-	parts = append(parts, statsValue("samples_processed", stats.GetSamplesProcessed()))
-	return parts
+	return []string{
+		statsValue("querier_wall_time", stats.LoadWallTime()),
+		statsValue("response_time", queryResponseTime),
+		statsValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes())
+		statsValue("samples_processed", stats.GetSamplesProcessed()),
+	}
 }
 
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
@@ -509,22 +509,22 @@ func getResponseQueryStats(queryResponseTime time.Duration, queryResponseSizeByt
 		return nil
 	}
 	stats := details.QuerierStats
-	parts := make([]string, 0)
-	parts = append(parts, statsValue("encode", stats.LoadEncodeTime()))
-	parts = append(parts, statsValueWithKey("series_count", "c", stats.LoadEstimatedSeriesCount()))
-	parts = append(parts, statsValueWithKey("chunk_bytes", "c", stats.LoadFetchedChunkBytes()))
-	parts = append(parts, statsValueWithKey("chunks_count", "c", stats.LoadFetchedChunks()))
-	parts = append(parts, statsValueWithKey("index_bytes", "c", stats.LoadFetchedIndexBytes()))
-	parts = append(parts, statsValueWithKey("series_fetched", "c", stats.LoadFetchedSeries()))
-	parts = append(parts, statsValueWithKey("wall_time", "c", stats.LoadWallTime()))
-	parts = append(parts, statsValue("queue", stats.LoadQueueTime()))
-	parts = append(parts, statsValueWithKey("response_size", "c", queryResponseSizeBytes))
-	parts = append(parts, statsValue("response_time", queryResponseTime))
-	parts = append(parts, statsValueWithKey("cache_hit", "c", details.ResultsCacheHitBytes))
-	parts = append(parts, statsValueWithKey("cache_miss", "c", details.ResultsCacheMissBytes))
-	parts = append(parts, statsValueWithKey("sharded", "c", stats.LoadShardedQueries()))
-	parts = append(parts, statsValueWithKey("split", "c", stats.LoadSplitQueries()))
-	return parts
+	return []string{
+		statsValue("encode", stats.LoadEncodeTime()),
+		statsValueWithKey("series_count", "c", stats.LoadEstimatedSeriesCount()),
+		statsValueWithKey("chunk_bytes", "c", stats.LoadFetchedChunkBytes()),
+		statsValueWithKey("chunks_count", "c", stats.LoadFetchedChunks()),
+		statsValueWithKey("index_bytes", "c", stats.LoadFetchedIndexBytes()),
+		statsValueWithKey("series_fetched", "c", stats.LoadFetchedSeries()),
+		statsValueWithKey("wall_time", "c", stats.LoadWallTime()),
+		statsValue("queue", stats.LoadQueueTime()),
+		statsValueWithKey("response_size", "c", queryResponseSizeBytes),
+		statsValue("response_time", queryResponseTime),
+		statsValueWithKey("cache_hit", "c", details.ResultsCacheHitBytes),
+		statsValueWithKey("cache_miss", "c", details.ResultsCacheMissBytes),
+		statsValueWithKey("sharded", "c", stats.LoadShardedQueries()),
+		statsValueWithKey("split", "c", stats.LoadSplitQueries()),
+	}
 }
 
 func statsValue(name string, val interface{}) string {
@@ -535,11 +535,11 @@ func statsValueWithKey(name string, key string, val interface{}) string {
 	switch v := val.(type) {
 	case time.Duration:
 		durationInMs := strconv.FormatFloat(float64(v)/float64(time.Millisecond), 'f', -1, 64)
-		return name + ";dur=" + durationInMs
+		return fmt.Sprintf("%s;dur=%s", name, durationInMs)
 	case uint64:
-		return name + ";" + key + "=" + strconv.FormatUint(v, 10)
+		return fmt.Sprintf("%s;%s=%s", name, key, strconv.FormatUint(v, 10))
 	default:
-		return name + ";" + key + "=" + fmt.Sprintf("%v", v)
+		return fmt.Sprintf("%s;%s=%v", name, key, val)
 	}
 }
 
