@@ -4,7 +4,9 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
@@ -28,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 type pusherFunc func(context.Context, *mimirpb.WriteRequest) error
@@ -288,7 +292,7 @@ func TestPushErrorHandler_IsServerError(t *testing.T) {
 	}
 }
 
-func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testing.T) {
+func TestPusherConsumer_Consume_ShouldLogErrorsHonoringOptionalLogging(t *testing.T) {
 	// Create a request that will be used in this test. The content doesn't matter,
 	// since we only test errors.
 	req := &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries("series_1")}}
@@ -372,6 +376,173 @@ func TestPusherConsumer_consume_ShouldLogErrorsHonoringOptionalLogging(t *testin
 		`), "cortex_ingest_storage_reader_requests_failed_total"))
 	})
 
+}
+
+func TestPusherConsumer_Consume_ShouldNotLeakGoroutinesOnServerError(t *testing.T) {
+	test.VerifyNoLeak(t)
+
+	const (
+		tenantID         = "tenant-1"
+		numWriteRequests = 1000
+	)
+
+	var (
+		ctx       = context.Background()
+		serverErr = errors.New("mocked server error")
+	)
+
+	scenarios := map[string]struct {
+		cfg KafkaConfig
+	}{
+		"concurrent ingestion disabled": {
+			cfg: func() KafkaConfig {
+				cfg := KafkaConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.IngestionConcurrencyMax = 0
+
+				return cfg
+			}(),
+		},
+		"concurrent ingestion enabled, concurrency = 2, queue capacity = 1, estimated series per batch = 1": {
+			cfg: func() KafkaConfig {
+				cfg := KafkaConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.IngestionConcurrencyMax = 2
+				cfg.IngestionConcurrencyEstimatedBytesPerSample = 1
+				cfg.IngestionConcurrencyTargetFlushesPerShard = 1
+				cfg.IngestionConcurrencyBatchSize = 1
+				cfg.IngestionConcurrencyQueueCapacity = 1
+
+				return cfg
+			}(),
+		},
+		"concurrent ingestion enabled, concurrency = 2, queue capacity = 5, estimated series per batch = 1": {
+			cfg: func() KafkaConfig {
+				cfg := KafkaConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.IngestionConcurrencyMax = 2
+				cfg.IngestionConcurrencyEstimatedBytesPerSample = 1
+				cfg.IngestionConcurrencyTargetFlushesPerShard = 1
+				cfg.IngestionConcurrencyBatchSize = 1
+				cfg.IngestionConcurrencyQueueCapacity = 5
+
+				return cfg
+			}(),
+		},
+		"concurrent ingestion enabled, concurrency = 2, queue capacity = 5, estimated series per batch = 5": {
+			cfg: func() KafkaConfig {
+				cfg := KafkaConfig{}
+				flagext.DefaultValues(&cfg)
+				cfg.IngestionConcurrencyMax = 2
+				cfg.IngestionConcurrencyEstimatedBytesPerSample = 1
+				cfg.IngestionConcurrencyTargetFlushesPerShard = 1
+				cfg.IngestionConcurrencyBatchSize = 5
+				cfg.IngestionConcurrencyQueueCapacity = 5
+
+				return cfg
+			}(),
+		},
+	}
+
+	runForEachScenario := func(t *testing.T, run func(t *testing.T, cfg KafkaConfig, fast bool)) {
+		for scenarioName, scenarioData := range scenarios {
+			scenarioData := scenarioData
+
+			t.Run(scenarioName, func(t *testing.T) {
+				t.Parallel()
+
+				for _, fast := range []bool{true, false} {
+					fast := fast
+
+					t.Run(fmt.Sprintf("upstream push is fast: %t", fast), func(t *testing.T) {
+						t.Parallel()
+						run(t, scenarioData.cfg, fast)
+					})
+				}
+			})
+		}
+	}
+
+	runTest := func(t *testing.T, cfg KafkaConfig, pusher pusherFunc) {
+		records := make([]record, 0, numWriteRequests)
+
+		// Generate the records containing the write requests.
+		for i := 0; i < numWriteRequests; i++ {
+			req := mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{mockPreallocTimeseries(fmt.Sprintf("series_%d", i))}}
+			marshalled, err := req.Marshal()
+			require.NoError(t, err)
+
+			records = append(records, record{ctx: ctx, content: marshalled, tenantID: tenantID})
+		}
+
+		metrics := newPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+		consumer := newPusherConsumer(pusher, cfg, metrics, log.NewNopLogger())
+
+		// We expect consumption to fail.
+		err := consumer.Consume(context.Background(), records)
+		require.ErrorContains(t, err, "consuming record")
+		require.ErrorContains(t, err, serverErr.Error())
+	}
+
+	t.Run("all push fail", func(t *testing.T) {
+		t.Parallel()
+
+		runForEachScenario(t, func(t *testing.T, cfg KafkaConfig, fast bool) {
+			pusher := pusherFunc(func(_ context.Context, _ *mimirpb.WriteRequest) error {
+				if !fast {
+					time.Sleep(time.Duration(rand.Int63n(int64(250 * time.Millisecond))))
+				}
+
+				return serverErr
+			})
+
+			runTest(t, cfg, pusher)
+		})
+	})
+
+	t.Run("the 1st push fail", func(t *testing.T) {
+		t.Parallel()
+
+		runForEachScenario(t, func(t *testing.T, cfg KafkaConfig, fast bool) {
+			pushCount := atomic.NewInt64(0)
+
+			pusher := pusherFunc(func(_ context.Context, _ *mimirpb.WriteRequest) error {
+				if !fast {
+					time.Sleep(time.Duration(rand.Int63n(int64(250 * time.Millisecond))))
+				}
+
+				if pushCount.Inc() == 1 {
+					return serverErr
+				}
+
+				return nil
+			})
+
+			runTest(t, cfg, pusher)
+		})
+	})
+
+	t.Run("the 10th push fail", func(t *testing.T) {
+		t.Parallel()
+
+		runForEachScenario(t, func(t *testing.T, cfg KafkaConfig, fast bool) {
+			pushCount := atomic.NewInt64(0)
+
+			pusher := pusherFunc(func(_ context.Context, _ *mimirpb.WriteRequest) error {
+				if !fast {
+					time.Sleep(time.Duration(rand.Int63n(int64(250 * time.Millisecond))))
+				}
+
+				if pushCount.Inc() == 10 {
+					return serverErr
+				}
+
+				return nil
+			})
+
+			runTest(t, cfg, pusher)
+		})
+	})
 }
 
 // ingesterError mimics how the ingester construct errors
@@ -956,6 +1127,114 @@ func TestParallelStoragePusher_idealShardsFor(t *testing.T) {
 	}
 }
 
+func TestParallelStoragePusher_Fuzzy(t *testing.T) {
+	test.VerifyNoLeak(t)
+
+	const (
+		numTenants               = 10
+		numWriteRequests         = 100
+		numSeriesPerWriteRequest = 100
+	)
+
+	var (
+		serverErr                   = errors.New("mocked server error")
+		serverErrsCount             = atomic.NewInt64(0)
+		enqueuedTimeSeriesReqs      = 0
+		enqueuedTimeSeriesPerTenant = map[string][]string{}
+		pushedTimeSeriesPerTenant   = map[string][]string{}
+		pushedTimeSeriesPerTenantMx = sync.Mutex{}
+	)
+
+	generateWriteRequest := func(batchID, numSeries int) *mimirpb.WriteRequest {
+		timeseries := make([]mimirpb.PreallocTimeseries, 0, numSeries)
+		for i := 0; i < numSeries; i++ {
+			timeseries = append(timeseries, mockPreallocTimeseries(fmt.Sprintf("series_%d_%d", batchID, i)))
+		}
+
+		return &mimirpb.WriteRequest{Timeseries: timeseries, Source: mimirpb.API}
+	}
+
+	pusher := pusherFunc(func(ctx context.Context, req *mimirpb.WriteRequest) error {
+		tenantID, err := user.ExtractOrgID(ctx)
+		require.NoError(t, err)
+
+		// Keep track of the received series.
+		pushedTimeSeriesPerTenantMx.Lock()
+		for _, series := range req.Timeseries {
+			pushedTimeSeriesPerTenant[tenantID] = append(pushedTimeSeriesPerTenant[tenantID], series.Labels[0].Value)
+		}
+		pushedTimeSeriesPerTenantMx.Unlock()
+
+		// Simulate some slowdown.
+		time.Sleep(time.Millisecond)
+
+		// Simulate a 0.1% failure rate.
+		if rand.Intn(1000) == 0 {
+			serverErrsCount.Inc()
+			return serverErr
+		}
+
+		return nil
+	})
+
+	// Configure the pusher so that it uses multiple shards per tenant.
+	const maxShards = 10
+	const batchSize = 1
+	const queueCapacity = 5
+	const bytesPerSample = 1
+	const targetFlushes = 1
+	bytesPerTenant := map[string]int{}
+	for tenantID := 0; tenantID < numTenants; tenantID++ {
+		bytesPerTenant[fmt.Sprintf("tenant-%d", tenantID)] = 5
+	}
+
+	metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
+	psp := newParallelStoragePusher(metrics, pusher, bytesPerTenant, 0, maxShards, batchSize, queueCapacity, bytesPerSample, targetFlushes, nil)
+
+	// Keep pushing batches of write requests until we hit an error.
+	for batchID := 0; batchID < numWriteRequests; batchID++ {
+		// Generate the tenant owning this batch.
+		tenantID := fmt.Sprintf("tenant-%d", batchID%numTenants)
+		ctx := user.InjectOrgID(context.Background(), tenantID)
+
+		// Ensure the tenant will use more than 1 shard.
+		require.Greater(t, psp.idealShardsFor(tenantID), 1)
+
+		req := generateWriteRequest(batchID, numSeriesPerWriteRequest)
+
+		if err := psp.PushToStorage(ctx, req); err == nil {
+			enqueuedTimeSeriesReqs++
+
+			// Keep track of the enqueued series. We don't keep track of it if there was an error because, in case
+			// of an error, only some series may been added to a batch (it breaks on the first failed "append to batch").
+			for _, series := range req.Timeseries {
+				enqueuedTimeSeriesPerTenant[tenantID] = append(enqueuedTimeSeriesPerTenant[tenantID], series.Labels[0].Value)
+			}
+		} else {
+			// We received an error. Make sure a server error was reported by the upstream pusher.
+			require.Greater(t, serverErrsCount.Load(), int64(0))
+
+			// Break on first error.
+			break
+		}
+	}
+
+	t.Logf("enqueued time series requests: %d", enqueuedTimeSeriesReqs)
+
+	// Close the parallel pusher.
+	if errs := psp.Close(); len(errs) > 0 {
+		// We received an error. Make sure a server error was reported by the upstream pusher.
+		require.Greater(t, serverErrsCount.Load(), int64(0))
+	}
+
+	// Ensure all enqueued series have been pushed.
+	for tenantID, tenantSeries := range enqueuedTimeSeriesPerTenant {
+		for _, series := range tenantSeries {
+			require.Contains(t, pushedTimeSeriesPerTenant[tenantID], series)
+		}
+	}
+}
+
 func TestBatchingQueue_NoDeadlock(t *testing.T) {
 	capacity := 2
 	batchSize := 3
@@ -975,7 +1254,7 @@ func TestBatchingQueue_NoDeadlock(t *testing.T) {
 		for range queue.Channel() {
 			// Simulate processing time
 			time.Sleep(50 * time.Millisecond)
-			queue.ErrorChannel() <- fmt.Errorf("mock error")
+			queue.ReportError(fmt.Errorf("mock error"))
 		}
 	}()
 
@@ -992,7 +1271,7 @@ func TestBatchingQueue_NoDeadlock(t *testing.T) {
 
 	// Ensure the queue is empty and no deadlock occurred
 	require.Len(t, queue.ch, 0)
-	require.Len(t, queue.errCh, 0)
+	require.Len(t, queue.errs, 0)
 	require.Len(t, queue.currentBatch.Timeseries, 0)
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -1060,7 +1339,7 @@ func TestBatchingQueue(t *testing.T) {
 			defer queue.Done()
 			for b := range queue.Channel() {
 				batch = b
-				queue.ErrorChannel() <- nil
+				queue.ReportError(nil)
 			}
 		}()
 
@@ -1177,8 +1456,8 @@ func TestBatchingQueue_ErrorHandling(t *testing.T) {
 		require.NoError(t, queue.AddToBatch(ctx, mimirpb.API, series2))
 
 		// Push an error to fill the error channel.
-		queue.ErrorChannel() <- fmt.Errorf("mock error 1")
-		queue.ErrorChannel() <- fmt.Errorf("mock error 2")
+		queue.ReportError(fmt.Errorf("mock error 1"))
+		queue.ReportError(fmt.Errorf("mock error 2"))
 
 		// AddToBatch should return an error now.
 		err := queue.AddToBatch(ctx, mimirpb.API, series2)
@@ -1211,8 +1490,8 @@ func TestBatchingQueue_ErrorHandling(t *testing.T) {
 		}
 
 		// Push multiple errors
-		queue.ErrorChannel() <- fmt.Errorf("mock error 1")
-		queue.ErrorChannel() <- fmt.Errorf("mock error 2")
+		queue.ReportError(fmt.Errorf("mock error 1"))
+		queue.ReportError(fmt.Errorf("mock error 2"))
 
 		// Close and Done on the queue.
 		queue.Done()
