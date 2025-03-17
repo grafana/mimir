@@ -262,13 +262,7 @@ local filename = 'mimir-ruler.json';
           '{{user}} - errors',
           '{{user}} - dropped',
         ]) +
-        {
-          fieldConfig+: {
-            defaults+: {
-              unit: 'percentunit',
-            },
-          },
-        } +
+        { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
         $.panelDescription(
           'Undelivered notifications (per tenant)',
           |||
@@ -287,7 +281,7 @@ local filename = 'mimir-ruler.json';
             /
           sum by(user) (cortex_prometheus_notifications_queue_capacity{%s}) > 0
         ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}') +
-        { fieldConfig+: { defaults+: { unit: 'percentunit' } } }
+        { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } }
       )
     )
     .addRow(

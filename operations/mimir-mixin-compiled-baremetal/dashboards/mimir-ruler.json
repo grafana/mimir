@@ -1940,6 +1940,7 @@
                               "mode": "none"
                            }
                         },
+                        "max": 1,
                         "min": 0,
                         "thresholds": {
                            "mode": "absolute",
@@ -1994,6 +1995,7 @@
                               "mode": "none"
                            }
                         },
+                        "max": 1,
                         "min": 0,
                         "thresholds": {
                            "mode": "absolute",
