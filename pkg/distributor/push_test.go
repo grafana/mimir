@@ -57,6 +57,14 @@ func TestHandler_remoteWrite(t *testing.T) {
 	assert.Equal(t, 200, resp.Code)
 }
 
+func TestHandler_remoteWriteWithMalformedRequest(t *testing.T) {
+	req := createMalformedRW1Request(t, createPrometheusRemoteWriteProtobuf(t))
+	resp := httptest.NewRecorder()
+	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, 200, resp.Code)
+}
+
 func TestOTelMetricsToMetadata(t *testing.T) {
 	otelMetrics := pmetric.NewMetrics()
 	rs := otelMetrics.ResourceMetrics().AppendEmpty()
@@ -516,6 +524,22 @@ func createRequest(t testing.TB, protobuf []byte) *http.Request {
 	req.Header.Add("Content-Encoding", "snappy")
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+
+	const tenantID = "test"
+	req.Header.Set("X-Scope-OrgID", tenantID)
+	ctx := user.InjectOrgID(context.Background(), tenantID)
+	req = req.WithContext(ctx)
+
+	return req
+}
+
+func createMalformedRW1Request(t testing.TB, protobuf []byte) *http.Request {
+	t.Helper()
+	inoutBytes := snappy.Encode(nil, protobuf)
+	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(inoutBytes))
+	require.NoError(t, err)
+	req.Header.Add("Content-Encoding", "snappy")
+	req.Header.Set("Content-Type", "text/plain")
 
 	const tenantID = "test"
 	req.Header.Set("X-Scope-OrgID", tenantID)
