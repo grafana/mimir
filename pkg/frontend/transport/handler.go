@@ -498,7 +498,7 @@ func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.Que
 	return []string{
 		statsValue("querier_wall_time", stats.LoadWallTime()),
 		statsValue("response_time", queryResponseTime),
-		statsValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes())
+		statsValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes()),
 		statsValue("samples_processed", stats.GetSamplesProcessed()),
 	}
 }
