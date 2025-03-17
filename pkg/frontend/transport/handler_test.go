@@ -325,7 +325,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         0,
+			expectedMetrics:         5,
 			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
 			expectedReadConsistency: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
