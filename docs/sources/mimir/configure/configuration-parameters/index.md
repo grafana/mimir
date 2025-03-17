@@ -510,6 +510,11 @@ storage:
   # system as object storage backend.
   # The CLI flags prefix for this block configuration is: common.storage
   [filesystem: <filesystem_storage_backend>]
+
+client_cluster_validation:
+  # (experimental) Optionally define the cluster validation label.
+  # CLI flag: -common.client-cluster-validation.label
+  [label: <string> | default = ""]
 ```
 
 ### server
@@ -5180,6 +5185,11 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # address, hostname, or an entry specified in the DNS Service Discovery format.
 # CLI flag: -<prefix>.memcached.addresses
 [addresses: <string> | default = ""]
+
+# (experimental) DNS provider used for resolving memcached addresses. Available
+# providers golang, miekgdns, miekgdns2
+# CLI flag: -<prefix>.memcached.addresses-provider
+[addresses_provider: <string> | default = "miekgdns"]
 
 # The socket read/write timeout.
 # CLI flag: -<prefix>.memcached.timeout

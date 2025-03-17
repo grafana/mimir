@@ -230,7 +230,7 @@
         // Alert if block-builder didn't process cycles in the past hour.
         {
           alert: $.alertName('BlockBuilderNoCycleProcessing'),
-          'for': '20m',
+          'for': '60m',
           expr: |||
             max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (histogram_count(increase(cortex_blockbuilder_consume_cycle_duration_seconds[60m]))) == 0
           ||| % $._config,

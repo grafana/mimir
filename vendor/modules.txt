@@ -252,7 +252,7 @@ github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding
 # github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.15
 ## explicit; go 1.22
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
-# github.com/aws/aws-sdk-go-v2/service/s3 v1.78.1
+# github.com/aws/aws-sdk-go-v2/service/s3 v1.78.2
 ## explicit; go 1.22
 github.com/aws/aws-sdk-go-v2/service/s3/types
 # github.com/aws/aws-sdk-go-v2/service/sso v1.25.1
@@ -458,7 +458,7 @@ github.com/go-openapi/spec
 # github.com/go-openapi/strfmt v0.23.0
 ## explicit; go 1.20
 github.com/go-openapi/strfmt
-# github.com/go-openapi/swag v0.23.0
+# github.com/go-openapi/swag v0.23.1
 ## explicit; go 1.20
 github.com/go-openapi/swag
 # github.com/go-openapi/validate v0.24.0
@@ -645,7 +645,7 @@ github.com/grafana/alerting/receivers/webex
 github.com/grafana/alerting/receivers/webhook
 github.com/grafana/alerting/receivers/wecom
 github.com/grafana/alerting/templates
-# github.com/grafana/dskit v0.0.0-20250312185509-4320c75000d9
+# github.com/grafana/dskit v0.0.0-20250314184143-8abd91ce153f
 ## explicit; go 1.21
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -657,6 +657,7 @@ github.com/grafana/dskit/crypto/tls
 github.com/grafana/dskit/dns
 github.com/grafana/dskit/dns/godns
 github.com/grafana/dskit/dns/miekgdns
+github.com/grafana/dskit/dns/miekgdns2
 github.com/grafana/dskit/flagext
 github.com/grafana/dskit/gate
 github.com/grafana/dskit/grpcclient
@@ -850,8 +851,8 @@ github.com/kylelemons/godebug/pretty
 # github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0
 ## explicit; go 1.16
 github.com/lufia/plan9stats
-# github.com/mailru/easyjson v0.7.7
-## explicit; go 1.12
+# github.com/mailru/easyjson v0.9.0
+## explicit; go 1.20
 github.com/mailru/easyjson/buffer
 github.com/mailru/easyjson/jlexer
 github.com/mailru/easyjson/jwriter
@@ -1239,7 +1240,7 @@ github.com/twmb/franz-go/pkg/sasl/plain
 # github.com/twmb/franz-go/pkg/kadm v1.14.0
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kadm
-# github.com/twmb/franz-go/pkg/kfake v0.0.0-20250121044851-f30c518d6b72
+# github.com/twmb/franz-go/pkg/kfake v0.0.0-20250310205051-07bdebeca4be
 ## explicit; go 1.21
 github.com/twmb/franz-go/pkg/kfake
 # github.com/twmb/franz-go/pkg/kmsg v1.9.0
@@ -1568,7 +1569,7 @@ google.golang.org/genproto/googleapis/type/expr
 google.golang.org/genproto/googleapis/api
 google.golang.org/genproto/googleapis/api/annotations
 google.golang.org/genproto/googleapis/api/httpbody
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20250303144028-a0af3efb3deb
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20250313205543-e70fdf4c4cb4
 ## explicit; go 1.23.0
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails

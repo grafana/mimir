@@ -1,6 +1,6 @@
 module github.com/grafana/mimir
 
-go 1.23.0
+go 1.23.7
 
 // Please note that this directive is ignored when building with the Mimir build image,
 // that will always use its bundled toolchain.
@@ -15,14 +15,14 @@ require (
 	github.com/felixge/fgprof v0.9.5
 	github.com/go-kit/log v0.2.1
 	github.com/go-openapi/strfmt v0.23.0
-	github.com/go-openapi/swag v0.23.0
+	github.com/go-openapi/swag v0.23.1
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.1
 	github.com/golang/protobuf v1.5.4
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250312185509-4320c75000d9
+	github.com/grafana/dskit v0.0.0-20250314184143-8abd91ce153f
 	github.com/grafana/e2e v0.1.2-0.20250306030804-b80b212be908
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.11
@@ -59,7 +59,7 @@ require (
 	cloud.google.com/go/storage v1.43.0
 	github.com/alecthomas/chroma/v2 v2.15.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.78.1
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.78.2
 	github.com/dennwc/varint v1.0.0
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/google/go-cmp v0.6.0
@@ -81,7 +81,7 @@ require (
 	github.com/tjhop/slog-gokit v0.1.4
 	github.com/twmb/franz-go v1.18.1
 	github.com/twmb/franz-go/pkg/kadm v1.14.0
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250121044851-f30c518d6b72
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20250310205051-07bdebeca4be
 	github.com/twmb/franz-go/pkg/kmsg v1.9.0
 	github.com/twmb/franz-go/plugin/kotel v1.5.0
 	github.com/twmb/franz-go/plugin/kprom v1.1.0
@@ -248,7 +248,7 @@ require (
 	github.com/klauspost/compress v1.17.11
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
-	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4
@@ -295,7 +295,7 @@ require (
 	golang.org/x/tools v0.29.0 // indirect
 	google.golang.org/genproto v0.0.0-20241113202542-65e8d215514f // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250115164207-1a7da9e5054f // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250303144028-a0af3efb3deb
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250313205543-e70fdf4c4cb4
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
 	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect

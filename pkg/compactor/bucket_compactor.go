@@ -30,7 +30,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
-	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -388,7 +387,6 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	level.Info(jobLogger).Log("msg", "compacted blocks", "new_block_count", len(compIDs), "new_blocks", fmt.Sprintf("%v", compIDs), "block_count", blockCount, "blocks", toCompactStr, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	uploadBegin := time.Now()
-	uploadedBlocks := atomic.NewInt64(0)
 
 	if err = verifyCompactedBlocksTimeRanges(compIDs, toCompactMinTime.UnixMilli(), toCompactMaxTime.UnixMilli(), subDir); err != nil {
 		level.Warn(jobLogger).Log("msg", "compacted blocks verification failed", "err", err)
@@ -396,6 +394,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
+	uploadBlocksCount := len(blocksToUpload)
 
 	// update labels and verify all blocks
 	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
@@ -435,18 +434,21 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	// Optionally build sparse-index-headers. Building sparse-index-headers is best effort, we do not skip uploading a
 	// compacted block if there's an error affecting sparse-index-headers.
-	if c.uploadSparseIndexHeaders {
+	switch c.uploadSparseIndexHeaders {
+	case true:
 		// Create a bucket backed by the local compaction directory, allows calls to prepareSparseIndexHeader to
 		// construct sparse-index-headers without making requests to object storage.
 		fsbkt, err := filesystem.NewBucket(subDir)
 		if err != nil {
+			c.metrics.compactionBlocksBuildSparseHeadersFailed.Add(float64(uploadBlocksCount))
 			level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
-			return
+			break
 		}
-		_ = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
+		_ = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 			blockToUpload := blocksToUpload[idx]
 			err := prepareSparseIndexHeader(ctx, jobLogger, fsbkt, subDir, blockToUpload.ulid, c.sparseIndexHeaderSamplingRate, c.sparseIndexHeaderconfig)
 			if err != nil {
+				c.metrics.compactionBlocksBuildSparseHeadersFailed.Inc()
 				level.Warn(jobLogger).Log("msg", "failed to create sparse index headers", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
 			}
 			return nil
@@ -454,16 +456,23 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	// upload all blocks
-	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
+	c.metrics.blockUploadsStarted.Add(float64(uploadBlocksCount))
+	err = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
 		blockToUpload := blocksToUpload[idx]
-		uploadedBlocks.Inc()
 		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
 		begin := time.Now()
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil); err != nil {
+			var uploadErr *block.UploadError
+			if errors.As(err, &uploadErr) {
+				c.metrics.blockUploadsFailed.WithLabelValues(uploadErr.FileType()).Inc()
+			} else {
+				c.metrics.blockUploadsFailed.WithLabelValues(string(block.FileTypeUnknown)).Inc()
+			}
 			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
 		}
 
 		elapsed := time.Since(begin)
+		c.metrics.blockUploadsDuration.WithLabelValues(jobType).Observe(elapsed.Seconds())
 		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", blockToUpload.ulid, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(blockToUpload.labels))
 		return nil
 	})
@@ -472,7 +481,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	elapsed = time.Since(uploadBegin)
-	level.Info(jobLogger).Log("msg", "uploaded all blocks", "blocks", uploadedBlocks, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	level.Info(jobLogger).Log("msg", "uploaded all blocks", "blocks", uploadBlocksCount, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	// Mark for deletion the blocks we just compacted from the job and bucket so they do not get included
 	// into the next planning cycle.
@@ -703,17 +712,21 @@ func deleteBlock(bkt objstore.Bucket, id ulid.ULID, bdir string, logger log.Logg
 
 // BucketCompactorMetrics holds the metrics tracked by BucketCompactor.
 type BucketCompactorMetrics struct {
-	groupCompactionRunsStarted         prometheus.Counter
-	groupCompactionRunsCompleted       prometheus.Counter
-	groupCompactionRunsFailed          prometheus.Counter
-	groupCompactions                   prometheus.Counter
-	blockCompactionDelay               *prometheus.HistogramVec
-	compactionBlocksVerificationFailed prometheus.Counter
-	blocksMarkedForDeletion            prometheus.Counter
-	blocksMarkedForNoCompact           *prometheus.CounterVec
-	blocksMaxTimeDelta                 prometheus.Histogram
-	compactionJobDuration              *prometheus.HistogramVec
-	compactionJobBlocks                *prometheus.HistogramVec
+	groupCompactionRunsStarted               prometheus.Counter
+	groupCompactionRunsCompleted             prometheus.Counter
+	groupCompactionRunsFailed                prometheus.Counter
+	groupCompactions                         prometheus.Counter
+	blockCompactionDelay                     *prometheus.HistogramVec
+	compactionBlocksVerificationFailed       prometheus.Counter
+	compactionBlocksBuildSparseHeadersFailed prometheus.Counter
+	blocksMarkedForDeletion                  prometheus.Counter
+	blocksMarkedForNoCompact                 *prometheus.CounterVec
+	blocksMaxTimeDelta                       prometheus.Histogram
+	compactionJobDuration                    *prometheus.HistogramVec
+	compactionJobBlocks                      *prometheus.HistogramVec
+	blockUploadsStarted                      prometheus.Counter
+	blockUploadsFailed                       *prometheus.CounterVec
+	blockUploadsDuration                     *prometheus.HistogramVec
 }
 
 // NewBucketCompactorMetrics makes a new BucketCompactorMetrics.
@@ -763,6 +776,10 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Name: "cortex_compactor_blocks_verification_failures_total",
 			Help: "Total number of failures when verifying min/max time ranges of compacted blocks.",
 		}),
+		compactionBlocksBuildSparseHeadersFailed: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_compactor_build_sparse_headers_failures_total",
+			Help: "Total number of failures when building sparse index headers.",
+		}),
 		blocksMarkedForDeletion: blocksMarkedForDeletion,
 		blocksMarkedForNoCompact: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_compactor_blocks_marked_for_no_compaction_total",
@@ -773,6 +790,22 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 			Help:    "Difference between now and the max time of a block being compacted in seconds.",
 			Buckets: prometheus.LinearBuckets(86400, 43200, 8), // 1 to 5 days, in 12 hour intervals
 		}),
+		blockUploadsStarted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_compactor_block_uploads_started_total",
+			Help: "Total number of block uploads started.",
+		}),
+		blockUploadsFailed: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_compactor_block_uploads_failed_total",
+			Help: "Total number of block uploads failed.",
+		}, []string{"type"}),
+		blockUploadsDuration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_compactor_block_upload_duration_seconds",
+			Help:                            "Duration of successful block uploads.",
+			Buckets:                         prometheus.ExponentialBuckets(0.004, 2, 14), // 4ms to 32768ms
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+		}, []string{"type"}),
 	}
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason).Add(0)
