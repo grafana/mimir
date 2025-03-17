@@ -42,31 +42,39 @@ func (d *EliminateCommonSubexpressions) Name() string {
 // (a * b) + (a * b)
 //
 // (a - a) + (a - a) + (a * b) + (a * b)
+// ((a - a) + (a - a)) + ((a * b) + (a * b))
+// (a - a) + ((a - a) / (a * b)) % (a * b)
+// ((aa - ab) + (ac - ad)) + ((a * b) + (a * b))
 //
 // # Combinations of all of the above
 // b + b + sum(a) + sum(a) + sum(rate(foo[1m])) + max(rate(foo[1m])) + a
 
 func (d *EliminateCommonSubexpressions) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
 	// FIXME: there's certainly a more efficient way to do this
-	// FIXME: one easy improvement: alternative to Equals() (or parameter?) that doesn't consider children
 	// FIXME: need to consider selector time ranges when doing this (eg. if subqueries are involved)
-	// FIXME: handle duplicate binary expressions like (a + a) + (a + a) or (a + b) + (a + b)
-	// - may be able to handle parallel binops etc. by checking if expected child is still present: if not, then we've already discovered a duplicate as part of another group
-	// FIXME: handle nested duplication cases like min(a) + min(a) + max(a) + max(a)
 
 	// Figure out all the paths to leaves
 	paths := d.accumulatePaths(plan.Root)
 
-	// For each path: find all the other paths that terminate in the same selector
-	groups := d.groupPaths(paths, 0)
-
-	for _, group := range groups {
-		if err := d.applyDeduplication(group); err != nil {
-			return nil, err
-		}
+	// For each path: find all the other paths that terminate in the same selector, then inject a duplication node
+	err := d.groupAndApplyDeduplication(paths, 0)
+	if err != nil {
+		return nil, err
 	}
 
 	return plan, nil
+}
+
+func (d *EliminateCommonSubexpressions) groupAndApplyDeduplication(paths []*path, offset int) error {
+	groups := d.groupPaths(paths, offset)
+
+	for _, group := range groups {
+		if err := d.applyDeduplication(group, offset); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // accumulatePaths returns a list of paths from root that terminate in VectorSelector or MatrixSelector nodes.
@@ -130,6 +138,14 @@ func (d *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) []
 			}
 
 			otherPathLeaf := otherPath.NodeAtOffsetFromLeaf(offset)
+			if leaf == otherPathLeaf {
+				// If we've found two paths with the same ancestor, then we don't consider these the same, as there's no duplication.
+				// eg. if the expression is "a + a":
+				// - if offset is 0 (group by leaf nodes): these are duplicates, group them together
+				// - if offset is 1 (group by parent of leaf nodes): same node, no duplication, don't group together
+				continue
+			}
+
 			if !leaf.Equals(otherPathLeaf) {
 				continue
 			}
@@ -151,8 +167,8 @@ func (d *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) []
 	return groups
 }
 
-func (d *EliminateCommonSubexpressions) applyDeduplication(group []*path) error {
-	duplicatePathLength := d.findCommonSubexpressionLength(group, 1)
+func (d *EliminateCommonSubexpressions) applyDeduplication(group []*path, offset int) error {
+	duplicatePathLength := d.findCommonSubexpressionLength(group, offset+1)
 	duplicate := &Duplicate{Inner: group[0].NodeAtOffsetFromLeaf(duplicatePathLength - 1)}
 
 	for _, path := range group {
@@ -163,7 +179,17 @@ func (d *EliminateCommonSubexpressions) applyDeduplication(group []*path) error 
 		}
 	}
 
-	// TODO: if we have more than two paths, recursively group and apply deduplication again in case there's another level of duplication
+	if len(group) <= 2 {
+		// Can't possibly have any more common subexpressions. We're done.
+		return nil
+	}
+
+	// Check if a subset of the paths we just examined share an even longer common subexpression.
+	// eg. if the expression is "a + max(a) + max(a)", then we may have just deduplicated the "a" selectors,
+	// but we can also deduplicate the "max(a)" expressions.
+	if err := d.groupAndApplyDeduplication(group, duplicatePathLength); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -186,6 +212,14 @@ func (d *EliminateCommonSubexpressions) findCommonSubexpressionLength(group []*p
 			}
 
 			otherNode := path.NodeAtOffsetFromLeaf(length)
+			if firstNode == otherNode {
+				// If we've found two paths with the same ancestor, then we don't consider these the same, as there's no duplication.
+				// eg. if the expression is "a + a":
+				// - if offset is 0 (group by leaf nodes): these are duplicates, group them together
+				// - if offset is 1 (group by parent of leaf nodes): same node, no duplication, don't group together
+				return length
+			}
+
 			if !firstNode.Equals(otherNode) {
 				// Nodes aren't the same, so the longest common subexpression is the length of the path not including the current node.
 				return length
