@@ -713,6 +713,15 @@ Where:
 - `TENANT` is the tenant id reported in the example error message above as `REDACTED-TENANT`
 - `BLOCK` is the last part of the file path reported as `REDACTED-BLOCK` in the example error message above
 
+### MimirCompactorFailingToBuildSparseIndexHeaders
+
+This alert fires when `-compactor.upload-sparse-index-headers` is set to `true` but the compactor fails to build some sparse index headers.
+
+How to **investigate**:
+
+- If the alert `MimirCompactorHasRunOutOfDiskSpace` has fired as well, then investigate that issue first. If there is no disk space available, the compactor will fail to write sparse headers to local disk prior to upload.
+- Look for any errors in the compactor logs, focusing on logs with `method=indexheader.NewStreamBinaryReader`.
+
 ### MimirBucketIndexNotUpdated
 
 This alert fires when the bucket index, for a given tenant, is not updated since a long time. The bucket index is expected to be periodically updated by the compactor and is used by queriers and store-gateways to get an almost-updated view over the bucket store.

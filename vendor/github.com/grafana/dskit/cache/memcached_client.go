@@ -37,6 +37,8 @@ var (
 	ErrInvalidWriteBufferSizeBytes             = errors.New("invalid write buffer size specified (must be greater than 0)")
 	ErrInvalidReadBufferSizeBytes              = errors.New("invalid read buffer size specified (must be greater than 0)")
 
+	dnsProviders = []string{dns.GolangResolverType.String(), dns.MiekgdnsResolverType.String(), dns.MiekgdnsResolverType2.String()}
+
 	_ Cache = (*MemcachedClient)(nil)
 )
 
@@ -74,6 +76,10 @@ type MemcachedClientConfig struct {
 	// Addresses specifies the list of memcached addresses. The addresses get
 	// resolved with the DNS provider.
 	Addresses flagext.StringSliceCSV `yaml:"addresses"`
+
+	// AddressesProvider specifies the DNS provider used for resolving memcached
+	// addresses.
+	AddressesProvider dns.ResolverType `yaml:"addresses_provider" category:"experimental"`
 
 	// Timeout specifies the socket read/write timeout.
 	Timeout time.Duration `yaml:"timeout"`
@@ -132,6 +138,8 @@ type MemcachedClientConfig struct {
 
 func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(&c.Addresses, prefix+"addresses", "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.")
+	c.AddressesProvider = dns.MiekgdnsResolverType
+	f.Var(&c.AddressesProvider, prefix+"addresses-provider", fmt.Sprintf("DNS provider used for resolving memcached addresses. Available providers %s", strings.Join(dnsProviders, ", ")))
 	f.DurationVar(&c.Timeout, prefix+"timeout", 200*time.Millisecond, "The socket read/write timeout.")
 	f.DurationVar(&c.ConnectTimeout, prefix+"connect-timeout", 200*time.Millisecond, "The connection timeout.")
 	f.IntVar(&c.WriteBufferSizeBytes, prefix+"write-buffer-size-bytes", 4096, "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.")
@@ -268,13 +276,7 @@ func newMemcachedClient(
 	reg = prometheus.WrapRegistererWith(
 		prometheus.Labels{labelCacheBackend: backendValueMemcached},
 		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
-
-	addressProvider := dns.NewProvider(
-		logger,
-		reg,
-		dns.MiekgdnsResolverType,
-	)
-
+	addressProvider := dns.NewProvider(logger, reg, config.AddressesProvider)
 	metrics := newClientMetrics(reg)
 
 	c := &MemcachedClient{

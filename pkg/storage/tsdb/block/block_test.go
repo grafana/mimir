@@ -477,9 +477,10 @@ func TestUploadCleanup(t *testing.T) {
 
 	{
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/index"}
+		uerr := &UploadError{}
 
 		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
-		require.ErrorIs(t, uploadErr, errUploadFailed)
+		require.ErrorAs(t, uploadErr, uerr)
 
 		// If upload of index fails, block is deleted.
 		require.Equal(t, 0, len(bkt.Objects()))
@@ -488,9 +489,10 @@ func TestUploadCleanup(t *testing.T) {
 
 	{
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/meta.json"}
+		uerr := &UploadError{}
 
 		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
-		require.ErrorIs(t, uploadErr, errUploadFailed)
+		require.ErrorAs(t, uploadErr, uerr)
 
 		// If upload of meta.json fails, nothing is cleaned up.
 		require.Equal(t, 3, len(bkt.Objects()))
@@ -500,8 +502,6 @@ func TestUploadCleanup(t *testing.T) {
 		require.Equal(t, 0, len(bkt.Objects()[path.Join(DebugMetas, fmt.Sprintf("%s.json", b1.String()))]))
 	}
 }
-
-var errUploadFailed = errors.New("upload failed")
 
 type errBucket struct {
 	objstore.Bucket
@@ -516,7 +516,7 @@ func (eb errBucket) Upload(ctx context.Context, name string, r io.Reader) error 
 	}
 
 	if strings.HasSuffix(name, eb.failSuffix) {
-		return errUploadFailed
+		return UploadError{cause: err, fileType: FileType(name)}
 	}
 	return nil
 }
