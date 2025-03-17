@@ -131,7 +131,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 
 		// Return writer close errors only if there was not already a returned error set (we don't want to overwrite it).
 		if len(writerCloseErrs) > 0 && returnErr == nil {
-			returnErr = multierror.New(writer.Close()...).Err()
+			returnErr = multierror.New(writerCloseErrs...).Err()
 		}
 	}()
 

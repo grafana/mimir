@@ -488,7 +488,7 @@ func TestPusherConsumer_Consume_ShouldNotLeakGoroutinesOnServerError(t *testing.
 		t.Parallel()
 
 		runForEachScenario(t, func(t *testing.T, cfg KafkaConfig, fast bool) {
-			pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) error {
+			pusher := pusherFunc(func(_ context.Context, request *mimirpb.WriteRequest) error {
 				if !fast {
 					time.Sleep(time.Duration(rand.Int63n(int64(250 * time.Millisecond))))
 				}
@@ -506,7 +506,7 @@ func TestPusherConsumer_Consume_ShouldNotLeakGoroutinesOnServerError(t *testing.
 		runForEachScenario(t, func(t *testing.T, cfg KafkaConfig, fast bool) {
 			pushCount := atomic.NewInt64(0)
 
-			pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) error {
+			pusher := pusherFunc(func(_ context.Context, request *mimirpb.WriteRequest) error {
 				if !fast {
 					time.Sleep(time.Duration(rand.Int63n(int64(250 * time.Millisecond))))
 				}
@@ -528,7 +528,7 @@ func TestPusherConsumer_Consume_ShouldNotLeakGoroutinesOnServerError(t *testing.
 		runForEachScenario(t, func(t *testing.T, cfg KafkaConfig, fast bool) {
 			pushCount := atomic.NewInt64(0)
 
-			pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) error {
+			pusher := pusherFunc(func(_ context.Context, request *mimirpb.WriteRequest) error {
 				if !fast {
 					time.Sleep(time.Duration(rand.Int63n(int64(250 * time.Millisecond))))
 				}
