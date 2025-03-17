@@ -60,7 +60,7 @@ func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsu
 
 // Consume implements the recordConsumer interface.
 // It'll use a separate goroutine to unmarshal the next record while we push the current record to storage.
-func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
+func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnErr error) {
 	defer func(processingStart time.Time) {
 		c.metrics.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 	}(time.Now())
@@ -121,7 +121,20 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 		bytesPerTenant[r.tenantID] += len(r.content)
 	}
 
+	// Create and start the storage writer.
 	writer := c.newStorageWriter(bytesPerTenant)
+
+	// Ensure the writer gets closed either in case of successful or failed consumption.
+	// If we don't close the writer, then we have a goroutines and memory leak.
+	defer func() {
+		writerCloseErrs := writer.Close()
+
+		// Return writer close errors only if there was not already a returned error set (we don't want to overwrite it).
+		if len(writerCloseErrs) > 0 && returnErr == nil {
+			returnErr = multierror.New(writerCloseErrs...).Err()
+		}
+	}()
+
 	for r := range recordsChannel {
 		if r.err != nil {
 			level.Error(spanlogger.FromContext(ctx, c.logger)).Log("msg", "failed to parse write request; skipping", "err", r.err)
@@ -137,9 +150,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) error {
 	}
 
 	cancel(cancellation.NewErrorf("done unmarshalling records"))
-
-	// We need to tell the storage writer that we're done and no more records are coming.
-	return multierror.New(writer.Close()...).Err()
+	return nil
 }
 
 func (c pusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCloser {
@@ -239,14 +250,14 @@ type parallelStoragePusher struct {
 }
 
 // newParallelStoragePusher creates a new parallelStoragePusher instance.
-func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, sampleRate int64, maxShards int, batchSize int, queueCapacity int, bytesPerSample int, targetFlushes int, logger log.Logger) *parallelStoragePusher {
+func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, loggerSampleRate int64, maxShards int, batchSize int, queueCapacity int, bytesPerSample int, targetFlushes int, logger log.Logger) *parallelStoragePusher {
 	return &parallelStoragePusher{
 		logger:         log.With(logger, "component", "parallel-storage-pusher"),
 		pushers:        make(map[string]PusherCloser),
 		upstreamPusher: pusher,
 		maxShards:      maxShards,
 		bytesPerTenant: bytesPerTenant,
-		errorHandler:   newPushErrorHandler(metrics, util_log.NewSampler(sampleRate), logger),
+		errorHandler:   newPushErrorHandler(metrics, util_log.NewSampler(loggerSampleRate), logger),
 		batchSize:      batchSize,
 		queueCapacity:  queueCapacity,
 		bytesPerSample: bytesPerSample,
@@ -433,6 +444,7 @@ func (p *parallelStorageShards) run(queue *batchingQueue) {
 	defer p.wg.Done()
 	defer queue.Done()
 
+	// By design of the queue, we must drain the queue, otherwise a deadlock could happen.
 	for wr := range queue.Channel() {
 		p.metrics.batchAge.Observe(time.Since(wr.startedAt).Seconds())
 		p.metrics.timeSeriesPerFlush.Observe(float64(len(wr.WriteRequest.Timeseries)))
@@ -444,7 +456,7 @@ func (p *parallelStorageShards) run(queue *batchingQueue) {
 		// If it is, we need to stop processing as the batch will be retried. When is not (client error), it'll log it, and we can continue processing.
 		p.metrics.processingTime.WithLabelValues(requestContents(wr.WriteRequest)).Observe(time.Since(processingStart).Seconds())
 		if p.errorHandler.IsServerError(wr.Context, err) {
-			queue.ErrorChannel() <- err
+			queue.ReportError(err)
 		}
 	}
 }
@@ -532,12 +544,23 @@ func (p *pushErrorHandler) shouldLogClientError(ctx context.Context, err error) 
 
 // batchingQueue is a queue that batches the incoming time series according to the batch size.
 // Once the batch size is reached, the batch is pushed to a channel which can be accessed through the Channel() method.
+//
+// Contract:
+// - The queue must always be drained by the consumer.
 type batchingQueue struct {
 	metrics *batchingQueueMetrics
 
-	ch    chan flushableWriteRequest
-	errCh chan error
-	done  chan struct{}
+	ch chan flushableWriteRequest
+
+	// errs is the list of errors reported by the queue consumer. We don't use a buffered channel
+	// so that we don't have to reason about the required capacity to avoid any deadlock between
+	// producer (that collect errors) and consumer (that can report errors). The concurrency around
+	// this queue is tricky.
+	errs   multierror.MultiError
+	errsMx sync.Mutex
+
+	// done channel gets closed once there's no more data that will be enqueued.
+	done chan struct{}
 
 	currentBatch flushableWriteRequest
 	batchSize    int
@@ -548,7 +571,6 @@ func newBatchingQueue(capacity int, batchSize int, metrics *batchingQueueMetrics
 	return &batchingQueue{
 		metrics:      metrics,
 		ch:           make(chan flushableWriteRequest, capacity),
-		errCh:        make(chan error, capacity+1), // We check errs before pushing to the channel, so we need to have a buffer of at least capacity+1 so that the consumer can push all of its errors and not rely on the producer to unblock it.
 		done:         make(chan struct{}),
 		currentBatch: flushableWriteRequest{WriteRequest: &mimirpb.WriteRequest{Timeseries: mimirpb.PreallocTimeseriesSliceFromPool()}},
 		batchSize:    batchSize,
@@ -594,7 +616,6 @@ func (q *batchingQueue) Close() error {
 	<-q.done
 
 	errs = append(errs, q.collectErrors()...)
-	close(q.errCh)
 	return errs.Err()
 }
 
@@ -603,12 +624,18 @@ func (q *batchingQueue) Channel() <-chan flushableWriteRequest {
 	return q.ch
 }
 
-// ErrorChannel returns the channel where errors are pushed.
-func (q *batchingQueue) ErrorChannel() chan<- error {
-	return q.errCh
+// ReportError reports an error occurred processing a flushableWriteRequest consumed from the queue.
+func (q *batchingQueue) ReportError(err error) {
+	if err == nil {
+		return
+	}
+
+	q.errsMx.Lock()
+	q.errs.Add(err)
+	q.errsMx.Unlock()
 }
 
-// Done signals the queue that there is no more data coming for both the channel and the error channel.
+// Done signals the queue that there is no more data coming for the channel, and no more error reported via ReportError().
 // It is necessary to ensure we don't close the channel before all the data is flushed.
 func (q *batchingQueue) Done() {
 	close(q.done)
@@ -622,13 +649,15 @@ func (q *batchingQueue) pushIfFull() error {
 }
 
 // push pushes the current batch to the channel and resets the current batch.
-// It also collects any errors that might have occurred while pushing the batch.
+// It also collects any errors that might have occurred while processing any previous batch.
 func (q *batchingQueue) push() error {
 	errs := q.collectErrors()
 
 	q.metrics.flushErrorsTotal.Add(float64(len(errs)))
 	q.metrics.flushTotal.Inc()
 
+	// By design, we expect the queue to always be drained by whoever uses it. So we don't worry
+	// whether this call could block *forever*. If it does, then it's a bug.
 	q.ch <- q.currentBatch
 	q.resetCurrentBatch()
 
@@ -643,14 +672,14 @@ func (q *batchingQueue) resetCurrentBatch() {
 }
 
 func (q *batchingQueue) collectErrors() multierror.MultiError {
-	var errs multierror.MultiError
+	var returnErrs multierror.MultiError
 
-	for {
-		select {
-		case err := <-q.errCh:
-			errs.Add(err)
-		default:
-			return errs
-		}
+	q.errsMx.Lock()
+	if len(q.errs) > 0 {
+		returnErrs = q.errs
+		q.errs = multierror.MultiError{}
 	}
+	q.errsMx.Unlock()
+
+	return returnErrs
 }
