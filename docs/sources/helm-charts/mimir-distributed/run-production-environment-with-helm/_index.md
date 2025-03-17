@@ -10,7 +10,7 @@ weight: 40
 
 # Run Grafana Mimir in production using the Helm chart
 
-In addition to the guide [Get started with Grafana Mimir using the Helm chart]({{< relref "../get-started-helm-charts" >}}),
+In addition to the guide [Get started with Grafana Mimir using the Helm chart](../get-started-helm-charts/),
 which covers setting up Grafana Mimir on a local Kubernetes cluster or
 within a low-risk development environment, you can prepare Grafana Mimir
 for production.
@@ -154,7 +154,7 @@ store_gateway:
 ### Existing installations
 
 If you are upgrading from a previous `mimir-distributed` Helm chart version
-to v4.0, then refer to the [migration guide]({{< relref "../migration-guides/migrate-from-single-zone-with-helm" >}}) to configure
+to v4.0, then refer to the [migration guide](../migration-guides/migrate-from-single-zone-with-helm/) to configure
 zone-aware replication.
 
 ## Configure Mimir to use object storage
@@ -295,7 +295,7 @@ If you need redundancy on the write path before it reaches Mimir, then you
 can set up redundant instances of Prometheus or Grafana Alloy to
 write metrics to Mimir.
 
-For more information, see [Configure high-availability deduplication with Consul]({{< relref "./configure-helm-ha-deduplication-consul" >}}).
+For more information, see [Configure high-availability deduplication with Consul](configure-helm-ha-deduplication-consul/).
 
 ## Deploy on OpenShift
 
