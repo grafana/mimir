@@ -39,10 +39,11 @@ import (
 
 const (
 	// StatusClientClosedRequest is the status code for when a client request cancellation of an http request
-	StatusClientClosedRequest = 499
-	ServiceTimingHeaderName   = "Server-Timing"
-	cacheControlHeader        = "Cache-Control"
-	cacheControlLogField      = "header_cache_control"
+	StatusClientClosedRequest    = 499
+	ServiceTimingHeaderName      = "Server-Timing"
+	cacheControlHeader           = "Cache-Control"
+	cacheControlLogField         = "header_cache_control"
+	responseQueryStatsHeaderName = "X-Mimir-Response-Query-Stats"
 )
 
 var (
@@ -177,7 +178,8 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Initialise the queryDetails in the context and make sure it's propagated
 	// down the request chain.
-	if f.cfg.QueryStatsEnabled {
+	queryStatsHeaderNameOk, _ := strconv.ParseBool(r.Header.Get(responseQueryStatsHeaderName))
+	if f.cfg.QueryStatsEnabled || queryStatsHeaderNameOk {
 		var ctx context.Context
 		queryDetails, ctx = querymiddleware.ContextWithEmptyDetails(r.Context())
 		r = r.WithContext(ctx)
@@ -244,10 +246,6 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hs[h] = vs
 	}
 
-	if f.cfg.QueryStatsEnabled {
-		writeServiceTimingHeader(queryResponseTime, hs, queryDetails.QuerierStats)
-	}
-
 	w.WriteHeader(resp.StatusCode)
 	// we don't check for copy error as there is no much we can do at this point
 	queryResponseSize, _ := io.Copy(w, resp.Body)
@@ -257,6 +255,17 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if f.cfg.QueryStatsEnabled {
 		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, nil)
+	}
+
+	var parts []string
+	if f.cfg.QueryStatsEnabled {
+		parts = getQueryStats(queryResponseTime, queryDetails)
+	}
+	if queryStatsHeaderNameOk {
+		parts = append(parts, getResponseQueryStats(queryResponseTime, queryResponseSize, queryDetails)...)
+	}
+	if len(parts) > 0 {
+		hs.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
 	}
 }
 
@@ -481,26 +490,56 @@ func writeError(w http.ResponseWriter, err error) int {
 	return statusCode
 }
 
-func writeServiceTimingHeader(queryResponseTime time.Duration, headers http.Header, stats *querier_stats.Stats) {
-	if stats != nil {
-		parts := make([]string, 0)
-		parts = append(parts, statsValue("querier_wall_time", stats.LoadWallTime()))
-		parts = append(parts, statsValue("response_time", queryResponseTime))
-		parts = append(parts, statsValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes()))
-		parts = append(parts, statsValue("samples_processed", stats.GetSamplesProcessed()))
-		headers.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
+func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.QueryDetails) []string {
+	if details == nil {
+		return nil
+	}
+	stats := details.QuerierStats
+	return []string{
+		statsValue("querier_wall_time", stats.LoadWallTime()),
+		statsValue("response_time", queryResponseTime),
+		statsValue("bytes_processed", stats.LoadFetchedChunkBytes()+stats.LoadFetchedIndexBytes()),
+		statsValue("samples_processed", stats.GetSamplesProcessed()),
+	}
+}
+
+// getResponseQueryStats returns the response query stats in the format of Server-Timing header.
+func getResponseQueryStats(queryResponseTime time.Duration, queryResponseSizeBytes int64, details *querymiddleware.QueryDetails) []string {
+	if details == nil {
+		return nil
+	}
+	stats := details.QuerierStats
+	return []string{
+		statsValue("encode", stats.LoadEncodeTime()),
+		statsValueWithKey("series_count", "c", stats.LoadEstimatedSeriesCount()),
+		statsValueWithKey("chunk_bytes", "c", stats.LoadFetchedChunkBytes()),
+		statsValueWithKey("chunks_count", "c", stats.LoadFetchedChunks()),
+		statsValueWithKey("index_bytes", "c", stats.LoadFetchedIndexBytes()),
+		statsValueWithKey("series_fetched", "c", stats.LoadFetchedSeries()),
+		statsValueWithKey("wall_time", "c", stats.LoadWallTime()),
+		statsValue("queue", stats.LoadQueueTime()),
+		statsValueWithKey("response_size", "c", queryResponseSizeBytes),
+		statsValue("response_time", queryResponseTime),
+		statsValueWithKey("cache_hit", "c", details.ResultsCacheHitBytes),
+		statsValueWithKey("cache_miss", "c", details.ResultsCacheMissBytes),
+		statsValueWithKey("sharded", "c", stats.LoadShardedQueries()),
+		statsValueWithKey("split", "c", stats.LoadSplitQueries()),
 	}
 }
 
 func statsValue(name string, val interface{}) string {
+	return statsValueWithKey(name, "val", val)
+}
+
+func statsValueWithKey(name string, key string, val interface{}) string {
 	switch v := val.(type) {
 	case time.Duration:
 		durationInMs := strconv.FormatFloat(float64(v)/float64(time.Millisecond), 'f', -1, 64)
-		return name + ";dur=" + durationInMs
+		return fmt.Sprintf("%s;dur=%s", name, durationInMs)
 	case uint64:
-		return name + ";val=" + strconv.FormatUint(v, 10)
+		return fmt.Sprintf("%s;%s=%s", name, key, strconv.FormatUint(v, 10))
 	default:
-		return name + ";val=" + fmt.Sprintf("%v", v)
+		return fmt.Sprintf("%s;%s=%v", name, key, val)
 	}
 }
 
