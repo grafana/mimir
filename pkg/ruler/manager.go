@@ -300,6 +300,7 @@ func (r *DefaultMultiTenantManager) getOrCreateNotifier(userID string) (*notifie
 		QueueCapacity:   r.cfg.NotificationQueueCapacity,
 		DrainOnShutdown: true,
 		Registerer:      reg,
+		MaxBatchSize:    r.cfg.NotificationBatchSize,
 		Do: func(ctx context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
 			// Note: The passed-in context comes from the Prometheus notifier
 			// and does *not* contain the userID. So it needs to be added to the context

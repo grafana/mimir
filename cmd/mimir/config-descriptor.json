@@ -13052,6 +13052,17 @@
           "fieldCategory": "advanced"
         },
         {
+          "kind": "field",
+          "name": "notification_batch_size",
+          "required": false,
+          "desc": "Maximum number of notifications to send in a single request to the Alertmanager.",
+          "fieldValue": null,
+          "fieldDefaultValue": 64,
+          "fieldFlag": "ruler.notification-batch-size",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
           "kind": "block",
           "name": "alertmanager_client",
           "required": false,

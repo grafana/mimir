@@ -113,6 +113,8 @@ type Config struct {
 	NotificationQueueCapacity int `yaml:"notification_queue_capacity" category:"advanced"`
 	// HTTP timeout duration when sending notifications to the Alertmanager.
 	NotificationTimeout time.Duration `yaml:"notification_timeout" category:"advanced"`
+	// NotificationBatchSize determines how many notifications to send in a single request to the Alertmanager.
+	NotificationBatchSize int `yaml:"notification_batch_size" category:"experimental"`
 	// Client configs for interacting with the Alertmanager
 	Notifier NotifierConfig `yaml:"alertmanager_client"`
 
@@ -188,6 +190,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.AlertmanagerRefreshInterval, "ruler.alertmanager-refresh-interval", 1*time.Minute, "How long to wait between refreshing DNS resolutions of Alertmanager hosts.")
 	f.IntVar(&cfg.NotificationQueueCapacity, "ruler.notification-queue-capacity", 10000, "Capacity of the queue for notifications to be sent to the Alertmanager.")
 	f.DurationVar(&cfg.NotificationTimeout, "ruler.notification-timeout", 10*time.Second, "HTTP timeout duration when sending notifications to the Alertmanager.")
+	f.IntVar(&cfg.NotificationBatchSize, "ruler.notification-batch-size", 64, "Maximum number of notifications to send in a single request to the Alertmanager.")
 
 	f.StringVar(&cfg.RulePath, "ruler.rule-path", "./data-ruler/", "Directory to store temporary rule files loaded by the Prometheus rule managers. This directory is not required to be persisted between restarts.")
 	f.BoolVar(&cfg.EnableAPI, "ruler.enable-api", true, "Enable the ruler config API.")

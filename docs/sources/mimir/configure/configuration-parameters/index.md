@@ -2053,6 +2053,11 @@ The `ruler` block configures the ruler.
 # CLI flag: -ruler.notification-timeout
 [notification_timeout: <duration> | default = 10s]
 
+# (experimental) Maximum number of notifications to send in a single request to
+# the Alertmanager.
+# CLI flag: -ruler.notification-batch-size
+[notification_batch_size: <int> | default = 64]
+
 alertmanager_client:
   # (advanced) Enable TLS for gRPC client connecting to alertmanager.
   # CLI flag: -ruler.alertmanager-client.tls-enabled
