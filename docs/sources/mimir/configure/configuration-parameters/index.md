@@ -1839,7 +1839,7 @@ results_cache:
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]
 
-# (experimental) Cache non-transient errors from queries.
+# Cache non-transient errors from queries.
 # CLI flag: -query-frontend.cache-errors
 [cache_errors: <boolean> | default = false]
 
@@ -3749,7 +3749,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.results-cache-ttl-for-labels-query
 [results_cache_ttl_for_labels_query: <duration> | default = 0s]
 
-# (experimental) Time to live duration for cached non-transient errors
+# Time to live duration for cached non-transient errors
 # CLI flag: -query-frontend.results-cache-ttl-for-errors
 [results_cache_ttl_for_errors: <duration> | default = 5m]
 
