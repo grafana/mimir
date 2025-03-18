@@ -192,12 +192,7 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 		nv := c.activeSeries.Dec()
 		if nativeHistogramBucketNum >= 0 && c.nativeHistograms.Load() > 0 {
 			c.nativeHistograms.Dec()
-			// when native histogram counter is 0 or bucket counter value would go negative, we should reset the bucket counter
-			if c.nativeHistograms.Load() == 0 || c.nativeHistogramBuckets.Load() < int64(nativeHistogramBucketNum) {
-				c.nativeHistogramBuckets.Store(0)
-			} else {
-				c.nativeHistogramBuckets.Sub(int64(nativeHistogramBucketNum))
-			}
+			c.nativeHistogramBuckets.Sub(int64(nativeHistogramBucketNum))
 		}
 		if nv > 0 {
 			at.observedMtx.RUnlock()
@@ -222,12 +217,7 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 		at.overflowCounter.activeSeries.Dec()
 		if nativeHistogramBucketNum >= 0 && at.overflowCounter.nativeHistograms.Load() > 0 {
 			at.overflowCounter.nativeHistograms.Dec()
-			// when native histogram counter is 0 or bucket counter value would go negative, we should reset the bucket counter
-			if c.nativeHistograms.Load() == 0 || at.overflowCounter.nativeHistogramBuckets.Load() < int64(nativeHistogramBucketNum) {
-				at.overflowCounter.nativeHistogramBuckets.Store(0)
-			} else {
-				at.overflowCounter.nativeHistogramBuckets.Sub(int64(nativeHistogramBucketNum))
-			}
+			at.overflowCounter.nativeHistogramBuckets.Sub(int64(nativeHistogramBucketNum))
 		}
 		return
 	}
