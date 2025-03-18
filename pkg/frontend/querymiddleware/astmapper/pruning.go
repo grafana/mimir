@@ -4,8 +4,6 @@ package astmapper
 
 import (
 	"context"
-	"math"
-	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -33,185 +31,93 @@ func (pruner *queryPruner) MapExpr(expr parser.Expr) (mapped parser.Expr, finish
 		return nil, false, err
 	}
 
-	switch e := expr.(type) {
-	case *parser.ParenExpr:
-		mapped, finished, err = pruner.MapExpr(e.Expr)
-		if err != nil {
-			return e, false, err
-		}
-		return &parser.ParenExpr{Expr: mapped, PosRange: e.PosRange}, finished, nil
-	case *parser.BinaryExpr:
-		return pruner.pruneBinOp(e)
-	default:
-		return e, false, nil
-	}
-}
-
-func (pruner *queryPruner) pruneBinOp(expr *parser.BinaryExpr) (mapped parser.Expr, finished bool, err error) {
-	switch expr.Op {
-	case parser.MUL:
-		return pruner.handleMultiplyOp(expr), false, nil
-	case parser.GTR, parser.LSS:
-		return pruner.handleCompOp(expr), false, nil
-	case parser.LOR:
-		return pruner.handleOrOp(expr), false, nil
-	case parser.LAND:
-		return pruner.handleAndOp(expr), false, nil
-	case parser.LUNLESS:
-		return pruner.handleUnlessOp(expr), false, nil
-	default:
+	e, ok := expr.(*parser.BinaryExpr)
+	if !ok {
 		return expr, false, nil
 	}
+
+	if e.Op != parser.LAND || e.VectorMatching == nil ||
+		!e.VectorMatching.On || len(e.VectorMatching.MatchingLabels) != 0 {
+		// Return if not "<lhs> and on() <rhs>"
+		return expr, false, nil
+	}
+
+	isConst, isEmpty := pruner.isConst(e.RHS)
+	if !isConst {
+		return expr, false, nil
+	}
+	if isEmpty {
+		// The right hand side is empty, so the whole expression is empty due to
+		// "and on()", return the right hand side.
+		return e.RHS, false, nil
+	}
+	// The right hand side is const and not empty, so the whole expression is
+	// just the left side.
+	return e.LHS, false, nil
 }
 
-// The bool signifies if the number evaluates to infinity, and if it does
-// we return the infinity of the correct sign.
-func calcInf(isPositive bool, num string) (*parser.NumberLiteral, bool) {
-	coeff, err := strconv.Atoi(num)
-	if err != nil || coeff == 0 {
-		return nil, false
-	}
-	switch {
-	case isPositive && coeff > 0:
-		return &parser.NumberLiteral{Val: math.Inf(1)}, true
-	case isPositive && coeff < 0:
-		return &parser.NumberLiteral{Val: math.Inf(-1)}, true
-	case !isPositive && coeff > 0:
-		return &parser.NumberLiteral{Val: math.Inf(-1)}, true
-	case !isPositive && coeff < 0:
-		return &parser.NumberLiteral{Val: math.Inf(1)}, true
-	default:
-		return nil, false
-	}
-}
-
-func (pruner *queryPruner) handleMultiplyOp(expr *parser.BinaryExpr) parser.Expr {
-	isInfR, signR := pruner.isInfinite(expr.RHS)
-	if isInfR {
-		newExpr, ok := calcInf(signR, expr.LHS.String())
-		if ok {
-			return newExpr
-		}
-	}
-	isInfL, signL := pruner.isInfinite(expr.LHS)
-	if isInfL {
-		newExpr, ok := calcInf(signL, expr.RHS.String())
-		if ok {
-			return newExpr
-		}
-	}
-	return expr
-}
-
-func (pruner *queryPruner) handleCompOp(expr *parser.BinaryExpr) parser.Expr {
-	var refNeg, refPos parser.Expr
-	switch expr.Op {
-	case parser.LSS:
-		refNeg = expr.RHS
-		refPos = expr.LHS
-	case parser.GTR:
-		refNeg = expr.LHS
-		refPos = expr.RHS
-	default:
-		return expr
-	}
-
-	// foo < -Inf or -Inf > foo => vector(0) < -Inf
-	isInf, sign := pruner.isInfinite(refNeg)
-	if isInf && !sign {
-		return &parser.BinaryExpr{
-			LHS: &parser.Call{
-				Func: parser.Functions["vector"],
-				Args: []parser.Expr{&parser.NumberLiteral{Val: 0}},
-			},
-			Op:         parser.LSS,
-			RHS:        &parser.NumberLiteral{Val: math.Inf(-1)},
-			ReturnBool: false,
-		}
-	}
-
-	// foo > +Inf or +Inf < foo => vector(0) > +Inf => vector(0) < -Inf
-	isInf, sign = pruner.isInfinite(refPos)
-	if isInf && sign {
-		return &parser.BinaryExpr{
-			LHS: &parser.Call{
-				Func: parser.Functions["vector"],
-				Args: []parser.Expr{&parser.NumberLiteral{Val: 0}},
-			},
-			Op:         parser.LSS,
-			RHS:        &parser.NumberLiteral{Val: math.Inf(-1)},
-			ReturnBool: false,
-		}
-	}
-
-	return expr
-}
-
-// 1st bool is true if the number is infinite.
-// 2nd bool is true if the number is positive infinity.
-func (pruner *queryPruner) isInfinite(expr parser.Expr) (bool, bool) {
-	mapped, _, err := pruner.MapExpr(expr)
-	if err == nil {
-		expr = mapped
-	}
+func (pruner *queryPruner) isConst(expr parser.Expr) (isConst, isEmpty bool) {
+	var lhs, rhs parser.Expr
 	switch e := expr.(type) {
 	case *parser.ParenExpr:
-		return pruner.isInfinite(e.Expr)
+		return pruner.isConst(e.Expr)
+	case *parser.BinaryExpr:
+		if e.Op != parser.EQLC || e.ReturnBool {
+			return false, false
+		}
+		lhs = e.LHS
+		rhs = e.RHS
+	default:
+		return false, false
+	}
+
+	if vectorAndNumber, equals := pruner.isVectorAndNumberEqual(lhs, rhs); vectorAndNumber {
+		return true, !equals
+	}
+	if vectorAndNumber, equals := pruner.isVectorAndNumberEqual(rhs, lhs); vectorAndNumber {
+		return true, !equals
+	}
+	return false, false
+}
+
+// isVectorAndNumberEqual returns whether the lhs is a const vector like
+// "vector(5)"" and the right hand size is a number like "2". Also returns
+// if the values are equal.
+func (pruner *queryPruner) isVectorAndNumberEqual(lhs, rhs parser.Expr) (bool, bool) {
+	lIsVector, lValue := pruner.isConstVector(lhs)
+	if !lIsVector {
+		return false, false
+	}
+	rIsConst, rValue := pruner.isNumber(rhs)
+	if !rIsConst {
+		return false, false
+	}
+	return true, rValue == lValue
+}
+
+func (pruner *queryPruner) isConstVector(expr parser.Expr) (isVector bool, value float64) {
+	switch e := expr.(type) {
+	case *parser.ParenExpr:
+		return pruner.isConstVector(e.Expr)
+	case *parser.Call:
+		if e.Func.Name != "vector" || len(e.Args) != 1 {
+			return false, 0
+		}
+		lit, ok := e.Args[0].(*parser.NumberLiteral)
+		if !ok {
+			return false, 0
+		}
+		return true, lit.Val
+	}
+	return false, 0
+}
+
+func (pruner *queryPruner) isNumber(expr parser.Expr) (isNumber bool, value float64) {
+	switch e := expr.(type) {
+	case *parser.ParenExpr:
+		return pruner.isNumber(e.Expr)
 	case *parser.NumberLiteral:
-		if math.IsInf(e.Val, 1) {
-			return true, true
-		}
-		if math.IsInf(e.Val, -1) {
-			return true, false
-		}
-		return false, false
-	default:
-		return false, false
+		return true, e.Val
 	}
-}
-
-func (pruner *queryPruner) handleOrOp(expr *parser.BinaryExpr) parser.Expr {
-	switch {
-	case pruner.isEmpty(expr.LHS):
-		return expr.RHS
-	case pruner.isEmpty(expr.RHS):
-		return expr.LHS
-	}
-	return expr
-}
-
-func (pruner *queryPruner) handleAndOp(expr *parser.BinaryExpr) parser.Expr {
-	switch {
-	case pruner.isEmpty(expr.LHS):
-		return expr.LHS
-	case pruner.isEmpty(expr.RHS):
-		return expr.RHS
-	}
-	return expr
-}
-
-func (pruner *queryPruner) handleUnlessOp(expr *parser.BinaryExpr) parser.Expr {
-	switch {
-	case pruner.isEmpty(expr.LHS):
-		return expr.LHS
-	case pruner.isEmpty(expr.RHS):
-		return expr.LHS
-	}
-	return expr
-}
-
-func (pruner *queryPruner) isEmpty(expr parser.Expr) bool {
-	mapped, _, err := pruner.MapExpr(expr)
-	if err == nil {
-		expr = mapped
-	}
-	switch e := expr.(type) {
-	case *parser.ParenExpr:
-		return pruner.isEmpty(e.Expr)
-	default:
-		if e.String() == `vector(0) < -Inf` {
-			return true
-		}
-		return false
-	}
+	return false, 0
 }

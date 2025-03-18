@@ -8,6 +8,7 @@ package client
 import (
 	"flag"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/zstd"
 )
@@ -34,13 +36,13 @@ type closableHealthAndIngesterClient struct {
 }
 
 // MakeIngesterClient makes a new IngesterClient
-func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics) (HealthAndIngesterClient, error) {
+func MakeIngesterClient(inst ring.InstanceDesc, cfg Config, metrics *Metrics, logger log.Logger) (HealthAndIngesterClient, error) {
 	reportGRPCStatusesOptions := []middleware.InstrumentationOption{middleware.ReportGRPCStatusOption}
 	unary, stream := grpcclient.Instrument(metrics.requestDuration, reportGRPCStatusesOptions...)
 	unary = append(unary, querierapi.ReadConsistencyClientUnaryInterceptor)
 	stream = append(stream, querierapi.ReadConsistencyClientStreamInterceptor)
 
-	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream)
+	dialOpts, err := cfg.GRPCClientConfig.DialOption(unary, stream, util.NewInvalidClusterValidationReporter(cfg.GRPCClientConfig.ClusterValidation.Label, metrics.invalidClusterVerificationLabels, logger))
 	if err != nil {
 		return nil, err
 	}
@@ -72,8 +74,12 @@ type Config struct {
 
 // RegisterFlags registers configuration settings used by the ingester client config.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix("ingester.client", f)
+}
+
+func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name, zstd.Name}
-	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("ingester.client", f)
+	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix, f)
 }
 
 func (cfg *Config) Validate() error {

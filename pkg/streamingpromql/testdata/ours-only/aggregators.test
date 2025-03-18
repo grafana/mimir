@@ -1,27 +1,25 @@
-# This test can be moved back into `ours` once https://github.com/prometheus/prometheus/pull/14941 is merged.
+# SPDX-License-Identifier: AGPL-3.0-only
 
-load 1m
-	series{label="a", group="a"} 1 2 3 4   5 -50
-	series{label="b", group="a"} 9 8 7 -10 _ 2
-	series{label="c", group="b"} 1 2   3 4  5   -50
-	series{label="d", group="b"} 1 NaN _ 40 NaN 0
-	series{label="e", group="c"} 1    2 3 4 5   -50
-	series{label="f", group="c"} -inf 3 0 9 inf 10
-	series{label="g", group="d"} NaN 3 0 9 NaN 10
-	series{label="h", group="e"} -inf 3 0 9 inf 10
+# This case currently fails with Prometheus' engine due to https://github.com/prometheus/prometheus/issues/15971.
+load 6m
+  series{env="prod", instance="1"} 1 4 9  20 _ _
+  series{env="prod", instance="2"} 2 3 10 _  _ 1
+  series{env="prod", instance="3"} 0 0 8  _  _ _
+  param                            1 3 2  1  1 1
 
-eval range from 0 to 6m step 1m stddev by (group) (series)
-  {group="a"} 4 3 2 7 7.5 26 26
-  {group="b"} 0 NaN NaN 18 NaN 25 25
-  {group="c"} NaN 0.5 1.5 2.5 NaN 30 30
-  {group="d"} NaN 0 0 0 NaN 0 0
-  {group="e"} NaN 0 0 0 NaN 0 0
-
-eval range from 0 to 6m step 1m stdvar by (group) (series)
-  {group="a"} 16 9 4 49 56.25 676 676
-  {group="b"} 0 NaN NaN 324 NaN 625 625
-  {group="c"} NaN 0.25 2.25 6.25 NaN 900 900
-  {group="d"} NaN 0 0 0 NaN 0 0
-  {group="e"} NaN 0 0 0 NaN 0 0
+eval range from 0 to 30m step 6m topk(scalar(param), series)
+  series{env="prod", instance="1"} _ 4 9  20 _ _
+  series{env="prod", instance="2"} 2 3 10 _  _ 1
+  series{env="prod", instance="3"} _ 0 _  _  _ _
 
 clear
+
+# This case currently fails with Prometheus' engine due to https://github.com/prometheus/prometheus/issues/15971.
+load 6m
+  series{env="prod", instance="1"} 1   4   9   20  _   _   _ _
+  series{env="prod", instance="2"} 2   3   10  _   _   1   _ _
+  series{env="prod", instance="3"} 0   0   8   _   _   _   _ _
+  param                            0.5 0.1 0.9 0.1 0.2 0.3 _ Inf
+
+eval_warn range from 0 to 42m step 6m quantile(scalar(param), series)
+  {} 1 0.6000000000000001 9.799999999999999 20 _ 1 _ _

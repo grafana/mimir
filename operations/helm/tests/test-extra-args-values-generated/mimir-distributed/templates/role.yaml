@@ -1,0 +1,16 @@
+---
+# Source: mimir-distributed/templates/role.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: test-extra-args-values-mimir
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-extra-args-values
+    app.kubernetes.io/managed-by: Helm
+  namespace: "citestns"
+rules:
+- apiGroups:      ['extensions']
+  resources:      ['podsecuritypolicies']
+  verbs:          ['use']
+  resourceNames:  [test-extra-args-values-mimir]

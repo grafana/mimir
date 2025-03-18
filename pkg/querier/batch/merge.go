@@ -50,7 +50,7 @@ func newMergeIterator(it iterator, cs []GenericChunk) *mergeIterator {
 		c.batches = newBatchStream(len(c.its), &c.hPool, &c.fhPool)
 	}
 	for i, cs := range css {
-		c.its[i] = newNonOverlappingIterator(c.its[i], cs, &c.hPool, &c.fhPool)
+		c.its[i] = newNonOverlappingIterator(c.its[i], i, cs, &c.hPool, &c.fhPool)
 	}
 
 	for _, iter := range c.its {
@@ -138,7 +138,7 @@ func (c *mergeIterator) buildNextBatch(size int) chunkenc.ValueType {
 	// is before all iterators next entry.
 	for len(c.h) > 0 && (c.batches.len() == 0 || c.nextBatchEndTime() >= c.h[0].AtTime()) {
 		batch := c.h[0].Batch()
-		c.batches.merge(&batch, size)
+		c.batches.merge(&batch, size, c.h[0].id)
 
 		if c.h[0].Next(size) != chunkenc.ValNone {
 			heap.Fix(&c.h, 0)
@@ -165,7 +165,7 @@ func (c *mergeIterator) Err() error {
 	return c.currErr
 }
 
-type iteratorHeap []iterator
+type iteratorHeap []*nonOverlappingIterator
 
 func (h *iteratorHeap) Len() int      { return len(*h) }
 func (h *iteratorHeap) Swap(i, j int) { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
@@ -177,7 +177,7 @@ func (h *iteratorHeap) Less(i, j int) bool {
 }
 
 func (h *iteratorHeap) Push(x interface{}) {
-	*h = append(*h, x.(iterator))
+	*h = append(*h, x.(*nonOverlappingIterator))
 }
 
 func (h *iteratorHeap) Pop() interface{} {

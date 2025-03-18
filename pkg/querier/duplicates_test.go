@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -94,7 +94,7 @@ func runPromQLAndGetJSONResult(t *testing.T, query string, ts mimirpb.TimeSeries
 	tq := &testQueryable{ts: newTimeSeriesSeriesSet([]mimirpb.TimeSeries{ts})}
 
 	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:     log.NewNopLogger(),
+		Logger:     promslog.NewNopLogger(),
 		Timeout:    10 * time.Second,
 		MaxSamples: 1e6,
 	})

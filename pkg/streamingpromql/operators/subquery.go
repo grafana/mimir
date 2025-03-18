@@ -6,6 +6,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
@@ -69,8 +70,23 @@ func (s *Subquery) NextSeries(ctx context.Context) error {
 	}
 
 	s.nextStepT = s.ParentQueryTimeRange.StartT
-	s.floats.Use(data.Floats)
-	s.histograms.Use(data.Histograms)
+
+	if err := s.floats.Use(data.Floats); err != nil {
+		return err
+	}
+
+	// Clear counter reset information to avoid under- or over-counting resets.
+	// See https://github.com/prometheus/prometheus/pull/15987 for more explanation.
+	for _, p := range data.Histograms {
+		if p.H.CounterResetHint == histogram.NotCounterReset || p.H.CounterResetHint == histogram.CounterReset {
+			p.H.CounterResetHint = histogram.UnknownCounterReset
+		}
+	}
+
+	if err := s.histograms.Use(data.Histograms); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -91,8 +107,8 @@ func (s *Subquery) NextStepSamples() (*types.RangeVectorStepData, error) {
 	// Apply offset after adjusting for timestamp from @ modifier.
 	rangeEnd = rangeEnd - s.SubqueryOffset
 	rangeStart := rangeEnd - s.rangeMilliseconds
-	s.floats.DiscardPointsBefore(rangeStart)
-	s.histograms.DiscardPointsBefore(rangeStart)
+	s.floats.DiscardPointsAtOrBefore(rangeStart)
+	s.histograms.DiscardPointsAtOrBefore(rangeStart)
 
 	s.stepData.Floats = s.floats.ViewUntilSearchingForwards(rangeEnd, s.stepData.Floats)
 	s.stepData.Histograms = s.histograms.ViewUntilSearchingForwards(rangeEnd, s.stepData.Histograms)

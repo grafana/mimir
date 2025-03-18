@@ -51,7 +51,12 @@ func main() {
 	if *httpServer != "" {
 		go func() {
 			log.Println("HTTP server running on", *httpServer)
-			log.Println(http.ListenAndServe(*httpServer, nil))
+			server := &http.Server{
+				Addr:         *httpServer,
+				ReadTimeout:  10 * time.Second,
+				WriteTimeout: 10 * time.Second,
+			}
+			log.Println(server.ListenAndServe())
 		}()
 	}
 

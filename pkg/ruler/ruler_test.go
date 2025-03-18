@@ -7,11 +7,13 @@ package ruler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -35,15 +37,12 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/rules"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
 
@@ -137,11 +136,11 @@ type prepareOptions struct {
 	rulerAddrMap     map[string]*Ruler
 	rulerAddrAutoMap bool
 	start            bool
-	managerQueryFunc rules.QueryFunc
+	managerQueryFunc promRules.QueryFunc
 }
 
 func applyPrepareOptions(t *testing.T, instanceID string, opts ...prepareOption) prepareOptions {
-	defaultLogger := testutil.NewLogger(t)
+	defaultLogger := log.Logger(utiltest.NewTestingLogger(t))
 	defaultLogger = log.With(defaultLogger, "instance", instanceID)
 	defaultLogger = level.NewFilter(defaultLogger, level.AllowInfo())
 
@@ -200,7 +199,7 @@ func withPrometheusRegisterer(reg prometheus.Registerer) prepareOption {
 }
 
 // withManagerQueryFunc is a prepareOption that configures the query function to pass to the ruler manager.
-func withManagerQueryFunc(queryFunc rules.QueryFunc) prepareOption {
+func withManagerQueryFunc(queryFunc promRules.QueryFunc) prepareOption {
 	return func(opts *prepareOptions) {
 		opts.managerQueryFunc = queryFunc
 	}
@@ -237,7 +236,7 @@ func prepareRulerManager(t *testing.T, cfg Config, opts ...prepareOption) *Defau
 		return storage.NoopQuerier(), nil
 	})
 
-	var queryFunc rules.QueryFunc
+	var queryFunc promRules.QueryFunc
 	if options.managerQueryFunc != nil {
 		queryFunc = options.managerQueryFunc
 	} else {
@@ -1664,6 +1663,68 @@ user2:
 	require.YAMLEq(t, expectedResponseYaml, string(body))
 }
 
+func TestRuler_ListAllUsers(t *testing.T) {
+	defaultCfg := defaultRulerConfig(t)
+
+	testCases := map[string]struct {
+		cfg             Config
+		limits          RulesLimits
+		expectedTenants []string
+	}{
+		"include all tenants": {
+			cfg:             defaultCfg,
+			limits:          validation.MockDefaultOverrides(),
+			expectedTenants: []string{"user1", "user2"},
+		},
+		"include disabled tenants": {
+			cfg: func() Config {
+				// Copy default config
+				cfg := defaultCfg
+				cfg.DisabledTenants = []string{"user1"}
+				return cfg
+			}(),
+			limits:          validation.MockDefaultOverrides(),
+			expectedTenants: []string{"user1", "user2"},
+		},
+		"include tenants disabled in overrides": {
+			cfg: defaultCfg,
+			limits: validation.MockOverrides(func(_ *validation.Limits, tenantLimits map[string]*validation.Limits) {
+				const userID = "user1"
+				tenantLimits[userID] = validation.MockDefaultLimits()
+				tenantLimits[userID].RulerRecordingRulesEvaluationEnabled = false
+			}),
+			expectedTenants: []string{"user1", "user2"},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			r := prepareRuler(t, tc.cfg, newMockRuleStore(mockRules), withLimits(tc.limits), withStart())
+
+			router := mux.NewRouter()
+			router.Path("/ruler/tenants").Methods(http.MethodGet).HandlerFunc(r.ListAllUsers)
+
+			req := requestFor(t, http.MethodGet, "http://localhost:8080/ruler/tenants", nil, "")
+			req.Header.Set("Accept", "application/json")
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			resp := w.Result()
+
+			// Check status code and header
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Equal(t, "application/json", resp.Header.Get("Content-Type"))
+
+			var respJSON struct {
+				Tenants []string `json:"tenants"`
+			}
+			require.NoError(t, json.NewDecoder(resp.Body).Decode(&respJSON))
+			require.ElementsMatch(t, tc.expectedTenants, respJSON.Tenants)
+		})
+	}
+}
+
 type senderFunc func(alerts ...*notifier.Alert)
 
 func (s senderFunc) Send(alerts ...*notifier.Alert) {
@@ -1940,7 +2001,7 @@ func TestFilterRuleGroupsByNotMissing(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			logger := log.NewNopLogger()
 
-			actual := filterRuleGroupsByNotMissing(testData.configs, testData.missing, logger)
+			actual := FilterRuleGroupsByNotMissing(testData.configs, testData.missing, logger)
 			assert.Equal(t, testData.expected, actual)
 		})
 	}

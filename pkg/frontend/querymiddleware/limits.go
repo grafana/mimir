@@ -7,6 +7,7 @@ package querymiddleware
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -99,8 +100,14 @@ type Limits interface {
 	// EnabledPromQLExperimentalFunctions returns the names of PromQL experimental functions allowed for the tenant.
 	EnabledPromQLExperimentalFunctions(userID string) []string
 
+	// Prom2RangeCompat returns if Prometheus 2/3 range compatibility fixes are enabled for the tenant.
+	Prom2RangeCompat(userID string) bool
+
 	// BlockedQueries returns the blocked queries.
 	BlockedQueries(userID string) []*validation.BlockedQuery
+
+	// BlockedRequests returns the blocked http requests.
+	BlockedRequests(userID string) []*validation.BlockedRequest
 
 	// AlignQueriesWithStep returns if queries should be adjusted to be step-aligned
 	AlignQueriesWithStep(userID string) bool
@@ -110,6 +117,10 @@ type Limits interface {
 
 	// IngestStorageReadConsistency returns the default read consistency for the tenant.
 	IngestStorageReadConsistency(userID string) string
+
+	// InstantQueriesWithSubquerySpinOff returns a list of regexp patterns of instant queries that can be optimized by spinning off range queries.
+	// If the list is empty, the feature is disabled.
+	InstantQueriesWithSubquerySpinOff(userID string) []string
 }
 
 type limitsMiddleware struct {
@@ -189,7 +200,6 @@ func (l limitsMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Respon
 			return nil, newMaxTotalQueryLengthError(queryLen, maxQueryLength)
 		}
 	}
-
 	return l.next.Do(ctx, r)
 }
 
@@ -241,6 +251,12 @@ func (rt limitedParallelismRoundTripper) RoundTrip(r *http.Request) (*http.Respo
 	response, err := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 			if err := sem.Acquire(ctx, 1); err != nil {
+				// Without this change, using WithTimeoutCause has no effect when calling Do on
+				// limitedParallelismRoundTripper, since that would need to return the cause as error,
+				// which is the normal behaviour except that semaphore does not do that.
+				if errors.Is(err, ctx.Err()) {
+					err = context.Cause(ctx)
+				}
 				return nil, fmt.Errorf("could not acquire work: %w", err)
 			}
 			defer sem.Release(1)

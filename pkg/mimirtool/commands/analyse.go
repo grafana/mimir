@@ -6,6 +6,7 @@
 package commands
 
 import (
+	"fmt"
 	"runtime"
 	"strconv"
 
@@ -30,8 +31,12 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 		Default("").
 		Envar(envVars.AuthToken).
 		StringVar(&paCmd.authToken)
-	prometheusAnalyzeCmd.Flag("id", "Basic auth username to use when contacting Prometheus or Grafana Mimir, also set as tenant ID; alternatively, set "+envVars.TenantID+".").
+	prometheusAnalyzeCmd.Flag("id", "Grafana Mimir tenant ID; alternatively, set "+envVars.TenantID+". Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided.").
 		Envar(envVars.TenantID).
+		Default("").
+		StringVar(&paCmd.tenantID)
+	prometheusAnalyzeCmd.Flag("user", fmt.Sprintf("Basic auth API user to use when contacting Prometheus or Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).
+		Envar(envVars.APIUser).
 		Default("").
 		StringVar(&paCmd.username)
 	prometheusAnalyzeCmd.Flag("key", "Basic auth password to use when contacting Prometheus or Grafana Mimir; alternatively, set "+envVars.APIKey+"").
@@ -81,10 +86,14 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 		Envar(envVars.Address).
 		Required().
 		StringVar(&raCmd.ClientConfig.Address)
-	rulerAnalyzeCmd.Flag("id", "Basic auth username and X-Scope-OrgID value to use when contacting Prometheus or Grafana Mimir; alternatively, set "+envVars.TenantID+".").
+	rulerAnalyzeCmd.Flag("id", "Mimir tenant id, alternatively set "+envVars.TenantID+". Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided.").
 		Envar(envVars.TenantID).
 		Default("").
 		StringVar(&raCmd.ClientConfig.ID)
+	rulerAnalyzeCmd.Flag("user", fmt.Sprintf("Basic auth username to use when contacting Prometheus or Grafana Mimir, alternatively set %s. If empty, %s will be used instead. ", envVars.APIUser, envVars.TenantID)).
+		Envar(envVars.APIUser).
+		Default("").
+		StringVar(&raCmd.ClientConfig.User)
 	rulerAnalyzeCmd.Flag("key", "Basic auth password to use when contacting Prometheus or Grafana Mimir; alternatively, set "+envVars.APIKey+".").
 		Envar(envVars.APIKey).
 		Default("").
@@ -96,6 +105,10 @@ func (cmd *AnalyzeCommand) Register(app *kingpin.Application, envVars EnvVarName
 		Default("").
 		Envar(envVars.AuthToken).
 		StringVar(&raCmd.ClientConfig.AuthToken)
+	raCmd.ClientConfig.ExtraHeaders = map[string]string{}
+	rulerAnalyzeCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").
+		Envar(envVars.ExtraHeaders).
+		StringMapVar(&raCmd.ClientConfig.ExtraHeaders)
 
 	daCmd := &DashboardAnalyzeCommand{}
 	dashboardAnalyzeCmd := analyzeCmd.Command("dashboard", "Analyze and output the metrics used in Grafana dashboard files").Action(daCmd.run)

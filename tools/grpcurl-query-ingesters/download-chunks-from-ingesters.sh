@@ -9,7 +9,8 @@ MIMIR_TENANT_ID=""
 
 SCRIPT_DIR=$(realpath "$(dirname "${0}")")
 OUTPUT_DIR="chunks-dump"
-NEXT_PORT=9010
+# Randomize port and start from higher ports, so we don't collide with random apps on your laptop.
+NEXT_PORT=$(( ((RANDOM % 49152) + 16384) ))
 
 # File used to keep track of the list of ingesters failed to be queried.
 # Reset it each time this script is called.

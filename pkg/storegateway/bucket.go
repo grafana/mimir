@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"sync"
@@ -38,21 +39,20 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
@@ -383,7 +383,7 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 	return nil
 }
 
-func (s *BucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]int64 {
+func (s *BucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]struct{} {
 	previouslyLoadedBlocks, err := indexheader.RestoreLoadedBlocks(s.dir)
 	if err != nil {
 		level.Warn(s.logger).Log(
@@ -397,7 +397,7 @@ func (s *BucketStore) tryRestoreLoadedBlocksSet() map[ulid.ULID]int64 {
 	return previouslyLoadedBlocks
 }
 
-func (s *BucketStore) loadBlocks(ctx context.Context, blocks map[ulid.ULID]int64) {
+func (s *BucketStore) loadBlocks(ctx context.Context, blocks map[ulid.ULID]struct{}) {
 	// This is not happening during a request so we can ignore the stats.
 	ignoredStats := newSafeQueryStats()
 	// We ignore the time the block was used because it can only be in the map if it was still loaded before the shutdown
@@ -1419,8 +1419,13 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label names response hints").Error())
 	}
 
+	names := util.MergeSlices(sets...)
+	if req.Limit > 0 && len(names) > int(req.Limit) {
+		names = names[:req.Limit]
+	}
+
 	return &storepb.LabelNamesResponse{
-		Names: util.MergeSlices(sets...),
+		Names: names,
 		Hints: anyHints,
 	}, nil
 }
@@ -1595,8 +1600,13 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label values response hints").Error())
 	}
 
+	values := util.MergeSlices(sets...)
+	if req.Limit > 0 && len(values) > int(req.Limit) {
+		values = values[:req.Limit]
+	}
+
 	return &storepb.LabelValuesResponse{
-		Values: util.MergeSlices(sets...),
+		Values: values,
 		Hints:  anyHints,
 	}, nil
 }

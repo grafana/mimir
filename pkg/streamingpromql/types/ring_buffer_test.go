@@ -16,10 +16,10 @@ import (
 // We want to ensure FPoint+HPoint ring buffers are tested consistently,
 // and we don't care about performance here so we can use an interface+generics.
 type ringBuffer[T any] interface {
-	DiscardPointsBefore(t int64)
+	DiscardPointsAtOrBefore(t int64)
 	Append(p T) error
 	Reset()
-	Use(s []T)
+	Use(s []T) error
 	Release()
 	ViewUntilSearchingForwardsForTesting(maxT int64) ringBufferView[T]
 	ViewUntilSearchingBackwardsForTesting(maxT int64) ringBufferView[T]
@@ -36,6 +36,7 @@ type ringBufferView[T any] interface {
 	Count() int
 	Any() bool
 	First() T
+	PointAt(i int) T
 }
 
 func TestRingBuffer(t *testing.T) {
@@ -77,7 +78,7 @@ func TestRingBuffer(t *testing.T) {
 func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 	shouldHaveNoPoints(t, buf)
 
-	buf.DiscardPointsBefore(1) // Should handle empty buffer.
+	buf.DiscardPointsAtOrBefore(0) // Should handle empty buffer.
 	shouldHaveNoPoints(t, buf)
 
 	require.NoError(t, buf.Append(points[0]))
@@ -86,16 +87,16 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 	require.NoError(t, buf.Append(points[1]))
 	shouldHavePoints(t, buf, points[:2]...)
 
-	buf.DiscardPointsBefore(1)
+	buf.DiscardPointsAtOrBefore(0)
 	shouldHavePoints(t, buf, points[:2]...) // No change.
 
-	buf.DiscardPointsBefore(2)
+	buf.DiscardPointsAtOrBefore(1)
 	shouldHavePoints(t, buf, points[1:2]...)
 
 	require.NoError(t, buf.Append(points[2]))
 	shouldHavePoints(t, buf, points[1:3]...)
 
-	buf.DiscardPointsBefore(4)
+	buf.DiscardPointsAtOrBefore(3)
 	shouldHaveNoPoints(t, buf)
 
 	require.NoError(t, buf.Append(points[3]))
@@ -120,10 +121,11 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 
 	pointsWithPowerOfTwoCapacity := make([]T, 0, 16) // Use must be passed a slice with a capacity that is equal to a power of 2.
 	pointsWithPowerOfTwoCapacity = append(pointsWithPowerOfTwoCapacity, points...)
-	buf.Use(pointsWithPowerOfTwoCapacity)
+	err := buf.Use(pointsWithPowerOfTwoCapacity)
+	require.NoError(t, err)
 	shouldHavePoints(t, buf, points...)
 
-	buf.DiscardPointsBefore(5)
+	buf.DiscardPointsAtOrBefore(4)
 	shouldHavePoints(t, buf, points[4:]...)
 
 	buf.Release()
@@ -131,8 +133,14 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 
 	subsliceWithPowerOfTwoCapacity := make([]T, 0, 8) // Use must be passed a slice with a capacity that is equal to a power of 2.
 	subsliceWithPowerOfTwoCapacity = append(subsliceWithPowerOfTwoCapacity, points[4:]...)
-	buf.Use(subsliceWithPowerOfTwoCapacity)
+	err = buf.Use(subsliceWithPowerOfTwoCapacity)
+	require.NoError(t, err)
 	shouldHavePoints(t, buf, points[4:]...)
+
+	nonPowerOfTwoSlice := make([]T, 0, 15)
+	err = buf.Use(nonPowerOfTwoSlice)
+	require.EqualError(t, err, "slice capacity must be a power of two, but is 15",
+		"Error message should indicate the invalid capacity")
 }
 
 func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
@@ -176,7 +184,7 @@ func testDiscardPointsBeforeThroughWrapAround[T any](t *testing.T, buf ringBuffe
 	// Ideally we wouldn't reach into the internals here, but this helps ensure the test is testing the correct scenario.
 	require.Len(t, buf.GetPoints(), 4, "expected underlying slice to have length 4, if this assertion fails, the test setup is not as expected")
 	require.Equal(t, 4, cap(buf.GetPoints()), "expected underlying slice to have capacity 4, if this assertion fails, the test setup is not as expected")
-	buf.DiscardPointsBefore(3)
+	buf.DiscardPointsAtOrBefore(2)
 	require.NoError(t, buf.Append(points[4]))
 	require.NoError(t, buf.Append(points[5]))
 
@@ -185,13 +193,13 @@ func testDiscardPointsBeforeThroughWrapAround[T any](t *testing.T, buf ringBuffe
 	require.Equal(t, 4, cap(buf.GetPoints()), "expected underlying slice to have capacity 4")
 
 	// Discard before end of underlying slice.
-	buf.DiscardPointsBefore(4)
+	buf.DiscardPointsAtOrBefore(3)
 	shouldHavePoints(t, buf, points[3:6]...)
 
 	require.Equal(t, 3, buf.GetFirstIndex(), "expected first point to be in middle of underlying slice, if this assertion fails, the test setup is not as expected")
 
 	// Discard after wraparound.
-	buf.DiscardPointsBefore(6)
+	buf.DiscardPointsAtOrBefore(5)
 	shouldHavePoints(t, buf, points[5])
 }
 
@@ -261,7 +269,7 @@ func TestRingBuffer_RemoveLastPoint(t *testing.T) {
 		require.Len(t, buf.GetPoints(), 4, "expected underlying slice to have length 4, if this assertion fails, the test setup is not as expected")
 		require.Equal(t, 4, cap(buf.GetPoints()), "expected underlying slice to have capacity 4, if this assertion fails, the test setup is not as expected")
 		require.Equal(t, 4, buf.size, "The size includes all points")
-		buf.DiscardPointsBefore(3)
+		buf.DiscardPointsAtOrBefore(2)
 		require.Equal(t, 2, buf.size, "The size is reduced by the removed points")
 		require.Equal(t, 2, buf.GetFirstIndex(), "the firstIndex is half way through the ring")
 
@@ -416,6 +424,11 @@ func viewShouldHavePoints[T any](t *testing.T, view ringBufferView[T], expected 
 	} else {
 		require.True(t, present)
 		require.Equal(t, expected[len(expected)-1], end)
+	}
+
+	for idx, expectedPoint := range expected {
+		actualPoint := view.PointAt(idx)
+		require.Equal(t, expectedPoint, actualPoint)
 	}
 }
 

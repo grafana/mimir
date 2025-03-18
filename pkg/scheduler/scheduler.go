@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
@@ -85,6 +86,7 @@ type Scheduler struct {
 	connectedFrontendClients prometheus.GaugeFunc
 	queueDuration            *prometheus.HistogramVec
 	inflightRequests         prometheus.Summary
+	invalidClusterValidation *prometheus.CounterVec
 }
 
 type connectedFrontend struct {
@@ -158,6 +160,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		},
 		[]string{"query_component"},
 	)
+	s.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(registerer, "query-frontend", util.GRPCProtocol)
 
 	s.requestQueue, err = queue.NewRequestQueue(
 		s.log,
@@ -508,6 +511,11 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 			QueueTimeNanos:  queueTime.Nanoseconds(),
 		})
 
+		if grpcutil.IsCanceled(err) {
+			// The querier abruptly closing the connection should be the only reason we'd get a cancellation error here.
+			err = fmt.Errorf("querier disconnected ungracefully")
+		}
+
 		if err != nil {
 			errCh <- fmt.Errorf("failed to send query to querier '%v': %w", querierID, err)
 			span.LogFields(otlog.Message("sending query to querier failed"), otlog.Error(err))
@@ -519,6 +527,12 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 		span.Finish()
 
 		_, err = querier.Recv()
+
+		if grpcutil.IsCanceled(err) {
+			// The querier abruptly closing the connection should be the only reason we'd get a cancellation error here.
+			err = fmt.Errorf("querier disconnected ungracefully")
+		}
+
 		if err != nil {
 			errCh <- fmt.Errorf("failed to receive response from querier '%v': %w", querierID, err)
 			return
@@ -548,10 +562,14 @@ func (s *Scheduler) forwardRequestToQuerier(querier schedulerpb.SchedulerForQuer
 }
 
 func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.SchedulerRequest, requestErr error) {
-	opts, err := s.cfg.GRPCClientConfig.DialOption([]grpc.UnaryClientInterceptor{
-		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
-		middleware.ClientUserHeaderInterceptor},
-		nil)
+	opts, err := s.cfg.GRPCClientConfig.DialOption(
+		[]grpc.UnaryClientInterceptor{
+			otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
+			middleware.ClientUserHeaderInterceptor,
+		},
+		nil,
+		util.NewInvalidClusterValidationReporter(s.cfg.GRPCClientConfig.ClusterValidation.Label, s.invalidClusterValidation, s.log),
+	)
 	if err != nil {
 		level.Warn(s.log).Log("msg", "failed to create gRPC options for the connection to frontend to report error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 		return

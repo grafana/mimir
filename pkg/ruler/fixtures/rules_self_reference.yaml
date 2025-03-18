@@ -1,0 +1,20 @@
+groups:
+  - name: self_reference
+    rules:
+      # Evaluated concurrently, no dependencies
+      - record: job:http_requests:rate1m
+        expr: sum by (job)(rate(http_requests_total[1m])) or last_over_time(job:http_requests:rate1m[1m]) # New value or last value
+      - record: job:http_requests:rate5m
+        expr: sum by (job)(rate(http_requests_total[5m])) or last_over_time(job:http_requests:rate5m[5m]) # New value or last value
+
+      # These rules will be grouped into batches of independent rules
+      - record: job1:http_requests:rate1m
+        expr: job:http_requests:rate1m{job="job1"}
+      - record: job1_cluster1:http_requests:rate1m
+        expr: job1:http_requests:rate1m{cluster="cluster1"}
+      - record: job1_cluster2:http_requests:rate1m
+        expr: job1:http_requests:rate1m{cluster="cluster2"}
+      - record: job1_cluster1_namespace1:http_requests:rate1m
+        expr: job1_cluster1:http_requests:rate1m{namespace="namespace1"}
+      - record: job1_cluster1_namespace2:http_requests:rate1m
+        expr: job1_cluster1:http_requests:rate1m{namespace="namespace2"}

@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"log/slog"
 	"math"
 	"slices"
 	"sort"
@@ -30,8 +31,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/cespare/xxhash/v2"
-	gokitlog "github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -54,7 +53,7 @@ const (
 	createdSuffix = "_created"
 	// maxExemplarRunes is the maximum number of UTF-8 exemplar characters
 	// according to the prometheus specification
-	// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars
+	// https://github.com/prometheus/OpenMetrics/blob/v1.0.0/specification/OpenMetrics.md#exemplars
 	maxExemplarRunes = 128
 	// Trace and Span id keys are defined as part of the spec:
 	// https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification%2Fmetrics%2Fdatamodel.md#exemplars-2
@@ -161,7 +160,10 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	// map ensures no duplicate label names.
 	l := make(map[string]string, maxLabelCount)
 	for _, label := range labels {
-		var finalKey = prometheustranslator.NormalizeLabel(label.Name)
+		finalKey := label.Name
+		if !settings.AllowUTF8 {
+			finalKey = prometheustranslator.NormalizeLabel(finalKey)
+		}
 		if existingValue, alreadyExists := l[finalKey]; alreadyExists {
 			l[finalKey] = existingValue + ";" + label.Value
 		} else {
@@ -170,7 +172,10 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 	}
 
 	for _, lbl := range promotedAttrs {
-		normalized := prometheustranslator.NormalizeLabel(lbl.Name)
+		normalized := lbl.Name
+		if !settings.AllowUTF8 {
+			normalized = prometheustranslator.NormalizeLabel(normalized)
+		}
 		if _, exists := l[normalized]; !exists {
 			l[normalized] = lbl.Value
 		}
@@ -208,7 +213,7 @@ func createAttributes(resource pcommon.Resource, attributes pcommon.Map, setting
 			log.Println("label " + name + " is overwritten. Check if Prometheus reserved labels are used.")
 		}
 		// internal labels should be maintained
-		if !(len(name) > 4 && name[:2] == "__" && name[len(name)-2:] == "__") {
+		if !settings.AllowUTF8 && !(len(name) > 4 && name[:2] == "__" && name[len(name)-2:] == "__") {
 			name = prometheustranslator.NormalizeLabel(name)
 		}
 		l[name] = extras[i+1]
@@ -247,7 +252,7 @@ func isValidAggregationTemporality(metric pmetric.Metric) bool {
 // However, work is under way to resolve this shortcoming through a feature called native histograms custom buckets:
 // https://github.com/prometheus/prometheus/issues/13485.
 func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints pmetric.HistogramDataPointSlice,
-	resource pcommon.Resource, settings Settings, baseName string, logger gokitlog.Logger) error {
+	resource pcommon.Resource, settings Settings, baseName string, logger *slog.Logger) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -339,7 +344,7 @@ func (c *MimirConverter) addHistogramDataPoints(ctx context.Context, dataPoints 
 			labels := createLabels(baseName+createdSuffix, baseLabels)
 			c.addTimeSeriesIfNeeded(labels, startTimestampMs, pt.Timestamp())
 		}
-		level.Debug(logger).Log("labels", labelsStringer(createLabels(baseName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "histogram")
+		logger.Debug("addHistogramDataPoints", "labels", labelsStringer(createLabels(baseName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "histogram")
 	}
 
 	return nil
@@ -361,9 +366,17 @@ func getPromExemplars[T exemplarType](ctx context.Context, everyN *everyNTimes, 
 		exemplarRunes := 0
 
 		promExemplar := mimirpb.Exemplar{
-			Value:       exemplar.DoubleValue(),
 			TimestampMs: timestamp.FromTime(exemplar.Timestamp().AsTime()),
 		}
+		switch exemplar.ValueType() {
+		case pmetric.ExemplarValueTypeInt:
+			promExemplar.Value = float64(exemplar.IntValue())
+		case pmetric.ExemplarValueTypeDouble:
+			promExemplar.Value = exemplar.DoubleValue()
+		default:
+			return nil, fmt.Errorf("unsupported exemplar value type: %v", exemplar.ValueType())
+		}
+
 		if traceID := exemplar.TraceID(); !traceID.IsEmpty() {
 			val := hex.EncodeToString(traceID[:])
 			exemplarRunes += utf8.RuneCountInString(traceIDKey) + utf8.RuneCountInString(val)
@@ -445,7 +458,7 @@ func mostRecentTimestampInMetric(metric pmetric.Metric) pcommon.Timestamp {
 }
 
 func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pmetric.SummaryDataPointSlice, resource pcommon.Resource,
-	settings Settings, baseName string, logger gokitlog.Logger) error {
+	settings Settings, baseName string, logger *slog.Logger) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -502,7 +515,7 @@ func (c *MimirConverter) addSummaryDataPoints(ctx context.Context, dataPoints pm
 			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
 		}
 
-		level.Debug(logger).Log("labels", labelsStringer(createLabels(baseName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "summary")
+		logger.Debug("addSummaryDataPoints", "labels", labelsStringer(createLabels(baseName, baseLabels)), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "summary")
 	}
 
 	return nil
@@ -584,9 +597,10 @@ const defaultIntervalForStartTimestamps = int64(300_000)
 // handleStartTime adds a zero sample at startTs only if startTs is within validIntervalForStartTimestamps of the sample timestamp.
 // The reason for doing this is that PRW v1 doesn't support Created Timestamps. After switching to PRW v2's direct CT support,
 // make use of its direct support fort Created Timestamps instead.
+// See https://github.com/prometheus/prometheus/issues/14600 for context.
 // See https://opentelemetry.io/docs/specs/otel/metrics/data-model/#resets-and-gaps to know more about how OTel handles
 // resets for cumulative metrics.
-func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.LabelAdapter, settings Settings, typ string, value float64, logger gokitlog.Logger) {
+func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.LabelAdapter, settings Settings, typ string, val float64, logger *slog.Logger) {
 	if !settings.EnableCreatedTimestampZeroIngestion {
 		return
 	}
@@ -608,10 +622,13 @@ func (c *MimirConverter) handleStartTime(startTs, ts int64, labels []mimirpb.Lab
 		return
 	}
 
-	level.Debug(logger).Log("msg", "adding zero value at start_ts", "type", typ, "labels", labelsStringer(labels), "start_ts", startTs, "sample_ts", ts, "sample_value", value)
+	logger.Debug("adding zero value at start_ts", "type", typ, "labels", labelsStringer(labels), "start_ts", startTs, "sample_ts", ts, "sample_value", val)
 
-	// See https://github.com/prometheus/prometheus/issues/14600 for context.
-	c.addSample(&mimirpb.Sample{TimestampMs: startTs}, labels)
+	var createdTimeValue float64
+	if settings.EnableStartTimeQuietZero {
+		createdTimeValue = math.Float64frombits(value.QuietZeroNaN)
+	}
+	c.addSample(&mimirpb.Sample{TimestampMs: startTs, Value: createdTimeValue}, labels)
 }
 
 // handleHistogramStartTime similar to the method above but for native histograms..
@@ -670,6 +687,10 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 	}
 
 	settings.PromoteResourceAttributes = nil
+	if settings.KeepIdentifyingResourceAttributes {
+		// Do not pass identifying attributes as ignoreAttrs below.
+		identifyingAttrs = nil
+	}
 	labels := createAttributes(resource, attributes, settings, identifyingAttrs, false, model.MetricNameLabel, name)
 	haveIdentifier := false
 	for _, l := range labels {
@@ -684,10 +705,10 @@ func addResourceTargetInfo(resource pcommon.Resource, settings Settings, timesta
 		return
 	}
 
-	ts := convertTimeStamp(timestamp)
 	sample := &mimirpb.Sample{
-		Value:       float64(1),
-		TimestampMs: ts,
+		Value: float64(1),
+		// convert ns to ms
+		TimestampMs: convertTimeStamp(timestamp),
 	}
 	converter.addSample(sample, labels)
 }

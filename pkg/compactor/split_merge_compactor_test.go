@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -659,6 +660,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				reg,
 				nil,
 				nil,
+				0,
 			)
 			require.NoError(t, err)
 			metas, partials, err := fetcher.FetchWithoutMarkedForDeletion(ctx)
@@ -751,6 +753,7 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 		reg,
 		nil,
 		nil,
+		0,
 	)
 	require.NoError(t, err)
 	metas, partials, err := fetcher.FetchWithoutMarkedForDeletion(ctx)
@@ -774,7 +777,7 @@ func TestMultitenantCompactor_ShouldGuaranteeSeriesShardingConsistencyOverTheTim
 	for _, actualMeta := range actualMetas {
 		expectedSeriesIDs := expectedSeriesIDByShard[actualMeta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel]]
 
-		b, err := tsdb.OpenBlock(logger, filepath.Join(storageDir, userID, actualMeta.ULID.String()), nil)
+		b, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), filepath.Join(storageDir, userID, actualMeta.ULID.String()), nil, nil)
 		require.NoError(t, err)
 
 		indexReader, err := b.Index()

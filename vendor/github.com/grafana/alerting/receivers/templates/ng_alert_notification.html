@@ -1260,7 +1260,7 @@
                   <tbody>
                     <tr>
                       <td align="center" class="txt" style="font-size:0px;padding:10px 25px;word-break:break-word;">
-                        <div style="font-family: Inter, Helvetica, Arial; font-size: 13px; line-height: 150%; text-align: center; color: #000000;">&copy; {{ now | date "2006" }} Grafana Labs. Sent by <a href="{{ .AppUrl }}" style="color: #6E9FFF;">Grafana v{{ .BuildVersion }}</a>.</div>
+                        <div style="font-family: Inter, Helvetica, Arial; font-size: 13px; line-height: 150%; text-align: center; color: #000000;">&copy; {{ now | date "2006" }} Grafana Labs. Sent by <a href="{{ .AppUrl }}" style="color: #6E9FFF;">{{ .SentBy }}</a>.</div>
                       </td>
                     </tr>
                   </tbody>

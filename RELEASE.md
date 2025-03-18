@@ -24,8 +24,9 @@ The following table contains past releases and tentative dates for upcoming rele
 | 2.12.0  | 2024-03-11 | Yuri Nikolic       |
 | 2.13.0  | 2024-06-17 | Dimitar Dimitrov   |
 | 2.14.0  | 2024-10-07 | Vladimir Varankin  |
-| 2.15.0  | 2024-12-09 | _To be announced_  |
-| 2.16.0  | 2025-03-10 | _To be announced_  |
+| 2.15.0  | 2025-01-06 | Casie Chen         |
+| 2.16.0  | 2025-03-17 | Nick Pillitteri    |
+| 2.17.0  | 2025-06-09 | _To be announced_  |
 
 ## Release shepherd responsibilities
 
@@ -125,6 +126,7 @@ If something is not clear, you can get back to this document to learn more about
     - `operations/mimir/images.libsonnet` (`_images.mimir` and `_images.query_tee` fields)
     - `operations/mimir-rules-action/Dockerfile` (`grafana/mimirtool` image tag)
   - [ ] [Tag the release](https://github.com/grafana/mimir/blob/main/RELEASE.md#how-to-tag-a-release)
+    - NOTE: The release notes should be included at `docs/sources/mimir/release-notes` on the branch _before_ tagging the release.
     ```bash
     git checkout release-<version>
     ./tools/release/tag-release.sh
@@ -276,7 +278,11 @@ To publish a stable release:
    1. Update the Mimir version in the following locations:
       - `operations/mimir/images.libsonnet` (`_images.mimir` and `_images.query_tee` fields)
       - `operations/mimir-rules-action/Dockerfile` (`grafana/mimirtool` image tag)
+   1. Update Jsonnet tests: `make build-jsonnet-tests`
+   1. Commit updated tests
 1. Update dashboard screenshots
+   1. Make sure that operations/mimir-mixin-tools/screenshots/.config is configured according to the directions in [operations/mimir-mixin-tools/screenshots/run.sh](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-tools/screenshots/run.sh)
+   1. Make sure that operations/mimir-mixin-tools/serve/.config is configured according to the directions in [operations/mimir-mixin-tools/serve/run.sh](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin-tools/serve/run.sh)
    1. Run `make mixin-screenshots`
    1. Review all updated screenshots and ensure no sensitive data is disclosed
    1. Open a PR
@@ -292,6 +298,7 @@ To publish a stable release:
    - Keep the last 3 minor releases
 1. Publish dashboards (done by a Grafana Labs member)
    1. Login to [https://grafana.com](https://grafana.com) with your Grafana Labs account
+      1. Make sure your user in the Grafana Labs organization members list has Admin access.
    1. Open [https://grafana.com/orgs/grafana/dashboards](https://grafana.com/orgs/grafana/dashboards)
    1. For each dashboard at `operations/mimir-mixin-compiled/dashboards`:
       1. Open the respective dashboard page

@@ -8,6 +8,7 @@ package mimirpb
 import (
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -15,15 +16,17 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/zeropool"
-	"golang.org/x/exp/slices"
 )
 
 const (
-	minPreallocatedTimeseries         = 100
-	minPreallocatedLabels             = 20
-	minPreallocatedSamplesPerSeries   = 10
-	minPreallocatedExemplarsPerSeries = 1
-	maxPreallocatedExemplarsPerSeries = 10
+	minPreallocatedTimeseries          = 100
+	minPreallocatedLabels              = 20
+	maxPreallocatedLabels              = 200
+	minPreallocatedSamplesPerSeries    = 10
+	maxPreallocatedSamplesPerSeries    = 100
+	maxPreallocatedHistogramsPerSeries = 100
+	minPreallocatedExemplarsPerSeries  = 1
+	maxPreallocatedExemplarsPerSeries  = 10
 )
 
 var (
@@ -176,6 +179,10 @@ func (p *PreallocTimeseries) ResizeExemplars(newSize int) {
 		}
 	}
 	p.Exemplars = p.Exemplars[:newSize]
+	p.clearUnmarshalData()
+}
+
+func (p *PreallocTimeseries) SamplesUpdated() {
 	p.clearUnmarshalData()
 }
 
@@ -409,7 +416,7 @@ func (bs *LabelAdapter) Unmarshal(dAtA []byte) error {
 }
 
 func yoloString(buf []byte) string {
-	return *((*string)(unsafe.Pointer(&buf)))
+	return unsafe.String(unsafe.SliceData(buf), len(buf)) // nolint:gosec
 }
 
 // Size implements proto.Sizer.
@@ -476,9 +483,28 @@ func ReuseTimeseries(ts *TimeSeries) {
 		ts.Labels[i].Name = ""
 		ts.Labels[i].Value = ""
 	}
-	ts.Labels = ts.Labels[:0]
-	ts.Samples = ts.Samples[:0]
-	ts.Histograms = ts.Histograms[:0]
+
+	// Retain the slices only if their capacity is not bigger than the desired max pre-allocated size.
+	// This allows us to ensure we don't put very large slices back to the pool (e.g. a few requests with
+	// a huge number of samples may cause in-use heap memory to significantly increase, because the slices
+	// allocated by such poison requests would be reused by other requests with a normal number of samples).
+	if cap(ts.Labels) > maxPreallocatedLabels {
+		ts.Labels = nil
+	} else {
+		ts.Labels = ts.Labels[:0]
+	}
+
+	if cap(ts.Samples) > maxPreallocatedSamplesPerSeries {
+		ts.Samples = nil
+	} else {
+		ts.Samples = ts.Samples[:0]
+	}
+
+	if cap(ts.Histograms) > maxPreallocatedHistogramsPerSeries {
+		ts.Histograms = nil
+	} else {
+		ts.Histograms = ts.Histograms[:0]
+	}
 
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)
@@ -647,7 +673,7 @@ func copyToYoloLabels(buf []byte, dst, src []LabelAdapter) ([]LabelAdapter, []by
 // It requires that the buffer has a capacity which is greater than or equal to the length of the source string.
 func copyToYoloString(buf []byte, src string) (string, []byte) {
 	buf = buf[:len(src)]
-	copy(buf, *((*[]byte)(unsafe.Pointer(&src))))
+	copy(buf, unsafe.Slice(unsafe.StringData(src), len(src))) // nolint:gosec
 	return yoloString(buf), buf[len(buf):]
 }
 

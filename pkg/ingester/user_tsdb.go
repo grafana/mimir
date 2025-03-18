@@ -261,7 +261,7 @@ func nextForcedHeadCompactionRange(blockDuration, headMinTime, headMaxTime, forc
 
 	// By default we try to compact the whole head, honoring the forcedMaxTime.
 	minTime = headMinTime
-	maxTime = util_math.Min(headMaxTime, forcedMaxTime)
+	maxTime = min(headMaxTime, forcedMaxTime)
 
 	// Due to the forcedMaxTime, the range may be empty. In that case we just skip it.
 	if maxTime < minTime {
@@ -619,12 +619,15 @@ func (u *userTSDB) computeOwnedSeries() int {
 	}
 
 	count := 0
+	idx := u.Head().MustIndex()
+	defer idx.Close()
+
 	u.Head().ForEachSecondaryHash(func(refs []chunks.HeadSeriesRef, secondaryHashes []uint32) {
 		for i, sh := range secondaryHashes {
 			if u.ownedTokenRanges.IncludesKey(sh) {
 				count++
 			} else {
-				u.activeSeries.Delete(refs[i])
+				u.activeSeries.Delete(refs[i], idx)
 			}
 		}
 	})

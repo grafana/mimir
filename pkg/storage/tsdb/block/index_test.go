@@ -36,7 +36,7 @@ func TestRewrite(t *testing.T) {
 	}, 150, 0, 1000, labels.EmptyLabels())
 	require.NoError(t, err)
 
-	ir, err := index.NewFileReader(filepath.Join(tmpDir, b.String(), IndexFilename))
+	ir, err := index.NewFileReader(filepath.Join(tmpDir, b.String(), IndexFilename), index.DecodePostingsRaw)
 	require.NoError(t, err)
 
 	defer func() { require.NoError(t, ir.Close()) }()
@@ -78,7 +78,7 @@ func TestRewrite(t *testing.T) {
 	require.NoError(t, iw.Close())
 	require.NoError(t, cw.Close())
 
-	ir2, err := index.NewFileReader(filepath.Join(tmpDir, m.ULID.String(), IndexFilename))
+	ir2, err := index.NewFileReader(filepath.Join(tmpDir, m.ULID.String(), IndexFilename), index.DecodePostingsRaw)
 	require.NoError(t, err)
 
 	defer func() { require.NoError(t, ir2.Close()) }()

@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/codec"
+	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -32,13 +34,20 @@ import (
 var (
 	errNegativeUpdateTimeoutJitterMax = errors.New("HA tracker max update timeout jitter shouldn't be negative")
 	errInvalidFailoverTimeout         = "HA Tracker failover timeout (%v) must be at least 1s greater than update timeout - max jitter (%v)"
-	errMemberlistUnsupported          = errors.New("memberlist is not supported by the HA tracker since gossip propagation is too slow for HA purposes")
 )
 
 type haTrackerLimits interface {
 	// MaxHAClusters returns the max number of clusters that the HA tracker should track for a user.
 	// Samples from additional clusters are rejected.
 	MaxHAClusters(user string) int
+}
+
+type haTracker interface {
+	services.Service
+	http.Handler
+
+	checkReplica(ctx context.Context, userID, cluster, replica string, now time.Time) error
+	cleanupHATrackerMetricsForUser(userID string)
 }
 
 // ProtoReplicaDescFactory makes new InstanceDescs
@@ -49,6 +58,82 @@ func ProtoReplicaDescFactory() proto.Message {
 // NewReplicaDesc returns an empty *distributor.ReplicaDesc.
 func NewReplicaDesc() *ReplicaDesc {
 	return &ReplicaDesc{}
+}
+
+// Merge merges other ReplicaDesc into this one.
+// The decision is made based on the ReceivedAt timestamp, if the Replica name is the same and at the ElectedAt if the
+// Replica name is different
+func (r *ReplicaDesc) Merge(other memberlist.Mergeable, _ bool) (change memberlist.Mergeable, error error) {
+	return r.mergeWithTime(other)
+}
+
+func (r *ReplicaDesc) mergeWithTime(mergeable memberlist.Mergeable) (memberlist.Mergeable, error) {
+	if mergeable == nil {
+		return nil, nil
+	}
+
+	other, ok := mergeable.(*ReplicaDesc)
+	if !ok {
+		return nil, fmt.Errorf("expected *distributor.ReplicaDesc, got %T", mergeable)
+	}
+
+	if other == nil {
+		return nil, nil
+	}
+
+	changed := false
+	if other.Replica == r.Replica {
+		// Keeping the one with the most recent receivedAt timestamp
+		if other.ReceivedAt > r.ReceivedAt {
+			*r = *other
+			changed = true
+		} else if r.ReceivedAt == other.ReceivedAt && r.DeletedAt == 0 && other.DeletedAt != 0 {
+			*r = *other
+			changed = true
+		}
+	} else {
+		// keep the most recent ElectedAt to reach consistency
+		if other.ElectedAt > r.ElectedAt {
+			*r = *other
+			changed = true
+		} else if other.ElectedAt == r.ElectedAt {
+			// if the timestamps are equal we compare ReceivedAt
+			if other.ReceivedAt > r.ReceivedAt {
+				*r = *other
+				changed = true
+			}
+		}
+	}
+
+	// No changes
+	if !changed {
+		return nil, nil
+	}
+
+	out := NewReplicaDesc()
+	*out = *r
+	return out, nil
+}
+
+// MergeContent describes content of this Mergeable.
+// Given that ReplicaDesc can have only one instance at a time, it returns the ReplicaDesc it contains. By doing this we choose
+// to not make use of the subset invalidation feature of memberlist
+func (r *ReplicaDesc) MergeContent() []string {
+	result := []string(nil)
+	if len(r.Replica) != 0 {
+		result = append(result, r.String())
+	}
+	return result
+}
+
+// RemoveTombstones is noOp because we will handle replica deletions outside the context of memberlist.
+func (r *ReplicaDesc) RemoveTombstones(_ time.Time) (total, removed int) {
+	return
+}
+
+// Clone returns a deep copy of the ReplicaDesc.
+func (r *ReplicaDesc) Clone() memberlist.Mergeable {
+	return proto.Clone(r).(*ReplicaDesc)
 }
 
 // HATrackerConfig contains the configuration required to
@@ -66,7 +151,10 @@ type HATrackerConfig struct {
 	// more than this duration
 	FailoverTimeout time.Duration `yaml:"ha_tracker_failover_timeout" category:"advanced"`
 
-	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the ring. Please be aware that memberlist is not supported by the HA tracker since gossip propagation is too slow for HA purposes."`
+	// This is a potentially high cardinality metric, so it is disabled by default.
+	EnableElectedReplicaMetric bool `yaml:"enable_elected_replica_metric"`
+
+	KVStore kv.Config `yaml:"kvstore" doc:"description=Backend storage to use for the ring. Note that memberlist support is experimental."`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -75,6 +163,7 @@ func (cfg *HATrackerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.UpdateTimeout, "distributor.ha-tracker.update-timeout", 15*time.Second, "Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp.")
 	f.DurationVar(&cfg.UpdateTimeoutJitterMax, "distributor.ha-tracker.update-timeout-jitter-max", 5*time.Second, "Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time.")
 	f.DurationVar(&cfg.FailoverTimeout, "distributor.ha-tracker.failover-timeout", 30*time.Second, "If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout")
+	f.BoolVar(&cfg.EnableElectedReplicaMetric, "distributor.ha-tracker.enable-elected-replica-metric", false, "Enable the elected_replica_status metric, which shows the current elected replica. It is disabled by default due to the possible high cardinality of the metric.")
 
 	// We want the ability to use different instances for the ring and
 	// for HA cluster tracking. We also customize the default keys prefix, in
@@ -94,10 +183,6 @@ func (cfg *HATrackerConfig) Validate() error {
 		return fmt.Errorf(errInvalidFailoverTimeout, cfg.FailoverTimeout, minFailureTimeout)
 	}
 
-	if cfg.KVStore.Store == "memberlist" {
-		return errMemberlistUnsupported
-	}
-
 	return nil
 }
 
@@ -107,7 +192,7 @@ func GetReplicaDescCodec() codec.Proto {
 
 // Track the replica we're accepting samples from
 // for each HA cluster we know about.
-type haTracker struct {
+type defaultHaTracker struct {
 	services.Service
 
 	logger              log.Logger
@@ -119,6 +204,7 @@ type haTracker struct {
 	electedLock sync.RWMutex                         // protects clusters maps
 	clusters    map[string]map[string]*haClusterInfo // Known clusters with elected replicas per user. First key = user, second key = cluster name.
 
+	electedReplicaStatus          *prometheus.CounterVec
 	electedReplicaChanges         *prometheus.CounterVec
 	electedReplicaTimestamp       *prometheus.GaugeVec
 	lastElectionTimestamp         *prometheus.GaugeVec
@@ -140,21 +226,25 @@ type haClusterInfo struct {
 	nonElectedLastSeenTimestamp int64 // timestamp in milliseconds
 }
 
-// newHATracker returns a new HA cluster tracker using either Consul,
+// newHaTracker returns a new HA cluster tracker using either Consul,
 // etcd, or an in-memory KV store. Tracker must be started via StartAsync().
-func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Registerer, logger log.Logger) (*haTracker, error) {
+func newHaTracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Registerer, logger log.Logger) (*defaultHaTracker, error) {
 	var jitter time.Duration
 	if cfg.UpdateTimeoutJitterMax > 0 {
 		jitter = time.Duration(rand.Int63n(int64(2*cfg.UpdateTimeoutJitterMax))) - cfg.UpdateTimeoutJitterMax
 	}
 
-	t := &haTracker{
+	t := &defaultHaTracker{
 		logger:              log.With(logger, "component", "ha-tracker"),
 		cfg:                 cfg,
 		updateTimeoutJitter: jitter,
 		limits:              limits,
 		clusters:            map[string]map[string]*haClusterInfo{},
 
+		electedReplicaStatus: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ha_tracker_elected_replica_status",
+			Help: "The current elected replica for a user ID/cluster.",
+		}, []string{"user", "cluster", "replica"}),
 		electedReplicaChanges: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ha_tracker_elected_replica_changes_total",
 			Help: "The total number of times the elected replica has changed for a user ID/cluster.",
@@ -172,9 +262,12 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 			Help: "The total number of reelections for a user ID/cluster, from the KVStore.",
 		}, []string{"user", "cluster"}),
 		electedReplicaPropagationTime: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ha_tracker_elected_replica_change_propagation_time_seconds",
-			Help:    "The time it for the distributor to update the replica change.",
-			Buckets: prometheus.DefBuckets,
+			Name:                            "cortex_ha_tracker_elected_replica_change_propagation_time_seconds",
+			Help:                            "The time it for the distributor to update the replica change.",
+			Buckets:                         prometheus.DefBuckets,
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMaxBucketNumber:  100,
+			NativeHistogramMinResetDuration: time.Hour,
 		}),
 		kvCASCalls: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ha_tracker_kv_store_cas_total",
@@ -198,29 +291,22 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 			Help: "Number of elected replicas that failed to be marked for deletion, or deleted.",
 		}),
 	}
-
-	if cfg.EnableHATracker {
-		client, err := kv.NewClient(
-			cfg.KVStore,
-			GetReplicaDescCodec(),
-			kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "distributor-hatracker"),
-			logger,
-		)
-		if err != nil {
-			return nil, err
-		}
-		t.client = client
+	client, err := kv.NewClient(
+		cfg.KVStore,
+		GetReplicaDescCodec(),
+		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "distributor-hatracker"),
+		logger,
+	)
+	if err != nil {
+		return nil, err
 	}
+	t.client = client
 
 	t.Service = services.NewBasicService(t.syncHATrackerStateOnStart, t.loop, nil)
 	return t, nil
 }
 
-func (h *haTracker) syncHATrackerStateOnStart(ctx context.Context) error {
-	if !h.cfg.EnableHATracker {
-		return nil
-	}
-
+func (h *defaultHaTracker) syncHATrackerStateOnStart(ctx context.Context) error {
 	level.Info(h.logger).Log("msg", "sync HA state on start: Listing keys from KV Store")
 	keys, err := h.client.List(ctx, "")
 	if err != nil {
@@ -256,13 +342,7 @@ func (h *haTracker) syncHATrackerStateOnStart(ctx context.Context) error {
 }
 
 // Follows pattern used by ring for WatchKey.
-func (h *haTracker) loop(ctx context.Context) error {
-	if !h.cfg.EnableHATracker {
-		// don't do anything, but wait until asked to stop.
-		<-ctx.Done()
-		return nil
-	}
-
+func (h *defaultHaTracker) loop(ctx context.Context) error {
 	// Start cleanup loop. It will stop when context is done.
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -287,7 +367,7 @@ func (h *haTracker) loop(ctx context.Context) error {
 	return nil
 }
 
-func (h *haTracker) processKVStoreEntry(key string, replica *ReplicaDesc) {
+func (h *defaultHaTracker) processKVStoreEntry(key string, replica *ReplicaDesc) {
 	segments := strings.SplitN(key, "/", 2)
 
 	// Valid key would look like cluster/replica, and a key without a / such as `ring` would be invalid.
@@ -310,7 +390,8 @@ func (h *haTracker) processKVStoreEntry(key string, replica *ReplicaDesc) {
 	h.electedReplicaPropagationTime.Observe(time.Since(timestamp.Time(replica.ReceivedAt)).Seconds())
 }
 
-func (h *haTracker) cleanupDeletedReplica(user string, cluster string) {
+func (h *defaultHaTracker) cleanupDeletedReplica(user string, cluster string) {
+	h.electedReplicaStatus.DeletePartialMatch(prometheus.Labels{"user": user, "cluster": cluster})
 	h.electedReplicaChanges.DeleteLabelValues(user, cluster)
 	h.electedReplicaTimestamp.DeleteLabelValues(user, cluster)
 	h.lastElectionTimestamp.DeleteLabelValues(user, cluster)
@@ -336,7 +417,7 @@ const (
 	deletionTimeout = 30 * time.Minute
 )
 
-func (h *haTracker) updateKVLoop(ctx context.Context) {
+func (h *defaultHaTracker) updateKVLoop(ctx context.Context) {
 	cleanupTick := time.NewTicker(util.DurationWithJitter(cleanupCyclePeriod, cleanupCycleJitterVariance))
 	defer cleanupTick.Stop()
 	tick := time.NewTicker(h.cfg.UpdateTimeout)
@@ -357,7 +438,7 @@ func (h *haTracker) updateKVLoop(ctx context.Context) {
 
 // Loop over all entries in our cache and update KVStore where it is out of date,
 // electing a new replica if necessary.
-func (h *haTracker) updateKVStoreAll(ctx context.Context, now time.Time) {
+func (h *defaultHaTracker) updateKVStoreAll(ctx context.Context, now time.Time) {
 	h.electedLock.RLock()
 	defer h.electedLock.RUnlock()
 	// Note the maps may change when we release the lock while talking to KVStore;
@@ -394,7 +475,7 @@ func (h *haTracker) updateKVStoreAll(ctx context.Context, now time.Time) {
 
 // Replicas marked for deletion before deadline will be deleted.
 // Replicas with last-received timestamp before deadline will be marked for deletion.
-func (h *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) {
+func (h *defaultHaTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) {
 	keys, err := h.client.List(ctx, "")
 	if err != nil {
 		level.Warn(h.logger).Log("msg", "cleanup: failed to list replica keys", "err", err)
@@ -472,12 +553,7 @@ func (h *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) 
 // Updates to and from the KV store are handled in the background, except
 // if we have no cached data for this cluster in which case we create the
 // record and store it in-band.
-func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica string, now time.Time) error {
-	// If HA tracking isn't enabled then accept the sample
-	if !h.cfg.EnableHATracker {
-		return nil
-	}
-
+func (h *defaultHaTracker) checkReplica(ctx context.Context, userID, cluster, replica string, now time.Time) error {
 	h.electedLock.Lock()
 	if entry := h.clusters[userID][cluster]; entry != nil {
 		var err error
@@ -511,12 +587,12 @@ func (h *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 	return h.checkReplica(ctx, userID, cluster, replica, now)
 }
 
-func (h *haTracker) withinUpdateTimeout(now time.Time, receivedAt int64) bool {
+func (h *defaultHaTracker) withinUpdateTimeout(now time.Time, receivedAt int64) bool {
 	return now.Sub(timestamp.Time(receivedAt)) < h.cfg.UpdateTimeout+h.updateTimeoutJitter
 }
 
 // Must be called with electedLock held.
-func (h *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
+func (h *defaultHaTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 	if h.clusters[userID] == nil {
 		h.clusters[userID] = map[string]*haClusterInfo{}
 	}
@@ -526,6 +602,10 @@ func (h *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 		h.clusters[userID][cluster] = entry
 	}
 	if desc.Replica != entry.elected.Replica {
+		if h.cfg.EnableElectedReplicaMetric {
+			h.electedReplicaStatus.DeletePartialMatch(prometheus.Labels{"user": userID, "cluster": cluster})
+			h.electedReplicaStatus.WithLabelValues(userID, cluster, desc.Replica).Inc()
+		}
 		h.electedReplicaChanges.WithLabelValues(userID, cluster).Inc()
 		h.lastElectionTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ElectedAt / 1000))
 		h.totalReelections.WithLabelValues(userID, cluster).Set(float64(desc.ElectedChanges))
@@ -543,7 +623,7 @@ func (h *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 
 // If we do set the value then err will be nil and desc will contain the value we set.
 // If there is already a valid value in the store, return nil, nil.
-func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time, receivedAt int64) error {
+func (h *defaultHaTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time, receivedAt int64) error {
 	key := fmt.Sprintf("%s/%s", userID, cluster)
 	var desc *ReplicaDesc
 	var electedAtTime, electedChanges int64
@@ -567,7 +647,10 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 				electedChanges = desc.ElectedChanges + 1
 			}
 		} else {
-			if desc == nil && electedAtTime == 0 {
+			if desc == nil || (desc.DeletedAt > 0) {
+				// if there is no desc in the kvStore , or if the entry in kvStore is marked as deleted but not yet removed,
+				// set the electedAtTime to avoid being zero
+				// The second part, (desc.DeletedAt > 0), ensures the replica is elected to "revive" the cluster entry after the previous one was deleted.
 				electedAtTime = timestamp.FromTime(now)
 			}
 		}
@@ -582,12 +665,10 @@ func (h *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 		return desc, true, nil
 	})
 	h.kvCASCalls.WithLabelValues(userID, cluster).Inc()
-	// If cache is currently empty, add the data we either stored or received from KVStore
+	// Add data stored or received from KVStore, if available.
 	if err == nil && desc != nil {
 		h.electedLock.Lock()
-		if h.clusters[userID][cluster] == nil {
-			h.updateCache(userID, cluster, desc)
-		}
+		h.updateCache(userID, cluster, desc)
 		h.electedLock.Unlock()
 	}
 	return err
@@ -609,9 +690,10 @@ func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapt
 	return cluster, replica
 }
 
-func (h *haTracker) cleanupHATrackerMetricsForUser(userID string) {
+func (h *defaultHaTracker) cleanupHATrackerMetricsForUser(userID string) {
 	filter := prometheus.Labels{"user": userID}
 
+	h.electedReplicaStatus.DeletePartialMatch(filter)
 	h.electedReplicaChanges.DeletePartialMatch(filter)
 	h.electedReplicaTimestamp.DeletePartialMatch(filter)
 	h.lastElectionTimestamp.DeletePartialMatch(filter)

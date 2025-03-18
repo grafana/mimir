@@ -14,9 +14,10 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	mimirtest "github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestCardinalityQueryCache_RoundTrip_WithTenantFederation(t *testing.T) {
@@ -66,7 +67,7 @@ func TestCardinalityQueryCache_RoundTrip_WithTenantFederation(t *testing.T) {
 			cacheBackend := cache.NewInstrumentedMockCache()
 			limits := multiTenantMockLimits{byTenant: testData.limits}
 
-			rt := newCardinalityQueryCacheRoundTripper(cacheBackend, DefaultCacheKeyGenerator{}, limits, downstream, testutil.NewLogger(t), nil)
+			rt := newCardinalityQueryCacheRoundTripper(cacheBackend, DefaultCacheKeyGenerator{}, limits, downstream, mimirtest.NewTestingLogger(t), nil)
 			res, err := rt.RoundTrip(req)
 			require.NoError(t, err)
 

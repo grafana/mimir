@@ -56,7 +56,7 @@ func TestStreamingChunkSeries_HappyPath(t *testing.T) {
 	require.Equal(t, 1.0, m.SumCounters("cortex_distributor_query_ingester_chunks_deduped_total"))
 
 	require.Equal(t, uint64(3), queryStats.FetchedChunksCount)
-	require.Equal(t, uint64(114), queryStats.FetchedChunkBytes)
+	require.Equal(t, uint64(111), queryStats.FetchedChunkBytes)
 }
 
 func assertChunkIteratorsEqual(t testing.TB, c1, c2 chunkenc.Iterator) {
@@ -128,7 +128,7 @@ func TestStreamingChunkSeries_CreateIteratorTwice(t *testing.T) {
 
 	iterator = series.Iterator(iterator)
 	require.NotNil(t, iterator)
-	require.EqualError(t, iterator.Err(), `can't create iterator multiple times for the one streaming series ({the-name="the-value"})`)
+	require.EqualError(t, iterator.Err(), `can't create iterator multiple times for the one streaming series ({"the-name"="the-value"})`)
 }
 
 func createTestChunk(t *testing.T, time int64, value float64) client.Chunk {

@@ -32,7 +32,8 @@ body:
   id: environment
   attributes:
     label: What was your environment?
-    placeholder: Infrastructure (e.g., Kubernetes, bare-metal, laptop), deployment tool (e.g., helm, jsonnet)
+    description: When sharing the configs, make sure you have redacted any credentials or other sensitive details.
+    placeholder: Infrastructure (e.g., Kubernetes, bare-metal, laptop), deployment tool (e.g., helm, jsonnet), versions (e.g. Mimir 2.14, Kubernetes 1.30, Helm 3.16).
   validations:
     required: true
 

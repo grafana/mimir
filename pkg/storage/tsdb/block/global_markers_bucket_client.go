@@ -30,6 +30,10 @@ func BucketWithGlobalMarkers(b objstore.Bucket) objstore.Bucket {
 	}
 }
 
+func (b *globalMarkersBucket) Provider() objstore.ObjProvider {
+	return b.parent.Provider()
+}
+
 // Upload implements objstore.Bucket.
 func (b *globalMarkersBucket) Upload(ctx context.Context, name string, r io.Reader) error {
 	globalMarkPath := getGlobalMarkPathFromBlockMark(name)

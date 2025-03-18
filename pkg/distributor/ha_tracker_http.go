@@ -36,7 +36,7 @@ type haTrackerReplica struct {
 	FailoverTime        time.Duration `json:"failoverDuration"`
 }
 
-func (h *haTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (h *defaultHaTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	h.electedLock.RLock()
 
 	var electedReplicas []haTrackerReplica

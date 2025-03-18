@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -73,15 +74,17 @@ func TestLabelNamesRequest(t *testing.T) {
 		mint, maxt = 0, 10
 	)
 
+	hints := &storage.LabelHints{Limit: 10}
 	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
 
-	req, err := ToLabelNamesRequest(mint, maxt, matchers)
+	req, err := ToLabelNamesRequest(mint, maxt, hints, matchers)
 	require.NoError(t, err)
 
-	actualMinT, actualMaxT, actualMatchers, err := FromLabelNamesRequest(req)
+	actualMinT, actualMaxT, actualHints, actualMatchers, err := FromLabelNamesRequest(req)
 	require.NoError(t, err)
 
 	assert.Equal(t, int64(mint), actualMinT)
 	assert.Equal(t, int64(maxt), actualMaxT)
+	assert.Equal(t, hints, actualHints)
 	assert.Equal(t, matchers, actualMatchers)
 }

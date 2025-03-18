@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kfake"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
@@ -296,9 +297,9 @@ func TestFranzGoErrorStrings(t *testing.T) {
 type noopReaderMetricsSource struct {
 }
 
-func (n noopReaderMetricsSource) BufferedBytes() int64   { return 0 }
-func (n noopReaderMetricsSource) BufferedRecords() int64 { return 0 }
-func (n noopReaderMetricsSource) BytesPerRecord() int64  { return 0 }
+func (n noopReaderMetricsSource) BufferedBytes() int64           { return 0 }
+func (n noopReaderMetricsSource) BufferedRecords() int64         { return 0 }
+func (n noopReaderMetricsSource) EstimatedBytesPerRecord() int64 { return 0 }
 
 func TestConcurrentFetchers(t *testing.T) {
 	const (
@@ -570,188 +571,6 @@ func TestConcurrentFetchers(t *testing.T) {
 		}
 	})
 
-	t.Run("concurrency can be updated", func(t *testing.T) {
-		t.Parallel()
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		rec1 := []byte("record-1")
-		rec2 := []byte("record-2")
-		rec3 := []byte("record-3")
-
-		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
-		client := newKafkaProduceClient(t, clusterAddr)
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, concurrency, 0)
-
-		produceRecordAndAssert := func(record []byte) {
-			producedOffset := produceRecord(ctx, t, client, topicName, partitionID, record)
-			// verify that the record is fetched.
-
-			fetches := longPollFetches(fetchers, 1, 5*time.Second)
-
-			require.Equal(t, fetches.Records()[0].Value, record)
-			require.Equal(t, fetches.Records()[0].Offset, producedOffset)
-		}
-
-		// Ensure that the fetchers work with the initial concurrency.
-		produceRecordAndAssert(rec1)
-
-		// Now, update the concurrency.
-		fetchers.Update(ctx, 1)
-
-		// Ensure that the fetchers work with the updated concurrency.
-		produceRecordAndAssert(rec2)
-
-		// Update and verify again.
-		fetchers.Update(ctx, 10)
-		produceRecordAndAssert(rec3)
-
-		// We expect no more records returned by PollFetches() and no buffered records.
-		pollFetchesAndAssertNoRecords(t, fetchers)
-	})
-
-	t.Run("update concurrency with continuous production", func(t *testing.T) {
-		t.Parallel()
-
-		const (
-			testDuration       = 10 * time.Second
-			produceInterval    = 10 * time.Millisecond
-			initialConcurrency = 2
-		)
-
-		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
-		defer cancel()
-
-		produceCtx, cancelProduce := context.WithTimeout(context.Background(), testDuration)
-		defer cancelProduce()
-
-		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
-		client := newKafkaProduceClient(t, clusterAddr)
-
-		producedCount := atomic.NewInt64(0)
-
-		// Start producing records continuously
-		go func() {
-			ticker := time.NewTicker(produceInterval)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-produceCtx.Done():
-					return
-				case <-ticker.C:
-					count := producedCount.Inc()
-					record := fmt.Sprintf("record-%d", count)
-					// Use context.Background() so that we don't race with the test context being cancelled.
-					produceRecord(context.Background(), t, client, topicName, partitionID, []byte(record))
-				}
-			}
-		}()
-
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, 0, initialConcurrency, 0)
-
-		fetchedRecords := make([]*kgo.Record, 0)
-
-		// Initial fetch with starting concurrency
-		fetches := longPollFetches(fetchers, math.MaxInt, 2*time.Second)
-		initialFetched := fetches.NumRecords()
-
-		// Update to higher concurrency
-		fetchers.Update(ctx, 4)
-		fetches = longPollFetches(fetchers, math.MaxInt, 3*time.Second)
-		highConcurrencyFetched := fetches.NumRecords()
-
-		// Update to lower concurrency
-		fetchers.Update(ctx, 1)
-		fetches = longPollFetches(fetchers, math.MaxInt, 3*time.Second)
-		lowerConcurrentFetched := fetches.NumRecords()
-
-		cancelProduce()
-		// Consume everything that's left now.
-		fetches = longPollFetches(fetchers, math.MaxInt, 2*time.Second)
-		finalFetched := fetches.NumRecords()
-		totalProduced := producedCount.Load()
-		totalFetched := initialFetched + highConcurrencyFetched + lowerConcurrentFetched + finalFetched
-
-		// Verify fetched records
-		assert.True(t, totalFetched > 0, "Expected to fetch some records")
-		assert.Equal(t, int64(totalFetched), totalProduced, "Should not fetch more records than produced")
-		assert.True(t, highConcurrencyFetched > initialFetched, "Expected to fetch more records with higher concurrency")
-
-		// Verify record contents
-		for i, record := range fetchedRecords {
-			expectedContent := fmt.Sprintf("record-%d", i+1)
-			assert.Equal(t, expectedContent, string(record.Value),
-				"Record %d has unexpected content: %s", i, string(record.Value))
-		}
-
-		// We expect no more records returned by PollFetches() and no buffered records.
-		pollFetchesAndAssertNoRecords(t, fetchers)
-
-		// Log some statistics
-		t.Logf("Total produced: %d, Total fetched: %d", totalProduced, totalFetched)
-		t.Logf("Fetched with initial concurrency: %d", initialFetched)
-		t.Logf("Fetched with high concurrency: %d", highConcurrencyFetched)
-		t.Logf("Fetched with low concurrency: %d", totalFetched-initialFetched-highConcurrencyFetched)
-	})
-
-	t.Run("consume from end and update immediately", func(t *testing.T) {
-		t.Parallel()
-
-		const (
-			initialRecords     = 100
-			additionalRecords  = 50
-			initialConcurrency = 2
-			updatedConcurrency = 4
-		)
-
-		ctx := context.Background()
-
-		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
-		client := newKafkaProduceClient(t, clusterAddr)
-
-		// Produce initial records
-		for i := 0; i < initialRecords; i++ {
-			record := fmt.Sprintf("initial-record-%d", i+1)
-			produceRecord(ctx, t, client, topicName, partitionID, []byte(record))
-		}
-
-		// Start concurrent fetchers from the end
-		fetchers := createConcurrentFetchers(ctx, t, client, topicName, partitionID, kafkaOffsetEnd, initialConcurrency, 0)
-
-		// Immediately update concurrency
-		fetchers.Update(ctx, updatedConcurrency)
-
-		// Produce additional records
-		for i := 0; i < additionalRecords; i++ {
-			record := fmt.Sprintf("additional-record-%d", i+1)
-			produceRecord(ctx, t, client, topicName, partitionID, []byte(record))
-		}
-
-		// Fetch records
-		fetches := longPollFetches(fetchers, additionalRecords, 5*time.Second)
-		fetchedRecords := fetches.Records()
-
-		// Verify fetched records
-		assert.LessOrEqual(t, len(fetchedRecords), additionalRecords,
-			"Should not fetch more records than produced after start")
-
-		// Verify record contents
-		for i, record := range fetchedRecords {
-			expectedContent := fmt.Sprintf("additional-record-%d", i+1)
-			assert.Equal(t, expectedContent, string(record.Value),
-				"Record %d has unexpected content: %s", i, string(record.Value))
-		}
-
-		// We expect no more records returned by PollFetches() and no buffered records.
-		pollFetchesAndAssertNoRecords(t, fetchers)
-
-		// Log some statistics
-		t.Logf("Total records produced: %d", initialRecords+additionalRecords)
-		t.Logf("Records produced after start: %d", additionalRecords)
-		t.Logf("Records fetched: %d", len(fetchedRecords))
-	})
-
 	t.Run("staggered production", func(t *testing.T) {
 		t.Parallel()
 
@@ -907,7 +726,7 @@ func TestConcurrentFetchers(t *testing.T) {
 
 		logger := log.NewNopLogger()
 		reg := prometheus.NewPedanticRegistry()
-		metrics := newReaderMetrics(partitionID, reg, noopReaderMetricsSource{})
+		metrics := newReaderMetrics(partitionID, reg, noopReaderMetricsSource{}, topicName)
 
 		client := newKafkaProduceClient(t, clusterAddr)
 
@@ -1118,19 +937,24 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 		partitionID = 1
 	)
 
-	var (
-		ctx                  = context.Background()
-		cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topic)
-		client               = newKafkaProduceClient(t, clusterAddr)
-		fetchers             = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0)
-	)
+	setup := func(t *testing.T) (*concurrentFetchers, *kfake.Cluster, context.Context) {
+		var (
+			ctx                  = context.Background()
+			cluster, clusterAddr = testkafka.CreateCluster(t, partitionID+1, topic)
+			client               = newKafkaProduceClient(t, clusterAddr)
+			fetchers             = createConcurrentFetchers(ctx, t, client, topic, partitionID, 0, 1, 0)
+		)
+		t.Cleanup(cluster.Close)
 
-	// Produce some records.
-	produceRecord(ctx, t, client, topic, partitionID, []byte("record-1"))
-	produceRecord(ctx, t, client, topic, partitionID, []byte("record-2"))
-	produceRecord(ctx, t, client, topic, partitionID, []byte("record-3"))
+		// Produce some records.
+		produceRecord(ctx, t, client, topic, partitionID, []byte("record-1"))
+		produceRecord(ctx, t, client, topic, partitionID, []byte("record-2"))
+		produceRecord(ctx, t, client, topic, partitionID, []byte("record-3"))
+		return fetchers, cluster, ctx
+	}
 
 	t.Run("should fetch records honoring the start offset", func(t *testing.T) {
+		fetchers, _, ctx := setup(t)
 		res := fetchers.fetchSingle(ctx, fetchWant{
 			startOffset:             1,
 			endOffset:               5,
@@ -1145,6 +969,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 	})
 
 	t.Run("should return an empty non-error response if context is canceled", func(t *testing.T) {
+		fetchers, _, ctx := setup(t)
 		ctx, cancel := context.WithCancel(ctx)
 		cancel()
 
@@ -1160,8 +985,9 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 	})
 
 	t.Run("should return an error response if the Fetch request fails", func(t *testing.T) {
-		// Control only the next request, then drop it.
+		fetchers, cluster, ctx := setup(t)
 		cluster.ControlKey(kmsg.Fetch.Int16(), func(_ kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
 			return nil, errors.New("failed request"), true
 		})
 
@@ -1177,8 +1003,9 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 	})
 
 	t.Run("should return an error response if the Fetch request contains an error", func(t *testing.T) {
-		// Control only the next request, then drop it.
+		fetchers, cluster, ctx := setup(t)
 		cluster.ControlKey(kmsg.Fetch.Int16(), func(kreq kmsg.Request) (kmsg.Response, error, bool) {
+			cluster.KeepControl()
 			req := kreq.(*kmsg.FetchRequest)
 
 			return &kmsg.FetchResponse{
@@ -1333,7 +1160,7 @@ func createConcurrentFetchers(ctx context.Context, t *testing.T, client *kgo.Cli
 	logger := testingLogger.WithT(t)
 
 	reg := prometheus.NewPedanticRegistry()
-	metrics := newReaderMetrics(partition, reg, noopReaderMetricsSource{})
+	metrics := newReaderMetrics(partition, reg, noopReaderMetricsSource{}, topic)
 
 	// This instantiates the fields of kprom.
 	// This is usually done by franz-go, but since now we use the metrics ourselves, we need to instantiate the metrics ourselves.

@@ -121,8 +121,12 @@ func (c *LoadgenCommand) run(_ *kingpin.ParseContext) error {
 
 	http.Handle("/metrics", promhttp.Handler())
 	go func() {
-		err := http.ListenAndServe(c.metricsListenAddress, nil)
-		if err != nil {
+		server := http.Server{
+			Addr:         c.metricsListenAddress,
+			ReadTimeout:  10 * time.Second,
+			WriteTimeout: 10 * time.Second,
+		}
+		if err := server.ListenAndServe(); err != nil {
 			logrus.WithError(err).Errorln("metrics listener failed")
 		}
 	}()

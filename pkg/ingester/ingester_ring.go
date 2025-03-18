@@ -66,7 +66,8 @@ type RingConfig struct {
 	SpreadMinimizingZones           flagext.StringSliceCSV `yaml:"spread_minimizing_zones" category:"advanced"`
 
 	// Injected internally
-	ListenPort int `yaml:"-"`
+	ListenPort             int  `yaml:"-"`
+	HideTokensInStatusPage bool `yaml:"-"`
 
 	// Used only for testing.
 	JoinAfter time.Duration `yaml:"-"`
@@ -132,7 +133,6 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	// Lifecycler.
 	f.DurationVar(&cfg.ObservePeriod, prefix+"observe-period", 0*time.Second, "Observe tokens after generating to resolve collisions. Useful when using gossiping ring.")
-	flagext.DeprecatedFlag(f, prefix+"join-after", "Deprecated: this setting was used to set a period of time to wait before joining the hash ring. Mimir now behaves as this setting is always set to 0s.", logger)
 	f.DurationVar(&cfg.MinReadyDuration, prefix+"min-ready-duration", 15*time.Second, "Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates.")
 	f.DurationVar(&cfg.FinalSleep, prefix+"final-sleep", 0, "Duration to sleep for before exiting, to ensure metrics are scraped.")
 
@@ -155,6 +155,7 @@ func (cfg *RingConfig) ToRingConfig() ring.Config {
 	rc.ZoneAwarenessEnabled = cfg.ZoneAwarenessEnabled
 	rc.ExcludedZones = cfg.ExcludedZones
 	rc.SubringCacheDisabled = false // Enable subring caching.
+	rc.HideTokensInStatusPage = cfg.HideTokensInStatusPage
 
 	return rc
 }
@@ -185,6 +186,7 @@ func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	lc.ListenPort = cfg.ListenPort
 	lc.EnableInet6 = cfg.EnableIPv6
 	lc.RingTokenGenerator = cfg.customTokenGenerator()
+	lc.HideTokensInStatusPage = cfg.HideTokensInStatusPage
 
 	return lc
 }

@@ -19,16 +19,16 @@ func TestNonOverlappingIter(t *testing.T) {
 	for i := int64(0); i < 100; i++ {
 		cs = append(cs, mkGenericChunk(t, model.TimeFromUnix(i*10), 10, chunk.PrometheusXorChunk))
 	}
-	testIter(t, 10*100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, cs, nil, nil), labels.EmptyLabels()), chunk.PrometheusXorChunk)
-	it := newNonOverlappingIterator(nil, cs, nil, nil)
+	testIter(t, 10*100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, 0, cs, nil, nil), labels.EmptyLabels()), chunk.PrometheusXorChunk)
+	it := newNonOverlappingIterator(nil, 0, cs, nil, nil)
 	adapter := newIteratorAdapter(nil, it, labels.EmptyLabels())
 	testSeek(t, 10*100, adapter, chunk.PrometheusXorChunk)
 
 	// Do the same operations while re-using the iterators.
-	it = newNonOverlappingIterator(it, cs, nil, nil)
+	it = newNonOverlappingIterator(it, 0, cs, nil, nil)
 	adapter = newIteratorAdapter(adapter.(*iteratorAdapter), it, labels.EmptyLabels())
 	testIter(t, 10*100, adapter, chunk.PrometheusXorChunk)
-	it = newNonOverlappingIterator(it, cs, nil, nil)
+	it = newNonOverlappingIterator(it, 0, cs, nil, nil)
 	adapter = newIteratorAdapter(adapter.(*iteratorAdapter), it, labels.EmptyLabels())
 	testSeek(t, 10*100, adapter, chunk.PrometheusXorChunk)
 }
@@ -42,6 +42,6 @@ func TestNonOverlappingIterSparse(t *testing.T) {
 		mkGenericChunk(t, model.TimeFromUnix(95), 1, chunk.PrometheusXorChunk),
 		mkGenericChunk(t, model.TimeFromUnix(96), 4, chunk.PrometheusXorChunk),
 	}
-	testIter(t, 100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, cs, nil, nil), labels.EmptyLabels()), chunk.PrometheusXorChunk)
-	testSeek(t, 100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, cs, nil, nil), labels.EmptyLabels()), chunk.PrometheusXorChunk)
+	testIter(t, 100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, 0, cs, nil, nil), labels.EmptyLabels()), chunk.PrometheusXorChunk)
+	testSeek(t, 100, newIteratorAdapter(nil, newNonOverlappingIterator(nil, 0, cs, nil, nil), labels.EmptyLabels()), chunk.PrometheusXorChunk)
 }

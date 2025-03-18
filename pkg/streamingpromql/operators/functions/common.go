@@ -25,11 +25,11 @@ var DropSeriesName = SeriesMetadataFunctionDefinition{
 }
 
 // InstantVectorSeriesFunction is a function that takes in an instant vector and produces an instant vector.
-type InstantVectorSeriesFunction func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error)
+type InstantVectorSeriesFunction func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error)
 
 // floatTransformationFunc is not needed elsewhere, so it is not exported yet
 func floatTransformationFunc(transform func(f float64) float64) InstantVectorSeriesFunction {
-	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		for i := range seriesData.Floats {
 			seriesData.Floats[i].F = transform(seriesData.Floats[i].F)
 		}
@@ -39,16 +39,22 @@ func floatTransformationFunc(transform func(f float64) float64) InstantVectorSer
 
 func FloatTransformationDropHistogramsFunc(transform func(f float64) float64) InstantVectorSeriesFunction {
 	ft := floatTransformationFunc(transform)
-	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		// Functions that do not explicitly mention native histograms in their documentation will ignore histogram samples.
 		// https://prometheus.io/docs/prometheus/latest/querying/functions
 		types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
 		seriesData.Histograms = nil
-		return ft(seriesData, nil, memoryConsumptionTracker)
+		return ft(seriesData, nil, timeRange, memoryConsumptionTracker)
 	}
 }
 
-func PassthroughData(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+func DropHistograms(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	types.HPointSlicePool.Put(seriesData.Histograms, memoryConsumptionTracker)
+	seriesData.Histograms = nil
+	return seriesData, nil
+}
+
+func PassthroughData(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	return seriesData, nil
 }
 
@@ -72,7 +78,10 @@ func PassthroughData(seriesData types.InstantVectorSeriesData, _ []types.ScalarD
 type RangeVectorStepFunction func(
 	step *types.RangeVectorStepData,
 	rangeSeconds float64,
+	scalarArgsData []types.ScalarData,
+	timeRange types.QueryTimeRange,
 	emitAnnotation types.EmitAnnotationFunc,
+	memoryConsumptionTracker *limiting.MemoryConsumptionTracker,
 ) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
 
 // RangeVectorSeriesValidationFunction is a function that is called after a series is completed for a function over a range vector.
@@ -113,6 +122,11 @@ type FunctionOverRangeVectorDefinition struct {
 
 	// NeedsSeriesNamesForAnnotations indicates that this function uses the names of input series when emitting annotations.
 	NeedsSeriesNamesForAnnotations bool
+
+	// UseFirstArgumentPositionForAnnotations indicates that annotations emitted by this function should use the position of the
+	// first argument, not the position of the inner expression.
+	// FIXME: we might need something more flexible in the future (eg. to accommodate other argument positions), but this is good enough for now.
+	UseFirstArgumentPositionForAnnotations bool
 }
 
 type SeriesMetadataFunctionDefinition struct {

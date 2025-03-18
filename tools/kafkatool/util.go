@@ -16,7 +16,6 @@ func CreateKafkaClient(kafkaAddress, kafkaClientID string, auth sasl.Mechanism) 
 		kgo.ClientID(kafkaClientID),
 		kgo.RecordPartitioner(kgo.ManualPartitioner()),
 		kgo.DisableIdempotentWrite(),
-		kgo.AllowAutoTopicCreation(),
 		kgo.BrokerMaxWriteBytes(268_435_456),
 		kgo.MaxBufferedBytes(268_435_456),
 	}

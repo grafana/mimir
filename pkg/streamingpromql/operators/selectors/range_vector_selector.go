@@ -21,6 +21,7 @@ import (
 
 type RangeVectorSelector struct {
 	Selector *Selector
+	Stats    *types.QueryStats
 
 	rangeMilliseconds int64
 	chunkIterator     chunkenc.Iterator
@@ -32,9 +33,10 @@ type RangeVectorSelector struct {
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
 
-func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) *RangeVectorSelector {
+func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, stats *types.QueryStats) *RangeVectorSelector {
 	return &RangeVectorSelector{
 		Selector:   selector,
+		Stats:      stats,
 		floats:     types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms: types.NewHPointRingBuffer(memoryConsumptionTracker),
 		stepData:   &types.RangeVectorStepData{},
@@ -90,8 +92,8 @@ func (m *RangeVectorSelector) NextStepSamples() (*types.RangeVectorStepData, err
 	// Apply offset after adjusting for timestamp from @ modifier.
 	rangeEnd = rangeEnd - m.Selector.Offset
 	rangeStart := rangeEnd - m.rangeMilliseconds
-	m.floats.DiscardPointsBefore(rangeStart)
-	m.histograms.DiscardPointsBefore(rangeStart)
+	m.floats.DiscardPointsAtOrBefore(rangeStart)
+	m.histograms.DiscardPointsAtOrBefore(rangeStart)
 
 	if err := m.fillBuffer(m.floats, m.histograms, rangeStart, rangeEnd); err != nil {
 		return nil, err
@@ -101,6 +103,8 @@ func (m *RangeVectorSelector) NextStepSamples() (*types.RangeVectorStepData, err
 	m.stepData.Histograms = m.histograms.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Histograms)
 	m.stepData.RangeStart = rangeStart
 	m.stepData.RangeEnd = rangeEnd
+
+	m.Stats.TotalSamples += int64(m.stepData.Floats.Count()) + m.stepData.Histograms.EquivalentFloatSampleCount()
 
 	return m.stepData, nil
 }
@@ -116,7 +120,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			return m.chunkIterator.Err()
 		case chunkenc.ValFloat:
 			t, f := m.chunkIterator.At()
-			if value.IsStaleNaN(f) || t < rangeStart {
+			if value.IsStaleNaN(f) || t <= rangeStart {
 				// Range vectors ignore stale markers
 				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
 				continue
@@ -134,7 +138,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			}
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			t := m.chunkIterator.AtT()
-			if t < rangeStart {
+			if t <= rangeStart {
 				continue
 			}
 			hPoint, _ := histograms.NextPoint()

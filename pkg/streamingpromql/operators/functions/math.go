@@ -52,7 +52,7 @@ var Sgn = FloatTransformationDropHistogramsFunc(func(f float64) float64 {
 	return f
 })
 
-var UnaryNegation InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+var UnaryNegation InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, _ *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	for i := range seriesData.Floats {
 		seriesData.Floats[i].F = -seriesData.Floats[i].F
 	}
@@ -64,24 +64,16 @@ var UnaryNegation InstantVectorSeriesFunction = func(seriesData types.InstantVec
 	return seriesData, nil
 }
 
-var Clamp InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+var Clamp InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	outputIdx := 0
 	minArg := scalarArgsData[0]
 	maxArg := scalarArgsData[1]
 
-	// There will always be a scalar at every step of the query.
-	// However, there may not be a sample at a step. So we need to
-	// keep track of where we are up to step-wise with the scalars,
-	// incrementing through the scalars until their timestamp matches
-	// the samples.
-	argIdx := 0
-
 	for _, data := range seriesData.Floats {
-		for data.T > minArg.Samples[argIdx].T {
-			argIdx++
-		}
-		minVal := minArg.Samples[argIdx].F
-		maxVal := maxArg.Samples[argIdx].F
+		// Scalars are guaranteed to have a point for each step in the query.
+		idx := timeRange.PointIndex(data.T)
+		minVal := minArg.Samples[idx].F
+		maxVal := maxArg.Samples[idx].F
 
 		if maxVal < minVal {
 			// Drop this point as there is no valid answer
@@ -109,22 +101,14 @@ func ClampMinMaxFactory(isMin bool) InstantVectorSeriesFunction {
 		}
 	}
 
-	return func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+	return func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		clampTo := scalarArgsData[0]
 
-		// There will always be a scalar at every step of the query.
-		// However, there may not be a sample at a step. So we need to
-		// keep track of where we are up to step-wise with the scalars,
-		// incrementing through the scalars until their timestamp matches
-		// the samples.
-		argIdx := 0
-
 		for step, data := range seriesData.Floats {
-			for data.T > clampTo.Samples[argIdx].T {
-				argIdx++
-			}
+			// Scalars are guaranteed to have a point for each step in the query.
+			idx := timeRange.PointIndex(data.T)
+			val := clampTo.Samples[idx].F
 
-			val := clampTo.Samples[argIdx].F
 			// We reuse the existing FPoint slice in place
 			seriesData.Floats[step].F = clampFunc(val, data.F)
 		}
@@ -137,23 +121,15 @@ func ClampMinMaxFactory(isMin bool) InstantVectorSeriesFunction {
 
 // round returns a number rounded to toNearest.
 // Ties are solved by rounding up.
-var Round InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
+var Round InstantVectorSeriesFunction = func(seriesData types.InstantVectorSeriesData, scalarArgsData []types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 	toNearest := scalarArgsData[0]
 
-	// There will always be a scalar at every step of the query.
-	// However, there may not be a sample at a step. So we need to
-	// keep track of where we are up to step-wise with the scalars,
-	// incrementing through the scalars until their timestamp matches
-	// the samples.
-	argIdx := 0
-
 	for step, data := range seriesData.Floats {
-		for data.T > toNearest.Samples[argIdx].T {
-			argIdx++
-		}
+		// Scalars are guaranteed to have a point for each step in the query.
+		idx := timeRange.PointIndex(data.T)
 
 		// Invert as it seems to cause fewer floating point accuracy issues.
-		toNearestInverse := 1.0 / toNearest.Samples[argIdx].F
+		toNearestInverse := 1.0 / toNearest.Samples[idx].F
 
 		// We reuse the existing FPoint slice in place
 		seriesData.Floats[step].F = math.Floor(data.F*toNearestInverse+0.5) / toNearestInverse

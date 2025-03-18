@@ -28,8 +28,8 @@ import (
 
 var (
 	// These expressions are taken directly from the promqltest package, and are what it uses to parse eval commands.
-	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|warn|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
-	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
+	patEvalInstant = regexp.MustCompile(`^eval(?:_(fail|warn|info|ordered))?\s+instant\s+(?:at\s+(.+?))?\s+(.+)$`)
+	patEvalRange   = regexp.MustCompile(`^eval(?:_(fail|warn|info))?\s+range\s+from\s+(.+)\s+to\s+(.+)\s+step\s+(.+?)\s+(.+)$`)
 )
 
 func main() {

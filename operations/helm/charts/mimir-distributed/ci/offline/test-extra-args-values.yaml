@@ -1,0 +1,54 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.20"
+
+test_extra_args: &test_extra_args
+  extraArgs:
+    flag-empty: null
+    flag-string: hello
+    flag-bool: false
+    flag-float: 1.23
+    flag-json1: "{\"foo\":\"bar\"}"
+    flag-json2: '{"foo":"bar"}'
+    flag-number: 0
+
+admin_api:
+  <<: *test_extra_args
+
+alertmanager:
+  <<: *test_extra_args
+
+compactor:
+  <<: *test_extra_args
+
+continuous_test:
+  <<: *test_extra_args
+
+distributor:
+  <<: *test_extra_args
+
+gateway:
+  <<: *test_extra_args
+
+overrides_exporter:
+  <<: *test_extra_args
+
+query_frontend:
+  <<: *test_extra_args
+
+query_scheduler:
+  <<: *test_extra_args
+
+ruler:
+  <<: *test_extra_args
+
+ruler_querier:
+  <<: *test_extra_args
+
+ruler_query_scheduler:
+  <<: *test_extra_args
+
+smoke_test:
+  <<: *test_extra_args
+
+store_gateway:
+  <<: *test_extra_args

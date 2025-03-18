@@ -10,7 +10,7 @@ weight: 110
 The Remote ruler reads networking dashboard shows receive and transmit bandwidth, in-flight requests, and TCP connections for ruler query path components when remote operational mode is enabled.
 The dashboard isolates each service on the remote ruler read path into its own section and displays the order in which a read request flows.
 
-This dashboard requires [additional resources metrics]({{< relref "../../requirements#additional-resources-metrics" >}}).
+This dashboard requires [additional resources metrics](../../requirements/#additional-resources-metrics).
 
 ## Example
 

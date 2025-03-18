@@ -40,14 +40,14 @@ spec:
       {{- end }}
       containers:
         - name: query-scheduler
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "query-scheduler") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=query-scheduler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
           {{- range $key, $value := .Values.query_scheduler.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.query_scheduler.extraVolumeMounts }}

@@ -35,7 +35,7 @@ for PR_ID in ${OPEN_PR_IDS}; do
 
   # The backtick here is markdown and we don't want to get it evaluated by the shell.
   # shellcheck disable=SC2016
-  PR_COMMENT_LINK=$(gh pr comment "${PR_ID}" --body 'The CHANGELOG has just been cut to prepare for the next release. Please rebase `main` and eventually move the CHANGELOG entry added / updated in this PR to the top of the '$CHANGELOG_PATH' document. Thanks!')
+  PR_COMMENT_LINK=$(gh pr comment "${PR_ID}" --body ':robot: _Automated comment_ <br><br>The CHANGELOG has just been cut to prepare for the next release. Please rebase `main` and eventually move the CHANGELOG entry added / updated in this PR to the top of the '$CHANGELOG_PATH' document. Thanks!')
   gh pr edit "${PR_ID}" --add-label "${NOTIFICATION_LABEL}" >/dev/null
 
   echo "  Notification posted: ${PR_COMMENT_LINK}"

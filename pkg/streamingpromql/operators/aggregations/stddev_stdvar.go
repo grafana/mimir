@@ -9,6 +9,8 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -33,12 +35,23 @@ type StddevStdvarAggregationGroup struct {
 	groupSeriesCounts []float64
 }
 
-func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ types.EmitAnnotationFunc) error {
-	var err error
+func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
+	// Native histograms are ignored for stddev and stdvar.
+	if len(data.Histograms) > 0 {
+		emitAnnotation(func(_ string, expressionPosition posrange.PositionRange) error {
+			name := "stdvar"
 
-	// Native histograms are ignored for stddev
+			if g.stddev {
+				name = "stddev"
+			}
+
+			return annotations.NewHistogramIgnoredInAggregationInfo(name, expressionPosition)
+		})
+	}
+
 	if len(data.Floats) > 0 && g.floats == nil {
 		// First series with float values for this group, populate it.
+		var err error
 		g.floats, err = types.Float64SlicePool.Get(timeRange.StepCount, memoryConsumptionTracker)
 		if err != nil {
 			return err
@@ -70,7 +83,7 @@ func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVector
 	return nil
 }
 
-func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *StddevStdvarAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount := 0
 	for _, sc := range g.groupSeriesCounts {
 		if sc > 0 {

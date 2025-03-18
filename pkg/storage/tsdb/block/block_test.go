@@ -28,7 +28,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
-	"github.com/grafana/mimir/pkg/util/test"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -158,7 +157,7 @@ func TestUpload(t *testing.T) {
 	})
 
 	t.Run("missing chunks", func(t *testing.T) {
-		test.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
+		testutil.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
 
 		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
 		require.Error(t, err)
@@ -167,7 +166,7 @@ func TestUpload(t *testing.T) {
 
 	t.Run("missing index file", func(t *testing.T) {
 		require.NoError(t, os.MkdirAll(path.Join(tmpDir, "test", b1.String(), ChunksDirname), 0777))
-		test.Copy(t, path.Join(tmpDir, b1.String(), ChunksDirname, "000001"), path.Join(tmpDir, "test", b1.String(), ChunksDirname, "000001"))
+		testutil.Copy(t, path.Join(tmpDir, b1.String(), ChunksDirname, "000001"), path.Join(tmpDir, "test", b1.String(), ChunksDirname, "000001"))
 
 		err := Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, "test", b1.String()), nil)
 		require.Error(t, err)
@@ -175,7 +174,7 @@ func TestUpload(t *testing.T) {
 	})
 
 	t.Run("missing meta.json file", func(t *testing.T) {
-		test.Copy(t, path.Join(tmpDir, b1.String(), IndexFilename), path.Join(tmpDir, "test", b1.String(), IndexFilename))
+		testutil.Copy(t, path.Join(tmpDir, b1.String(), IndexFilename), path.Join(tmpDir, "test", b1.String(), IndexFilename))
 		require.NoError(t, os.Remove(path.Join(tmpDir, "test", b1.String(), MetaFilename)))
 
 		// Missing meta.json file.
@@ -198,7 +197,7 @@ func TestUpload(t *testing.T) {
 		require.Contains(t, err.Error(), "/meta.json: no such file or directory")
 	})
 
-	test.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
+	testutil.Copy(t, path.Join(tmpDir, b1.String(), MetaFilename), path.Join(tmpDir, "test", b1.String(), MetaFilename))
 
 	t.Run("full block", func(t *testing.T) {
 		// Full
@@ -478,9 +477,10 @@ func TestUploadCleanup(t *testing.T) {
 
 	{
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/index"}
+		uerr := &UploadError{}
 
 		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
-		require.ErrorIs(t, uploadErr, errUploadFailed)
+		require.ErrorAs(t, uploadErr, uerr)
 
 		// If upload of index fails, block is deleted.
 		require.Equal(t, 0, len(bkt.Objects()))
@@ -489,9 +489,10 @@ func TestUploadCleanup(t *testing.T) {
 
 	{
 		errBkt := errBucket{Bucket: bkt, failSuffix: "/meta.json"}
+		uerr := &UploadError{}
 
 		uploadErr := Upload(ctx, log.NewNopLogger(), errBkt, path.Join(tmpDir, b1.String()), nil)
-		require.ErrorIs(t, uploadErr, errUploadFailed)
+		require.ErrorAs(t, uploadErr, uerr)
 
 		// If upload of meta.json fails, nothing is cleaned up.
 		require.Equal(t, 3, len(bkt.Objects()))
@@ -501,8 +502,6 @@ func TestUploadCleanup(t *testing.T) {
 		require.Equal(t, 0, len(bkt.Objects()[path.Join(DebugMetas, fmt.Sprintf("%s.json", b1.String()))]))
 	}
 }
-
-var errUploadFailed = errors.New("upload failed")
 
 type errBucket struct {
 	objstore.Bucket
@@ -517,7 +516,7 @@ func (eb errBucket) Upload(ctx context.Context, name string, r io.Reader) error 
 	}
 
 	if strings.HasSuffix(name, eb.failSuffix) {
-		return errUploadFailed
+		return UploadError{cause: err, fileType: FileType(name)}
 	}
 	return nil
 }

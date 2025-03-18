@@ -18,10 +18,9 @@ package prometheusremotewrite
 
 import (
 	"context"
+	"log/slog"
 	"math"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -47,9 +46,9 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 			model.MetricNameLabel,
 			name,
 		)
-		timestamp := convertTimeStamp(pt.Timestamp())
 		sample := &prompb.Sample{
-			Timestamp: timestamp,
+			// convert ns to ms
+			Timestamp: convertTimeStamp(pt.Timestamp()),
 		}
 		switch pt.ValueType() {
 		case pmetric.NumberDataPointValueTypeInt:
@@ -67,7 +66,7 @@ func (c *PrometheusConverter) addGaugeNumberDataPoints(ctx context.Context, data
 }
 
 func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPoints pmetric.NumberDataPointSlice,
-	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, logger log.Logger) error {
+	resource pcommon.Resource, metric pmetric.Metric, settings Settings, name string, logger *slog.Logger) error {
 	for x := 0; x < dataPoints.Len(); x++ {
 		if err := c.everyN.checkContext(ctx); err != nil {
 			return err
@@ -85,8 +84,8 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			model.MetricNameLabel,
 			name,
 		)
-
 		sample := &prompb.Sample{
+			// convert ns to ms
 			Timestamp: timestamp,
 		}
 		switch pt.ValueType() {
@@ -127,7 +126,7 @@ func (c *PrometheusConverter) addSumNumberDataPoints(ctx context.Context, dataPo
 			}
 			c.addTimeSeriesIfNeeded(createdLabels, startTimestampMs, pt.Timestamp())
 		}
-		level.Debug(logger).Log("labels", labelsStringer(lbls), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "sum")
+		logger.Debug("addSumNumberDataPoints", "labels", labelsStringer(lbls), "start_ts", startTimestampMs, "sample_ts", timestamp, "type", "sum")
 	}
 
 	return nil

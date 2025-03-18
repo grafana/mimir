@@ -22,29 +22,35 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
-	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
+
+	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 type Settings struct {
-	ExternalLabels                             map[string]string
-	Namespace                                  string
-	PromoteResourceAttributes                  []string
-	DisableTargetInfo                          bool
-	ExportCreatedMetric                        bool
-	AddMetricSuffixes                          bool
-	SendMetadata                               bool
+	Namespace                         string
+	ExternalLabels                    map[string]string
+	DisableTargetInfo                 bool
+	ExportCreatedMetric               bool
+	AddMetricSuffixes                 bool
+	SendMetadata                      bool
+	AllowUTF8                         bool
+	PromoteResourceAttributes         []string
+	KeepIdentifyingResourceAttributes bool
+
+	// Mimir specifics.
 	EnableCreatedTimestampZeroIngestion        bool
+	EnableStartTimeQuietZero                   bool
 	ValidIntervalCreatedTimestampZeroIngestion time.Duration
 }
 
@@ -59,6 +65,7 @@ type MimirConverter struct {
 	unique    map[uint64]*mimirpb.TimeSeries
 	conflicts map[uint64][]*mimirpb.TimeSeries
 	everyN    everyNTimes
+	metadata  []mimirpb.MetricMetadata
 }
 
 func NewMimirConverter() *MimirConverter {
@@ -69,9 +76,19 @@ func NewMimirConverter() *MimirConverter {
 }
 
 // FromMetrics converts pmetric.Metrics to Mimir remote write format.
-func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings, logger log.Logger) (annots annotations.Annotations, errs error) {
+func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, settings Settings, logger *slog.Logger) (annots annotations.Annotations, errs error) {
 	c.everyN = everyNTimes{n: 128}
 	resourceMetricsSlice := md.ResourceMetrics()
+
+	numMetrics := 0
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		scopeMetricsSlice := resourceMetricsSlice.At(i).ScopeMetrics()
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			numMetrics += scopeMetricsSlice.At(j).Metrics().Len()
+		}
+	}
+	c.metadata = make([]mimirpb.MetricMetadata, 0, numMetrics)
+
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
@@ -97,7 +114,18 @@ func (c *MimirConverter) FromMetrics(ctx context.Context, md pmetric.Metrics, se
 					continue
 				}
 
-				promName := prometheustranslator.BuildCompliantName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				var promName string
+				if settings.AllowUTF8 {
+					promName = prometheustranslator.BuildMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				} else {
+					promName = prometheustranslator.BuildCompliantMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+				}
+				c.metadata = append(c.metadata, mimirpb.MetricMetadata{
+					Type:             otelMetricTypeToPromMetricType(metric),
+					MetricFamilyName: promName,
+					Help:             metric.Description(),
+					Unit:             metric.Unit(),
+				})
 
 				// handle individual metrics based on type
 				//exhaustive:enforce

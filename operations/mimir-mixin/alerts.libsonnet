@@ -5,7 +5,9 @@
     (import 'alerts/alertmanager.libsonnet') +
     (import 'alerts/blocks.libsonnet') +
     (import 'alerts/compactor.libsonnet') +
+    (import 'alerts/distributor.libsonnet') +
     (import 'alerts/autoscaling.libsonnet') +
     (if $._config.ingest_storage_enabled then import 'alerts/ingest-storage.libsonnet' else {}) +
-    (import 'alerts/continuous-test.libsonnet'),
+    (import 'alerts/continuous-test.libsonnet') +
+    (if $._config.gem_enabled then import 'alerts/gem.libsonnet' else {}),
 }

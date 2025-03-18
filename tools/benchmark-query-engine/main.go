@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"syscall"
@@ -46,6 +47,7 @@ type app struct {
 	justRunIngester bool
 	cpuProfilePath  string
 	memProfilePath  string
+	benchtime       string
 }
 
 func (a *app) run() error {
@@ -109,6 +111,8 @@ func (a *app) runBenchmarks(filteredNames []string) error {
 		return fmt.Errorf("benchmark binary failed validation: %w", err)
 	}
 
+	slog.Info("running benchmarks...")
+
 	haveRunAnyTests := false
 
 	for _, name := range filteredNames {
@@ -148,6 +152,7 @@ func (a *app) parseArgs() error {
 	flag.StringVar(&a.ingesterAddress, "use-existing-ingester", "", "use existing ingester rather than creating a new one")
 	flag.StringVar(&a.cpuProfilePath, "cpuprofile", "", "write CPU profile to file, only supported when running a single iteration of one benchmark")
 	flag.StringVar(&a.memProfilePath, "memprofile", "", "write memory profile to file, only supported when running a single iteration of one benchmark")
+	flag.StringVar(&a.benchtime, "benchtime", "", "value passed to benchmark binary as -benchtime flag")
 
 	if err := flagext.ParseFlagsWithoutArguments(flag.CommandLine); err != nil {
 		fmt.Printf("%v\n", err)
@@ -194,6 +199,8 @@ func (a *app) createTempDir() error {
 }
 
 func (a *app) buildBinary() error {
+	slog.Info("building binary...")
+
 	a.binaryPath = filepath.Join(a.tempDir, "benchmark-binary")
 
 	cmd := exec.Command("go", "test", "-c", "-o", a.binaryPath, "-tags", "stringlabels", ".")
@@ -313,6 +320,10 @@ func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 		args = append(args, "-test.memprofile="+a.memProfilePath)
 	}
 
+	if a.benchtime != "" {
+		args = append(args, "-test.benchtime="+a.benchtime)
+	}
+
 	cmd := exec.Command(a.binaryPath, args...)
 	buf := &bytes.Buffer{}
 	cmd.Stdout = buf
@@ -339,11 +350,22 @@ func (a *app) runTestCase(name string, printBenchmarkHeader bool) error {
 			}
 		} else if isBenchmarkLine {
 			fmt.Print(l)
-			fmt.Printf("     %v B\n", usage.Maxrss)
+			fmt.Printf("     %v B\n", maxRSSInBytes(usage))
 		} else if !isPassLine {
 			fmt.Println(l)
 		}
 	}
 
 	return nil
+}
+
+func maxRSSInBytes(usage *syscall.Rusage) int64 {
+	switch runtime.GOOS {
+	case "linux":
+		return usage.Maxrss * 1024 // Maxrss is returned in kilobytes on Linux.
+	case "darwin":
+		return usage.Maxrss // Maxrss is already in bytes on macOS.
+	default:
+		panic(fmt.Sprintf("unknown GOOS '%v'", runtime.GOOS))
+	}
 }

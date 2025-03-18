@@ -51,6 +51,10 @@ func (b *SSEBucketClient) Close() error {
 	return b.bucket.Close()
 }
 
+func (b *SSEBucketClient) Provider() objstore.ObjProvider {
+	return b.bucket.Provider()
+}
+
 // Upload the contents of the reader as an object into the bucket.
 func (b *SSEBucketClient) Upload(ctx context.Context, name string, r io.Reader) error {
 	if sse, err := b.getCustomS3SSEConfig(); err != nil {

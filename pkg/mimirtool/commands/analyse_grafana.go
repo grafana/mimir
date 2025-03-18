@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -17,7 +18,6 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/grafana-tools/sdk"
 	"github.com/prometheus/common/model"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"

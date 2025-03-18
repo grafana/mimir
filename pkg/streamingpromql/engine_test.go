@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
@@ -40,133 +41,171 @@ import (
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
 
+func init() {
+	types.EnableManglingReturnedSlices = true
+}
+
 func TestUnsupportedPromQLFeatures(t *testing.T) {
-	featureToggles := EnableAllFeatures
+	features := EnableAllFeatures
+
+	// Disable experimental so that parser will parse it without the updating experiemental flag
+	parser.Functions["double_exponential_smoothing"].Experimental = false
 
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"metric{} + on() group_left() other_metric{}":  "binary expression with many-to-one matching",
-		"metric{} + on() group_right() other_metric{}": "binary expression with one-to-many matching",
-		"topk(5, metric{})":                            "'topk' aggregation with parameter",
-		`count_values("foo", metric{})`:                "'count_values' aggregation with parameter",
-		"quantile_over_time(0.4, metric{}[5m])":        "'quantile_over_time' function",
-		"quantile(0.95, metric{})":                     "'quantile' aggregation with parameter",
+		"double_exponential_smoothing(metric{}[1h], 1, 1)": "'double_exponential_smoothing' function",
 	}
 
 	for expression, expectedError := range unsupportedExpressions {
 		t.Run(expression, func(t *testing.T) {
-			requireQueryIsUnsupported(t, featureToggles, expression, expectedError)
+			requireQueryIsUnsupported(t, features, expression, expectedError)
 		})
 	}
 }
 
 func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 	t.Run("aggregation operations", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableAggregationOperations = false
+		features := EnableAllFeatures
+		features.EnableAggregationOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "sum by (label) (metric)", "aggregation operations")
+		requireQueryIsUnsupported(t, features, "sum by (label) (metric)", "aggregation operations")
 	})
 
 	t.Run("vector/vector binary expressions with comparison operation", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableVectorVectorBinaryComparisonOperations = false
+		features := EnableAllFeatures
+		features.EnableVectorVectorBinaryComparisonOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "metric{} > other_metric{}", "vector/vector binary expression with '>'")
+		requireQueryIsUnsupported(t, features, "metric{} > other_metric{}", "vector/vector binary expression with '>'")
 
 		// Other operations should still be supported.
-		requireQueryIsSupported(t, featureToggles, "metric{} > 1")
-		requireQueryIsSupported(t, featureToggles, "1 > metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 > bool 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
-		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 + 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} and other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} > 1")
+		requireQueryIsSupported(t, features, "1 > metric{}")
+		requireQueryIsSupported(t, features, "2 > bool 1")
+		requireQueryIsSupported(t, features, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} + 1")
+		requireQueryIsSupported(t, features, "1 + metric{}")
+		requireQueryIsSupported(t, features, "2 + 1")
+		requireQueryIsSupported(t, features, "metric{} and other_metric{}")
 	})
 
 	t.Run("vector/scalar binary expressions with comparison operation", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableVectorScalarBinaryComparisonOperations = false
+		features := EnableAllFeatures
+		features.EnableVectorScalarBinaryComparisonOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "metric{} > 1", "vector/scalar binary expression with '>'")
-		requireQueryIsUnsupported(t, featureToggles, "1 > metric{}", "vector/scalar binary expression with '>'")
+		requireQueryIsUnsupported(t, features, "metric{} > 1", "vector/scalar binary expression with '>'")
+		requireQueryIsUnsupported(t, features, "1 > metric{}", "vector/scalar binary expression with '>'")
 
 		// Other operations should still be supported.
-		requireQueryIsSupported(t, featureToggles, "metric{} > other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 > bool 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
-		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 + 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} and other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} > other_metric{}")
+		requireQueryIsSupported(t, features, "2 > bool 1")
+		requireQueryIsSupported(t, features, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} + 1")
+		requireQueryIsSupported(t, features, "1 + metric{}")
+		requireQueryIsSupported(t, features, "2 + 1")
+		requireQueryIsSupported(t, features, "metric{} and other_metric{}")
 	})
 
 	t.Run("scalar/scalar binary expressions with comparison operation", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableScalarScalarBinaryComparisonOperations = false
+		features := EnableAllFeatures
+		features.EnableScalarScalarBinaryComparisonOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "2 > bool 1", "scalar/scalar binary expression with '>'")
+		requireQueryIsUnsupported(t, features, "2 > bool 1", "scalar/scalar binary expression with '>'")
 
 		// Other operations should still be supported.
-		requireQueryIsSupported(t, featureToggles, "metric{} > other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} > 1")
-		requireQueryIsSupported(t, featureToggles, "1 > metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
-		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 + 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} and other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} > other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} > 1")
+		requireQueryIsSupported(t, features, "1 > metric{}")
+		requireQueryIsSupported(t, features, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} + 1")
+		requireQueryIsSupported(t, features, "1 + metric{}")
+		requireQueryIsSupported(t, features, "2 + 1")
+		requireQueryIsSupported(t, features, "metric{} and other_metric{}")
 	})
 
 	t.Run("binary expressions with logical operations", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableBinaryLogicalOperations = false
+		features := EnableAllFeatures
+		features.EnableBinaryLogicalOperations = false
 
-		requireQueryIsUnsupported(t, featureToggles, "metric{} and other_metric{}", "binary expression with 'and'")
-		requireQueryIsUnsupported(t, featureToggles, "metric{} or other_metric{}", "binary expression with 'or'")
-		requireQueryIsUnsupported(t, featureToggles, "metric{} unless other_metric{}", "binary expression with 'unless'")
+		requireQueryIsUnsupported(t, features, "metric{} and other_metric{}", "binary expression with 'and'")
+		requireQueryIsUnsupported(t, features, "metric{} or other_metric{}", "binary expression with 'or'")
+		requireQueryIsUnsupported(t, features, "metric{} unless other_metric{}", "binary expression with 'unless'")
 
 		// Other operations should still be supported.
-		requireQueryIsSupported(t, featureToggles, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} + 1")
-		requireQueryIsSupported(t, featureToggles, "1 + metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 + 1")
-		requireQueryIsSupported(t, featureToggles, "metric{} > other_metric{}")
-		requireQueryIsSupported(t, featureToggles, "metric{} > 1")
-		requireQueryIsSupported(t, featureToggles, "1 > metric{}")
-		requireQueryIsSupported(t, featureToggles, "2 > bool 1")
+		requireQueryIsSupported(t, features, "metric{} + other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} + 1")
+		requireQueryIsSupported(t, features, "1 + metric{}")
+		requireQueryIsSupported(t, features, "2 + 1")
+		requireQueryIsSupported(t, features, "metric{} > other_metric{}")
+		requireQueryIsSupported(t, features, "metric{} > 1")
+		requireQueryIsSupported(t, features, "1 > metric{}")
+		requireQueryIsSupported(t, features, "2 > bool 1")
 	})
 
 	t.Run("scalars", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableScalars = false
+		features := EnableAllFeatures
+		features.EnableScalars = false
 
-		requireQueryIsUnsupported(t, featureToggles, "2", "scalar values")
+		requireQueryIsUnsupported(t, features, "2", "scalar values")
 	})
 
 	t.Run("subqueries", func(t *testing.T) {
-		featureToggles := EnableAllFeatures
-		featureToggles.EnableSubqueries = false
+		features := EnableAllFeatures
+		features.EnableSubqueries = false
 
-		requireQueryIsUnsupported(t, featureToggles, "sum_over_time(metric[1m:10s])", "subquery")
+		requireQueryIsUnsupported(t, features, "sum_over_time(metric[1m:10s])", "subquery")
+	})
+
+	t.Run("one-to-many and many-to-one binary operations", func(t *testing.T) {
+		features := EnableAllFeatures
+		features.EnableOneToManyAndManyToOneBinaryOperations = false
+
+		requireQueryIsUnsupported(t, features, "metric{} + on() group_left() other_metric{}", "binary expression with many-to-one matching")
+		requireQueryIsUnsupported(t, features, "metric{} + on() group_right() other_metric{}", "binary expression with one-to-many matching")
+	})
+
+	t.Run("function disabled by name", func(t *testing.T) {
+		features := EnableAllFeatures
+		features.DisabledFunctions = []string{"histogram_quantile", "ceil", "nonexistant"}
+
+		requireQueryIsUnsupported(t, features, "ceil(metric{})", "'ceil' function")
+		requireQueryIsUnsupported(t, features, "histogram_quantile(0.9, h{})", "'histogram_quantile' function")
+	})
+
+	t.Run("aggregation disabled by name", func(t *testing.T) {
+		features := EnableAllFeatures
+		features.DisabledAggregations = []string{"sum", "avg", "MAX"}
+
+		requireQueryIsUnsupported(t, features, "avg by (label) (metric{})", "'avg' aggregation disabled")
+		requireQueryIsUnsupported(t, features, "max(metric{})", "'max' aggregation disabled")
+		requireQueryIsUnsupported(t, features, "SUM(metric{})", "'sum' aggregation disabled")
+	})
+
+	t.Run("unknown aggregation name disabled", func(t *testing.T) {
+		features := EnableAllFeatures
+		features.DisabledAggregations = []string{"sum", "avg", "NotAnAgg"}
+
+		opts := NewTestEngineOpts()
+		opts.Features = features
+		_, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+		require.Error(t, err)
+		require.EqualError(t, err, "disabled aggregation 'NotAnAgg' does not exist")
 	})
 }
 
-func requireQueryIsUnsupported(t *testing.T, toggles FeatureToggles, expression string, expectedError string) {
-	requireRangeQueryIsUnsupported(t, toggles, expression, expectedError)
-	requireInstantQueryIsUnsupported(t, toggles, expression, expectedError)
+func requireQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
+	requireRangeQueryIsUnsupported(t, features, expression, expectedError)
+	requireInstantQueryIsUnsupported(t, features, expression, expectedError)
 }
 
-func requireQueryIsSupported(t *testing.T, toggles FeatureToggles, expression string) {
-	requireRangeQueryIsSupported(t, toggles, expression)
-	requireInstantQueryIsSupported(t, toggles, expression)
+func requireQueryIsSupported(t *testing.T, features Features, expression string) {
+	requireRangeQueryIsSupported(t, features, expression)
+	requireInstantQueryIsSupported(t, features, expression)
 }
 
-func requireRangeQueryIsUnsupported(t *testing.T, featureToggles FeatureToggles, expression string, expectedError string) {
+func requireRangeQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
-	opts.FeatureToggles = featureToggles
+	opts.Features = features
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -177,9 +216,9 @@ func requireRangeQueryIsUnsupported(t *testing.T, featureToggles FeatureToggles,
 	require.Nil(t, qry)
 }
 
-func requireInstantQueryIsUnsupported(t *testing.T, featureToggles FeatureToggles, expression string, expectedError string) {
+func requireInstantQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
-	opts.FeatureToggles = featureToggles
+	opts.Features = features
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -190,9 +229,9 @@ func requireInstantQueryIsUnsupported(t *testing.T, featureToggles FeatureToggle
 	require.Nil(t, qry)
 }
 
-func requireRangeQueryIsSupported(t *testing.T, featureToggles FeatureToggles, expression string) {
+func requireRangeQueryIsSupported(t *testing.T, features Features, expression string) {
 	opts := NewTestEngineOpts()
-	opts.FeatureToggles = featureToggles
+	opts.Features = features
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -200,9 +239,9 @@ func requireRangeQueryIsSupported(t *testing.T, featureToggles FeatureToggles, e
 	require.NoError(t, err)
 }
 
-func requireInstantQueryIsSupported(t *testing.T, featureToggles FeatureToggles, expression string) {
+func requireInstantQueryIsSupported(t *testing.T, features Features, expression string) {
 	opts := NewTestEngineOpts()
-	opts.FeatureToggles = featureToggles
+	opts.Features = features
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
@@ -258,7 +297,7 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 	prometheus := q.Exec(context.Background())
 	q.Close()
 
-	testutils.RequireEqualResults(t, expr, prometheus, mimir)
+	testutils.RequireEqualResults(t, expr, prometheus, mimir, false)
 }
 
 // This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
@@ -359,8 +398,8 @@ func TestRangeVectorSelectors(t *testing.T) {
 		expected *promql.Result
 		ts       time.Time
 	}{
-		"matches series with points in range": {
-			expr: "some_metric[1m]",
+		"floats: matches series with points in range": {
+			expr: "some_metric[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -381,22 +420,22 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"matches no series": {
+		"floats: matches no series": {
 			expr: "some_nonexistent_metric[1m]",
 			ts:   baseT,
 			expected: &promql.Result{
 				Value: promql.Matrix{},
 			},
 		},
-		"no samples in range": {
+		"floats: no samples in range": {
 			expr: "some_metric[1m]",
 			ts:   baseT.Add(20 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{},
 			},
 		},
-		"does not return points outside range if last selected point does not align to end of range": {
-			expr: "some_metric_with_gaps[1m]",
+		"floats: does not return points outside range if last selected point does not align to end of range": {
+			expr: "some_metric_with_gaps[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -409,8 +448,8 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"metric with stale marker": {
-			expr: "some_metric_with_stale_marker[3m]",
+		"floats: metric with stale marker": {
+			expr: "some_metric_with_stale_marker[3m1s]",
 			ts:   baseT.Add(3 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -425,8 +464,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"histogram: matches series with points in range": {
-			expr: "incr_histogram[1m]",
+		"floats: 0 length range": {
+			expr: "some_metric[0]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
+		"histograms: matches series with points in range": {
+			expr: "incr_histogram[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -511,15 +557,15 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"histogram: no samples in range": {
+		"histograms: no samples in range": {
 			expr: "incr_histogram[1m]",
 			ts:   baseT.Add(20 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{},
 			},
 		},
-		"histogram: does not return points outside range if last selected point does not align to end of range": {
-			expr: "histogram_with_gaps[1m]",
+		"histograms: does not return points outside range if last selected point does not align to end of range": {
+			expr: "histogram_with_gaps[1m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -548,8 +594,8 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
-		"histogram: metric with stale marker": {
-			expr: "histogram_with_stale_marker[3m]",
+		"histograms: metric with stale marker": {
+			expr: "histogram_with_stale_marker[3m1s]",
 			ts:   baseT.Add(3 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -612,6 +658,13 @@ func TestRangeVectorSelectors(t *testing.T) {
 				},
 			},
 		},
+		"histograms: 0 length range": {
+			expr: "incr_histogram[0]",
+			ts:   baseT.Add(2 * time.Minute),
+			expected: &promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
 		"mixed series with histograms and floats": {
 			expr: "mixed_metric[4m]",
 			ts:   baseT.Add(4 * time.Minute),
@@ -672,7 +725,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 		},
 		"mixed series with a float then a histogram": {
 			// No incorrect lookback
-			expr: "mixed_metric_float_first[2m]",
+			expr: "mixed_metric_float_first[2m1s]",
 			ts:   baseT.Add(2 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -707,7 +760,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"selector with positive offset (looking backwards)": {
-			expr: "some_metric[1m] offset 1m",
+			expr: "some_metric[1m1s] offset 1m",
 			ts:   baseT.Add(3 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -729,7 +782,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"selector with negative offset (looking forwards)": {
-			expr: "some_metric[1m] offset -1m",
+			expr: "some_metric[1m1s] offset -1m",
 			ts:   baseT.Add(1 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -765,7 +818,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"selector with @ modifier": {
-			expr: "some_metric[1m] @ 2m",
+			expr: "some_metric[1m1s] @ 2m",
 			ts:   baseT.Add(20 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -787,7 +840,7 @@ func TestRangeVectorSelectors(t *testing.T) {
 			},
 		},
 		"selector with @ modifier and offset": {
-			expr: "some_metric[1m] @ 3m offset 1m",
+			expr: "some_metric[1m1s] @ 3m offset 1m",
 			ts:   baseT.Add(20 * time.Minute),
 			expected: &promql.Result{
 				Value: promql.Matrix{
@@ -905,6 +958,22 @@ func TestSubqueries(t *testing.T) {
 			Start: time.Unix(10, 0),
 		},
 		{
+			// A query where SeriesMetadata returns some series but evaluates to no samples should not return anything.
+			Query: `(metric{type="floats"} > Inf)[20s:10s]`,
+			Start: time.Unix(30, 0),
+			Result: promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
+		{
+			// A nested subquery with the same properties as above.
+			Query: `last_over_time((metric{type="floats"} > Inf)[20s:10s])[30s:5s]`,
+			Start: time.Unix(30, 0),
+			Result: promql.Result{
+				Value: promql.Matrix{},
+			},
+		},
+		{
 			Query: "metric[20s:5s]",
 			Result: promql.Result{
 				Value: promql.Matrix{
@@ -969,15 +1038,31 @@ func TestSubqueries(t *testing.T) {
 			Start: time.Unix(35, 0),
 		},
 		{
+			Query: "metric[20s:5s]",
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
+						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
+					},
+					promql.Series{
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 2}, T: 15000}, {H: &histogram.FloatHistogram{Count: 2}, T: 20000}, {H: &histogram.FloatHistogram{Count: 2}, T: 25000}, {H: &histogram.FloatHistogram{Count: 2}, T: 30000}},
+						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
+					},
+				},
+			},
+			Start: time.Unix(30, 0),
+		},
+		{
 			Query: "metric[20s:5s] offset 5s",
 			Result: promql.Result{
 				Value: promql.Matrix{
 					promql.Series{
-						Floats: []promql.FPoint{{F: 2, T: 10000}, {F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
+						Floats: []promql.FPoint{{F: 2, T: 15000}, {F: 2, T: 20000}, {F: 2, T: 25000}, {F: 2, T: 30000}},
 						Metric: labels.FromStrings("__name__", "metric", "type", "floats"),
 					},
 					promql.Series{
-						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 2}, T: 10000}, {H: &histogram.FloatHistogram{Count: 2}, T: 15000}, {H: &histogram.FloatHistogram{Count: 2}, T: 20000}, {H: &histogram.FloatHistogram{Count: 2}, T: 25000}, {H: &histogram.FloatHistogram{Count: 2}, T: 30000}},
+						Histograms: []promql.HPoint{{H: &histogram.FloatHistogram{Count: 2}, T: 15000}, {H: &histogram.FloatHistogram{Count: 2}, T: 20000}, {H: &histogram.FloatHistogram{Count: 2}, T: 25000}, {H: &histogram.FloatHistogram{Count: 2}, T: 30000}},
 						Metric:     labels.FromStrings("__name__", "metric", "type", "histograms"),
 					},
 				},
@@ -1016,8 +1101,27 @@ func TestSubqueries(t *testing.T) {
 			},
 			Start: time.Unix(35, 0),
 		},
+		{
+			Query: "metric[0:5s]",
+			Result: promql.Result{
+				Value: promql.Matrix{},
+			},
+			Start: time.Unix(10, 0),
+		},
 		{ // Normal selector.
 			Query: `http_requests{group=~"pro.*",instance="0"}[30s:10s]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 10000, T: 10000000}, {F: 100, T: 10010000}, {F: 130, T: 10020000}},
+						Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
+					},
+				},
+			},
+			Start: time.Unix(10020, 0),
+		},
+		{ // Normal selector. Add 1ms to the range to see the legacy behavior of the previous test.
+			Query: `http_requests{group=~"pro.*",instance="0"}[30s1ms:10s]`,
 			Result: promql.Result{
 				Value: promql.Matrix{
 					promql.Series{
@@ -1057,6 +1161,35 @@ func TestSubqueries(t *testing.T) {
 			Result: promql.Result{
 				Value: promql.Matrix{
 					promql.Series{
+						Floats:   []promql.FPoint{{F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
+						Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
+						DropName: true,
+					},
+					promql.Series{
+						Floats:   []promql.FPoint{{F: 4, T: 7990000}, {F: 4, T: 7995000}, {F: 4, T: 8000000}},
+						Metric:   labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
+						DropName: true,
+					},
+					promql.Series{
+						Floats:   []promql.FPoint{{F: 1, T: 7990000}, {F: 1, T: 7995000}, {F: 1, T: 8000000}},
+						Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
+						DropName: true,
+					},
+					promql.Series{
+						Floats:   []promql.FPoint{{F: 2, T: 7990000}, {F: 2, T: 7995000}, {F: 2, T: 8000000}},
+						Metric:   labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
+						DropName: true,
+					},
+				},
+				Warnings: annotations.New().Add(annotations.NewPossibleNonCounterInfo("http_requests", posrange.PositionRange{Start: 5})),
+			},
+			Start: time.Unix(8000, 0),
+		},
+		{
+			Query: `rate(http_requests[1m])[15s1ms:5s]`, // Add 1ms to the range to see the legacy behavior of the previous test.
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
 						Floats:   []promql.FPoint{{F: 3, T: 7985000}, {F: 3, T: 7990000}, {F: 3, T: 7995000}, {F: 3, T: 8000000}},
 						Metric:   labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
 						DropName: true,
@@ -1086,7 +1219,7 @@ func TestSubqueries(t *testing.T) {
 			Result: promql.Result{
 				Value: promql.Matrix{
 					promql.Series{
-						Floats: []promql.FPoint{{F: 270, T: 90000}, {F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
+						Floats: []promql.FPoint{{F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
 						Metric: labels.EmptyLabels(),
 					},
 				},
@@ -1094,7 +1227,31 @@ func TestSubqueries(t *testing.T) {
 			Start: time.Unix(120, 0),
 		},
 		{
+			Query: `sum(http_requests{group=~"pro.*"})[30s:10s]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 300, T: 100000}, {F: 330, T: 110000}, {F: 360, T: 120000}},
+						Metric: labels.EmptyLabels(),
+					},
+				},
+			},
+			Start: time.Unix(121, 0), // 1s later doesn't change the result compared to above.
+		},
+		{
 			Query: `sum(http_requests)[40s:10s]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 900, T: 90000}, {F: 1000, T: 100000}, {F: 1100, T: 110000}, {F: 1200, T: 120000}},
+						Metric: labels.EmptyLabels(),
+					},
+				},
+			},
+			Start: time.Unix(120, 0),
+		},
+		{
+			Query: `sum(http_requests)[40s1ms:10s]`, // Add 1ms to the range to see the legacy behavior of the previous test.
 			Result: promql.Result{
 				Value: promql.Matrix{
 					promql.Series{
@@ -1107,6 +1264,18 @@ func TestSubqueries(t *testing.T) {
 		},
 		{
 			Query: `(sum(http_requests{group=~"p.*"})+sum(http_requests{group=~"c.*"}))[20s:5s]`,
+			Result: promql.Result{
+				Value: promql.Matrix{
+					promql.Series{
+						Floats: []promql.FPoint{{F: 1000, T: 105000}, {F: 1100, T: 110000}, {F: 1100, T: 115000}, {F: 1200, T: 120000}},
+						Metric: labels.EmptyLabels(),
+					},
+				},
+			},
+			Start: time.Unix(120, 0),
+		},
+		{
+			Query: `(sum(http_requests{group=~"p.*"})+sum(http_requests{group=~"c.*"}))[20s1ms:5s]`, // Add 1ms to the range to see the legacy behavior of the previous test.
 			Result: promql.Result{
 				Value: promql.Matrix{
 					promql.Series{
@@ -1129,7 +1298,7 @@ func TestSubqueries(t *testing.T) {
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "floats"),
 					},
 					{
-						H:      &histogram.FloatHistogram{Count: -1, CounterResetHint: histogram.CounterReset},
+						H:      &histogram.FloatHistogram{Count: -1, CounterResetHint: histogram.UnknownCounterReset},
 						T:      40000,
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "histograms"),
 					},
@@ -1152,7 +1321,7 @@ func TestSubqueries(t *testing.T) {
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "floats"),
 					},
 					{
-						H:      &histogram.FloatHistogram{Count: 6, CounterResetHint: histogram.NotCounterReset},
+						H:      &histogram.FloatHistogram{Count: 6},
 						T:      30000,
 						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "histograms"),
 					},
@@ -1174,7 +1343,8 @@ func TestSubqueries(t *testing.T) {
 				require.NoError(t, err)
 
 				res := qry.Exec(context.Background())
-				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res)
+				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res, false)
+				qry.Close()
 			}
 
 			// Ensure our test cases are correct by running them against Prometheus' engine too.
@@ -1836,10 +2006,93 @@ func (t *timeoutTestingQueryTracker) Close() error {
 	return nil
 }
 
-func TestAnnotations(t *testing.T) {
+type annotationTestCase struct {
+	data                               string
+	expr                               string
+	expectedWarningAnnotations         []string
+	expectedInfoAnnotations            []string
+	skipComparisonWithPrometheusReason string
+	instantEvaluationTimestamp         *time.Time
+}
+
+func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 	startT := timestamp.Time(0).Add(time.Minute)
 	step := time.Minute
 	endT := startT.Add(2 * step)
+
+	opts := NewTestEngineOpts()
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+	const prometheusEngineName = "Prometheus' engine"
+	engines := map[string]promql.QueryEngine{
+		"Mimir's engine": mimirEngine,
+
+		// Compare against Prometheus' engine to verify our test cases are valid.
+		prometheusEngineName: prometheusEngine,
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
+			t.Cleanup(func() { _ = store.Close() })
+
+			queryTypes := map[string]func(engine promql.QueryEngine) (promql.Query, error){
+				"range": func(engine promql.QueryEngine) (promql.Query, error) {
+					return engine.NewRangeQuery(context.Background(), store, nil, testCase.expr, startT, endT, step)
+				},
+				"instant": func(engine promql.QueryEngine) (promql.Query, error) {
+					t := startT
+
+					if testCase.instantEvaluationTimestamp != nil {
+						t = *testCase.instantEvaluationTimestamp
+					}
+
+					return engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, t)
+				},
+			}
+
+			for queryType, generator := range queryTypes {
+				t.Run(queryType, func(t *testing.T) {
+					results := make([]*promql.Result, 0, 2)
+
+					for engineName, engine := range engines {
+						if engineName == prometheusEngineName && testCase.skipComparisonWithPrometheusReason != "" {
+							t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
+							continue
+						}
+
+						query, err := generator(engine)
+						require.NoError(t, err)
+						t.Cleanup(query.Close)
+
+						res := query.Exec(context.Background())
+						require.NoError(t, res.Err)
+						results = append(results, res)
+
+						warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+						require.ElementsMatch(t, testCase.expectedWarningAnnotations, warnings)
+						require.ElementsMatch(t, testCase.expectedInfoAnnotations, infos)
+					}
+
+					// If both results are available, compare them (sometimes we skip prometheus)
+					if len(results) == 2 {
+						// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
+						// or vice-versa where no result may be expected etc.
+						testutils.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestAnnotations(t *testing.T) {
+	floatData := `
+		metric{type="float", series="1"} 0+1x3
+		metric{type="float", series="2"} 1+1x3
+	`
 
 	mixedFloatHistogramData := `
 		metric{type="float", series="1"} 0+1x3
@@ -1854,21 +2107,20 @@ func TestAnnotations(t *testing.T) {
 		metric{series="custom-buckets-2"} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[2 3] buckets:[1 2 1]}}x3
 		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
 		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
-    `
+	`
 
-	type testCase struct {
-		data                               string
-		expr                               string
-		expectedWarningAnnotations         []string
-		expectedInfoAnnotations            []string
-		skipComparisonWithPrometheusReason string
-	}
+	nativeHistogramsWithResetHintsMix := `
+		metric{reset_hint="unknown"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+		metric{reset_hint="gauge"} {{schema:0 sum:0 count:0 counter_reset_hint:gauge}}+{{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}x3
+		metric{reset_hint="gauge-unknown"} {{schema:0 sum:0 count:0 counter_reset_hint:gauge}} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+		metric{reset_hint="unknown-gauge"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}x3
+	`
 
-	testCases := map[string]testCase{
+	testCases := map[string]annotationTestCase{
 		"sum() with float and native histogram at same step": {
 			data:                       mixedFloatHistogramData,
 			expr:                       "sum by (series) (metric)",
-			expectedWarningAnnotations: []string{"PromQL warning: encountered a mix of histograms and floats for aggregation (1:18)"},
+			expectedWarningAnnotations: []string{`PromQL warning: encountered a mix of histograms and floats for aggregation (1:18)`},
 		},
 		"sum() with floats and native histograms for different output series at the same step": {
 			data: mixedFloatHistogramData,
@@ -1883,10 +2135,70 @@ func TestAnnotations(t *testing.T) {
 			expr: `sum(metric{type="histogram"})`,
 		},
 
+		"delta() over a native histogram with unknown CounterResetHint": {
+			data:                       nativeHistogramsWithResetHintsMix,
+			expr:                       `delta(metric{reset_hint="unknown"}[3m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
+		},
+		"delta() over a native histogram with gauge CounterResetHint": {
+			data: nativeHistogramsWithResetHintsMix,
+			expr: `delta(metric{reset_hint="gauge"}[3m])`,
+		},
+		"delta() with first point having gauge CounterResetHint and last point having unknown CounterResetHint": {
+			data:                       nativeHistogramsWithResetHintsMix,
+			expr:                       `delta(metric{reset_hint="gauge-unknown"}[3m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
+		},
+		"delta() with first point having unknown CounterResetHint and last point having gauge CounterResetHint": {
+			data:                       nativeHistogramsWithResetHintsMix,
+			expr:                       `delta(metric{reset_hint="unknown-gauge"}[3m])`,
+			expectedWarningAnnotations: []string{`PromQL warning: this native histogram metric is not a gauge: "metric" (1:7)`},
+		},
+
+		"stdvar() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `stdvar(metric{type="float"})`,
+		},
+		"stdvar() with only native histograms": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `stdvar(metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{"PromQL info: ignored histogram in stdvar aggregation (1:8)"},
+		},
+
+		"stddev() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `stddev(metric{type="float"})`,
+		},
+		"stddev() with only native histograms": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `stddev(metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{"PromQL info: ignored histogram in stddev aggregation (1:8)"},
+		},
+
+		"min() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `min(metric{type="float"})`,
+		},
+		"min() with only native histograms": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `min(metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{"PromQL info: ignored histogram in min aggregation (1:5)"},
+		},
+
+		"max() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `max(metric{type="float"})`,
+		},
+		"max() with only native histograms": {
+			data:                    mixedFloatHistogramData,
+			expr:                    `max(metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{"PromQL info: ignored histogram in max aggregation (1:5)"},
+		},
+
 		"avg() with float and native histogram at same step": {
 			data:                       mixedFloatHistogramData,
 			expr:                       "avg by (series) (metric)",
-			expectedWarningAnnotations: []string{"PromQL warning: encountered a mix of histograms and floats for aggregation (1:18)"},
+			expectedWarningAnnotations: []string{`PromQL warning: encountered a mix of histograms and floats for aggregation (1:18)`},
 		},
 		"avg() with floats and native histograms for different output series at the same step": {
 			data: mixedFloatHistogramData,
@@ -1918,19 +2230,19 @@ func TestAnnotations(t *testing.T) {
 
 		"sum_over_time() over series with both floats and histograms": {
 			data:                       `some_metric 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
-			expr:                       `sum_over_time(some_metric[1m])`,
+			expr:                       `sum_over_time(some_metric[1m1s])`,
 			expectedWarningAnnotations: []string{`PromQL warning: encountered a mix of histograms and floats for metric name "some_metric" (1:15)`},
 		},
 		"sum_over_time() over native histograms with both exponential and custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: `sum_over_time(metric{series="mixed-exponential-custom-buckets"}[1m])`,
+			expr: `sum_over_time(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:15)`,
 			},
 		},
 		"sum_over_time() over native histograms with incompatible custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: `sum_over_time(metric{series="incompatible-custom-buckets"}[1m])`,
+			expr: `sum_over_time(metric{series="incompatible-custom-buckets"}[1m1s])`,
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:15)`,
 			},
@@ -1938,37 +2250,103 @@ func TestAnnotations(t *testing.T) {
 
 		"avg_over_time() over series with both floats and histograms": {
 			data:                       `some_metric 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
-			expr:                       `avg_over_time(some_metric[1m])`,
+			expr:                       `avg_over_time(some_metric[1m1s])`,
 			expectedWarningAnnotations: []string{`PromQL warning: encountered a mix of histograms and floats for metric name "some_metric" (1:15)`},
 		},
 		"avg_over_time() over native histograms with both exponential and custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: `avg_over_time(metric{series="mixed-exponential-custom-buckets"}[1m])`,
+			expr: `avg_over_time(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:15)`,
 			},
 		},
 		"avg_over_time() over native histograms with incompatible custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: `avg_over_time(metric{series="incompatible-custom-buckets"}[1m])`,
+			expr: `avg_over_time(metric{series="incompatible-custom-buckets"}[1m1s])`,
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:15)`,
 			},
 		},
 
-		"binary operation between native histograms with exponential and custom buckets": {
-			data: nativeHistogramsWithCustomBucketsData,
-			expr: `metric{series="exponential-buckets"} + ignoring(series) metric{series="custom-buckets-1"}`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "" (1:1)`,
+		"topk() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric{type="float"})`,
+		},
+		"topk() with only histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in topk aggregation (1:1)`,
 			},
 		},
-		"binary operation between native histograms with incompatible custom buckets": {
-			data: nativeHistogramsWithCustomBucketsData,
-			expr: `metric{series="custom-buckets-1"} + ignoring(series) metric{series="custom-buckets-2"}`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "" (1:1)`,
+		"topk() with both floats and histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `topk(1, metric)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in topk aggregation (1:1)`,
 			},
+		},
+
+		"bottomk() with only floats": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric{type="float"})`,
+		},
+		"bottomk() with only histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric{type="histogram"})`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in bottomk aggregation (1:1)`,
+			},
+		},
+		"bottomk() with both floats and histograms()": {
+			data: mixedFloatHistogramData,
+			expr: `bottomk(1, metric)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in bottomk aggregation (1:1)`,
+			},
+		},
+
+		"quantile_over_time() with negative quantile": {
+			data: `metric 0 1 2 3`,
+			expr: `quantile_over_time(-1, metric[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: quantile value should be between 0 and 1, got -1 (1:20)`,
+			},
+		},
+		"quantile_over_time() with 0 quantile": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(0, some_metric[1m1s])`,
+		},
+		"quantile_over_time() with quantile between 0 and 1": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(0.5, some_metric[1m1s])`,
+		},
+		"quantile_over_time() with 1 quantile": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(1, some_metric[1m1s])`,
+		},
+		"quantile_over_time() with quantile greater than 1": {
+			data: `some_metric 0 1 2 3`,
+			expr: `quantile_over_time(1.2, some_metric[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: quantile value should be between 0 and 1, got 1.2 (1:20)`,
+			},
+		},
+		"quantile_over_time() over series with only floats": {
+			data: `some_metric 1 2`,
+			expr: `quantile_over_time(0.2, some_metric[1m1s])`,
+		},
+		"quantile_over_time() over series with only histograms": {
+			data: `some_metric {{count:1}} {{count:2}}`,
+			expr: `quantile_over_time(0.2, some_metric[1m1s])`,
+		},
+		"quantile_over_time() over series with both floats and histograms": {
+			data: `some_metric 1 {{count:2}}`,
+			expr: `quantile_over_time(0.2, some_metric[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:20)`,
+			},
+			skipComparisonWithPrometheusReason: "Prometheus' engine emits the wrong annotation, see https://github.com/prometheus/prometheus/pull/16018",
 		},
 
 		"multiple annotations from different operators": {
@@ -1978,48 +2356,101 @@ func TestAnnotations(t *testing.T) {
 				float_metric             10 20
 				other_float_metric       10 20
 			`,
-			expr: "rate(mixed_metric_count[1m]) + rate(other_mixed_metric_count[1m]) + rate(float_metric[1m]) + rate(other_float_metric[1m])",
+			expr: "rate(mixed_metric_count[1m1s]) + rate(other_mixed_metric_count[1m1s]) + rate(float_metric[1m1s]) + rate(other_float_metric[1m1s])",
 			expectedWarningAnnotations: []string{
 				`PromQL warning: encountered a mix of histograms and floats for metric name "mixed_metric_count" (1:6)`,
-				`PromQL warning: encountered a mix of histograms and floats for metric name "other_mixed_metric_count" (1:37)`,
+				`PromQL warning: encountered a mix of histograms and floats for metric name "other_mixed_metric_count" (1:39)`,
 			},
 			expectedInfoAnnotations: []string{
-				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "float_metric" (1:74)`,
-				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "other_float_metric" (1:99)`,
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "float_metric" (1:78)`,
+				`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "other_float_metric" (1:105)`,
+			},
+		},
+
+		"quantile with mixed histograms": {
+			data: mixedFloatHistogramData,
+			expr: "quantile(0.9, metric)",
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histogram in quantile aggregation (1:15)`,
+			},
+		},
+		"quantile with invalid param": {
+			data: floatData,
+			expr: "quantile(1.5, metric)",
+			expectedWarningAnnotations: []string{
+				`PromQL warning: quantile value should be between 0 and 1, got 1.5 (1:10)`,
 			},
 		},
 	}
 
+	for _, f := range []string{"min_over_time", "max_over_time", "stddev_over_time", "stdvar_over_time"} {
+		testCases[fmt.Sprintf("%v() over series with only floats", f)] = annotationTestCase{
+			data: `some_metric 1 2`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+		}
+		testCases[fmt.Sprintf("%v() over series with only histograms", f)] = annotationTestCase{
+			data: `some_metric {{count:1}} {{count:2}}`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+		}
+		testCases[fmt.Sprintf("%v() over series with both floats and histograms", f)] = annotationTestCase{
+			data: `some_metric 1 {{count:2}}`,
+			expr: fmt.Sprintf(`%v(some_metric[1m1s])`, f),
+			expectedInfoAnnotations: []string{
+				fmt.Sprintf(`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:%v)`, len(f)+2),
+			},
+		}
+	}
+
+	runAnnotationTests(t, testCases)
+}
+
+func TestRateIncreaseAnnotations(t *testing.T) {
+	mixedFloatHistogramData := `
+		metric{type="float", series="1"} 0+1x3
+		metric{type="float", series="2"} 1+1x3
+		metric{type="histogram", series="1"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+		metric{type="histogram", series="2"} {{schema:0 sum:1 count:1 buckets:[1]}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+	`
+
+	nativeHistogramsWithCustomBucketsData := `
+		metric{series="exponential-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+		metric{series="custom-buckets-1"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}x3
+		metric{series="custom-buckets-2"} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[2 3] buckets:[1 2 1]}}x3
+		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
+    `
+
+	testCases := map[string]annotationTestCase{}
 	// rate and increase use the same annotations
 	for _, function := range []string{"rate", "increase"} {
 		position := len(fmt.Sprintf("%s(", function)) + 1
-		testCases[fmt.Sprintf("%s() over metric without counter suffix containing only floats", function)] = testCase{
+		testCases[fmt.Sprintf("%s() over metric without counter suffix containing only floats", function)] = annotationTestCase{
 			data:                    mixedFloatHistogramData,
-			expr:                    fmt.Sprintf(`%s(metric{type="float"}[1m])`, function),
+			expr:                    fmt.Sprintf(`%s(metric{type="float"}[1m1s])`, function),
 			expectedInfoAnnotations: []string{fmt.Sprintf(`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "metric" (1:%d)`, position)},
 		}
 
-		testCases[fmt.Sprintf("%s() over metric without counter suffix containing only native histograms", function)] = testCase{
+		testCases[fmt.Sprintf("%s() over metric without counter suffix containing only native histograms", function)] = annotationTestCase{
 			data: mixedFloatHistogramData,
-			expr: fmt.Sprintf(`%s(metric{type="histogram"}[1m])`, function),
+			expr: fmt.Sprintf(`%s(metric{type="histogram"}[1m1s])`, function),
 		}
-		testCases[fmt.Sprintf("%s() over metric ending in _total", function)] = testCase{
+		testCases[fmt.Sprintf("%s() over metric ending in _total", function)] = annotationTestCase{
 			data: `some_metric_total 0+1x3`,
-			expr: fmt.Sprintf(`%s(some_metric_total[1m])`, function),
+			expr: fmt.Sprintf(`%s(some_metric_total[1m1s])`, function),
 		}
-		testCases[fmt.Sprintf("%s() over metric ending in _sum", function)] = testCase{
+		testCases[fmt.Sprintf("%s() over metric ending in _sum", function)] = annotationTestCase{
 			data: `some_metric_sum 0+1x3`,
-			expr: fmt.Sprintf(`%s(some_metric_sum[1m])`, function),
+			expr: fmt.Sprintf(`%s(some_metric_sum[1m1s])`, function),
 		}
-		testCases[fmt.Sprintf("%s() over metric ending in _count", function)] = testCase{
+		testCases[fmt.Sprintf("%s() over metric ending in _count", function)] = annotationTestCase{
 			data: `some_metric_count 0+1x3`,
-			expr: fmt.Sprintf(`%s(some_metric_count[1m])`, function),
+			expr: fmt.Sprintf(`%s(some_metric_count[1m1s])`, function),
 		}
-		testCases[fmt.Sprintf("%s() over metric ending in _bucket", function)] = testCase{
+		testCases[fmt.Sprintf("%s() over metric ending in _bucket", function)] = annotationTestCase{
 			data: `some_metric_bucket 0+1x3`,
-			expr: fmt.Sprintf(`%s(some_metric_bucket[1m])`, function),
+			expr: fmt.Sprintf(`%s(some_metric_bucket[1m1s])`, function),
 		}
-		testCases[fmt.Sprintf("%s() over multiple metric names", function)] = testCase{
+		testCases[fmt.Sprintf("%s() over multiple metric names", function)] = annotationTestCase{
 			data: `
 				not_a_counter{env="prod", series="1"}      0+1x3
 				a_total{series="2"}                        1+1x3
@@ -2029,119 +2460,495 @@ func TestAnnotations(t *testing.T) {
 				not_a_counter{env="test", series="6"}      5+1x3
 				also_not_a_counter{env="test", series="7"} 6+1x3
 			`,
-			expr: fmt.Sprintf(`%s({__name__!=""}[1m])`, function),
+			expr: fmt.Sprintf(`%s({__name__!=""}[1m1s])`, function),
 			expectedInfoAnnotations: []string{
 				fmt.Sprintf(`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "not_a_counter" (1:%d)`, position),
 				fmt.Sprintf(`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "also_not_a_counter" (1:%d)`, position),
 			},
 		}
-		testCases[fmt.Sprintf("%s() over series with both floats and histograms", function)] = testCase{
+		testCases[fmt.Sprintf("%s() over series with both floats and histograms", function)] = annotationTestCase{
 			data:                       `some_metric_count 10 {{schema:0 sum:1 count:1 buckets:[1]}}`,
-			expr:                       fmt.Sprintf(`%s(some_metric_count[1m])`, function),
+			expr:                       fmt.Sprintf(`%s(some_metric_count[1m1s])`, function),
 			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: encountered a mix of histograms and floats for metric name "some_metric_count" (1:%d)`, position)},
 		}
-		testCases[fmt.Sprintf("%s() over series with first histogram that is not a counter", function)] = testCase{
+		testCases[fmt.Sprintf("%s() over series with first histogram that is not a counter", function)] = annotationTestCase{
 			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}`,
-			expr:                       fmt.Sprintf(`%s(some_metric[1m])`, function),
+			expr:                       fmt.Sprintf(`%s(some_metric[1m1s])`, function),
 			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:%d)`, position)},
 		}
-		testCases[fmt.Sprintf("%s() over series with last histogram that is not a counter", function)] = testCase{
+		testCases[fmt.Sprintf("%s() over series with last histogram that is not a counter", function)] = annotationTestCase{
 			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}`,
-			expr:                       fmt.Sprintf(`%s(some_metric[1m])`, function),
+			expr:                       fmt.Sprintf(`%s(some_metric[1m1s])`, function),
 			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:%d)`, position)},
 		}
-		testCases[fmt.Sprintf("%s() over series with a histogram that is not a counter that is neither the first or last in the range", function)] = testCase{
+		testCases[fmt.Sprintf("%s() over series with a histogram that is not a counter that is neither the first or last in the range", function)] = annotationTestCase{
 			data:                       `some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}} {{schema:0 sum:3 count:3 buckets:[3]}}`,
-			expr:                       fmt.Sprintf(`%s(some_metric[2m] @ 2m)`, function),
+			expr:                       fmt.Sprintf(`%s(some_metric[2m1s] @ 2m)`, function),
 			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: this native histogram metric is not a counter: "some_metric" (1:%d)`, position)},
 		}
 
-		testCases[fmt.Sprintf("%s() over native histograms with both exponential and custom buckets", function)] = testCase{
-			data: nativeHistogramsWithCustomBucketsData,
-			expr: fmt.Sprintf(`%s(metric{series="mixed-exponential-custom-buckets"}[1m])`, function),
+		// We ignore the first sample if it's incompatible with the second, so we need to run the two test cases below
+		// at a time range where we'll get at least three points in the range.
+		incompatibleSchemaEvaluationTimestamp := timestamp.Time(0).Add(2 * time.Minute)
+
+		testCases[fmt.Sprintf("%s() over native histograms with both exponential and custom buckets", function)] = annotationTestCase{
+			data:                       nativeHistogramsWithCustomBucketsData,
+			expr:                       fmt.Sprintf(`%s(metric{series="mixed-exponential-custom-buckets"}[2m1s])`, function),
+			instantEvaluationTimestamp: &incompatibleSchemaEvaluationTimestamp,
 			expectedWarningAnnotations: []string{
 				fmt.Sprintf(`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:%d)`, position),
 			},
 		}
-		testCases[fmt.Sprintf("%s() over native histograms with incompatible custom buckets", function)] = testCase{
-			data: nativeHistogramsWithCustomBucketsData,
-			expr: fmt.Sprintf(`%s(metric{series="incompatible-custom-buckets"}[1m])`, function),
+		testCases[fmt.Sprintf("%s() over native histograms with incompatible custom buckets", function)] = annotationTestCase{
+			data:                       nativeHistogramsWithCustomBucketsData,
+			expr:                       fmt.Sprintf(`%s(metric{series="incompatible-custom-buckets"}[2m1s])`, function),
+			instantEvaluationTimestamp: &incompatibleSchemaEvaluationTimestamp,
 			expectedWarningAnnotations: []string{
 				fmt.Sprintf(`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:%d)`, position),
 			},
 		}
-		testCases[fmt.Sprintf("%s() over metric without counter suffix with single float or histogram in range", function)] = testCase{
+
+		testCases[fmt.Sprintf("%s() over metric without counter suffix with single float or histogram in range", function)] = annotationTestCase{
 			data: `
 				series 3 1 {{schema:3 sum:12 count:7 buckets:[2 2 3]}}
 			`,
-			expr:                       fmt.Sprintf("%s(series[45s])", function),
+			expr:                       fmt.Sprintf("%s(series[46s])", function),
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		}
-		testCases[fmt.Sprintf("%s() over one point in range", function)] = testCase{
+		testCases[fmt.Sprintf("%s() over one point in range", function)] = annotationTestCase{
 			data: `
 				series 1
 			`,
-			expr:                       fmt.Sprintf("%s(series[1m])", function),
+			expr:                       fmt.Sprintf("%s(series[1m1s])", function),
 			expectedWarningAnnotations: []string{},
 			expectedInfoAnnotations:    []string{},
 		}
 	}
-
-	opts := NewTestEngineOpts()
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
-	require.NoError(t, err)
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-
-	const prometheusEngineName = "Prometheus' engine"
-	engines := map[string]promql.QueryEngine{
-		"Mimir's engine": mimirEngine,
-
-		// Compare against Prometheus' engine to verify our test cases are valid.
-		prometheusEngineName: prometheusEngine,
-	}
-
-	for name, testCase := range testCases {
-		t.Run(name, func(t *testing.T) {
-			store := promqltest.LoadedStorage(t, "load 1m\n"+strings.TrimSpace(testCase.data))
-			t.Cleanup(func() { _ = store.Close() })
-
-			for engineName, engine := range engines {
-				t.Run(engineName, func(t *testing.T) {
-					if engineName == prometheusEngineName && testCase.skipComparisonWithPrometheusReason != "" {
-						t.Skipf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
-					}
-
-					queryTypes := map[string]func() (promql.Query, error){
-						"range": func() (promql.Query, error) {
-							return engine.NewRangeQuery(context.Background(), store, nil, testCase.expr, startT, endT, step)
-						},
-						"instant": func() (promql.Query, error) {
-							return engine.NewInstantQuery(context.Background(), store, nil, testCase.expr, startT)
-						},
-					}
-
-					for queryType, generator := range queryTypes {
-						t.Run(queryType, func(t *testing.T) {
-							query, err := generator()
-							require.NoError(t, err)
-							t.Cleanup(query.Close)
-
-							res := query.Exec(context.Background())
-							require.NoError(t, res.Err)
-
-							warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
-							require.ElementsMatch(t, testCase.expectedWarningAnnotations, warnings)
-							require.ElementsMatch(t, testCase.expectedInfoAnnotations, infos)
-						})
-					}
-				})
-			}
-		})
-	}
+	runAnnotationTests(t, testCases)
 }
 
-func getMixedMetricsForTests() ([]string, int, string) {
+func TestDeltaAnnotations(t *testing.T) {
+	nativeHistogramsWithGaugeResetHints := `
+		metric{series="mix-float-nh"} 10 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
+		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+	`
+
+	testCases := map[string]annotationTestCase{
+		"delta() over series with mixed floats and native histograms": {
+			data: nativeHistogramsWithGaugeResetHints,
+			expr: `delta(metric{series="mix-float-nh"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: encountered a mix of histograms and floats for metric name "metric" (1:7)`,
+			},
+		},
+		"delta() over metric with incompatible schema": {
+			data: nativeHistogramsWithGaugeResetHints,
+			expr: `delta(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:7)`,
+			},
+		},
+	}
+
+	runAnnotationTests(t, testCases)
+}
+
+func TestIrateIdeltaAnnotations(t *testing.T) {
+	irateData := `
+		metric{series="floats"} 1 2
+		metric{series="nh"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}}
+		metric{series="mixed-float-nh"} 10 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1]}}
+		metric{series="mixed-exponential-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
+		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 12] buckets:[1]}}
+		metric{series="nh-first-gauge"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}
+		metric{series="nh-second-gauge"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}
+	`
+
+	ideltaData := `
+		metric{series="floats"} 1 2
+		metric{series="nh"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}
+		metric{series="mixed-float-nh"} 10 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
+		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}
+		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 12] buckets:[1] counter_reset_hint:gauge}}
+		metric{series="nh-first-not-gauge"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}
+		metric{series="nh-second-not-gauge"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}
+	`
+
+	testCases := map[string]annotationTestCase{
+		"irate() over series with only floats": {
+			data:                       irateData,
+			expr:                       `irate(metric{series="floats"}[1m1s])`,
+			expectedWarningAnnotations: []string{},
+		},
+		"irate() over series with only native histograms": {
+			data:                       irateData,
+			expr:                       `irate(metric{series="nh"}[1m1s])`,
+			expectedWarningAnnotations: []string{},
+		},
+		"irate() over series with mixed floats and native histograms": {
+			data: irateData,
+			expr: `irate(metric{series="mixed-float-nh"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: encountered a mix of histograms and floats for metric name "metric" (1:7)`,
+			},
+		},
+		// In the case where irate() is run over a metric with both exponential and custom buckets,
+		// the change in schema counts as a reset and so we'll just return the last point with no annotation.
+		"irate() over metric with incompatible schema": {
+			data:                       irateData,
+			expr:                       `irate(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
+			expectedWarningAnnotations: []string{},
+		},
+		// Similar to the case above: change in bucket layout counts as a reset, so we won't return an annotation.
+		"irate() over metric with incompatible custom buckets": {
+			data:                       irateData,
+			expr:                       `irate(metric{series="incompatible-custom-buckets"}[1m1s])`,
+			expectedWarningAnnotations: []string{},
+		},
+		"irate() over metric with first point not being a counter native histogram": {
+			data: irateData,
+			expr: `irate(metric{series="nh-first-gauge"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: this native histogram metric is not a counter: "metric" (1:7)`,
+			},
+		},
+		"irate() over metric with second point not being a counter native histogram": {
+			data: irateData,
+			expr: `irate(metric{series="nh-second-gauge"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: this native histogram metric is not a counter: "metric" (1:7)`,
+			},
+		},
+
+		"idelta() over series with only floats": {
+			data:                       ideltaData,
+			expr:                       `idelta(metric{series="floats"}[1m1s])`,
+			expectedWarningAnnotations: []string{},
+		},
+		"idelta() over series with only native histograms": {
+			data:                       ideltaData,
+			expr:                       `idelta(metric{series="nh"}[1m1s])`,
+			expectedWarningAnnotations: []string{},
+		},
+		"idelta() over series with mixed floats and native histograms": {
+			data: ideltaData,
+			expr: `idelta(metric{series="mixed-float-nh"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: encountered a mix of histograms and floats for metric name "metric" (1:8)`,
+			},
+		},
+		"idelta() over metric with incompatible schema": {
+			data: ideltaData,
+			expr: `idelta(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:8)`,
+			},
+		},
+		"idelta() over metric with incompatible custom buckets": {
+			data: ideltaData,
+			expr: `idelta(metric{series="incompatible-custom-buckets"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:8)`,
+			},
+		},
+		"idelta() over metric with first point not being a gauge native histogram": {
+			data: ideltaData,
+			expr: `idelta(metric{series="nh-first-not-gauge"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: this native histogram metric is not a gauge: "metric" (1:8)`,
+			},
+		},
+		"idelta() over metric with second point not being a gauge native histogram": {
+			data: ideltaData,
+			expr: `idelta(metric{series="nh-second-not-gauge"}[1m1s])`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: this native histogram metric is not a gauge: "metric" (1:8)`,
+			},
+		},
+	}
+
+	runAnnotationTests(t, testCases)
+}
+
+func TestDerivPredictLinearAnnotations(t *testing.T) {
+	data := `
+		only_floats 0 1
+		only_histograms {{count:0}} {{count:0}}
+		mixed 0 {{count:0}}
+    `
+
+	testCases := map[string]annotationTestCase{
+		"deriv() over series with only floats": {
+			data: data,
+			expr: `deriv(only_floats[1m1s])`,
+			// Expect no annotations.
+		},
+		"deriv() over series with only histograms": {
+			data: data,
+			expr: `deriv(only_histograms[1m1s])`,
+			// Expect no annotations.
+		},
+		"deriv() over series with both floats and histograms": {
+			data: data,
+			expr: `deriv(mixed[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed" (1:7)`,
+			},
+		},
+
+		"predict_linear() over series with only floats": {
+			data: data,
+			expr: `predict_linear(only_floats[1m1s], 5)`,
+			// Expect no annotations.
+		},
+		"predict_linear() over series with only histograms": {
+			data: data,
+			expr: `predict_linear(only_histograms[1m1s], 5)`,
+			// Expect no annotations.
+		},
+		"predict_linear() over series with both floats and histograms": {
+			data: data,
+			expr: `predict_linear(mixed[1m1s], 5)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed" (1:16)`,
+			},
+		},
+	}
+
+	runAnnotationTests(t, testCases)
+}
+
+func TestBinaryOperationAnnotations(t *testing.T) {
+	mixedFloatHistogramData := `
+	metric{type="float", series="1"} 0+1x3
+	metric{type="float", series="2"} 1+1x3
+	metric{type="histogram", series="1"} {{schema:0 sum:0 count:0}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+	metric{type="histogram", series="2"} {{schema:0 sum:1 count:1 buckets:[1]}}+{{schema:0 sum:5 count:4 buckets:[1 2 1]}}x3
+	metric{type="histogram-custom-buckets", series="1"} {{schema:-53 sum:0 count:0 custom_values:[5 10]}}+{{schema:-53 sum:5 count:4 buckets:[1 2 1] custom_values:[5 10]}}x3
+	metric{type="histogram-custom-buckets", series="2"} {{schema:-53 sum:1 count:1 buckets:[1] custom_values:[5 10]}}+{{schema:-53 sum:5 count:4 buckets:[1 2 1] custom_values:[5 10]}}x3
+	metric{type="histogram-custom-buckets-other-layout", series="1"} {{schema:-53 sum:0 count:0 custom_values:[5 12]}}+{{schema:-53 sum:5 count:4 buckets:[1 2 1] custom_values:[5 12]}}x3
+	metric{type="histogram-custom-buckets-other-layout", series="2"} {{schema:-53 sum:1 count:1 buckets:[1] custom_values:[5 12]}}+{{schema:-53 sum:5 count:4 buckets:[1 2 1] custom_values:[5 12]}}x3
+`
+
+	testCases := map[string]annotationTestCase{}
+	binaryOperations := map[string]struct {
+		floatHistogramSupported              bool
+		histogramFloatSupported              bool
+		histogramHistogramSupported          bool
+		supportsBool                         bool
+		emitsWarningOnIncompatibleHistograms bool
+	}{
+		"+": {
+			floatHistogramSupported:              false,
+			histogramFloatSupported:              false,
+			histogramHistogramSupported:          true,
+			emitsWarningOnIncompatibleHistograms: true,
+		},
+		"-": {
+			floatHistogramSupported:              false,
+			histogramFloatSupported:              false,
+			histogramHistogramSupported:          true,
+			emitsWarningOnIncompatibleHistograms: true,
+		},
+		"*": {
+			floatHistogramSupported:     true,
+			histogramFloatSupported:     true,
+			histogramHistogramSupported: false,
+		},
+		"/": {
+			floatHistogramSupported:     false,
+			histogramFloatSupported:     true,
+			histogramHistogramSupported: false,
+		},
+		"^": {
+			floatHistogramSupported:     false,
+			histogramFloatSupported:     false,
+			histogramHistogramSupported: false,
+		},
+		"%": {
+			floatHistogramSupported:     false,
+			histogramFloatSupported:     false,
+			histogramHistogramSupported: false,
+		},
+		"atan2": {
+			floatHistogramSupported:     false,
+			histogramFloatSupported:     false,
+			histogramHistogramSupported: false,
+		},
+		"==": {
+			floatHistogramSupported:     false,
+			histogramFloatSupported:     false,
+			histogramHistogramSupported: true,
+			supportsBool:                true,
+		},
+		"!=": {
+			floatHistogramSupported:     false,
+			histogramFloatSupported:     false,
+			histogramHistogramSupported: true,
+			supportsBool:                true,
+		},
+		">": {
+			floatHistogramSupported:     false,
+			histogramFloatSupported:     false,
+			histogramHistogramSupported: false,
+			supportsBool:                true,
+		},
+		"<": {
+			floatHistogramSupported:     false,
+			histogramFloatSupported:     false,
+			histogramHistogramSupported: false,
+			supportsBool:                true,
+		},
+		">=": {
+			floatHistogramSupported:     false,
+			histogramFloatSupported:     false,
+			histogramHistogramSupported: false,
+			supportsBool:                true,
+		},
+		"<=": {
+			floatHistogramSupported:     false,
+			histogramFloatSupported:     false,
+			histogramHistogramSupported: false,
+			supportsBool:                true,
+		},
+	}
+
+	addIncompatibleTypesTestCase := func(op string, name string, expr string, left string, right string, supported bool) {
+		testCase := annotationTestCase{
+			data: mixedFloatHistogramData,
+			expr: expr,
+		}
+
+		if !supported {
+			testCase.expectedInfoAnnotations = []string{fmt.Sprintf(`PromQL info: incompatible sample types encountered for binary operator "%v": %v %v %v (1:1)`, op, left, op, right)}
+		}
+
+		testCases[name] = testCase
+	}
+
+	addIncompatibleLayoutTestCase := func(op string, name string, expr string, shouldEmitAnnotation bool) {
+		testCase := annotationTestCase{
+			data: mixedFloatHistogramData,
+			expr: expr,
+		}
+
+		if shouldEmitAnnotation {
+			testCase.expectedWarningAnnotations = []string{fmt.Sprintf(`PromQL warning: incompatible bucket layout encountered for binary operator %v (1:1)`, op)}
+		}
+
+		testCases[name] = testCase
+	}
+
+	cardinalities := map[string]string{
+		"one-to-one":  "",
+		"many-to-one": "group_left",
+		"one-to-many": "group_right",
+	}
+
+	for op, binop := range binaryOperations {
+		expressions := []string{op}
+
+		if binop.supportsBool {
+			expressions = append(expressions, op+" bool")
+		}
+
+		for _, expr := range expressions {
+			addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between a scalar on the left side and a histogram on the right", expr), fmt.Sprintf(`2 %v metric{type="histogram"}`, expr), "float", "histogram", binop.floatHistogramSupported)
+			addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between a histogram on the left side and a scalar on the right", expr), fmt.Sprintf(`metric{type="histogram"} %v 2`, expr), "histogram", "float", binop.histogramFloatSupported)
+
+			for cardinalityName, cardinalityModifier := range cardinalities {
+				addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between two floats with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="float"} %v ignoring(type) %v metric{type="float"}`, expr, cardinalityModifier), "float", "float", true)
+				addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between a float on the left side and a histogram on the right with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="float"} %v ignoring(type) %v metric{type="histogram"}`, expr, cardinalityModifier), "float", "histogram", binop.floatHistogramSupported)
+				addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between a histogram on the left side and a float on the right with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="float"}`, expr, cardinalityModifier), "histogram", "float", binop.histogramFloatSupported)
+				addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between two histograms with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="histogram"}`, expr, cardinalityModifier), "histogram", "histogram", binop.histogramHistogramSupported)
+
+				if binop.histogramHistogramSupported {
+					addIncompatibleLayoutTestCase(op, fmt.Sprintf("binary %v between histograms with exponential and custom buckets with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="histogram-custom-buckets"}`, expr, cardinalityModifier), binop.emitsWarningOnIncompatibleHistograms)
+					addIncompatibleLayoutTestCase(op, fmt.Sprintf("binary %v between histograms with incompatible custom bucket schemas with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram-custom-buckets"} %v ignoring(type) %v metric{type="histogram-custom-buckets-other-layout"}`, expr, cardinalityModifier), binop.emitsWarningOnIncompatibleHistograms)
+				}
+			}
+		}
+	}
+
+	runAnnotationTests(t, testCases)
+}
+
+func TestHistogramAnnotations(t *testing.T) {
+	mixedClassicHistograms := `
+		series{host="a", le="0.1"}  2
+		series{host="a", le="1"}    1
+		series{host="a", le="10"}   5
+		series{host="a", le="100"}  4
+		series{host="a", le="1000"} 9
+		series{host="a", le="+Inf"} 8
+		series{host="a"}            {{schema:0 sum:5 count:4 buckets:[9 2 1]}}
+		series{host="b"}            1
+		series{host="c", le="abc"}  1
+		series{host="d", le="0.1"}  2
+		series{host="d", le="1"}    1
+		series{host="d", le="10"}   5
+		series{host="d", le="100"}  4
+		series{host="d", le="1000"} 9
+		series{host="d", le="+Inf"} 8
+	`
+
+	testCases := map[string]annotationTestCase{
+		"bad bucket label warning": {
+			data:                       mixedClassicHistograms,
+			expr:                       `histogram_quantile(0.5, series{host="c"})`,
+			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "abc" for metric name "series" (1:25)`},
+		},
+		"invalid quantile warning": {
+			data:                       mixedClassicHistograms,
+			expr:                       `histogram_quantile(2, series{host="d"})`,
+			expectedWarningAnnotations: []string{`PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)`},
+		},
+		"mixed classic and native histogram warning": {
+			data:                       mixedClassicHistograms,
+			expr:                       `histogram_quantile(0.5, series{host="a"})`,
+			expectedWarningAnnotations: []string{`PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:25)`},
+		},
+		"forced monotonicity info": {
+			data:                               mixedClassicHistograms,
+			expr:                               `histogram_quantile(0.5, series{host="d"})`,
+			expectedInfoAnnotations:            []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series" (1:25)`},
+			skipComparisonWithPrometheusReason: "Prometheus does not output any series name: https://github.com/prometheus/prometheus/issues/15411",
+		},
+		"both mixed classic+native histogram and invalid quantile warnings": {
+			data: mixedClassicHistograms,
+			expr: `histogram_quantile(9, series{host="a"})`,
+			expectedWarningAnnotations: []string{
+				`PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:23)`,
+				`PromQL warning: quantile value should be between 0 and 1, got 9 (1:20)`,
+			},
+		},
+		"forced monotonicity info is not emitted when quantile is invalid": {
+			data:                       mixedClassicHistograms,
+			expr:                       `histogram_quantile(2, series{host="d"})`,
+			expectedWarningAnnotations: []string{`PromQL warning: quantile value should be between 0 and 1, got 2 (1:20)`},
+		},
+		"no le label on selected series": {
+			data: `
+				series  2
+			`,
+			expr:                       `histogram_quantile(0.5, series{})`,
+			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:25)`},
+		},
+		"extra entry in series without le label": {
+			data: `
+				series{le="+Inf"} 1
+				series  2
+			`,
+			expr:                       `histogram_quantile(0.5, series{})`,
+			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:25)`},
+		},
+	}
+
+	runAnnotationTests(t, testCases)
+}
+
+func getMixedMetricsForTests(includeClassicHistograms bool) ([]string, int, string) {
 	// We're loading series with the following combinations of values. This is difficult to visually see in the actual
 	// data loaded, so it is represented in a table here.
 	// f = float value, h = native histogram, _ = no value, N = NaN, s = stale, i = infinity
@@ -2177,14 +2984,37 @@ func getMixedMetricsForTests() ([]string, int, string) {
 		series{label="l", group="d"} {{schema:1 sum:10 count:5 buckets:[1 2]}} _ -Inf _ stale NaN 3
 		series{label="m", group="d"} stale Inf NaN _ _ 4 _
 		series{label="n", group="d"} _ _ _ _ _ _ _
-		series{label="o", group="d"} Inf Inf -Inf Inf Inf -Inf -Inf
+		series{label="o", group="d"} Inf Inf -Inf Inf Inf -Inf -Inf`
+
+	// Series p and q are special cases with classic histograms
+	// q includes extra series without the `le` label, as well as different types in each bucket
+	// {p} c c c c c c c
+	// {q} (mixed)
+	samples += `
+		series{label="p", le="0.1", group="a"}  0+2x7
+		series{label="p", le="1", group="a"}    0+1x7
+		series{label="p", le="10", group="a"}   0+5x7
+		series{label="p", le="100", group="a"}  0+4x7
+		series{label="p", le="1000", group="a"} 0+9x7
+		series{label="p", le="+Inf", group="a"} 0+8x7
+		series{label="q", le="0.1", group="a"}  1 _ 2 3 stale NaN _
+		series{label="q", le="1", group="a"}    2 _ Inf _ stale 5 _
+		series{label="q", le="10", group="a"}   3 _ stale 3 stale 5 _
+		series{label="q", le="100", group="a"}  4 _ 2 3 stale 5 _
+		series{label="q", le="1000", group="a"} 5 {{schema:1 sum:10 count:5 buckets:[1 2]}} 2 3 stale 5 _
+		series{label="q", le="+Inf", group="a"} 9 _ 2 3 NaN 5 _
+		series{label="q", group="a"} 1 _ 2 {{schema:1 sum:10 count:5 buckets:[1 2]}} stale 5 _
 	`
+
 	labelsToUse := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o"}
+	if includeClassicHistograms {
+		labelsToUse = append(labelsToUse, []string{"p", "q"}...)
+	}
 
 	return labelsToUse, pointsPerSeries, samples
 }
 
-func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries int, samples string) {
+func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries int, samples string, skipAnnotationComparison bool) {
 	// Although most tests are covered with the promql test files (both ours and upstream),
 	// there is a lot of repetition around a few edge cases.
 	// This is not intended to be comprehensive, but instead check for some common edge cases
@@ -2220,26 +3050,62 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 		t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 		for _, expr := range expressions {
-			testName := fmt.Sprintf("Expr: %s, Start: %d, End: %d, Interval: %s", expr, start.Unix(), end.Unix(), tr.interval)
-			t.Run(testName, func(t *testing.T) {
-				q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
-				require.NoError(t, err)
-				defer q.Close()
-				expectedResults := q.Exec(context.Background())
+			// We run so many combinations that calling t.Run() for each of them has a noticeable performance impact.
+			// So we instead just log the test case before we run it.
+			t.Logf("Expr: %s, Start: %d, End: %d, Interval: %s", expr, start.Unix(), end.Unix(), tr.interval)
+			q, err := prometheusEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
+			require.NoError(t, err)
+			defer q.Close()
+			prometheusResults := q.Exec(context.Background())
 
-				q, err = mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
-				require.NoError(t, err)
-				defer q.Close()
-				mimirResults := q.Exec(context.Background())
+			q, err = mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
+			require.NoError(t, err)
+			defer q.Close()
+			mimirResults := q.Exec(context.Background())
 
-				testutils.RequireEqualResults(t, expr, expectedResults, mimirResults)
-			})
+			testutils.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
 		}
 	}
 }
 
+func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
+	t.Parallel()
+
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
+
+	// Test each label individually to catch edge cases in with single series
+	labelCombinations := testutils.Combinations(labelsToUse, 1)
+	// Generate combinations of 2 labels. (e.g., "a,b", "e,f" etc)
+	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
+
+	expressions := []string{}
+
+	for _, labels := range labelCombinations {
+		labelRegex := strings.Join(labels, "|")
+		expressions = append(expressions, fmt.Sprintf(`histogram_avg(series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`histogram_count(series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`histogram_fraction(-5, 5, series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`histogram_fraction(0, scalar(series{label="i"}), series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`histogram_fraction(scalar(series{label="i"}), 2, series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`histogram_fraction(scalar(series{label="i"}), scalar(series{label="i"}), series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`histogram_quantile(0.8, series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`histogram_quantile(scalar(series{label="i"}), series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`histogram_stddev(series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`histogram_stdvar(series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`histogram_sum(series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`timestamp(series{label=~"(%s)"})`, labelRegex))
+	}
+
+	// We skip comparing the annotation results as Prometheus does not output any series name
+	// for forced monotonicity: https://github.com/prometheus/prometheus/issues/15411
+
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, true)
+}
+
 func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
+	t.Parallel()
+
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(false)
 
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
 	labelCombinations := testutils.Combinations(labelsToUse, 2)
@@ -2249,26 +3115,53 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 
 	for _, labels := range labelCombinations {
 		for _, op := range []string{"+", "-", "*", "/", "and", "unless", "or"} {
-			binaryExpr := fmt.Sprintf(`series{label="%s"}`, labels[0])
+			expr := fmt.Sprintf(`series{label="%s"}`, labels[0])
 			for _, label := range labels[1:] {
-				binaryExpr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
+				expr += fmt.Sprintf(` %s series{label="%s"}`, op, label)
 			}
-			expressions = append(expressions, binaryExpr)
+			expressions = append(expressions, expr)
 
 			// Same thing again, this time with grouping.
-			binaryExpr = fmt.Sprintf(`series{label="%s"}`, labels[0])
-			for _, label := range labels[1:] {
-				binaryExpr += fmt.Sprintf(` %s on (group) series{label="%s"}`, op, label)
+			expr = fmt.Sprintf(`series{label="%s"}`, labels[0])
+			for i, label := range labels[1:] {
+				expr += fmt.Sprintf(` %s ignoring (label, group) `, op)
+
+				if i == 0 && len(labels) > 2 {
+					expr += "("
+				}
+
+				expr += fmt.Sprintf(`{label="%s"}`, label)
 			}
-			expressions = append(expressions, binaryExpr)
+			if len(labels) > 2 {
+				expr += ")"
+			}
+			expressions = append(expressions, expr)
 		}
+
+		// Similar thing again, this time with group_left
+		expr := fmt.Sprintf(`series{label="%s"}`, labels[0])
+		for i, label := range labels[1:] {
+			expr += ` * on(group) group_left(label) `
+
+			if i == 0 && len(labels) > 2 {
+				expr += "("
+			}
+
+			expr += fmt.Sprintf(`{label="%s"}`, label)
+		}
+		if len(labels) > 2 {
+			expr += ")"
+		}
+		expressions = append(expressions, expr)
 	}
 
-	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
 }
 
 func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
+	t.Parallel()
+
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
@@ -2290,38 +3183,49 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 			expressions = append(expressions, fmt.Sprintf(`%s by (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s without (group) (series{label=~"(%s)"})`, aggFunc, labelRegex))
 		}
+		// NOTE(jhesketh): We do not test a changing quantile factor here as prometheus currently
+		// does not support it (https://github.com/prometheus/prometheus/issues/15971)
+		expressions = append(expressions, fmt.Sprintf(`quantile (0.9, series{label=~"(%s)"})`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`quantile by (group) (0.9, series{label=~"(%s)"})`, labelRegex))
+
+		expressions = append(expressions, fmt.Sprintf(`count_values("value", series{label="%s"})`, labelRegex))
 	}
 
-	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
 }
 
 func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
+	t.Parallel()
+
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
-	// Generate combinations of 2, 3, and 4 labels. (e.g., "a,b", "e,f", "c,d,e", "a,b,c,d", "c,d,e,f" etc)
+	// Generate combinations of 2 labels. (e.g., "a,b", "e,f" etc)
 	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 4)...)
 
 	expressions := []string{}
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
-		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv"} {
+		// FIXME: irate() is temporarily disabled here due to https://github.com/prometheus/prometheus/pull/16199
+		for _, function := range []string{"rate", "increase", "changes", "resets", "deriv", "idelta", "delta", "deriv", "stddev_over_time", "stdvar_over_time"} {
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[45s])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`%s(series{label=~"(%s)"}[1m])`, function, labelRegex))
 			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[2m15s]))`, function, labelRegex))
-			expressions = append(expressions, fmt.Sprintf(`sum(%s(series{label=~"(%s)"}[5m]))`, function, labelRegex))
 		}
+
+		expressions = append(expressions, fmt.Sprintf(`predict_linear(series{label=~"(%s)"}[1m], 30)`, labelRegex))
+		expressions = append(expressions, fmt.Sprintf(`quantile_over_time(scalar(series{label="i"}), series{label=~"(%s)"}[1m])`, labelRegex))
 	}
 
-	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
 }
 
 func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
-	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests()
+	t.Parallel()
+
+	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
 	labelCombinations := testutils.Combinations(labelsToUse, 1)
@@ -2351,5 +3255,141 @@ func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
 		}
 	}
 
-	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData)
+	runMixedMetricsTests(t, expressions, pointsPerSeries, seriesData, false)
+}
+
+func TestQueryStats(t *testing.T) {
+	opts := NewTestEngineOpts()
+	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+	start := timestamp.Time(0)
+	end := start.Add(10 * time.Minute)
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			dense_series  0 1 2 3 4 5 6 7 8 9 10
+			start_series  0 1 _ _ _ _ _ _ _ _ _
+			end_series    _ _ _ _ _ 5 6 7 8 9 10
+			sparse_series 0 _ _ _ _ _ _ 7 _ _ _
+			stale_series  0 1 2 3 4 5 stale 7 8 9 10
+			nan_series    NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
+			native_histogram_series {{schema:0 sum:2 count:4 buckets:[1 2 1]}} {{sum:2 count:4 buckets:[1 2 1]}}
+	`)
+
+	runQueryAndGetTotalSamples := func(t *testing.T, engine promql.QueryEngine, expr string, isInstantQuery bool) int64 {
+		var q promql.Query
+		var err error
+
+		if isInstantQuery {
+			q, err = engine.NewInstantQuery(context.Background(), storage, nil, expr, end)
+		} else {
+			q, err = engine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, time.Minute)
+		}
+
+		require.NoError(t, err)
+
+		defer q.Close()
+
+		res := q.Exec(context.Background())
+		require.NoError(t, res.Err)
+
+		return q.Stats().Samples.TotalSamples
+	}
+
+	testCases := map[string]struct {
+		expr                 string
+		isInstantQuery       bool
+		expectedTotalSamples int64
+	}{
+		"instant vector selector with point at every time step": {
+			expr:                 `dense_series{}`,
+			expectedTotalSamples: 11,
+		},
+		"instant vector selector with points only in start of time range": {
+			expr:                 `start_series{}`,
+			expectedTotalSamples: 2 + 4, // 2 for original points, plus 4 for lookback to last point.
+		},
+		"instant vector selector with points only at end of time range": {
+			expr:                 `end_series{}`,
+			expectedTotalSamples: 6,
+		},
+		"instant vector selector with sparse points": {
+			expr:                 `sparse_series{}`,
+			expectedTotalSamples: 5 + 4, // 5 for first point at T=0, and 4 for second point at T=7
+		},
+		"instant vector selector with stale marker": {
+			expr:                 `stale_series{}`,
+			expectedTotalSamples: 10, // Instant vector selectors ignore stale markers.
+		},
+
+		"raw range vector selector with single point": {
+			expr:                 `dense_series[45s]`,
+			isInstantQuery:       true,
+			expectedTotalSamples: 1,
+		},
+		"raw range vector selector with multiple points": {
+			expr:                 `dense_series[3m45s]`,
+			isInstantQuery:       true,
+			expectedTotalSamples: 4,
+		},
+
+		"range vector selector with point at every time step": {
+			expr:                 `sum_over_time(dense_series{}[30s])`,
+			expectedTotalSamples: 11,
+		},
+		"range vector selector with points only in start of time range": {
+			expr:                 `sum_over_time(start_series{}[30s])`,
+			expectedTotalSamples: 2,
+		},
+		"range vector selector with points only at end of time range": {
+			expr:                 `sum_over_time(end_series{}[30s])`,
+			expectedTotalSamples: 6,
+		},
+		"range vector selector with sparse points": {
+			expr:                 `sum_over_time(sparse_series{}[30s])`,
+			expectedTotalSamples: 2,
+		},
+		"range vector selector where range overlaps previous step's range": {
+			expr:                 `sum_over_time(dense_series{}[1m30s])`,
+			expectedTotalSamples: 21, // Each step except the first selects two points.
+		},
+		"range vector selector with stale marker": {
+			expr:                 `count_over_time(stale_series{}[1m30s])`,
+			expectedTotalSamples: 19, // Each step except the first selects two points. Range vector selectors ignore stale markers.
+		},
+
+		"expression with multiple selectors": {
+			expr:                 `dense_series{} + end_series{}`,
+			expectedTotalSamples: 11 + 6,
+		},
+		"instant vector selector with NaNs": {
+			expr:                 `nan_series{}`,
+			expectedTotalSamples: 11,
+		},
+		"range vector selector with NaNs": {
+			expr:                 `sum_over_time(nan_series{}[1m])`,
+			expectedTotalSamples: 11,
+		},
+		"instant vector selector with native histograms": {
+			expr:                 `native_histogram_series{}`,
+			expectedTotalSamples: 78,
+		},
+		"range vector selector with native histograms": {
+			expr:                 `sum_over_time(native_histogram_series{}[1m])`,
+			expectedTotalSamples: 26,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			prometheusCount := runQueryAndGetTotalSamples(t, prometheusEngine, testCase.expr, testCase.isInstantQuery)
+			require.Equal(t, testCase.expectedTotalSamples, prometheusCount, "invalid test case: expected samples does not match value from Prometheus' engine")
+
+			mimirCount := runQueryAndGetTotalSamples(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
+			require.Equal(t, testCase.expectedTotalSamples, mimirCount)
+		})
+	}
 }

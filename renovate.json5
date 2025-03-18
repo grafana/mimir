@@ -3,7 +3,7 @@
     "extends": [
       "config:base"
     ],
-    "baseBranches": ["main", "release-2.14", "release-2.13"],
+    "baseBranches": ["main", "release-2.15", "release-2.14"],
     "postUpdateOptions": [
       "gomodTidy",
       "gomodUpdateImportPaths"
@@ -11,7 +11,7 @@
     "schedule": ["before 9am on Monday"],
     "packageRules": [
       {
-        "matchBaseBranches": ["release-2.14", "release-2.13"],
+        "matchBaseBranches": ["release-2.15", "release-2.14"],
         "packagePatterns": ["*"],
         "enabled": false
       },
@@ -40,6 +40,14 @@
         "paths": ["operations/mimir-mixin-tools/screenshots"],
         "managers": ["npm"],
         "enabled": true
+      },
+      {
+        "description": "Pin jaegertracing/all-in-one Docker image, since newer versions lack the agent we depend on",
+        "matchPackageNames": ["jaegertracing/all-in-one"],
+        "matchDatasources": [
+          "docker",
+        ],
+        "enabled": false
       }
     ],
     "branchPrefix": "deps-update/",

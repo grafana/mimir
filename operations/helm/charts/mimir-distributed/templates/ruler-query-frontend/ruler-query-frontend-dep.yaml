@@ -46,7 +46,7 @@ spec:
       {{- end }}
       containers:
         - name: ruler-query-frontend
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "ruler-query-frontend") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=query-frontend"
@@ -58,7 +58,7 @@ spec:
             - "-server.grpc.keepalive.max-connection-age=30s"
             - "-shutdown-delay=90s"
           {{- range $key, $value := .Values.ruler_query_frontend.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.ruler_query_frontend.extraVolumeMounts }}

@@ -30,7 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/util"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -255,6 +254,13 @@ func mapEngineError(err error) error {
 		cause = err
 	}
 
+	// The engine sometimes returns context.Canceled without mapping it to one of the expected
+	// error types. Handle that specially here since we rely on the error type for errors being
+	// accurate.
+	if errors.Is(cause, context.Canceled) {
+		return apierror.New(apierror.TypeCanceled, cause.Error())
+	}
+
 	// By default, all errors returned by engine.Eval() are execution errors,
 	// This is the same as Prometheus API does: http://github.com/prometheus/prometheus/blob/076109fa1910ad2198bf2c447a174fee31114982/web/api/v1/api.go#L550-L550
 	errorType := apierror.TypeExec
@@ -345,7 +351,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		prevTotalShards := totalShards
 		// If an estimate for query cardinality is available, use it to limit the number
 		// of shards based on linear interpolation.
-		totalShards = util_math.Min(totalShards, int(seriesCount.EstimatedSeriesCount/s.maxSeriesPerShard)+1)
+		totalShards = min(totalShards, int(seriesCount.EstimatedSeriesCount/s.maxSeriesPerShard)+1)
 
 		if prevTotalShards != totalShards {
 			spanLog.DebugLog(
@@ -380,7 +386,7 @@ func (s *querySharding) getShardsForQuery(ctx context.Context, tenantIDs []strin
 		}
 
 		prevTotalShards := totalShards
-		totalShards = util_math.Max(1, util_math.Min(totalShards, (maxShardedQueries/int(hints.TotalQueries))/numShardableLegs))
+		totalShards = max(1, min(totalShards, (maxShardedQueries/int(hints.TotalQueries))/numShardableLegs))
 
 		if prevTotalShards != totalShards {
 			spanLog.DebugLog(
@@ -498,7 +504,7 @@ func longestRegexpMatcherBytes(expr parser.Expr) int {
 				continue
 			}
 
-			longest = util_math.Max(longest, len(matcher.Value))
+			longest = max(longest, len(matcher.Value))
 		}
 	}
 

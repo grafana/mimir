@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/instrument"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -52,9 +53,6 @@ type fetcher interface {
 	// record and use the returned context when doing something that is common to all records.
 	PollFetches(context.Context) (kgo.Fetches, context.Context)
 
-	// Update updates the fetcher with the given concurrency.
-	Update(ctx context.Context, concurrency int)
-
 	// Stop stops the fetcher.
 	Stop()
 
@@ -64,8 +62,8 @@ type fetcher interface {
 	// BufferedBytes returns the number of bytes that have been fetched but not yet consumed.
 	BufferedBytes() int64
 
-	// BytesPerRecord returns the current estimation for how many bytes each record is.
-	BytesPerRecord() int64
+	// EstimatedBytesPerRecord returns the current estimation for how many bytes each record is.
+	EstimatedBytesPerRecord() int64
 }
 
 // fetchWant represents a range of offsets to fetch.
@@ -373,7 +371,7 @@ func (r *concurrentFetchers) BufferedBytes() int64 {
 	return r.bufferedFetchedBytes.Load()
 }
 
-func (r *concurrentFetchers) BytesPerRecord() int64 {
+func (r *concurrentFetchers) EstimatedBytesPerRecord() int64 {
 	return r.estimatedBytesPerRecord.Load()
 }
 
@@ -397,15 +395,6 @@ func (r *concurrentFetchers) Stop() {
 	r.bufferedFetchedBytes.Store(0)
 
 	level.Info(r.logger).Log("msg", "stopped concurrent fetchers", "last_returned_offset", r.lastReturnedOffset)
-}
-
-// Update implements fetcher
-func (r *concurrentFetchers) Update(ctx context.Context, concurrency int) {
-	r.Stop()
-	r.done = make(chan struct{})
-
-	r.wg.Add(1)
-	go r.start(ctx, r.lastReturnedOffset+1, concurrency)
 }
 
 // PollFetches implements fetcher
@@ -493,7 +482,7 @@ func recordIndexAfterOffset(records []*kgo.Record, offset int64) int {
 func (r *concurrentFetchers) recordOrderedFetchTelemetry(f fetchResult, firstReturnedRecordIndex int, waitStartTime time.Time) {
 	waitDuration := time.Since(waitStartTime)
 	level.Debug(r.logger).Log("msg", "received ordered fetch", "num_records", len(f.Records), "wait_duration", waitDuration)
-	r.metrics.fetchWaitDuration.Observe(waitDuration.Seconds())
+	instrument.ObserveWithExemplar(f.ctx, r.metrics.fetchWaitDuration, waitDuration.Seconds())
 
 	var (
 		doubleFetchedBytes             = 0
@@ -862,6 +851,10 @@ func (r *concurrentFetchers) start(ctx context.Context, startOffset int64, concu
 			// When there isn't a fetch in flight the HWM will never be updated, we will dispatch the next fetchWant even if that means it's above the HWM.
 			dispatchNextWant = wants
 		}
+
+		// Periodically update our estimation, so it's exported as a metric.
+		r.estimatedBytesPerRecord.Store(int64(nextFetch.estimatedBytesPerRecord))
+
 		select {
 		case <-r.done:
 			return

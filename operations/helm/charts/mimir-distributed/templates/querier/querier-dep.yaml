@@ -45,7 +45,7 @@ spec:
       {{- end }}
       containers:
         - name: querier
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "querier") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=querier"
@@ -63,7 +63,7 @@ spec:
             {{- end }}
           {{- end }}
           {{- range $key, $value := .Values.querier.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - -{{ $key }}={{ $value }}
           {{- end }}
           volumeMounts:
             {{- if .Values.querier.extraVolumeMounts }}

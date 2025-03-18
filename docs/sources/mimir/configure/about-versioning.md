@@ -46,6 +46,19 @@ Experimental configuration and flags are subject to change.
 
 The following features are currently experimental:
 
+- Cost attribution
+  - Configure labels for cost attribution
+    - `-validation.cost-attribution-labels`
+  - Configure cost attribution limits, such as label cardinality and the maximum number of cost attribution labels
+    - `-validation.max-cost-attribution-labels-per-user`
+    - `-validation.max-cost-attribution-cardinality-per-user`
+  - Configure cooldown periods and eviction intervals for cost attribution
+    - `-validation.cost-attribution-cooldown`
+    - `-cost-attribution.eviction-interval`
+  - Configure the metrics endpoint dedicated to cost attribution
+    - `-cost-attribution.registry-path`
+  - Configure the cost attribution cleanup process run interval
+    - `-cost-attribution.cleanup-interval`
 - Alertmanager
   - Enable a set of experimental API endpoints to help support the migration of the Grafana Alertmanager to the Mimir Alertmanager.
     - `-alertmanager.grafana-alertmanager-compatibility-enabled`
@@ -56,6 +69,10 @@ The following features are currently experimental:
     - `-compactor.no-blocks-file-cleanup-enabled`
   - In-memory cache for parsed meta.json files:
     - `-compactor.in-memory-tenant-meta-cache-size`
+  - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
+    - `-compactor.max-lookback`
+  - Enable the compactor to upload sparse index headers to object storage during compaction cycles.
+    - `-compactor.upload-sparse-index-headers`
 - Ruler
   - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
   - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
@@ -74,6 +91,10 @@ The following features are currently experimental:
   - Cache rule group contents.
     - `-ruler-storage.cache.rule-group-enabled`
 - Distributor
+  - Influx ingestion
+    - `/api/v1/push/influx/write` endpoint
+    - `-distributor.influx-endpoint-enabled`
+    - `-distributor.max-influx-request-size`
   - Metrics relabeling
     - `-distributor.metric-relabeling-enabled`
   - Using status code 529 instead of 429 upon rate limit exhaustion.
@@ -88,6 +109,12 @@ The following features are currently experimental:
     - `-ingester.client.grpc-compression=zstd`
   - Enable conversion of OTel start timestamps to Prometheus zero samples to mark series start
     - `-distributor.otel-created-timestamp-zero-ingestion-enabled`
+  - Promote a certain set of OTel resource attributes to labels
+    - `-distributor.promote-otel-resource-attributes`
+  - Add experimental `memberlist` key-value store for ha_tracker. Note that this feature is `experimental`, as the upper limits of propagation times have not yet been validated. Additionally, cleanup operations have not yet been implemented for the memberlist entries.
+    - `-distributor.ha-tracker.kvstore.store`
+  - Allow keeping OpenTelemetry `service.instance.id`, `service.name` and `service.namespace` resource attributes in `target_info` on top of converting them to the `instance` and `job` labels.
+    - `-distributor.otel-keep-identifying-resource-attributes`
 - Hash ring
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
@@ -146,13 +173,40 @@ The following features are currently experimental:
     - `-ingester.read-circuit-breaker.cooldown-period`
     - `-ingester.read-circuit-breaker.initial-delay`
     - `-ingester.read-circuit-breaker.request-timeout`
+  - Reactive concurrency limiters
+    - `-ingester.push-reactive-limiter.enabled`
+    - `-ingester.push-reactive-limiter.short-window-min-duration`
+    - `-ingester.push-reactive-limiter.short-window-max-duration`
+    - `-ingester.push-reactive-limiter.short-window-min-samples`
+    - `-ingester.push-reactive-limiter.long-window`
+    - `-ingester.push-reactive-limiter.sample-quantile`
+    - `-ingester.push-reactive-limiter.min-inflight-limit`
+    - `-ingester.push-reactive-limiter.max-inflight-limit`
+    - `-ingester.push-reactivereactive-limiter.initial-inflight-limit`
+    - `-ingester.push-reactive-limiter.max-limit-factor`
+    - `-ingester.push-reactive-limiter.correlation-window`
+    - `-ingester.push-reactive-limiter.initial-rejection-factor`
+    - `-ingester.push-reactive-limiter.max-rejection-factor`
+    - `-ingester.read-reactive-limiter.enabled`
+    - `-ingester.read-reactive-limiter.short-window-min-duration`
+    - `-ingester.read-reactive-limiter.short-window-max-duration`
+    - `-ingester.read-reactive-limiter.short-window-min-samples`
+    - `-ingester.read-reactive-limiter.long-window`
+    - `-ingester.read-reactive-limiter.sample-quantile`
+    - `-ingester.read-reactive-limiter.min-inflight-limit`
+    - `-ingester.read-reactive-limiter.max-inflight-limit`
+    - `-ingester.read-reactive-limiter.initial-inflight-limit`
+    - `-ingester.read-reactive-limiter.max-limit-factor`
+    - `-ingester.read-reactive-limiter.correlation-window`
+    - `-ingester.read-reactive-limiter.initial-rejection-factor`
+    - `-ingester.read-reactive-limiter.max-rejection-factor`
+    - `-ingester.rejection-prioritizer.calibration-interval`
 - Querier
   - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
   - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
-  - Enable PromQL experimental functions (`-querier.promql-experimental-functions-enabled`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
-  - Mimir query engine (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
+  - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine=mimir` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
 - Query-frontend
@@ -162,11 +216,14 @@ The following features are currently experimental:
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
-  - Caching of non-transient error responses (`-query-frontend.cache-errors`, `-query-frontend.results-cache-ttl-for-errors`)
+  - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
+  - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.instant-queries-with-subquery-spin-off` and the `instant_queries_with_subquery_spin_off` per-tenant limit)
+  - Enable PromQL experimental functions per-tenant (`-query-frontend.enabled-promql-experimental-functions` and the `enabled_promql_experimental_functions` per-tenant limit)
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
+  - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
 - Read-write deployment mode
 - API endpoints:
   - `/api/v1/user_limits`
@@ -189,6 +246,8 @@ The following features are currently experimental:
   - Customise write and read buffer size
     - `-<prefix>.memcached.write-buffer-size-bytes`
     - `-<prefix>.memcached.read-buffer-size-bytes`
+  - Alternate DNS service discovery backend
+    - `-<prefix>.memcached.addresses-provider`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
@@ -199,6 +258,15 @@ The following features are currently experimental:
 - Server
   - [PROXY protocol](https://www.haproxy.org/download/2.3/doc/proxy-protocol.txt) support
     - `-server.proxy-protocol-enabled`
+  - Cross-cluster validation support for gRPC communication
+    - `-server.cluster-validation.label`
+    - `-server.cluster-validation.grpc.enabled`
+    - `-server.cluster-validation.grpc.soft-validation`
+- gRPC clients
+  - Cross-cluster validation support for gRPC communication:
+    - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
+    - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
+    - Invalid cluster validations are tracked via the `cortex_client_request_invalid_cluster_validation_labels_total` metrics.
 - Kafka-based ingest storage
   - `-ingest-storage.*`
   - `-ingester.partition-ring.*`
@@ -206,7 +274,7 @@ The following features are currently experimental:
 ## Deprecated features
 
 Deprecated features are usable up until the release that indicates their removal.
-For details about what _deprecated_ means, see [Parameter lifecycle]({{< relref "./configuration-parameters#parameter-lifecycle" >}}).
+For details about what _deprecated_ means, see [Parameter lifecycle](../configuration-parameters/#parameter-lifecycle).
 
 The following features or configuration parameters are currently deprecated and will be **removed in a future release (to be announced)**:
 

@@ -18,6 +18,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +38,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -50,18 +52,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
-	"golang.org/x/exp/slices"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/indexheader"
+	"github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader/index"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -1149,7 +1150,7 @@ func appendTestSeries(series int) func(testing.TB, func() storage.Appender) {
 
 func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
 	// Put a 3 MiB limit on segment files so we can test with many segment files without creating too big blocks.
-	compactor, err := tsdb.NewLeveledCompactorWithChunkSize(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, 3*1024*1024, nil)
+	compactor, err := tsdb.NewLeveledCompactorWithChunkSize(context.Background(), nil, promslog.NewNopLogger(), []int64{1000000}, nil, 3*1024*1024, nil)
 	assert.NoError(t, err)
 
 	assert.NoError(t, os.MkdirAll(dir, 0777))
@@ -1429,7 +1430,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 
 	ibkt := objstore.WithNoopInstr(bkt)
-	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil, nil)
+	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	runTestWithStore := func(t test.TB, st *BucketStore, reg prometheus.Gatherer) {
@@ -1664,7 +1665,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 					// Reset the memory pool tracker.
 					seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
 
-					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil, nil)
+					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil, nil, 0)
 					assert.NoError(t, err)
 
 					// Create the bucket store.
@@ -1988,7 +1989,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 	)
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
@@ -2049,7 +2050,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2120,7 +2121,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	_, blockMinT, blockMaxT := uploadTestBlock(t, tmpDir, instrBkt, []testBlockDataSetup{appendTestSeries(10000)})
@@ -2200,7 +2201,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2324,7 +2325,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	assert.NoError(t, block.Upload(context.Background(), logger, bkt, filepath.Join(headOpts.ChunkDirRoot, blk.String()), nil))
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
@@ -2461,7 +2462,7 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 	instrBkt := objstore.WithNoopInstr(bkt)
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(t, err)
 
 	tests := map[string]struct {
@@ -2610,7 +2611,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	}
 
 	// Instance a real bucket store we'll use to query back the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
 	assert.NoError(tb, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})

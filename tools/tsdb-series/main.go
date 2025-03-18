@@ -21,6 +21,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/index"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var logger = log.NewLogfmtLogger(os.Stderr)
@@ -104,7 +106,7 @@ type seriesWithStats struct {
 }
 
 func printBlockIndex(ctx context.Context, blockDir string, printChunks bool, seriesStats bool, matchers []*labels.Matcher, minTime time.Time, maxTime time.Time, jsonOutput bool) {
-	block, err := tsdb.OpenBlock(logger, blockDir, nil)
+	block, err := tsdb.OpenBlock(util_log.SlogFromGoKit(logger), blockDir, nil, nil)
 	if err != nil {
 		level.Error(logger).Log("msg", "failed to open block", "dir", blockDir, "err", err)
 		return

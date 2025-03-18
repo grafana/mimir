@@ -8,6 +8,7 @@ package distributor
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/concurrency"
@@ -36,6 +38,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	colmetricpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -48,6 +51,14 @@ import (
 
 func TestHandler_remoteWrite(t *testing.T) {
 	req := createRequest(t, createPrometheusRemoteWriteProtobuf(t))
+	resp := httptest.NewRecorder()
+	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
+	handler.ServeHTTP(resp, req)
+	assert.Equal(t, 200, resp.Code)
+}
+
+func TestHandler_remoteWriteWithMalformedRequest(t *testing.T) {
+	req := createMalformedRW1Request(t, createPrometheusRemoteWriteProtobuf(t))
 	resp := httptest.NewRecorder()
 	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, verifyWritePushFunc(t, mimirpb.API), nil, log.NewNopLogger())
 	handler.ServeHTTP(resp, req)
@@ -513,6 +524,22 @@ func createRequest(t testing.TB, protobuf []byte) *http.Request {
 	req.Header.Add("Content-Encoding", "snappy")
 	req.Header.Set("Content-Type", "application/x-protobuf")
 	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+
+	const tenantID = "test"
+	req.Header.Set("X-Scope-OrgID", tenantID)
+	ctx := user.InjectOrgID(context.Background(), tenantID)
+	req = req.WithContext(ctx)
+
+	return req
+}
+
+func createMalformedRW1Request(t testing.TB, protobuf []byte) *http.Request {
+	t.Helper()
+	inoutBytes := snappy.Encode(nil, protobuf)
+	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(inoutBytes))
+	require.NoError(t, err)
+	req.Header.Add("Content-Encoding", "snappy")
+	req.Header.Set("Content-Type", "text/plain")
 
 	const tenantID = "test"
 	req.Header.Set("X-Scope-OrgID", tenantID)
@@ -1183,7 +1210,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 
 		return nil
 	}
-	h := OTLPHandler(200, util.NewBufferPool(0), nil, otlpLimitsMock{}, RetryConfig{}, push, newPushMetrics(reg), reg, log.NewNopLogger())
+	h := OTLPHandler(200, util.NewBufferPool(0), nil, otlpLimitsMock{}, nil, RetryConfig{}, false, push, newPushMetrics(reg), reg, log.NewNopLogger())
 	srv.HTTP.Handle("/otlp", h)
 
 	// start the server
@@ -1208,6 +1235,8 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 		expectedGrpcErrorMessage string
 	}
 
+	emptyReqProto, err := proto.Marshal(&colmetricpb.ExportMetricsServiceRequest{})
+	require.NoError(t, err)
 	testcases := map[string]testCase{
 		"missing content type returns 415": {
 			request: &httpgrpc.HTTPRequest{
@@ -1217,14 +1246,14 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 			},
 			expectedResponse: &httpgrpc.HTTPResponse{Code: 415,
 				Headers: []*httpgrpc.Header{
-					{Key: "Content-Type", Values: []string{"application/octet-stream"}},
+					{Key: "Content-Length", Values: []string{"86"}},
+					{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
 					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
 				},
-				Body: mustMarshalStatus(t, 415, "unsupported content type: , supported: [application/json, application/x-protobuf]"),
+				Body: protoMarshalStatus(t, 415, "unsupported content type: , supported: [application/json, application/x-protobuf]"),
 			},
 			expectedGrpcErrorMessage: "rpc error: code = Code(415) desc = unsupported content type: , supported: [application/json, application/x-protobuf]",
 		},
-
 		"invalid JSON request returns 400": {
 			request: &httpgrpc.HTTPRequest{
 				Method: "POST",
@@ -1236,14 +1265,53 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 			},
 			expectedResponse: &httpgrpc.HTTPResponse{Code: 400,
 				Headers: []*httpgrpc.Header{
-					{Key: "Content-Type", Values: []string{"application/octet-stream"}},
+					{Key: "Content-Length", Values: []string{"140"}},
+					{Key: "Content-Type", Values: []string{"application/json"}},
 					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
 				},
-				Body: mustMarshalStatus(t, 400, "ReadObjectCB: expect { or n, but found i, error found in #1 byte of ...|invalid|..., bigger context ...|invalid|..."),
+				Body: jsonMarshalStatus(t, 400, "ReadObjectCB: expect { or n, but found i, error found in #1 byte of ...|invalid|..., bigger context ...|invalid|..."),
 			},
 			expectedGrpcErrorMessage: "rpc error: code = Code(400) desc = ReadObjectCB: expect { or n, but found i, error found in #1 byte of ...|invalid|..., bigger context ...|invalid|...",
 		},
-
+		"invalid protobuf request returns 400": {
+			request: &httpgrpc.HTTPRequest{
+				Method: "POST",
+				Headers: []*httpgrpc.Header{
+					{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
+				},
+				Url:  "/otlp",
+				Body: []byte("invalid"),
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{Code: 400,
+				Headers: []*httpgrpc.Header{
+					{Key: "Content-Length", Values: []string{"19"}},
+					{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
+					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
+				},
+				Body: protoMarshalStatus(t, 400, "unexpected EOF"),
+			},
+			expectedGrpcErrorMessage: "rpc error: code = Code(400) desc = unexpected EOF",
+		},
+		"invalid JSON with non-utf8 characters request returns 400": {
+			request: &httpgrpc.HTTPRequest{
+				Method: "POST",
+				Headers: []*httpgrpc.Header{
+					{Key: "Content-Type", Values: []string{"application/json"}},
+				},
+				Url: "/otlp",
+				// \xf6 and \xd3 are not valid UTF8 characters, and they should be replaced with \UFFFD in the output.
+				Body: []byte("\n\xf6\x16\n\xd3\x02\n\x1d\n\x11container.runtime\x12\x08\n\x06docker\n'\n\x12container.h"),
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{Code: 400,
+				Headers: []*httpgrpc.Header{
+					{Key: "Content-Length", Values: []string{"267"}},
+					{Key: "Content-Type", Values: []string{"application/json"}},
+					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
+				},
+				Body: jsonMarshalStatus(t, 400, "ReadObjectCB: expect { or n, but found \ufffd, error found in #2 byte of ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011co|..., bigger context ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011container.runtime\u0012\u0008\n\u0006docker\n'\n\u0012container.h|..."),
+			},
+			expectedGrpcErrorMessage: "rpc error: code = Code(400) desc = ReadObjectCB: expect { or n, but found \ufffd, error found in #2 byte of ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011co|..., bigger context ...|\n\ufffd\u0016\n\ufffd\u0002\n\u001d\n\u0011container.runtime\u0012\u0008\n\u0006docker\n'\n\u0012container.h|...",
+		},
 		"empty JSON is good request, with 200 status code": {
 			request: &httpgrpc.HTTPRequest{
 				Method: "POST",
@@ -1254,12 +1322,34 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 				Body: []byte("{}"),
 			},
 			expectedResponse: &httpgrpc.HTTPResponse{Code: 200,
-				Headers: nil, // No headers expected for 200.
-				Body:    nil, // No body expected for 200 code.
+				Headers: []*httpgrpc.Header{
+					{Key: "Content-Length", Values: []string{"2"}},
+					{Key: "Content-Type", Values: []string{"application/json"}},
+					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
+				},
+				Body: []byte("{}"),
 			},
 			expectedGrpcErrorMessage: "", // No error expected
 		},
-
+		"empty protobuf is good request, with 200 status code": {
+			request: &httpgrpc.HTTPRequest{
+				Method: "POST",
+				Headers: []*httpgrpc.Header{
+					{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
+				},
+				Url:  "/otlp",
+				Body: emptyReqProto,
+			},
+			expectedResponse: &httpgrpc.HTTPResponse{Code: 200,
+				Headers: []*httpgrpc.Header{
+					{Key: "Content-Length", Values: []string{"0"}},
+					{Key: "Content-Type", Values: []string{"application/x-protobuf"}},
+					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
+				},
+				Body: nil,
+			},
+			expectedGrpcErrorMessage: "", // No error expected
+		},
 		"trigger 5xx error by sending special metric": {
 			request: &httpgrpc.HTTPRequest{
 				Method: "POST",
@@ -1267,15 +1357,16 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 					{Key: "Content-Type", Values: []string{"application/json"}},
 				},
 				Url: "/otlp",
-				// This is simple OTLP request, with "report_server_error".
+				// This is a simple OTLP request, with "report_server_error".
 				Body: []byte(`{"resourceMetrics": [{"scopeMetrics": [{"metrics": [{"name": "report_server_error", "gauge": {"dataPoints": [{"timeUnixNano": "1679912463340000000", "asDouble": 10.66}]}}]}]}]}`),
 			},
 			expectedResponse: &httpgrpc.HTTPResponse{Code: 503,
 				Headers: []*httpgrpc.Header{
-					{Key: "Content-Type", Values: []string{"application/octet-stream"}},
+					{Key: "Content-Length", Values: []string{"46"}},
+					{Key: "Content-Type", Values: []string{"application/json"}},
 					{Key: "X-Content-Type-Options", Values: []string{"nosniff"}},
 				},
-				Body: mustMarshalStatus(t, codes.Internal, "some random push error"),
+				Body: jsonMarshalStatus(t, codes.Internal, "some random push error"),
 			},
 			expectedGrpcErrorMessage: "rpc error: code = Code(503) desc = some random push error",
 		},
@@ -1288,7 +1379,6 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 		t.Run(fmt.Sprintf("grpc: %s", name), func(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "test")
 			resp, err := hc.Handle(ctx, tc.request)
-
 			if err != nil {
 				require.EqualError(t, err, tc.expectedGrpcErrorMessage)
 
@@ -1339,19 +1429,35 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 	}
 }
 
-func mustMarshalStatus(t *testing.T, code codes.Code, msg string) []byte {
+func protoMarshalStatus(t *testing.T, code codes.Code, msg string) []byte {
+	t.Helper()
 	bytes, err := status.New(code, msg).Proto().Marshal()
+	require.NoError(t, err)
+	return bytes
+}
+
+func jsonMarshalStatus(t *testing.T, code codes.Code, msg string) []byte {
+	t.Helper()
+	bytes, err := json.Marshal(status.New(code, msg).Proto())
 	require.NoError(t, err)
 	return bytes
 }
 
 type otlpLimitsMock struct{}
 
-func (o otlpLimitsMock) OTelMetricSuffixesEnabled(_ string) bool {
+func (o otlpLimitsMock) OTelMetricSuffixesEnabled(string) bool {
 	return false
 }
 
-func (o otlpLimitsMock) OTelCreatedTimestampZeroIngestionEnabled(_ string) bool {
+func (o otlpLimitsMock) OTelCreatedTimestampZeroIngestionEnabled(string) bool {
+	return false
+}
+
+func (o otlpLimitsMock) PromoteOTelResourceAttributes(string) []string {
+	return nil
+}
+
+func (o otlpLimitsMock) OTelKeepIdentifyingResourceAttributes(string) bool {
 	return false
 }
 

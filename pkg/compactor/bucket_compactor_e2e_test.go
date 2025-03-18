@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -36,7 +37,9 @@ import (
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 func TestSyncer_GarbageCollect_e2e(t *testing.T) {
@@ -118,7 +121,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			duplicateBlocksFilter,
-		}, nil)
+		}, nil, 0)
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
@@ -225,20 +228,23 @@ func TestGroupCompactE2E(t *testing.T) {
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			duplicateBlocksFilter,
 			noCompactMarkerFilter,
-		}, nil)
+		}, nil, 0)
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 		sy, err := newMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
 		require.NoError(t, err)
 
-		comp, err := tsdb.NewLeveledCompactor(ctx, reg, logger, []int64{1000, 3000}, nil, nil)
+		comp, err := tsdb.NewLeveledCompactor(ctx, reg, util_log.SlogFromGoKit(logger), []int64{1000, 3000}, nil, nil)
 		require.NoError(t, err)
 
 		planner := NewSplitAndMergePlanner([]int64{1000, 3000})
 		grouper := NewSplitAndMergeGrouper("user-1", []int64{1000, 3000}, 0, 0, logger)
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, prometheus.NewPedanticRegistry())
-		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 4, metrics)
+		cfg := indexheader.Config{VerifyOnLoad: true}
+		bComp, err := NewBucketCompactor(
+			logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 4, metrics, true, 32, cfg,
+		)
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.
@@ -250,6 +256,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsStarted))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsFailed))
+		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.blockUploadsStarted))
 
 		_, err = os.Stat(dir)
 		assert.True(t, os.IsNotExist(err), "dir %s should be remove after compaction.", dir)
@@ -339,6 +346,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.groupCompactionRunsStarted))
 		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
 		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsFailed))
+		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.blockUploadsStarted))
 
 		_, err = os.Stat(dir)
 		assert.True(t, os.IsNotExist(err), "dir %s should be remove after compaction.", dir)
@@ -369,6 +377,21 @@ func TestGroupCompactE2E(t *testing.T) {
 			}
 
 			others[defaultGroupKey(meta.Thanos.Downsample.Resolution, labels.FromMap(meta.Thanos.Labels))] = meta
+			return nil
+		}))
+
+		// expect the blocks that are compacted to have sparse-index-headers in object storage.
+		require.NoError(t, bkt.Iter(ctx, "", func(n string) error {
+			id, ok := block.IsBlockDir(n)
+			if !ok {
+				return nil
+			}
+
+			if _, ok := others[id.String()]; ok {
+				p := path.Join(id.String(), block.SparseIndexHeaderFilename)
+				exists, _ := bkt.Exists(ctx, p)
+				assert.True(t, exists, "expected sparse index headers not found %s", p)
+			}
 			return nil
 		}))
 
@@ -497,7 +520,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			duplicateBlocksFilter,
-		}, nil)
+		}, nil, 0)
 		require.NoError(t, err)
 
 		sy, err := newMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
@@ -690,7 +713,7 @@ func createBlockWithOptions(
 	if err := g.Wait(); err != nil {
 		return id, err
 	}
-	c, err := tsdb.NewLeveledCompactor(ctx, nil, log.NewNopLogger(), []int64{maxt - mint}, nil, nil)
+	c, err := tsdb.NewLeveledCompactor(ctx, nil, promslog.NewNopLogger(), []int64{maxt - mint}, nil, nil)
 	if err != nil {
 		return id, errors.Wrap(err, "create compactor")
 	}

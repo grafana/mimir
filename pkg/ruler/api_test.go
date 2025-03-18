@@ -32,6 +32,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	mimirtest "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -1097,6 +1098,72 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				},
 			},
 		},
+		"when filtering using query parameters from vanilla Prometheus": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams: "?" + url.Values{
+				"file[]":       []string{namespaceName(3)},
+				"rule_group[]": []string{groupName(2)},
+			}.Encode(),
+			limits: validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: groupName(2),
+					File: namespaceName(3),
+					Rules: []rule{
+						&recordingRule{
+							Name:   "NonUniqueNamedRule",
+							Query:  "up",
+							Health: "unknown",
+							Type:   "recording",
+						},
+						&alertingRule{
+							Name:   "UniqueNamedRuleN3G2",
+							Query:  "up < 1",
+							State:  "inactive",
+							Health: "unknown",
+							Type:   "alerting",
+							Alerts: []*Alert{},
+						},
+					},
+					Interval: 60,
+				},
+			},
+		},
+		"when supplying filter params in both formats, vanilla Prometheus format takes precedent": {
+			configuredRules:    makeFilterTestRules(),
+			expectedConfigured: len(makeFilterTestRules()),
+			queryParams: "?" + url.Values{
+				"file:":        []string{"foo"},
+				"rule_group":   []string{"bar"},
+				"file[]":       []string{namespaceName(3)},
+				"rule_group[]": []string{groupName(2)},
+			}.Encode(),
+			limits: validation.MockDefaultOverrides(),
+			expectedRules: []*RuleGroup{
+				{
+					Name: groupName(2),
+					File: namespaceName(3),
+					Rules: []rule{
+						&recordingRule{
+							Name:   "NonUniqueNamedRule",
+							Query:  "up",
+							Health: "unknown",
+							Type:   "recording",
+						},
+						&alertingRule{
+							Name:   "UniqueNamedRuleN3G2",
+							Query:  "up < 1",
+							State:  "inactive",
+							Health: "unknown",
+							Type:   "alerting",
+							Alerts: []*Alert{},
+						},
+					},
+					Interval: 60,
+				},
+			},
+		},
 	}
 
 	for name, tc := range testCases {
@@ -1123,7 +1190,7 @@ func TestRuler_PrometheusRules(t *testing.T) {
 				return len(rls.Groups)
 			})
 
-			a := NewAPI(r, r.store, log.NewNopLogger())
+			a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 			req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/rules"+tc.queryParams, nil, userID)
 			w := httptest.NewRecorder()
@@ -1180,7 +1247,7 @@ func TestRuler_PrometheusAlerts(t *testing.T) {
 		return len(rls.Groups)
 	})
 
-	a := NewAPI(r, r.store, log.NewNopLogger())
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 	req := requestFor(t, http.MethodGet, "https://localhost:8080/prometheus/api/v1/alerts", nil, "user1")
 	w := httptest.NewRecorder()
@@ -1359,7 +1426,7 @@ rules:
 
 			reg := prometheus.NewPedanticRegistry()
 			r := prepareRuler(t, rulerCfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg))
-			a := NewAPI(r, r.store, log.NewNopLogger())
+			a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 			router := mux.NewRouter()
 			router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
@@ -1429,7 +1496,7 @@ rules:
 		defaults.RulerMaxRuleGroupsPerTenant = 2
 		defaults.RulerMaxRulesPerRuleGroup = 2
 	})))
-	a := NewAPI(r, r.store, log.NewNopLogger())
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 	router := mux.NewRouter()
 	router.Path("/prometheus/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodGet).HandlerFunc(a.GetRuleGroup)
@@ -1510,7 +1577,7 @@ func TestAPI_DeleteNamespace(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	r := prepareRuler(t, cfg, newMockRuleStore(mockRulesNamespaces), withStart(), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg))
-	a := NewAPI(r, r.store, log.NewNopLogger())
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 	router := mux.NewRouter()
 	router.Path("/prometheus/config/v1/rules/{namespace}").Methods(http.MethodDelete).HandlerFunc(a.DeleteNamespace)
@@ -1567,7 +1634,7 @@ func TestAPI_DeleteRuleGroup(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 	r := prepareRuler(t, cfg, newMockRuleStore(mockRulesNamespaces), withStart(), withRulerAddrAutomaticMapping(), withPrometheusRegisterer(reg))
-	a := NewAPI(r, r.store, log.NewNopLogger())
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 	router := mux.NewRouter()
 	router.Path("/prometheus/config/v1/rules/{namespace}/{groupName}").Methods(http.MethodDelete).HandlerFunc(a.DeleteRuleGroup)
@@ -1609,7 +1676,7 @@ func TestRuler_LimitsPerGroup(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 1
 	})))
 
-	a := NewAPI(r, r.store, log.NewNopLogger())
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 	tc := []struct {
 		name   string
@@ -1662,7 +1729,7 @@ func TestRuler_RulerGroupLimits(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 1
 	})))
 
-	a := NewAPI(r, r.store, log.NewNopLogger())
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 	tc := []struct {
 		name   string
@@ -1722,7 +1789,7 @@ func TestRuler_RulerGroupLimitsDisabled(t *testing.T) {
 		defaults.RulerMaxRulesPerRuleGroup = 0
 	})))
 
-	a := NewAPI(r, r.store, log.NewNopLogger())
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 	tc := []struct {
 		name   string
@@ -1823,7 +1890,7 @@ func TestAPIRoutesCorrectlyHandleInvalidTenantID(t *testing.T) {
 				cfg.TenantFederation.Enabled = true
 
 				r := prepareRuler(t, cfg, newMockRuleStore(map[string]rulespb.RuleGroupList{}), withStart())
-				a := NewAPI(r, r.store, log.NewNopLogger())
+				a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
 
 				router := mux.NewRouter()
 				router.Path("/api/v1/rules").Methods(http.MethodGet).HandlerFunc(a.PrometheusRules)

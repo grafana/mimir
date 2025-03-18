@@ -47,8 +47,9 @@
 
   // The default Kafka client ID settings to use for producers and consumers.
   // These key-value settings get serialised into a comma-separated string.
-  ingest_storage_kafka_producer_client_id_settings:: {},
-  ingest_storage_kafka_consumer_client_id_settings:: {},
+  ingest_storage_kafka_client_id_settings:: {},
+  ingest_storage_kafka_producer_client_id_settings:: $.ingest_storage_kafka_client_id_settings,
+  ingest_storage_kafka_consumer_client_id_settings:: $.ingest_storage_kafka_client_id_settings,
 
   // The per-component Kafka client ID settings overrides.
   ingest_storage_distributor_kafka_client_id_settings:: $.ingest_storage_kafka_producer_client_id_settings,

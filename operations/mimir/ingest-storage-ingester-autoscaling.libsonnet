@@ -98,7 +98,7 @@
       statefulSet.mixin.metadata.withAnnotationsMixin(
         {
           'grafana.com/prepare-downscale-http-path': 'ingester/prepare-shutdown',  // We want to tell ingesters that they are shutting down.
-          'grafana.com/prepare-downscale-http-port': '80',
+          'grafana.com/prepare-downscale-http-port': '%(server_http_port)s' % $._config,
         } + (
           if zone == $._config.ingest_storage_ingester_autoscaling_primary_zone then {
             'grafana.com/rollout-mirror-replicas-from-resource-name': $._config.ingest_storage_ingester_autoscaling_primary_zone,

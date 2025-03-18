@@ -15,38 +15,38 @@ Mimirtool is a command-line tool that operators and tenants can use to execute a
 
 - The `alertmanager` command enables you to create, update, and delete tenant configurations in Grafana Mimir Alertmanager or Grafana Cloud Metrics.
 
-  For more information about the `alertmanager` command, refer to [Alertmanager]({{< relref "#alertmanager" >}}).
+  For more information about the `alertmanager` command, refer to [Alertmanager](#alertmanager).
 
 - The `rules` command enables you to validate and lint Prometheus rule files and convert them for use in Grafana Mimir.
   You can also create, update, and delete rulegroups in Grafana Mimir or Grafana Cloud Metrics.
 
-  For more information about the `rules` command, refer to [Rules]({{< relref "#rules" >}}).
+  For more information about the `rules` command, refer to [Rules](#rules).
 
 - The `remote-read` subcommand enables you to fetch statistics and series from [remote-read](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations) APIs.
   You can write series from a remote-read API to a local TSDB file that you load into Prometheus.
 
-  For more information about the remote-read command, refer to [Remote-read]({{< relref "#remote-read" >}}).
+  For more information about the remote-read command, refer to [Remote-read](#remote-read).
 
 - The `analyze` command extracts statistics about metric usage from Grafana or Hosted Grafana instances.
   You can also extract the same metrics from Grafana dashboard JSON files or Prometheus rule YAML files.
 
-  For more information about the `analyze` command, refer to [Analyze]({{< relref "#analyze" >}}).
+  For more information about the `analyze` command, refer to [Analyze](#analyze).
 
 - The `bucket-validation` command verifies that an object storage bucket is suitable as a backend storage for Grafana Mimir.
 
-  For more information about the `bucket-validation` command, refer to [Bucket validation]({{< relref "#bucket-validation" >}}).
+  For more information about the `bucket-validation` command, refer to [Bucket validation](#bucket-validation).
 
 - The `acl` command generates the label-based access control header used in Grafana Enterprise Metrics and Grafana Cloud Metrics.
 
-  For more information about the `acl` command, refer to [ACL]({{< relref "#acl" >}}).
+  For more information about the `acl` command, refer to [ACL](#acl).
 
 - The `config` command helps convert configuration files from Cortex to Grafana Mimir.
 
-  For more information about the `config` command, refer to [Config]({{< relref "#config" >}})
+  For more information about the `config` command, refer to [Config](#config)
 
 - The `backfill` command uploads existing Prometheus TSDB blocks into Grafana Mimir.
 
-  For more information about the `backfill` command, refer to [Backfill]({{< relref "#backfill" >}})
+  For more information about the `backfill` command, refer to [Backfill](#backfill)
 
 Mimirtool interacts with:
 
@@ -70,12 +70,22 @@ chmod +x mimirtool
 
 For Mimirtools to interact with Grafana Mimir, Grafana Enterprise Metrics, Prometheus, or Grafana, set the following environment variables or CLI flags.
 
-| Environment variable | Flag        | Description                                                                                                                                                                                      |
-| -------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `MIMIR_ADDRESS`      | `--address` | Sets the address of the API of the Grafana Mimir cluster.                                                                                                                                        |
-| `MIMIR_API_USER`     | `--user`    | Sets the basic auth username. If this variable is empty and `MIMIR_API_KEY` is set, the system uses `MIMIR_TENANT_ID` instead. If you're using Grafana Cloud, this variable is your instance ID. |
-| `MIMIR_API_KEY`      | `--key`     | Sets the basic auth password. If you're using Grafana Cloud, this variable is your API key.                                                                                                      |
-| `MIMIR_TENANT_ID`    | `--id`      | Sets the tenant ID of the Grafana Mimir instance that Mimirtools interacts with.                                                                                                                 |
+| Environment variable  | Flag              | Description                                                                                                                                                                                                |
+| --------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MIMIR_ADDRESS`       | `--address`       | Sets the address of the API of the Grafana Mimir cluster.                                                                                                                                                  |
+| `MIMIR_API_USER`      | `--user`          | Sets the basic authentication username. If this variable is empty and `MIMIR_API_KEY` is set, the system uses `MIMIR_TENANT_ID` instead. If you're using Grafana Cloud, this variable is your instance ID. |
+| `MIMIR_API_KEY`       | `--key`           | Sets the basic authentication password. If you're using Grafana Cloud, this variable is your API key.                                                                                                      |
+| `MIMIR_TENANT_ID`     | `--id`            | Sets the tenant ID of the Grafana Mimir instance that Mimirtool interacts with.                                                                                                                            |
+| `MIMIR_EXTRA_HEADERS` | `--extra-headers` | Extra headers to add to the requests in header=value format. You can specify this flag multiple times. You must newline separate environment values.                                                       |
+
+It is also possible to set TLS-related options with the following environment variables or CLI flags:
+
+| Environment variable             | Flag                         | Description                                                                                                            |
+| -------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `MIMIR_TLS_CA_PATH`              | `--tls-ca-path`              | Sets the path to the CA certificate to use to verify the connection to the Grafana Mimir cluster.                      |
+| `MIMIR_TLS_CERT_PATH`            | `--tls-cert-path`            | Sets the path to the client certificate to use to authenticate to the Grafana Mimir cluster.                           |
+| `MIMIR_TLS_KEY_PATH`             | `--tls-key-path`             | Sets the path to the private key to use to authenticate to the Grafana Mimir cluster.                                  |
+| `MIMIR_TLS_INSECURE_SKIP_VERIFY` | `--tls-insecure-skip-verify` | If `true`, disables verification of the Grafana Mimir cluster's TLS certificate. This is insecure and not recommended. |
 
 ## Commands
 
@@ -135,6 +145,8 @@ route:
   group_by: ["example_groupby"]
 receivers:
   - name: "example_receiver"
+templates:
+  - example_template.tpl
 ```
 
 `./example_alertmanager_template.tpl`:
@@ -298,10 +310,9 @@ For more information, refer to the [documentation of Mimirtool Github Action](ht
 
 Configuration options relevant to rules commands:
 
-| Flag              | Description                                                                               |
-| ----------------- | ----------------------------------------------------------------------------------------- |
-| `--auth-token`    | Authentication token for bearer token or JWT auth.                                        |
-| `--extra-headers` | Extra headers to add to the requests in header=value format. (Can specify multiple times) |
+| Flag           | Description                                        |
+| -------------- | -------------------------------------------------- |
+| `--auth-token` | Authentication token for bearer token or JWT auth. |
 
 #### List rules
 
@@ -888,7 +899,7 @@ mimirtool bucket-validation
 #### Convert
 
 The config convert command converts configuration parameters that work with Cortex v1.10.0 and above to parameters that work with Grafana Mimir v2.0.0.
-It supports converting both CLI flags and [YAML configuration files]({{< relref "../../configure/configuration-parameters" >}}).
+It supports converting both CLI flags and [YAML configuration files](../../../configure/configuration-parameters/).
 
 ##### Configuration
 
@@ -929,7 +940,7 @@ the `--update-defaults` flag, `mimirtool config convert` will not update the val
 
 ##### Example
 
-The following example shows a command that converts Cortex [query-frontend]({{< relref "../../references/architecture/components/query-frontend" >}}) YAML configuration file and CLI flag to a Mimir-compatible YAML and CLI flag.
+The following example shows a command that converts Cortex [query-frontend](../../../references/architecture/components/query-frontend/) YAML configuration file and CLI flag to a Mimir-compatible YAML and CLI flag.
 
 ```bash
 mimirtool config convert --yaml-file=cortex.yaml --flags-file=cortex.flags --yaml-out=mimir.yaml --flags-out=mimir.flags
@@ -1127,12 +1138,12 @@ The only parameter of the script is a file containing the flags, with each flag 
 
 ### Backfill
 
-The `backfill` command uploads Prometheus TSDB blocks into Grafana Mimir, by using the [block-upload API that is exposed by the compactor component]({{< relref "../../references/http-api#compactor" >}}).
+The `backfill` command uploads Prometheus TSDB blocks into Grafana Mimir, by using the [block-upload API that is exposed by the compactor component](../../../references/http-api/#compactor).
 
 If the command is interrupted, you can restart it. Mimirtool detects which blocks are already uploaded, and will only upload unfinished or new blocks.
 
 The block-upload feature is disabled by default.
-To enable the block-upload feature for a user or an entire system, refer to [Configure TSDB block upload]({{< relref "../../configure/configure-tsdb-block-upload" >}}).
+To enable the block-upload feature for a user or an entire system, refer to [Configure TSDB block upload](../../../configure/configure-tsdb-block-upload/).
 If block upload is not enabled for the user, `mimirtool backfill` will fail.
 
 ##### Example

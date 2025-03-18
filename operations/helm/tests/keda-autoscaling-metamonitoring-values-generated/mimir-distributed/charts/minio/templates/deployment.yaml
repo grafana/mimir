@@ -6,7 +6,7 @@ metadata:
   name: keda-autoscaling-metamonitoring-values-minio
   labels:
     app: minio
-    chart: minio-5.3.0
+    chart: minio-5.4.0
     release: keda-autoscaling-metamonitoring-values
     heritage: Helm
 spec:
@@ -27,8 +27,8 @@ spec:
         app: minio
         release: keda-autoscaling-metamonitoring-values
       annotations:
-        checksum/secrets: 183f875b2a90f6468f0fd200769a84ca465e889b3e41e97f687c096a772866a2
-        checksum/config: b68cf2ffb05965faee62f83d7c5d2a16afc88a90d239338fc873ee7feffe7204
+        checksum/secrets: 2b079ce61089452f9095ab14f5feb3ae1899db15bbf20a8815723477371230a7
+        checksum/config: b02cc0c7ffd8183fd8f34c542c1f7b18803881bd596f6b87bb122f991cba33ff
     spec:
       securityContext:
         
@@ -40,7 +40,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2024-04-18T19-09-19Z"
+          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"

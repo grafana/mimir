@@ -24,7 +24,7 @@ type SumAggregationGroup struct {
 	histogramPointCount     int
 }
 
-func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc) error {
+func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
 	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
 		// Nothing to do
@@ -35,7 +35,7 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 	if err != nil {
 		return err
 	}
-	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotationFunc)
+	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotation)
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func (g *SumAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 	return nil
 }
 
-func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotationFunc types.EmitAnnotationFunc) error {
+func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc) error {
 	var err error
 
 	if len(data.Histograms) > 0 && g.histogramSums == nil {
@@ -113,7 +113,7 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			g.histogramSums[outputIdx] = invalidCombinationOfHistograms
 			g.histogramPointCount--
 
-			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotationFunc); err != nil {
+			if err := functions.NativeHistogramErrorToAnnotation(err, emitAnnotation); err != nil {
 				// Unknown error: we couldn't convert the error to an annotation. Give up.
 				return err
 			}
@@ -164,7 +164,7 @@ func (g *SumAggregationGroup) reconcileAndCountFloatPoints() (int, bool) {
 	return floatPointCount, haveMixedFloatsAndHistograms
 }
 
-func (g *SumAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
+func (g *SumAggregationGroup) ComputeOutputSeries(_ types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error) {
 	floatPointCount, hasMixedData := g.reconcileAndCountFloatPoints()
 	var floatPoints []promql.FPoint
 	var err error
@@ -194,6 +194,9 @@ func (g *SumAggregationGroup) ComputeOutputSeries(timeRange types.QueryTimeRange
 			if h != nil && h != invalidCombinationOfHistograms {
 				t := timeRange.StartT + int64(i)*timeRange.IntervalMilliseconds
 				histogramPoints = append(histogramPoints, promql.HPoint{T: t, H: h.Compact(0)})
+
+				// Remove histogram from slice to ensure it's not mutated when the slice is reused.
+				g.histogramSums[i] = nil
 			}
 		}
 	}

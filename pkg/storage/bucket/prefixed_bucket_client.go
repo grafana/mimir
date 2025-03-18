@@ -35,6 +35,10 @@ func (b *PrefixedBucketClient) Close() error {
 	return b.bucket.Close()
 }
 
+func (b *PrefixedBucketClient) Provider() objstore.ObjProvider {
+	return b.bucket.Provider()
+}
+
 // Upload the contents of the reader as an object into the bucket.
 func (b *PrefixedBucketClient) Upload(ctx context.Context, name string, r io.Reader) (err error) {
 	err = b.bucket.Upload(ctx, b.fullName(name), r)

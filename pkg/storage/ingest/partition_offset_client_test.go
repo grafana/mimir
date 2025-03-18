@@ -67,11 +67,11 @@ func TestPartitionOffsetClient_FetchPartitionLastProducedOffset(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_last_produced_offset_failures_total Total number of failed requests to get the last produced offset.
 			# TYPE cortex_ingest_storage_reader_last_produced_offset_failures_total counter
-			cortex_ingest_storage_reader_last_produced_offset_failures_total{partition="0"} 0
+			cortex_ingest_storage_reader_last_produced_offset_failures_total{partition="0",topic="test"} 0
 
 			# HELP cortex_ingest_storage_reader_last_produced_offset_requests_total Total number of requests issued to get the last produced offset.
 			# TYPE cortex_ingest_storage_reader_last_produced_offset_requests_total counter
-			cortex_ingest_storage_reader_last_produced_offset_requests_total{partition="0"} 3
+			cortex_ingest_storage_reader_last_produced_offset_requests_total{partition="0",topic="test"} 3
 		`), "cortex_ingest_storage_reader_last_produced_offset_requests_total",
 			"cortex_ingest_storage_reader_last_produced_offset_failures_total"))
 	})
@@ -220,11 +220,11 @@ func TestPartitionOffsetClient_FetchPartitionStartOffset(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_partition_start_offset_failures_total Total number of failed requests to get the partition start offset.
 			# TYPE cortex_ingest_storage_reader_partition_start_offset_failures_total counter
-			cortex_ingest_storage_reader_partition_start_offset_failures_total{partition="0"} 0
+			cortex_ingest_storage_reader_partition_start_offset_failures_total{partition="0",topic="test"} 0
 
 			# HELP cortex_ingest_storage_reader_partition_start_offset_requests_total Total number of requests issued to get the partition start offset.
 			# TYPE cortex_ingest_storage_reader_partition_start_offset_requests_total counter
-			cortex_ingest_storage_reader_partition_start_offset_requests_total{partition="0"} 4
+			cortex_ingest_storage_reader_partition_start_offset_requests_total{partition="0",topic="test"} 4
 		`), "cortex_ingest_storage_reader_partition_start_offset_requests_total",
 			"cortex_ingest_storage_reader_partition_start_offset_failures_total"))
 	})
@@ -380,11 +380,11 @@ func TestPartitionOffsetClient_FetchPartitionsLastProducedOffsets(t *testing.T) 
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_last_produced_offset_failures_total Total number of failed requests to get the last produced offset.
 			# TYPE cortex_ingest_storage_reader_last_produced_offset_failures_total counter
-			cortex_ingest_storage_reader_last_produced_offset_failures_total{partition="mixed"} 0
+			cortex_ingest_storage_reader_last_produced_offset_failures_total{partition="mixed",topic="test"} 0
 
 			# HELP cortex_ingest_storage_reader_last_produced_offset_requests_total Total number of requests issued to get the last produced offset.
 			# TYPE cortex_ingest_storage_reader_last_produced_offset_requests_total counter
-			cortex_ingest_storage_reader_last_produced_offset_requests_total{partition="mixed"} 4
+			cortex_ingest_storage_reader_last_produced_offset_requests_total{partition="mixed",topic="test"} 4
 		`), "cortex_ingest_storage_reader_last_produced_offset_requests_total",
 			"cortex_ingest_storage_reader_last_produced_offset_failures_total"))
 	})

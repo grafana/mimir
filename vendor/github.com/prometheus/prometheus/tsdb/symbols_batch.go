@@ -45,7 +45,7 @@ func newSymbolFlushers(concurrency int) *symbolFlushers {
 
 func (f *symbolFlushers) flushSymbols(outputFile string, symbols map[string]struct{}) error {
 	if len(symbols) == 0 {
-		return fmt.Errorf("no symbols")
+		return errors.New("no symbols")
 	}
 
 	f.errMu.Lock()

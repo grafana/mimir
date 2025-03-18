@@ -10,6 +10,7 @@ package distributor
 import (
 	"context"
 	"io"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -21,7 +22,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"golang.org/x/exp/slices"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"

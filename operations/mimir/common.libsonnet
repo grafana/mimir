@@ -131,13 +131,14 @@
     local deployment = $.apps.v1.deployment;
     local topologySpreadConstraints = $.core.v1.topologySpreadConstraint;
 
-    deployment.spec.template.spec.withTopologySpreadConstraints(
-      // Evenly spread replicas among available nodes.
-      topologySpreadConstraints.labelSelector.withMatchLabels({ name: name }) +
-      topologySpreadConstraints.withTopologyKey('kubernetes.io/hostname') +
-      topologySpreadConstraints.withWhenUnsatisfiable('ScheduleAnyway') +
-      topologySpreadConstraints.withMaxSkew(maxSkew),
-    ),
+    if maxSkew < 0 then {} else
+      deployment.spec.template.spec.withTopologySpreadConstraints(
+        // Evenly spread replicas among available nodes.
+        topologySpreadConstraints.labelSelector.withMatchLabels({ name: name }) +
+        topologySpreadConstraints.withTopologyKey('kubernetes.io/hostname') +
+        topologySpreadConstraints.withWhenUnsatisfiable('ScheduleAnyway') +
+        topologySpreadConstraints.withMaxSkew(maxSkew),
+      ),
 
   newMimirNodeAffinityMatchers(nodeAffinityMatchers)::
     local deployment = $.apps.v1.deployment;

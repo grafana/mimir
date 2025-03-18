@@ -36,8 +36,8 @@ func NewKafkaReaderClient(cfg KafkaConfig, metrics *kprom.Metrics, logger log.Lo
 	return client, nil
 }
 
-func NewKafkaReaderClientMetrics(component string, reg prometheus.Registerer) *kprom.Metrics {
-	return kprom.NewMetrics("cortex_ingest_storage_reader",
+func NewKafkaReaderClientMetrics(prefix, component string, reg prometheus.Registerer) *kprom.Metrics {
+	return kprom.NewMetrics(prefix,
 		kprom.Registerer(prometheus.WrapRegistererWith(prometheus.Labels{"component": component}, reg)),
 		// Do not export the client ID, because we use it to specify options to the backend.
 		kprom.FetchAndProduceDetail(kprom.Batches, kprom.Records, kprom.CompressedBytes, kprom.UncompressedBytes))

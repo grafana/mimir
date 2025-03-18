@@ -13,6 +13,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -25,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb"
@@ -36,7 +38,6 @@ import (
 	"github.com/thanos-io/objstore"
 	filesystemstore "github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	grpc_metadata "google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -651,7 +652,7 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 	// then it will be snapshotted to the storage directory.
 	tmpDir := t.TempDir()
 
-	db, err := tsdb.Open(tmpDir, log.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
+	db, err := tsdb.Open(tmpDir, promslog.NewNopLogger(), nil, tsdb.DefaultOptions(), nil)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, db.Close())

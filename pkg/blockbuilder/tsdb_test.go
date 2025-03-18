@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -98,13 +99,13 @@ func TestTSDBBuilder(t *testing.T) {
 	}
 	addFloatSample := func(builder *TSDBBuilder, ts int64, val float64, lastEnd, currEnd int64, recordProcessedBefore, wantAccepted bool) {
 		rec := createRequest(userID, floatSample(ts, val), nil, wantAccepted)
-		allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, recordProcessedBefore)
+		allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, recordProcessedBefore, false)
 		require.NoError(t, err)
 		require.Equal(t, wantAccepted, allProcessed)
 	}
 	addHistogramSample := func(builder *TSDBBuilder, ts int64, lastEnd, currEnd int64, recordProcessedBefore, wantAccepted bool) {
 		rec := createRequest(userID, nil, histogramSample(ts), wantAccepted)
-		allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, recordProcessedBefore)
+		allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, recordProcessedBefore, false)
 		require.NoError(t, err)
 		require.Equal(t, wantAccepted, allProcessed)
 	}
@@ -159,7 +160,7 @@ func TestTSDBBuilder(t *testing.T) {
 			expSamples = expSamples[:0]
 			expHistograms = expHistograms[:0]
 			metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-			builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics)
+			builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
 
 			currEnd, lastEnd := tc.currEnd, tc.lastEnd
 			{ // Add float samples.
@@ -225,7 +226,7 @@ func TestTSDBBuilder(t *testing.T) {
 				// This one goes into the block.
 				samples := floatSample(lastEnd+20, 1)
 				rec := createRequest(userID, samples, nil, false)
-				allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false)
+				allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
 				require.NoError(t, err)
 				require.True(t, allProcessed)
 				expOOOSamples := append([]mimirpb.Sample(nil), samples...)
@@ -233,7 +234,7 @@ func TestTSDBBuilder(t *testing.T) {
 				// This one doesn't go into the block because of "ErrOutOfOrderSample" (soft error)
 				samples = floatSample(lastEnd-20, 1)
 				rec = createRequest(userID, samples, nil, false)
-				allProcessed, err = builder.Process(context.Background(), rec, lastEnd, currEnd, false)
+				allProcessed, err = builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
 				require.NoError(t, err)
 				require.True(t, allProcessed)
 
@@ -265,7 +266,7 @@ func TestTSDBBuilder(t *testing.T) {
 			require.NoError(t, err)
 			require.Nil(t, builder.tsdbs[tenant])
 
-			newDB, err := tsdb.Open(shipperDir, log.NewNopLogger(), nil, nil, nil)
+			newDB, err := tsdb.Open(shipperDir, promslog.NewNopLogger(), nil, nil, nil)
 			require.NoError(t, err)
 
 			// One for the in-order current range. Two for the out-of-order blocks: one for the current range
@@ -278,6 +279,40 @@ func TestTSDBBuilder(t *testing.T) {
 			require.NoError(t, newDB.Close())
 		})
 	}
+}
+
+func TestTSDBBuilder_CompactAndUpload_fail(t *testing.T) {
+	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+	require.NoError(t, err)
+	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	t.Cleanup(func() {
+		require.NoError(t, builder.Close())
+	})
+
+	userID := strconv.Itoa(rand.Int())
+	tenant := tsdbTenant{
+		partitionID: 0,
+		tenantID:    userID,
+	}
+	_, err = builder.getOrCreateTSDB(tenant)
+	require.NoError(t, err)
+
+	errUploadFailed := fmt.Errorf("upload failed")
+	_, err = builder.CompactAndUpload(context.Background(), func(_ context.Context, _, _ string, _ []tsdb.BlockMeta) error {
+		return errUploadFailed
+	})
+	require.ErrorIs(t, err, errUploadFailed)
+}
+
+func compareQueryWithDir(t *testing.T, bucketDir string, expSamples []mimirpb.Sample, expHistograms []mimirpb.Histogram, matchers ...*labels.Matcher) *tsdb.DB {
+	db, err := tsdb.Open(bucketDir, promslog.NewNopLogger(), nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	compareQuery(t, db, expSamples, expHistograms, matchers...)
+
+	return db
 }
 
 func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHistograms []mimirpb.Histogram, matchers ...*labels.Matcher) {
@@ -329,9 +364,9 @@ func compareQuery(t *testing.T, db *tsdb.DB, expSamples []mimirpb.Sample, expHis
 }
 
 func mockUploaderFunc(t *testing.T, destDir string) blockUploader {
-	return func(_ context.Context, _, dbDir string, blockIDs []string) error {
-		for _, bid := range blockIDs {
-			blockDir := path.Join(dbDir, bid)
+	return func(_ context.Context, _, dbDir string, metas []tsdb.BlockMeta) error {
+		for _, meta := range metas {
+			blockDir := path.Join(dbDir, meta.ULID.String())
 			err := os.Rename(blockDir, path.Join(destDir, path.Base(blockDir)))
 			require.NoError(t, err)
 		}
@@ -349,7 +384,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	require.NoError(t, err)
 	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
-	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics)
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
 
 	// Has a timeseries with no samples.
 	var rec kgo.Record
@@ -364,7 +399,7 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	data, err := req.Marshal()
 	require.NoError(t, err)
 	rec.Value = data
-	allProcessed, err := builder.Process(context.Background(), &rec, lastEnd, currEnd, false)
+	allProcessed, err := builder.Process(context.Background(), &rec, lastEnd, currEnd, false, false)
 	require.NoError(t, err)
 	require.True(t, allProcessed)
 
@@ -373,11 +408,138 @@ func TestProcessingEmptyRequest(t *testing.T) {
 	data, err = req.Marshal()
 	require.NoError(t, err)
 	rec.Value = data
-	allProcessed, err = builder.Process(context.Background(), &rec, lastEnd, currEnd, false)
+	allProcessed, err = builder.Process(context.Background(), &rec, lastEnd, currEnd, false, false)
 	require.NoError(t, err)
 	require.True(t, allProcessed)
 
 	require.NoError(t, builder.tsdbs[tsdbTenant{0, userID}].Close())
+}
+
+// TestTSDBBuilderLimits tests the correct enforcements of series limits and also
+// that series limit error does not cause the processing to fail (i.e. do not error out).
+func TestTSDBBuilderLimits(t *testing.T) {
+	var (
+		user1 = "user1"
+		user2 = "user2"
+		// Limits should be applied only if the limits is under 50
+		applyGlobalSeriesLimitUnder = 50
+	)
+
+	limits := map[string]*validation.Limits{
+		user1: {
+			MaxGlobalSeriesPerUser:           30,
+			NativeHistogramsIngestionEnabled: true,
+		},
+		user2: {
+			MaxGlobalSeriesPerUser:           150,
+			NativeHistogramsIngestionEnabled: true,
+		},
+	}
+	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
+	require.NoError(t, err)
+
+	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, applyGlobalSeriesLimitUnder)
+	t.Cleanup(func() {
+		require.NoError(t, builder.Close())
+	})
+
+	var (
+		processingRange = time.Hour.Milliseconds()
+		lastEnd         = 2 * processingRange
+		currEnd         = 3 * processingRange
+		ts              = lastEnd + (processingRange / 2)
+	)
+	createRequest := func(userID string, seriesID int) *kgo.Record {
+		var (
+			samples    []mimirpb.Sample
+			histograms []mimirpb.Histogram
+		)
+		if seriesID%2 == 0 {
+			samples = floatSample(ts, float64(seriesID))
+		} else {
+			histograms = histogramSample(ts)
+		}
+		return &kgo.Record{
+			Key:   []byte(userID),
+			Value: createWriteRequest(t, strconv.Itoa(seriesID), samples, histograms),
+		}
+	}
+
+	for seriesID := 1; seriesID <= 100; seriesID++ {
+		for userID := range limits {
+			rec := createRequest(userID, seriesID)
+			allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
+			require.NoError(t, err)
+			require.Equal(t, true, allProcessed)
+		}
+	}
+
+	// user1 had a limit of 30, which is less than applyGlobalSeriesLimitUnder.
+	// So the limit must be applied.
+	db, err := builder.getOrCreateTSDB(tsdbTenant{tenantID: user1})
+	require.NoError(t, err)
+	require.Equal(t, uint64(30), db.Head().NumSeries())
+
+	// user2 had a limit of 100, which is greather than applyGlobalSeriesLimitUnder.
+	// So the limit must not be applied.
+	db, err = builder.getOrCreateTSDB(tsdbTenant{tenantID: user2})
+	require.NoError(t, err)
+	require.Equal(t, uint64(100), db.Head().NumSeries())
+}
+
+// TestTSDBBuilderNativeHistogramEnabledError tests that when native histograms are disabled for a tenant,
+// the TSDB builder does not error out when trying to ingest native histogram for that tenant.
+func TestTSDBBuilderNativeHistogramEnabledError(t *testing.T) {
+	var (
+		user1 = "user1"
+		user2 = "user2"
+	)
+
+	limits := map[string]*validation.Limits{
+		user1: {
+			NativeHistogramsIngestionEnabled: true,
+		},
+		user2: {
+			NativeHistogramsIngestionEnabled: false,
+		},
+	}
+	overrides, err := validation.NewOverrides(defaultLimitsTestConfig(), validation.NewMockTenantLimits(limits))
+	require.NoError(t, err)
+
+	metrics := newTSDBBBuilderMetrics(prometheus.NewPedanticRegistry())
+	builder := NewTSDBBuilder(log.NewNopLogger(), t.TempDir(), mimir_tsdb.BlocksStorageConfig{}, overrides, metrics, 0)
+	t.Cleanup(func() {
+		require.NoError(t, builder.Close())
+	})
+
+	var (
+		processingRange = time.Hour.Milliseconds()
+		lastEnd         = 2 * processingRange
+		currEnd         = 3 * processingRange
+		ts              = lastEnd + (processingRange / 2)
+	)
+	for seriesID := 1; seriesID <= 100; seriesID++ {
+		for userID := range limits {
+			rec := &kgo.Record{
+				Key:   []byte(userID),
+				Value: createWriteRequest(t, strconv.Itoa(seriesID), nil, histogramSample(ts)),
+			}
+			allProcessed, err := builder.Process(context.Background(), rec, lastEnd, currEnd, false, false)
+			require.NoError(t, err)
+			require.Equal(t, true, allProcessed)
+		}
+	}
+
+	// user1 had native histograms enabled. We should see it in the TSDB.
+	db, err := builder.getOrCreateTSDB(tsdbTenant{tenantID: user1})
+	require.NoError(t, err)
+	require.Equal(t, uint64(100), db.Head().NumSeries())
+
+	// user2 had native histograms disabled. Nothing should be in the TSDB.
+	db, err = builder.getOrCreateTSDB(tsdbTenant{tenantID: user2})
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), db.Head().NumSeries())
 }
 
 func defaultLimitsTestConfig() validation.Limits {

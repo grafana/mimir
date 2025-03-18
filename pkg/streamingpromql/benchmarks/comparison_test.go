@@ -67,7 +67,7 @@ func BenchmarkQuery(b *testing.B) {
 				prometheusResult, prometheusClose := c.Run(ctx, b, start, end, interval, prometheusEngine, q)
 				mimirResult, mimirClose := c.Run(ctx, b, start, end, interval, mimirEngine, q)
 
-				testutils.RequireEqualResults(b, c.Expr, prometheusResult, mimirResult)
+				testutils.RequireEqualResults(b, c.Expr, prometheusResult, mimirResult, false)
 
 				prometheusClose()
 				mimirClose()
@@ -108,7 +108,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
 			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
 
-			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult)
+			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, false)
 
 			prometheusClose()
 			mimirClose()
@@ -237,7 +237,7 @@ func createIngesterQueryable(t testing.TB, address string) storage.Queryable {
 	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)
 
-	d, err := distributor.New(distributorCfg, clientCfg, overrides, nil, ingestersRing, nil, false, nil, logger)
+	d, err := distributor.New(distributorCfg, clientCfg, overrides, nil, nil, ingestersRing, nil, false, nil, logger)
 	require.NoError(t, err)
 
 	queryMetrics := stats.NewQueryMetrics(nil)

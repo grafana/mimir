@@ -220,11 +220,15 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 			return decompressSnappyFromBuffer(buffers, buf, maxSize, sp)
 		}
 	case Gzip:
-		var err error
-		reader, err = gzip.NewReader(reader)
+		gzReader, err := gzip.NewReader(reader)
 		if err != nil {
 			return nil, errors.Wrap(err, "create gzip reader")
 		}
+
+		defer func() {
+			_ = gzReader.Close()
+		}()
+		reader = gzReader
 	case Lz4:
 		reader = lz4.NewReader(reader)
 	default:

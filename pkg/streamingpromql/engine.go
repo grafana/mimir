@@ -9,15 +9,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 )
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
@@ -44,13 +47,29 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		return nil, errors.New("enabling delayed name removal not supported by Mimir query engine")
 	}
 
+	// We must sort DisabledFunctions as we use a binary search on it later.
+	slices.Sort(opts.Features.DisabledFunctions)
+
+	disabledAggregationsItems := make([]parser.ItemType, 0, len(opts.Features.DisabledAggregations))
+	for _, agg := range opts.Features.DisabledAggregations {
+		item, ok := aggregations.GetAggregationItemType(agg)
+		if !ok {
+			return nil, fmt.Errorf("disabled aggregation '%s' does not exist", agg)
+		}
+		disabledAggregationsItems = append(disabledAggregationsItems, item)
+	}
+	// No point sorting DisabledAggregations earlier, as ItemType ints are not in order.
+	// We must sort DisabledAggregationsItems as we use a binary search on it later.
+	slices.Sort(disabledAggregationsItems)
+
 	return &Engine{
-		lookbackDelta:            lookbackDelta,
-		timeout:                  opts.CommonOpts.Timeout,
-		limitsProvider:           limitsProvider,
-		activeQueryTracker:       opts.CommonOpts.ActiveQueryTracker,
-		featureToggles:           opts.FeatureToggles,
-		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
+		lookbackDelta:             lookbackDelta,
+		timeout:                   opts.CommonOpts.Timeout,
+		limitsProvider:            limitsProvider,
+		activeQueryTracker:        opts.CommonOpts.ActiveQueryTracker,
+		features:                  opts.Features,
+		disabledAggregationsItems: disabledAggregationsItems,
+		noStepSubqueryIntervalFn:  opts.CommonOpts.NoStepSubqueryIntervalFn,
 
 		logger: logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
@@ -65,11 +84,13 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 }
 
 type Engine struct {
-	lookbackDelta            time.Duration
-	timeout                  time.Duration
-	limitsProvider           QueryLimitsProvider
-	activeQueryTracker       promql.QueryTracker
-	featureToggles           FeatureToggles
+	lookbackDelta             time.Duration
+	timeout                   time.Duration
+	limitsProvider            QueryLimitsProvider
+	activeQueryTracker        promql.QueryTracker
+	features                  Features
+	disabledAggregationsItems []parser.ItemType
+
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
 	logger                                    log.Logger

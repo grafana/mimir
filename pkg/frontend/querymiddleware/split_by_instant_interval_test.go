@@ -15,8 +15,8 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -377,8 +377,8 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 					expectedSplitQueries:         0,
 					expectedSkippedNonSplittable: 1,
 				},
-				"holt_winters": {
-					query:                        `holt_winters(metric_counter[1m], 0.5, 0.9)`,
+				"double_exponential_smoothing": {
+					query:                        `double_exponential_smoothing(metric_counter[1m], 0.5, 0.9)`,
 					expectedSplitQueries:         0,
 					expectedSkippedNonSplittable: 1,
 				},
@@ -434,7 +434,7 @@ func TestInstantQuerySplittingCorrectness(t *testing.T) {
 				},
 			}
 
-			series := make([]*promql.StorageSeries, 0, numSeries+(numConvHistograms*len(histogramBuckets))+numNativeHistograms)
+			series := make([]storage.Series, 0, numSeries+(numConvHistograms*len(histogramBuckets))+numNativeHistograms)
 			seriesID := 0
 			end := start.Add(30 * time.Minute)
 

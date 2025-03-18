@@ -63,7 +63,6 @@ func (c *MimirConverter) addExponentialHistogramDataPoints(ctx context.Context, 
 			promName,
 		)
 		ts, _ := c.getOrCreateTimeSeries(lbls)
-
 		ts.Histograms = append(ts.Histograms, histogram)
 
 		exemplars, err := getPromExemplars[pmetric.ExponentialHistogramDataPoint](ctx, &c.everyN, pt)

@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/alerting/definition"
+	alertingHttp "github.com/grafana/alerting/http"
 	"github.com/grafana/alerting/images"
 	alertingNotify "github.com/grafana/alerting/notify"
 	"github.com/grafana/alerting/notify/nfstatus"
@@ -104,6 +105,8 @@ type Config struct {
 	PersisterConfig   PersisterConfig
 
 	GrafanaAlertmanagerCompatibility bool
+	GrafanaAlertmanagerTenantSuffix  string
+	EnableNotifyHooks                bool
 }
 
 // An Alertmanager manages the alerts for one user.
@@ -202,7 +205,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		maintenanceStop: make(chan struct{}),
 		configHashMetric: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 			Name: "alertmanager_config_hash",
-			Help: "Hash of the currently loaded alertmanager configuration.",
+			Help: "Hash of the currently loaded alertmanager configuration. Note that this is not a cryptographically strong hash.",
 		}),
 
 		rateLimitedNotifications: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -486,6 +489,7 @@ func (am *Alertmanager) ApplyConfig(conf *definition.PostableApiAlertingConfig, 
 		KeyFile:       cfg.Global.HTTPConfig.TLSConfig.KeyFile,
 		SkipVerify:    !cfg.Global.SMTPRequireTLS,
 		StaticHeaders: staticHeaders,
+		SentBy:        fmt.Sprintf("Mimir v%s", version.Version),
 	}
 	am.emailCfgMtx.Unlock()
 
@@ -595,8 +599,17 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 	// Create a firewall binded to the per-tenant config.
 	firewallDialer := util_net.NewFirewallDialer(newFirewallDialerConfigProvider(am.cfg.UserID, am.cfg.Limits))
 
-	// Create a function that wraps a notifier with rate limiting.
+	// Create a function that wraps a notifier with rate limiting and external hooks.
 	nw := func(integrationName string, notifier notify.Notifier) notify.Notifier {
+		if am.cfg.EnableNotifyHooks {
+			n, err := newNotifyHooksNotifier(notifier, am.cfg.Limits, am.cfg.UserID, am.logger)
+			if err != nil {
+				// It's rare an error is returned, but in theory it can happen.
+				level.Error(am.logger).Log("msg", "Failed to setup notify hooks", "err", err)
+			} else {
+				notifier = n
+			}
+		}
 		if am.cfg.Limits != nil {
 			rl := &tenantRateLimits{
 				tenant:      am.cfg.UserID,
@@ -604,7 +617,7 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 				integration: integrationName,
 			}
 
-			return newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
+			notifier = newRateLimitedNotifier(notifier, rl, 10*time.Second, am.rateLimitedNotifications.WithLabelValues(integrationName))
 		}
 		return notifier
 	}
@@ -622,6 +635,7 @@ func (am *Alertmanager) buildIntegrationsMap(gCfg *config.GlobalConfig, nc []*de
 		KeyFile:       gCfg.HTTPConfig.TLSConfig.KeyFile,
 		SkipVerify:    !gCfg.SMTPRequireTLS,
 		StaticHeaders: staticHeaders,
+		SentBy:        fmt.Sprintf("Mimir v%s", version.Version),
 	}
 
 	var gTmpl *template.Template
@@ -666,21 +680,17 @@ func (am *Alertmanager) buildGrafanaReceiverIntegrations(rcv *alertingNotify.API
 func buildGrafanaReceiverIntegrations(emailCfg alertingReceivers.EmailSenderConfig, rcv *alertingNotify.APIReceiver, tmpl *template.Template, logger log.Logger) ([]*nfstatus.Integration, error) {
 	// The decrypt functions and the context are used to decrypt the configuration.
 	// We don't need to decrypt anything, so we can pass a no-op decrypt func and a context.Background().
-	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, alertingNotify.NoopDecrypt)
+	rCfg, err := alertingNotify.BuildReceiverConfiguration(context.Background(), rcv, alertingNotify.NoopDecode, alertingNotify.NoopDecrypt)
 	if err != nil {
 		return nil, err
-	}
-
-	whFn := func(alertingReceivers.Metadata) (alertingReceivers.WebhookSender, error) {
-		return NewSender(logger), nil
 	}
 
 	integrations, err := alertingNotify.BuildReceiverIntegrations(
 		rCfg,
 		tmpl,
-		&images.UnavailableProvider{}, // TODO: include images in notifications
+		&images.URLProvider{},
 		newLoggerFactory(logger),
-		whFn,
+		alertingHttp.ClientConfiguration{UserAgent: version.UserAgent()},
 		alertingReceivers.NewEmailSenderFactory(emailCfg),
 		1, // orgID is always 1.
 		version.Version,
@@ -762,7 +772,7 @@ func buildReceiverIntegrations(nc config.Receiver, tmpl *template.Template, fire
 }
 
 func md5HashAsMetricValue(data []byte) float64 {
-	sum := md5.Sum(data)
+	sum := md5.Sum(data) //nolint:gosec
 	// We only want 48 bits as a float64 only has a 53 bit mantissa.
 	smallSum := sum[0:6]
 	var bytes = make([]byte, 8)

@@ -573,6 +573,10 @@ func (m multiTenantMockLimits) EnabledPromQLExperimentalFunctions(userID string)
 	return m.byTenant[userID].enabledPromQLExperimentalFunctions
 }
 
+func (m multiTenantMockLimits) Prom2RangeCompat(userID string) bool {
+	return m.byTenant[userID].prom2RangeCompat
+}
+
 func (m multiTenantMockLimits) BlockedQueries(userID string) []*validation.BlockedQuery {
 	return m.byTenant[userID].blockedQueries
 }
@@ -595,6 +599,14 @@ func (m multiTenantMockLimits) QueryIngestersWithin(userID string) time.Duration
 
 func (m multiTenantMockLimits) IngestStorageReadConsistency(userID string) string {
 	return m.byTenant[userID].ingestStorageReadConsistency
+}
+
+func (m multiTenantMockLimits) BlockedRequests(userID string) []*validation.BlockedRequest {
+	return m.byTenant[userID].blockedRequests
+}
+
+func (m multiTenantMockLimits) InstantQueriesWithSubquerySpinOff(userID string) []string {
+	return m.byTenant[userID].instantQueriesWithSubquerySpinOff
 }
 
 type mockLimits struct {
@@ -620,10 +632,13 @@ type mockLimits struct {
 	resultsCacheTTLForErrors             time.Duration
 	resultsCacheForUnalignedQueryEnabled bool
 	enabledPromQLExperimentalFunctions   []string
+	prom2RangeCompat                     bool
 	blockedQueries                       []*validation.BlockedQuery
+	blockedRequests                      []*validation.BlockedRequest
 	alignQueriesWithStep                 bool
 	queryIngestersWithin                 time.Duration
 	ingestStorageReadConsistency         string
+	instantQueriesWithSubquerySpinOff    []string
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -712,6 +727,10 @@ func (m mockLimits) EnabledPromQLExperimentalFunctions(string) []string {
 	return m.enabledPromQLExperimentalFunctions
 }
 
+func (m mockLimits) Prom2RangeCompat(string) bool {
+	return m.prom2RangeCompat
+}
+
 func (m mockLimits) CreationGracePeriod(string) time.Duration {
 	return m.creationGracePeriod
 }
@@ -730,6 +749,14 @@ func (m mockLimits) QueryIngestersWithin(string) time.Duration {
 
 func (m mockLimits) IngestStorageReadConsistency(string) string {
 	return m.ingestStorageReadConsistency
+}
+
+func (m mockLimits) BlockedRequests(string) []*validation.BlockedRequest {
+	return m.blockedRequests
+}
+
+func (m mockLimits) InstantQueriesWithSubquerySpinOff(string) []string {
+	return m.instantQueriesWithSubquerySpinOff
 }
 
 type mockHandler struct {

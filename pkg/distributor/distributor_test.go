@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,12 +42,12 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/storage"
 	promtestutil "github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kfake"
 	"go.uber.org/atomic"
-	"golang.org/x/exp/slices"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -54,6 +55,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -64,7 +66,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -196,7 +197,7 @@ func TestDistributor_Push(t *testing.T) {
 			happyIngesters:       3,
 			samples:              samplesIn{num: 25, startTimestampMs: 123456789000},
 			metadata:             5,
-			expectedGRPCError:    status.New(codes.ResourceExhausted, newIngestionRateLimitedError(20, 20).Error()),
+			expectedGRPCError:    status.New(codes.ResourceExhausted, newIngestionBurstSizeLimitedError(20, 55).Error()),
 			expectedErrorDetails: &mimirpb.ErrorDetails{Cause: mimirpb.INGESTION_RATE_LIMITED},
 			metricNames:          []string{lastSeenTimestamp},
 			expectedMetrics: `
@@ -361,6 +362,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		"cortex_distributor_non_ha_samples_received_total",
 		"cortex_distributor_latest_seen_sample_timestamp_seconds",
 		"cortex_distributor_label_values_with_newlines_total",
+		"cortex_distributor_dropped_native_histograms_total",
 	}
 
 	d.receivedSamples.WithLabelValues("userA").Add(5)
@@ -376,11 +378,16 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.dedupedSamples.WithLabelValues("userA", "cluster1").Inc() // We cannot clean this metric
 	d.latestSeenSampleTimestampPerUser.WithLabelValues("userA").Set(1111)
 	d.labelValuesWithNewlinesPerUser.WithLabelValues("userA").Inc()
+	d.droppedNativeHistograms.WithLabelValues("userA").Inc()
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_distributor_deduped_samples_total The total number of deduplicated samples.
 		# TYPE cortex_distributor_deduped_samples_total counter
 		cortex_distributor_deduped_samples_total{cluster="cluster1",user="userA"} 1
+
+		# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped because native histograms ingestion is disabled.
+    	# TYPE cortex_distributor_dropped_native_histograms_total counter
+    	cortex_distributor_dropped_native_histograms_total{user="userA"} 1
 
 		# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 		# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -427,6 +434,9 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_distributor_deduped_samples_total The total number of deduplicated samples.
 		# TYPE cortex_distributor_deduped_samples_total counter
+
+		# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped because native histograms ingestion is disabled.
+    	# TYPE cortex_distributor_dropped_native_histograms_total counter
 
 		# HELP cortex_distributor_latest_seen_sample_timestamp_seconds Unix timestamp of latest received sample per user.
 		# TYPE cortex_distributor_latest_seen_sample_timestamp_seconds gauge
@@ -960,7 +970,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 
 				var expectedIngesters int
 				if shuffleShardSize > 0 {
-					expectedIngesters = util_math.Min(shuffleShardSize, numIngesters)
+					expectedIngesters = min(shuffleShardSize, numIngesters)
 				} else {
 					expectedIngesters = numIngesters
 				}
@@ -1274,6 +1284,11 @@ func TestDistributor_Push_LabelNameValidation(t *testing.T) {
 			skipLabelNameValidationReq: true,
 			errExpected:                false,
 		},
+		"UTF-8 characters are not accepted": {
+			inputLabels: labelAdapters(model.MetricNameLabel, "foo", "😊", "smile!"),
+			errExpected: true,
+			errMessage:  `received a series with an invalid label: '😊' series: 'foo{😊="smile!"}' (err-mimir-label-invalid)`,
+		},
 	}
 
 	for testName, tc := range tests {
@@ -1457,6 +1472,309 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 				assert.Error(t, err)
 				assert.Nil(t, resp)
 				checkGRPCError(t, tc.expectedErr, expectedDetails, err)
+			}
+		})
+	}
+}
+
+func TestDistributor_Push_CountDroppedNativeHistograms(t *testing.T) {
+	tests := map[string]struct {
+		ingestionEnabled    bool
+		expectCounterExists bool
+	}{
+		"native histograms ingestion enabled": {
+			ingestionEnabled:    true,
+			expectCounterExists: false,
+		},
+		"native histograms ingestion disabled": {
+			ingestionEnabled:    false,
+			expectCounterExists: true,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "user")
+			req := makeWriteRequestHistogram([]string{model.MetricNameLabel, "test"}, 1000, generateTestHistogram(0))
+
+			limits := prepareDefaultLimits()
+			limits.NativeHistogramsIngestionEnabled = tc.ingestionEnabled
+
+			ds, _, regs, _ := prepare(t, prepConfig{
+				numIngesters:    2,
+				happyIngesters:  2,
+				numDistributors: 1,
+				limits:          limits,
+			})
+
+			// Pre-condition check.
+			require.Len(t, ds, 1)
+			require.Len(t, regs, 1)
+
+			resp, err := ds[0].Push(ctx, req)
+			require.NoError(t, err)
+			require.Equal(t, emptyResponse, resp)
+			if tc.expectCounterExists {
+				assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(`
+					# HELP cortex_distributor_dropped_native_histograms_total The total number of native histograms that were silently dropped because native histograms ingestion is disabled.
+    				# TYPE cortex_distributor_dropped_native_histograms_total counter
+    				cortex_distributor_dropped_native_histograms_total{user="user"} 1
+				`), "cortex_distributor_dropped_native_histograms_total"))
+			} else {
+				assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(``), "cortex_distributor_dropped_native_histograms_total"))
+			}
+		})
+	}
+}
+
+func TestDistributor_SampleDuplicateTimestamp(t *testing.T) {
+	labels := []string{labels.MetricName, "series", "job", "job", "service", "service"}
+
+	testCases := map[string]struct {
+		req             *mimirpb.WriteRequest
+		expectedSamples []mimirpb.PreallocTimeseries
+		expectedMetrics string
+	}{
+		"do not deduplicate if there are no duplicated timestamps": {
+			req: makeWriteRequestWith(
+				makeTimeseries(labels, makeSamples(10, 1), nil, nil),
+				makeTimeseries(labels, makeSamples(20, 2), nil, nil),
+			),
+			expectedSamples: []mimirpb.PreallocTimeseries{
+				makeTimeseries(labels, makeSamples(10, 1), nil, nil),
+				makeTimeseries(labels, makeSamples(20, 2), nil, nil),
+			},
+		},
+		"deduplicate duplicated timestamps within a single timeseries, and return the first error encountered": {
+			req: makeWriteRequestWith(
+				makeTimeseries(labels, append(makeSamples(10, 1), append(makeSamples(20, 2), append(makeSamples(10, 3), makeSamples(20, 4)...)...)...), nil, nil),
+				makeTimeseries(labels, nil, append(makeHistograms(30, generateTestHistogram(0)), append(makeHistograms(40, generateTestHistogram(1)), append(makeHistograms(40, generateTestHistogram(2)), makeHistograms(30, generateTestHistogram(3))...)...)...), nil),
+			),
+			expectedSamples: []mimirpb.PreallocTimeseries{
+				makeTimeseries(labels, append(makeSamples(10, 1), makeSamples(20, 2)...), nil, nil),
+				makeTimeseries(labels, nil, append(makeHistograms(30, generateTestHistogram(0)), makeHistograms(40, generateTestHistogram(1))...), nil),
+			},
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="test-group",reason="sample_duplicate_timestamp",user="user"} 4
+			`,
+		},
+		"do not deduplicate duplicated timestamps in different timeseries": {
+			req: makeWriteRequestWith(
+				makeTimeseries(labels, append(makeSamples(10, 1), makeSamples(10, 2)...), makeHistograms(30, generateTestHistogram(0)), nil),
+				makeTimeseries(labels, makeSamples(10, 3), append(makeHistograms(20, generateTestHistogram(1)), makeHistograms(20, generateTestHistogram(2))...), nil),
+				makeTimeseries(labels, makeSamples(10, 4), append(makeHistograms(20, generateTestHistogram(3)), makeHistograms(30, generateTestHistogram(4))...), nil),
+			),
+			expectedSamples: []mimirpb.PreallocTimeseries{
+				makeTimeseries(labels, makeSamples(10, 1), makeHistograms(30, generateTestHistogram(0)), nil),
+				makeTimeseries(labels, makeSamples(10, 3), makeHistograms(20, generateTestHistogram(1)), nil),
+				makeTimeseries(labels, makeSamples(10, 4), append(makeHistograms(20, generateTestHistogram(3)), makeHistograms(30, generateTestHistogram(4))...), nil),
+			},
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="test-group",reason="sample_duplicate_timestamp",user="user"} 2
+			`,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			limits := prepareDefaultLimits()
+			ds, _, regs, _ := prepare(t, prepConfig{
+				limits:          limits,
+				numDistributors: 1,
+			})
+
+			// Pre-condition check.
+			require.Len(t, ds, 1)
+			require.Len(t, regs, 1)
+
+			now := mtime.Now()
+			for _, ts := range tc.req.Timeseries {
+				shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
+				require.False(t, shouldRemove)
+				require.NoError(t, err)
+			}
+
+			assert.Equal(t, tc.expectedSamples, tc.req.Timeseries)
+			assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(tc.expectedMetrics), "cortex_discarded_samples_total"))
+		})
+	}
+}
+
+func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
+	const (
+		metricName              = "series"
+		testSize                = 80_000
+		numberOfDifferentValues = 40_000
+	)
+	labels := []string{labels.MetricName, metricName, "job", "job", "service", "service"}
+
+	now := mtime.Now()
+	timestamp := now.UnixMilli()
+
+	testCases := map[string]struct {
+		setup func(int) [][]mimirpb.PreallocTimeseries
+	}{
+		"one timeseries with one sample": {
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				ts := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, makeSamples(timestamp, 1), nil, nil),
+				}
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					timeseries[i] = ts
+				}
+				return timeseries
+			},
+		},
+		"one timeseries with one histogram": {
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				ts := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, nil, makeHistograms(timestamp, generateTestHistogram(1)), nil),
+				}
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					timeseries[i] = ts
+				}
+				return timeseries
+			},
+		},
+		"one timeseries with one sample and one histogram": {
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				ts := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, makeSamples(timestamp-1, 1), makeHistograms(timestamp, generateTestHistogram(2)), nil),
+				}
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					timeseries[i] = ts
+				}
+				return timeseries
+			},
+		},
+		"one timeseries with two samples": {
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				ts := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, append(makeSamples(timestamp-1, 1), makeSamples(timestamp, 2)...), nil, nil),
+				}
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					timeseries[i] = ts
+				}
+				return timeseries
+			},
+		},
+		"one timeseries with two histograms": {
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				ts := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, nil, append(makeHistograms(timestamp-1, generateTestHistogram(1)), makeHistograms(timestamp, generateTestHistogram(2))...), nil),
+				}
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					timeseries[i] = ts
+				}
+				return timeseries
+			},
+		},
+		"one timeseries with two samples and two histograms": {
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				ts := []mimirpb.PreallocTimeseries{
+					makeTimeseries(labels, append(makeSamples(timestamp-1, 1), makeSamples(timestamp, 2)...), append(makeHistograms(timestamp-1, generateTestHistogram(3)), makeHistograms(timestamp, generateTestHistogram(4))...), nil),
+				}
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					timeseries[i] = ts
+				}
+				return timeseries
+			},
+		},
+		"one timeseries with 80_000 samples with duplicated timestamps": {
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					samples := make([]mimirpb.Sample, testSize)
+					value := 0
+					for i := 0; i < testSize; i++ {
+						if i < numberOfDifferentValues {
+							value++
+						}
+						samples[i].TimestampMs = timestamp
+						samples[i].Value = float64(value)
+					}
+					timeseries[i] = []mimirpb.PreallocTimeseries{
+						makeTimeseries(labels, samples, nil, nil),
+					}
+				}
+				return timeseries
+			},
+		},
+		"one timeseries with 80_000 histograms with duplicated timestamps": {
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					histograms := make([]mimirpb.Histogram, testSize)
+					value := 0
+					for i := 0; i < testSize; i++ {
+						if i < numberOfDifferentValues {
+							value++
+						}
+						histograms[i] = makeHistograms(timestamp, generateTestHistogram(value))[0]
+					}
+					timeseries[i] = []mimirpb.PreallocTimeseries{
+						makeTimeseries(labels, nil, histograms, nil),
+					}
+				}
+				return timeseries
+			},
+		},
+		"one timeseries with 80_000 samples and 80_000 histograms with duplicated timestamps": {
+			setup: func(n int) [][]mimirpb.PreallocTimeseries {
+				timeseries := make([][]mimirpb.PreallocTimeseries, n)
+				for i := 0; i < n; i++ {
+					samples := make([]mimirpb.Sample, testSize)
+					histograms := make([]mimirpb.Histogram, testSize)
+					value := 0
+					for i := 0; i < testSize; i++ {
+						if i < numberOfDifferentValues {
+							value++
+						}
+						samples[i].TimestampMs = timestamp
+						samples[i].Value = float64(value)
+						histograms[i] = makeHistograms(timestamp, generateTestHistogram(value))[0]
+					}
+					timeseries[i] = []mimirpb.PreallocTimeseries{
+						makeTimeseries(labels, samples, histograms, nil),
+					}
+				}
+				return timeseries
+			},
+		},
+	}
+
+	limits := prepareDefaultLimits()
+	ds, _, regs, _ := prepare(b, prepConfig{
+		limits:          limits,
+		numDistributors: 1,
+	})
+
+	// Pre-condition check.
+	require.Len(b, ds, 1)
+	require.Len(b, regs, 1)
+
+	for name, tc := range testCases {
+		b.Run(name, func(b *testing.B) {
+			timeseries := tc.setup(b.N)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for n := 0; n < b.N; n++ {
+				for _, ts := range timeseries[n] {
+					_, err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0)
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
 			}
 		})
 	}
@@ -1695,8 +2013,9 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			require.Len(t, regs, 1)
 
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS)
+				shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS)
 				assert.NoError(t, err)
+				assert.False(t, shouldRemove)
 			}
 
 			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
@@ -1802,11 +2121,13 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 			require.Len(t, regs, 1)
 
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0)
+				shouldRemove, err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0)
 				if tc.expectedError != nil {
 					require.ErrorAs(t, err, &tc.expectedError)
+					require.True(t, shouldRemove)
 				} else {
 					assert.NoError(t, err)
+					assert.False(t, shouldRemove)
 				}
 			}
 			if tc.expectedError == nil {
@@ -1823,7 +2144,7 @@ func mkLabels(n int, extra ...string) []mimirpb.LabelAdapter {
 		ret[i+1] = mimirpb.LabelAdapter{Name: fmt.Sprintf("name_%d", i), Value: fmt.Sprintf("value_%d", i)}
 	}
 	for i := 0; i < len(extra); i += 2 {
-		ret[i+n+1] = mimirpb.LabelAdapter{Name: extra[i], Value: extra[i+1]}
+		ret[i/2+n+1] = mimirpb.LabelAdapter{Name: extra[i], Value: extra[i+1]}
 	}
 	slices.SortFunc(ret, func(a, b mimirpb.LabelAdapter) int {
 		switch {
@@ -1856,7 +2177,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					metrics[i] = mkLabels(10)
+					metrics[i] = mkLabels(10, "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1877,7 +2198,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					metrics[i] = mkLabels(10)
+					metrics[i] = mkLabels(10, "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1897,7 +2218,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					metrics[i] = mkLabels(31)
+					metrics[i] = mkLabels(30, "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1918,7 +2239,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				for i := 0; i < numSeriesPerRequest; i++ {
 					// Add a label with a very long name.
-					metrics[i] = mkLabels(10, fmt.Sprintf("xxx_%0.200d", 1), "xxx")
+					metrics[i] = mkLabels(10, fmt.Sprintf("xxx_%0.200d", 1), "xxx", "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1939,7 +2260,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				for i := 0; i < numSeriesPerRequest; i++ {
 					// Add a label with a very long value.
-					metrics[i] = mkLabels(10, "xxx", fmt.Sprintf("xxx_%0.200d", 1))
+					metrics[i] = mkLabels(10, "xxx", fmt.Sprintf("xxx_%0.200d", 1), "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -1959,7 +2280,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					metrics[i] = mkLabels(10)
+					metrics[i] = mkLabels(10, "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().Add(time.Hour).UnixNano() / int64(time.Millisecond),
@@ -1970,7 +2291,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			},
 			expectedErr: "received a sample whose timestamp is too far in the future",
 		},
-		"all samples go to metric_relabel_configs": {
+		"all samples go to metric relabel configs": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.MetricRelabelConfigs = []*relabel.Config{
 					{
@@ -1987,7 +2308,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					metrics[i] = mkLabels(10)
+					metrics[i] = mkLabels(10, "team", strconv.Itoa(i%4))
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -2000,78 +2321,110 @@ func BenchmarkDistributor_Push(b *testing.B) {
 		},
 	}
 
-	for testName, testData := range tests {
-		b.Run(testName, func(b *testing.B) {
-			// Create an in-memory KV store for the ring with 1 ingester registered.
-			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
-			b.Cleanup(func() { assert.NoError(b, closer.Close()) })
+	costAttributionCases := []struct {
+		state          string
+		customRegistry *prometheus.Registry
+		cfg            func(limits *validation.Limits)
+	}{
+		{
+			state:          "disabled",
+			customRegistry: nil,
+			cfg:            func(_ *validation.Limits) {},
+		},
+		{
+			state:          "enabled",
+			customRegistry: prometheus.NewRegistry(),
+			cfg: func(limits *validation.Limits) {
+				limits.CostAttributionLabels = []string{"team"}
+				limits.MaxCostAttributionCardinalityPerUser = 100
+			},
+		},
+	}
 
-			err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
-				func(_ interface{}) (interface{}, bool, error) {
-					d := &ring.Desc{}
-					d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
-					return d, true, nil
-				},
-			)
-			require.NoError(b, err)
+	for _, caCase := range costAttributionCases {
+		b.Run(fmt.Sprintf("cost_attribution=%s", caCase.state), func(b *testing.B) {
+			for testName, testData := range tests {
+				b.Run(fmt.Sprintf("scenario=%s", testName), func(b *testing.B) {
+					// Create an in-memory KV store for the ring with 1 ingester registered.
+					kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+					b.Cleanup(func() { assert.NoError(b, closer.Close()) })
 
-			ingestersRing, err := ring.New(ring.Config{
-				KVStore:           kv.Config{Mock: kvStore},
-				HeartbeatTimeout:  60 * time.Minute,
-				ReplicationFactor: 1,
-			}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
-			require.NoError(b, err)
-			require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingestersRing))
-			b.Cleanup(func() {
-				require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingestersRing))
-			})
+					err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
+						func(_ interface{}) (interface{}, bool, error) {
+							d := &ring.Desc{}
+							d.AddIngester("ingester-1", "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(128, nil), ring.ACTIVE, time.Now(), false, time.Time{})
+							return d, true, nil
+						},
+					)
+					require.NoError(b, err)
 
-			test.Poll(b, time.Second, 1, func() interface{} {
-				return ingestersRing.InstancesCount()
-			})
+					ingestersRing, err := ring.New(ring.Config{
+						KVStore:           kv.Config{Mock: kvStore},
+						HeartbeatTimeout:  60 * time.Minute,
+						ReplicationFactor: 1,
+					}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
+					require.NoError(b, err)
+					require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingestersRing))
+					b.Cleanup(func() {
+						require.NoError(b, services.StopAndAwaitTerminated(context.Background(), ingestersRing))
+					})
 
-			// Prepare the distributor configuration.
-			var distributorCfg Config
-			var clientConfig client.Config
-			limits := validation.Limits{}
-			flagext.DefaultValues(&distributorCfg, &clientConfig, &limits)
-			distributorCfg.DistributorRing.Common.KVStore.Store = "inmemory"
+					test.Poll(b, time.Second, 1, func() interface{} {
+						return ingestersRing.InstancesCount()
+					})
 
-			limits.IngestionRate = float64(rate.Inf) // Unlimited.
-			testData.prepareConfig(&limits)
+					// Prepare the distributor configuration.
+					var distributorCfg Config
+					var clientConfig client.Config
+					limits := validation.Limits{}
+					flagext.DefaultValues(&distributorCfg, &clientConfig, &limits)
+					distributorCfg.DistributorRing.Common.KVStore.Store = "inmemory"
 
-			distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
-				return &noopIngester{}, nil
-			})
+					limits.IngestionRate = float64(rate.Inf) // Unlimited.
+					testData.prepareConfig(&limits)
 
-			overrides, err := validation.NewOverrides(limits, nil)
-			require.NoError(b, err)
+					distributorCfg.IngesterClientFactory = ring_client.PoolInstFunc(func(ring.InstanceDesc) (ring_client.PoolClient, error) {
+						return &noopIngester{}, nil
+					})
 
-			// Start the distributor.
-			distributor, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
-			require.NoError(b, err)
-			require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
+					caCase.cfg(&limits)
+					overrides, err := validation.NewOverrides(limits, nil)
+					require.NoError(b, err)
 
-			b.Cleanup(func() {
-				require.NoError(b, services.StopAndAwaitTerminated(context.Background(), distributor))
-			})
+					// Initialize the cost attribution manager
+					var cam *costattribution.Manager
+					if caCase.customRegistry != nil {
+						cam, err = costattribution.NewManager(5*time.Second, 10*time.Second, nil, overrides, caCase.customRegistry)
+						require.NoError(b, err)
+					}
 
-			// Prepare the series to remote write before starting the benchmark.
-			metrics, samples := testData.prepareSeries()
+					// Start the distributor.
+					distributor, err := New(distributorCfg, clientConfig, overrides, nil, cam, ingestersRing, nil, true, nil, log.NewNopLogger())
+					require.NoError(b, err)
+					require.NoError(b, services.StartAndAwaitRunning(context.Background(), distributor))
 
-			// Run the benchmark.
-			b.ReportAllocs()
-			b.ResetTimer()
+					b.Cleanup(func() {
+						require.NoError(b, services.StopAndAwaitTerminated(context.Background(), distributor))
+					})
 
-			for n := 0; n < b.N; n++ {
-				_, err := distributor.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
+					// Prepare the series to remote write before starting the benchmark.
+					metrics, samples := testData.prepareSeries()
 
-				if testData.expectedErr == "" && err != nil {
-					b.Fatalf("no error expected but got %v", err)
-				}
-				if testData.expectedErr != "" && (err == nil || !strings.Contains(err.Error(), testData.expectedErr)) {
-					b.Fatalf("expected %v error but got %v", testData.expectedErr, err)
-				}
+					// Run the benchmark.
+					b.ReportAllocs()
+					b.ResetTimer()
+
+					for n := 0; n < b.N; n++ {
+						_, err := distributor.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
+
+						if testData.expectedErr == "" && err != nil {
+							b.Fatalf("no error expected but got %v", err)
+						}
+						if testData.expectedErr != "" && (err == nil || !strings.Contains(err.Error(), testData.expectedErr)) {
+							b.Fatalf("expected %v error but got %v", testData.expectedErr, err)
+						}
+					}
+				})
 			}
 		})
 	}
@@ -2121,6 +2474,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 	tests := map[string]struct {
 		shuffleShardSize  int
 		matchers          []*labels.Matcher
+		hints             *storage.SelectHints
 		maxSeriesPerQuery int
 		expectedResult    [][]mimirpb.LabelAdapter
 		expectedIngesters int
@@ -2130,6 +2484,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown"),
 			},
+			hints:             &storage.SelectHints{},
 			expectedResult:    nil,
 			expectedIngesters: numIngesters,
 		},
@@ -2137,6 +2492,18 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
+			hints: &storage.SelectHints{},
+			expectedResult: [][]mimirpb.LabelAdapter{
+				fixtures[0].lbls,
+				fixtures[1].lbls,
+			},
+			expectedIngesters: numIngesters,
+		},
+		"should filter metrics by matcher when no hints passed": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			hints: nil,
 			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[0].lbls,
 				fixtures[1].lbls,
@@ -2148,6 +2515,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 				mustNewMatcher(labels.MatchEqual, "status", "200"),
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
+			hints: &storage.SelectHints{},
 			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[0].lbls,
 			},
@@ -2157,6 +2525,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "fast_fingerprint_collision"),
 			},
+			hints: &storage.SelectHints{},
 			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[3].lbls,
 				fixtures[4].lbls,
@@ -2168,6 +2537,7 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
+			hints: &storage.SelectHints{},
 			expectedResult: [][]mimirpb.LabelAdapter{
 				fixtures[0].lbls,
 				fixtures[1].lbls,
@@ -2178,8 +2548,33 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
+			hints:             &storage.SelectHints{},
 			maxSeriesPerQuery: 1,
 			expectedError:     validation.NewLimitError("the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-series-per-query, or contact your service administrator."),
+		},
+		"should error out if max series per query is reached before hint limit": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "test_.*"),
+			},
+			hints: &storage.SelectHints{
+				Limit: 2,
+			},
+			maxSeriesPerQuery: 1,
+			expectedError:     validation.NewLimitError("the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query). Consider reducing the time range and/or number of series selected by the query. One way to reduce the number of selected series is to add more label matchers to the query. Otherwise, to adjust the related per-tenant limit, configure -querier.max-fetched-series-per-query, or contact your service administrator."),
+		},
+		"should not return more metrics than hint limit": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			hints: &storage.SelectHints{
+				Limit: 1,
+			},
+			// For the case when the limit hint set the test checks that the returned metrics are in the subset of the expectedResult.
+			expectedResult: [][]mimirpb.LabelAdapter{
+				fixtures[0].lbls,
+				fixtures[1].lbls,
+			},
+			expectedIngesters: numIngesters,
 		},
 	}
 
@@ -2224,14 +2619,20 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					// Set up limiter
 					ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(testData.maxSeriesPerQuery, 0, 0, 0, stats.NewQueryMetrics(prometheus.NewPedanticRegistry())))
 
-					metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.matchers...)
+					metrics, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.hints, testData.matchers...)
 					if testData.expectedError != nil {
 						require.ErrorIs(t, err, testData.expectedError)
 						return
 					}
-
 					require.NoError(t, err)
-					requireLabelAdaptersMatchLabels(t, testData.expectedResult, metrics)
+
+					if testData.hints == nil || testData.hints.Limit == 0 {
+						requireLabelAdaptersMatchLabels(t, testData.expectedResult, metrics)
+					} else {
+						// The order of ingester responses isn't guaranteed. Thus, we can only test that the distributor's response is in the subset of expectedResult.
+						require.Len(t, metrics, testData.hints.Limit)
+						requireLabelAdaptersContainLabels(t, testData.expectedResult, metrics)
+					}
 
 					// Check how many ingesters have been queried.
 					if ingestStorageEnabled {
@@ -2247,6 +2648,107 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 					}
 				})
 			}
+		})
+	}
+}
+
+func TestDistributor_MetricsForLabelMatchers_adjustPushDownLimit(t *testing.T) {
+	const numIngesters = 10
+
+	now := model.Now()
+
+	fixtures := []struct {
+		lbls      []mimirpb.LabelAdapter
+		value     float64
+		timestamp int64
+	}{
+		{labelAdapters(labels.MetricName, "test_1", "status", "2xx"), 1, 100000},
+		{labelAdapters(labels.MetricName, "test_1", "status", "3xx"), 1, 110000},
+		{labelAdapters(labels.MetricName, "test_1", "status", "5xx"), 1, 120000},
+	}
+
+	tests := map[string]struct {
+		setupFunc     func(*prepConfig)
+		hints         *storage.SelectHints
+		expectedLimit int
+	}{
+		"should adjust push-down limit": {
+			hints: &storage.SelectHints{
+				Limit: 50,
+			},
+			expectedLimit: 17,
+		},
+		"should adjust push-down limit if shuffle shard size is set": {
+			setupFunc: func(testConfig *prepConfig) {
+				testConfig.shuffleShardSize = 6
+			},
+			hints: &storage.SelectHints{
+				Limit: 50,
+			},
+			expectedLimit: 25, // the pushed-down limit is divided between two shards (ingest_shard_size=6; RF=3)
+		},
+		"should adjust push-down limit if ingest-storage is enabled": {
+			setupFunc: func(testConfig *prepConfig) {
+				testConfig.ingestStorageEnabled = true
+			},
+			hints: &storage.SelectHints{
+				Limit: 50,
+			},
+			expectedLimit: 5, // the pushed-down limit is divided by the number of ingesters
+		},
+		"should adjust push-down limit if ingest-storage is enabled and partition shard size is set": {
+			setupFunc: func(testConfig *prepConfig) {
+				testConfig.ingestStorageEnabled = true
+				testConfig.limits = prepareDefaultLimits()
+				testConfig.limits.IngestionPartitionsTenantShardSize = 3
+			},
+			hints: &storage.SelectHints{
+				Limit: 50,
+			},
+			expectedLimit: 17, // the pushed-down limit is divided by number of partitions (ingest_shard_size=3)
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
+			testConfig := prepConfig{
+				numIngesters:    numIngesters,
+				happyIngesters:  numIngesters,
+				numDistributors: 1,
+			}
+			if testData.setupFunc != nil {
+				testData.setupFunc(&testConfig)
+			}
+
+			ds, ingesters, _, _ := prepare(t, testConfig)
+
+			// Ensure strong read consistency, required to have no flaky tests when ingest storage is enabled.
+			ctx := user.InjectOrgID(context.Background(), "test")
+			ctx = api.ContextWithReadConsistencyLevel(ctx, api.ReadConsistencyStrong)
+
+			for _, series := range fixtures {
+				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+				_, err := ds[0].Push(ctx, req)
+				require.NoError(t, err)
+			}
+
+			// In this test, we only assert the side effect of limit's push-down. The behavior of matchers and the returned metrics are already tested above.
+			matchers := []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			}
+			_, err := ds[0].MetricsForLabelMatchers(ctx, now, now, testData.hints, matchers...)
+			require.NoError(t, err)
+
+			var called bool
+			assertMockIngestersCalledFunc(ingesters, "MetricsForLabelMatchers", func(args ...any) {
+				require.Len(t, args, 2)
+				req := args[1].(*client.MetricsForLabelMatchersRequest)
+				require.EqualValues(t, testData.expectedLimit, req.Limit)
+				called = true
+			})
+			require.True(t, called)
 		})
 	}
 }
@@ -2413,6 +2915,23 @@ func requireLabelAdaptersMatchLabels(tb testing.TB, a [][]mimirpb.LabelAdapter, 
 	slices.SortFunc(bAsLabelAdapters, mimirpb.CompareLabelAdapters)
 
 	promtestutil.RequireEqual(tb, a, bAsLabelAdapters)
+}
+
+// Check that the LabelAdaptors contain the Labels. Assume LabelAdaptors are already sorted.
+func requireLabelAdaptersContainLabels(tb testing.TB, a [][]mimirpb.LabelAdapter, b []labels.Labels) {
+	tb.Helper()
+	if len(a) == 0 && len(b) == 0 {
+		return
+	}
+	bAsLabelAdapters := make([][]mimirpb.LabelAdapter, len(b))
+	for i, s := range b {
+		bAsLabelAdapters[i] = mimirpb.FromLabelsToLabelAdapters(s)
+	}
+	slices.SortFunc(bAsLabelAdapters, mimirpb.CompareLabelAdapters)
+
+	for _, bb := range bAsLabelAdapters {
+		require.Contains(tb, a, bb)
+	}
 }
 
 func TestDistributor_ActiveNativeHistogramSeries(t *testing.T) {
@@ -2997,6 +3516,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 
 	tests := map[string]struct {
 		shuffleShardSize  int
+		hints             *storage.LabelHints
 		matchers          []*labels.Matcher
 		expectedResult    []string
 		expectedIngesters int
@@ -3015,6 +3535,38 @@ func TestDistributor_LabelNames(t *testing.T) {
 			expectedResult:    []string{labels.MetricName, "reason", "status"},
 			expectedIngesters: numIngesters,
 		},
+		"should filter metrics by single matcher and apply limit": {
+			hints: &storage.LabelHints{Limit: 2},
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName, "reason"},
+			expectedIngesters: numIngesters,
+		},
+		"should filter metrics by single matcher and ignore limit when it is zero": {
+			hints: &storage.LabelHints{Limit: 0},
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName, "reason", "status"},
+			expectedIngesters: numIngesters,
+		},
+		"should filter metrics by single matcher and ignore limit when it is equal than the number of items returned": {
+			hints: &storage.LabelHints{Limit: 3},
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName, "reason", "status"},
+			expectedIngesters: numIngesters,
+		},
+		"should filter metrics by single matcher and ignore limit when it is greater than the number of items returned": {
+			hints: &storage.LabelHints{Limit: 5},
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName, "reason", "status"},
+			expectedIngesters: numIngesters,
+		},
 		"should filter metrics by multiple matchers": {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, "status", "200"),
@@ -3023,12 +3575,30 @@ func TestDistributor_LabelNames(t *testing.T) {
 			expectedResult:    []string{labels.MetricName, "status"},
 			expectedIngesters: numIngesters,
 		},
+		"should filter metrics by multiple matchers and apply limit": {
+			hints: &storage.LabelHints{Limit: 1},
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, "status", "200"),
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName},
+			expectedIngesters: numIngesters,
+		},
 		"should query only ingesters belonging to tenant's subring if shuffle sharding is enabled": {
 			shuffleShardSize: 3,
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
 			expectedResult:    []string{labels.MetricName, "reason", "status"},
+			expectedIngesters: 3,
+		},
+		"should query only ingesters belonging to tenant's subring if shuffle sharding is enabled and apply limit": {
+			shuffleShardSize: 3,
+			hints:            &storage.LabelHints{Limit: 1},
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName},
 			expectedIngesters: 3,
 		},
 	}
@@ -3072,7 +3642,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 						require.NoError(t, err)
 					}
 
-					names, err := ds[0].LabelNames(ctx, now, now, testData.matchers...)
+					names, err := ds[0].LabelNames(ctx, now, now, testData.hints, testData.matchers...)
 					require.NoError(t, err)
 					assert.ElementsMatch(t, testData.expectedResult, names)
 
@@ -3152,10 +3722,10 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 					expectedMetadata := make([]scrape.MetricMetadata, 0, len(req.Metadata))
 					for _, m := range req.Metadata {
 						expectedMetadata = append(expectedMetadata, scrape.MetricMetadata{
-							Metric: m.MetricFamilyName,
-							Type:   mimirpb.MetricMetadataMetricTypeToMetricType(m.Type),
-							Help:   m.Help,
-							Unit:   m.Unit,
+							MetricFamily: m.MetricFamilyName,
+							Type:         mimirpb.MetricMetadataMetricTypeToMetricType(m.Type),
+							Help:         m.Help,
+							Unit:         m.Unit,
 						})
 					}
 
@@ -3258,6 +3828,7 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 	tests := map[string]struct {
 		from, to            model.Time
 		expectedLabelValues []string
+		hints               *storage.LabelHints
 		matchers            []*labels.Matcher
 	}{
 		"all time selected, no matchers": {
@@ -3275,6 +3846,30 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 			to:                  300_000,
 			expectedLabelValues: []string{"label_1"},
 			matchers:            []*labels.Matcher{mustNewMatcher(labels.MatchEqual, "reason", "broken")},
+		},
+		"all time selected, no matchers, hints provided without limit": {
+			from:                0,
+			to:                  300_000,
+			hints:               &storage.LabelHints{Limit: 0},
+			expectedLabelValues: []string{"label_0", "label_1"},
+		},
+		"all time selected, no matchers, limit provided": {
+			from:                0,
+			to:                  300_000,
+			hints:               &storage.LabelHints{Limit: 1},
+			expectedLabelValues: []string{"label_0"},
+		},
+		"all time selected, no matchers, limit equal to number of label values": {
+			from:                0,
+			to:                  300_000,
+			hints:               &storage.LabelHints{Limit: 2},
+			expectedLabelValues: []string{"label_0", "label_1"},
+		},
+		"all time selected, no matchers, limit greater than number of label values": {
+			from:                0,
+			to:                  300_000,
+			hints:               &storage.LabelHints{Limit: 4},
+			expectedLabelValues: []string{"label_0", "label_1"},
 		},
 	}
 
@@ -3306,7 +3901,7 @@ func TestDistributor_LabelValuesForLabelName(t *testing.T) {
 						require.NoError(t, err)
 					}
 
-					response, err := ds[0].LabelValuesForLabelName(ctx, testCase.from, testCase.to, labels.MetricName, testCase.matchers...)
+					response, err := ds[0].LabelValuesForLabelName(ctx, testCase.from, testCase.to, labels.MetricName, testCase.hints, testCase.matchers...)
 					require.NoError(t, err)
 					assert.ElementsMatch(t, response, testCase.expectedLabelValues)
 				})
@@ -4016,13 +4611,13 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistency(t *testing.T) {
 	var (
 		// Define fixtures used in tests.
-		series1 = makeTimeseries([]string{labels.MetricName, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil)
-		series2 = makeTimeseries([]string{labels.MetricName, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0), nil)
-		series3 = makeTimeseries([]string{labels.MetricName, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0), nil)
-		series4 = makeTimeseries([]string{labels.MetricName, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil)
-		series5 = makeTimeseries([]string{labels.MetricName, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0), nil)
-		series6 = makeTimeseries([]string{labels.MetricName, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0), nil)
-		other1  = makeTimeseries([]string{labels.MetricName, "other_1", "job", "job-1", "service", "service-1"}, makeSamples(0, 0), nil)
+		series1 = makeTimeseries([]string{labels.MetricName, "series_1", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series2 = makeTimeseries([]string{labels.MetricName, "series_2", "job", "job-b", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series3 = makeTimeseries([]string{labels.MetricName, "series_3", "job", "job-c", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series4 = makeTimeseries([]string{labels.MetricName, "series_4", "job", "job-a", "service", "service-1"}, makeSamples(0, 0), nil, nil)
+		series5 = makeTimeseries([]string{labels.MetricName, "series_5", "job", "job-a", "service", "service-2"}, makeSamples(0, 0), nil, nil)
+		series6 = makeTimeseries([]string{labels.MetricName, "series_6", "job", "job-b" /* no service label */}, makeSamples(0, 0), nil, nil)
+		other1  = makeTimeseries([]string{labels.MetricName, "other_1", "job", "job-1", "service", "service-1"}, makeSamples(0, 0), nil, nil)
 
 		// To keep assertions simple, all tests push all series, and then request the cardinality of the same label names,
 		// so we expect the same response from each successful test.
@@ -4718,6 +5313,7 @@ func TestRelabelMiddleware(t *testing.T) {
 					},
 					makeSamples(123, 1.23),
 					nil,
+					nil,
 				)},
 			}},
 			expectedReqs: []*mimirpb.WriteRequest{{
@@ -4728,6 +5324,7 @@ func TestRelabelMiddleware(t *testing.T) {
 						"tenant_id", "user",
 					},
 					makeSamples(123, 1.23),
+					nil,
 					nil,
 				)},
 			}},
@@ -5334,7 +5931,7 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		require.NoError(t, err)
 
 		reg := prometheus.NewPedanticRegistry()
-		d, err := New(distributorCfg, clientConfig, overrides, nil, ingestersRing, partitionsRing, true, reg, log.NewNopLogger())
+		d, err := New(distributorCfg, clientConfig, overrides, nil, nil, ingestersRing, partitionsRing, true, reg, log.NewNopLogger())
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, d))
 		t.Cleanup(func() {
@@ -5396,6 +5993,7 @@ func makeWriteRequest(startTimestampMs int64, samples, metadata int, exemplars, 
 				},
 				makeSamples(startTimestampMs+int64(i), float64(i)),
 				nil,
+				nil,
 			)
 
 			if exemplars {
@@ -5438,12 +6036,13 @@ func makeWriteRequestWith(series ...mimirpb.PreallocTimeseries) *mimirpb.WriteRe
 	return &mimirpb.WriteRequest{Timeseries: series}
 }
 
-func makeTimeseries(seriesLabels []string, samples []mimirpb.Sample, exemplars []mimirpb.Exemplar) mimirpb.PreallocTimeseries {
+func makeTimeseries(seriesLabels []string, samples []mimirpb.Sample, histograms []mimirpb.Histogram, exemplars []mimirpb.Exemplar) mimirpb.PreallocTimeseries {
 	return mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{
-			Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(seriesLabels...)),
-			Samples:   samples,
-			Exemplars: exemplars,
+			Labels:     mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(seriesLabels...)),
+			Samples:    samples,
+			Histograms: histograms,
+			Exemplars:  exemplars,
 		},
 	}
 }
@@ -5695,13 +6294,14 @@ type mockIngester struct {
 	sync.Mutex
 	client.IngesterClient
 	grpc_health_v1.HealthClient
-	happy                         bool
-	stats                         client.UsersStatsResponse
-	timeseries                    map[uint32]*mimirpb.PreallocTimeseries
-	metadata                      map[uint32]map[mimirpb.MetricMetadata]struct{}
-	queryDelay                    time.Duration
-	pushDelay                     time.Duration
-	calls                         map[string]int
+	happy      bool
+	stats      client.UsersStatsResponse
+	timeseries map[uint32]*mimirpb.PreallocTimeseries
+	metadata   map[uint32]map[mimirpb.MetricMetadata]struct{}
+	queryDelay time.Duration
+	pushDelay  time.Duration
+	// calls is a map from a methodName to list the method's invocations; each invocation is a list of the call's arguments.
+	calls                         map[string][][]any
 	zone                          string
 	labelNamesStreamResponseDelay time.Duration
 	timeOut                       bool
@@ -5792,7 +6392,7 @@ func (i *mockIngester) Close() error {
 }
 
 func (i *mockIngester) Push(ctx context.Context, req *mimirpb.WriteRequest, _ ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
-	i.trackCall("Push")
+	i.trackCall("Push", ctx, req)
 
 	time.Sleep(i.pushDelay)
 
@@ -5872,7 +6472,7 @@ func makeWireChunk(c chunk.EncodedChunk) client.Chunk {
 }
 
 func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest, _ ...grpc.CallOption) (client.Ingester_QueryStreamClient, error) {
-	i.trackCall("QueryStream")
+	i.trackCall("QueryStream", ctx, req)
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
@@ -6107,7 +6707,7 @@ func (i *mockIngester) QueryExemplars(ctx context.Context, req *client.ExemplarQ
 }
 
 func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest, _ ...grpc.CallOption) (*client.MetricsForLabelMatchersResponse, error) {
-	i.trackCall("MetricsForLabelMatchers")
+	i.trackCall("MetricsForLabelMatchers", ctx, req)
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
@@ -6120,7 +6720,7 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 		return nil, errFail
 	}
 
-	multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
+	hints, multiMatchers, err := client.FromMetricsForLabelMatchersRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -6133,11 +6733,20 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 			}
 		}
 	}
+
+	// Always sort metrics by their labels to make testing simpler.
+	slices.SortFunc(response.Metric, func(m1, m2 *mimirpb.Metric) int {
+		return mimirpb.CompareLabelAdapters(m1.Labels, m2.Labels)
+	})
+
+	if hints != nil && hints.Limit > 0 && len(response.Metric) > hints.Limit {
+		response.Metric = response.Metric[:hints.Limit]
+	}
 	return &response, nil
 }
 
 func (i *mockIngester) LabelValues(ctx context.Context, req *client.LabelValuesRequest, _ ...grpc.CallOption) (*client.LabelValuesResponse, error) {
-	i.trackCall("LabelValues")
+	i.trackCall("LabelValues", ctx, req)
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
@@ -6150,7 +6759,7 @@ func (i *mockIngester) LabelValues(ctx context.Context, req *client.LabelValuesR
 		return nil, errFail
 	}
 
-	labelName, from, to, matchers, err := client.FromLabelValuesRequest(req)
+	labelName, from, to, hints, matchers, err := client.FromLabelValuesRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -6184,11 +6793,14 @@ func (i *mockIngester) LabelValues(ctx context.Context, req *client.LabelValuesR
 
 	slices.Sort(response)
 
+	if hints != nil && hints.Limit > 0 && len(response) > hints.Limit {
+		response = response[:hints.Limit]
+	}
 	return &client.LabelValuesResponse{LabelValues: response}, nil
 }
 
 func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesRequest, _ ...grpc.CallOption) (*client.LabelNamesResponse, error) {
-	i.trackCall("LabelNames")
+	i.trackCall("LabelNames", ctx, req)
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
@@ -6201,20 +6813,31 @@ func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesReq
 		return nil, errFail
 	}
 
-	_, _, matchers, err := client.FromLabelNamesRequest(req)
+	_, _, hints, matchers, err := client.FromLabelNamesRequest(req)
 	if err != nil {
 		return nil, err
 	}
 
 	response := client.LabelNamesResponse{}
+	labelsSet := map[string]struct{}{}
+
 	for _, ts := range i.timeseries {
 		if match(ts.Labels, matchers) {
 			for _, lbl := range ts.Labels {
+				if _, ok := labelsSet[lbl.Name]; ok {
+					continue
+				}
+
+				labelsSet[lbl.Name] = struct{}{}
 				response.LabelNames = append(response.LabelNames, lbl.Name)
 			}
 		}
 	}
 	slices.Sort(response.LabelNames)
+
+	if hints != nil && hints.Limit > 0 && len(response.LabelNames) > hints.Limit {
+		response.LabelNames = response.LabelNames[:hints.Limit]
+	}
 
 	return &response, nil
 }
@@ -6295,7 +6918,7 @@ func (s *labelNamesAndValuesMockStream) Recv() (*client.LabelNamesAndValuesRespo
 }
 
 func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.LabelValuesCardinalityRequest, _ ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {
-	i.trackCall("LabelValuesCardinality")
+	i.trackCall("LabelValuesCardinality", ctx, req)
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
@@ -6369,7 +6992,7 @@ func (s *labelValuesCardinalityStream) Recv() (*client.LabelValuesCardinalityRes
 }
 
 func (i *mockIngester) ActiveSeries(ctx context.Context, req *client.ActiveSeriesRequest, _ ...grpc.CallOption) (client.Ingester_ActiveSeriesClient, error) {
-	i.trackCall("ActiveSeries")
+	i.trackCall("ActiveSeries", ctx, req)
 
 	if err := i.enforceReadConsistency(ctx); err != nil {
 		return nil, err
@@ -6435,22 +7058,31 @@ func (s *activeSeriesStream) CloseSend() error {
 	return nil
 }
 
-func (i *mockIngester) trackCall(name string) {
+func (i *mockIngester) trackCall(name string, args ...any) {
 	i.Lock()
 	defer i.Unlock()
 
 	if i.calls == nil {
-		i.calls = map[string]int{}
+		i.calls = make(map[string][][]any)
 	}
 
-	i.calls[name]++
+	i.calls[name] = append(i.calls[name], args)
 }
 
 func (i *mockIngester) countCalls(name string) int {
 	i.Lock()
 	defer i.Unlock()
 
-	return i.calls[name]
+	return len(i.calls[name])
+}
+
+func (i *mockIngester) assertCalledFunc(name string, assertionFunc func(args ...any)) {
+	i.Lock()
+	defer i.Unlock()
+
+	for _, call := range i.calls[name] {
+		assertionFunc(call...)
+	}
 }
 
 func (i *mockIngester) enforceReadConsistency(ctx context.Context) error {
@@ -6808,6 +7440,12 @@ func countMockIngestersCalled(ingesters []*mockIngester, name string) int {
 		}
 	}
 	return count
+}
+
+func assertMockIngestersCalledFunc(ingesters []*mockIngester, name string, assertionFunc func(args ...any)) {
+	for _, i := range ingesters {
+		i.assertCalledFunc(name, assertionFunc)
+	}
 }
 
 // TestDistributor_MetricsWithRequestModifications tests that the distributor metrics are properly updated when
@@ -7684,7 +8322,7 @@ func TestDistributor_Push_SendMessageMetadata(t *testing.T) {
 
 	req := &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
-			makeTimeseries([]string{model.MetricNameLabel, "test1"}, makeSamples(time.Now().UnixMilli(), 1), nil),
+			makeTimeseries([]string{model.MetricNameLabel, "test1"}, makeSamples(time.Now().UnixMilli(), 1), nil, nil),
 		},
 		Source: mimirpb.API,
 	}
@@ -7968,7 +8606,7 @@ func TestCheckStartedMiddleware(t *testing.T) {
 	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)
 
-	distributor, err := New(distributorConfig, clientConfig, overrides, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
+	distributor, err := New(distributorConfig, clientConfig, overrides, nil, nil, ingestersRing, nil, true, nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), "user")
@@ -7998,4 +8636,102 @@ func TestCheckStartedMiddleware(t *testing.T) {
 	// We expect the push request to be rejected with an unavailable error.
 	require.NotNil(t, err)
 	require.ErrorContains(t, err, "rpc error: code = Internal desc = distributor is unavailable (current state: New)")
+}
+
+func Test_outerMaybeDelayMiddleware(t *testing.T) {
+	tests := []struct {
+		name          string
+		userID        string
+		delay         time.Duration
+		pushDuration  time.Duration
+		expectedSleep time.Duration
+	}{
+		{
+			name:          "No delay configured",
+			userID:        "user1",
+			delay:         0,
+			pushDuration:  500 * time.Millisecond,
+			expectedSleep: 0,
+		},
+		{
+			name:          "Delay configured but request took longer than delay",
+			userID:        "user2",
+			delay:         500 * time.Millisecond,
+			pushDuration:  1 * time.Second,
+			expectedSleep: 0,
+		},
+		{
+			name:          "Delay configured and request took less than delay",
+			userID:        "user3",
+			delay:         500 * time.Millisecond,
+			pushDuration:  50 * time.Millisecond,
+			expectedSleep: 450 * time.Millisecond,
+		},
+		{
+			name:          "Failed to extract a tenantID",
+			userID:        "",
+			delay:         500 * time.Millisecond,
+			pushDuration:  50 * time.Millisecond,
+			expectedSleep: 0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := validation.NewMockTenantLimits(map[string]*validation.Limits{
+				tc.userID: {
+					IngestionArtificialDelay: model.Duration(tc.delay),
+				},
+			})
+			overrides, err := validation.NewOverrides(*prepareDefaultLimits(), limits)
+			require.NoError(t, err)
+
+			// Mock to capture sleep and advance time.
+			timeSource := &MockTimeSource{CurrentTime: time.Now()}
+
+			distributor := &Distributor{
+				log:    log.NewNopLogger(),
+				limits: overrides,
+				sleep:  timeSource.Sleep,
+				now:    timeSource.Now,
+			}
+
+			// fake push just adds time to the mocked time to make it seem like time has moved forward.
+			p := func(_ context.Context, _ *Request) error {
+				timeSource.Add(tc.pushDuration)
+				return nil
+			}
+
+			ctx := context.Background()
+			if tc.userID != "" {
+				ctx = user.InjectOrgID(ctx, tc.userID)
+			}
+			wrappedPush := distributor.outerMaybeDelayMiddleware(p)
+			err = wrappedPush(ctx, NewParsedRequest(&mimirpb.WriteRequest{}))
+			require.NoError(t, err)
+
+			// Due to the 10% jitter we need to take into account that the number will not be deterministic in tests.
+			difference := timeSource.Slept - tc.expectedSleep
+			require.LessOrEqual(t, difference.Abs(), tc.expectedSleep/10)
+		})
+	}
+}
+
+type MockTimeSource struct {
+	CurrentTime time.Time
+	Slept       time.Duration
+}
+
+func (m *MockTimeSource) Now() time.Time {
+	return m.CurrentTime
+}
+
+func (m *MockTimeSource) Sleep(d time.Duration) {
+	if d > 0 {
+		m.Slept += d
+	}
+}
+
+func (m *MockTimeSource) Add(d time.Duration) {
+	m.CurrentTime = m.CurrentTime.Add(d)
 }

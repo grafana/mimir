@@ -172,9 +172,10 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var maxGroups int
+	var maxGroups int32
 	if maxGroupsVal := req.URL.Query().Get("group_limit"); maxGroupsVal != "" {
-		maxGroups, err = strconv.Atoi(maxGroupsVal)
+		maxGroupsRaw, err := strconv.ParseInt(maxGroupsVal, 10, 32)
+		maxGroups = int32(maxGroupsRaw)
 		if err != nil || maxGroups < 0 {
 			respondInvalidRequest(logger, w, "invalid group limit value")
 			return
@@ -188,7 +189,20 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 		File:          req.URL.Query()["file"],
 		ExcludeAlerts: excludeAlerts,
 		NextToken:     req.URL.Query().Get("group_next_token"),
-		MaxGroups:     int32(maxGroups),
+		MaxGroups:     maxGroups,
+	}
+
+	// The file, rule_group and rule_name query parameters differ
+	// from Vanilla prometheus: file[], rule_group[], rule_name[]
+	// If they are provided in this format, use them instead.
+	if req.URL.Query().Has("rule_name[]") {
+		rulesReq.RuleName = req.URL.Query()["rule_name[]"]
+	}
+	if req.URL.Query().Has("rule_group[]") {
+		rulesReq.RuleGroup = req.URL.Query()["rule_group[]"]
+	}
+	if req.URL.Query().Has("file[]") {
+		rulesReq.File = req.URL.Query()["file[]"]
 	}
 
 	ruleTypeFilter := strings.ToLower(req.URL.Query().Get("type"))
@@ -519,7 +533,7 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 		// so their content is empty).
 		numRuleGroupsBeforeFiltering := len(rgs)
 		tenantRuleGroups := map[string]rulespb.RuleGroupList{userID: rgs}
-		tenantRuleGroups = filterRuleGroupsByNotMissing(tenantRuleGroups, missing, a.logger)
+		tenantRuleGroups = FilterRuleGroupsByNotMissing(tenantRuleGroups, missing, a.logger)
 
 		var tenantFound bool
 		rgs, tenantFound = tenantRuleGroups[userID]

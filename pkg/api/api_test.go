@@ -201,24 +201,15 @@ func (mi MockIngester) ShutdownHandler(w http.ResponseWriter, _ *http.Request) {
 func TestApiIngesterShutdown(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
-		setFlag            bool
 		expectedStatusCode int
 	}{
 		{
-			name:               "flag set to true, enable GET request for ingester shutdown",
-			setFlag:            true,
-			expectedStatusCode: http.StatusNoContent,
-		},
-		{
 			name:               "flag not set (default), disable GET request for ingester shutdown",
-			setFlag:            false,
 			expectedStatusCode: http.StatusMethodNotAllowed,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := Config{
-				GETRequestForIngesterShutdownEnabled: tc.setFlag,
-			}
+			cfg := Config{}
 			serverCfg := getServerConfig(t)
 			federationCfg := tenantfederation.Config{}
 			srv, err := server.New(serverCfg)

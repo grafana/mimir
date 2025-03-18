@@ -17,11 +17,10 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 
+	"github.com/grafana/mimir/pkg/storage/indexheader"
+	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storegateway/indexheader"
-	streamindex "github.com/grafana/mimir/pkg/storegateway/indexheader/index"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
 // rawPostingGroup keeps posting keys for single matcher. It is raw because there is no guarantee
@@ -458,7 +457,7 @@ func (w labelValuesPostingsStrategy) selectPostings(matchersGroups []postingGrou
 	completeMatchersPlusSeriesSize := completeMatchersSize + maxPossibleSeriesSize
 	partialMatchersPlusSeriesSize := postingGroupsTotalSize(partialMatchersGroups) + maxPossibleSeriesSize
 
-	if util_math.Min(completeMatchersPlusSeriesSize, completeMatchersPlusLabelValuesSize) < partialMatchersPlusSeriesSize {
+	if min(completeMatchersPlusSeriesSize, completeMatchersPlusLabelValuesSize) < partialMatchersPlusSeriesSize {
 		return matchersGroups, nil
 	}
 	return partialMatchersGroups, omittedMatchersGroups

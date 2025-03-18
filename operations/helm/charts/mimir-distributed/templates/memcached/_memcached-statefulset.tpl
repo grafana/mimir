@@ -105,7 +105,7 @@ spec:
               name: client
           args:
             - -m {{ .allocatedMemory }}
-            - --extended=modern,track_sizes{{ with .extraExtendedOptions }},{{ . }}{{ end }}
+            - --extended=modern{{ with .extraExtendedOptions }},{{ . }}{{ end }}
             - -I {{ .maxItemMemory }}m
             - -c {{ .connectionLimit }}
             - -v

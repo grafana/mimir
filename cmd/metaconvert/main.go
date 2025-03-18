@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"slices"
 	"syscall"
 
 	gklog "github.com/go-kit/log"
@@ -22,7 +23,6 @@ import (
 	dslog "github.com/grafana/dskit/log"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/objstore"
-	"golang.org/x/exp/slices"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"

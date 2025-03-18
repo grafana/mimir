@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/golang/snappy"
 	"github.com/opentracing/opentracing-go"
@@ -283,6 +284,10 @@ func (r *remoteReadQueryRequest) GetQuery() string {
 
 func (r *remoteReadQueryRequest) GetHeaders() []*PrometheusHeader {
 	return nil
+}
+
+func (r *remoteReadQueryRequest) GetLookbackDelta() time.Duration {
+	return 0
 }
 
 func (r *remoteReadQueryRequest) WithID(_ int64) (MetricsQueryRequest, error) {

@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
 
-	gokitlog "github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -90,7 +90,7 @@ func main() {
 }
 
 func analyseSymbols(ctx context.Context, blockDir string, uniqueSymbols map[string]struct{}, uniqueSymbolsPerShard []map[string]struct{}) error {
-	block, err := tsdb.OpenBlock(gokitlog.NewLogfmtLogger(os.Stderr), blockDir, nil)
+	block, err := tsdb.OpenBlock(slog.New(slog.NewTextHandler(os.Stderr, nil)), blockDir, nil, nil)
 	if err != nil {
 		return fmt.Errorf("failed to open block: %v", err)
 	}

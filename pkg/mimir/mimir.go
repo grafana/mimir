@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -52,6 +53,7 @@ import (
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/continuoustest"
+	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -148,6 +150,10 @@ type Config struct {
 	Common CommonConfig `yaml:"common"`
 
 	TimeseriesUnmarshalCachingOptimizationEnabled bool `yaml:"timeseries_unmarshal_caching_optimization_enabled" category:"experimental"`
+
+	CostAttributionEvictionInterval time.Duration `yaml:"cost_attribution_eviction_interval" category:"experimental"`
+	CostAttributionRegistryPath     string        `yaml:"cost_attribution_registry_path" category:"experimental"`
+	CostAttributionCleanupInterval  time.Duration `yaml:"cost_attribution_cleanup_interval" category:"experimental"`
 }
 
 // RegisterFlags registers flags.
@@ -173,6 +179,9 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&c.MaxSeparateMetricsGroupsPerUser, "max-separate-metrics-groups-per-user", 1000, "Maximum number of groups allowed per user by which specified distributor and ingester metrics can be further separated.")
 	f.BoolVar(&c.EnableGoRuntimeMetrics, "enable-go-runtime-metrics", false, "Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.")
 	f.BoolVar(&c.TimeseriesUnmarshalCachingOptimizationEnabled, "timeseries-unmarshal-caching-optimization-enabled", true, "Enables optimized marshaling of timeseries.")
+	f.StringVar(&c.CostAttributionRegistryPath, "cost-attribution.registry-path", "", "Defines a custom path for the registry. When specified, Mimir exposes cost attribution metrics through this custom path. If not specified, cost attribution metrics aren't exposed.")
+	f.DurationVar(&c.CostAttributionEvictionInterval, "cost-attribution.eviction-interval", 20*time.Minute, "Specifies how often inactive cost attributions for received and discarded sample trackers are evicted from the counter, ensuring they do not contribute to the cost attribution cardinality per user limit. This setting does not apply to active series, which are managed separately.")
+	f.DurationVar(&c.CostAttributionCleanupInterval, "cost-attribution.cleanup-interval", 3*time.Minute, "Time interval at which the cost attribution cleanup process runs, ensuring inactive cost attribution entries are purged.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
@@ -214,6 +223,18 @@ func (c *Config) CommonConfigInheritance() CommonConfigInheritance {
 			"blocks_storage":       &c.BlocksStorage.Bucket.StorageBackendConfig,
 			"ruler_storage":        &c.RulerStorage.StorageBackendConfig,
 			"alertmanager_storage": &c.AlertmanagerStorage.StorageBackendConfig,
+		},
+		ClientClusterValidation: map[string]*clusterutil.ClusterValidationConfig{
+			"ingester_client":                  &c.IngesterClient.GRPCClientConfig.ClusterValidation,
+			"frontend_worker_frontend_client":  &c.Worker.QueryFrontendGRPCClientConfig.ClusterValidation,
+			"frontend_worker_scheduler_client": &c.Worker.QuerySchedulerGRPCClientConfig.ClusterValidation,
+			"block_builder_scheduler_client":   &c.BlockBuilder.SchedulerConfig.GRPCClientConfig.ClusterValidation,
+			"frontend_query_scheduler_client":  &c.Frontend.FrontendV2.GRPCClientConfig.ClusterValidation,
+			"querier_store_gateway_client":     &c.Querier.StoreGatewayClient.ClusterValidation,
+			"scheduler_query_frontend_client":  &c.QueryScheduler.GRPCClientConfig.ClusterValidation,
+			"ruler_client":                     &c.Ruler.ClientTLSConfig.ClusterValidation,
+			"ruler_query_frontend_client":      &c.Ruler.QueryFrontend.GRPCClientConfig.ClusterValidation,
+			"alert_manager_client":             &c.Alertmanager.AlertmanagerClient.GRPCClientConfig.ClusterValidation,
 		},
 	}
 }
@@ -591,10 +612,15 @@ func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) 
 		for name, loc := range inheritance.Storage {
 			specificStorageLocations[name] = loc
 		}
+		specificClusterValidationLocations := specificLocationsUnmarshaler{}
+		for name, loc := range inheritance.ClientClusterValidation {
+			specificClusterValidationLocations[name] = loc
+		}
 
 		common := configWithCustomCommonUnmarshaler{
 			Common: &commonConfigUnmarshaler{
-				Storage: &specificStorageLocations,
+				Storage:                 &specificStorageLocations,
+				ClientClusterValidation: &specificClusterValidationLocations,
 			},
 		}
 
@@ -614,7 +640,12 @@ func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConf
 	for _, inh := range inheriters {
 		inheritance := inh.CommonConfigInheritance()
 		for desc, loc := range inheritance.Storage {
-			if err := inheritFlags(log, common.Storage.RegisteredFlags, loc.RegisteredFlags, setFlags); err != nil {
+			if err := inheritFlags(log, &common.Storage, loc, setFlags); err != nil {
+				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
+			}
+		}
+		for desc, loc := range inheritance.ClientClusterValidation {
+			if err := inheritFlags(log, &common.ClientClusterValidation, loc, setFlags); err != nil {
 				return fmt.Errorf("can't inherit common flags for %q: %w", desc, err)
 			}
 		}
@@ -624,11 +655,13 @@ func InheritCommonFlagValues(log log.Logger, fs *flag.FlagSet, common CommonConf
 }
 
 // inheritFlags takes flags from the origin set and sets them to the equivalent flags in the dest set, unless those are already set.
-func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.RegisteredFlags, set map[string]bool) error {
-	for f, o := range orig.Flags {
-		d, ok := dest.Flags[f]
+func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flagext.RegisteredFlagsTracker, set map[string]bool) error {
+	origFlags := orig.RegisteredFlags()
+	destFlags := dest.RegisteredFlags()
+	for f, o := range origFlags.Flags {
+		d, ok := destFlags.Flags[f]
 		if !ok {
-			return fmt.Errorf("implementation error: flag %q was in flags prefixed with %q (%q) but was not in flags prefixed with %q (%q)", f, orig.Prefix, o.Name, dest.Prefix, d.Name)
+			return fmt.Errorf("implementation error: flag %q was in flags prefixed with %q (%q) but was not in flags prefixed with %q (%q)", f, origFlags.Prefix, o.Name, destFlags.Prefix, d.Name)
 		}
 		if !set[o.Name] {
 			// Nothing to inherit because origin was not set.
@@ -655,16 +688,19 @@ func inheritFlags(log log.Logger, orig util.RegisteredFlags, dest util.Registere
 }
 
 type CommonConfig struct {
-	Storage bucket.StorageBackendConfig `yaml:"storage"`
+	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
+	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
-	Storage map[string]*bucket.StorageBackendConfig
+	Storage                 map[string]*bucket.StorageBackendConfig
+	ClientClusterValidation map[string]*clusterutil.ClusterValidationConfig
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
+	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -679,7 +715,8 @@ type configWithCustomCommonUnmarshaler struct {
 
 // commonConfigUnmarshaler will unmarshal each field of the common config into specific locations.
 type commonConfigUnmarshaler struct {
-	Storage *specificLocationsUnmarshaler `yaml:"storage"`
+	Storage                 *specificLocationsUnmarshaler `yaml:"storage"`
+	ClientClusterValidation *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.
@@ -705,40 +742,41 @@ type Mimir struct {
 	ServiceMap    map[string]services.Service
 	ModuleManager *modules.Manager
 
-	API                             *api.API
-	Server                          *server.Server
-	IngesterRing                    *ring.Ring
-	IngesterPartitionRingWatcher    *ring.PartitionRingWatcher
-	IngesterPartitionInstanceRing   *ring.PartitionInstanceRing
-	TenantLimits                    validation.TenantLimits
-	Overrides                       *validation.Overrides
-	ActiveGroupsCleanup             *util.ActiveGroupsCleanupService
-	Distributor                     *distributor.Distributor
-	Ingester                        *ingester.Ingester
-	Flusher                         *flusher.Flusher
-	FrontendV1                      *frontendv1.Frontend
-	RuntimeConfig                   *runtimeconfig.Manager
-	QuerierQueryable                prom_storage.SampleAndChunkQueryable
-	ExemplarQueryable               prom_storage.ExemplarQueryable
-	AdditionalStorageQueryables     []querier.TimeRangeQueryable
-	MetadataSupplier                querier.MetadataSupplier
-	QuerierEngine                   promql.QueryEngine
-	QueryFrontendTripperware        querymiddleware.Tripperware
-	QueryFrontendTopicOffsetsReader *ingest.TopicOffsetsReader
-	QueryFrontendCodec              querymiddleware.Codec
-	Ruler                           *ruler.Ruler
-	RulerStorage                    rulestore.RuleStore
-	Alertmanager                    *alertmanager.MultitenantAlertmanager
-	Compactor                       *compactor.MultitenantCompactor
-	StoreGateway                    *storegateway.StoreGateway
-	MemberlistKV                    *memberlist.KVInitService
-	ActivityTracker                 *activitytracker.ActivityTracker
-	Vault                           *vault.Vault
-	UsageStatsReporter              *usagestats.Reporter
-	BlockBuilder                    *blockbuilder.BlockBuilder
-	BlockBuilderScheduler           *blockbuilderscheduler.BlockBuilderScheduler
-	ContinuousTestManager           *continuoustest.Manager
-	BuildInfoHandler                http.Handler
+	API                              *api.API
+	Server                           *server.Server
+	IngesterRing                     *ring.Ring
+	IngesterPartitionRingWatcher     *ring.PartitionRingWatcher
+	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
+	TenantLimits                     validation.TenantLimits
+	Overrides                        *validation.Overrides
+	ActiveGroupsCleanup              *util.ActiveGroupsCleanupService
+	Distributor                      *distributor.Distributor
+	Ingester                         *ingester.Ingester
+	Flusher                          *flusher.Flusher
+	FrontendV1                       *frontendv1.Frontend
+	RuntimeConfig                    *runtimeconfig.Manager
+	QuerierQueryable                 prom_storage.SampleAndChunkQueryable
+	ExemplarQueryable                prom_storage.ExemplarQueryable
+	AdditionalStorageQueryables      []querier.TimeRangeQueryable
+	MetadataSupplier                 querier.MetadataSupplier
+	QuerierEngine                    promql.QueryEngine
+	QueryFrontendTripperware         querymiddleware.Tripperware
+	QueryFrontendTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader
+	QueryFrontendCodec               querymiddleware.Codec
+	Ruler                            *ruler.Ruler
+	RulerStorage                     rulestore.RuleStore
+	Alertmanager                     *alertmanager.MultitenantAlertmanager
+	Compactor                        *compactor.MultitenantCompactor
+	StoreGateway                     *storegateway.StoreGateway
+	MemberlistKV                     *memberlist.KVInitService
+	ActivityTracker                  *activitytracker.ActivityTracker
+	Vault                            *vault.Vault
+	UsageStatsReporter               *usagestats.Reporter
+	BlockBuilder                     *blockbuilder.BlockBuilder
+	BlockBuilderScheduler            *blockbuilderscheduler.BlockBuilderScheduler
+	ContinuousTestManager            *continuoustest.Manager
+	BuildInfoHandler                 http.Handler
+	CostAttributionManager           *costattribution.Manager
 }
 
 // New makes a new Mimir.
@@ -808,6 +846,12 @@ func setUpGoRuntimeMetrics(cfg Config, reg prometheus.Registerer) {
 	rules := []collectors.GoRuntimeMetricsRule{
 		// Enable the mutex wait time metric.
 		{Matcher: goregexp.MustCompile(`^/sync/mutex/wait/total:seconds$`)},
+		// Enable the GC total CPU time metric.
+		{Matcher: goregexp.MustCompile(`^/cpu/classes/gc/total:cpu-seconds$`)},
+		// Enable the total available CPU time metric.
+		{Matcher: goregexp.MustCompile(`^/cpu/classes/total:cpu-seconds$`)},
+		// Enable the total idle CPU time metric.
+		{Matcher: goregexp.MustCompile(`^/cpu/classes/idle:cpu-seconds$`)},
 	}
 
 	if cfg.EnableGoRuntimeMetrics {

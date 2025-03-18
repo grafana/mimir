@@ -1,6 +1,6 @@
 # What is this?
 
-A simple hacky script + tool to download chunks from ingesters and dump their content.
+A simple hacky script + tool to download chunks from ingesters and dump their content. This tool is similar to the tool for dumping chunks from store-gateways: [grpcurl-query-store-gateways](../grpcurl-query-store-gateways).
 
 # How to use it
 

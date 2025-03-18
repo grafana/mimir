@@ -32,6 +32,10 @@ func NewDelayedBucketClient(wrapped objstore.Bucket, minDelay, maxDelay time.Dur
 	}
 }
 
+func (m *DelayedBucketClient) Provider() objstore.ObjProvider {
+	return m.wrapped.Provider()
+}
+
 func (m *DelayedBucketClient) Upload(ctx context.Context, name string, r io.Reader) error {
 	m.delay()
 	defer m.delay()

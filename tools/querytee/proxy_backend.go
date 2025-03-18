@@ -37,10 +37,11 @@ type ProxyBackend struct {
 	// Whether this is the preferred backend from which picking up
 	// the response and sending it back to the client.
 	preferred bool
+	cfg       BackendConfig
 }
 
 // NewProxyBackend makes a new ProxyBackend
-func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool) ProxyBackendInterface {
+func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool, cfg BackendConfig) ProxyBackendInterface {
 	innerTransport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
@@ -63,6 +64,7 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 		endpoint:  endpoint,
 		timeout:   timeout,
 		preferred: preferred,
+		cfg:       cfg,
 		client: &http.Client{
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return errors.New("the query-tee proxy does not follow redirects")
@@ -138,6 +140,12 @@ func (b *ProxyBackend) createBackendRequest(ctx context.Context, orig *http.Requ
 
 	// Remove Accept-Encoding header to avoid sending compressed responses
 	req.Header.Del("Accept-Encoding")
+
+	for headerName, headerValues := range b.cfg.RequestHeaders {
+		for _, headerValue := range headerValues {
+			req.Header.Add(headerName, headerValue)
+		}
+	}
 
 	return req, nil
 }
