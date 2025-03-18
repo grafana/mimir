@@ -874,7 +874,7 @@ func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args
 			x = smoothingFactor * sample.F
 
 			// Scale the last smoothed value for all samples except the first one in head.
-			if head && i > 0 || !head {
+			if !head || i > 0 {
 				estimatedTrend = trendFactor*(smooth1-smooth0) + (1-trendFactor)*estimatedTrend
 			}
 			y = (1 - smoothingFactor) * (smooth1 + estimatedTrend)
