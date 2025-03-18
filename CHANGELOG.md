@@ -1,6 +1,6 @@
 # Changelog
 
-## main / unreleased
+## 2.16.0-rc.0
 
 ### Grafana Mimir
 
@@ -28,7 +28,6 @@
 * [ENHANCEMENT] Ruler: Add `cortex_prometheus_rule_group_last_rule_duration_sum_seconds` metric to track the total evaluation duration of a rule group regardless of concurrency #10189
 * [ENHANCEMENT] Distributor: Add native histogram support for `electedReplicaPropagationTime` metric in ha_tracker. #10264
 * [ENHANCEMENT] Ingester: More efficient CPU/memory utilization-based read request limiting. #10325
-* [ENHANCEMENT] Dashboards: Add Query-Scheduler <-> Querier Inflight Requests row to Query Reads and Remote Ruler reads dashboards. #10290
 * [ENHANCEMENT] OTLP: In addition to the flag `-distributor.otel-created-timestamp-zero-ingestion-enabled` there is now `-distributor.otel-start-time-quiet-zero` to convert OTel start timestamps to Prometheus QuietZeroNaNs. This flag is to make the change rollout safe between Ingesters and Distributors. #10238
 * [ENHANCEMENT] Ruler: When rule concurrency is enabled for a rule group, its rules will now be reordered and run in batches based on their dependencies. This increases the number of rules that can potentially run concurrently. Note that the global and tenant-specific limits still apply #10400
 * [ENHANCEMENT] Query-frontend: include more information about read consistency in trace spans produced when using experimental ingest storage. #10412
@@ -36,7 +35,6 @@
 * [ENHANCEMENT] Ingester: add `active_series_additional_custom_trackers` configuration, in addition to the already existing `active_series_custom_trackers`. The `active_series_additional_custom_trackers` configuration allows you to configure additional custom trackers that get merged with `active_series_custom_trackers` at runtime. #10428
 * [ENHANCEMENT] Query-frontend: Allow blocking raw http requests with the `blocked_requests` configuration. Requests can be blocked based on their path, method or query parameters #10484
 * [ENHANCEMENT] Ingester: Added the following metrics exported by `PostingsForMatchers` cache: #10500 #10525
-* [ENHANCEMENT] Add support for the HTTP header `X-Filter-Queryables` which allows callers to decide which queryables should be used by the querier, useful for debugging and testing queryables in isolation. #10552 #10594
   * `cortex_ingester_tsdb_head_postings_for_matchers_cache_hits_total`
   * `cortex_ingester_tsdb_head_postings_for_matchers_cache_misses_total`
   * `cortex_ingester_tsdb_head_postings_for_matchers_cache_requests_total`
@@ -47,6 +45,7 @@
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_requests_total`
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_skips_total`
   * `cortex_ingester_tsdb_block_postings_for_matchers_cache_evictions_total`
+* [ENHANCEMENT] Add support for the HTTP header `X-Filter-Queryables` which allows callers to decide which queryables should be used by the querier, useful for debugging and testing queryables in isolation. #10552 #10594
 * [ENHANCEMENT] Compactor: Shuffle users' order in `BlocksCleaner`. Prevents bucket indexes from going an extended period without cleanup during compactor restarts. #10513
 * [ENHANCEMENT] Distributor, querier, ingester and store-gateway: Add support for `limit` parameter for label names and values requests. #10410
 * [ENHANCEMENT] Ruler: Adds support for filtering results from rule status endpoint by `file[]`, `rule_group[]` and `rule_name[]`. #10589
@@ -95,6 +94,7 @@
 * [BUGFIX] Querier: fix issue where `label_join` could incorrectly return multiple series with the same labels rather than failing with `vector cannot contain metrics with the same labelset`. https://github.com/prometheus/prometheus/pull/15975 #10826
 * [BUGFIX] Querier: fix issue where counter resets on native histograms could be incorrectly under- or over-counted when using subqueries. https://github.com/prometheus/prometheus/pull/15987 #10871
 * [BUGFIX] Ingester: fix goroutines and memory leak when experimental ingest storage enabled and a server-side error occurs during metrics ingestion. #10915
+* [BUGFIX] Alertmanager: Avoid fetching Grafana state if Grafana AM compatibility is not enabled. #10857
 
 ### Mixin
 
@@ -107,6 +107,7 @@
 * [ENHANCEMENT] Dashboards: clarify when query-frontend and query-scheduler dashboard panels are expected to show no data. #10624
 * [ENHANCEMENT] Alerts: Add warning alert `DistributorGcUsesTooMuchCpu`. #10641
 * [ENHANCEMENT] Dashboards: Add "Federation-frontend" dashboard for GEM. #10697 #10736
+* [ENHANCEMENT] Dashboards: Add Query-Scheduler <-> Querier Inflight Requests row to Query Reads and Remote Ruler reads dashboards. #10290
 * [ENHANCEMENT] Alerts: Add "Federation-frontend" alert for remote clusters returning errors. #10698
 * [BUGFIX] Dashboards: fix how we switch between classic and native histograms. #10018
 * [BUGFIX] Alerts: Ignore cache errors performing `delete` operations since these are expected to fail when keys don't exist. #10287
