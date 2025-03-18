@@ -2270,6 +2270,12 @@ func TestAnnotations(t *testing.T) {
 			expr:                    "double_exponential_smoothing(some_metric[1m1s], 0.5, 0.5)",
 			expectedInfoAnnotations: []string{`PromQL info: ignored histograms in a range containing both floats and histograms for metric name "some_metric" (1:30)`},
 		},
+		"double_exponential_smoothing() with only native histogram at same step will result with no annotations": {
+			data:                       `some_histo_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}}`,
+			expr:                       "double_exponential_smoothing(some_histo_metric[1m1s], 0.5, 0.5)",
+			expectedInfoAnnotations:    []string{},
+			expectedWarningAnnotations: []string{},
+		},
 	}
 
 	for _, f := range []string{"min_over_time", "max_over_time", "stddev_over_time", "stdvar_over_time"} {
