@@ -16,10 +16,10 @@ import (
 	"go.uber.org/atomic"
 )
 
-type asCounters struct {
-	asCount     *atomic.Int64
-	nhCount     *atomic.Int64
-	nhBucketNum *atomic.Int64
+type counters struct {
+	activeSeries           *atomic.Int64
+	nativeHistograms       *atomic.Int64
+	nativeHistogramBuckets *atomic.Int64
 }
 
 type ActiveSeriesTracker struct {
