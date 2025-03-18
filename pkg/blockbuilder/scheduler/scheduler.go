@@ -345,8 +345,8 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 			}
 		}
 
-		// ??? Is EndOffset inclusive? Do we need to commit EndOffset+1?
-		s.advanceCommittedOffset(j.Topic, j.Partition, j.EndOffset)
+		// EndOffset is inclusive, so we need to commit EndOffset+1.
+		s.advanceCommittedOffset(j.Topic, j.Partition, j.EndOffset+1)
 		logger.Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
