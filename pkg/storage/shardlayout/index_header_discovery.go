@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -26,6 +27,7 @@ import (
 
 type IndexHeaderMetaDiscoverer interface {
 	Discover(context.Context) error
+	GetMetaMap() *IndexHeaderMetaMap
 }
 
 type BucketIndexHeaderMetaDiscoverer struct {
@@ -71,29 +73,36 @@ func NewBucketIndexHeaderMetaDiscoverer(
 	}
 }
 
-func (ihd *BucketIndexHeaderMetaDiscoverer) Discover(ctx context.Context) error {
+func (ihd *BucketIndexHeaderMetaDiscoverer) Discover(ctx context.Context) (err error) {
+	level.Info(ihd.logger).Log("msg", "started discovering index header metadata")
 	retries := backoff.New(ctx, ihd.syncBackoffConfig)
 
-	var lastErr error
+	var taskErr error
 	for retries.Ongoing() {
 		tenantIDs, err := ihd.ListAllowedTenants(ctx)
 		if err != nil {
 			retries.Wait()
 			continue
 		}
-		lastErr = ihd.discoverForTenants(ctx, tenantIDs)
-		if lastErr == nil {
+		taskErr = ihd.discoverForTenants(ctx, tenantIDs)
+		if taskErr == nil {
+			level.Info(ihd.logger).Log(
+				"msg", "completed discovering index header metadata",
+				"tenantBlockIndexHeaders", ihd.GetMetaMap().String(),
+			)
 			return nil
 		}
 
 		retries.Wait()
 	}
 
-	if lastErr == nil {
-		return retries.Err()
+	if taskErr != nil {
+		err = taskErr
+	} else {
+		err = retries.Err()
 	}
 
-	return lastErr
+	return err
 }
 
 func (ihd *BucketIndexHeaderMetaDiscoverer) discoverForTenants(ctx context.Context, tenantIDs []string) error {
@@ -146,6 +155,7 @@ func (ihd *BucketIndexHeaderMetaDiscoverer) discoverForTenants(ctx context.Conte
 func (ihd *BucketIndexHeaderMetaDiscoverer) discoverForTenant(ctx context.Context, tenantID string) error {
 	tenantBucketClient := ihd.getOrCreateTenantBucketClient(tenantID)
 	tenantLogger := util_log.WithUserID(tenantID, ihd.logger)
+	fetcherReg := prometheus.NewRegistry()
 
 	indexHeaderMetaFetcherFilters := []block.MetadataFilter{
 		bucketindex.NewMinTimeMetaFilter(ihd.cfg.BucketStore.IgnoreBlocksWithin),
@@ -161,9 +171,10 @@ func (ihd *BucketIndexHeaderMetaDiscoverer) discoverForTenant(ctx context.Contex
 		ihd.bucket,
 		ihd.limits,
 		ihd.logger,
-		ihd.reg,
+		fetcherReg,
 		indexHeaderMetaFetcherFilters,
 	)
+	//indexHeaderMetaFetcherMetrics.AddUserRegistry(tenantID, fetcherReg)
 
 	metas, _, metaFetchErr := indexHeaderMetaFetcher.Fetch(ctx)
 	// For partial view allow adding new blocks at least. TODO figure out what this means
@@ -251,6 +262,10 @@ func (ihd *BucketIndexHeaderMetaDiscoverer) ListAllowedTenants(ctx context.Conte
 	}
 
 	return filtered, nil
+}
+
+func (ihd *BucketIndexHeaderMetaDiscoverer) GetMetaMap() *IndexHeaderMetaMap {
+	return ihd.IndexHeaderMetaMap
 }
 
 //func (ihd *BucketIndexHeaderMetaDiscoverer) blockIndexHeaderAttrs(ctx context.Context, blockID ulid.ULID) (objstore.ObjectAttributes, error) {

@@ -213,14 +213,14 @@ func (u *BucketStores) initialSync(ctx context.Context) error {
 	var err error
 	start := time.Now()
 	level.Info(u.logger).Log("msg", "discovering TSDB index headers for all users")
-	tenantBlockIndexHeaders, err := u.indexHeaderDiscoverer.Discover(ctx)
+	err = u.indexHeaderDiscoverer.Discover(ctx)
 	if err != nil {
 		level.Warn(u.logger).Log("msg", "failed to discover TSDB index headers", "err", err)
 		return fmt.Errorf("initial discovery with bucket: %w", err)
 	}
 	level.Info(u.logger).Log(
 		"msg", "successfully discovered TSDB index headers for all users",
-		"tenantBlockIndexHeaders", tenantBlockIndexHeaders.String(),
+		"tenantBlockIndexHeaders", u.indexHeaderDiscoverer.GetMetaMap().String(),
 		"duration", time.Since(start).String(),
 	)
 
