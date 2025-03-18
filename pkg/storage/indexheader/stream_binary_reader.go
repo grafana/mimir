@@ -221,8 +221,6 @@ func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstor
 	}
 	sparseHeaderObjPath := filepath.Join(id.String(), block.SparseIndexHeaderFilename)
 
-	defer level.Info(logger).Log("msg", "downloaded sparse index-header from bucket")
-
 	reader, err := bkt.Get(ctx, sparseHeaderObjPath)
 	if err != nil {
 		return nil, fmt.Errorf("getting sparse index-header from bucket: %w", err)
@@ -238,6 +236,8 @@ func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstor
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+
+	level.Info(logger).Log("msg", "downloaded sparse index-header from bucket")
 
 	return data, nil
 }
