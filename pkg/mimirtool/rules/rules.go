@@ -107,7 +107,7 @@ func (r RuleNamespace) CheckRecordingRules(strict bool) int {
 // AggregateBy modifies the aggregation rules in groups to include a given Label.
 // If the applyTo function is provided, the aggregation is applied only to rules
 // for which the applyTo function returns true.
-func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.RuleGroup, rule rulefmt.RuleNode) bool) (int, int, error) {
+func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.RuleGroup, rule rulefmt.Rule) bool) (int, int, error) {
 	// `count` represents the number of rules we evaluated.
 	// `mod` represents the number of rules we modified - a modification can either be a lint or adding the
 	// label in the aggregation.
@@ -127,7 +127,7 @@ func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.Ru
 			}
 
 			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("evaluating...")
-			exp, err := parser.ParseExpr(rule.Expr.Value)
+			exp, err := parser.ParseExpr(rule.Expr)
 			if err != nil {
 				return count, mod, err
 			}
@@ -139,14 +139,14 @@ func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.Ru
 			parser.Inspect(exp, f)
 
 			// Only modify the ones that actually changed.
-			if rule.Expr.Value != exp.String() {
+			if rule.Expr != exp.String() {
 				log.WithFields(log.Fields{
 					"rule":        getRuleName(rule),
 					"currentExpr": rule.Expr,
 					"afterExpr":   exp.String(),
 				}).Debugf("expression differs")
 				mod++
-				r.Groups[i].Rules[j].Expr.Value = exp.String()
+				r.Groups[i].Rules[j].Expr = exp.String()
 			}
 		}
 	}
