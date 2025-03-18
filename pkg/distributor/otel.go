@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -380,6 +381,7 @@ func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, pay
 	}
 
 	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(httpCode)
 	if len(body) == 0 {
 		return
