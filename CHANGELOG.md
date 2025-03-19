@@ -4,6 +4,9 @@
 
 ### Grafana Mimir
 
+* [FEATURE] gRPC: Support ZSTD compression for ingester client. #10411
+  * `-ingester.client.grpc-compression=zstd`
+
 ### Mixin
 
 * [ENHANCEMENT] Dashboards: Include absolute number of notifications attempted to alertmanager in 'Mimir / Ruler'. #10918
