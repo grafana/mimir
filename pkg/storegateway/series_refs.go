@@ -1269,6 +1269,7 @@ func fetchCachedSeriesForPostings(ctx context.Context, userID string, indexCache
 		logSeriesForPostingsCacheEvent(ctx, logger, userID, blockID, shard, itemID, "msg", "can't decode series cache", "err", err)
 		return seriesChunkRefsSet{}, false
 	}
+	// TODO: Use custom unmarshaling with memory pooling instead of holding on to buffer.
 	defer entry.FreeBuffer()
 
 	if !bytes.Equal(itemID.encodedPostings, entry.DiffEncodedPostings) {

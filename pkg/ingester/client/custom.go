@@ -103,7 +103,7 @@ type CustomTimeSeriesChunk struct {
 func (m *CustomTimeSeriesChunk) Release() {
 	for _, chk := range m.Chunks {
 		//nolint:staticcheck
-		chunkDataPool.Put(chk.Data)
+		chunkDataPool.Put(chk.Data[:0])
 		chk.Data = nil
 	}
 	m.Labels = m.Labels[:0]
@@ -802,7 +802,7 @@ type CustomQueryStreamSeriesChunks struct {
 func (m *CustomQueryStreamSeriesChunks) Release() {
 	for _, chk := range m.Chunks {
 		//nolint:staticcheck
-		chunkDataPool.Put(chk.Data)
+		chunkDataPool.Put(chk.Data[:0])
 		chk.Data = nil
 	}
 	m.Chunks = m.Chunks[:0]
@@ -959,5 +959,5 @@ func (m *ExemplarQueryResponse) Release() {
 // ReleaseChunk puts chk back in pool.
 func ReleaseChunk(chk Chunk) {
 	//nolint:staticcheck
-	chunkDataPool.Put(chk.Data)
+	chunkDataPool.Put(chk.Data[:0])
 }
