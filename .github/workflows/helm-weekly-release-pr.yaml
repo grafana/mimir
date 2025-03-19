@@ -2,14 +2,9 @@ name: helm-weekly-release-pr
 
 on:
   schedule:
-    - cron: '0 10 * * 1-5' # 10 UTC on weekdays; if we miss published images one day, they should align the day after
+    - cron: "0 10 * * 1-5" # 10 UTC on weekdays; if we miss published images one day, they should align the day after
 
   workflow_dispatch: # for manual testing
-
-# These permissions are needed to assume roles from Github's OIDC.
-permissions:
-  contents: read
-  id-token: write
 
 jobs:
   weekly-release-pr:
@@ -18,22 +13,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: imjasonh/setup-crane@v0.4
 
-      - name: Retrieve GitHub App credentials from Vault
-        id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
-        with:
-          repo_secrets: |
-            APP_ID=mimir-github-bot:app_id
-            PRIVATE_KEY=mimir-github-bot:private_key
-
-      - name: Generate GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ env.APP_ID }}
-          private-key: ${{ env.PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
       - name: Update/regenerate files
         id: update
         run: bash .github/workflows/scripts/helm-weekly-release.sh
@@ -41,11 +20,10 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           title: Release mimir-distributed Helm chart ${{ steps.update.outputs.new_chart_version }}
           body: Automated PR created by [helm-weekly-release-pr.yaml](https://github.com/grafana/mimir/blob/main/.github/workflows/helm-weekly-release-pr.yaml)
           commit-message: Update mimir-distributed chart to ${{ steps.update.outputs.new_chart_version }}
-          author: grafanabot <grafanabot@grafana.com>
           branch: helm-chart-weekly-${{ steps.update.outputs.new_chart_version }}
           base: main
           labels: helm
