@@ -52,6 +52,17 @@ func (d *EliminateCommonSubexpressions) Name() string {
 func (d *EliminateCommonSubexpressions) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
 	// FIXME: there's certainly a more efficient way to do this
 	// FIXME: need to consider selector time ranges when doing this (eg. if subqueries are involved)
+	// - introduce "TimeRange(parent types.QueryTimeRange) types.QueryTimeRange" method on Node?
+	// FIXME: when expression is something like (a + b) / (a + b), we'll do some duplicate work or potentially do the wrong thing:
+	// - first we'll process the duplicate "a" selectors
+	//   - we'll replace the "a" selectors with a single reference
+	//   - then we'll continue up the path and replace the (a + b) expressions with a single reference
+	// - then we'll process the duplicate "b" selectors
+	//   - we'll replace the "b" selectors with a single reference (but this is not necessary any more - there's only one reference to "b")
+	//   - we'll replace the (a + b) expressions with another single reference (wasteful but not wrong)
+	// TODO: subset selectors
+	// TODO: exploit associativity to find more common expressions? (eg. (a + b) / (a + c + b) --> (a + b) / (a + b + c) --> X / (X + c))
+	// - likely tricky to do correctly with series matching rules, may not be worth it
 
 	// Figure out all the paths to leaves
 	paths := d.accumulatePaths(plan.Root)
