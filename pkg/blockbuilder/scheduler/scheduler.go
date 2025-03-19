@@ -178,7 +178,7 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 
 	// We choose a boundary time that is the current time rounded down to the nearest hour.
 	// We want to create jobs that will consume everything up but not including this boundary.
-	// We want to consume nothing after this boundary. A later run will create a new job for the next hour.
+	// A later run will create job(s) for the boundary and beyond.
 
 	boundary := time.Now().Truncate(time.Hour)
 	of := newOffsetFinder(s.adminClient)
@@ -191,7 +191,7 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 			s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(gl.End.Offset))
 			s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(gl.Commit.At))
 
-			ranges, err := consumptionRanges(ctx, of, s.cfg.Kafka.Topic, part, gl.Commit.At, gl.End.Offset, time.Hour, boundary)
+			ranges, err := computePartitionJobs(ctx, of, s.cfg.Kafka.Topic, part, gl.Commit.At, gl.End.Offset, time.Hour, boundary)
 			if err != nil {
 				level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
 				continue
@@ -256,8 +256,11 @@ func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partit
 
 var _ offsetStore = (*offsetFinder)(nil)
 
-// consumptionRanges returns the ranges of offsets that should be consumed.
-func consumptionRanges(ctx context.Context, offs offsetStore, topic string, partition int32, committed int64, partEnd int64, width time.Duration, boundaryTime time.Time) ([]offsetRange, error) {
+// computePartitionJobs returns the ranges of offsets that should be consumed
+// for the given topic and partition.
+func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, partition int32,
+	committed int64, partEnd int64, width time.Duration, boundaryTime time.Time) ([]offsetRange, error) {
+
 	if committed >= partEnd {
 		// No new data to consume.
 		return []offsetRange{}, nil
@@ -265,13 +268,14 @@ func consumptionRanges(ctx context.Context, offs offsetStore, topic string, part
 
 	// boundaryTime is intended to be exclusive. (i.e., consume up to but not including 11:00 AM.)
 	// Subtract a millisecond to make this work correctly with the Kafka offset APIs.
+
 	boundaryTime = boundaryTime.Add(-1 * time.Millisecond)
-	boundaryOffset, err := offs.offsetAfterTime(ctx, topic, partition, boundaryTime)
+	windowEndOffset, err := offs.offsetAfterTime(ctx, topic, partition, boundaryTime)
 	if err != nil {
 		return nil, err
 	}
 
-	if committed >= boundaryOffset {
+	if committed >= windowEndOffset {
 		// No new data to consume.
 		return []offsetRange{}, nil
 	}
@@ -284,8 +288,14 @@ func consumptionRanges(ctx context.Context, offs offsetStore, topic string, part
 			return nil, err
 		}
 		if off < committed {
+			// We're now before the committed offset, so we're done.
 			break
 		}
+		if off >= windowEndOffset {
+			// Found an offset beyond our window. Move along.
+			continue
+		}
+
 		if len(starts) == 0 || off != starts[len(starts)-1] {
 			starts = append(starts, off)
 		}
@@ -301,7 +311,7 @@ func consumptionRanges(ctx context.Context, offs offsetStore, topic string, part
 		if i < len(starts)-1 {
 			ranges[i].end = starts[i+1]
 		} else {
-			ranges[i].end = boundaryOffset
+			ranges[i].end = windowEndOffset
 		}
 	}
 
