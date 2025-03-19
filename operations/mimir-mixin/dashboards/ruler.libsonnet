@@ -192,14 +192,87 @@ local filename = 'mimir-ruler.json';
     .addRow(
       $.row('Notifications')
       .addPanel(
-        $.timeseriesPanel('Delivery errors') +
-        $.queryPanel(|||
-          sum by(user) (rate(cortex_prometheus_notifications_errors_total{%s}[$__rate_interval]))
+        $.timeseriesPanel('Notifications') +
+        $.queryPanel([
+          'sum(rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval])) > 0' % $.jobMatcher($._config.job_names.ruler),
+          'sum(rate(cortex_prometheus_notifications_errors_total{%s}[$__rate_interval])) > 0' % $.jobMatcher($._config.job_names.ruler),
+          'sum(rate(cortex_prometheus_notifications_dropped_total{%s}[$__rate_interval])) > 0' % $.jobMatcher($._config.job_names.ruler),
+        ], [
+          'sent',
+          'errors',
+          'dropped',
+        ]) +
+        {
+          fieldConfig+: {
+            defaults+: {
+              unit: 'reqps',
+            },
+          },
+          options+: {
+            tooltip: {
+              mode: 'multi',
+              sort: 'desc',
+            },
+          },
+        } +
+        $.panelDescription(
+          'Notifications',
+          |||
+            Shows the absolute rate of notification outcomes:
+            - Sent: Successfully delivered notifications
+            - Errors: Notifications that encountered errors during delivery
+            - Dropped: Notifications that were dropped from the sending queue because the queue is full
+          |||
+        )
+      )
+      .addPanel(
+        $.timeseriesPanel('Undelivered notifications (per tenant)') +
+        $.queryPanel([
+          // Error notifications percentage
+          |||
+            sum by(user) (rate(cortex_prometheus_notifications_errors_total{%s}[$__rate_interval]))
             /
-          sum by(user) (rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval]) > 0)
-          > 0
-        ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}') +
-        { fieldConfig+: { defaults+: { unit: 'short', noValue: 0 } } }
+            (
+              sum by(user) (rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval]))
+              +
+              sum by(user) (rate(cortex_prometheus_notifications_dropped_total{%s}[$__rate_interval]))
+            )
+            > 0
+          ||| % [
+            $.jobMatcher($._config.job_names.ruler),
+            $.jobMatcher($._config.job_names.ruler),
+            $.jobMatcher($._config.job_names.ruler),
+          ],
+          // Dropped notifications percentage
+          |||
+            sum by(user) (rate(cortex_prometheus_notifications_dropped_total{%s}[$__rate_interval]))
+            /
+            (
+              sum by(user) (rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval]))
+              +
+              sum by(user) (rate(cortex_prometheus_notifications_dropped_total{%s}[$__rate_interval]))
+            )
+            > 0
+          ||| % [
+            $.jobMatcher($._config.job_names.ruler),
+            $.jobMatcher($._config.job_names.ruler),
+            $.jobMatcher($._config.job_names.ruler),
+          ],
+        ], [
+          '{{user}} - errors',
+          '{{user}} - dropped',
+        ]) +
+        { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
+        $.panelDescription(
+          'Undelivered notifications (per tenant)',
+          |||
+            Shows the percentage of notifications that resulted in errors or were dropped, per tenant:
+            - Errors: Percentage of notifications that encountered errors during delivery
+            - Dropped: Percentage of notifications that were dropped from the queue
+
+            Both percentages are calculated as proportion of total notifications (sent + dropped).
+          |||
+        )
       )
       .addPanel(
         $.timeseriesPanel('Queue length') +
@@ -207,15 +280,8 @@ local filename = 'mimir-ruler.json';
           sum by(user) (cortex_prometheus_notifications_queue_length{%s})
             /
           sum by(user) (cortex_prometheus_notifications_queue_capacity{%s}) > 0
-        ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}')
-        { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } },
-      )
-      .addPanel(
-        $.timeseriesPanel('Dropped') +
-        $.queryPanel(|||
-          sum by (user) (increase(cortex_prometheus_notifications_dropped_total{%s}[$__rate_interval])) > 0
-        ||| % $.jobMatcher($._config.job_names.ruler), '{{ user }}') +
-        { fieldConfig+: { defaults+: { unit: 'short', noValue: 0 } } }
+        ||| % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], '{{ user }}') +
+        { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } }
       )
     )
     .addRow(
