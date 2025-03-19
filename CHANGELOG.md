@@ -6,6 +6,8 @@
 
 ### Mixin
 
+* [ENHANCEMENT] Dashboards: Include absolute number of notifications attempted to alertmanager in 'Mimir / Ruler'. #10918
+
 ### Jsonnet
 
 ### Mimirtool
