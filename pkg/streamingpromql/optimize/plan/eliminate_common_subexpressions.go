@@ -298,3 +298,11 @@ func (d *Duplicate) Equals(other planning.Node) bool {
 
 	return ok && d.Inner.Equals(otherDuplicate.Inner)
 }
+
+func (d *Duplicate) Describe() string {
+	return ""
+}
+
+func (d *Duplicate) ChildrenLabels() []string {
+	return []string{""}
+}
