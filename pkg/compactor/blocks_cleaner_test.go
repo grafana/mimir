@@ -919,7 +919,7 @@ func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithMarkerOutsideDelayP
 			cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 1
 			cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
 			# HELP cortex_compactor_blocks_cleaned_total Total number of blocks deleted.
-           	# TYPE cortex_compactor_blocks_cleaned_total counter
+			# TYPE cortex_compactor_blocks_cleaned_total counter
 			cortex_compactor_blocks_cleaned_total 0
 			`),
 		"cortex_bucket_blocks_count",
@@ -1002,7 +1002,7 @@ func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithGlobalMarkerPresent
 			cortex_compactor_blocks_marked_for_deletion_total{reason="partial"} 0
 			cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
 			# HELP cortex_compactor_blocks_cleaned_total Total number of blocks deleted.
-           	# TYPE cortex_compactor_blocks_cleaned_total counter
+			# TYPE cortex_compactor_blocks_cleaned_total counter
 			cortex_compactor_blocks_cleaned_total 0
 			`),
 		"cortex_bucket_blocks_count",
