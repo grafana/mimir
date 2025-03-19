@@ -53,6 +53,13 @@ func (l *blockingLimiter) AcquirePermit(ctx context.Context) (Permit, error) {
 
 func (l *blockingLimiter) CanAcquirePermit() bool {
 	if l.reactiveLimiter.CanAcquirePermit() {
+		l.mu.RLock()
+		if l.rejectionRate != 0 {
+			l.mu.Lock()
+			l.rejectionRate = 0
+			l.mu.Unlock()
+		}
+		l.mu.RUnlock()
 		return true
 	}
 
@@ -73,8 +80,8 @@ func (l *blockingLimiter) CanAcquirePermit() bool {
 }
 
 func (l *blockingLimiter) RejectionRate() float64 {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.mu.RLock()
+	defer l.mu.RUnlock()
 	return l.rejectionRate
 }
 

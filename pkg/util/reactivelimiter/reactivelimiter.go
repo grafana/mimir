@@ -155,7 +155,7 @@ type reactiveLimiter struct {
 
 	// Mutable state
 	semaphore *mimirsync.DynamicSemaphore
-	mu        sync.Mutex
+	mu        sync.RWMutex
 
 	// Guarded by mu
 	limit            float64        // The current concurrency limit
@@ -189,8 +189,8 @@ func (l *reactiveLimiter) CanAcquirePermit() bool {
 }
 
 func (l *reactiveLimiter) Limit() int {
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	l.mu.RLock()
+	defer l.mu.RUnlock()
 	return int(l.limit)
 }
 
