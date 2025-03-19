@@ -250,22 +250,9 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 	}()
 
 	level.Debug(logger).Log("msg", "loading sparse index-header from disk")
-	sparseHeaders := &indexheaderpb.Sparse{}
-
-	gzipped := bytes.NewReader(sparseData)
-	gzipReader, err := gzip.NewReader(gzipped)
+	sparseHeaders, err := decodeSparseData(logger, sparseData)
 	if err != nil {
-		return fmt.Errorf("failed to create sparse index-header gzip reader: %w", err)
-	}
-	defer runutil.CloseWithLogOnErr(logger, gzipReader, "close sparse index-header gzip reader")
-
-	sparseData, err = io.ReadAll(gzipReader)
-	if err != nil {
-		return fmt.Errorf("failed to read sparse index-header: %w", err)
-	}
-
-	if err := sparseHeaders.Unmarshal(sparseData); err != nil {
-		return fmt.Errorf("failed to decode sparse index-header file: %w", err)
+		return err
 	}
 
 	r.symbols, err = streamindex.NewSymbolsFromSparseHeader(r.factory, sparseHeaders.Symbols, r.indexVersion, int(r.toc.Symbols))
@@ -279,6 +266,27 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 	}
 
 	return nil
+}
+
+func decodeSparseData(logger log.Logger, sparseData []byte) (*indexheaderpb.Sparse, error) {
+	sparseHeaders := &indexheaderpb.Sparse{}
+
+	gzipped := bytes.NewReader(sparseData)
+	gzipReader, err := gzip.NewReader(gzipped)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sparse index-header gzip reader: %w", err)
+	}
+	defer runutil.CloseWithLogOnErr(logger, gzipReader, "close sparse index-header gzip reader")
+
+	sparseData, err = io.ReadAll(gzipReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read sparse index-header: %w", err)
+	}
+
+	if err := sparseHeaders.Unmarshal(sparseData); err != nil {
+		return nil, fmt.Errorf("failed to decode sparse index-header file: %w", err)
+	}
+	return sparseHeaders, err
 }
 
 // loadFromIndexHeader loads in symbols and postings offset table from the index-header.

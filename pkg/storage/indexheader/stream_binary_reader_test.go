@@ -134,6 +134,7 @@ func TestStreamBinaryReader_LabelValuesOffsetsHonorsContextCancel(t *testing.T) 
 // TestStreamBinaryReader_UsesSparseHeaderFromObjectStore tests if StreamBinaryReader uses
 // a sparse index header that's already present in the object store instead of recreating it.
 func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
+	const samplingRate = 32
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
@@ -154,17 +155,18 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 	require.NoError(t, block.Upload(ctx, logger, bkt, filepath.Join(tmpDir, blockID.String()), nil))
 
 	// First, create a StreamBinaryReader to generate the sparse header file
-	origReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	origReader, err := NewStreamBinaryReader(ctx, logger, bkt, tmpDir, blockID, samplingRate, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(t, err)
 	require.NoError(t, origReader.Close())
 
 	// Get the generated sparse header file path
 	sparseHeadersPath := filepath.Join(tmpDir, blockID.String(), block.SparseIndexHeaderFilename)
 
-	// Read the sparse header file content and calculate its hash
-	sparseData, err := os.ReadFile(sparseHeadersPath)
+	// Read the sparse header file content and save its size
+	originalSparseData, err := os.ReadFile(sparseHeadersPath)
 	require.NoError(t, err)
-	originalFileSize := len(sparseData)
+	originalSparseHeader, err := decodeSparseData(logger, originalSparseData)
+	require.NoError(t, err)
 
 	// Delete the local sparse header file to ensure we'll need to get it from the object store
 	require.NoError(t, os.Remove(sparseHeadersPath))
@@ -174,17 +176,16 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 
 	// Upload the sparse header directly to the object store
 	sparseHeaderObjPath := filepath.Join(blockID.String(), block.SparseIndexHeaderFilename)
-	require.NoError(t, bkt.Upload(ctx, sparseHeaderObjPath, bytes.NewReader(sparseData)))
+	require.NoError(t, bkt.Upload(ctx, sparseHeaderObjPath, bytes.NewReader(originalSparseData)))
 
 	// Create a bucket that can track downloads and verify content
 	trackedBkt := &trackedBucket{
-		BucketReader:     bkt,
-		expectedPath:     sparseHeaderObjPath,
-		fileSizeExpected: originalFileSize,
+		BucketReader: bkt,
+		expectedPath: sparseHeaderObjPath,
 	}
 
 	// Create a new StreamBinaryReader - it should use the sparse header from the object store
-	newReader, err := NewStreamBinaryReader(ctx, logger, trackedBkt, tmpDir, blockID, 3, NewStreamBinaryReaderMetrics(nil), Config{})
+	newReader, err := NewStreamBinaryReader(ctx, logger, trackedBkt, tmpDir, blockID, samplingRate, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(t, err)
 	defer newReader.Close()
 
@@ -193,10 +194,11 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 	require.Equal(t, sparseHeaderObjPath, trackedBkt.downloadedPath, "The correct path should have been downloaded")
 
 	// Verify that the sparse header file exists locally
-	fileInfo, err := os.Stat(sparseHeadersPath)
+	newSparseData, err := os.ReadFile(sparseHeadersPath)
 	require.NoError(t, err)
-	require.NotNil(t, fileInfo, "Sparse header file should exist locally after reading from object store")
-	require.Equal(t, int64(originalFileSize), fileInfo.Size(), "Downloaded file should have the same size as the original")
+	newSparseHeader, err := decodeSparseData(logger, newSparseData)
+	require.NoError(t, err)
+	require.Equal(t, originalSparseHeader, newSparseHeader, "Downloaded file should have the same size as the original")
 
 	// Check that the reader is functional by performing a label names query
 	labelNames, err := newReader.LabelNames(ctx)
@@ -207,10 +209,9 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 // trackedBucket wraps a BucketReader and tracks details about downloaded files
 type trackedBucket struct {
 	objstore.BucketReader
-	expectedPath     string
-	fileSizeExpected int
-	getWasCalled     bool
-	downloadedPath   string
+	expectedPath   string
+	getWasCalled   bool
+	downloadedPath string
 }
 
 func (b *trackedBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
