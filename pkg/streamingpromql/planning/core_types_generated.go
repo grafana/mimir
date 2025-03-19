@@ -5,12 +5,18 @@ package planning
 import (
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/promql/parser"
 )
 
 // TODO: actually generate some / all of this automatically
 // TODO: tests for equality edge cases
+// TODO: tests for descriptions
 
 func (a *AggregateExpression) Type() string {
 	return "AggregateExpression"
@@ -49,6 +55,39 @@ func (a *AggregateExpression) Equals(other Node) bool {
 		a.Without == otherAggregateExpression.Without
 }
 
+func (a *AggregateExpression) Describe() string {
+	builder := &strings.Builder{}
+	builder.WriteString(a.Op.String())
+
+	if a.Without || len(a.Grouping) > 0 {
+		if a.Without {
+			builder.WriteString(" without(")
+		} else {
+			builder.WriteString(" by(")
+		}
+
+		for i, l := range a.Grouping {
+			if i > 0 {
+				builder.WriteString(", ")
+			}
+
+			builder.WriteString(l)
+		}
+
+		builder.WriteString(")")
+	}
+
+	return builder.String()
+}
+
+func (a *AggregateExpression) ChildrenLabels() []string {
+	if a.Param == nil {
+		return []string{""}
+	}
+
+	return []string{"expression", "parameter"}
+}
+
 func (b *BinaryExpression) Type() string {
 	return "BinaryExpression"
 }
@@ -78,6 +117,65 @@ func (b *BinaryExpression) Equals(other Node) bool {
 		b.ReturnBool == otherBinaryExpression.ReturnBool
 }
 
+func (b *BinaryExpression) Describe() string {
+	builder := &strings.Builder{}
+
+	builder.WriteString("LHS ")
+	builder.WriteString(b.Op.String())
+
+	if b.ReturnBool {
+		builder.WriteString(" bool")
+	}
+
+	builder.WriteString(" RHS")
+
+	if b.VectorMatching == nil {
+		return builder.String()
+	}
+
+	if b.VectorMatching.On || len(b.VectorMatching.MatchingLabels) > 0 {
+		if b.VectorMatching.On {
+			builder.WriteString(" on(")
+		} else {
+			builder.WriteString(" ignoring(")
+		}
+
+		for i, l := range b.VectorMatching.MatchingLabels {
+			if i > 0 {
+				builder.WriteString(", ")
+			}
+
+			builder.WriteString(l)
+		}
+
+		builder.WriteRune(')')
+	}
+
+	if b.VectorMatching.Card == parser.CardOneToMany || b.VectorMatching.Card == parser.CardManyToOne {
+		if b.VectorMatching.Card == parser.CardOneToMany {
+			builder.WriteString(" group_right(")
+		} else {
+			builder.WriteString(" group_left(")
+		}
+
+		for i, l := range b.VectorMatching.Include {
+			if i > 0 {
+				builder.WriteString(", ")
+			}
+
+			builder.WriteString(l)
+		}
+
+		builder.WriteRune(')')
+	}
+
+	return builder.String()
+}
+
+func (b *BinaryExpression) ChildrenLabels() []string {
+	return []string{"LHS", "RHS"}
+}
+
 func (f *FunctionCall) Type() string {
 	return "FunctionCall"
 }
@@ -98,6 +196,24 @@ func (f *FunctionCall) Equals(other Node) bool {
 		slices.EqualFunc(f.Args, otherFunctionCall.Args, func(a, b Node) bool {
 			return a.Equals(b)
 		})
+}
+
+func (f *FunctionCall) Describe() string {
+	return fmt.Sprintf("%v(...)", f.FunctionName)
+}
+
+func (f *FunctionCall) ChildrenLabels() []string {
+	if len(f.Args) == 1 {
+		return []string{""}
+	}
+
+	l := make([]string, len(f.Args))
+
+	for i := range l {
+		l[i] = fmt.Sprintf("param %v", i)
+	}
+
+	return l
 }
 
 func (n *NumberLiteral) Type() string {
@@ -122,6 +238,14 @@ func (n *NumberLiteral) Equals(other Node) bool {
 	return ok && n.Value == otherLiteral.Value
 }
 
+func (n *NumberLiteral) Describe() string {
+	return strconv.FormatFloat(n.Value, 'g', -1, 64)
+}
+
+func (n *NumberLiteral) ChildrenLabels() []string {
+	return nil
+}
+
 func (n *StringLiteral) Type() string {
 	return "StringLiteral"
 }
@@ -142,6 +266,14 @@ func (n *StringLiteral) Equals(other Node) bool {
 	otherLiteral, ok := other.(*StringLiteral)
 
 	return ok && n.Value == otherLiteral.Value
+}
+
+func (n *StringLiteral) Describe() string {
+	return strconv.QuoteToASCII(n.Value)
+}
+
+func (n *StringLiteral) ChildrenLabels() []string {
+	return nil
 }
 
 func (u *UnaryExpression) Type() string {
@@ -170,6 +302,14 @@ func (u *UnaryExpression) Equals(other Node) bool {
 		u.Inner.Equals(otherUnaryExpression.Inner)
 }
 
+func (u *UnaryExpression) Describe() string {
+	return u.Op.String()
+}
+
+func (u *UnaryExpression) ChildrenLabels() []string {
+	return []string{""}
+}
+
 func (v *VectorSelector) Type() string {
 	return "VectorSelector"
 }
@@ -193,6 +333,44 @@ func (v *VectorSelector) Equals(other Node) bool {
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
 		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && *v.Timestamp == *otherVectorSelector.Timestamp)) &&
 		v.Offset == otherVectorSelector.Offset
+}
+
+func (v *VectorSelector) Describe() string {
+	return describeSelector(v.Matchers, v.Timestamp, v.Offset, nil)
+}
+
+func describeSelector(matchers []*labels.Matcher, ts *int64, offset time.Duration, rng *time.Duration) string {
+	builder := &strings.Builder{}
+	builder.WriteRune('{')
+	for _, m := range matchers {
+		builder.WriteString(m.String())
+	}
+	builder.WriteRune('}')
+
+	if rng != nil {
+		builder.WriteRune('[')
+		builder.WriteString(rng.String())
+		builder.WriteRune(']')
+	}
+
+	if ts != nil {
+		builder.WriteString(" @ ")
+		builder.WriteString(strconv.FormatInt(*ts, 10))
+		builder.WriteString(" (")
+		builder.WriteString(timestamp.Time(*ts).Format(time.RFC3339))
+		builder.WriteRune(')')
+	}
+
+	if offset != 0 {
+		builder.WriteString(" offset ")
+		builder.WriteString(offset.String())
+	}
+
+	return builder.String()
+}
+
+func (v *VectorSelector) ChildrenLabels() []string {
+	return nil
 }
 
 func (m *MatrixSelector) Type() string {
@@ -219,6 +397,14 @@ func (m *MatrixSelector) Equals(other Node) bool {
 		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && *m.Timestamp == *otherMatrixSelector.Timestamp)) &&
 		m.Offset == otherMatrixSelector.Offset &&
 		m.Range == otherMatrixSelector.Range
+}
+
+func (m *MatrixSelector) Describe() string {
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range)
+}
+
+func (m *MatrixSelector) ChildrenLabels() []string {
+	return nil
 }
 
 func matchersEqual(a, b *labels.Matcher) bool {
@@ -253,4 +439,33 @@ func (s *Subquery) Equals(other Node) bool {
 		s.Offset == otherSubquery.Offset &&
 		s.Range == otherSubquery.Range &&
 		s.Step == otherSubquery.Step
+}
+
+func (s *Subquery) Describe() string {
+	builder := &strings.Builder{}
+
+	builder.WriteRune('[')
+	builder.WriteString(s.Range.String())
+	builder.WriteRune(':')
+	builder.WriteString(s.Step.String())
+	builder.WriteRune(']')
+
+	if s.Timestamp != nil {
+		builder.WriteString(" @ ")
+		builder.WriteString(strconv.FormatInt(*s.Timestamp, 10))
+		builder.WriteString(" (")
+		builder.WriteString(timestamp.Time(*s.Timestamp).Format(time.RFC3339))
+		builder.WriteRune(')')
+	}
+
+	if s.Offset != 0 {
+		builder.WriteString(" offset ")
+		builder.WriteString(s.Offset.String())
+	}
+
+	return builder.String()
+}
+
+func (s *Subquery) ChildrenLabels() []string {
+	return []string{""}
 }

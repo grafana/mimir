@@ -39,5 +39,19 @@ type Node interface {
 	// should be ignored.
 	Equals(other Node) bool
 
+	// Describe returns a human-readable representation of this node.
+	//
+	// Returning an empty string is valid.
+	Describe() string
+
+	// ChildrenLabels returns human-readable labels for the children of this node.
+	// The number of labels returned must match the number of children returned by Children.
+	// Each label must be unique.
+	//
+	// For example, a binary expression would return "LHS" and "RHS".
+	//
+	// Returning an empty string for a label is valid.
+	ChildrenLabels() []string
+
 	// FIXME: most of the above methods can be generated automatically
 }
