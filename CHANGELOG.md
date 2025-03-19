@@ -118,6 +118,7 @@
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Ingester: fix goroutines and memory leak when experimental ingest storage enabled and a server-side error occurs during metrics ingestion. #10915
 * [BUGFIX] Alertmanager: Avoid fetching Grafana state if Grafana AM compatibility is not enabled. #10857
+* [BUGFIX] Alertmanager: Fix decoding of queryFromGeneratorURL in templates. #8914
 
 ### Mixin
 
@@ -309,7 +310,6 @@
 * [BUGFIX] PromQL: Ignore native histograms in `topk` and `bottomk` functions and return info annotation instead. #10188
 * [BUGFIX] PromQL: Let `limitk` and `limit_ratio` include native histograms if applicable. #10188
 * [BUGFIX] PromQL: Fix `changes` and `resets` functions to count switch between float and native histograms sample type as change and reset. #10188
-* [BUGFIX] Alertmanager: Fix decoding of queryFromGeneratorURL in templates. #8914
 
 ### Mixin
 
