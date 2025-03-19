@@ -43,6 +43,7 @@ const (
 	validationHeartbeatInterval = 1 * time.Minute       // Duration of time between heartbeats of an in-progress block upload validation
 	validationHeartbeatTimeout  = 5 * time.Minute       // Maximum duration of time to wait until a validation is able to be restarted
 	maximumMetaSizeBytes        = 1 * 1024 * 1024       // 1 MiB, maximum allowed size of an uploaded block's meta.json file
+	maxBlockUploadConcurrency   = 8                     // Max concurrency allowed for a single block upload
 )
 
 var maxBlockUploadSizeBytesFormat = "block exceeds the maximum block size limit of %d bytes"
