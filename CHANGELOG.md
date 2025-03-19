@@ -8,6 +8,7 @@
 
 * [ENHANCEMENT] Dashboards: Include absolute number of notifications attempted to alertmanager in 'Mimir / Ruler'. #10918
 * [ENHANCEMENT] Alerts: Make `MimirRolloutStuck` a critical alert if it has been firing for 6h. #10890
+* [ENHANCEMENT] Compactor: Upload block index file and multiple segment files concurrently. Concurrency scales linearly with block size up to `maxBlockUploadConcurrency`. #10947
 
 ### Jsonnet
 

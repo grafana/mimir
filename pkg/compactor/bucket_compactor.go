@@ -464,7 +464,6 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		begin := time.Now()
 
 		chunksDir := filepath.Join(bdir, block.ChunksDirname)
-
 		opts, err := getUploadOptions(chunksDir)
 		if err != nil {
 			level.Warn(jobLogger).Log("msg", "using default block upload options", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
