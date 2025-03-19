@@ -565,7 +565,7 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 // cleanUserPartialBlocks deletes partial blocks which are safe to be deleted. The provided index is updated accordingly.
 // partialDeletionCutoffTime, if not zero, is used to find blocks without deletion marker that were last modified before this time. Such blocks will be marked for deletion.
 func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map[ulid.ULID]error, idx *bucketindex.Index, partialDeletionCutoffTime time.Time, userBucket objstore.InstrumentedBucket, userLogger log.Logger) {
-	// Collect all blocks with missing meta.json or inconsistent deletion markers into buffered channel.
+	// Collect all blocks with missing meta.json or inconsistent deletion markers.
 	blocks := make([]ulid.ULID, 0, len(partials))
 
 	for blockID, blockErr := range partials {
