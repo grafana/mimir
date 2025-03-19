@@ -60,6 +60,7 @@ func (d *EliminateCommonSubexpressions) Apply(ctx context.Context, plan *plannin
 	// - then we'll process the duplicate "b" selectors
 	//   - we'll replace the "b" selectors with a single reference (but this is not necessary any more - there's only one reference to "b")
 	//   - we'll replace the (a + b) expressions with another single reference (wasteful but not wrong)
+	// TODO: don't deduplicate range vector selectors or subqueries directly - only deduplicate expressions that produce instant vectors
 	// TODO: subset selectors
 	// TODO: exploit associativity to find more common expressions? (eg. (a + b) / (a + c + b) --> (a + b) / (a + b + c) --> X / (X + c))
 	// - likely tricky to do correctly with series matching rules, may not be worth it
