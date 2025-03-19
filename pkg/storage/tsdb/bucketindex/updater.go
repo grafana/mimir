@@ -230,13 +230,15 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 		m, err := w.updateBlockDeletionMarkIndexEntry(ctx, id)
 		if errors.Is(err, ErrBlockDeletionMarkNotFound) {
 			// This could happen if the block is permanently deleted between the "list objects" and now.
-			if isDirEmpty(ctx, w.bkt, id.String()) {
-				level.Warn(w.logger).Log("msg", "skipped missing block deletion mark when updating bucket index", "block", id.String())
+			if isDirEmpty(ctx, w.bkt, id) {
+				level.Info(w.logger).Log("msg", "removing stale block deletion mark", "block", id)
 				if err := w.bkt.Delete(ctx, block.DeletionMarkFilepath(id)); err != nil {
 					level.Warn(w.logger).Log("msg", "failed to clean stale global deletion mark", "block", id.String())
 				}
 				return nil, nil
 			}
+			// If the block's deletion mark is not found and the block's directory contains some files, then it has not yet been
+			// permanently deleted. Record any partially deleted blocks so that we can check if deletion should be retried.
 			partials[id] = err
 			return nil, nil
 		}
@@ -256,13 +258,12 @@ func (w *Updater) updateBlockDeletionMarks(ctx context.Context, old []*BlockDele
 	out = append(out, updatedMarks...)
 
 	level.Info(w.logger).Log("msg", "updated deletion markers for recently marked blocks", "count", len(discovered), "total_deletion_markers", len(out))
-
 	return out, partials, nil
 }
 
-func isDirEmpty(ctx context.Context, bkt objstore.Bucket, id string) bool {
+func isDirEmpty(ctx context.Context, bkt objstore.Bucket, id ulid.ULID) bool {
 	empty := true
-	_ = bkt.Iter(ctx, id, func(_ string) error {
+	_ = bkt.Iter(ctx, id.String(), func(_ string) error {
 		empty = false
 		return nil
 	})

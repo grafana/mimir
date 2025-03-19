@@ -571,10 +571,9 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 	for blockID, blockErr := range partials {
 		// We can safely delete blocks which are partial because the meta.json is missing. Blocks that are missing deletion-mark.json can
 		// be deleted if they exceed the delay period.
-		if !errors.Is(blockErr, bucketindex.ErrBlockMetaNotFound) && !errors.Is(blockErr, bucketindex.ErrBlockDeletionMarkNotFound) {
-			continue
+		if errors.Is(blockErr, bucketindex.ErrBlockMetaNotFound) || errors.Is(blockErr, bucketindex.ErrBlockDeletionMarkNotFound) {
+			blocks = append(blocks, blockID)
 		}
-		blocks = append(blocks, blockID)
 	}
 
 	var mu sync.Mutex

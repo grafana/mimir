@@ -542,14 +542,11 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
-	ts := func(hours int) int64 {
-		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
-	}
-
-	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
-	block2 := createTSDBBlock(t, bucketClient, "user-1", ts(-8), ts(-6), 2, nil)
-	block3 := createTSDBBlock(t, bucketClient, "user-2", ts(-10), ts(-8), 2, nil)
-	block4 := createTSDBBlock(t, bucketClient, "user-2", ts(-8), ts(-6), 2, nil)
+	now := time.Now()
+	block1 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -8), tsOffset(now, -6), 2, nil)
+	block3 := createTSDBBlock(t, bucketClient, "user-2", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
+	block4 := createTSDBBlock(t, bucketClient, "user-2", tsOffset(now, -8), tsOffset(now, -6), 2, nil)
 
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:           time.Hour,
@@ -787,12 +784,9 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
-	ts := func(hours int) int64 {
-		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
-	}
-
-	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
-	block2 := createTSDBBlock(t, bucketClient, "user-1", ts(-8), ts(-6), 2, nil)
+	now := time.Now()
+	block1 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -8), tsOffset(now, -6), 2, nil)
 
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:                 time.Hour,
@@ -854,23 +848,16 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	))
 }
 
-func checkBlockDeletionMarker(t *testing.T, user string, cl objstore.Bucket, blockID ulid.ULID, deletionMarkerExists bool) {
-	checkBlock(t, user, cl, blockID, true, deletionMarkerExists)
-}
-
 func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithMarkerOutsideDelayPeriod(t *testing.T) {
 
 	deletionDelay := time.Hour
 	parentClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient := block.BucketWithGlobalMarkers(parentClient)
 
-	ts := func(hours int) int64 {
-		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
-	}
+	now := time.Now()
+	block1 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
 
-	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
-
-	createDeletionMark(t, bucketClient, "user-1", block1, time.Now().Add(-deletionDelay).Add(-time.Minute))
+	createDeletionMark(t, bucketClient, "user-1", block1, now.Add(-deletionDelay).Add(-time.Minute))
 
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:                 deletionDelay,
@@ -935,12 +922,10 @@ func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithGlobalMarkerPresent
 	parentClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient := block.BucketWithGlobalMarkers(parentClient)
 
-	ts := func(hours int) int64 {
-		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
-	}
+	now := time.Now()
 
-	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
-	createDeletionMark(t, bucketClient, "user-1", block1, time.Now().Add(-deletionDelay).Add(-time.Minute))
+	block1 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
+	createDeletionMark(t, bucketClient, "user-1", block1, now.Add(-deletionDelay).Add(-time.Minute))
 
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:                 deletionDelay,
@@ -1016,12 +1001,9 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
-	ts := func(hours int) int64 {
-		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
-	}
-
-	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
-	block2 := createTSDBBlock(t, bucketClient, "user-2", ts(-8), ts(-6), 2, nil)
+	now := time.Now()
+	block1 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, "user-2", tsOffset(now, -8), tsOffset(now, -6), 2, nil)
 
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:                 time.Hour,
@@ -1103,12 +1085,10 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
 
-	ts := func(hours int) int64 {
-		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
-	}
+	now := time.Now()
 
 	// Create a partial block.
-	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
+	block1 := createTSDBBlock(t, bucketClient, "user-1", tsOffset(now, -10), tsOffset(now, -8), 2, nil)
 	err := bucketClient.Delete(ctx, path.Join("user-1", block1.String(), block.MetaFilename))
 	require.NoError(t, err)
 
@@ -1628,6 +1608,14 @@ func TestBlocksCleaner_instrumentBucketIndexUpdate(t *testing.T) {
 		cortex_bucket_index_last_successful_update_timestamp_seconds{user="user-1"} 1
 		`),
 		"cortex_bucket_index_last_successful_update_timestamp_seconds"))
+}
+
+func tsOffset(dt time.Time, hours int) int64 {
+	return dt.Add(time.Duration(hours)*time.Hour).Unix() * 1000
+}
+
+func checkBlockDeletionMarker(t *testing.T, user string, cl objstore.Bucket, blockID ulid.ULID, deletionMarkerExists bool) {
+	checkBlock(t, user, cl, blockID, true, deletionMarkerExists)
 }
 
 type hookBucket struct {
