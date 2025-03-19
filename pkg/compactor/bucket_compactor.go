@@ -8,7 +8,6 @@ package compactor
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -463,10 +462,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
 		begin := time.Now()
 
-		chunksDir := filepath.Join(bdir, block.ChunksDirname)
-		opts, err := getUploadOptions(chunksDir)
-		if err != nil {
-			level.Warn(jobLogger).Log("msg", "using default block upload options", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
+		opts := []objstore.UploadOption{
+			objstore.WithUploadConcurrency(maxBlockUploadConcurrency),
 		}
 
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil, opts...); err != nil {
@@ -507,22 +504,6 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 	}
 	return true, compIDs, nil
-}
-
-func getUploadOptions(chunksDir string) ([]objstore.UploadOption, error) {
-	var con int
-	if err := filepath.WalkDir(chunksDir, func(_ string, _ fs.DirEntry, _ error) error {
-		if con < maxBlockUploadConcurrency {
-			con++
-		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-
-	return []objstore.UploadOption{
-		objstore.WithUploadConcurrency(con),
-	}, nil
 }
 
 func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.Bucket, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
