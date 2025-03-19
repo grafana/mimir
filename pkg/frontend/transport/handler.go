@@ -44,6 +44,20 @@ const (
 	cacheControlHeader           = "Cache-Control"
 	cacheControlLogField         = "header_cache_control"
 	responseQueryStatsHeaderName = "X-Mimir-Response-Query-Stats"
+	encodeTimeSeconds            = "encode_time_seconds"
+	estimatedSeriesCount         = "estimated_series_count"
+	fetchedChunkBytes            = "fetched_chunk_bytes"
+	fetchedChunksCount           = "fetched_chunks_count"
+	fetchedIndexBytes            = "fetched_index_bytes"
+	fetchedSeriesCount           = "fetched_series_count"
+	queryWallTimeSeconds         = "query_wall_time_seconds"
+	queueTimeSeconds             = "queue_time_seconds"
+	responseSizeBytes            = "response_size_bytes"
+	responseTime                 = "response_time"
+	resultsCacheHitBytes         = "results_cache_hit_bytes"
+	resultsCacheMissBytes        = "results_cache_miss_bytes"
+	shardedQueries               = "sharded_queries"
+	splitQueries                 = "split_queries"
 )
 
 var (
@@ -329,19 +343,19 @@ func (f *Handler) reportQueryStats(
 		"route_name", middleware.ExtractRouteName(r.Context()),
 		"user_agent", r.UserAgent(),
 		"status_code", queryResponseStatusCode,
-		"response_time", queryResponseTime,
-		"response_size_bytes", queryResponseSizeBytes,
-		"query_wall_time_seconds", wallTime.Seconds(),
-		"fetched_series_count", numSeries,
-		"fetched_chunk_bytes", numBytes,
-		"fetched_chunks_count", numChunks,
-		"fetched_index_bytes", numIndexBytes,
-		"sharded_queries", stats.LoadShardedQueries(),
-		"split_queries", stats.LoadSplitQueries(),
+		responseTime, queryResponseTime,
+		responseSizeBytes, queryResponseSizeBytes,
+		queryWallTimeSeconds, wallTime.Seconds(),
+		fetchedSeriesCount, numSeries,
+		fetchedChunkBytes, numBytes,
+		fetchedChunksCount, numChunks,
+		fetchedIndexBytes, numIndexBytes,
+		shardedQueries, stats.LoadShardedQueries(),
+		splitQueries, stats.LoadSplitQueries(),
 		"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
-		"estimated_series_count", stats.GetEstimatedSeriesCount(),
-		"queue_time_seconds", stats.LoadQueueTime().Seconds(),
-		"encode_time_seconds", stats.LoadEncodeTime().Seconds(),
+		estimatedSeriesCount, stats.GetEstimatedSeriesCount(),
+		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
+		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
 		"samples_processed", stats.LoadSamplesProcessed(),
 	}, formatQueryString(details, queryString)...)
 
@@ -358,8 +372,8 @@ func (f *Handler) reportQueryStats(
 			logMessage = append(logMessage, "time_since_max_time", queryStartTime.Sub(details.MaxT))
 		}
 		logMessage = append(logMessage,
-			"results_cache_hit_bytes", details.ResultsCacheHitBytes,
-			"results_cache_miss_bytes", details.ResultsCacheMissBytes,
+			resultsCacheHitBytes, details.ResultsCacheHitBytes,
+			resultsCacheMissBytes, details.ResultsCacheMissBytes,
 		)
 	}
 
@@ -510,36 +524,34 @@ func getResponseQueryStats(queryResponseTime time.Duration, queryResponseSizeByt
 	}
 	stats := details.QuerierStats
 	return []string{
-		statsValue("encode", stats.LoadEncodeTime()),
-		statsValueWithKey("series_count", "c", stats.LoadEstimatedSeriesCount()),
-		statsValueWithKey("chunk_bytes", "c", stats.LoadFetchedChunkBytes()),
-		statsValueWithKey("chunks_count", "c", stats.LoadFetchedChunks()),
-		statsValueWithKey("index_bytes", "c", stats.LoadFetchedIndexBytes()),
-		statsValueWithKey("series_fetched", "c", stats.LoadFetchedSeries()),
-		statsValueWithKey("wall_time", "c", stats.LoadWallTime()),
-		statsValue("queue", stats.LoadQueueTime()),
-		statsValueWithKey("response_size", "c", queryResponseSizeBytes),
-		statsValue("response_time", queryResponseTime),
-		statsValueWithKey("cache_hit", "c", details.ResultsCacheHitBytes),
-		statsValueWithKey("cache_miss", "c", details.ResultsCacheMissBytes),
-		statsValueWithKey("sharded", "c", stats.LoadShardedQueries()),
-		statsValueWithKey("split", "c", stats.LoadSplitQueries()),
+		statsValue(encodeTimeSeconds, stats.LoadEncodeTime().Seconds()),
+		statsValue(estimatedSeriesCount, stats.LoadEstimatedSeriesCount()),
+		statsValue(fetchedChunkBytes, stats.LoadFetchedChunkBytes()),
+		statsValue(fetchedChunksCount, stats.LoadFetchedChunks()),
+		statsValue(fetchedIndexBytes, stats.LoadFetchedIndexBytes()),
+		statsValue(fetchedSeriesCount, stats.LoadFetchedSeries()),
+		statsValue(queryWallTimeSeconds, stats.LoadWallTime().Seconds()),
+		statsValue(queueTimeSeconds, stats.LoadQueueTime().Seconds()),
+		statsValue(responseSizeBytes, queryResponseSizeBytes),
+		statsValue(responseTime, queryResponseTime),
+		statsValue(resultsCacheHitBytes, details.ResultsCacheHitBytes),
+		statsValue(resultsCacheMissBytes, details.ResultsCacheMissBytes),
+		statsValue(shardedQueries, stats.LoadShardedQueries()),
+		statsValue(splitQueries, stats.LoadSplitQueries()),
 	}
 }
 
 func statsValue(name string, val interface{}) string {
-	return statsValueWithKey(name, "val", val)
-}
-
-func statsValueWithKey(name string, key string, val interface{}) string {
 	switch v := val.(type) {
 	case time.Duration:
 		durationInMs := strconv.FormatFloat(float64(v)/float64(time.Millisecond), 'f', -1, 64)
 		return fmt.Sprintf("%s;dur=%s", name, durationInMs)
+	case float64: // duration in seconds.
+		return fmt.Sprintf("%s;dur=%v", name, val)
 	case uint64:
-		return fmt.Sprintf("%s;%s=%s", name, key, strconv.FormatUint(v, 10))
+		return fmt.Sprintf("%s;val=%s", name, strconv.FormatUint(v, 10))
 	default:
-		return fmt.Sprintf("%s;%s=%v", name, key, val)
+		return fmt.Sprintf("%s;val=%v", name, val)
 	}
 }
 
