@@ -2815,6 +2815,7 @@ respsLoop:
 			return nil, err
 		}
 		// Make safe copies of labels.
+		// TODO: Review.
 		m.InternStrings(strings.Clone)
 		result = append(result, m)
 	}
