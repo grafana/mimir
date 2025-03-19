@@ -96,9 +96,6 @@ func (e *SoftAppendErrorProcessor) ProcessErr(err error, ts int64, labels []mimi
 		return true
 
 	// Map TSDB native histogram validation errors to soft errors.
-	case errors.Is(err, storage.ErrOOONativeHistogramsDisabled):
-		e.errOOONativeHistogramsDisabled(err, ts, labels)
-		return true
 	case errors.Is(err, histogram.ErrHistogramCountMismatch):
 		e.errHistogramCountMismatch(err, ts, labels)
 		return true
