@@ -42,9 +42,10 @@ func TestBlockingLimiter_AcquirePermit(t *testing.T) {
 	assertBlocked(2)
 	go acquireBlocking()
 	assertBlocked(3)
+	assert.Equal(t, .5, limiter.computeRejectionRate())
 	go acquireBlocking()
 	assertBlocked(4)
-	assert.Equal(t, .5, limiter.RejectionRate())
+	assert.Equal(t, 1.0, limiter.computeRejectionRate())
 
 	// Queue is full
 	permit, err := limiter.AcquirePermit(context.Background())
@@ -52,7 +53,7 @@ func TestBlockingLimiter_AcquirePermit(t *testing.T) {
 	require.ErrorIs(t, err, ErrExceeded)
 	assertBlocked(4)
 	require.Eventually(t, func() bool {
-		return limiter.RejectionRate() == 1.0
+		return limiter.computeRejectionRate() == 1.0
 	}, 300*time.Millisecond, 10*time.Millisecond)
 }
 

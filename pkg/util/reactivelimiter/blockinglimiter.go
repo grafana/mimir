@@ -21,19 +21,12 @@ type BlockingLimiter interface {
 	// CanAcquirePermit returns whether it's currently possible to acquire a permit, based on the number of requests
 	// inflight, the current queue size, and current rejection threshold.
 	CanAcquirePermit() bool
-
-	// RejectionRate returns the current rate, from 0 to 1, at which the limiter will reject requests, based on recent
-	// execution times.
-	RejectionRate() float64
 }
 
 // blockingLimiter wraps an adaptiveLimiter and blocks some portion of requests when the adaptiveLimiter is at its
 // limit.
 type blockingLimiter struct {
 	*reactiveLimiter
-
-	// Mutable state
-	rejectionRate float64 // Guarded by mu
 }
 
 func NewBlockingLimiter(config *Config, logger log.Logger) BlockingLimiter {
@@ -53,23 +46,10 @@ func (l *blockingLimiter) AcquirePermit(ctx context.Context) (Permit, error) {
 
 func (l *blockingLimiter) CanAcquirePermit() bool {
 	if l.reactiveLimiter.CanAcquirePermit() {
-		l.mu.RLock()
-		if l.rejectionRate != 0 {
-			l.mu.Lock()
-			l.rejectionRate = 0
-			l.mu.Unlock()
-		}
-		l.mu.RUnlock()
 		return true
 	}
 
-	l.mu.Lock()
-	rejectionThreshold := int(l.limit * l.config.InitialRejectionFactor)
-	maxQueueSize := int(l.limit * l.config.MaxRejectionFactor)
-	rejectionRate := computeRejectionRate(l.Blocked(), rejectionThreshold, maxQueueSize)
-	l.rejectionRate = rejectionRate
-	l.mu.Unlock()
-
+	rejectionRate := l.computeRejectionRate()
 	if rejectionRate == 0 {
 		return true
 	}
@@ -79,10 +59,10 @@ func (l *blockingLimiter) CanAcquirePermit() bool {
 	return true
 }
 
-func (l *blockingLimiter) RejectionRate() float64 {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return l.rejectionRate
+func (l *blockingLimiter) computeRejectionRate() float64 {
+	rejectionThreshold := int(l.limit * l.config.InitialRejectionFactor)
+	maxQueueSize := int(l.limit * l.config.MaxRejectionFactor)
+	return computeRejectionRate(l.Blocked(), rejectionThreshold, maxQueueSize)
 }
 
 func computeRejectionRate(queueSize, rejectionThreshold, maxQueueSize int) float64 {
