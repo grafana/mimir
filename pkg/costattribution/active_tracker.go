@@ -200,8 +200,8 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 		}
 		at.observedMtx.RUnlock()
 		at.observedMtx.Lock()
-		as, ok := at.observed[string(buf.Bytes())]
-		if ok && as.activeSeries.Load() == 0 {
+		c, ok := at.observed[string(buf.Bytes())]
+		if ok && c.activeSeries.Load() == 0 {
 			// use buf.String() instead of string(buf.Bytes()) to fix the lint issue
 			delete(at.observed, buf.String())
 		}
