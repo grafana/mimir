@@ -90,13 +90,13 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	createDeletionMark(t, bucketClient, "user-2", block7, now.Add(-deletionDelay).Add(-time.Hour))         // Block reached the deletion threshold.
 
 	// Blocks for user-3, marked for deletion.
-	require.NoError(t, tsdb.WriteTenantDeletionMark(context.Background(), bucketClient, "user-3", nil, tsdb.NewTenantDeletionMark(time.Now())))
+	require.NoError(t, tsdb.WriteTenantDeletionMark(context.Background(), bucketClient, "user-3", nil, tsdb.NewTenantDeletionMark(now)))
 	block9 := createTSDBBlock(t, bucketClient, "user-3", 10, 30, 2, nil)
 	block10 := createTSDBBlock(t, bucketClient, "user-3", 30, 50, 2, nil)
 
 	// User-4 with no more blocks, but couple of mark and debug files. Should be fully deleted.
-	user4Mark := tsdb.NewTenantDeletionMark(time.Now())
-	user4Mark.FinishedTime = util.UnixSecondsFromTime(time.Now().Add(-60 * time.Second)) // Set to check final user cleanup.
+	user4Mark := tsdb.NewTenantDeletionMark(now)
+	user4Mark.FinishedTime = util.UnixSecondsFromTime(now.Add(-60 * time.Second)) // Set to check final user cleanup.
 	require.NoError(t, tsdb.WriteTenantDeletionMark(context.Background(), bucketClient, "user-4", nil, user4Mark))
 	user4DebugMetaFile := path.Join("user-4", block.DebugMetas, "meta.json")
 	require.NoError(t, bucketClient.Upload(context.Background(), user4DebugMetaFile, strings.NewReader("some random content here")))
@@ -1139,8 +1139,9 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 
 	const tenant = "user"
 
-	objectTime := time.Now().Add(-1 * time.Hour).Truncate(time.Second) // ignore milliseconds, as not all filesystems store them.
-	blockID := createTSDBBlock(t, b, tenant, objectTime.UnixMilli(), time.Now().UnixMilli(), 2, nil)
+	now := time.Now()
+	objectTime := now.Add(-1 * time.Hour).Truncate(time.Second) // ignore milliseconds, as not all filesystems store them.
+	blockID := createTSDBBlock(t, b, tenant, objectTime.UnixMilli(), now.UnixMilli(), 2, nil)
 	for _, f := range []string{"meta.json", "index", "chunks/000001", "tombstones"} {
 		require.NoError(t, os.Chtimes(filepath.Join(dir, tenant, blockID.String(), filepath.FromSlash(f)), objectTime, objectTime))
 	}
