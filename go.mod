@@ -22,7 +22,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20250314184143-8abd91ce153f
+	github.com/grafana/dskit v0.0.0-20250317110113-267c3994bf46
 	github.com/grafana/e2e v0.1.2-0.20250306030804-b80b212be908
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.11
@@ -124,6 +124,8 @@ require (
 	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.8 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.25.1 // indirect
+	github.com/hashicorp/go-metrics v0.5.4 // indirect
+	github.com/hashicorp/go-msgpack/v2 v2.1.2 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/go-secure-stdlib/parseutil v0.1.7 // indirect
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
@@ -225,17 +227,16 @@ require (
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
 	github.com/grafana/gomemcache v0.0.0-20250228145437-da7b95fd2ac1
-	github.com/hashicorp/consul/api v1.31.0 // indirect
+	github.com/hashicorp/consul/api v1.31.2 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
-	github.com/hashicorp/go-msgpack v1.1.5 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.6 // indirect
-	github.com/hashicorp/memberlist v0.5.0 // indirect
-	github.com/hashicorp/serf v0.10.1 // indirect
+	github.com/hashicorp/memberlist v0.5.3 // indirect
+	github.com/hashicorp/serf v0.10.2 // indirect
 	github.com/hashicorp/vault/api/auth/approle v0.8.0
 	github.com/hashicorp/vault/api/auth/kubernetes v0.8.0
 	github.com/hashicorp/vault/api/auth/userpass v0.8.0
@@ -287,7 +288,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.59.0 // indirect
 	go.opentelemetry.io/otel/metric v1.34.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/exp v0.0.0-20241215155358-4a5509556b9e // indirect
+	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8 // indirect
 	golang.org/x/mod v0.22.0 // indirect
 	golang.org/x/oauth2 v0.27.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
@@ -308,7 +309,7 @@ replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus 
 // - https://github.com/hashicorp/memberlist/pull/260
 // - https://github.com/grafana/memberlist/pull/3
 // - https://github.com/hashicorp/memberlist/pull/263
-replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220714140823-09ffed8adbbe
+replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20250317104852-00c1ea42224b
 
 // gopkg.in/yaml.v3
 // + https://github.com/go-yaml/yaml/pull/691
