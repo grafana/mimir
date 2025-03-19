@@ -231,7 +231,7 @@ func TestAggregateBy(t *testing.T) {
 			expectedIdx := 0
 			for _, g := range tc.rn.Groups {
 				for _, r := range g.Rules {
-					require.Equal(t, tc.expectedExpr[expectedIdx], r.Expr.Value)
+					require.Equal(t, tc.expectedExpr[expectedIdx], r.Expr)
 					expectedIdx++
 				}
 			}
@@ -302,7 +302,7 @@ func TestLintExpressions(t *testing.T) {
 
 			backend := MimirBackend
 			c, m, err := r.LintExpressions(backend)
-			rexpr := r.Groups[0].Rules[0].Expr.Value
+			rexpr := r.Groups[0].Rules[0].Expr
 
 			require.Equal(t, tc.count, c)
 			require.Equal(t, tc.modified, m)

@@ -31,7 +31,6 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/integration/ca"
 	"github.com/grafana/mimir/integration/e2emimir"
@@ -1713,28 +1712,16 @@ func createTestRuleGroup(opts ...testRuleGroupsOption) rulefmt.RuleGroup {
 }
 
 func recordingRule(record, expr string) rulefmt.Rule {
-	var recordNode = yaml.Node{}
-	var exprNode = yaml.Node{}
-
-	recordNode.SetString(record)
-	exprNode.SetString(expr)
-
 	return rulefmt.Rule{
-		Record: recordNode,
-		Expr:   exprNode,
+		Record: record,
+		Expr:   expr,
 	}
 }
 
 func alertingRule(alert, expr string) rulefmt.Rule {
-	var alertNode = yaml.Node{}
-	var exprNode = yaml.Node{}
-
-	alertNode.SetString(alert)
-	exprNode.SetString(expr)
-
 	return rulefmt.Rule{
-		Alert: alertNode,
-		Expr:  exprNode,
+		Alert: alert,
+		Expr:  expr,
 		For:   30,
 	}
 }
