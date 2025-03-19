@@ -437,3 +437,172 @@ func TestLessThan(t *testing.T) {
 	assert.False(t, specLessThan(schedulerpb.JobSpec{CommitRecTs: now}, schedulerpb.JobSpec{CommitRecTs: oneHourAgo}))
 	assert.False(t, specLessThan(schedulerpb.JobSpec{CommitRecTs: now}, schedulerpb.JobSpec{CommitRecTs: now}))
 }
+
+func TestConsumptionRanges(t *testing.T) {
+	ctx := context.Background()
+
+	tests := map[string]struct {
+		offsets        map[int64]int64
+		commit         int64
+		end            int64
+		width          time.Duration
+		boundary       time.Time
+		expectedRanges []offsetRange
+	}{
+		"basic consumption ranges": {
+			offsets: map[int64]int64{
+				100: 1000,
+				101: 1001,
+				200: 2000,
+				300: 3000,
+				400: 4000,
+				500: 5000,
+				599: 5999,
+				600: 6000,
+				700: 7000,
+			},
+			commit:   2000,
+			end:      10001,
+			width:    200 * time.Millisecond,
+			boundary: time.UnixMilli(600),
+			expectedRanges: []offsetRange{
+				{start: 2000, end: 4000},
+				{start: 4000, end: 6000},
+			},
+		},
+		"no new data": {
+			// End offset is the one that was consumed last time.
+			offsets: map[int64]int64{
+				100: 1000,
+				101: 1001,
+				199: 1999,
+			},
+			commit:         2000,
+			end:            2000,
+			width:          200 * time.Millisecond,
+			boundary:       time.UnixMilli(600),
+			expectedRanges: []offsetRange{},
+		},
+		/*
+			"two jobs": {
+				offsets: map[int64]int64{
+					199: 1999,
+					200: 2000,
+					300: 3000,
+				},
+				commit:   2000,
+				end:      3001,
+				width:    200 * time.Millisecond,
+				boundary: time.UnixMilli(600),
+				// jobs would be data inside of time ranges:
+				// - [400, 600) -> [2000, 3000)
+				// - [200, 400) -> [3000, 3001)
+
+				expectedRanges: []offsetRange{
+					{start: 2000, end: 3000},
+					{start: 3000, end: 3001},
+				},
+			}, */
+		"one record: no new data": {
+			offsets: map[int64]int64{
+				199: 1999,
+			},
+			commit:         2000,
+			end:            2000,
+			width:          200 * time.Millisecond,
+			boundary:       time.UnixMilli(599),
+			expectedRanges: []offsetRange{},
+		},
+		"initial consumption: no data": {
+			offsets:        map[int64]int64{},
+			commit:         0,
+			end:            0,
+			width:          200 * time.Millisecond,
+			boundary:       time.UnixMilli(599),
+			expectedRanges: []offsetRange{},
+		},
+		"data gaps wider than range width": {
+			offsets: map[int64]int64{
+				99:  999,
+				100: 1000,
+				101: 1001,
+				102: 1002,
+				103: 1003,
+				104: 1004,
+				105: 1005,
+				106: 1006,
+				107: 1007,
+				108: 1008,
+				109: 1009,
+				110: 1010,
+				111: 1011,
+				112: 1012,
+				// (large gap that would result in duplicate ranges given a naive implementation)
+				500: 1013,
+				501: 1014,
+				502: 1015,
+				503: 1016,
+				600: 1017,
+			},
+			commit:   1000,
+			end:      10001,
+			width:    100 * time.Millisecond,
+			boundary: time.UnixMilli(600),
+			expectedRanges: []offsetRange{
+				{start: 1000, end: 1013},
+				{start: 1013, end: 1017},
+			},
+		},
+		// more cases:
+		// - boundary is before any data
+		// - boundary is after all data
+		// - boundary is in the middle of the data
+		// - boundary is at the end of the data
+		// - boundary is at the start of the data
+		// - boundary is in the middle of the data
+		// - boundary is at the end of the data
+		// - there are data gaps wider than the width
+
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			println(name)
+			offset := make(map[time.Time]int64, len(tt.offsets))
+			for a, b := range tt.offsets {
+				offset[time.UnixMilli(a)] = b
+			}
+			f := &mockOffsetFinder{offsets: offset, end: tt.end}
+			r, err := consumptionRanges(ctx, f, "topic", 0, tt.commit, tt.end, tt.width, tt.boundary)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedRanges, r)
+		})
+	}
+}
+
+// Create an offsetStore that we can just prepopulate with offset scenarios.
+type mockOffsetFinder struct {
+	offsets map[time.Time]int64
+	end     int64
+}
+
+func (o *mockOffsetFinder) offsetAfterTime(ctx context.Context, topic string, partition int32, t time.Time) (int64, error) {
+	// scan the offsets map and return the lowest offset whose time is after t.
+	mint := time.Time{}
+	off := int64(-1)
+	for k, v := range o.offsets {
+		if k.After(t) {
+			if mint.IsZero() || mint.After(k) {
+				mint = k
+				off = v
+			}
+		}
+	}
+	if off == -1 {
+		// Like ListOffsetsAfterMilli, we return the end offset if we don't find any new data.
+		return o.end, nil
+	}
+	return off, nil
+}
+
+var _ offsetStore = (*mockOffsetFinder)(nil)

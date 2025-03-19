@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -148,17 +149,40 @@ func (s *BlockBuilderScheduler) completeObservationMode() {
 	s.observationComplete = true
 }
 
+// updateSchedule examines the state of the Kafka topic and updates the
+// schedule, creating consumption jobs if appropriate.
 func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	startTime := time.Now()
 	defer func() {
 		s.metrics.updateScheduleDuration.Observe(time.Since(startTime).Seconds())
 	}()
 
+	jobs, err := s.computeJobs(ctx)
+	if err != nil {
+		level.Warn(s.logger).Log("msg", "failed to discover jobs", "err", err)
+		return
+	}
+
+	for _, job := range jobs {
+		jobID := fmt.Sprintf("%s/%d/%d", job.Topic, job.Partition, job.StartOffset)
+		s.jobs.addOrUpdate(jobID, *job)
+	}
+}
+
+func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb.JobSpec, error) {
 	lag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.ConsumerGroup, 0)
 	if err != nil {
 		level.Warn(s.logger).Log("msg", "failed to get group lag", "err", err)
-		return
+		return nil, err
 	}
+
+	// We choose a boundary time that is the current time rounded down to the nearest hour.
+	// We want to create jobs that will consume everything up but not including this boundary.
+	// We want to consume nothing after this boundary. A later run will create a new job for the next hour.
+
+	boundary := time.Now().Truncate(time.Hour)
+	of := newOffsetFinder(s.adminClient)
+	jobs := []*schedulerpb.JobSpec{}
 
 	if ps, ok := lag[s.cfg.Kafka.Topic]; ok {
 		for part, gl := range ps {
@@ -166,42 +190,122 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 			s.metrics.partitionStartOffset.WithLabelValues(partStr).Set(float64(gl.Start.Offset))
 			s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(gl.End.Offset))
 			s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(gl.Commit.At))
-		}
-	}
 
-	oldTime := time.Now().Add(-s.cfg.ConsumeInterval)
-	oldOffsets, err := s.adminClient.ListOffsetsAfterMilli(ctx, oldTime.UnixMilli(), s.cfg.Kafka.Topic)
-	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to obtain old offsets", "err", err)
-		return
-	}
+			ranges, err := consumptionRanges(ctx, of, s.cfg.Kafka.Topic, part, gl.Commit.At, gl.End.Offset, time.Hour, boundary)
+			if err != nil {
+				level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
+				continue
+			}
 
-	// See if the group-committed offset per partition is behind our "old" offsets.
-
-	oldOffsets.Each(func(o kadm.ListedOffset) {
-		if o.Err != nil {
-			level.Warn(s.logger).Log("msg", "failed to get old offset", "partition", o.Partition, "err", o.Err)
-			return
-		}
-		if l, ok := lag.Lookup(o.Topic, o.Partition); ok {
-			if l.Commit.At < o.Offset {
-				level.Info(s.logger).Log("msg", "partition ready", "p", o.Partition)
-
-				// The job is uniquely identified by {topic, partition, consumption start offset}.
-				jobID := fmt.Sprintf("%s/%d/%d", o.Topic, o.Partition, l.Commit.At)
-				partState := blockbuilder.PartitionStateFromLag(s.logger, l, 0)
-				s.jobs.addOrUpdate(jobID, schedulerpb.JobSpec{
-					Topic:          o.Topic,
-					Partition:      o.Partition,
-					StartOffset:    l.Commit.At,
-					EndOffset:      l.End.Offset,
-					CommitRecTs:    partState.CommitRecordTimestamp,
-					LastSeenOffset: partState.LastSeenOffset,
-					LastBlockEndTs: partState.LastBlockEnd,
+			for _, r := range ranges {
+				jobs = append(jobs, &schedulerpb.JobSpec{
+					Topic:       s.cfg.Kafka.Topic,
+					Partition:   part,
+					StartOffset: r.start,
+					EndOffset:   r.end,
 				})
 			}
 		}
-	})
+	}
+
+	return jobs, nil
+}
+
+type offsetStore interface {
+	offsetAfterTime(context.Context, string, int32, time.Time) (int64, error)
+}
+
+type offsetFinder struct {
+	offsets     map[time.Time]kadm.ListedOffsets
+	adminClient *kadm.Client
+}
+
+func newOffsetFinder(adminClient *kadm.Client) *offsetFinder {
+	return &offsetFinder{
+		offsets:     make(map[time.Time]kadm.ListedOffsets),
+		adminClient: adminClient,
+	}
+}
+
+type offsetRange struct {
+	start int64 // the first offset to consume
+	end   int64 // the first offset not to consume
+}
+
+// offsetAfterTime is a cached version of adminClient.ListOffsetsAfterMilli that
+// makes use of the fact that we're always asking about the same points in time.
+func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partition int32, t time.Time) (int64, error) {
+	offs, ok := o.offsets[t]
+	if !ok {
+		offs, err := o.adminClient.ListOffsetsAfterMilli(ctx, t.UnixMilli(), topic)
+		if err != nil {
+			return 0, err
+		}
+		o.offsets[t] = offs
+	}
+
+	l, ok := offs.Lookup(topic, partition)
+	if !ok {
+		return 0, fmt.Errorf("no offset found for partition %d at time %s", partition, t)
+	}
+	if l.Err != nil {
+		return 0, fmt.Errorf("failed to get offset for partition %d at time %s: %w", partition, t, l.Err)
+	}
+	return l.Offset, nil
+}
+
+var _ offsetStore = (*offsetFinder)(nil)
+
+// consumptionRanges returns the ranges of offsets that should be consumed.
+func consumptionRanges(ctx context.Context, offs offsetStore, topic string, partition int32, committed int64, partEnd int64, width time.Duration, boundaryTime time.Time) ([]offsetRange, error) {
+	if committed >= partEnd {
+		// No new data to consume.
+		return []offsetRange{}, nil
+	}
+
+	// boundaryTime is intended to be exclusive. (i.e., consume up to but not including 11:00 AM.)
+	// Subtract a millisecond to make this work correctly with the Kafka offset APIs.
+	boundaryTime = boundaryTime.Add(-1 * time.Millisecond)
+	boundaryOffset, err := offs.offsetAfterTime(ctx, topic, partition, boundaryTime)
+	if err != nil {
+		return nil, err
+	}
+
+	if committed >= boundaryOffset {
+		// No new data to consume.
+		return []offsetRange{}, nil
+	}
+
+	starts := []int64{}
+
+	for pb := boundaryTime.Add(-width); true; pb = pb.Add(-width) {
+		off, err := offs.offsetAfterTime(ctx, topic, partition, pb)
+		if err != nil {
+			return nil, err
+		}
+		if off < committed {
+			break
+		}
+		if len(starts) == 0 || off != starts[len(starts)-1] {
+			starts = append(starts, off)
+		}
+	}
+
+	// We have a slice of start offsets. Put them in increasing order, then transform them into (startInclusive, endExclusive) pairs.
+
+	slices.Reverse(starts)
+	ranges := make([]offsetRange, len(starts))
+
+	for i, s := range starts {
+		ranges[i].start = s
+		if i < len(starts)-1 {
+			ranges[i].end = starts[i+1]
+		} else {
+			ranges[i].end = boundaryOffset
+		}
+	}
+
+	return ranges, nil
 }
 
 func (s *BlockBuilderScheduler) fetchLag(ctx context.Context) (kadm.GroupLag, error) {
