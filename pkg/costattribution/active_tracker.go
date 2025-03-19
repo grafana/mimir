@@ -230,10 +230,10 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 		var activeSeries int64
 		var nativeHistogram int64
 		var nhBucketNum int64
-		for _, as := range at.observed {
-			activeSeries += as.activeSeries.Load()
-			nativeHistogram += as.nativeHistograms.Load()
-			nhBucketNum += as.nativeHistogramBuckets.Load()
+		for _, c := range at.observed {
+			activeSeries += c.activeSeries.Load()
+			nativeHistogram += c.nativeHistograms.Load()
+			nhBucketNum += c.nativeHistogramBuckets.Load()
 		}
 		at.observedMtx.RUnlock()
 		out <- prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(activeSeries+at.overflowCounter.activeSeries.Load()), at.overflowLabels[:len(at.overflowLabels)-1]...)
@@ -248,19 +248,19 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 	}
 	// We don't know the performance of out receiver, so we don't want to hold the lock for too long
 	var prometheusMetrics []prometheus.Metric
-	for key, as := range at.observed {
+	for key, c := range at.observed {
 		keys := strings.Split(key, string(sep))
 		keys = append(keys, at.userID)
 		prometheusMetrics = append(prometheusMetrics,
-			prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(as.activeSeries.Load()), keys...),
+			prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(c.activeSeries.Load()), keys...),
 		)
-		if as.nativeHistograms.Load() > 0 {
+		if c.nativeHistograms.Load() > 0 {
 			prometheusMetrics = append(prometheusMetrics,
-				prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, float64(as.nativeHistograms.Load()), keys...),
+				prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, float64(c.nativeHistograms.Load()), keys...),
 			)
-			if as.nativeHistogramBuckets.Load() > 0 {
+			if c.nativeHistogramBuckets.Load() > 0 {
 				prometheusMetrics = append(prometheusMetrics,
-					prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, float64(as.nativeHistogramBuckets.Load()), keys...),
+					prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, float64(c.nativeHistogramBuckets.Load()), keys...),
 				)
 			}
 		}
