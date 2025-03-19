@@ -81,7 +81,7 @@ func (l *priorityLimiter) CanAcquirePermit(priority Priority) bool {
 
 func (l *priorityLimiter) canAcquirePermit(granularPriority int) bool {
 	// Threshold against the limiter's max capacity
-	maxBlocked := int(float64(l.Limit()) * l.config.MaxRejectionFactor)
+	_, _, _, maxBlocked := l.queueStats()
 	if l.reactiveLimiter.Blocked() >= maxBlocked {
 		return false
 	}
@@ -92,11 +92,4 @@ func (l *priorityLimiter) canAcquirePermit(granularPriority int) bool {
 
 func (l *priorityLimiter) RejectionRate() float64 {
 	return l.prioritizer.RejectionRate()
-}
-
-func (l *priorityLimiter) getAndResetStats() (limit, inflight, queued, rejectionThreshold, maxQueue int) {
-	limit = l.Limit()
-	rejectionThreshold = int(float64(limit) * l.config.InitialRejectionFactor)
-	maxQueue = int(float64(limit) * l.config.MaxRejectionFactor)
-	return limit, l.Inflight(), l.Blocked(), rejectionThreshold, maxQueue
 }

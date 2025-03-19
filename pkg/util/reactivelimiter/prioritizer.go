@@ -77,10 +77,9 @@ func (r *prioritizer) Calibrate() {
 	r.mu.Lock()
 
 	// Compute queue stats across all registered limiters
-	var totalLimit, totalQueued, totalFreeInflight, totalRejectionThresh, totalMaxQueue int
+	var totalLimit, totalQueued, totalRejectionThresh, totalMaxQueue int
 	for _, limiter := range r.limiters {
-		limit, inflight, queued, rejectionThresh, maxQueue := limiter.getAndResetStats()
-		totalFreeInflight += limit - inflight
+		limit, queued, rejectionThresh, maxQueue := limiter.queueStats()
 		totalLimit += limit
 		totalQueued += queued
 		totalRejectionThresh += rejectionThresh

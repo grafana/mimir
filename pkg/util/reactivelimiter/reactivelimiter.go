@@ -331,6 +331,13 @@ func (l *reactiveLimiter) logLimit(direction, reason string, limit float64, grad
 		"rttCorr", fmt.Sprintf("%.2f", rttCorr))
 }
 
+func (l *reactiveLimiter) queueStats() (limit, queued, rejectionThreshold, maxQueue int) {
+	limit = l.Limit()
+	rejectionThreshold = int(float64(limit) * l.config.InitialRejectionFactor)
+	maxQueue = int(float64(limit) * l.config.MaxRejectionFactor)
+	return limit, l.Blocked(), rejectionThreshold, maxQueue
+}
+
 type recordingPermit struct {
 	limiter         *reactiveLimiter
 	startTime       time.Time

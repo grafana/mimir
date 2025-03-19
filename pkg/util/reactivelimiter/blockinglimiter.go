@@ -60,9 +60,8 @@ func (l *blockingLimiter) CanAcquirePermit() bool {
 }
 
 func (l *blockingLimiter) computeRejectionRate() float64 {
-	rejectionThreshold := int(l.limit * l.config.InitialRejectionFactor)
-	maxQueueSize := int(l.limit * l.config.MaxRejectionFactor)
-	return computeRejectionRate(l.Blocked(), rejectionThreshold, maxQueueSize)
+	_, blocked, rejectionThreshold, maxQueueSize := l.queueStats()
+	return computeRejectionRate(blocked, rejectionThreshold, maxQueueSize)
 }
 
 func computeRejectionRate(queueSize, rejectionThreshold, maxQueueSize int) float64 {

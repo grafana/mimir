@@ -83,15 +83,6 @@ func newBlockingLimiter(cfg *reactivelimiter.Config, requestType string, logger 
 	}
 
 	limiter := reactivelimiter.NewBlockingLimiter(cfg, log.With(logger, "requestType", requestType))
-
-	// Register rejection metrics for the requestType
-	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
-		Name:        "cortex_ingester_rejection_rate",
-		Help:        "Ingester prioritizer rejection rate.",
-		ConstLabels: map[string]string{reactiveLimiterRequestTypeLabel: requestType},
-	}, func() float64 {
-		return limiter.RejectionRate()
-	})
 	registerReactiveLimiterMetrics(limiter, requestType, registerer)
 	return limiter
 }
