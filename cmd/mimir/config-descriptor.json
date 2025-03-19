@@ -4735,8 +4735,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 300000000000,
           "fieldFlag": "query-frontend.results-cache-ttl-for-errors",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -7075,8 +7074,7 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.cache-errors",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",

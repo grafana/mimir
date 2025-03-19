@@ -59,7 +59,7 @@ type Config struct {
 	SplitQueriesByInterval   time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
 	ResultsCacheConfig       `yaml:"results_cache"`
 	CacheResults             bool          `yaml:"cache_results"`
-	CacheErrors              bool          `yaml:"cache_errors" category:"experimental"`
+	CacheErrors              bool          `yaml:"cache_errors"`
 	MaxRetries               int           `yaml:"max_retries" category:"advanced"`
 	NotRunningTimeout        time.Duration `yaml:"not_running_timeout" category:"advanced"`
 	ShardedQueries           bool          `yaml:"parallelize_shardable_queries"`
