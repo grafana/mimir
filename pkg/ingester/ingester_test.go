@@ -6188,7 +6188,7 @@ func TestIngester_QueryStream(t *testing.T) {
 		}
 	}
 
-	// Create a GRPC server used to query back the data.
+	// Create a gRPC server used to query back the data.
 	serv := grpc.NewServer(grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor))
 	defer serv.GracefulStop()
 	client.RegisterIngesterServer(serv, i)
@@ -6200,7 +6200,7 @@ func TestIngester_QueryStream(t *testing.T) {
 		require.NoError(t, serv.Serve(listener))
 	}()
 
-	// Query back the series using GRPC streaming.
+	// Query back the series using gRPC streaming.
 	inst := ring.InstanceDesc{Id: "test", Addr: listener.Addr().String()}
 	c, err := client.MakeIngesterClient(inst, defaultClientTestConfig(), client.NewMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
@@ -6348,12 +6348,14 @@ func TestIngester_QueryStream(t *testing.T) {
 				lbls := mimirpb.FromLabelAdaptersToLabels(series.Labels)
 				typeLabel := lbls.Get("type")
 
+				t.Logf("Handling series: %s", lbls.String())
+
 				seriesID, err := strconv.Atoi(lbls.Get("series_id"))
 				require.NoError(t, err)
 
 				// We expect no duplicated series in the result.
 				_, exists := actualSeriesIDs[typeLabel][seriesID]
-				assert.False(t, exists)
+				require.False(t, exists)
 				actualSeriesIDs[typeLabel][seriesID] = struct{}{}
 
 				// We expect 1 chunk.
@@ -6370,7 +6372,7 @@ func TestIngester_QueryStream(t *testing.T) {
 
 					require.Equal(t, chunkenc.ValFloat, it.Next())
 					actualTs, actualValue := it.At()
-					assert.Equal(t, int64(seriesID), actualTs)
+					require.Equal(t, int64(seriesID), actualTs)
 					assert.Equal(t, float64(seriesID), actualValue)
 
 					assert.Equal(t, chunkenc.ValNone, it.Next())
