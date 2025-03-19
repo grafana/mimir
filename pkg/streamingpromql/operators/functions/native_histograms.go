@@ -80,7 +80,7 @@ func HistogramFraction(seriesData types.InstantVectorSeriesData, scalarArgsData 
 
 		data.Floats = append(data.Floats, promql.FPoint{
 			T: histogram.T,
-			F: histogramFraction(lowerVal, upperVal, histogram.H),
+			F: promql.HistogramFraction(lowerVal, upperVal, histogram.H),
 		})
 	}
 
@@ -89,9 +89,9 @@ func HistogramFraction(seriesData types.InstantVectorSeriesData, scalarArgsData 
 	return data, nil
 }
 
+// HistogramStdDevStdVar returns either the standard deviation, or standard variance of a native histogram.
+// Float values are ignored.
 func HistogramStdDevStdVar(isStdDev bool) InstantVectorSeriesFunction {
-	// returns either the standard deviation, or standard variance of a native histogram.
-	// Float values are ignored.
 	return func(seriesData types.InstantVectorSeriesData, _ []types.ScalarData, _ types.QueryTimeRange, memoryConsumptionTracker *limiting.MemoryConsumptionTracker) (types.InstantVectorSeriesData, error) {
 		fPoints, err := types.FPointSlicePool.Get(len(seriesData.Histograms), memoryConsumptionTracker)
 		if err != nil {

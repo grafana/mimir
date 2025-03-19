@@ -204,7 +204,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('CacheRequestErrors'),
           // Specifically exclude "add" and "delete" operations which are used for cache invalidation and "locking"
           // since they are expected to sometimes fail in normal operation (such as when a "lock" already exists or
-          // key being invalidated does not exist).
+          // key being invalidated does not exist). We also only alert when there at least 10 req/sec to the cache
+          // to avoid flapping alerts in low-traffic environments.
           expr: |||
             (
               sum by(%(group_by)s, name, operation) (
@@ -213,7 +214,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               /
               sum by(%(group_by)s, name, operation) (
                 rate(thanos_cache_operations_total{operation!~"add|delete"}[%(range_interval)s])
-              )
+              ) > 10
             ) * 100 > 5
           ||| % {
             group_by: $._config.alert_aggregation_labels,
@@ -544,78 +545,86 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
     {
+      local statefulset_rollout_stuck(for_duration, severity) = {
+        alert: $.alertName('RolloutStuck'),
+        expr: |||
+          (
+            max without (revision) (
+              %(kube_statefulset_status_current_revision)s
+                unless
+              %(kube_statefulset_status_update_revision)s
+            )
+              *
+            (
+              %(kube_statefulset_replicas)s
+                !=
+              %(kube_statefulset_status_replicas_updated)s
+            )
+          ) and (
+            changes(%(kube_statefulset_status_replicas_updated)s[%(range_interval)s])
+              ==
+            0
+          )
+          * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
+        ||| % {
+          aggregation_labels: $._config.alert_aggregation_labels,
+          kube_statefulset_status_current_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_current_revision'),
+          kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_update_revision'),
+          kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas'),
+          kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated'),
+          range_interval: '15m:' + $.alertRangeInterval(1),
+        },
+        'for': for_duration,
+        labels: {
+          severity: severity,
+          workload_type: 'statefulset',
+        },
+        annotations: {
+          message: |||
+            The {{ $labels.rollout_group }} rollout is stuck in %(alert_aggregation_variables)s.
+          ||| % $._config,
+        },
+      },
+
+      local deployment_rollout_stuck(for_duration, severity) = {
+        alert: $.alertName('RolloutStuck'),
+        expr: |||
+          (
+            %(kube_deployment_spec_replicas)s
+              !=
+            %(kube_deployment_status_replicas_updated)s
+          ) and (
+            changes(%(kube_deployment_status_replicas_updated)s[%(range_interval)s])
+              ==
+            0
+          )
+          * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
+        ||| % {
+          aggregation_labels: $._config.alert_aggregation_labels,
+          kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas'),
+          kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated'),
+          range_interval: '15m:' + $.alertRangeInterval(1),
+        },
+        'for': for_duration,
+        labels: {
+          severity: severity,
+          workload_type: 'deployment',
+        },
+        annotations: {
+          message: |||
+            The {{ $labels.rollout_group }} rollout is stuck in %(alert_aggregation_variables)s.
+          ||| % $._config,
+        },
+      },
+
+
       name: 'mimir-rollout-alerts',
       rules: [
-        {
-          alert: $.alertName('RolloutStuck'),
-          expr: |||
-            (
-              max without (revision) (
-                %(kube_statefulset_status_current_revision)s
-                  unless
-                %(kube_statefulset_status_update_revision)s
-              )
-                *
-              (
-                %(kube_statefulset_replicas)s
-                  !=
-                %(kube_statefulset_status_replicas_updated)s
-              )
-            ) and (
-              changes(%(kube_statefulset_status_replicas_updated)s[%(range_interval)s])
-                ==
-              0
-            )
-            * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
-          ||| % {
-            aggregation_labels: $._config.alert_aggregation_labels,
-            kube_statefulset_status_current_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_current_revision'),
-            kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_update_revision'),
-            kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas'),
-            kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated'),
-            range_interval: '15m:' + $.alertRangeInterval(1),
-          },
-          'for': '30m',
-          labels: {
-            severity: 'warning',
-            workload_type: 'statefulset',
-          },
-          annotations: {
-            message: |||
-              The {{ $labels.rollout_group }} rollout is stuck in %(alert_aggregation_variables)s.
-            ||| % $._config,
-          },
-        },
-        {
-          alert: $.alertName('RolloutStuck'),
-          expr: |||
-            (
-              %(kube_deployment_spec_replicas)s
-                !=
-              %(kube_deployment_status_replicas_updated)s
-            ) and (
-              changes(%(kube_deployment_status_replicas_updated)s[%(range_interval)s])
-                ==
-              0
-            )
-            * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
-          ||| % {
-            aggregation_labels: $._config.alert_aggregation_labels,
-            kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas'),
-            kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated'),
-            range_interval: '15m:' + $.alertRangeInterval(1),
-          },
-          'for': '30m',
-          labels: {
-            severity: 'warning',
-            workload_type: 'deployment',
-          },
-          annotations: {
-            message: |||
-              The {{ $labels.rollout_group }} rollout is stuck in %(alert_aggregation_variables)s.
-            ||| % $._config,
-          },
-        },
+        statefulset_rollout_stuck('30m', 'warning'),
+        statefulset_rollout_stuck('6h', 'critical'),
+        deployment_rollout_stuck('30m', 'warning'),
+        deployment_rollout_stuck('6h', 'critical'),
+
         {
           alert: 'RolloutOperatorNotReconciling',
           expr: |||
@@ -681,7 +690,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RulerTooManyFailedPushes'),
           expr: |||
             100 * (
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_failed_total[%(range_interval)s]))
+            # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_failed_total{reason=~"(error|^$)"}[%(range_interval)s]))
               /
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_write_requests_total[%(range_interval)s]))
             ) > 1
@@ -702,7 +712,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RulerTooManyFailedQueries'),
           expr: |||
             100 * (
-            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_failed_total[%(range_interval)s]))
+            # Here it matches on empty "reason" for backwards compatibility, with when the metric didn't have this label.
+            sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_failed_total{reason=~"(error|^$)"}[%(range_interval)s]))
               /
             sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ruler_queries_total[%(range_interval)s]))
             ) > 1

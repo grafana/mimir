@@ -219,6 +219,20 @@ func (s *Stats) LoadSamplesProcessed() uint64 {
 	return atomic.LoadUint64(&s.SamplesProcessed)
 }
 
+func (s *Stats) AddSpunOffSubqueries(num uint32) {
+	if s == nil {
+		return
+	}
+	atomic.AddUint32(&s.SpunOffSubqueries, num)
+}
+
+func (s *Stats) LoadSpunOffSubqueries() uint32 {
+	if s == nil {
+		return 0
+	}
+	return atomic.LoadUint32(&s.SpunOffSubqueries)
+}
+
 // Merge the provided Stats into this one.
 func (s *Stats) Merge(other *Stats) {
 	if s == nil || other == nil {
@@ -236,6 +250,7 @@ func (s *Stats) Merge(other *Stats) {
 	s.AddQueueTime(other.LoadQueueTime())
 	s.AddEncodeTime(other.LoadEncodeTime())
 	s.AddSamplesProcessed(other.LoadSamplesProcessed())
+	s.AddSpunOffSubqueries(other.LoadSpunOffSubqueries())
 }
 
 // Copy returns a copy of the stats. Use this rather than regular struct assignment

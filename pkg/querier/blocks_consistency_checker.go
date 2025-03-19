@@ -41,7 +41,7 @@ func NewBlocksConsistency(uploadGracePeriod time.Duration, reg prometheus.Regist
 // NewTracker creates a consistency tracker from the known blocks. It filters out any block uploaded within uploadGracePeriod
 // and with a deletion mark within deletionGracePeriod.
 func (c *BlocksConsistency) NewTracker(knownBlocks bucketindex.Blocks, logger log.Logger) BlocksConsistencyTracker {
-	blocksToTrack := make(map[ulid.ULID]struct{}, len(knownBlocks))
+	blocksToTrack := make(map[ulid.ULID]*bucketindex.Block, len(knownBlocks))
 	for _, block := range knownBlocks {
 		// Some recently uploaded blocks, already discovered by the querier, may not have been discovered
 		// and loaded by the store-gateway yet. In order to avoid false positives, we grant some time
@@ -55,7 +55,7 @@ func (c *BlocksConsistency) NewTracker(knownBlocks bucketindex.Blocks, logger lo
 			continue
 		}
 
-		blocksToTrack[block.ID] = struct{}{}
+		blocksToTrack[block.ID] = block
 	}
 
 	return BlocksConsistencyTracker{
@@ -70,13 +70,13 @@ type BlocksConsistencyTracker struct {
 	checksTotal  prometheus.Counter
 	checksFailed prometheus.Counter
 
-	tracked map[ulid.ULID]struct{}
+	tracked map[ulid.ULID]*bucketindex.Block
 	queried map[ulid.ULID]struct{}
 }
 
 // Check takes a slice of blocks which can be all queried blocks so far or only blocks queried since the last call to Check.
 // Check returns the blocks which haven't been seen in any call to Check yet.
-func (c BlocksConsistencyTracker) Check(queriedBlocks []ulid.ULID) (missingBlocks []ulid.ULID) {
+func (c BlocksConsistencyTracker) Check(queriedBlocks []ulid.ULID) (missingBlocks bucketindex.Blocks) {
 	// Make map of queried blocks, for quick lookup.
 	for _, blockID := range queriedBlocks {
 		if _, ok := c.tracked[blockID]; !ok {
@@ -88,8 +88,8 @@ func (c BlocksConsistencyTracker) Check(queriedBlocks []ulid.ULID) (missingBlock
 	}
 
 	// Look for any missing blocks.
-	for block := range c.tracked {
-		if _, ok := c.queried[block]; !ok {
+	for id, block := range c.tracked {
+		if _, ok := c.queried[id]; !ok {
 			missingBlocks = append(missingBlocks, block)
 		}
 	}

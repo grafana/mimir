@@ -153,6 +153,10 @@ func (r *PrometheusRangeQueryRequest) GetHints() *Hints {
 	return r.hints
 }
 
+func (r *PrometheusRangeQueryRequest) GetLookbackDelta() time.Duration {
+	return r.lookbackDelta
+}
+
 // WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
 func (r *PrometheusRangeQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
 	newRequest := *r
@@ -343,6 +347,10 @@ func (r *PrometheusInstantQueryRequest) GetOptions() Options {
 
 func (r *PrometheusInstantQueryRequest) GetHints() *Hints {
 	return r.hints
+}
+
+func (r *PrometheusInstantQueryRequest) GetLookbackDelta() time.Duration {
+	return r.lookbackDelta
 }
 
 func (r *PrometheusInstantQueryRequest) WithID(id int64) (MetricsQueryRequest, error) {
@@ -725,6 +733,8 @@ type PrometheusLabelsResponse struct {
 	ErrorType string              `json:"errorType,omitempty"`
 	Error     string              `json:"error,omitempty"`
 	Headers   []*PrometheusHeader `json:"-"`
+	Warnings  []string            `json:"warnings,omitempty"`
+	Infos     []string            `json:"infos,omitempty"`
 }
 
 func (m *PrometheusLabelsResponse) GetHeaders() []*PrometheusHeader {
@@ -748,6 +758,8 @@ type PrometheusSeriesResponse struct {
 	ErrorType string              `json:"errorType,omitempty"`
 	Error     string              `json:"error,omitempty"`
 	Headers   []*PrometheusHeader `json:"-"`
+	Warnings  []string            `json:"warnings,omitempty"`
+	Infos     []string            `json:"infos,omitempty"`
 }
 
 func (m *PrometheusSeriesResponse) GetHeaders() []*PrometheusHeader {

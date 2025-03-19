@@ -349,11 +349,11 @@ func getFieldName(field reflect.StructField) string {
 func getFieldCustomType(t reflect.Type) (string, bool) {
 	// Handle custom data types used in the config
 	switch t.String() {
-	case reflect.TypeOf(validation.LimitsMap[float64]{}).String():
+	case reflect.TypeOf(flagext.LimitsMap[float64]{}).String():
 		return "map of string to float64", true
-	case reflect.TypeOf(validation.LimitsMap[int]{}).String():
+	case reflect.TypeOf(flagext.LimitsMap[int]{}).String():
 		return "map of string to int", true
-	case reflect.TypeOf(validation.LimitsMap[string]{}).String():
+	case reflect.TypeOf(flagext.LimitsMap[string]{}).String():
 		return "map of string to string", true
 	case reflect.TypeOf(&url.URL{}).String():
 		return "url", true
@@ -367,6 +367,8 @@ func getFieldCustomType(t reflect.Type) (string, bool) {
 		return "relabel_config...", true
 	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
 		return "blocked_queries_config...", true
+	case reflect.TypeOf([]*validation.BlockedRequest{}).String():
+		return "blocked_requests_config...", true
 	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
 	default:
@@ -437,11 +439,11 @@ func getFieldType(t reflect.Type) (string, error) {
 func getCustomFieldType(t reflect.Type) (string, bool) {
 	// Handle custom data types used in the config
 	switch t.String() {
-	case reflect.TypeOf(validation.LimitsMap[float64]{}).String():
+	case reflect.TypeOf(flagext.LimitsMap[float64]{}).String():
 		return "map of string to float64", true
-	case reflect.TypeOf(validation.LimitsMap[int]{}).String():
+	case reflect.TypeOf(flagext.LimitsMap[int]{}).String():
 		return "map of string to int", true
-	case reflect.TypeOf(validation.LimitsMap[string]{}).String():
+	case reflect.TypeOf(flagext.LimitsMap[string]{}).String():
 		return "map of string to string", true
 	case reflect.TypeOf(&url.URL{}).String():
 		return "url", true
@@ -455,6 +457,8 @@ func getCustomFieldType(t reflect.Type) (string, bool) {
 		return "relabel_config...", true
 	case reflect.TypeOf([]*validation.BlockedQuery{}).String():
 		return "blocked_queries_config...", true
+	case reflect.TypeOf([]*validation.BlockedRequest{}).String():
+		return "blocked_requests_config...", true
 	case reflect.TypeOf(asmodel.CustomTrackersConfig{}).String():
 		return "map of tracker name (string) to matcher (string)", true
 	default:
@@ -488,10 +492,12 @@ func ReflectType(typ string) reflect.Type {
 		return reflect.TypeOf([]*relabel.Config{})
 	case "blocked_queries_config...":
 		return reflect.TypeOf([]*validation.BlockedQuery{})
+	case "blocked_requests_config...":
+		return reflect.TypeOf([]*validation.BlockedRequest{})
 	case "map of string to float64":
-		return reflect.TypeOf(validation.LimitsMap[float64]{})
+		return reflect.TypeOf(flagext.LimitsMap[float64]{})
 	case "map of string to int":
-		return reflect.TypeOf(validation.LimitsMap[int]{})
+		return reflect.TypeOf(flagext.LimitsMap[int]{})
 	case "list of durations":
 		return reflect.TypeOf(tsdb.DurationList{})
 	default:

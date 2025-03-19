@@ -5,10 +5,13 @@ package client
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type Metrics struct {
-	requestDuration *prometheus.HistogramVec
+	requestDuration                  *prometheus.HistogramVec
+	invalidClusterVerificationLabels *prometheus.CounterVec
 }
 
 func NewMetrics(reg prometheus.Registerer) *Metrics {
@@ -18,5 +21,7 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 			Help:    "Time spent doing Ingester requests.",
 			Buckets: prometheus.ExponentialBuckets(0.001, 4, 8),
 		}, []string{"operation", "status_code"}),
+
+		invalidClusterVerificationLabels: util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "ingester", util.GRPCProtocol),
 	}
 }

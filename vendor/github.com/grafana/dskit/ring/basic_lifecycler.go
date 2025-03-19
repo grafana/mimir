@@ -53,6 +53,8 @@ type BasicLifecyclerConfig struct {
 	HeartbeatTimeout    time.Duration
 	TokensObservePeriod time.Duration
 	NumTokens           int
+	// HideTokensInStatusPage allows tokens to be hidden from management tools e.g. the status page, for use in contexts which do not utilize tokens.
+	HideTokensInStatusPage bool
 
 	// If true lifecycler doesn't unregister instance from the ring when it's stopping. Default value is false,
 	// which means unregistering.
@@ -546,5 +548,5 @@ func (l *BasicLifecycler) getRing(ctx context.Context) (*Desc, error) {
 }
 
 func (l *BasicLifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	newRingPageHandler(l, l.cfg.HeartbeatTimeout).handle(w, req)
+	newRingPageHandler(l, l.cfg.HeartbeatTimeout, l.cfg.HideTokensInStatusPage).handle(w, req)
 }

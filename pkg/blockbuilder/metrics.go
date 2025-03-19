@@ -5,6 +5,8 @@ package blockbuilder
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type blockBuilderMetrics struct {
@@ -12,6 +14,8 @@ type blockBuilderMetrics struct {
 	processPartitionDuration *prometheus.HistogramVec
 	fetchErrors              *prometheus.CounterVec
 	consumerLagRecords       *prometheus.GaugeVec
+	blockCounts              *prometheus.CounterVec
+	invalidClusterValidation *prometheus.CounterVec
 }
 
 func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
@@ -40,6 +44,15 @@ func newBlockBuilderMetrics(reg prometheus.Registerer) blockBuilderMetrics {
 		Help: "The per-topic-partition number of records, instance needs to work through each cycle.",
 	}, []string{"partition"})
 
+	// block_time can be "next", "current" or "previous".
+	// If the block belongs to the current 2h block range, it goes in "current".
+	// "next" or "previous" are used for the blocks that are not in the current 2h block range.
+	m.blockCounts = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_blockbuilder_blocks_produced_total",
+		Help: "Total number of blocks produced for specific block ranges (next, current, previous).",
+	}, []string{"block_time"})
+
+	m.invalidClusterValidation = util.NewRequestInvalidClusterValidationLabelsTotalCounter(reg, "block-builder-scheduler", util.GRPCProtocol)
 	return m
 }
 

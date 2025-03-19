@@ -1438,6 +1438,40 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 	}
 }
 
+func TestBlocksCleaner_instrumentBucketIndexUpdate(t *testing.T) {
+
+	reg := prometheus.NewPedanticRegistry()
+	ctx := context.Background()
+
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = block.BucketWithGlobalMarkers(bucketClient)
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:                 12 * time.Hour,
+		CleanupInterval:               time.Minute,
+		CleanupConcurrency:            1,
+		DeleteBlocksConcurrency:       1,
+		GetDeletionMarkersConcurrency: 1,
+	}
+
+	logger := log.NewNopLogger()
+	cfgProvider := newMockConfigProvider()
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+
+	idx := bucketindex.Index{UpdatedAt: 1}
+	require.NoError(t, bucketindex.WriteIndex(ctx, bucketClient, "user-1", cfgProvider, &idx))
+
+	cleaner.instrumentBucketIndexUpdate(ctx)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_bucket_index_last_successful_update_timestamp_seconds Timestamp of the last successful update of a tenant's bucket index.
+		# TYPE cortex_bucket_index_last_successful_update_timestamp_seconds gauge
+		cortex_bucket_index_last_successful_update_timestamp_seconds{user="user-1"} 1
+		`),
+		"cortex_bucket_index_last_successful_update_timestamp_seconds"))
+}
+
 type hookBucket struct {
 	objstore.Bucket
 
@@ -1510,6 +1544,7 @@ type mockConfigProvider struct {
 	userPartialBlockDelayInvalid map[string]bool
 	verifyChunks                 map[string]bool
 	perTenantInMemoryCache       map[string]int
+	maxLookback                  map[string]time.Duration
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -1524,6 +1559,7 @@ func newMockConfigProvider() *mockConfigProvider {
 		userPartialBlockDelayInvalid: make(map[string]bool),
 		verifyChunks:                 make(map[string]bool),
 		perTenantInMemoryCache:       make(map[string]int),
+		maxLookback:                  make(map[string]time.Duration),
 	}
 }
 
@@ -1589,6 +1625,13 @@ func (m *mockConfigProvider) S3SSEKMSKeyID(string) string {
 
 func (m *mockConfigProvider) S3SSEKMSEncryptionContext(string) string {
 	return ""
+}
+
+func (m *mockConfigProvider) CompactorMaxLookback(user string) time.Duration {
+	if result, ok := m.maxLookback[user]; ok {
+		return result
+	}
+	return 0
 }
 
 func (c *BlocksCleaner) runCleanupWithErr(ctx context.Context) error {

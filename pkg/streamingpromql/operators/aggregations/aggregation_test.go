@@ -239,7 +239,8 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			aggregator, err := NewAggregation(nil, types.NewInstantQueryTimeRange(timestamp.Time(0)), testCase.grouping, testCase.without, parser.SUM, nil, nil, posrange.PositionRange{})
 			require.NoError(t, err)
-			bytesFunc, labelsFunc := aggregator.seriesToGroupFuncs()
+			bytesFunc := aggregator.groupLabelsBytesFunc()
+			labelsFunc := aggregator.groupLabelsFunc()
 
 			actualLabels := labelsFunc(testCase.inputSeries)
 			require.Equal(t, testCase.expectedOutputSeries, actualLabels)

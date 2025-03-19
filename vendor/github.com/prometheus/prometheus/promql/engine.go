@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
+	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/zeropool"
 )
@@ -123,12 +124,13 @@ type QueryEngine interface {
 	NewRangeQuery(ctx context.Context, q storage.Queryable, opts QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error)
 }
 
+var _ QueryLogger = (*logging.JSONFileLogger)(nil)
+
 // QueryLogger is an interface that can be used to log all the queries logged
 // by the engine.
 type QueryLogger interface {
-	Log(context.Context, slog.Level, string, ...any)
-	With(args ...any)
-	Close() error
+	slog.Handler
+	io.Closer
 }
 
 // A Query is derived from an a raw query string and can be run against an engine
@@ -436,6 +438,8 @@ func NewEngine(opts EngineOpts) *Engine {
 }
 
 // Close closes ng.
+// Callers must ensure the engine is really no longer in use before calling this to avoid
+// issues failures like in https://github.com/prometheus/prometheus/issues/15232
 func (ng *Engine) Close() error {
 	if ng == nil {
 		return nil
@@ -627,6 +631,9 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 	defer func() {
 		ng.queryLoggerLock.RLock()
 		if l := ng.queryLogger; l != nil {
+			logger := slog.New(l)
+			f := make([]slog.Attr, 0, 16) // Probably enough up front to not need to reallocate on append.
+
 			params := make(map[string]interface{}, 4)
 			params["query"] = q.q
 			if eq, ok := q.Statement().(*parser.EvalStmt); ok {
@@ -635,20 +642,20 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws annota
 				// The step provided by the user is in seconds.
 				params["step"] = int64(eq.Interval / (time.Second / time.Nanosecond))
 			}
-			f := []interface{}{"params", params}
+			f = append(f, slog.Any("params", params))
 			if err != nil {
-				f = append(f, "error", err)
+				f = append(f, slog.Any("error", err))
 			}
-			f = append(f, "stats", stats.NewQueryStats(q.Stats()))
+			f = append(f, slog.Any("stats", stats.NewQueryStats(q.Stats())))
 			if span := trace.SpanFromContext(ctx); span != nil {
-				f = append(f, "spanID", span.SpanContext().SpanID())
+				f = append(f, slog.Any("spanID", span.SpanContext().SpanID()))
 			}
 			if origin := ctx.Value(QueryOrigin{}); origin != nil {
 				for k, v := range origin.(map[string]interface{}) {
-					f = append(f, k, v)
+					f = append(f, slog.Any(k, v))
 				}
 			}
-			l.Log(context.Background(), slog.LevelInfo, "promql query logged", f...)
+			logger.LogAttrs(context.Background(), slog.LevelInfo, "promql query logged", f...)
 			// TODO: @tjhop -- do we still need this metric/error log if logger doesn't return errors?
 			// ng.metrics.queryLogFailures.Inc()
 			// ng.logger.Error("can't log query", "err", err)
@@ -1353,7 +1360,7 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 	}
 	groups := make([]groupedAggregation, groupCount)
 
-	var k int
+	var k int64
 	var ratio float64
 	var seriess map[uint64]Series
 	switch aggExpr.Op {
@@ -1361,9 +1368,9 @@ func (ev *evaluator) rangeEvalAgg(ctx context.Context, aggExpr *parser.Aggregate
 		if !convertibleToInt64(param) {
 			ev.errorf("Scalar value %v overflows int64", param)
 		}
-		k = int(param)
-		if k > len(inputMatrix) {
-			k = len(inputMatrix)
+		k = int64(param)
+		if k > int64(len(inputMatrix)) {
+			k = int64(len(inputMatrix))
 		}
 		if k < 1 {
 			return nil, warnings
@@ -1542,6 +1549,28 @@ func (ev *evaluator) evalSubquery(ctx context.Context, subq *parser.SubqueryExpr
 		VectorSelector: vs,
 	}
 	for _, s := range mat {
+		// Set any "NotCounterReset" and "CounterReset" hints in native
+		// histograms to "UnknownCounterReset" because we might
+		// otherwise miss a counter reset happening in samples not
+		// returned by the subquery, or we might over-detect counter
+		// resets if the sample with a counter reset is returned
+		// multiple times by a high-res subquery. This intentionally
+		// does not attempt to be clever (like detecting if we are
+		// really missing underlying samples or returning underlying
+		// samples multiple times) because subqueries on counters are
+		// inherently problematic WRT counter reset handling, so we
+		// cannot really solve the problem for good. We only want to
+		// avoid problems that happen due to the explicitly set counter
+		// reset hints and go back to the behavior we already know from
+		// float samples.
+		for i, hp := range s.Histograms {
+			switch hp.H.CounterResetHint {
+			case histogram.NotCounterReset, histogram.CounterReset:
+				h := *hp.H // Shallow copy is sufficient, we only change CounterResetHint.
+				h.CounterResetHint = histogram.UnknownCounterReset
+				s.Histograms[i].H = &h
+			}
+		}
 		vs.Series = append(vs.Series, NewStorageSeries(s))
 	}
 	return ms, mat.TotalSamples(), ws
@@ -2349,6 +2378,11 @@ func (ev *evaluator) matrixIterSlice(
 		if histograms != nil {
 			histograms = histograms[:0]
 		}
+	}
+
+	if mint == maxt {
+		// Empty range: return the empty slices.
+		return floats, histograms
 	}
 
 	soughtValueType := it.Seek(maxt)
@@ -3173,7 +3207,7 @@ func (ev *evaluator) aggregation(e *parser.AggregateExpr, q float64, inputMatrix
 // seriesToResult maps inputMatrix indexes to groups indexes.
 // For an instant query, returns a Matrix in descending order for topk or ascending for bottomk, or without any order for limitk / limit_ratio.
 // For a range query, aggregates output in the seriess map.
-func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int, r float64, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
+func (ev *evaluator) aggregationK(e *parser.AggregateExpr, k int64, r float64, inputMatrix Matrix, seriesToResult []int, groups []groupedAggregation, enh *EvalNodeHelper, seriess map[uint64]Series) (Matrix, annotations.Annotations) {
 	op := e.Op
 	var s Sample
 	var annos annotations.Annotations
@@ -3244,7 +3278,7 @@ seriesLoop:
 			case s.H != nil:
 				// Ignore histogram sample and add info annotation.
 				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("topk", e.PosRange))
-			case len(group.heap) < k:
+			case int64(len(group.heap)) < k:
 				heap.Push(&group.heap, &s)
 			case group.heap[0].F < s.F || (math.IsNaN(group.heap[0].F) && !math.IsNaN(s.F)):
 				// This new element is bigger than the previous smallest element - overwrite that.
@@ -3260,7 +3294,7 @@ seriesLoop:
 			case s.H != nil:
 				// Ignore histogram sample and add info annotation.
 				annos.Add(annotations.NewHistogramIgnoredInAggregationInfo("bottomk", e.PosRange))
-			case len(group.heap) < k:
+			case int64(len(group.heap)) < k:
 				heap.Push((*vectorByReverseValueHeap)(&group.heap), &s)
 			case group.heap[0].F > s.F || (math.IsNaN(group.heap[0].F) && !math.IsNaN(s.F)):
 				// This new element is smaller than the previous biggest element - overwrite that.
@@ -3271,13 +3305,13 @@ seriesLoop:
 			}
 
 		case parser.LIMITK:
-			if len(group.heap) < k {
+			if int64(len(group.heap)) < k {
 				heap.Push(&group.heap, &s)
 			}
 			// LIMITK optimization: early break if we've added K elem to _every_ group,
 			// especially useful for large timeseries where the user is exploring labels via e.g.
 			// limitk(10, my_metric)
-			if !group.groupAggrComplete && len(group.heap) == k {
+			if !group.groupAggrComplete && int64(len(group.heap)) == k {
 				group.groupAggrComplete = true
 				groupsRemaining--
 				if groupsRemaining == 0 {
@@ -3469,15 +3503,14 @@ func handleVectorBinopError(err error, e *parser.BinaryExpr) annotations.Annotat
 	if err == nil {
 		return nil
 	}
-	metricName := ""
+	op := parser.ItemTypeStr[e.Op]
 	pos := e.PositionRange()
 	if errors.Is(err, annotations.PromQLInfo) || errors.Is(err, annotations.PromQLWarning) {
 		return annotations.New().Add(err)
 	}
-	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-		return annotations.New().Add(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, pos))
-	} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-		return annotations.New().Add(annotations.NewIncompatibleCustomBucketsHistogramsWarning(metricName, pos))
+	// TODO(NeerajGartia21): Test the exact annotation output once the testing framework can do so.
+	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) || errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+		return annotations.New().Add(annotations.NewIncompatibleBucketLayoutInBinOpWarning(op, pos))
 	}
 	return nil
 }
@@ -3543,11 +3576,11 @@ func formatDate(t time.Time) string {
 // unwrapParenExpr does the AST equivalent of removing parentheses around a expression.
 func unwrapParenExpr(e *parser.Expr) {
 	for {
-		if p, ok := (*e).(*parser.ParenExpr); ok {
-			*e = p.Expr
-		} else {
+		p, ok := (*e).(*parser.ParenExpr)
+		if !ok {
 			break
 		}
+		*e = p.Expr
 	}
 }
 
@@ -3720,14 +3753,15 @@ func detectHistogramStatsDecoding(expr parser.Expr) {
 			if !ok {
 				continue
 			}
-			if call.Func.Name == "histogram_count" || call.Func.Name == "histogram_sum" {
+			switch call.Func.Name {
+			case "histogram_count", "histogram_sum", "histogram_avg":
 				n.SkipHistogramBuckets = true
-				break
-			}
-			if call.Func.Name == "histogram_quantile" || call.Func.Name == "histogram_fraction" {
+			case "histogram_quantile", "histogram_fraction":
 				n.SkipHistogramBuckets = false
-				break
+			default:
+				continue
 			}
+			break
 		}
 		return errors.New("stop")
 	})

@@ -31,7 +31,8 @@
     ingester_allow_multiple_replicas_on_same_node: false,
     store_gateway_allow_multiple_replicas_on_same_node: false,
 
-    // Controls the max skew for pod topology spread constraints.
+    // Controls the max skew for pod topology spread constraints. Set to a negative value to
+    // not configure the pod topology spread constraints at all.
     // See: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
     distributor_topology_spread_max_skew: 1,
     query_frontend_topology_spread_max_skew: 1,
@@ -112,7 +113,7 @@
     memcached_frontend_replicas: 3,
     memcached_index_queries_replicas: 3,
     memcached_chunks_replicas: 3,
-    memcached_metadata_replicas: 1,
+    memcached_metadata_replicas: 3,
 
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 5,
@@ -229,9 +230,14 @@
       'store-gateway.sharding-ring.prefix': '',
       'store-gateway.sharding-ring.replication-factor': $._config.store_gateway_replication_factor,
 
-      // Relax pressure on KV store when running at scale.
-      // When changing this, please remember to also change the hearbeat period defined in store_gateway_args.
-      'store-gateway.sharding-ring.heartbeat-timeout': '4m',
+      // We keep store-gateways in the ring during rolling updates. If a rolling update takes longer than
+      // the heartbeat period, the store-gateway will get detected as unhealthy by other replicas and they
+      // will start synching blocks owned by the restarting instances too. This could potentially cause
+      // issues to other store-gateways (e.g. hit disk capacity).
+      //
+      // We don't want blocks to be resharded in case of a slow rollout, so we set a relatively high
+      // heartbeat timeout for the store-gateway ring.
+      'store-gateway.sharding-ring.heartbeat-timeout': '10m',
     },
 
     // Querier component config (shared between the ruler and querier).

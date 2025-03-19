@@ -105,9 +105,9 @@ func TestCases(metricSizes []int) []BenchCase {
 		//{
 		//	Expr: "holt_winters(a_X[1d], 0.3, 0.3)",
 		//},
-		//{
-		//	Expr: "changes(a_X[1d])",
-		//},
+		{
+			Expr: "changes(a_X[1d])",
+		},
 		{
 			Expr: "rate(a_X[1d])",
 		},
@@ -127,6 +127,9 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum_over_time(nh_X[1m])",
 		},
+		{
+			Expr: "quantile_over_time(0.3, a_X[1m])",
+		},
 		//{
 		//	Expr: "absent_over_time(a_X[1d])",
 		//},
@@ -140,11 +143,11 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum(sum_over_time(a_X[10m:3m]))",
 		},
-		//// Unary operators.
-		//{
-		//	Expr: "-a_X",
-		//},
-		//// Binary operators.
+		// Unary operators.
+		{
+			Expr: "-a_X",
+		},
+		// Binary operators.
 		{
 			Expr: "a_X - b_X",
 		},
@@ -157,6 +160,9 @@ func TestCases(metricSizes []int) []BenchCase {
 		},
 		{
 			Expr: "nh_X / a_X",
+		},
+		{
+			Expr: "a_X == b_X",
 		},
 		{
 			Expr: "2 * a_X",
@@ -202,9 +208,13 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "label_replace(a_X, 'l2', '$1', 'l', '(.*)')",
 		},
-		//{
-		//	Expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
-		//},
+		{
+			Expr: "label_join(a_X, 'l2', '-', 'l', 'l')",
+		},
+		{
+			Expr:             "sort(a_X)",
+			InstantQueryOnly: true,
+		},
 		// Simple aggregations.
 		{
 			Expr: "sum(a_X)",
@@ -248,17 +258,30 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "avg by (l)(nh_X)",
 		},
-		//{
-		//	Expr: "count_values('value', h_X)",
-		//  Steps: 100,
-		//},
-		//{
-		//	Expr: "topk(1, a_X)",
-		//},
-		//{
-		//	Expr: "topk(5, a_X)",
-		//},
-		//// Combinations.
+		{
+			Expr:  "count_values('value', h_X)", // Every sample has a different value, so this expression will produce X * 100 output series.
+			Steps: 100,
+		},
+		{
+			Expr:  "count_values('value', h_X * 0)", // Every sample has the same value (0), so this expression will produce 1 series.
+			Steps: 100,
+		},
+		{
+			Expr: "topk(1, a_X)",
+		},
+		{
+			Expr: "topk(5, a_X)",
+		},
+		{
+			Expr: "topk by (le) (5, h_X)",
+		},
+		{
+			Expr: "quantile(0.9, a_X)",
+		},
+		{
+			Expr: "quantile by (le) (0.1, h_X)",
+		},
+		// Combinations.
 		{
 			Expr: "rate(a_X[1m]) + rate(b_X[1m])",
 		},
@@ -280,23 +303,26 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "histogram_quantile(0.9, nh_X)",
 		},
-		//// Many-to-one join.
-		//{
-		//	Expr: "a_X + on(l) group_right a_one",
-		//},
-		//// Label compared to blank string.
-		//{
-		//	Expr:  "count({__name__!=\"\"})",
-		//	Steps: 1,
-		//},
-		//{
-		//	Expr:  "count({__name__!=\"\",l=\"\"})",
-		//	Steps: 1,
-		//},
-		//// Functions which have special handling inside eval()
-		//{
-		//	Expr: "timestamp(a_X)",
-		//},
+		// Label compared to blank string.
+		{
+			Expr:  "count({__name__!=\"\"})",
+			Steps: 1,
+		},
+		{
+			Expr:  "count({__name__!=\"\",l=\"\"})",
+			Steps: 1,
+		},
+		// Functions which have special handling inside eval()
+		{
+			Expr: "timestamp(a_X)",
+		},
+		{
+			Expr: "absent(a_X)",
+		},
+		// Test when no samples present
+		{
+			Expr: "absent(a_X > Inf)",
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.

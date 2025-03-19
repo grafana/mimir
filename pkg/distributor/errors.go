@@ -41,6 +41,11 @@ var (
 		validation.IngestionBurstSizeFlag,
 	)
 
+	ingestionBurstSizeLimitedMsgFormat = globalerror.IngestionRateLimited.MessageWithPerTenantLimitConfig(
+		"the request has been rejected because the tenant exceeded the ingestion burst size limit, set to %d, with %d items. This limit is applied on the total number of samples, exemplars and metadata received across all distributors",
+		validation.IngestionBurstSizeFlag,
+	)
+
 	requestRateLimitedMsgFormat = globalerror.RequestRateLimited.MessageWithPerTenantLimitConfig(
 		"the request has been rejected because the tenant exceeded the request rate limit, set to %v requests/s across all distributors with a maximum allowed burst of %d",
 		validation.RequestRateFlag,
@@ -124,7 +129,7 @@ type ingestionRateLimitedError struct {
 	burst int
 }
 
-// newIngestionRateLimitedError creates a ingestionRateLimitedError error containing the given error message.
+// newIngestionRateLimitedError creates an ingestionRateLimitedError error containing the given rate and burst size limits.
 func newIngestionRateLimitedError(limit float64, burst int) ingestionRateLimitedError {
 	return ingestionRateLimitedError{
 		limit: limit,
@@ -142,6 +147,31 @@ func (e ingestionRateLimitedError) Cause() mimirpb.ErrorCause {
 
 // Ensure that ingestionRateLimitedError implements Error.
 var _ Error = ingestionRateLimitedError{}
+
+// ingestionBurstSizeLimitedError represents the ingestion burst size limited error.
+type ingestionBurstSizeLimitedError struct {
+	burst int
+	items int
+}
+
+// newIngestionBurstSizeLimitedError creates an ingestionBurstSizeLimitedError error containing the given burst size limit and number of items.
+func newIngestionBurstSizeLimitedError(burst, items int) ingestionBurstSizeLimitedError {
+	return ingestionBurstSizeLimitedError{
+		burst: burst,
+		items: items,
+	}
+}
+
+func (e ingestionBurstSizeLimitedError) Error() string {
+	return fmt.Sprintf(ingestionBurstSizeLimitedMsgFormat, e.burst, e.items)
+}
+
+func (e ingestionBurstSizeLimitedError) Cause() mimirpb.ErrorCause {
+	return mimirpb.INGESTION_RATE_LIMITED
+}
+
+// Ensure that ingestionBurstSizeLimitedError implements Error.
+var _ Error = ingestionBurstSizeLimitedError{}
 
 // requestRateLimitedError is an error used to represent the request rate limited error.
 type requestRateLimitedError struct {
@@ -174,7 +204,7 @@ type ingesterPushError struct {
 	cause   mimirpb.ErrorCause
 }
 
-// newIngesterPushError creates a ingesterPushError error representing the given status object.
+// newIngesterPushError creates an ingesterPushError error representing the given status object.
 func newIngesterPushError(stat *status.Status, ingesterID string) ingesterPushError {
 	errorCause := mimirpb.UNKNOWN_CAUSE
 	details := stat.Details()

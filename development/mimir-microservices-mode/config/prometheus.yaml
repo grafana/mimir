@@ -17,10 +17,13 @@ scrape_configs:
           - 'ruler-2:8023'
           - 'compactor:8006'
           - 'query-frontend:8007'
-          - 'store-gateway-1:8008'
-          - 'store-gateway-2:8009'
-          - 'query-scheduler:8011'
+          - 'query-scheduler:8008'
+          - 'store-gateway-1:8011'
+          - 'store-gateway-2:8012'
+          - 'store-gateway-3:8013'
+          - 'memcached-exporter:9150'
           - 'continuous-test:8090'
+          - 'load-generator:9900'
         labels:
           cluster: 'docker-compose'
           namespace: 'mimir-microservices-mode'
@@ -38,7 +41,7 @@ scrape_configs:
         target_label: 'container'
         regex: '(.+?)(-\d+)?'
         replacement: '${1}'
-    scrape_classic_histograms: true
+    always_scrape_classic_histograms: true
 
 remote_write:
   - url: http://distributor-1:8000/api/v1/push

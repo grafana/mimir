@@ -53,7 +53,7 @@
 // Support for ReplicaTemplate objects.
 (import 'replica-template.libsonnet') +
 
-// Experimental ingest storage.
+// Experimental ingest storage. Keep this at the end, because we need to override components on top of other changes.
 (import 'ingest-storage.libsonnet') +
 (import 'ingest-storage-ingester-autoscaling.libsonnet') +
 (import 'ingest-storage-migration.libsonnet') +

@@ -48,6 +48,7 @@ const (
 	IngesterMaxInMemorySeries            ID = "ingester-max-series"
 	IngesterMaxInflightPushRequests      ID = "ingester-max-inflight-push-requests"
 	IngesterMaxInflightPushRequestsBytes ID = "ingester-max-inflight-push-requests-bytes"
+	IngesterMaxInflightReadRequests      ID = "ingester-max-inflight-read-requests"
 
 	ExemplarLabelsMissing    ID = "exemplar-labels-missing"
 	ExemplarLabelsTooLong    ID = "exemplar-labels-too-long"
@@ -65,6 +66,7 @@ const (
 	IngestionRateLimited        ID = "tenant-max-ingestion-rate"
 	TooManyHAClusters           ID = "tenant-too-many-ha-clusters"
 	QueryBlocked                ID = "query-blocked"
+	RequestBlocked              ID = "request-blocked"
 
 	SampleTimestampTooOld    ID = "sample-timestamp-too-old"
 	SampleOutOfOrder         ID = "sample-out-of-order"

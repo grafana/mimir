@@ -3,11 +3,15 @@
 package binops
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"slices"
+	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -15,7 +19,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -82,6 +85,43 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 	}
 }
 
+func formatConflictError(
+	firstConflictingSeriesIndex int,
+	secondConflictingSeriesIndex int,
+	description string,
+	ts int64,
+	sourceSeriesMetadata []types.SeriesMetadata,
+	side string,
+	vectorMatching parser.VectorMatching,
+	op parser.ItemType,
+	returnBool bool,
+) error {
+	firstConflictingSeriesLabels := sourceSeriesMetadata[firstConflictingSeriesIndex].Labels
+	groupLabels := groupLabelsFunc(vectorMatching, op, returnBool)(firstConflictingSeriesLabels)
+
+	if secondConflictingSeriesIndex == -1 {
+		return fmt.Errorf(
+			"found %s for the match group %s on the %s side of the operation at timestamp %s",
+			description,
+			groupLabels,
+			side,
+			timestamp.Time(ts).Format(time.RFC3339Nano),
+		)
+	}
+
+	secondConflictingSeriesLabels := sourceSeriesMetadata[secondConflictingSeriesIndex].Labels
+
+	return fmt.Errorf(
+		"found %s for the match group %s on the %s side of the operation at timestamp %s: %s and %s",
+		description,
+		groupLabels,
+		side,
+		timestamp.Time(ts).Format(time.RFC3339Nano),
+		firstConflictingSeriesLabels,
+		secondConflictingSeriesLabels,
+	)
+}
+
 // filterSeries returns data filtered based on the mask provided.
 //
 // mask is expected to contain one value for each time step in the query time range.
@@ -142,6 +182,10 @@ func filterSeries(data types.InstantVectorSeriesData, mask []bool, desiredMaskVa
 // If lH is not nil, this indicates that the left side was a histogram, and similarly for the right side and rH.
 func emitIncompatibleTypesAnnotation(a *annotations.Annotations, op parser.ItemType, lH *histogram.FloatHistogram, rH *histogram.FloatHistogram, expressionPosition posrange.PositionRange) {
 	a.Add(annotations.NewIncompatibleTypesInBinOpInfo(sampleTypeDescription(lH), op.String(), sampleTypeDescription(rH), expressionPosition))
+}
+
+func emitIncompatibleBucketLayoutAnnotation(a *annotations.Annotations, op parser.ItemType, expressionPosition posrange.PositionRange) {
+	a.Add(annotations.NewIncompatibleBucketLayoutInBinOpWarning(op.String(), expressionPosition))
 }
 
 func sampleTypeDescription(h *histogram.FloatHistogram) string {
@@ -276,14 +320,24 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	e.rightIterator.Reset(right)
 
 	// Get first sample from left and right
-	lT, lF, lH, lOk := e.leftIterator.Next()
-	rT, rF, rH, rOk := e.rightIterator.Next()
+	lT, lF, lH, lHIndex, lOk := e.leftIterator.Next()
+	rT, rF, rH, rHIndex, rOk := e.rightIterator.Next()
 
 	appendHistogram := func(t int64, h *histogram.FloatHistogram) error {
 		if hPoints == nil {
 			if err := prepareHSlice(); err != nil {
 				return err
 			}
+		}
+
+		// Check if we're reusing the FloatHistogram from either side.
+		// If so, remove it so that it is not modified when the slice is reused.
+		if h == lH {
+			left.Histograms[lHIndex].H = nil
+		}
+
+		if h == rH {
+			right.Histograms[rHIndex].H = nil
 		}
 
 		hPoints = append(hPoints, promql.HPoint{
@@ -310,10 +364,14 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	}
 
 	appendNextSample := func() error {
-		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH)
+		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH, takeOwnershipOfLeft, takeOwnershipOfRight)
 
 		if err != nil {
-			err = functions.NativeHistogramErrorToAnnotation(err, e.emitAnnotation)
+			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) || errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+				emitIncompatibleBucketLayoutAnnotation(e.annotations, e.op, e.expressionPosition)
+				err = nil
+			}
+
 			if err != nil {
 				return err
 			}
@@ -349,12 +407,12 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 
 		// Advance the iterator with the lower timestamp, or both if equal
 		if lT == rT {
-			lT, lF, lH, lOk = e.leftIterator.Next()
-			rT, rF, rH, rOk = e.rightIterator.Next()
+			lT, lF, lH, lHIndex, lOk = e.leftIterator.Next()
+			rT, rF, rH, rHIndex, rOk = e.rightIterator.Next()
 		} else if lT < rT {
-			lT, lF, lH, lOk = e.leftIterator.Next()
+			lT, lF, lH, lHIndex, lOk = e.leftIterator.Next()
 		} else {
-			rT, rF, rH, rOk = e.rightIterator.Next()
+			rT, rF, rH, rHIndex, rOk = e.rightIterator.Next()
 		}
 	}
 
@@ -378,6 +436,301 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	}, nil
 }
 
-func (e *vectorVectorBinaryOperationEvaluator) emitAnnotation(generator types.AnnotationGenerator) {
-	e.annotations.Add(generator("", e.expressionPosition))
+type binaryOperationFunc func(
+	lF, rF float64,
+	lH, rH *histogram.FloatHistogram,
+	canMutateLeft, canMutateRight bool,
+) (f float64, h *histogram.FloatHistogram, keep bool, valid bool, err error)
+
+var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
+	parser.ADD: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, canMutateRight bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			return lF + rF, nil, true, true, nil
+		}
+
+		if lH != nil && rH != nil {
+			var res *histogram.FloatHistogram
+			var err error
+
+			if canMutateLeft {
+				res, err = lH.Add(rH)
+			} else if canMutateRight {
+				res, err = rH.Add(lH)
+			} else {
+				res, err = lH.Copy().Add(rH)
+			}
+
+			if err != nil {
+				return 0, nil, false, true, err
+			}
+			return 0, res.Compact(0), true, true, nil
+		}
+
+		return 0, nil, false, false, nil
+	},
+	parser.SUB: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, canMutateRight bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			return lF - rF, nil, true, true, nil
+		}
+
+		if lH != nil && rH != nil {
+			var res *histogram.FloatHistogram
+			var err error
+
+			if canMutateLeft {
+				res, err = lH.Sub(rH)
+			} else if canMutateRight {
+				res, err = rH.Mul(-1).Add(lH)
+			} else {
+				res, err = lH.Copy().Sub(rH)
+			}
+
+			if err != nil {
+				return 0, nil, false, true, err
+			}
+			return 0, res.Compact(0), true, true, nil
+		}
+
+		return 0, nil, false, false, nil
+	},
+	parser.MUL: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, canMutateRight bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			return lF * rF, nil, true, true, nil
+		}
+
+		if lH != nil && rH == nil {
+			if !canMutateLeft {
+				lH = lH.Copy()
+			}
+
+			return 0, lH.Mul(rF), true, true, nil
+		}
+
+		if lH == nil && rH != nil {
+			if !canMutateRight {
+				rH = rH.Copy()
+			}
+
+			return 0, rH.Mul(lF), true, true, nil
+		}
+
+		return 0, nil, false, false, nil
+	},
+	parser.DIV: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			return lF / rF, nil, true, true, nil
+		}
+
+		if lH != nil && rH == nil {
+			if !canMutateLeft {
+				lH = lH.Copy()
+			}
+
+			return 0, lH.Div(rF), true, true, nil
+		}
+
+		return 0, nil, false, false, nil
+	},
+	parser.POW: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			return math.Pow(lF, rF), nil, true, true, nil
+		}
+
+		return 0, nil, false, false, nil
+	},
+	parser.MOD: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			return math.Mod(lF, rF), nil, true, true, nil
+		}
+
+		return 0, nil, false, false, nil
+	},
+	parser.ATAN2: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			return math.Atan2(lF, rF), nil, true, true, nil
+		}
+
+		return 0, nil, false, false, nil
+	},
+	parser.EQLC: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, canMutateRight bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			if lF == rF {
+				return lF, nil, true, true, nil
+			}
+
+			return 0, nil, false, true, nil
+		}
+
+		if lH != nil && rH != nil {
+			if lH.Equals(rH) {
+				var res *histogram.FloatHistogram
+
+				if canMutateLeft {
+					res = lH
+				} else if canMutateRight {
+					res = rH
+				} else {
+					res = lH.Copy()
+				}
+
+				return 0, res, true, true, nil
+			}
+
+			return 0, nil, false, true, nil
+		}
+
+		return 0, nil, false, false, nil
+	},
+	parser.NEQ: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			if lF != rF {
+				return lF, nil, true, true, nil
+			}
+
+			return 0, nil, false, true, nil
+		}
+
+		if lH != nil && rH != nil {
+			if !lH.Equals(rH) {
+				if !canMutateLeft {
+					lH = lH.Copy()
+				}
+
+				return 0, lH, true, true, nil
+			}
+
+			return 0, nil, false, true, nil
+		}
+
+		return lF, lH, false, false, nil
+	},
+	parser.LTE: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH != nil || rH != nil {
+			return 0, nil, false, false, nil
+		}
+
+		if lF <= rF {
+			return lF, nil, true, true, nil
+		}
+
+		return 0, nil, false, true, nil
+	},
+	parser.LSS: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH != nil || rH != nil {
+			return 0, nil, false, false, nil
+		}
+
+		if lF < rF {
+			return lF, nil, true, true, nil
+		}
+
+		return 0, nil, false, true, nil
+	},
+	parser.GTE: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH != nil || rH != nil {
+			return 0, nil, false, false, nil
+		}
+
+		if lF >= rF {
+			return lF, nil, true, true, nil
+		}
+
+		return 0, nil, false, true, nil
+	},
+	parser.GTR: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH != nil || rH != nil {
+			return 0, nil, false, false, nil
+		}
+
+		if lF > rF {
+			return lF, nil, true, true, nil
+		}
+
+		return 0, nil, false, true, nil
+	},
+}
+
+var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
+	parser.EQLC: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			if lF == rF {
+				return 1, nil, true, true, nil
+			}
+
+			return 0, nil, true, true, nil
+		}
+
+		if lH != nil && rH != nil {
+			if lH.Equals(rH) {
+				return 1, nil, true, true, nil
+			}
+
+			return 0, nil, true, true, nil
+		}
+
+		return 0, nil, false, false, nil
+	},
+	parser.NEQ: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH == nil && rH == nil {
+			if lF != rF {
+				return 1, nil, true, true, nil
+			}
+
+			return 0, nil, true, true, nil
+		}
+
+		if lH != nil && rH != nil {
+			if !lH.Equals(rH) {
+				return 1, nil, true, true, nil
+			}
+
+			return 0, nil, true, true, nil
+		}
+
+		return 0, nil, false, false, nil
+	},
+	parser.LTE: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH != nil || rH != nil {
+			return 0, nil, false, false, nil
+		}
+
+		if lF <= rF {
+			return 1, nil, true, true, nil
+		}
+
+		return 0, nil, true, true, nil
+	},
+	parser.LSS: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH != nil || rH != nil {
+			return 0, nil, false, false, nil
+		}
+
+		if lF < rF {
+			return 1, nil, true, true, nil
+		}
+
+		return 0, nil, true, true, nil
+	},
+	parser.GTE: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH != nil || rH != nil {
+			return 0, nil, false, false, nil
+		}
+
+		if lF >= rF {
+			return 1, nil, true, true, nil
+		}
+
+		return 0, nil, true, true, nil
+	},
+	parser.GTR: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+		if lH != nil || rH != nil {
+			return 0, nil, false, false, nil
+		}
+
+		if lF > rF {
+			return 1, nil, true, true, nil
+		}
+
+		return 0, nil, true, true, nil
+	},
 }

@@ -1224,9 +1224,9 @@ func (this *PrometheusData) GoString() string {
 	s = append(s, "&querymiddleware.PrometheusData{")
 	s = append(s, "ResultType: "+fmt.Sprintf("%#v", this.ResultType)+",\n")
 	if this.Result != nil {
-		vs := make([]*SampleStream, len(this.Result))
+		vs := make([]SampleStream, len(this.Result))
 		for i := range vs {
-			vs[i] = &this.Result[i]
+			vs[i] = this.Result[i]
 		}
 		s = append(s, "Result: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -1241,16 +1241,16 @@ func (this *SampleStream) GoString() string {
 	s = append(s, "&querymiddleware.SampleStream{")
 	s = append(s, "Labels: "+fmt.Sprintf("%#v", this.Labels)+",\n")
 	if this.Samples != nil {
-		vs := make([]*mimirpb.Sample, len(this.Samples))
+		vs := make([]mimirpb.Sample, len(this.Samples))
 		for i := range vs {
-			vs[i] = &this.Samples[i]
+			vs[i] = this.Samples[i]
 		}
 		s = append(s, "Samples: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	if this.Histograms != nil {
-		vs := make([]*mimirpb.FloatHistogramPair, len(this.Histograms))
+		vs := make([]mimirpb.FloatHistogramPair, len(this.Histograms))
 		for i := range vs {
-			vs[i] = &this.Histograms[i]
+			vs[i] = this.Histograms[i]
 		}
 		s = append(s, "Histograms: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -1277,9 +1277,9 @@ func (this *CachedResponse) GoString() string {
 	s = append(s, "&querymiddleware.CachedResponse{")
 	s = append(s, "Key: "+fmt.Sprintf("%#v", this.Key)+",\n")
 	if this.Extents != nil {
-		vs := make([]*Extent, len(this.Extents))
+		vs := make([]Extent, len(this.Extents))
 		for i := range vs {
-			vs[i] = &this.Extents[i]
+			vs[i] = this.Extents[i]
 		}
 		s = append(s, "Extents: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
@@ -2467,10 +2467,7 @@ func (m *PrometheusHeader) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthModel
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthModel
 			}
 			if (iNdEx + skippy) > l {
@@ -2750,10 +2747,7 @@ func (m *PrometheusResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthModel
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthModel
 			}
 			if (iNdEx + skippy) > l {
@@ -2869,10 +2863,7 @@ func (m *PrometheusData) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthModel
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthModel
 			}
 			if (iNdEx + skippy) > l {
@@ -3024,10 +3015,7 @@ func (m *SampleStream) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthModel
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthModel
 			}
 			if (iNdEx + skippy) > l {
@@ -3173,10 +3161,7 @@ func (m *CachedError) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthModel
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthModel
 			}
 			if (iNdEx + skippy) > l {
@@ -3292,10 +3277,7 @@ func (m *CachedResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthModel
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthModel
 			}
 			if (iNdEx + skippy) > l {
@@ -3470,10 +3452,7 @@ func (m *Extent) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthModel
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthModel
 			}
 			if (iNdEx + skippy) > l {
@@ -3621,10 +3600,7 @@ func (m *Options) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthModel
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthModel
 			}
 			if (iNdEx + skippy) > l {
@@ -3693,10 +3669,7 @@ func (m *QueryStatistics) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthModel
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthModel
 			}
 			if (iNdEx + skippy) > l {
@@ -3865,10 +3838,7 @@ func (m *CachedHTTPResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthModel
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthModel
 			}
 			if (iNdEx + skippy) > l {
@@ -3982,10 +3952,7 @@ func (m *CachedHTTPHeader) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if skippy < 0 {
-				return ErrInvalidLengthModel
-			}
-			if (iNdEx + skippy) < 0 {
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
 				return ErrInvalidLengthModel
 			}
 			if (iNdEx + skippy) > l {
@@ -4003,6 +3970,7 @@ func (m *CachedHTTPHeader) Unmarshal(dAtA []byte) error {
 func skipModel(dAtA []byte) (n int, err error) {
 	l := len(dAtA)
 	iNdEx := 0
+	depth := 0
 	for iNdEx < l {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
@@ -4034,10 +4002,8 @@ func skipModel(dAtA []byte) (n int, err error) {
 					break
 				}
 			}
-			return iNdEx, nil
 		case 1:
 			iNdEx += 8
-			return iNdEx, nil
 		case 2:
 			var length int
 			for shift := uint(0); ; shift += 7 {
@@ -4058,55 +4024,30 @@ func skipModel(dAtA []byte) (n int, err error) {
 				return 0, ErrInvalidLengthModel
 			}
 			iNdEx += length
-			if iNdEx < 0 {
-				return 0, ErrInvalidLengthModel
-			}
-			return iNdEx, nil
 		case 3:
-			for {
-				var innerWire uint64
-				var start int = iNdEx
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return 0, ErrIntOverflowModel
-					}
-					if iNdEx >= l {
-						return 0, io.ErrUnexpectedEOF
-					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					innerWire |= (uint64(b) & 0x7F) << shift
-					if b < 0x80 {
-						break
-					}
-				}
-				innerWireType := int(innerWire & 0x7)
-				if innerWireType == 4 {
-					break
-				}
-				next, err := skipModel(dAtA[start:])
-				if err != nil {
-					return 0, err
-				}
-				iNdEx = start + next
-				if iNdEx < 0 {
-					return 0, ErrInvalidLengthModel
-				}
-			}
-			return iNdEx, nil
+			depth++
 		case 4:
-			return iNdEx, nil
+			if depth == 0 {
+				return 0, ErrUnexpectedEndOfGroupModel
+			}
+			depth--
 		case 5:
 			iNdEx += 4
-			return iNdEx, nil
 		default:
 			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
 		}
+		if iNdEx < 0 {
+			return 0, ErrInvalidLengthModel
+		}
+		if depth == 0 {
+			return iNdEx, nil
+		}
 	}
-	panic("unreachable")
+	return 0, io.ErrUnexpectedEOF
 }
 
 var (
-	ErrInvalidLengthModel = fmt.Errorf("proto: negative length found during unmarshaling")
-	ErrIntOverflowModel   = fmt.Errorf("proto: integer overflow")
+	ErrInvalidLengthModel        = fmt.Errorf("proto: negative length found during unmarshaling")
+	ErrIntOverflowModel          = fmt.Errorf("proto: integer overflow")
+	ErrUnexpectedEndOfGroupModel = fmt.Errorf("proto: unexpected end of group")
 )

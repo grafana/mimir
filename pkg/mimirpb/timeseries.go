@@ -416,7 +416,7 @@ func (bs *LabelAdapter) Unmarshal(dAtA []byte) error {
 }
 
 func yoloString(buf []byte) string {
-	return *((*string)(unsafe.Pointer(&buf)))
+	return unsafe.String(unsafe.SliceData(buf), len(buf)) // nolint:gosec
 }
 
 // Size implements proto.Sizer.
@@ -673,7 +673,7 @@ func copyToYoloLabels(buf []byte, dst, src []LabelAdapter) ([]LabelAdapter, []by
 // It requires that the buffer has a capacity which is greater than or equal to the length of the source string.
 func copyToYoloString(buf []byte, src string) (string, []byte) {
 	buf = buf[:len(src)]
-	copy(buf, *((*[]byte)(unsafe.Pointer(&src))))
+	copy(buf, unsafe.Slice(unsafe.StringData(src), len(src))) // nolint:gosec
 	return yoloString(buf), buf[len(buf):]
 }
 

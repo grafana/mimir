@@ -41,7 +41,7 @@ spec:
       {{- end }}
       containers:
         - name: admin-api
-          image: "{{ include "mimir.imageReference" . }}"
+          image: {{ include "mimir.imageReference" (dict "ctx" . "component" "admin-api") }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - "-target=admin-api"

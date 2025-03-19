@@ -1,0 +1,21 @@
+{
+  "min_time": 1738283066000,
+  "max_time": 1738283066001,
+  "matchers": [
+    {
+      "type": "LabelMatcher_EQ",
+      "name": "__name__",
+      "value": "cortex_request_duration_seconds_count"
+    },
+    {
+      "type": "LabelMatcher_NEQ",
+      "name": "cluster",
+      "value": "dev-us-east-0"
+    },
+    {
+      "type": "LabelMatcher_RE",
+      "name": "method",
+      "value": "POST|GET"
+    }
+  ]
+}

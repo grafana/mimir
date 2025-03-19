@@ -237,7 +237,7 @@ func createIngesterQueryable(t testing.TB, address string) storage.Queryable {
 	overrides, err := validation.NewOverrides(limits, nil)
 	require.NoError(t, err)
 
-	d, err := distributor.New(distributorCfg, clientCfg, overrides, nil, ingestersRing, nil, false, nil, logger)
+	d, err := distributor.New(distributorCfg, clientCfg, overrides, nil, nil, ingestersRing, nil, false, nil, logger)
 	require.NoError(t, err)
 
 	queryMetrics := stats.NewQueryMetrics(nil)

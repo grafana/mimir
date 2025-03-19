@@ -56,18 +56,17 @@ var (
 
 // Config for query_range middleware chain.
 type Config struct {
-	SplitQueriesByInterval           time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
-	ResultsCacheConfig               `yaml:"results_cache"`
-	CacheResults                     bool          `yaml:"cache_results"`
-	CacheErrors                      bool          `yaml:"cache_errors" category:"experimental"`
-	MaxRetries                       int           `yaml:"max_retries" category:"advanced"`
-	NotRunningTimeout                time.Duration `yaml:"not_running_timeout" category:"advanced"`
-	ShardedQueries                   bool          `yaml:"parallelize_shardable_queries"`
-	PrunedQueries                    bool          `yaml:"prune_queries" category:"experimental"`
-	BlockPromQLExperimentalFunctions bool          `yaml:"block_promql_experimental_functions" category:"experimental"`
-	TargetSeriesPerShard             uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
-	ShardActiveSeriesQueries         bool          `yaml:"shard_active_series_queries" category:"experimental"`
-	UseActiveSeriesDecoder           bool          `yaml:"use_active_series_decoder" category:"experimental"`
+	SplitQueriesByInterval   time.Duration `yaml:"split_queries_by_interval" category:"advanced"`
+	ResultsCacheConfig       `yaml:"results_cache"`
+	CacheResults             bool          `yaml:"cache_results"`
+	CacheErrors              bool          `yaml:"cache_errors"`
+	MaxRetries               int           `yaml:"max_retries" category:"advanced"`
+	NotRunningTimeout        time.Duration `yaml:"not_running_timeout" category:"advanced"`
+	ShardedQueries           bool          `yaml:"parallelize_shardable_queries"`
+	PrunedQueries            bool          `yaml:"prune_queries" category:"experimental"`
+	TargetSeriesPerShard     uint64        `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
+	ShardActiveSeriesQueries bool          `yaml:"shard_active_series_queries" category:"experimental"`
+	UseActiveSeriesDecoder   bool          `yaml:"use_active_series_decoder" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -95,7 +94,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.BoolVar(&cfg.PrunedQueries, "query-frontend.prune-queries", false, "True to enable pruning dead code (eg. expressions that cannot produce any results) and simplifying expressions (eg. expressions that can be evaluated immediately) in queries.")
-	f.BoolVar(&cfg.BlockPromQLExperimentalFunctions, "query-frontend.block-promql-experimental-functions", false, "True to control access to specific PromQL experimental functions per tenant.")
 	f.Uint64Var(&cfg.TargetSeriesPerShard, "query-frontend.query-sharding-target-series-per-shard", 0, "How many series a single sharded partial query should load at most. This is not a strict requirement guaranteed to be honoured by query sharding, but a hint given to the query sharding when the query execution is initially planned. 0 to disable cardinality-based hints.")
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
@@ -208,11 +206,10 @@ func NewTripperware(
 	codec Codec,
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
-	engineExperimentalFunctionsEnabled bool,
 	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
-	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, engineExperimentalFunctionsEnabled, ingestStorageTopicOffsetsReaders, registerer)
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, ingestStorageTopicOffsetsReaders, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +226,6 @@ func newQueryTripperware(
 	codec Codec,
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
-	engineExperimentalFunctionsEnabled bool,
 	ingestStorageTopicOffsetsReaders map[string]*ingest.TopicOffsetsReader,
 	registerer prometheus.Registerer,
 ) (Tripperware, error) {
@@ -237,8 +233,9 @@ func newQueryTripperware(
 	engineOpts.ActiveQueryTracker = nil
 	engine := promql.NewEngine(engineOpts)
 
-	// Experimental functions can only be enabled globally, and not on a per-engine basis.
-	parser.EnableExperimentalFunctions = engineExperimentalFunctionsEnabled
+	// Experimental functions are always enabled globally for all engines. Access to them
+	// is controlled by an experimental functions middleware that reads per-tenant settings.
+	parser.EnableExperimentalFunctions = true
 
 	var c cache.Cache
 	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
@@ -256,7 +253,8 @@ func newQueryTripperware(
 		cacheKeyGenerator = NewDefaultCacheKeyGenerator(codec, cfg.SplitQueriesByInterval)
 	}
 
-	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, registerer)
+	queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware := newQueryMiddlewares(cfg, log, limits, codec, c, cacheKeyGenerator, cacheExtractor, engine, engineOpts.NoStepSubqueryIntervalFn, registerer)
+	requestBlocker := newRequestBlocker(limits, log, registerer)
 
 	return func(next http.RoundTripper) http.RoundTripper {
 		// IMPORTANT: roundtrippers are executed in *reverse* order because they are wrappers.
@@ -311,6 +309,10 @@ func newQueryTripperware(
 		cardinality = NewCardinalityQueryRequestValidationRoundTripper(cardinality)
 
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if err := requestBlocker.isBlocked(r); err != nil {
+				return nil, err
+			}
+
 			switch {
 			case IsRangeQuery(r.URL.Path):
 				return queryrange.RoundTrip(r)
@@ -346,24 +348,30 @@ func newQueryMiddlewares(
 	cacheKeyGenerator CacheKeyGenerator,
 	cacheExtractor Extractor,
 	engine *promql.Engine,
+	defaultStepFunc func(rangeMillis int64) int64,
 	registerer prometheus.Registerer,
 ) (queryRangeMiddleware, queryInstantMiddleware, remoteReadMiddleware []MetricsQueryMiddleware) {
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
 	queryBlockerMiddleware := newQueryBlockerMiddleware(limits, log, registerer)
 	queryStatsMiddleware := newQueryStatsMiddleware(registerer, engine)
+	prom2CompatMiddleware := newProm2RangeCompatMiddleware(limits, log, registerer)
+	retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
 
 	remoteReadMiddleware = append(remoteReadMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
-		queryBlockerMiddleware)
+		queryBlockerMiddleware,
+	)
 
 	queryRangeMiddleware = append(queryRangeMiddleware,
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		queryBlockerMiddleware,
+		newInstrumentMiddleware("prom2_compat", metrics),
+		prom2CompatMiddleware,
 		newInstrumentMiddleware("step_align", metrics),
 		newStepAlignMiddleware(limits, log, registerer),
 	)
@@ -376,9 +384,10 @@ func newQueryMiddlewares(
 		)
 	}
 
-	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
+	// Create split and cache middleware if either splitting or caching is enabled
+	var splitAndCacheMiddleware MetricsQueryMiddleware
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), newSplitAndCacheMiddleware(
+		splitAndCacheMiddleware = newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
 			cfg.SplitQueriesByInterval,
@@ -390,15 +399,24 @@ func newQueryMiddlewares(
 			resultsCacheEnabledByOption,
 			log,
 			registerer,
-		))
+		)
+
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics), splitAndCacheMiddleware)
 	}
 
 	queryInstantMiddleware = append(queryInstantMiddleware,
-		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		queryStatsMiddleware,
 		newLimitsMiddleware(limits, log),
 		newSplitInstantQueryByIntervalMiddleware(limits, log, engine, registerer),
 		queryBlockerMiddleware,
+		newInstrumentMiddleware("prom2_compat", metrics),
+		prom2CompatMiddleware,
+	)
+
+	queryInstantMiddleware = append(
+		queryInstantMiddleware,
+		newInstrumentMiddleware("spin_off_subqueries", metrics),
+		newSpinOffSubqueriesMiddleware(limits, log, engine, registerer, splitAndCacheMiddleware, defaultStepFunc),
 	)
 
 	// Inject the extra middlewares provided by the user before the query pruning and query sharding middleware.
@@ -463,28 +481,23 @@ func newQueryMiddlewares(
 	}
 
 	if cfg.MaxRetries > 0 {
-		retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 	}
 
-	if parser.EnableExperimentalFunctions && cfg.BlockPromQLExperimentalFunctions {
-		// We only need to check for tenant-specific settings if experimental functions are enabled globally
-		// and if we want to control access to them per tenant.
-		// Does not apply to remote read as those are executed remotely and the enabling of PromQL experimental
-		// functions for those are not controlled here.
-		experimentalFunctionsMiddleware := newExperimentalFunctionsMiddleware(limits, log)
-		queryRangeMiddleware = append(
-			queryRangeMiddleware,
-			newInstrumentMiddleware("experimental_functions", metrics),
-			experimentalFunctionsMiddleware,
-		)
-		queryInstantMiddleware = append(
-			queryInstantMiddleware,
-			newInstrumentMiddleware("experimental_functions", metrics),
-			experimentalFunctionsMiddleware,
-		)
-	}
+	// Does not apply to remote read as those are executed remotely and the enabling of PromQL experimental
+	// functions for those are not controlled here.
+	experimentalFunctionsMiddleware := newExperimentalFunctionsMiddleware(limits, log)
+	queryRangeMiddleware = append(
+		queryRangeMiddleware,
+		newInstrumentMiddleware("experimental_functions", metrics),
+		experimentalFunctionsMiddleware,
+	)
+	queryInstantMiddleware = append(
+		queryInstantMiddleware,
+		newInstrumentMiddleware("experimental_functions", metrics),
+		experimentalFunctionsMiddleware,
+	)
 
 	return
 }

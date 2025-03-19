@@ -36,6 +36,7 @@ type ringBufferView[T any] interface {
 	Count() int
 	Any() bool
 	First() T
+	PointAt(i int) T
 }
 
 func TestRingBuffer(t *testing.T) {
@@ -135,6 +136,11 @@ func testRingBuffer[T any](t *testing.T, buf ringBuffer[T], points []T) {
 	err = buf.Use(subsliceWithPowerOfTwoCapacity)
 	require.NoError(t, err)
 	shouldHavePoints(t, buf, points[4:]...)
+
+	nonPowerOfTwoSlice := make([]T, 0, 15)
+	err = buf.Use(nonPowerOfTwoSlice)
+	require.EqualError(t, err, "slice capacity must be a power of two, but is 15",
+		"Error message should indicate the invalid capacity")
 }
 
 func TestRingBuffer_DiscardPointsBefore_ThroughWrapAround(t *testing.T) {
@@ -419,6 +425,11 @@ func viewShouldHavePoints[T any](t *testing.T, view ringBufferView[T], expected 
 		require.True(t, present)
 		require.Equal(t, expected[len(expected)-1], end)
 	}
+
+	for idx, expectedPoint := range expected {
+		actualPoint := view.PointAt(idx)
+		require.Equal(t, expectedPoint, actualPoint)
+	}
 }
 
 // Wrapper for FPointRingBuffer to work around indirection to get points
@@ -501,28 +512,4 @@ func setupRingBufferTestingPools(t *testing.T) {
 		getHPointSliceForRingBuffer = originalGetHPointSlice
 		putHPointSliceForRingBuffer = originalPutHPointSlice
 	})
-}
-
-func TestFPointRingBuffer_UseReturnsErrorOnNonPowerOfTwoSlice(t *testing.T) {
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
-	buf := NewFPointRingBuffer(memoryConsumptionTracker)
-
-	nonPowerOfTwoSlice := make([]promql.FPoint, 0, 15)
-
-	err := buf.Use(nonPowerOfTwoSlice)
-	require.Error(t, err, "Use() should return an error for a non-power-of-two slice")
-	require.EqualError(t, err, "slice capacity must be a power of two, but is 15",
-		"Error message should indicate the invalid capacity")
-}
-
-func TestHPointRingBuffer_UseReturnsErrorOnNonPowerOfTwoSlice(t *testing.T) {
-	memoryConsumptionTracker := limiting.NewMemoryConsumptionTracker(0, nil)
-	buf := NewHPointRingBuffer(memoryConsumptionTracker)
-
-	nonPowerOfTwoSlice := make([]promql.HPoint, 0, 15)
-
-	err := buf.Use(nonPowerOfTwoSlice)
-	require.Error(t, err, "Use() should return an error for a non-power-of-two slice")
-	require.EqualError(t, err, "slice capacity must be a power of two, but is 15",
-		"Error message should indicate the invalid capacity")
 }

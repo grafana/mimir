@@ -5,7 +5,7 @@
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 as kustomize
 FROM alpine/helm:3.14.4 as helm
-FROM golang:1.23.2-bookworm
+FROM golang:1.23.7-bookworm
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"
@@ -49,7 +49,7 @@ RUN git clone --depth 1 --branch ${SKOPEO_VERSION} https://github.com/containers
 RUN GO111MODULE=on \
 	go install github.com/client9/misspell/cmd/misspell@v0.3.4 && \
 	go install github.com/golang/protobuf/protoc-gen-go@v1.3.1 && \
-	go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.0 && \
+	go install github.com/gogo/protobuf/protoc-gen-gogoslick@v1.3.2 && \
 	go install github.com/weaveworks/tools/cover@bdd647e92546027e12cdde3ae0714bb495e43013 && \
 	go install github.com/fatih/faillint@v1.12.0 && \
 	go install github.com/campoy/embedmd@v1.0.0 && \

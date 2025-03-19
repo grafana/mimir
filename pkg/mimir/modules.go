@@ -43,6 +43,7 @@ import (
 	blockbuilderscheduler "github.com/grafana/mimir/pkg/blockbuilder/scheduler"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/continuoustest"
+	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
@@ -71,47 +72,50 @@ import (
 
 // The various modules that make up Mimir.
 const (
-	ActivityTracker                  string = "activity-tracker"
+	//lint:sorted
 	API                              string = "api"
-	SanityCheck                      string = "sanity-check"
-	IngesterRing                     string = "ingester-ring"
-	IngesterPartitionRing            string = "ingester-partitions-ring"
-	RuntimeConfig                    string = "runtime-config"
-	Overrides                        string = "overrides"
-	OverridesExporter                string = "overrides-exporter"
-	Server                           string = "server"
 	ActiveGroupsCleanupService       string = "active-groups-cleanup-service"
-	Distributor                      string = "distributor"
-	DistributorService               string = "distributor-service"
-	Ingester                         string = "ingester"
-	IngesterService                  string = "ingester-service"
-	Flusher                          string = "flusher"
-	Querier                          string = "querier"
-	Queryable                        string = "queryable"
-	StoreQueryable                   string = "store-queryable"
-	QueryFrontend                    string = "query-frontend"
-	QueryFrontendCodec               string = "query-frontend-codec"
-	QueryFrontendTripperware         string = "query-frontend-tripperware"
-	QueryFrontendTopicOffsetsReaders string = "query-frontend-topic-offsets-reader"
-	RulerStorage                     string = "ruler-storage"
-	Ruler                            string = "ruler"
+	ActivityTracker                  string = "activity-tracker"
 	AlertManager                     string = "alertmanager"
-	Compactor                        string = "compactor"
-	StoreGateway                     string = "store-gateway"
-	MemberlistKV                     string = "memberlist-kv"
-	QueryScheduler                   string = "query-scheduler"
-	Vault                            string = "vault"
-	TenantFederation                 string = "tenant-federation"
-	UsageStats                       string = "usage-stats"
 	BlockBuilder                     string = "block-builder"
 	BlockBuilderScheduler            string = "block-builder-scheduler"
+	Compactor                        string = "compactor"
 	ContinuousTest                   string = "continuous-test"
-	All                              string = "all"
+	CostAttributionService           string = "cost-attribution-service"
+	Distributor                      string = "distributor"
+	DistributorService               string = "distributor-service"
+	Flusher                          string = "flusher"
+	Ingester                         string = "ingester"
+	IngesterPartitionRing            string = "ingester-partitions-ring"
+	IngesterRing                     string = "ingester-ring"
+	IngesterService                  string = "ingester-service"
+	MemberlistKV                     string = "memberlist-kv"
+	Overrides                        string = "overrides"
+	OverridesExporter                string = "overrides-exporter"
+	Querier                          string = "querier"
+	QueryFrontend                    string = "query-frontend"
+	QueryFrontendCodec               string = "query-frontend-codec"
+	QueryFrontendTopicOffsetsReaders string = "query-frontend-topic-offsets-reader"
+	QueryFrontendTripperware         string = "query-frontend-tripperware"
+	QueryScheduler                   string = "query-scheduler"
+	Queryable                        string = "queryable"
+	Ruler                            string = "ruler"
+	RulerStorage                     string = "ruler-storage"
+	RuntimeConfig                    string = "runtime-config"
+	SanityCheck                      string = "sanity-check"
+	Server                           string = "server"
+	StoreGateway                     string = "store-gateway"
+	StoreQueryable                   string = "store-queryable"
+	TenantFederation                 string = "tenant-federation"
+	UsageStats                       string = "usage-stats"
+	Vault                            string = "vault"
 
 	// Write Read and Backend are the targets used when using the read-write deployment mode.
 	Write   string = "write"
 	Read    string = "read"
 	Backend string = "backend"
+
+	All string = "all"
 )
 
 var (
@@ -203,35 +207,38 @@ func (t *Mimir) initVault() (services.Service, error) {
 	t.Vault = v
 
 	// Update Configs - KVStore
-	t.Cfg.MemberlistKV.TCPTransport.TLS.Reader = t.Vault
-	t.Cfg.Distributor.HATrackerConfig.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	// lint:sorted
 	t.Cfg.Alertmanager.ShardingRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.Compactor.ShardingRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.Distributor.DistributorRing.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
-	t.Cfg.Ingester.IngesterRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Distributor.HATrackerConfig.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.Ingester.IngesterPartitionRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.Ingester.IngesterRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.MemberlistKV.TCPTransport.TLS.Reader = t.Vault
+	t.Cfg.OverridesExporter.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
+	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.Ruler.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 	t.Cfg.StoreGateway.ShardingRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
-	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
-	t.Cfg.OverridesExporter.Ring.Common.KVStore.StoreConfig.Etcd.TLS.Reader = t.Vault
 
 	// Update Configs - Redis Clients
-	t.Cfg.BlocksStorage.BucketStore.IndexCache.BackendConfig.Redis.TLS.Reader = t.Vault
+	// lint:sorted
 	t.Cfg.BlocksStorage.BucketStore.ChunksCache.BackendConfig.Redis.TLS.Reader = t.Vault
+	t.Cfg.BlocksStorage.BucketStore.IndexCache.BackendConfig.Redis.TLS.Reader = t.Vault
 	t.Cfg.BlocksStorage.BucketStore.MetadataCache.BackendConfig.Redis.TLS.Reader = t.Vault
 	t.Cfg.Frontend.QueryMiddleware.ResultsCacheConfig.BackendConfig.Redis.TLS.Reader = t.Vault
 
 	// Update Configs - GRPC Clients
-	t.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader = t.Vault
-	t.Cfg.Worker.QueryFrontendGRPCClientConfig.TLS.Reader = t.Vault
-	t.Cfg.Worker.QuerySchedulerGRPCClientConfig.TLS.Reader = t.Vault
-	t.Cfg.Querier.StoreGatewayClient.TLS.Reader = t.Vault
+	// lint:sorted
+	t.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Frontend.FrontendV2.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.IngesterClient.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.Querier.StoreGatewayClient.TLS.Reader = t.Vault
+	t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
 	t.Cfg.Ruler.ClientTLSConfig.TLS.Reader = t.Vault
 	t.Cfg.Ruler.Notifier.TLS.Reader = t.Vault
 	t.Cfg.Ruler.QueryFrontend.GRPCClientConfig.TLS.Reader = t.Vault
-	t.Cfg.Alertmanager.AlertmanagerClient.GRPCClientConfig.TLS.Reader = t.Vault
-	t.Cfg.QueryScheduler.GRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.Worker.QueryFrontendGRPCClientConfig.TLS.Reader = t.Vault
+	t.Cfg.Worker.QuerySchedulerGRPCClientConfig.TLS.Reader = t.Vault
 
 	// Update the Server
 	updateServerTLSCfgFunc := func(vault *vault.Vault, tlsConfig *server.TLSConfig) error {
@@ -297,7 +304,7 @@ func (t *Mimir) initServer() (services.Service, error) {
 	// t.Ingester or t.Distributor will be available. There's no race condition here, because gRPC server (service returned by this method, ie. initServer)
 	// is started only after t.Ingester and t.Distributor are set in initIngester or initDistributorService.
 
-	ingFn := func() pushReceiver {
+	ingFn := func() ingesterReceiver {
 		// Return explicit nil if there's no ingester. We don't want to return typed-nil as interface value.
 		if t.Ingester == nil {
 			return nil
@@ -354,6 +361,8 @@ func (t *Mimir) initServer() (services.Service, error) {
 }
 
 func (t *Mimir) initIngesterRing() (serv services.Service, err error) {
+	t.Cfg.Ingester.IngesterRing.HideTokensInStatusPage = t.Cfg.IngestStorage.Enabled
+
 	t.IngesterRing, err = ring.New(t.Cfg.Ingester.IngesterRing.ToRingConfig(), "ingester", ingester.IngesterRingKey, util_log.Logger, prometheus.WrapRegistererWithPrefix("cortex_", t.Registerer))
 	if err != nil {
 		return nil, err
@@ -402,15 +411,16 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	//
 	// By doing the initialization here instead of per-module init function, we avoid the problem
 	// of projects based on Mimir forgetting the wiring if they override module's init method (they also don't have access to private symbols).
+	// lint:sorted
 	t.Cfg.Alertmanager.ShardingRing.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Compactor.ShardingRing.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Distributor.DistributorRing.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-	t.Cfg.Ingester.IngesterRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ingester.IngesterPartitionRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	t.Cfg.Ingester.IngesterRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	t.Cfg.OverridesExporter.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
+	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ruler.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.StoreGateway.ShardingRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
-	t.Cfg.OverridesExporter.Ring.Common.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 
 	return serv, err
 }
@@ -463,7 +473,9 @@ func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.PreferAvailabilityZone = t.Cfg.Querier.PreferAvailabilityZone
 	t.Cfg.Distributor.IngestStorageConfig = t.Cfg.IngestStorage
 
-	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides, t.ActiveGroupsCleanup, t.IngesterRing, t.IngesterPartitionInstanceRing, canJoinDistributorsRing, t.Registerer, util_log.Logger)
+	t.Distributor, err = distributor.New(t.Cfg.Distributor, t.Cfg.IngesterClient, t.Overrides,
+		t.ActiveGroupsCleanup, t.CostAttributionManager, t.IngesterRing, t.IngesterPartitionInstanceRing,
+		canJoinDistributorsRing, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -485,6 +497,10 @@ func (t *Mimir) initDistributor() (serv services.Service, err error) {
 // Mimir. It also registers the API endpoints associated with those two services.
 func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	registerer := prometheus.WrapRegistererWith(querierEngine, t.Registerer)
+
+	if t.Cfg.Querier.FilterQueryablesEnabled {
+		t.Server.HTTP.Use(querier.FilterQueryablesMiddleware().Wrap)
+	}
 
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, err = querier.New(
@@ -645,18 +661,31 @@ func (t *Mimir) initActiveGroupsCleanupService() (services.Service, error) {
 	return t.ActiveGroupsCleanup, nil
 }
 
+func (t *Mimir) initCostAttributionService() (services.Service, error) {
+	// The cost attribution service is only initilized if the custom registry path is provided.
+	if t.Cfg.CostAttributionRegistryPath != "" {
+		reg := prometheus.NewRegistry()
+		var err error
+		t.CostAttributionManager, err = costattribution.NewManager(t.Cfg.CostAttributionCleanupInterval, t.Cfg.CostAttributionEvictionInterval, util_log.Logger, t.Overrides, reg)
+		t.API.RegisterCostAttribution(t.Cfg.CostAttributionRegistryPath, reg)
+		return t.CostAttributionManager, err
+	}
+	return nil, nil
+}
+
 func (t *Mimir) tsdbIngesterConfig() {
 	t.Cfg.Ingester.BlocksStorageConfig = t.Cfg.BlocksStorage
 }
 
 func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.IngesterRing.ListenPort = t.Cfg.Server.GRPCListenPort
+	t.Cfg.Ingester.IngesterRing.HideTokensInStatusPage = t.Cfg.IngestStorage.Enabled
 	t.Cfg.Ingester.StreamTypeFn = ingesterChunkStreaming(t.RuntimeConfig)
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.Cfg.Ingester.IngestStorageConfig = t.Cfg.IngestStorage
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.Registerer, util_log.Logger)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Overrides, t.IngesterRing, t.IngesterPartitionRingWatcher, t.ActiveGroupsCleanup, t.CostAttributionManager, t.Registerer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -742,7 +771,7 @@ func (t *Mimir) initQueryFrontendTopicOffsetsReaders() (services.Service, error)
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
 	promqlEngineRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "query-frontend"}, t.Registerer)
 
-	engineOpts, _, engineExperimentalFunctionsEnabled := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
+	engineOpts, _ := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
 
 	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.Frontend.QueryMiddleware,
@@ -751,7 +780,6 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.QueryFrontendCodec,
 		querymiddleware.PrometheusResponseExtractor{},
 		engineOpts,
-		engineExperimentalFunctionsEnabled,
 		t.QueryFrontendTopicOffsetsReaders,
 		t.Registerer,
 	)
@@ -855,11 +883,11 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	var queryFunc rules.QueryFunc
 
 	if t.Cfg.Ruler.QueryFrontend.Address != "" {
-		queryFrontendClient, err := ruler.DialQueryFrontend(t.Cfg.Ruler.QueryFrontend)
+		queryFrontendClient, err := ruler.DialQueryFrontend(t.Cfg.Ruler.QueryFrontend, t.Registerer, util_log.Logger)
 		if err != nil {
 			return nil, err
 		}
-		remoteQuerier := ruler.NewRemoteQuerier(queryFrontendClient, t.Cfg.Querier.EngineConfig.Timeout, t.Cfg.Ruler.QueryFrontend.QueryResultResponseFormat, t.Cfg.API.PrometheusHTTPPrefix, util_log.Logger, ruler.WithOrgIDMiddleware)
+		remoteQuerier := ruler.NewRemoteQuerier(queryFrontendClient, t.Cfg.Querier.EngineConfig.Timeout, t.Cfg.Ruler.QueryFrontend.MaxRetriesRate, t.Cfg.Ruler.QueryFrontend.QueryResultResponseFormat, t.Cfg.API.PrometheusHTTPPrefix, util_log.Logger, ruler.WithOrgIDMiddleware)
 
 		embeddedQueryable = prom_remote.NewSampleAndChunkQueryableClient(
 			remoteQuerier,
@@ -1002,6 +1030,8 @@ func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 
 func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	t.Cfg.Compactor.ShardingRing.Common.ListenPort = t.Cfg.Server.GRPCListenPort
+	t.Cfg.Compactor.SparseIndexHeadersConfig = t.Cfg.BlocksStorage.BucketStore.IndexHeader
+	t.Cfg.Compactor.SparseIndexHeadersSamplingRate = t.Cfg.BlocksStorage.BucketStore.PostingOffsetsInMemSampling
 
 	t.Compactor, err = compactor.NewMultitenantCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, t.Registerer)
 	if err != nil {
@@ -1044,16 +1074,17 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.API.RegisterMemberlistKV(t.Cfg.Server.PathPrefix, t.MemberlistKV)
 
 	// Update the config.
+	// lint:sorted
+	t.Cfg.Alertmanager.ShardingRing.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.Compactor.ShardingRing.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Distributor.DistributorRing.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Distributor.HATrackerConfig.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
-	t.Cfg.Ingester.IngesterRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.Ingester.IngesterPartitionRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
-	t.Cfg.StoreGateway.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
-	t.Cfg.Compactor.ShardingRing.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
-	t.Cfg.Ruler.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
-	t.Cfg.Alertmanager.ShardingRing.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
-	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.Ingester.IngesterRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 	t.Cfg.OverridesExporter.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.QueryScheduler.ServiceDiscovery.SchedulerRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.Ruler.Ring.Common.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
+	t.Cfg.StoreGateway.ShardingRing.KVStore.MemberlistKV = t.MemberlistKV.GetMemberlistKV
 
 	return t.MemberlistKV, nil
 }
@@ -1135,81 +1166,89 @@ func (t *Mimir) setupModuleManager() error {
 
 	// Register all modules here.
 	// RegisterModule(name string, initFn func()(services.Service, error))
-	mm.RegisterModule(Server, t.initServer, modules.UserInvisibleModule)
-	mm.RegisterModule(ActivityTracker, t.initActivityTracker, modules.UserInvisibleModule)
-	mm.RegisterModule(SanityCheck, t.initSanityCheck, modules.UserInvisibleModule)
+	// lint:sorted
 	mm.RegisterModule(API, t.initAPI, modules.UserInvisibleModule)
-	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
-	mm.RegisterModule(MemberlistKV, t.initMemberlistKV)
-	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
-	mm.RegisterModule(IngesterPartitionRing, t.initIngesterPartitionRing, modules.UserInvisibleModule)
-	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
-	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(ActiveGroupsCleanupService, t.initActiveGroupsCleanupService, modules.UserInvisibleModule)
-	mm.RegisterModule(Distributor, t.initDistributor)
-	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
-	mm.RegisterModule(Ingester, t.initIngester)
-	mm.RegisterModule(IngesterService, t.initIngesterService, modules.UserInvisibleModule)
-	mm.RegisterModule(Flusher, t.initFlusher)
-	mm.RegisterModule(Queryable, t.initQueryable, modules.UserInvisibleModule)
-	mm.RegisterModule(Querier, t.initQuerier)
-	mm.RegisterModule(StoreQueryable, t.initStoreQueryable, modules.UserInvisibleModule)
-	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
-	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
-	mm.RegisterModule(QueryFrontendTopicOffsetsReaders, t.initQueryFrontendTopicOffsetsReaders, modules.UserInvisibleModule)
-	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
-	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
-	mm.RegisterModule(Ruler, t.initRuler)
+	mm.RegisterModule(ActivityTracker, t.initActivityTracker, modules.UserInvisibleModule)
 	mm.RegisterModule(AlertManager, t.initAlertManager)
-	mm.RegisterModule(Compactor, t.initCompactor)
-	mm.RegisterModule(StoreGateway, t.initStoreGateway)
-	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
-	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
-	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
 	mm.RegisterModule(BlockBuilder, t.initBlockBuilder)
 	mm.RegisterModule(BlockBuilderScheduler, t.initBlockBuilderScheduler)
+	mm.RegisterModule(Compactor, t.initCompactor)
 	mm.RegisterModule(ContinuousTest, t.initContinuousTest)
+	mm.RegisterModule(CostAttributionService, t.initCostAttributionService, modules.UserInvisibleModule)
+	mm.RegisterModule(Distributor, t.initDistributor)
+	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
+	mm.RegisterModule(Flusher, t.initFlusher)
+	mm.RegisterModule(Ingester, t.initIngester)
+	mm.RegisterModule(IngesterPartitionRing, t.initIngesterPartitionRing, modules.UserInvisibleModule)
+	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
+	mm.RegisterModule(IngesterService, t.initIngesterService, modules.UserInvisibleModule)
+	mm.RegisterModule(MemberlistKV, t.initMemberlistKV)
+	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
+	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
+	mm.RegisterModule(Querier, t.initQuerier)
+	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
+	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
+	mm.RegisterModule(QueryFrontendTopicOffsetsReaders, t.initQueryFrontendTopicOffsetsReaders, modules.UserInvisibleModule)
+	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
+	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
+	mm.RegisterModule(Queryable, t.initQueryable, modules.UserInvisibleModule)
+	mm.RegisterModule(Ruler, t.initRuler)
+	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
+	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
+	mm.RegisterModule(SanityCheck, t.initSanityCheck, modules.UserInvisibleModule)
+	mm.RegisterModule(Server, t.initServer, modules.UserInvisibleModule)
+	mm.RegisterModule(StoreGateway, t.initStoreGateway)
+	mm.RegisterModule(StoreQueryable, t.initStoreQueryable, modules.UserInvisibleModule)
+	mm.RegisterModule(TenantFederation, t.initTenantFederation, modules.UserInvisibleModule)
+	mm.RegisterModule(UsageStats, t.initUsageStats, modules.UserInvisibleModule)
 	mm.RegisterModule(Vault, t.initVault, modules.UserInvisibleModule)
+
 	mm.RegisterModule(Write, nil)
 	mm.RegisterModule(Read, nil)
 	mm.RegisterModule(Backend, nil)
+
 	mm.RegisterModule(All, nil)
 
 	// Add dependencies
 	deps := map[string][]string{
-		Server:                           {ActivityTracker, SanityCheck, UsageStats},
+		//lint:sorted
 		API:                              {Server},
-		MemberlistKV:                     {API, Vault},
-		RuntimeConfig:                    {API},
-		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},
-		IngesterPartitionRing:            {MemberlistKV, IngesterRing, API},
-		Overrides:                        {RuntimeConfig},
-		OverridesExporter:                {Overrides, MemberlistKV, Vault},
-		Distributor:                      {DistributorService, API, ActiveGroupsCleanupService, Vault},
-		DistributorService:               {IngesterRing, IngesterPartitionRing, Overrides, Vault},
-		Ingester:                         {IngesterService, API, ActiveGroupsCleanupService, Vault},
-		IngesterService:                  {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV},
-		Flusher:                          {Overrides, API},
-		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
-		Querier:                          {TenantFederation, Vault},
-		StoreQueryable:                   {Overrides, MemberlistKV},
-		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders},
-		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
-		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
-		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
-		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault},
-		RulerStorage:                     {Overrides},
 		AlertManager:                     {API, MemberlistKV, Overrides, Vault},
-		Compactor:                        {API, MemberlistKV, Overrides, Vault},
-		StoreGateway:                     {API, Overrides, MemberlistKV, Vault},
-		TenantFederation:                 {Queryable},
 		BlockBuilder:                     {API, Overrides},
 		BlockBuilderScheduler:            {API},
+		Compactor:                        {API, MemberlistKV, Overrides, Vault},
 		ContinuousTest:                   {API},
-		Write:                            {Distributor, Ingester},
-		Read:                             {QueryFrontend, Querier},
-		Backend:                          {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
-		All:                              {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
+		CostAttributionService:           {API, Overrides},
+		Distributor:                      {DistributorService, API, ActiveGroupsCleanupService, Vault},
+		DistributorService:               {IngesterRing, IngesterPartitionRing, Overrides, Vault, CostAttributionService},
+		Flusher:                          {Overrides, API},
+		Ingester:                         {IngesterService, API, ActiveGroupsCleanupService, Vault},
+		IngesterPartitionRing:            {MemberlistKV, IngesterRing, API},
+		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},
+		IngesterService:                  {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV, CostAttributionService},
+		MemberlistKV:                     {API, Vault},
+		Overrides:                        {RuntimeConfig},
+		OverridesExporter:                {Overrides, MemberlistKV, Vault},
+		Querier:                          {TenantFederation, Vault},
+		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
+		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
+		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders},
+		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
+		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
+		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault},
+		RulerStorage:                     {Overrides},
+		RuntimeConfig:                    {API},
+		Server:                           {ActivityTracker, SanityCheck, UsageStats},
+		StoreGateway:                     {API, Overrides, MemberlistKV, Vault},
+		StoreQueryable:                   {Overrides, MemberlistKV},
+		TenantFederation:                 {Queryable},
+
+		Backend: {QueryScheduler, Ruler, StoreGateway, Compactor, AlertManager, OverridesExporter},
+		Read:    {QueryFrontend, Querier},
+		Write:   {Distributor, Ingester},
+
+		All: {QueryFrontend, Querier, Ingester, Distributor, StoreGateway, Ruler, Compactor},
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {

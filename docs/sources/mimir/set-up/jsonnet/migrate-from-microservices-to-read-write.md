@@ -25,7 +25,7 @@ Steps can be applied vice-versa for migrating from read-write mode to microservi
 
 ## Step 1: Configure prerequisite zone-awareness
 
-Read-write mode requires that you enable [multi-zone ingesters and store-gateways]({{< relref "../../configure/configure-zone-aware-replication#enabling-zone-awareness-via-the-grafana-mimir-jsonnet" >}}).
+Read-write mode requires that you enable [multi-zone ingesters and store-gateways](../../../configure/configure-zone-aware-replication/#enabling-zone-awareness-via-the-grafana-mimir-jsonnet).
 
 ```jsonnet
 {
@@ -36,7 +36,7 @@ Read-write mode requires that you enable [multi-zone ingesters and store-gateway
 }
 ```
 
-[Ruler remote evaluation]({{< relref "./configure-ruler#operational-modes" >}}) is also required to be disabled, however this is done later in the migration process if you are presently using it in microservices.
+[Ruler remote evaluation](../configure-ruler/#operational-modes) is also required to be disabled, however this is done later in the migration process if you are presently using it in microservices.
 
 ## Step 2: Deploy read-write components with 0 replicas
 
@@ -244,7 +244,7 @@ Then scale down the replicas for all components:
 
 Ensure backend components (`query-scheduler`, `compactor`, `ruler`, `store-gateway`) correctly left their respective rings (Query-scheduler, Compactor, Ruler, Store-gateway).
 
-It is now safe to disable [ruler remote evaluation]({{< relref "./configure-ruler#operational-modes" >}}). (This needs to be done after the microservices ruler has been scaled down, otherwise rule evaluations may fail).
+It is now safe to disable [ruler remote evaluation](../configure-ruler/#operational-modes). (This needs to be done after the microservices ruler has been scaled down, otherwise rule evaluations may fail).
 
 ```jsonnet
 {
@@ -298,7 +298,7 @@ Wait the next TSDB head compaction for ingesters (2 hours).
 You must follow the shutdown ingester procedure to avoid data loss.
 {{< /admonition >}}
 
-Follow the procedure for [shutting down ingesters]({{< relref "../../manage/run-production-environment/scaling-out.md#scaling-down-ingesters" >}}) in `ingester-zone-a`.
+Follow the procedure for [shutting down ingesters](../../../manage/run-production-environment/scaling-out/#scaling-down-ingesters) in `ingester-zone-a`.
 
 Scale down zone-a replicas (this can be done before waiting for step 4 in the shutdown procedure):
 

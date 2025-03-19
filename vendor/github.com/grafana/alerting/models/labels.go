@@ -13,6 +13,9 @@ const (
 	//nolint:gosec
 	ImageTokenAnnotation = "__alertImageToken__"
 
+	// ImageURLAnnotation is the annotation that will contain the URL of an alert's image.
+	ImageURLAnnotation = "__alert_image_url__"
+
 	// GrafanaReservedLabelPrefix contains the prefix for Grafana reserved labels. These differ from "__<label>__" labels
 	// in that they are not meant for internal-use only and will be passed-through to AMs and available to users in the same
 	// way as manually configured labels.

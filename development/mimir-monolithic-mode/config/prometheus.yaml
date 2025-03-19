@@ -9,13 +9,13 @@ scrape_configs:
       - targets: ['mimir-1:8001']
         labels:
           container: 'mimir-1'
-    scrape_classic_histograms: true
+    always_scrape_classic_histograms: true
   - job_name: mimir-2
     static_configs:
       - targets: ['mimir-2:8002']
         labels:
           container: 'mimir-2'
-    scrape_classic_histograms: true
+    always_scrape_classic_histograms: true
 
 remote_write:
   - url: http://mimir-1:8001/api/v1/push
