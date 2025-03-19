@@ -69,6 +69,11 @@ func encodeNode(n Node, stream *jsoniter.Stream, nodesToIndex map[Node]int) {
 	stream.WriteString(n.Type())
 	stream.WriteMore()
 
+	// TODO: only do this if we're returning analysis to a human
+	stream.WriteObjectField("description")
+	stream.WriteString(n.Describe())
+	stream.WriteMore()
+
 	stream.WriteObjectField("details")
 	stream.WriteVal(n)
 
@@ -85,6 +90,21 @@ func encodeNode(n Node, stream *jsoniter.Stream, nodesToIndex map[Node]int) {
 			}
 
 			stream.WriteInt(nodeIdx)
+		}
+
+		stream.WriteArrayEnd()
+
+		// TODO: only do this if we're returning analysis to a human
+		childrenLabels := n.ChildrenLabels()
+		stream.WriteMore()
+		stream.WriteObjectField("childrenLabels")
+		stream.WriteArrayStart()
+		for i, l := range childrenLabels {
+			if i > 0 {
+				stream.WriteMore()
+			}
+
+			stream.WriteString(l)
 		}
 
 		stream.WriteArrayEnd()

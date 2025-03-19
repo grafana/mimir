@@ -61,9 +61,9 @@ func (a *AggregateExpression) Describe() string {
 
 	if a.Without || len(a.Grouping) > 0 {
 		if a.Without {
-			builder.WriteString(" without(")
+			builder.WriteString(" without (")
 		} else {
-			builder.WriteString(" by(")
+			builder.WriteString(" by (")
 		}
 
 		for i, l := range a.Grouping {
@@ -127,47 +127,45 @@ func (b *BinaryExpression) Describe() string {
 		builder.WriteString(" bool")
 	}
 
+	if b.VectorMatching != nil {
+		if b.VectorMatching.On || len(b.VectorMatching.MatchingLabels) > 0 {
+			if b.VectorMatching.On {
+				builder.WriteString(" on (")
+			} else {
+				builder.WriteString(" ignoring (")
+			}
+
+			for i, l := range b.VectorMatching.MatchingLabels {
+				if i > 0 {
+					builder.WriteString(", ")
+				}
+
+				builder.WriteString(l)
+			}
+
+			builder.WriteRune(')')
+		}
+
+		if b.VectorMatching.Card == parser.CardOneToMany || b.VectorMatching.Card == parser.CardManyToOne {
+			if b.VectorMatching.Card == parser.CardOneToMany {
+				builder.WriteString(" group_right (")
+			} else {
+				builder.WriteString(" group_left (")
+			}
+
+			for i, l := range b.VectorMatching.Include {
+				if i > 0 {
+					builder.WriteString(", ")
+				}
+
+				builder.WriteString(l)
+			}
+
+			builder.WriteRune(')')
+		}
+	}
+
 	builder.WriteString(" RHS")
-
-	if b.VectorMatching == nil {
-		return builder.String()
-	}
-
-	if b.VectorMatching.On || len(b.VectorMatching.MatchingLabels) > 0 {
-		if b.VectorMatching.On {
-			builder.WriteString(" on(")
-		} else {
-			builder.WriteString(" ignoring(")
-		}
-
-		for i, l := range b.VectorMatching.MatchingLabels {
-			if i > 0 {
-				builder.WriteString(", ")
-			}
-
-			builder.WriteString(l)
-		}
-
-		builder.WriteRune(')')
-	}
-
-	if b.VectorMatching.Card == parser.CardOneToMany || b.VectorMatching.Card == parser.CardManyToOne {
-		if b.VectorMatching.Card == parser.CardOneToMany {
-			builder.WriteString(" group_right(")
-		} else {
-			builder.WriteString(" group_left(")
-		}
-
-		for i, l := range b.VectorMatching.Include {
-			if i > 0 {
-				builder.WriteString(", ")
-			}
-
-			builder.WriteString(l)
-		}
-
-		builder.WriteRune(')')
-	}
 
 	return builder.String()
 }
@@ -342,7 +340,11 @@ func (v *VectorSelector) Describe() string {
 func describeSelector(matchers []*labels.Matcher, ts *int64, offset time.Duration, rng *time.Duration) string {
 	builder := &strings.Builder{}
 	builder.WriteRune('{')
-	for _, m := range matchers {
+	for i, m := range matchers {
+		if i > 0 {
+			builder.WriteString(", ")
+		}
+
 		builder.WriteString(m.String())
 	}
 	builder.WriteRune('}')
