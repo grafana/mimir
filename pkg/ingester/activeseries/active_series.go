@@ -360,8 +360,6 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 				for i := 0; i < matchesLen; i++ {
 					s.activeMatchingNativeHistogramBuckets[matches.Get(i)] = uint32(int(s.activeMatchingNativeHistogramBuckets[matches.Get(i)]) + diff)
 				}
-				s.cat.Decrement(series, entry.numNativeHistogramBuckets)
-				s.cat.Increment(series, time.Unix(0, nowNanos), numNativeHistogramBuckets)
 			} else if numNativeHistogramBuckets >= 0 {
 				// change from float to histogram
 				s.activeNativeHistograms++
@@ -371,8 +369,6 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 					s.activeMatchingNativeHistograms[match]++
 					s.activeMatchingNativeHistogramBuckets[match] += uint32(numNativeHistogramBuckets)
 				}
-				s.cat.Decrement(series, -1)
-				s.cat.Increment(series, time.Unix(0, nowNanos), numNativeHistogramBuckets)
 			} else {
 				// change from histogram to float
 				s.activeNativeHistograms--
@@ -382,9 +378,9 @@ func (s *seriesStripe) findAndUpdateOrCreateEntryForSeries(ref storage.SeriesRef
 					s.activeMatchingNativeHistograms[match]--
 					s.activeMatchingNativeHistogramBuckets[match] -= uint32(entry.numNativeHistogramBuckets)
 				}
-				s.cat.Decrement(series, entry.numNativeHistogramBuckets)
-				s.cat.Increment(series, time.Unix(0, nowNanos), -1)
 			}
+			s.cat.Decrement(series, entry.numNativeHistogramBuckets)
+			s.cat.Increment(series, time.Unix(0, nowNanos), numNativeHistogramBuckets)
 			entry.numNativeHistogramBuckets = numNativeHistogramBuckets
 			s.refs[ref] = entry
 		}

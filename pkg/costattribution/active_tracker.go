@@ -190,7 +190,7 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 	c, ok := at.observed[string(buf.Bytes())]
 	if ok {
 		nv := c.activeSeries.Dec()
-		if nativeHistogramBucketNum >= 0 && c.nativeHistograms.Load() > 0 {
+		if nativeHistogramBucketNum >= 0 {
 			c.nativeHistograms.Dec()
 			c.nativeHistogramBuckets.Sub(int64(nativeHistogramBucketNum))
 		}
@@ -215,7 +215,7 @@ func (at *ActiveSeriesTracker) Decrement(lbls labels.Labels, nativeHistogramBuck
 
 	if !at.overflowSince.IsZero() {
 		at.overflowCounter.activeSeries.Dec()
-		if nativeHistogramBucketNum >= 0 && at.overflowCounter.nativeHistograms.Load() > 0 {
+		if nativeHistogramBucketNum >= 0 {
 			at.overflowCounter.nativeHistograms.Dec()
 			at.overflowCounter.nativeHistogramBuckets.Sub(int64(nativeHistogramBucketNum))
 		}
@@ -240,9 +240,9 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 
 		if nhcounter := float64(nativeHistogram + at.overflowCounter.nativeHistograms.Load()); nhcounter > 0 {
 			out <- prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, nhcounter, at.overflowLabels[:len(at.overflowLabels)-1]...)
-			if bcounter := float64(nhBucketNum + at.overflowCounter.nativeHistogramBuckets.Load()); bcounter > 0 {
-				out <- prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, bcounter, at.overflowLabels[:len(at.overflowLabels)-1]...)
-			}
+		}
+		if bcounter := float64(nhBucketNum + at.overflowCounter.nativeHistogramBuckets.Load()); bcounter > 0 {
+			out <- prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, bcounter, at.overflowLabels[:len(at.overflowLabels)-1]...)
 		}
 		return
 	}
@@ -258,11 +258,11 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 			prometheusMetrics = append(prometheusMetrics,
 				prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, float64(c.nativeHistograms.Load()), keys...),
 			)
-			if c.nativeHistogramBuckets.Load() > 0 {
-				prometheusMetrics = append(prometheusMetrics,
-					prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, float64(c.nativeHistogramBuckets.Load()), keys...),
-				)
-			}
+		}
+		if c.nativeHistogramBuckets.Load() > 0 {
+			prometheusMetrics = append(prometheusMetrics,
+				prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, float64(c.nativeHistogramBuckets.Load()), keys...),
+			)
 		}
 	}
 	at.observedMtx.RUnlock()
