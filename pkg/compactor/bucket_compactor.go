@@ -464,12 +464,13 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		begin := time.Now()
 
 		chunksDir := filepath.Join(bdir, block.ChunksDirname)
-		uploadConcurrency, err := getUploadConcurrency(chunksDir)
+
+		opts, err := getUploadOptions(chunksDir)
 		if err != nil {
-			uploadConcurrency = 1
+			level.Warn(jobLogger).Log("msg", "using default block upload options", "block", blockToUpload.ulid.String(), "shard", blockToUpload.shardIndex, "err", err)
 		}
 
-		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil, objstore.WithUploadConcurrency(uploadConcurrency)); err != nil {
+		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil, opts...); err != nil {
 			var uploadErr *block.UploadError
 			if errors.As(err, &uploadErr) {
 				c.metrics.blockUploadsFailed.WithLabelValues(uploadErr.FileType()).Inc()
@@ -509,15 +510,20 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	return true, compIDs, nil
 }
 
-func getUploadConcurrency(chunksDir string) (int, error) {
-	var concurrency int
-	err := filepath.WalkDir(chunksDir, func(_ string, _ fs.DirEntry, _ error) error {
-		if concurrency < maxBlockUploadConcurrency {
-			concurrency++
+func getUploadOptions(chunksDir string) ([]objstore.UploadOption, error) {
+	var con int
+	if err := filepath.WalkDir(chunksDir, func(_ string, _ fs.DirEntry, _ error) error {
+		if con < maxBlockUploadConcurrency {
+			con++
 		}
 		return nil
-	})
-	return concurrency, err
+	}); err != nil {
+		return nil, err
+	}
+
+	return []objstore.UploadOption{
+		objstore.WithUploadConcurrency(con),
+	}, nil
 }
 
 func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.Bucket, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
