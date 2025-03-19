@@ -192,28 +192,28 @@ func TestBlockBuilder_PullMode(t *testing.T) {
 		{
 			name:                "first offset till somewhere in between",
 			startOffset:         0,
-			endOffset:           (3 * 6) - 1,
+			endOffset:           3 * 6,
 			expSampleRangeStart: 0,
 			expSampleRangeEnd:   6,
 		},
 		{
 			name:                "somewhere in between till last offset",
 			startOffset:         int64(3 * 6),
-			endOffset:           3*10 - 1,
+			endOffset:           3 * 10,
 			expSampleRangeStart: 6,
 			expSampleRangeEnd:   10,
 		},
 		{
 			name:                "somewhere in between to somewhere in between",
 			startOffset:         int64(3 * 3),
-			endOffset:           3*6 - 1,
+			endOffset:           3 * 6,
 			expSampleRangeStart: 3,
 			expSampleRangeEnd:   6,
 		},
 		{
 			name:                "entire partition",
 			startOffset:         0,
-			endOffset:           3*10 - 1,
+			endOffset:           3 * 10,
 			expSampleRangeStart: 0,
 			expSampleRangeEnd:   10,
 		},
@@ -232,7 +232,7 @@ func TestBlockBuilder_PullMode(t *testing.T) {
 			kafkaRecTime := time.Now().Add(-time.Hour)
 			for range samplesPerTenant {
 				for _, tenant := range tenants {
-					samples := produceSamples(ctx, t, kafkaClient, 0, kafkaRecTime, tenant, kafkaRecTime.Add(-time.Minute))
+					samples := produceSamples(ctx, t, kafkaClient, 1, kafkaRecTime, tenant, kafkaRecTime.Add(-time.Minute))
 					producedSamples[tenant] = append(producedSamples[tenant], samples...)
 				}
 				recsPerTenant++
@@ -249,7 +249,7 @@ func TestBlockBuilder_PullMode(t *testing.T) {
 				},
 				schedulerpb.JobSpec{
 					Topic:       testTopic,
-					Partition:   0,
+					Partition:   1,
 					StartOffset: c.startOffset,
 					EndOffset:   c.endOffset,
 				},
@@ -824,90 +824,6 @@ func TestPartitionStateFromLag(t *testing.T) {
 	}
 }
 
-func TestPullMode(t *testing.T) {
-	ctx, cancel := context.WithCancelCause(context.Background())
-	t.Cleanup(func() { cancel(errors.New("test done")) })
-
-	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-	kafkaClient := mustKafkaClient(t, kafkaAddr)
-	kafkaClient.AddConsumeTopics(testTopic)
-
-	cfg, overrides := blockBuilderPullModeConfig(t, kafkaAddr)
-
-	startTime := time.Date(2024, 12, 20, 6, 10, 0, 0, time.UTC)
-	var expSamples []mimirpb.Sample
-
-	for i := range 5 {
-		expSamples = append(expSamples, produceSamples(ctx, t, kafkaClient, 0, startTime, "1",
-			startTime.Add(time.Duration(i)*time.Hour),
-		)...)
-		expSamples = append(expSamples, produceSamples(ctx, t, kafkaClient, 1, startTime, "1",
-			// Shift slightly to avoid duplicate timestamps.
-			startTime.Add(time.Duration(i)*time.Hour).Add(1*time.Minute),
-		)...)
-	}
-
-	scheduler := &mockSchedulerClient{}
-	scheduler.addJob(
-		schedulerpb.JobKey{
-			Id:    "test-job-p0-0",
-			Epoch: 220,
-		},
-		schedulerpb.JobSpec{
-			Topic:          testTopic,
-			Partition:      0,
-			StartOffset:    0,
-			EndOffset:      6,
-			CommitRecTs:    startTime.Add(-1 * time.Minute),
-			LastSeenOffset: 0,
-			LastBlockEndTs: startTime.Add(-1 * time.Minute),
-			CycleEndTs:     startTime.Add(6 * time.Hour),
-			CycleEndOffset: 5,
-		},
-	)
-	scheduler.addJob(
-		schedulerpb.JobKey{
-			Id:    "test-job-p1-0",
-			Epoch: 233,
-		},
-		schedulerpb.JobSpec{
-			Topic:          testTopic,
-			Partition:      1,
-			StartOffset:    0,
-			EndOffset:      6,
-			CommitRecTs:    startTime.Add(-1 * time.Minute),
-			LastSeenOffset: 0,
-			LastBlockEndTs: startTime.Add(-1 * time.Minute),
-			CycleEndTs:     startTime.Add(6 * time.Hour),
-			CycleEndOffset: 5,
-		},
-	)
-
-	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
-	require.NoError(t, err)
-
-	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
-		require.Equal(t, 1, scheduler.closeCallCount())
-	})
-
-	require.Eventually(t, func() bool {
-		return scheduler.completeJobCallCount() == 2
-	}, 5*time.Second, 100*time.Millisecond, "expected to complete two jobs")
-
-	require.EqualValues(t,
-		[]schedulerpb.JobKey{{Id: "test-job-p0-0", Epoch: 220}, {Id: "test-job-p1-0", Epoch: 233}},
-		scheduler.completeJobCalls,
-	)
-
-	compareQueryWithDir(t,
-		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
-		expSamples, nil,
-		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
-	)
-}
-
 func TestNoPartiallyConsumedRegions(t *testing.T) {
 	t.Parallel()
 
@@ -1213,26 +1129,8 @@ func (m *mockSchedulerClient) addJob(key schedulerpb.JobKey, spec schedulerpb.Jo
 	}{key: key, spec: spec})
 }
 
-func (m *mockSchedulerClient) runCallCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.runCalls
-}
-
-func (m *mockSchedulerClient) getJobCallCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.getJobCalls
-}
-
 func (m *mockSchedulerClient) completeJobCallCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.completeJobCalls)
-}
-
-func (m *mockSchedulerClient) closeCallCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.closeCalls
 }

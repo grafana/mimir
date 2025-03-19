@@ -670,7 +670,7 @@ consumerLoop:
 }
 
 // consumePartitionSectionPullMode is for the use of scheduler based architecture.
-// Both startOffset and endOffset are inclusive, and must be valid offsets and not something in the future.
+// startOffset is inclusive, endOffset is exclusive, and must be valid offsets and not something in the future (endOffset can be technically 1 offset in the future).
 // All the records and samples between these offsets will be consumed and put into a block.
 // The returned lastConsumedOffset is the offset of the last record consumed. It is the caller's responsibility to commit this offset.
 func (b *BlockBuilder) consumePartitionSectionPullMode(
@@ -681,7 +681,7 @@ func (b *BlockBuilder) consumePartitionSectionPullMode(
 	startOffset, endOffset int64,
 ) (lastConsumedOffset int64, retErr error) {
 	lastConsumedOffset = startOffset
-	if startOffset > endOffset {
+	if startOffset >= endOffset {
 		level.Info(logger).Log("msg", "nothing to consume")
 		return
 	}
@@ -721,7 +721,7 @@ func (b *BlockBuilder) consumePartitionSectionPullMode(
 	)
 
 consumerLoop:
-	for recOffset := int64(-1); recOffset < endOffset; {
+	for recOffset := int64(-1); recOffset < endOffset-1; {
 		if err := context.Cause(ctx); err != nil {
 			return 0, err
 		}
@@ -729,8 +729,7 @@ consumerLoop:
 		// PollFetches can return a non-failed fetch with zero records. In such a case, with only the fetches at hands,
 		// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
 		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
-		// the iterations against the cycleEndOffset, so it retried the polling up until the expected end of the partition is reached.
-		// TODO: update the above comment. Not fully applicable.
+		// the iterations against the endOffset, so it retried the polling up until the expected end of the partition is reached.
 		fetches := b.kafkaClient.PollFetches(ctx)
 		fetches.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
@@ -747,8 +746,8 @@ consumerLoop:
 				firstRec = rec
 			}
 
-			// Stop consuming after we crossed the endOffset.
-			if recOffset > endOffset {
+			// Stop consuming after we touched the endOffset.
+			if recOffset >= endOffset {
 				break consumerLoop
 			}
 
