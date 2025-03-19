@@ -214,7 +214,6 @@ func (b *BlockBuilder) runningPullMode(ctx context.Context) error {
 			continue
 		}
 
-		// TODO: pass on the last offset consumed to the scheduler. It may not be the end offset always.
 		if _, err := b.consumeJob(ctx, key, spec); err != nil {
 			level.Error(b.logger).Log("msg", "failed to consume job", "job_id", key.Id, "epoch", key.Epoch, "err", err)
 			continue
@@ -722,7 +721,7 @@ func (b *BlockBuilder) consumePartitionSectionPullMode(
 	)
 
 consumerLoop:
-	for recOffset := int64(-1); recOffset <= endOffset; {
+	for recOffset := int64(-1); recOffset < endOffset; {
 		if err := context.Cause(ctx); err != nil {
 			return 0, err
 		}
