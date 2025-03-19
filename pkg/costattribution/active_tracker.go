@@ -254,14 +254,14 @@ func (at *ActiveSeriesTracker) Collect(out chan<- prometheus.Metric) {
 		prometheusMetrics = append(prometheusMetrics,
 			prometheus.MustNewConstMetric(at.activeSeriesPerUserAttribution, prometheus.GaugeValue, float64(c.activeSeries.Load()), keys...),
 		)
-		if c.nativeHistograms.Load() > 0 {
+		if nhcounter := c.nativeHistograms.Load(); nhcounter > 0 {
 			prometheusMetrics = append(prometheusMetrics,
-				prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, float64(c.nativeHistograms.Load()), keys...),
+				prometheus.MustNewConstMetric(at.activeNativeHistogramSeriesPerUserAttribution, prometheus.GaugeValue, float64(nhcounter), keys...),
 			)
 		}
-		if c.nativeHistogramBuckets.Load() > 0 {
+		if nbcounter := c.nativeHistogramBuckets.Load(); nbcounter > 0 {
 			prometheusMetrics = append(prometheusMetrics,
-				prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, float64(c.nativeHistogramBuckets.Load()), keys...),
+				prometheus.MustNewConstMetric(at.activeNativeHistogramBucketsPerUserAttribution, prometheus.GaugeValue, float64(nbcounter), keys...),
 			)
 		}
 	}
