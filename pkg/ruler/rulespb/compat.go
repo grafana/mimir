@@ -44,13 +44,13 @@ func ToProto(user string, namespace string, rl rulefmt.RuleGroup) *RuleGroupDesc
 	return &rg
 }
 
-func formattedRuleToProto(rls []rulefmt.RuleNode) []*RuleDesc {
+func formattedRuleToProto(rls []rulefmt.Rule) []*RuleDesc {
 	rules := make([]*RuleDesc, len(rls))
 	for i := range rls {
 		rules[i] = &RuleDesc{
-			Expr:          rls[i].Expr.Value,
-			Record:        rls[i].Record.Value,
-			Alert:         rls[i].Alert.Value,
+			Expr:          rls[i].Expr,
+			Record:        rls[i].Record,
+			Alert:         rls[i].Alert,
 			For:           time.Duration(rls[i].For),
 			KeepFiringFor: time.Duration(rls[i].KeepFiringFor),
 			Labels:        mimirpb.FromLabelsToLabelAdapters(labels.FromMap(rls[i].Labels)),
@@ -66,7 +66,7 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 	formattedRuleGroup := rulefmt.RuleGroup{
 		Name:                          rg.GetName(),
 		Interval:                      model.Duration(rg.Interval),
-		Rules:                         make([]rulefmt.RuleNode, len(rg.GetRules())),
+		Rules:                         make([]rulefmt.Rule, len(rg.GetRules())),
 		SourceTenants:                 rg.GetSourceTenants(),
 		AlignEvaluationTimeOnInterval: rg.GetAlignEvaluationTimeOnInterval(),
 	}
@@ -85,8 +85,8 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 		exprNode := yaml.Node{}
 		exprNode.SetString(rl.GetExpr())
 
-		newRule := rulefmt.RuleNode{
-			Expr:          exprNode,
+		newRule := rulefmt.Rule{
+			Expr:          exprNode.Value,
 			Labels:        mimirpb.FromLabelAdaptersToLabels(rl.Labels).Map(),
 			Annotations:   mimirpb.FromLabelAdaptersToLabels(rl.Annotations).Map(),
 			For:           model.Duration(rl.GetFor()),
@@ -96,11 +96,11 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 		if rl.GetRecord() != "" {
 			recordNode := yaml.Node{}
 			recordNode.SetString(rl.GetRecord())
-			newRule.Record = recordNode
+			newRule.Record = recordNode.Value
 		} else {
 			alertNode := yaml.Node{}
 			alertNode.SetString(rl.GetAlert())
-			newRule.Alert = alertNode
+			newRule.Alert = alertNode.Value
 		}
 
 		formattedRuleGroup.Rules[i] = newRule

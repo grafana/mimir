@@ -49,13 +49,13 @@ func (r RuleNamespace) LintExpressions(backend string) (int, int, error) {
 	for i, group := range r.Groups {
 		for j, rule := range group.Rules {
 			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("linting %s", queryLanguage)
-			exp, err := parseFn(rule.Expr.Value)
+			exp, err := parseFn(rule.Expr)
 			if err != nil {
 				return count, mod, err
 			}
 
 			count++
-			if rule.Expr.Value != exp.String() {
+			if rule.Expr != exp.String() {
 				log.WithFields(log.Fields{
 					"rule":        getRuleName(rule),
 					"currentExpr": rule.Expr,
@@ -63,7 +63,7 @@ func (r RuleNamespace) LintExpressions(backend string) (int, int, error) {
 				}).Debugf("expression differs")
 
 				mod++
-				r.Groups[i].Rules[j].Expr.Value = exp.String()
+				r.Groups[i].Rules[j].Expr = exp.String()
 			}
 		}
 	}
@@ -84,10 +84,10 @@ func (r RuleNamespace) CheckRecordingRules(strict bool) int {
 	for _, group := range r.Groups {
 		for _, rule := range group.Rules {
 			// Assume if there is a rule.Record that this is a recording rule.
-			if rule.Record.Value == "" {
+			if rule.Record == "" {
 				continue
 			}
-			name = rule.Record.Value
+			name = rule.Record
 			log.WithFields(log.Fields{"rule": name}).Debugf("linting recording rule name")
 			chunks := strings.Split(name, ":")
 			if len(chunks) < reqChunks {
@@ -107,7 +107,7 @@ func (r RuleNamespace) CheckRecordingRules(strict bool) int {
 // AggregateBy modifies the aggregation rules in groups to include a given Label.
 // If the applyTo function is provided, the aggregation is applied only to rules
 // for which the applyTo function returns true.
-func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.RuleGroup, rule rulefmt.RuleNode) bool) (int, int, error) {
+func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.RuleGroup, rule rulefmt.Rule) bool) (int, int, error) {
 	// `count` represents the number of rules we evaluated.
 	// `mod` represents the number of rules we modified - a modification can either be a lint or adding the
 	// label in the aggregation.
@@ -127,7 +127,7 @@ func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.Ru
 			}
 
 			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("evaluating...")
-			exp, err := parser.ParseExpr(rule.Expr.Value)
+			exp, err := parser.ParseExpr(rule.Expr)
 			if err != nil {
 				return count, mod, err
 			}
@@ -139,14 +139,14 @@ func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.Ru
 			parser.Inspect(exp, f)
 
 			// Only modify the ones that actually changed.
-			if rule.Expr.Value != exp.String() {
+			if rule.Expr != exp.String() {
 				log.WithFields(log.Fields{
 					"rule":        getRuleName(rule),
 					"currentExpr": rule.Expr,
 					"afterExpr":   exp.String(),
 				}).Debugf("expression differs")
 				mod++
-				r.Groups[i].Rules[j].Expr.Value = exp.String()
+				r.Groups[i].Rules[j].Expr = exp.String()
 			}
 		}
 	}
@@ -156,7 +156,7 @@ func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.Ru
 
 // exprNodeInspectorFunc returns a PromQL inspector.
 // It modifies most PromQL expressions to include a given label.
-func exprNodeInspectorFunc(rule rulefmt.RuleNode, label string) func(node parser.Node, path []parser.Node) error {
+func exprNodeInspectorFunc(rule rulefmt.Rule, label string) func(node parser.Node, path []parser.Node) error {
 	return func(node parser.Node, _ []parser.Node) error {
 		var err error
 		switch n := node.(type) {
@@ -257,10 +257,10 @@ func ValidateRuleGroup(g rwrulefmt.RuleGroup) []error {
 	for i, r := range g.Rules {
 		for _, err := range r.Validate() {
 			var ruleName string
-			if r.Alert.Value != "" {
-				ruleName = r.Alert.Value
+			if r.Alert != "" {
+				ruleName = r.Alert
 			} else {
-				ruleName = r.Record.Value
+				ruleName = r.Record
 			}
 			errs = append(errs, &rulefmt.Error{
 				Group:    g.Name,
@@ -274,10 +274,10 @@ func ValidateRuleGroup(g rwrulefmt.RuleGroup) []error {
 	return errs
 }
 
-func getRuleName(r rulefmt.RuleNode) string {
-	if r.Record.Value != "" {
-		return r.Record.Value
+func getRuleName(r rulefmt.Rule) string {
+	if r.Record != "" {
+		return r.Record
 	}
 
-	return r.Alert.Value
+	return r.Alert
 }
