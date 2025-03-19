@@ -204,6 +204,7 @@ func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryRespons
 	for i, k := range keys {
 		ts := exemplarResults[k]
 		for i, l := range ts.Labels {
+			// TODO: Do we need to clone?
 			ts.Labels[i].Name = strings.Clone(l.Name)
 			ts.Labels[i].Value = strings.Clone(l.Value)
 		}

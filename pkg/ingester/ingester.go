@@ -2033,6 +2033,13 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 			return nil, ctx.Err()
 		}
 
+		// Besides we are passing the hints to q.Select, we also limit the number of returned series here,
+		// to account for cases when series were resolved via different instances and joined into a single seriesSet,
+		// which are not limited by the MergeSeriesSet.
+		if hints.Limit > 0 && len(result.Metric) >= hints.Limit {
+			break
+		}
+
 		result.Metric = append(result.Metric, mimirpb.CustomMetric{
 			Metric: &mimirpb.Metric{
 				Labels: mimirpb.FromLabelsToLabelAdapters(mergedSet.At().Labels()),
@@ -4118,6 +4125,7 @@ func (i *Ingester) checkAvailableForPush() error {
 // PushToStorage implements ingest.Pusher interface for ingestion via ingest-storage.
 func (i *Ingester) PushToStorage(ctx context.Context, req *mimirpb.WriteRequest) error {
 	err := i.PushWithCleanup(ctx, req, func() {
+		// TODO: Try to use custom unmarshaling with memory pooling instead.
 		req.FreeBuffer()
 		mimirpb.ReuseSlice(req.Timeseries)
 	})
