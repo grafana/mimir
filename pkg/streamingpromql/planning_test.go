@@ -52,7 +52,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [0,84]
-						}
+						},
+						"description": "{env=\"prod\", cluster!=\"cluster-2\", name=~\"foo.*\", node!~\"small-nodes-.*\", __name__=\"some_metric\"}"
 					}
 				]
 			}`,
@@ -75,7 +76,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [0,84]
-						}
+						},
+						"description": "{env=\"prod\", cluster!=\"cluster-2\", name=~\"foo.*\", node!~\"small-nodes-.*\", __name__=\"some_metric\"}"
 					}
 				]
 			}`,
@@ -95,7 +97,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							],
 							"timestamp": 0,
 							"expressionPosition": [0,15]
-						}
+						},
+						"description": "{__name__=\"some_metric\"} @ 0 (1970-01-01T00:00:00Z)"
 					}
 				]
 			}`,
@@ -115,7 +118,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							],
 							"timestamp": 3000,
 							"expressionPosition": [0,21]
-						}
+						},
+						"description": "{__name__=\"some_metric\"} @ 3000 (1970-01-01T00:00:03Z)"
 					}
 				]
 			}`,
@@ -135,7 +139,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							],
 							"timestamp": 5000,
 							"expressionPosition": [0,19]
-						}
+						},
+						"description": "{__name__=\"some_metric\"} @ 5000 (1970-01-01T00:00:05Z)"
 					}
 				]
 			}`,
@@ -155,7 +160,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							],
 							"offset": 30000000000,
 							"expressionPosition": [0,22]
-						}
+						},
+						"description": "{__name__=\"some_metric\"} offset 30s"
 					}
 				]
 			}`,
@@ -175,7 +181,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							],
 							"range": 60000000000,
 							"expressionPosition": [0,15]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}[1m0s]"
 					}
 				]
 			}`,
@@ -196,7 +203,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"range": 60000000000,
 							"timestamp": 0,
 							"expressionPosition": [0,19]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}[1m0s] @ 0 (1970-01-01T00:00:00Z)"
 					}
 				]
 			}`,
@@ -217,7 +225,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"range": 60000000000,
 							"timestamp": 3000,
 							"expressionPosition": [0,25]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}[1m0s] @ 3000 (1970-01-01T00:00:03Z)"
 					}
 				]
 			}`,
@@ -238,7 +247,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"range": 60000000000,
 							"timestamp": 5000,
 							"expressionPosition": [0,23]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}[1m0s] @ 5000 (1970-01-01T00:00:05Z)"
 					}
 				]
 			}`,
@@ -257,7 +267,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [1,12]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					}
 				]
 			}`,
@@ -274,7 +285,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						"details": {
 							"value": 12,
 							"expressionPosition": [0,2]
-						}
+						},
+						"description": "12"
 					}
 				]
 			}`,
@@ -291,7 +303,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						"details": {
 							"value": "abc",
 							"expressionPosition": [0,5]
-						}
+						},
+						"description": "\"abc\""
 					}
 				]
 			}`,
@@ -308,7 +321,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						"details": {
 							"functionName": "time",
 							"expressionPosition": [0,6]
-						}
+						},
+						"description": "time(...)"
 					}
 				]
 			}`,
@@ -325,7 +339,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						"details": {
 							"functionName": "year",
 							"expressionPosition": [0,6]
-						}
+						},
+						"description": "year(...)"
 					}
 				]
 			}`,
@@ -344,7 +359,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [5,16]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "FunctionCall",
@@ -352,7 +368,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"functionName": "year",
 							"expressionPosition": [0,17]
 						},
-						"children": [0]
+						"children": [0],
+						"description": "year(...)",
+						"childrenLabels": [""]
 					}
 				]
 			}`,
@@ -371,7 +389,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [1,12]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "UnaryExpression",
@@ -379,7 +398,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"op": "-",
 							"expressionPosition": [0,12]
 						},
-						"children": [0]
+						"children": [0],
+						"childrenLabels": [""],
+						"description": "-"
 					}
 				]
 			}`,
@@ -398,7 +419,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [4,15]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "AggregateExpression",
@@ -406,7 +428,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"op": "sum",
 							"expressionPosition": [0,16]
 						},
-						"children": [0]
+						"children": [0],
+						"childrenLabels": [""],
+						"description": "sum"
 					}
 				]
 			}`,
@@ -425,7 +449,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [14,25]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "AggregateExpression",
@@ -434,7 +459,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"grouping": ["foo"],
 							"expressionPosition": [0,26]
 						},
-						"children": [0]
+						"children": [0],
+						"childrenLabels": [""],
+						"description": "sum by (foo)"
 					}
 				]
 			}`,
@@ -453,7 +480,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [19,30]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "AggregateExpression",
@@ -463,7 +491,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"without": true,
 							"expressionPosition": [0,31]
 						},
-						"children": [0]
+						"children": [0],
+						"childrenLabels": [""],
+						"description": "sum without (foo)"
 					}
 				]
 			}`,
@@ -482,14 +512,16 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [8,19]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "NumberLiteral",
 						"details": {
 							"value": 3,
 							"expressionPosition": [5,6]
-						}
+						},
+						"description": "3"
 					},
 					{
 						"type": "AggregateExpression",
@@ -497,7 +529,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"op": "topk",
 							"expressionPosition": [0,20]
 						},
-						"children": [0,1]
+						"children": [0,1],
+						"childrenLabels": ["expression", "parameter"],
+						"description": "topk"
 					}
 				]
 			}`,
@@ -514,21 +548,25 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						"details": {
 							"value": 2,
 							"expressionPosition": [0,1]
-						}
+						},
+						"description": "2"
 					},
 					{
 						"type": "NumberLiteral",
 						"details": {
 							"value": 3,
 							"expressionPosition": [4,5]
-						}
+						},
+						"description": "3"
 					},
 					{
 						"type": "BinaryExpression",
 						"details": {
 							"op": "+"
 						},
-						"children": [0,1]
+						"children": [0,1],
+						"childrenLabels": ["LHS", "RHS"],
+						"description": "LHS + RHS"
 					}
 				]
 			}`,
@@ -545,7 +583,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						"details": {
 							"value": 2,
 							"expressionPosition": [0,1]
-						}
+						},
+						"description": "2"
 					},
 					{
 						"type": "VectorSelector",
@@ -554,14 +593,17 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [4,15]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "BinaryExpression",
 						"details": {
 							"op": "*"
 						},
-						"children": [0,1]
+						"children": [0,1],
+						"childrenLabels": ["LHS", "RHS"],
+						"description": "LHS * RHS"
 					}
 				]
 			}`,
@@ -580,14 +622,16 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [0,11]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "NumberLiteral",
 						"details": {
 							"value": 2,
 							"expressionPosition": [19,20]
-						}
+						},
+						"description": "2"
 					},
 					{
 						"type": "BinaryExpression",
@@ -595,7 +639,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"op": ">",
 							"returnBool": true
 						},
-						"children": [0,1]
+						"children": [0,1],
+						"childrenLabels": ["LHS", "RHS"],
+						"description": "LHS > bool RHS"
 					}
 				]
 			}`,
@@ -614,7 +660,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [0,11]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "VectorSelector",
@@ -623,7 +670,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_other_metric"}
 							],
 							"expressionPosition": [14,31]
-						}
+						},
+						"description": "{__name__=\"some_other_metric\"}"
 					},
 					{
 						"type": "BinaryExpression",
@@ -631,7 +679,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"op": "*",
 							"vectorMatching": {}
 						},
-						"children": [0,1]
+						"children": [0,1],
+						"childrenLabels": ["LHS", "RHS"],
+						"description": "LHS * RHS"
 					}
 				]
 			}`,
@@ -650,7 +700,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [0,11]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "VectorSelector",
@@ -659,7 +710,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_other_metric"}
 							],
 							"expressionPosition": [23,40]
-						}
+						},
+						"description": "{__name__=\"some_other_metric\"}"
 					},
 					{
 						"type": "BinaryExpression",
@@ -670,7 +722,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								"on": true
 							}
 						},
-						"children": [0,1]
+						"children": [0,1],
+						"childrenLabels": ["LHS", "RHS"],
+						"description": "LHS * on (foo) RHS"
 					}
 				]
 			}`,
@@ -689,7 +743,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [0,11]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "VectorSelector",
@@ -698,7 +753,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_other_metric"}
 							],
 							"expressionPosition": [29,46]
-						}
+						},
+						"description": "{__name__=\"some_other_metric\"}"
 					},
 					{
 						"type": "BinaryExpression",
@@ -708,7 +764,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								"matchingLabels": ["foo"]
 							}
 						},
-						"children": [0,1]
+						"children": [0,1],
+						"childrenLabels": ["LHS", "RHS"],
+						"description": "LHS * ignoring (foo) RHS"
 					}
 				]
 			}`,
@@ -727,7 +785,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [0,11]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "VectorSelector",
@@ -736,7 +795,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_other_metric"}
 							],
 							"expressionPosition": [46,63]
-						}
+						},
+						"description": "{__name__=\"some_other_metric\"}"
 					},
 					{
 						"type": "BinaryExpression",
@@ -748,7 +808,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								"include": ["bar"]
 							}
 						},
-						"children": [0,1]
+						"children": [0,1],
+						"childrenLabels": ["LHS", "RHS"],
+						"description": "LHS * ignoring (foo) group_left (bar) RHS"
 					}
 				]
 			}`,
@@ -767,7 +829,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [1,12]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "Subquery",
@@ -776,7 +839,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"step":   1000000000,
 							"expressionPosition": [0,20]
 						},
-						"children": [0]
+						"children": [0],
+						"description": "[1m0s:1s]",
+						"childrenLabels": [""]
 					}
 				]
 			}`,
@@ -795,7 +860,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [1,12]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "Subquery",
@@ -804,7 +870,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"step":  23000000000,
 							"expressionPosition": [0,18]
 						},
-						"children": [0]
+						"children": [0],
+						"description": "[1m0s:23s]",
+						"childrenLabels": [""]
 					}
 				]
 			}`,
@@ -823,7 +891,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [1,12]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "Subquery",
@@ -833,7 +902,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"offset": 3000000000,
 							"expressionPosition": [0,30]
 						},
-						"children": [0]
+						"children": [0],
+						"description": "[1m0s:1s] offset 3s",
+						"childrenLabels": [""]
 					}
 				]
 			}`,
@@ -852,7 +923,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 								{"type":0,"name":"__name__","value":"some_metric"}
 							],
 							"expressionPosition": [1,12]
-						}
+						},
+						"description": "{__name__=\"some_metric\"}"
 					},
 					{
 						"type": "Subquery",
@@ -862,7 +934,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 							"timestamp": 0,
 							"expressionPosition": [0,24]
 						},
-						"children": [0]
+						"children": [0],
+						"description": "[1m0s:1s] @ 0 (1970-01-01T00:00:00Z)",
+						"childrenLabels": [""]
 					}
 				]
 			}`,
