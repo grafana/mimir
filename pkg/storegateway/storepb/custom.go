@@ -189,7 +189,7 @@ type CustomSeries struct {
 func (m *CustomSeries) Release() {
 	for _, chk := range m.Chunks {
 		//nolint:staticcheck
-		chunkDataPool.Put(chk.Raw.Data)
+		chunkDataPool.Put(chk.Raw.Data[:0])
 		chk.Raw.Data = nil
 	}
 	m.Labels = m.Labels[:0]
