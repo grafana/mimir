@@ -4,11 +4,18 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Ruler: Remove experimental CLI flag `-ruler-storage.cache.rule-group-enabled` to enable or disable caching the contents of rule groups. Caching rule group contents is now always enabled when a cache is configured for the ruler. #10949
+* [ENHANCEMENT] Ingester: Add support for exporting native histogram cost attribution metrics (`cortex_ingester_attributed_active_native_histogram_series` and `cortex_ingester_attributed_active_native_histogram_buckets`) with labels specified by customers to a custom Prometheus registry. #10892
+* [ENHANCEMENT] Store-gateway: Download sparse headers uploaded by compactors. Compactors have to be configured with `-compactor.upload-sparse-index-headers=true` option. #10879
+* [ENHANCEMENT] Compactor: Upload block index file and multiple segment files concurrently. Concurrency scales linearly with block size up to `maxBlockUploadConcurrency`. #10947
+* [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
+* [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
+
 ### Mixin
 
 * [ENHANCEMENT] Dashboards: Include absolute number of notifications attempted to alertmanager in 'Mimir / Ruler'. #10918
 * [ENHANCEMENT] Alerts: Make `MimirRolloutStuck` a critical alert if it has been firing for 6h. #10890
-* [ENHANCEMENT] Compactor: Upload block index file and multiple segment files concurrently. Concurrency scales linearly with block size up to `maxBlockUploadConcurrency`. #10947
+* [BUGFIX] Dashboards: fix "Mimir / Tenants" legends for non-Kubernetes deployments. #10891
 
 ### Jsonnet
 
@@ -116,7 +123,6 @@
 * [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. https://github.com/prometheus/prometheus/pull/16060 #10824
 * [BUGFIX] Querier: fix issue where `label_join` could incorrectly return multiple series with the same labels rather than failing with `vector cannot contain metrics with the same labelset`. https://github.com/prometheus/prometheus/pull/15975 #10826
 * [BUGFIX] Querier: fix issue where counter resets on native histograms could be incorrectly under- or over-counted when using subqueries. https://github.com/prometheus/prometheus/pull/15987 #10871
-* [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Ingester: fix goroutines and memory leak when experimental ingest storage enabled and a server-side error occurs during metrics ingestion. #10915
 * [BUGFIX] Alertmanager: Avoid fetching Grafana state if Grafana AM compatibility is not enabled. #10857
 
