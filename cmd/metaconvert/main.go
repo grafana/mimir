@@ -153,7 +153,6 @@ func convertTenantBlocks(ctx context.Context, userBucketClient objstore.Bucket, 
 
 func uploadMetadata(ctx context.Context, bkt objstore.Bucket, meta block.Meta, path string) error {
 	var body bytes.Buffer
-
 	if err := meta.Write(&body); err != nil {
 		return errors.Wrap(err, "encode meta.json")
 	}
