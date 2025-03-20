@@ -3,37 +3,29 @@
 package planning
 
 import (
-	"slices"
-	"time"
-
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"slices"
 )
 
+// Why do we have this slightly odd structure with some fields declared below and some in the Protobuf message types?
+// When marshalling a query plan to Protobuf (or any other format), we need to handle references to nodes separately,
+// as multiple parent nodes can refer to the same child node.
+// If we declared these fields as ordinary Protobuf message fields, then these references would be lost, and each parent
+// would end up with a unique copy of the child node on unmarshalling.
+// So the rule is:
+// - if it's a reference to a Node instance, it needs to be declared here
+// - if it's anything else, it can go in the Protobuf message definition
+
 type AggregateExpression struct {
-	Op                 parser.ItemType        `json:"op"`
-	Inner              Node                   `json:"-"`
-	Param              Node                   `json:"-"`
-	Grouping           []string               `json:"grouping,omitempty"`
-	Without            bool                   `json:"without,omitempty"`
-	ExpressionPosition posrange.PositionRange `json:"expressionPosition"`
+	AggregateExpressionDetails
+	Inner Node
+	Param Node
 }
 
 type BinaryExpression struct {
-	Op             parser.ItemType `json:"op"`
-	LHS            Node            `json:"-"`
-	RHS            Node            `json:"-"`
-	VectorMatching *VectorMatching `json:"vectorMatching,omitempty"`
-	ReturnBool     bool            `json:"returnBool,omitempty"`
-}
-
-// VectorMatching is the same as parser.VectorMatching, but with JSON tags so we can skip serializing fields with their default values.
-type VectorMatching struct {
-	Card           parser.VectorMatchCardinality `json:"card,omitempty"`
-	MatchingLabels []string                      `json:"matchingLabels,omitempty"`
-	On             bool                          `json:"on,omitempty"`
-	Include        []string                      `json:"include,omitempty"`
+	BinaryExpressionDetails
+	LHS Node
+	RHS Node
 }
 
 func (v *VectorMatching) Equals(other *VectorMatching) bool {
@@ -58,47 +50,35 @@ func VectorMatchingFromParserType(v *parser.VectorMatching) *VectorMatching {
 }
 
 type FunctionCall struct {
-	FunctionName       string                 `json:"functionName"`
-	Args               []Node                 `json:"-"`
-	ExpressionPosition posrange.PositionRange `json:"expressionPosition"`
+	FunctionCallDetails
+	Args []Node `json:"-"`
 }
 
 type NumberLiteral struct {
-	Value              float64                `json:"value"` // TODO: encode as string to preserve precision?
-	ExpressionPosition posrange.PositionRange `json:"expressionPosition"`
+	NumberLiteralDetails
 }
 
 type StringLiteral struct {
-	Value              string                 `json:"value"`
-	ExpressionPosition posrange.PositionRange `json:"expressionPosition"`
+	StringLiteralDetails
 }
 
 type UnaryExpression struct {
-	Op                 parser.ItemType        `json:"op,omitempty"`
-	Inner              Node                   `json:"-"`
-	ExpressionPosition posrange.PositionRange `json:"expressionPosition"`
+	UnaryExpressionDetails
+	Inner Node
 }
 
 type VectorSelector struct {
-	Matchers           []*labels.Matcher      `json:"matchers,omitempty"`
-	Timestamp          *int64                 `json:"timestamp,omitempty"`
-	Offset             time.Duration          `json:"offset,omitempty"`
-	ExpressionPosition posrange.PositionRange `json:"expressionPosition"`
+	VectorSelectorDetails
 }
 
 type MatrixSelector struct {
-	Matchers           []*labels.Matcher      `json:"matchers"`
-	Timestamp          *int64                 `json:"timestamp,omitempty"`
-	Offset             time.Duration          `json:"offset,omitempty"`
-	Range              time.Duration          `json:"range,omitempty"`
-	ExpressionPosition posrange.PositionRange `json:"expressionPosition"`
+	MatrixSelectorDetails
 }
 
 type Subquery struct {
-	Inner              Node                   `json:"-"`
-	Timestamp          *int64                 `json:"timestamp,omitempty"`
-	Offset             time.Duration          `json:"offset,omitempty"`
-	Range              time.Duration          `json:"range,omitempty"`
-	Step               time.Duration          `json:"step,omitempty"`
-	ExpressionPosition posrange.PositionRange `json:"expressionPosition"`
+	SubqueryDetails
+	Inner Node `json:"-"`
 }
+
+// TODO: []LabelMatcher -> []*labels.Matcher conversion through labels.NewMatcher() to ensure internal regexp instance is populated
+// TODO: conversion helper methods for PositionRange

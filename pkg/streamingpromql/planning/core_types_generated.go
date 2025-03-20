@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -329,7 +328,7 @@ func (v *VectorSelector) Equals(other Node) bool {
 
 	return ok &&
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
-		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && *v.Timestamp == *otherVectorSelector.Timestamp)) &&
+		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Timestamp == otherVectorSelector.Timestamp.Timestamp)) &&
 		v.Offset == otherVectorSelector.Offset
 }
 
@@ -337,7 +336,7 @@ func (v *VectorSelector) Describe() string {
 	return describeSelector(v.Matchers, v.Timestamp, v.Offset, nil)
 }
 
-func describeSelector(matchers []*labels.Matcher, ts *int64, offset time.Duration, rng *time.Duration) string {
+func describeSelector(matchers []*LabelMatcher, ts *Timestamp, offset time.Duration, rng *time.Duration) string {
 	builder := &strings.Builder{}
 	builder.WriteRune('{')
 	for i, m := range matchers {
@@ -357,9 +356,9 @@ func describeSelector(matchers []*labels.Matcher, ts *int64, offset time.Duratio
 
 	if ts != nil {
 		builder.WriteString(" @ ")
-		builder.WriteString(strconv.FormatInt(*ts, 10))
+		builder.WriteString(strconv.FormatInt(ts.Timestamp, 10))
 		builder.WriteString(" (")
-		builder.WriteString(timestamp.Time(*ts).Format(time.RFC3339))
+		builder.WriteString(timestamp.Time(ts.Timestamp).Format(time.RFC3339))
 		builder.WriteRune(')')
 	}
 
@@ -396,7 +395,7 @@ func (m *MatrixSelector) Equals(other Node) bool {
 
 	return ok &&
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
-		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && *m.Timestamp == *otherMatrixSelector.Timestamp)) &&
+		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Timestamp == otherMatrixSelector.Timestamp.Timestamp)) &&
 		m.Offset == otherMatrixSelector.Offset &&
 		m.Range == otherMatrixSelector.Range
 }
@@ -409,7 +408,7 @@ func (m *MatrixSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func matchersEqual(a, b *labels.Matcher) bool {
+func matchersEqual(a, b *LabelMatcher) bool {
 	return a.Type == b.Type &&
 		a.Name == b.Name &&
 		a.Value == b.Value
@@ -437,7 +436,7 @@ func (s *Subquery) Equals(other Node) bool {
 	otherSubquery, ok := other.(*Subquery)
 
 	return ok &&
-		((s.Timestamp == nil && otherSubquery.Timestamp == nil) || (s.Timestamp != nil && otherSubquery.Timestamp != nil && *s.Timestamp == *otherSubquery.Timestamp)) &&
+		((s.Timestamp == nil && otherSubquery.Timestamp == nil) || (s.Timestamp != nil && otherSubquery.Timestamp != nil && s.Timestamp.Timestamp == otherSubquery.Timestamp.Timestamp)) &&
 		s.Offset == otherSubquery.Offset &&
 		s.Range == otherSubquery.Range &&
 		s.Step == otherSubquery.Step
@@ -454,9 +453,9 @@ func (s *Subquery) Describe() string {
 
 	if s.Timestamp != nil {
 		builder.WriteString(" @ ")
-		builder.WriteString(strconv.FormatInt(*s.Timestamp, 10))
+		builder.WriteString(strconv.FormatInt(s.Timestamp.Timestamp, 10))
 		builder.WriteString(" (")
-		builder.WriteString(timestamp.Time(*s.Timestamp).Format(time.RFC3339))
+		builder.WriteString(timestamp.Time(s.Timestamp.Timestamp).Format(time.RFC3339))
 		builder.WriteRune(')')
 	}
 

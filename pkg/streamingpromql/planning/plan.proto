@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package planning;
+
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
+import "google/protobuf/any.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message EncodedQueryPlan {
+  QueryTimeRange timeRange = 1 [(gogoproto.nullable) = false];
+  repeated EncodedNode nodes = 2;
+  int64 rootNode = 3;
+}
+
+message QueryTimeRange {
+  int64 startT = 1;
+  int64 endT = 2;
+  int64 intervalMilliseconds = 3;
+  int64 stepCount = 4;
+}
+
+message EncodedNode {
+  // Why use Any rather than a oneof?
+  // This allows us to define nodes in multiple packages without creating dependencies between them,
+  // and allows us to define new kinds of nodes in other repositories (eg. the one used for Grafana Cloud Metrics).
+  // TODO: is this the best type to use? Any will encode a string for the type of message, which seems expensive - could we use an integer perhaps?
+  google.protobuf.Any node = 1;
+  repeated int64 children = 2;
+
+  // The following fields will only be populated if this plan was generated with analysis enabled.
+  string description = 3;
+  repeated string childrenLabels = 4;
+}
