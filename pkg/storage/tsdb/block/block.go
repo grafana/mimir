@@ -203,7 +203,7 @@ func MarkForDeletion(ctx context.Context, logger log.Logger, bkt objstore.Bucket
 		return errors.Wrap(err, "json encode deletion mark")
 	}
 
-	if err := bkt.Upload(ctx, deletionMarkFile, bytes.NewBuffer(deletionMark)); err != nil {
+	if err := bkt.Upload(ctx, deletionMarkFile, bytes.NewReader(deletionMark)); err != nil {
 		return errors.Wrapf(err, "upload file %s to bucket", deletionMarkFile)
 	}
 	markedForDeletion.Inc()
@@ -398,7 +398,7 @@ func MarkForNoCompact(ctx context.Context, logger log.Logger, bkt objstore.Bucke
 		return errors.Wrap(err, "json encode no compact mark")
 	}
 
-	if err := bkt.Upload(ctx, m, bytes.NewBuffer(noCompactMark)); err != nil {
+	if err := bkt.Upload(ctx, m, bytes.NewReader(noCompactMark)); err != nil {
 		return errors.Wrapf(err, "upload file %s to bucket", m)
 	}
 	markedForNoCompact.Inc()
