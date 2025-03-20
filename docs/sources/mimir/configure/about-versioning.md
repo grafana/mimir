@@ -88,8 +88,6 @@ The following features are currently experimental:
   - Allow control over rule sync intervals.
     - `ruler.outbound-sync-queue-poll-interval`
     - `ruler.inbound-sync-queue-poll-interval`
-  - Cache rule group contents.
-    - `-ruler-storage.cache.rule-group-enabled`
 - Distributor
   - Influx ingestion
     - `/api/v1/push/influx/write` endpoint
