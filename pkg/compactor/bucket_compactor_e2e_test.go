@@ -115,7 +115,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 			fmt.Println("create", m.ULID)
 			var buf bytes.Buffer
 			require.NoError(t, json.NewEncoder(&buf).Encode(&m))
-			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), block.MetaFilename), &buf))
+			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), block.MetaFilename), bytes.NewReader(buf.Bytes())))
 		}
 
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
@@ -512,7 +512,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 			fmt.Println("create", m.ULID)
 			var buf bytes.Buffer
 			require.NoError(t, json.NewEncoder(&buf).Encode(&m))
-			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), block.MetaFilename), &buf))
+			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), block.MetaFilename), bytes.NewReader(buf.Bytes())))
 		}
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
