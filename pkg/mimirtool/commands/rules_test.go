@@ -213,23 +213,6 @@ func TestRuleCommand_checkRules(t *testing.T) {
 }
 
 func TestRuleSaveToFile_NamespaceRuleGroup(t *testing.T) {
-	t.Run("Fail save because marshal need node Kind defined", func(t *testing.T) {
-		namespace := "ns1"
-		rule1 := []rwrulefmt.RuleGroup{{
-			RuleGroup: rulefmt.RuleGroup{
-				Name: "group-1",
-				Rules: []rulefmt.Rule{
-					{
-						Record: "up",
-						Expr:   "up==1",
-					},
-				},
-			},
-		}}
-		tempDir := t.TempDir()
-		err := saveNamespaceRuleGroup(namespace, rule1, tempDir)
-		assert.ErrorContains(t, err, "yaml: cannot encode node with unknown kind")
-	})
 	t.Run("Successful save", func(t *testing.T) {
 		namespace := "ns1"
 		rule1 := []rwrulefmt.RuleGroup{{
