@@ -29,6 +29,7 @@ var (
 	ErrBlockMetaCorrupted         = block.ErrorSyncMetaCorrupted
 	ErrBlockDeletionMarkNotFound  = errors.New("block deletion mark not found")
 	ErrBlockDeletionMarkCorrupted = errors.New("block deletion mark corrupted")
+	errStopIter                   = errors.New("stop iteration")
 )
 
 // Updater is responsible to generate an update in-memory bucket index.
@@ -265,7 +266,7 @@ func isDirEmpty(ctx context.Context, bkt objstore.Bucket, id ulid.ULID) bool {
 	empty := true
 	_ = bkt.Iter(ctx, id.String(), func(_ string) error {
 		empty = false
-		return nil
+		return errStopIter
 	})
 	return empty
 }
