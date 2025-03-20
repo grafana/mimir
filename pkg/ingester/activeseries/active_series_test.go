@@ -44,6 +44,7 @@ func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
 	ref2, ls2 := storage.SeriesRef(2), labels.FromStrings("a", "2")
 	ref3, ls3 := storage.SeriesRef(3), labels.FromStrings("a", "3")
 	ref4, ls4 := storage.SeriesRef(4), labels.FromStrings("a", "4")
+
 	ref5 := storage.SeriesRef(5) // will be used for ls1 again.
 	c := NewActiveSeries(&asmodel.Matchers{}, DefaultTimeout, nil)
 	valid := c.Purge(time.Now(), nil)
@@ -271,51 +272,95 @@ func testCostAttributionUpdateSeries(t *testing.T, c *ActiveSeries, reg *prometh
 	assert.True(t, valid)
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(""), "cortex_ingester_attributed_active_series"))
 
-	c.UpdateSeries(ls1, ref1, time.Now(), -1, &idx)
+	c.UpdateSeries(ls1, ref1, time.Now(), 3, &idx)
 	valid = c.Purge(time.Now(), &idx)
 	assert.True(t, valid)
 	expectedMetrics := `
+	# HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+    cortex_ingester_attributed_active_native_histogram_buckets{a="1",tenant="user5",tracker="cost-attribution"} 3
+    # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+    cortex_ingester_attributed_active_native_histogram_series{a="1",tenant="user5",tracker="cost-attribution"} 1
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
     cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
 	`
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+	assert.NoError(t, testutil.GatherAndCompare(reg,
+		strings.NewReader(expectedMetrics),
+		"cortex_ingester_attributed_active_series",
+		"cortex_ingester_attributed_active_native_histogram_series",
+		"cortex_ingester_attributed_active_native_histogram_buckets"),
+	)
 
 	c.UpdateSeries(ls2, ref2, time.Now(), -1, &idx)
 	valid = c.Purge(time.Now(), &idx)
 	assert.True(t, valid)
 	expectedMetrics = `
+    # HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+    cortex_ingester_attributed_active_native_histogram_buckets{a="1",tenant="user5",tracker="cost-attribution"} 3
+    # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+    cortex_ingester_attributed_active_native_histogram_series{a="1",tenant="user5",tracker="cost-attribution"} 1
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
     cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
 	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 1
 	`
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+	assert.NoError(t, testutil.GatherAndCompare(reg,
+		strings.NewReader(expectedMetrics),
+		"cortex_ingester_attributed_active_series",
+		"cortex_ingester_attributed_active_native_histogram_series",
+		"cortex_ingester_attributed_active_native_histogram_buckets"),
+	)
 
 	c.UpdateSeries(ls3, ref3, time.Now(), -1, &idx)
 	valid = c.Purge(time.Now(), &idx)
 	assert.True(t, valid)
 	expectedMetrics = `
+    # HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+    cortex_ingester_attributed_active_native_histogram_buckets{a="1",tenant="user5",tracker="cost-attribution"} 3
+    # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+    cortex_ingester_attributed_active_native_histogram_series{a="1",tenant="user5",tracker="cost-attribution"} 1
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
     cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
 	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 1
 	cortex_ingester_attributed_active_series{a="3",tenant="user5",tracker="cost-attribution"} 1
 	`
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+	assert.NoError(t, testutil.GatherAndCompare(reg,
+		strings.NewReader(expectedMetrics),
+		"cortex_ingester_attributed_active_series",
+		"cortex_ingester_attributed_active_native_histogram_series",
+		"cortex_ingester_attributed_active_native_histogram_buckets"),
+	)
 
 	// ref7 has the same cost attribution labels as ref2, but it's a different series.
 	c.UpdateSeries(ls7, ref7, time.Now(), -1, &idx)
 	valid = c.Purge(time.Now(), &idx)
 	assert.True(t, valid)
 	expectedMetrics = `
+    # HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+    cortex_ingester_attributed_active_native_histogram_buckets{a="1",tenant="user5",tracker="cost-attribution"} 3
+    # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+    cortex_ingester_attributed_active_native_histogram_series{a="1",tenant="user5",tracker="cost-attribution"} 1
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
     cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
 	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 2
 	cortex_ingester_attributed_active_series{a="3",tenant="user5",tracker="cost-attribution"} 1
 	`
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+	assert.NoError(t, testutil.GatherAndCompare(reg,
+		strings.NewReader(expectedMetrics),
+		"cortex_ingester_attributed_active_series",
+		"cortex_ingester_attributed_active_native_histogram_series",
+		"cortex_ingester_attributed_active_native_histogram_buckets"),
+	)
 
 	c.UpdateSeries(ls4, ref4, time.Now(), 3, &idx)
 	valid = c.Purge(time.Now(), &idx)
@@ -334,6 +379,16 @@ func testCostAttributionUpdateSeries(t *testing.T, c *ActiveSeries, reg *prometh
 	valid = c.Purge(time.Now(), &idx)
 	assert.True(t, valid)
 	expectedMetrics = `
+    # HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+	cortex_ingester_attributed_active_native_histogram_buckets{a="1",tenant="user5",tracker="cost-attribution"} 3
+	cortex_ingester_attributed_active_native_histogram_buckets{a="4",tenant="user5",tracker="cost-attribution"} 3
+	cortex_ingester_attributed_active_native_histogram_buckets{a="5",tenant="user5",tracker="cost-attribution"} 5
+    # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+	cortex_ingester_attributed_active_native_histogram_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_native_histogram_series{a="4",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_native_histogram_series{a="5",tenant="user5",tracker="cost-attribution"} 1
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
     cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
@@ -342,19 +397,104 @@ func testCostAttributionUpdateSeries(t *testing.T, c *ActiveSeries, reg *prometh
 	cortex_ingester_attributed_active_series{a="4",tenant="user5",tracker="cost-attribution"} 1
 	cortex_ingester_attributed_active_series{a="5",tenant="user5",tracker="cost-attribution"} 1
 	`
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+	assert.NoError(t, testutil.GatherAndCompare(reg,
+		strings.NewReader(expectedMetrics),
+		"cortex_ingester_attributed_active_series",
+		"cortex_ingester_attributed_active_native_histogram_series",
+		"cortex_ingester_attributed_active_native_histogram_buckets"),
+	)
 
 	// changing a metric from float to histogram
 	c.UpdateSeries(ls3, ref3, time.Now(), 6, &idx)
 	valid = c.Purge(time.Now(), &idx)
 	assert.True(t, valid)
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+	expectedMetrics = `
+    # HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+	cortex_ingester_attributed_active_native_histogram_buckets{a="1",tenant="user5",tracker="cost-attribution"} 3
+	cortex_ingester_attributed_active_native_histogram_buckets{a="3",tenant="user5",tracker="cost-attribution"} 6
+	cortex_ingester_attributed_active_native_histogram_buckets{a="4",tenant="user5",tracker="cost-attribution"} 3
+	cortex_ingester_attributed_active_native_histogram_buckets{a="5",tenant="user5",tracker="cost-attribution"} 5
+    # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+	cortex_ingester_attributed_active_native_histogram_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_native_histogram_series{a="3",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_native_histogram_series{a="4",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_native_histogram_series{a="5",tenant="user5",tracker="cost-attribution"} 1
+    # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_series gauge
+    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 2
+	cortex_ingester_attributed_active_series{a="3",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="4",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="5",tenant="user5",tracker="cost-attribution"} 1
+	`
+	assert.NoError(t, testutil.GatherAndCompare(reg,
+		strings.NewReader(expectedMetrics),
+		"cortex_ingester_attributed_active_series",
+		"cortex_ingester_attributed_active_native_histogram_series",
+		"cortex_ingester_attributed_active_native_histogram_buckets"),
+	)
 
 	// fewer (zero) buckets for a histogram
 	c.UpdateSeries(ls4, ref4, time.Now(), 0, &idx)
 	valid = c.Purge(time.Now(), &idx)
 	assert.True(t, valid)
-	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_ingester_attributed_active_series"))
+	expectedMetrics = `
+    # HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+	cortex_ingester_attributed_active_native_histogram_buckets{a="1",tenant="user5",tracker="cost-attribution"} 3
+	cortex_ingester_attributed_active_native_histogram_buckets{a="3",tenant="user5",tracker="cost-attribution"} 6
+	cortex_ingester_attributed_active_native_histogram_buckets{a="5",tenant="user5",tracker="cost-attribution"} 5
+    # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+	cortex_ingester_attributed_active_native_histogram_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_native_histogram_series{a="3",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_native_histogram_series{a="4",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_native_histogram_series{a="5",tenant="user5",tracker="cost-attribution"} 1
+    # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_series gauge
+    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 2
+	cortex_ingester_attributed_active_series{a="3",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="4",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="5",tenant="user5",tracker="cost-attribution"} 1
+	`
+	assert.NoError(t, testutil.GatherAndCompare(reg,
+		strings.NewReader(expectedMetrics),
+		"cortex_ingester_attributed_active_series",
+		"cortex_ingester_attributed_active_native_histogram_series",
+		"cortex_ingester_attributed_active_native_histogram_buckets"),
+	)
+
+	// changing from histogram to float
+	c.UpdateSeries(ls3, ref3, time.Now(), -1, &idx)
+	valid = c.Purge(time.Now(), &idx)
+	assert.True(t, valid)
+	expectedMetrics = `
+    # HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
+	cortex_ingester_attributed_active_native_histogram_buckets{a="1",tenant="user5",tracker="cost-attribution"} 3
+	cortex_ingester_attributed_active_native_histogram_buckets{a="5",tenant="user5",tracker="cost-attribution"} 5
+    # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
+	cortex_ingester_attributed_active_native_histogram_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_native_histogram_series{a="4",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_native_histogram_series{a="5",tenant="user5",tracker="cost-attribution"} 1
+    # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
+    # TYPE cortex_ingester_attributed_active_series gauge
+    cortex_ingester_attributed_active_series{a="1",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="2",tenant="user5",tracker="cost-attribution"} 2
+	cortex_ingester_attributed_active_series{a="3",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="4",tenant="user5",tracker="cost-attribution"} 1
+	cortex_ingester_attributed_active_series{a="5",tenant="user5",tracker="cost-attribution"} 1
+	`
+	assert.NoError(t, testutil.GatherAndCompare(reg,
+		strings.NewReader(expectedMetrics),
+		"cortex_ingester_attributed_active_series",
+		"cortex_ingester_attributed_active_native_histogram_series",
+		"cortex_ingester_attributed_active_native_histogram_buckets"),
+	)
 
 	// ref2 is deleted from the head, but still active.
 	c.PostDeletion(map[chunks.HeadSeriesRef]labels.Labels{
