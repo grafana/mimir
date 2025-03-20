@@ -614,6 +614,12 @@ func TestConsumptionRanges(t *testing.T) {
 		},
 	}
 
+	/*
+		Testing todos:
+		- test that the boundary works appropriately when $now is right next to it. (Like right at the beginning of the hour.)
+
+	*/
+
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			println(name)

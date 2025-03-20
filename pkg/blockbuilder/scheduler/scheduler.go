@@ -191,7 +191,9 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 			s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(gl.End.Offset))
 			s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(gl.Commit.At))
 
-			pj, err := computePartitionJobs(ctx, of, s.cfg.Kafka.Topic, part, gl.Commit.At, gl.End.Offset, time.Hour, boundary)
+			// TODO: Don't use the commit offset Kafka told us, as s.committed is more up-to-date.
+
+			pj, err := computePartitionJobs(ctx, of, s.cfg.Kafka.Topic, part, gl.Commit.At, gl.End.Offset, s.cfg.ConsumeInterval, boundary)
 			if err != nil {
 				level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
 				continue
