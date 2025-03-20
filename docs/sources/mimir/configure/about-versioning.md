@@ -88,8 +88,6 @@ The following features are currently experimental:
   - Allow control over rule sync intervals.
     - `ruler.outbound-sync-queue-poll-interval`
     - `ruler.inbound-sync-queue-poll-interval`
-  - Cache rule group contents.
-    - `-ruler-storage.cache.rule-group-enabled`
 - Distributor
   - Influx ingestion
     - `/api/v1/push/influx/write` endpoint
@@ -214,7 +212,6 @@ The following features are currently experimental:
   - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
-  - Caching of non-transient error responses (`-query-frontend.cache-errors`, `-query-frontend.results-cache-ttl-for-errors`)
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
   - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.instant-queries-with-subquery-spin-off` and the `instant_queries_with_subquery_spin_off` per-tenant limit)
   - Enable PromQL experimental functions per-tenant (`-query-frontend.enabled-promql-experimental-functions` and the `enabled_promql_experimental_functions` per-tenant limit)
@@ -245,6 +242,8 @@ The following features are currently experimental:
   - Customise write and read buffer size
     - `-<prefix>.memcached.write-buffer-size-bytes`
     - `-<prefix>.memcached.read-buffer-size-bytes`
+  - Alternate DNS service discovery backend
+    - `-<prefix>.memcached.addresses-provider`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
@@ -262,6 +261,7 @@ The following features are currently experimental:
 - gRPC clients
   - Cross-cluster validation support for gRPC communication:
     - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
+    - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
     - Invalid cluster validations are tracked via the `cortex_client_request_invalid_cluster_validation_labels_total` metrics.
 - Kafka-based ingest storage
   - `-ingest-storage.*`

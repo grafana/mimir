@@ -154,7 +154,7 @@ func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, re
 		Command("prepare", "Modify a set of rules by including an specific label in aggregations.").
 		Action(r.prepare)
 	lintCmd := rulesCmd.
-		Command("lint", "Format a set of rule files. Keys are sorted alphabetically, with 4 spaces as indentantion, and PromQL expressions are formatted to a single line.").
+		Command("lint", "Format a set of rule files. Keys are sorted alphabetically, with 4 spaces as indentation, and PromQL expressions are formatted to a single line.").
 		Action(r.lint)
 	checkCmd := rulesCmd.
 		Command("check", "Run various best practice checks against rules.").

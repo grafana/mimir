@@ -510,6 +510,11 @@ storage:
   # system as object storage backend.
   # The CLI flags prefix for this block configuration is: common.storage
   [filesystem: <filesystem_storage_backend>]
+
+client_cluster_validation:
+  # (experimental) Optionally define the cluster validation label.
+  # CLI flag: -common.client-cluster-validation.label
+  [label: <string> | default = ""]
 ```
 
 ### server
@@ -1834,7 +1839,7 @@ results_cache:
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]
 
-# (experimental) Cache non-transient errors from queries.
+# Cache non-transient errors from queries.
 # CLI flag: -query-frontend.cache-errors
 [cache_errors: <boolean> | default = false]
 
@@ -2370,11 +2375,6 @@ local:
   [directory: <string> | default = ""]
 
 cache:
-  # (experimental) Enabling caching of rule group contents if a cache backend is
-  # configured.
-  # CLI flag: -ruler-storage.cache.rule-group-enabled
-  [rule_group_enabled: <boolean> | default = false]
-
   # Backend for ruler storage cache, if not empty. The cache is supported for
   # any storage backend except "local". Supported values: memcached, redis.
   # CLI flag: -ruler-storage.cache.backend
@@ -3744,7 +3744,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.results-cache-ttl-for-labels-query
 [results_cache_ttl_for_labels_query: <duration> | default = 0s]
 
-# (experimental) Time to live duration for cached non-transient errors
+# Time to live duration for cached non-transient errors
 # CLI flag: -query-frontend.results-cache-ttl-for-errors
 [results_cache_ttl_for_errors: <duration> | default = 5m]
 
@@ -5180,6 +5180,11 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # address, hostname, or an entry specified in the DNS Service Discovery format.
 # CLI flag: -<prefix>.memcached.addresses
 [addresses: <string> | default = ""]
+
+# (experimental) DNS provider used for resolving memcached addresses. Available
+# providers golang, miekgdns, miekgdns2
+# CLI flag: -<prefix>.memcached.addresses-provider
+[addresses_provider: <string> | default = "miekgdns"]
 
 # The socket read/write timeout.
 # CLI flag: -<prefix>.memcached.timeout

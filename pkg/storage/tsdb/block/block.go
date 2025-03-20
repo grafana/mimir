@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path"
@@ -41,6 +42,34 @@ const (
 	// DebugMetas is a directory for debug meta files that happen in the past. Useful for debugging.
 	DebugMetas = "debug/metas"
 )
+
+type FileType string
+
+const (
+	FileTypeMeta              FileType = "meta"
+	FileTypeIndex             FileType = "index"
+	FileTypeSparseIndexHeader FileType = "sparse_index_header"
+	FileTypeChunks            FileType = "chunks"
+	FileTypeUnknown           FileType = "unknown"
+)
+
+// UploadError wraps an error with additional information identifying the type of file that failed upload
+type UploadError struct {
+	cause    error
+	fileType FileType
+}
+
+func (e UploadError) Error() string {
+	return fmt.Sprintf("failed to upload %s: %v", e.fileType, e.cause)
+}
+
+func (e *UploadError) FileType() string {
+	return string(e.fileType)
+}
+
+func (e *UploadError) Unwrap() error {
+	return e.cause
+}
 
 // Download downloads a directory meant to be a block directory. If any one of the files
 // has a hash calculated in the meta file and it matches with what is in the destination path then
@@ -114,19 +143,21 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 	}
 
 	if err := objstore.UploadDir(ctx, logger, bkt, filepath.Join(blockDir, ChunksDirname), path.Join(id.String(), ChunksDirname)); err != nil {
-		return cleanUp(logger, bkt, id, errors.Wrap(err, "upload chunks"))
+		return cleanUp(logger, bkt, id, UploadError{err, FileTypeChunks})
 	}
 
 	if err := objstore.UploadFile(ctx, logger, bkt, filepath.Join(blockDir, IndexFilename), path.Join(id.String(), IndexFilename)); err != nil {
-		return cleanUp(logger, bkt, id, errors.Wrap(err, "upload index"))
+		return cleanUp(logger, bkt, id, UploadError{err, FileTypeIndex})
 	}
 
+	var oerr error
 	src := filepath.Join(blockDir, SparseIndexHeaderFilename)
 	dst := filepath.Join(id.String(), SparseIndexHeaderFilename)
 	if _, err := os.Stat(src); err == nil {
 		if err := objstore.UploadFile(ctx, logger, bkt, src, dst); err != nil {
 			// Don't call cleanUp. Uploading sparse index headers is best effort.
 			level.Warn(logger).Log("msg", "failed to upload sparse index headers", "block", id.String(), "err", err)
+			oerr = UploadError{err, FileTypeSparseIndexHeader}
 		}
 	}
 
@@ -136,10 +167,9 @@ func Upload(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blockDi
 		// and even though cleanUp will not see it yet, meta.json may appear in the bucket later.
 		// (Eg. S3 is known to behave this way when it returns 503 "SlowDown" error).
 		// If meta.json is not uploaded, this will produce partial blocks, but such blocks will be cleaned later.
-		return errors.Wrap(err, "upload meta file")
+		return UploadError{err, FileTypeMeta}
 	}
-
-	return nil
+	return oerr
 }
 
 func cleanUp(logger log.Logger, bkt objstore.Bucket, id ulid.ULID, origErr error) error {

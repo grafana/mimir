@@ -439,6 +439,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests. (default 3)
   -blocks-storage.bucket-store.chunks-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.chunks-cache.memcached.addresses-provider value
+    	[experimental] DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2 (default "miekgdns")
   -blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures
@@ -545,6 +547,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants). (default 1073741824)
   -blocks-storage.bucket-store.index-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.index-cache.memcached.addresses-provider value
+    	[experimental] DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2 (default "miekgdns")
   -blocks-storage.bucket-store.index-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures
@@ -669,6 +673,8 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache list of chunks for a block. (default 24h0m0s)
   -blocks-storage.bucket-store.metadata-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -blocks-storage.bucket-store.metadata-cache.memcached.addresses-provider value
+    	[experimental] DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2 (default "miekgdns")
   -blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures
@@ -989,6 +995,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine.
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
+  -common.client-cluster-validation.label string
+    	[experimental] Optionally define the cluster validation label.
   -common.storage.azure.account-key string
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
@@ -2302,7 +2310,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.align-queries-with-step
     	Mutate incoming queries to align their start and end with their step to improve result caching.
   -query-frontend.cache-errors
-    	[experimental] Cache non-transient errors from queries.
+    	Cache non-transient errors from queries.
   -query-frontend.cache-results
     	Cache query results.
   -query-frontend.cache-unaligned-requests
@@ -2410,7 +2418,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.results-cache-ttl-for-cardinality-query duration
     	Time to live duration for cached cardinality query results. The value 0 disables the cache.
   -query-frontend.results-cache-ttl-for-errors duration
-    	[experimental] Time to live duration for cached non-transient errors (default 5m)
+    	Time to live duration for cached non-transient errors (default 5m)
   -query-frontend.results-cache-ttl-for-labels-query duration
     	Time to live duration for cached label names and label values query results. The value 0 disables the cache.
   -query-frontend.results-cache-ttl-for-out-of-order-time-window duration
@@ -2421,6 +2429,8 @@ Usage of ./cmd/mimir/mimir:
     	Enable cache compression, if not empty. Supported values are: snappy.
   -query-frontend.results-cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -query-frontend.results-cache.memcached.addresses-provider value
+    	[experimental] DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2 (default "miekgdns")
   -query-frontend.results-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -query-frontend.results-cache.memcached.dns-ignore-startup-failures
@@ -2691,6 +2701,8 @@ Usage of ./cmd/mimir/mimir:
     	Backend for ruler storage cache, if not empty. The cache is supported for any storage backend except "local". Supported values: memcached, redis.
   -ruler-storage.cache.memcached.addresses comma-separated-list-of-strings
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
+  -ruler-storage.cache.memcached.addresses-provider value
+    	[experimental] DNS provider used for resolving memcached addresses. Available providers golang, miekgdns, miekgdns2 (default "miekgdns")
   -ruler-storage.cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
   -ruler-storage.cache.memcached.dns-ignore-startup-failures
@@ -2783,8 +2795,6 @@ Usage of ./cmd/mimir/mimir:
     	[deprecated] Username to use when connecting to Redis.
   -ruler-storage.cache.redis.write-timeout duration
     	[deprecated] Client write timeout. (default 3s)
-  -ruler-storage.cache.rule-group-enabled
-    	[experimental] Enabling caching of rule group contents if a cache backend is configured.
   -ruler-storage.filesystem.dir string
     	Local filesystem storage directory. (default "ruler")
   -ruler-storage.gcs.bucket-name string

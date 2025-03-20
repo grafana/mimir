@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -109,7 +110,7 @@ func TestBlockBuilder_StartWithExistingCommit(t *testing.T) {
 	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 
 	// Producing some records
-	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	cycleEndStartup := cycleEndBefore(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 
 	var producedSamples []mimirpb.Sample
 	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
@@ -184,7 +185,7 @@ func TestBlockBuilder_StartWithExistingCommit_PullMode(t *testing.T) {
 	cfg, overrides := blockBuilderPullModeConfig(t, kafkaAddr)
 
 	// Producing some records
-	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	cycleEndStartup := cycleEndBefore(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 
 	var producedSamples []mimirpb.Sample
 	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
@@ -399,7 +400,7 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection(t *testing.T) {
 
 	// Producing backlog of records in partition 0.
 	// For this test, the last-produced record must belong to the second to last cycle's section; i.e. the last section has nothing to consume.
-	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	cycleEndStartup := cycleEndBefore(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 
 	var producedSamples []mimirpb.Sample
 	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-5 * time.Hour).Add(29 * time.Minute)
@@ -467,7 +468,7 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection_PullMode(t *testi
 
 	// Producing backlog of records in partition 0.
 	// For this test, the last-produced record must belong to the second to last cycle's section; i.e. the last section has nothing to consume.
-	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	cycleEndStartup := cycleEndBefore(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 
 	var producedSamples []mimirpb.Sample
 	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-5 * time.Hour).Add(29 * time.Minute)
@@ -575,7 +576,7 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 
 	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 
-	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	cycleEndStartup := cycleEndBefore(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeInterval)
 
 	producedPerTenantSamples := make(map[string][]mimirpb.Sample, 0)
@@ -631,7 +632,7 @@ func TestBlockBuilder_WithMultipleTenants_PullMode(t *testing.T) {
 
 	cfg, overrides := blockBuilderPullModeConfig(t, kafkaAddr)
 
-	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	cycleEndStartup := cycleEndBefore(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeInterval)
 	firstTime := kafkaRecTime
 
@@ -706,7 +707,7 @@ func TestBlockBuilder_WithNonMonotonicRecordTimestamps(t *testing.T) {
 
 	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 
-	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	cycleEndStartup := cycleEndBefore(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 
 	const tenantID = "1"
 
@@ -799,7 +800,7 @@ func TestBlockBuilder_RetryOnTransientErrors(t *testing.T) {
 	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
 
 	// Producing some records
-	cycleEndStartup := cycleEndAtStartup(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	cycleEndStartup := cycleEndBefore(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
 
 	var producedSamples []mimirpb.Sample
 	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-1 * time.Hour).Add(29 * time.Minute)
@@ -913,7 +914,7 @@ func TestCycleEndAtStartup(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("now=%s/%s+%s", tc.nowTimeStr, tc.interval, tc.buffer), func(t *testing.T) {
 			now := mustTimeParse(t, time.TimeOnly, tc.nowTimeStr)
-			cycleEnd := cycleEndAtStartup(now, tc.interval, tc.buffer)
+			cycleEnd := cycleEndBefore(now, tc.interval, tc.buffer)
 			tc.testFunc(t, cycleEnd)
 		})
 	}
@@ -1153,7 +1154,8 @@ func TestNoPartiallyConsumedRegions(t *testing.T) {
 		return nil, nil, false
 	})
 
-	bb, err := New(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides)
+	reg := prometheus.NewPedanticRegistry()
+	bb, err := New(cfg, test.NewTestingLogger(t), reg, overrides)
 	require.NoError(t, err)
 
 	require.NoError(t, bb.starting(ctx))
@@ -1252,6 +1254,109 @@ func TestGetBlockCategoryCount(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestFastCatchupOnIdlePartition(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	kafkaClient := mustKafkaClient(t, kafkaAddr)
+	kafkaClient.AddConsumeTopics(testTopic)
+
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
+	cfg.ConsumeIntervalBuffer = 15 * time.Minute
+
+	reg := prometheus.NewPedanticRegistry()
+	bb, err := New(cfg, test.NewTestingLogger(t), reg, overrides)
+	require.NoError(t, err)
+
+	require.NoError(t, bb.starting(ctx))
+	t.Cleanup(func() {
+		require.NoError(t, bb.stoppingStandaloneMode(nil))
+	})
+
+	// An old record that we will commit. The time between 48h old to now is the idle period.
+	kafkaRecTime := time.Now().Add(-48 * time.Hour)
+	produceSamples(ctx, t, kafkaClient, 0, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
+
+	// Remaining samples for the last couple of hours. No samples in the buffer time for easier comparison later.
+	cycleEnd := cycleEndAfter(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+	var producedSamples []mimirpb.Sample
+	kafkaRecTime = cycleEnd.Truncate(cfg.ConsumeInterval).Add(-2 * time.Hour)
+	for kafkaRecTime.Before(cycleEnd.Add(-cfg.ConsumeIntervalBuffer)) {
+		samples := produceSamples(ctx, t, kafkaClient, 0, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
+		producedSamples = append(producedSamples, samples...)
+		kafkaRecTime = kafkaRecTime.Add(time.Minute)
+	}
+	require.NotEmpty(t, producedSamples)
+
+	// Fetch one record.
+	var recs []*kgo.Record
+	for len(recs) == 0 {
+		fetches := kafkaClient.PollFetches(ctx)
+		require.NoError(t, fetches.Err())
+		recs = append(recs, fetches.Records()...)
+	}
+
+	// Choosing the first old record to commit.
+	commitRec := recs[0]
+	lastRec := commitRec
+	blockEnd := commitRec.Timestamp.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval)
+	offset := kadm.Offset{
+		Topic:       commitRec.Topic,
+		Partition:   commitRec.Partition,
+		At:          commitRec.Offset + 1,
+		LeaderEpoch: -1, // not a group consumer
+		Metadata:    marshallCommitMeta(commitRec.Timestamp.UnixMilli(), lastRec.Timestamp.UnixMilli(), blockEnd.UnixMilli()),
+	}
+	commitOffset(ctx, t, kafkaClient, testGroup, offset)
+
+	err = bb.nextConsumeCycle(ctx, cycleEnd)
+	require.NoError(t, err)
+
+	// The above cycle should try one consumption for the old commit point, then shortcut
+	// to the last 2h records. So we should not have more than 3-4 consumption attempts.
+	// Without the shortcut in place, it will run consumption 48-49 times, one for each hour.
+	consumptionAttempts := getSampleCountFromHistogramVector(t, bb.blockBuilderMetrics.processPartitionDuration)
+	require.GreaterOrEqual(t, consumptionAttempts, 3)
+	require.LessOrEqual(t, consumptionAttempts, 4)
+
+	compareQueryWithDir(t,
+		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
+		producedSamples, nil,
+		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+	)
+}
+
+// getSampleCountFromHistogramVector gets the count field of histogram from the histogram vector.
+// The histogram vector must have only 1 histogram.
+// This function takes most of its code from promtest.ToFloat64() and adapts to our use case.
+func getSampleCountFromHistogramVector(t *testing.T, m *prometheus.HistogramVec) int {
+	var (
+		metrics []prometheus.Metric
+		mChan   = make(chan prometheus.Metric)
+		done    = make(chan struct{})
+	)
+
+	go func() {
+		for m := range mChan {
+			metrics = append(metrics, m)
+		}
+		close(done)
+	}()
+
+	m.Collect(mChan)
+	close(mChan)
+	<-done
+
+	require.Len(t, metrics, 1)
+
+	pb := &dto.Metric{}
+	require.NoError(t, metrics[0].Write(pb))
+	return int(*pb.Histogram.SampleCount)
 }
 
 func blockBuilderPullModeConfig(t *testing.T, addr string) (Config, *validation.Overrides) {
