@@ -44,7 +44,6 @@ import (
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -1476,10 +1475,10 @@ func TestRuler_DeleteTenantConfiguration_ShouldDeleteTenantConfigurationAndTrigg
 
 	// "upload" rule groups
 	for _, key := range ruleGroups {
-		desc := rulespb.ToProto(key.user, key.namespace, rulefmt.RuleGroup{Name: key.group, Rules: []rulefmt.RuleNode{
+		desc := rulespb.ToProto(key.user, key.namespace, rulefmt.RuleGroup{Name: key.group, Rules: []rulefmt.Rule{
 			{
-				Record: yaml.Node{Value: "up", Kind: yaml.ScalarNode},
-				Expr:   yaml.Node{Value: "up==1", Kind: yaml.ScalarNode},
+				Record: "up",
+				Expr:   "up==1",
 			},
 		}})
 		require.NoError(t, rs.SetRuleGroup(context.Background(), key.user, key.namespace, desc))
