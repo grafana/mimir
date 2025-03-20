@@ -255,7 +255,7 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 	}
 
 	// boundaryTime is intended to be exclusive. (i.e., consume up to but not including 11:00 AM.)
-	// Subtract a millisecond to make this work correctly with the Kafka offset APIs.
+	// Subtract 1ms to turn it into an inclusive boundary for fetching start offsets.
 
 	boundaryTime = boundaryTime.Add(-1 * time.Millisecond)
 	windowEndOffset, err := offs.offsetAfterTime(ctx, topic, partition, boundaryTime)
@@ -270,7 +270,10 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 
 	jobs := []*schedulerpb.JobSpec{}
 
-	for pb := boundaryTime.Add(-width); true; pb = pb.Add(-width) {
+	// Iterate backwards from the boundary time by width, stopping when we've
+	// crossed the committed offset.
+
+	for pb := boundaryTime.Add(-width); ; pb = pb.Add(-width) {
 		off, err := offs.offsetAfterTime(ctx, topic, partition, pb)
 		if err != nil {
 			return nil, err
