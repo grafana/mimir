@@ -227,11 +227,11 @@ func prepareBinaryExpr(e *parser.BinaryExpr, label string, rule string) error {
 }
 
 // Validate each rule in the rule namespace is valid
-func (r RuleNamespace) Validate() []error {
+func (r RuleNamespace) Validate(groupNodes []rulefmt.RuleGroupNode) []error {
 	set := map[string]struct{}{}
 	var errs []error
 
-	for _, g := range r.Groups {
+	for i, g := range r.Groups {
 		if g.Name == "" {
 			errs = append(errs, fmt.Errorf("Groupname should not be empty"))
 		}
@@ -245,17 +245,17 @@ func (r RuleNamespace) Validate() []error {
 
 		set[g.Name] = struct{}{}
 
-		errs = append(errs, ValidateRuleGroup(g)...)
+		errs = append(errs, ValidateRuleGroup(g, groupNodes[i])...)
 	}
 
 	return errs
 }
 
 // ValidateRuleGroup validates a rulegroup
-func ValidateRuleGroup(g rwrulefmt.RuleGroup) []error {
+func ValidateRuleGroup(g rwrulefmt.RuleGroup, node rulefmt.RuleGroupNode) []error {
 	var errs []error
 	for i, r := range g.Rules {
-		for _, err := range r.Validate() {
+		for _, err := range r.Validate(node.Rules[i]) {
 			var ruleName string
 			if r.Alert != "" {
 				ruleName = r.Alert
