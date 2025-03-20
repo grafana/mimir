@@ -76,7 +76,9 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 
 	binPath := filepath.Join(dir, id.String(), block.IndexHeaderFilename)
 	sparseHeadersPath := filepath.Join(dir, id.String(), block.SparseIndexHeaderFilename)
-	br, err := newFileStreamBinaryReader(binPath, id, sparseHeadersPath, postingOffsetsInMemSampling, spanLog, metrics, cfg)
+
+	// First, try to initialize from the binary header file
+	br, err := newFileStreamBinaryReader(ctx, binPath, id, sparseHeadersPath, postingOffsetsInMemSampling, spanLog, bkt, metrics, cfg)
 	if err == nil {
 		return br, nil
 	}
@@ -89,11 +91,11 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 	}
 
 	level.Debug(spanLog).Log("msg", "built index-header file", "path", binPath, "elapsed", time.Since(start))
-	return newFileStreamBinaryReader(binPath, id, sparseHeadersPath, postingOffsetsInMemSampling, spanLog, metrics, cfg)
+	return newFileStreamBinaryReader(ctx, binPath, id, sparseHeadersPath, postingOffsetsInMemSampling, spanLog, bkt, metrics, cfg)
 }
 
-// newFileStreamBinaryReader loads sparse index-headers from disk or constructs it from the index-header if not available.
-func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath string, postingOffsetsInMemSampling int, logger log.Logger, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
+// newFileStreamBinaryReader loads sparse index-headers from disk, then from the bucket, or constructs it from the index-header if neither of the two available.
+func newFileStreamBinaryReader(ctx context.Context, binPath string, id ulid.ULID, sparseHeadersPath string, postingOffsetsInMemSampling int, logger log.Logger, bkt objstore.BucketReader, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	logger = log.With(logger, "id", id, "path", sparseHeadersPath, "inmem_sampling_rate", postingOffsetsInMemSampling)
 
 	r := &StreamBinaryReader{
@@ -141,39 +143,11 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 		return nil, fmt.Errorf("cannot read table-of-contents: %w", err)
 	}
 
-	// Load in sparse symbols and postings offset table; from disk if this is a v2 index.
-	if r.indexVersion == index.FormatV2 {
-		var reconstruct bool
-		sparseData, err := os.ReadFile(sparseHeadersPath)
-		if err != nil && !os.IsNotExist(err) {
-			level.Warn(logger).Log("msg", "failed to read sparse index-headers from disk; recreating", "err", err)
-		}
-
-		if err == nil {
-			if err = r.loadFromSparseIndexHeader(logger, sparseData, postingOffsetsInMemSampling); err != nil {
-				reconstruct = true
-			}
-		}
-
-		// reconstruct from index if the sparse index-header file isn't on disk or if the sampling rate of the headers
-		// on disk can't be downsampled to the desired rate.
-		if err != nil || reconstruct {
-			if err = r.loadFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
-				return nil, fmt.Errorf("cannot load sparse index-header: %w", err)
-			}
-			if err := writeSparseHeadersToFile(logger, sparseHeadersPath, r); err != nil {
-				return nil, fmt.Errorf("cannot write sparse index-header to disk: %w", err)
-			}
-			level.Debug(logger).Log("msg", "built sparse index-header file")
-		}
-
-	} else {
-		if err = r.loadFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
-			return nil, fmt.Errorf("cannot load sparse index-header: %w", err)
-		}
+	// Load symbols and postings offset table
+	if err = r.loadSparseHeader(ctx, logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling, sparseHeadersPath, bkt, id); err != nil {
+		return nil, fmt.Errorf("cannot load sparse index-header: %w", err)
 	}
 
-	level.Debug(logger).Log("msg", "built sparse index-header file")
 	labelNames, err := r.postingsOffsetTable.LabelNames()
 	if err != nil {
 		return nil, fmt.Errorf("cannot load label names from postings offset table: %w", err)
@@ -190,6 +164,84 @@ func newFileStreamBinaryReader(binPath string, id ulid.ULID, sparseHeadersPath s
 	return r, err
 }
 
+// loadSparseHeader loads the sparse header from disk, object store, or constructs it from the index-header.
+// It prioritizes: 1) Local file 2) Object store 3) Generating from the index-header
+// It returns an error if the sparse header cannot be loaded from any of the sources.
+// If the sparse header was not found on disk, it will try to write it after generating or downloading it. If writing fails, loadSparseHeader does not return an error.
+func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Logger, cfg Config, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, sparseHeadersPath string, bkt objstore.BucketReader, id ulid.ULID) error {
+	// Only v2 indexes use sparse headers
+	if r.indexVersion != index.FormatV2 {
+		return r.loadFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling)
+	}
+
+	// 1. Try to load from local file first
+	localSparseHeaderBytes, err := os.ReadFile(sparseHeadersPath)
+	if err == nil {
+		level.Debug(logger).Log("msg", "loading sparse index-header from local disk")
+		err = r.loadFromSparseIndexHeader(logger, localSparseHeaderBytes, postingOffsetsInMemSampling)
+		if err == nil {
+			return nil
+		}
+		level.Warn(logger).Log("msg", "failed to load sparse index-header from disk; will try bucket", "err", err)
+	} else if os.IsNotExist(err) {
+		level.Debug(logger).Log("msg", "sparse index-header does not exist on disk; will try bucket")
+	} else {
+		level.Warn(logger).Log("msg", "failed to read sparse index-header from disk; will try bucket", "err", err)
+	}
+
+	// 2. Fall back to the bucket
+	bucketSparseHeaderBytes, err := tryDownloadSparseHeader(ctx, logger, bkt, id)
+	if err == nil {
+		// Try to load the downloaded sparse header
+		err = r.loadFromSparseIndexHeader(logger, bucketSparseHeaderBytes, postingOffsetsInMemSampling)
+		if err == nil {
+			tryWriteSparseHeadersToFile(logger, sparseHeadersPath, r)
+			return nil
+		}
+		level.Warn(logger).Log("msg", "failed to load sparse index-header from bucket; reconstructing", "err", err)
+	} else {
+		level.Info(logger).Log("msg", "could not download sparse index-header from bucket; reconstructing from index-header", "err", err)
+	}
+
+	// 3. Generate from index-header as a last resort
+	if err = r.loadFromIndexHeader(logger, cfg, indexLastPostingListEndBound, postingOffsetsInMemSampling); err != nil {
+		return fmt.Errorf("cannot load sparse index-header from full index-header: %w", err)
+	}
+	level.Info(logger).Log("msg", "generated sparse index-header from full index-header")
+	tryWriteSparseHeadersToFile(logger, sparseHeadersPath, r)
+
+	return nil
+}
+
+// tryDownloadSparseHeader attempts to download the sparse header from the object store.
+// It returns the sparse header data if successful, nil + error otherwise.
+func tryDownloadSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.BucketReader, id ulid.ULID) ([]byte, error) {
+	if bkt == nil {
+		return nil, fmt.Errorf("bucket is nil")
+	}
+	sparseHeaderObjPath := filepath.Join(id.String(), block.SparseIndexHeaderFilename)
+
+	reader, err := bkt.Get(ctx, sparseHeaderObjPath)
+	if err != nil {
+		return nil, fmt.Errorf("getting sparse index-header from bucket: %w", err)
+	}
+	defer runutil.CloseWithLogOnErr(logger, reader, "close sparse index-header reader")
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("reading sparse index-header from bucket: %w", err)
+	}
+
+	// Check if we've been canceled after downloading
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	level.Info(logger).Log("msg", "downloaded sparse index-header from bucket")
+
+	return data, nil
+}
+
 // loadFromSparseIndexHeader load from sparse index-header on disk.
 func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparseData []byte, postingOffsetsInMemSampling int) (err error) {
 	start := time.Now()
@@ -197,23 +249,10 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 		level.Info(logger).Log("msg", "loaded sparse index-header from disk", "elapsed", time.Since(start))
 	}()
 
-	level.Info(logger).Log("msg", "loading sparse index-header from disk")
-	sparseHeaders := &indexheaderpb.Sparse{}
-
-	gzipped := bytes.NewReader(sparseData)
-	gzipReader, err := gzip.NewReader(gzipped)
+	level.Debug(logger).Log("msg", "loading sparse index-header from disk")
+	sparseHeaders, err := decodeSparseData(logger, sparseData)
 	if err != nil {
-		return fmt.Errorf("failed to create sparse index-header gzip reader: %w", err)
-	}
-	defer runutil.CloseWithLogOnErr(logger, gzipReader, "close sparse index-header gzip reader")
-
-	sparseData, err = io.ReadAll(gzipReader)
-	if err != nil {
-		return fmt.Errorf("failed to read sparse index-header: %w", err)
-	}
-
-	if err := sparseHeaders.Unmarshal(sparseData); err != nil {
-		return fmt.Errorf("failed to decode sparse index-header file: %w", err)
+		return err
 	}
 
 	r.symbols, err = streamindex.NewSymbolsFromSparseHeader(r.factory, sparseHeaders.Symbols, r.indexVersion, int(r.toc.Symbols))
@@ -227,6 +266,27 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 	}
 
 	return nil
+}
+
+func decodeSparseData(logger log.Logger, sparseData []byte) (*indexheaderpb.Sparse, error) {
+	sparseHeaders := &indexheaderpb.Sparse{}
+
+	gzipped := bytes.NewReader(sparseData)
+	gzipReader, err := gzip.NewReader(gzipped)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create sparse index-header gzip reader: %w", err)
+	}
+	defer runutil.CloseWithLogOnErr(logger, gzipReader, "close sparse index-header gzip reader")
+
+	sparseData, err = io.ReadAll(gzipReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read sparse index-header: %w", err)
+	}
+
+	if err := sparseHeaders.Unmarshal(sparseData); err != nil {
+		return nil, fmt.Errorf("failed to decode sparse index-header file: %w", err)
+	}
+	return sparseHeaders, err
 }
 
 // loadFromIndexHeader loads in symbols and postings offset table from the index-header.
@@ -252,14 +312,7 @@ func (r *StreamBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, 
 }
 
 // writeSparseHeadersToFile uses protocol buffer to write StreamBinaryReader to disk at sparseHeadersPath.
-func writeSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, reader *StreamBinaryReader) error {
-	start := time.Now()
-	defer func() {
-		level.Info(logger).Log("msg", "wrote sparse index-header to disk", "elapsed", time.Since(start))
-	}()
-
-	level.Info(logger).Log("msg", "writing sparse index-header to disk")
-
+func writeSparseHeadersToFile(sparseHeadersPath string, reader *StreamBinaryReader) (retErr error) {
 	sparseHeaders := &indexheaderpb.Sparse{}
 	sparseHeaders.Symbols = reader.symbols.NewSparseSymbol()
 	sparseHeaders.PostingsOffsetTable = reader.postingsOffsetTable.NewSparsePostingOffsetTable()
@@ -285,6 +338,22 @@ func writeSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, reade
 	}
 
 	return nil
+}
+
+// tryWriteSparseHeadersToFile attempts to write the sparse header to disk.
+// If it fails, it will log a warning.
+func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, reader *StreamBinaryReader) {
+	start := time.Now()
+	level.Debug(logger).Log("msg", "writing sparse index-header to disk")
+
+	err := writeSparseHeadersToFile(sparseHeadersPath, reader)
+
+	if err != nil {
+		logger = log.With(level.Warn(logger), "msg", "error writing sparse header to disk; will continue loading block", "err", err)
+	} else {
+		logger = log.With(level.Info(logger), "msg", "wrote sparse header to disk")
+	}
+	logger.Log("elapsed", time.Since(start))
 }
 
 // newBinaryTOCFromFile return parsed TOC from given Decbuf. The Decbuf is expected to be
