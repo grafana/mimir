@@ -191,20 +191,13 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 			s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(gl.End.Offset))
 			s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(gl.Commit.At))
 
-			ranges, err := computePartitionJobs(ctx, of, s.cfg.Kafka.Topic, part, gl.Commit.At, gl.End.Offset, time.Hour, boundary)
+			pj, err := computePartitionJobs(ctx, of, s.cfg.Kafka.Topic, part, gl.Commit.At, gl.End.Offset, time.Hour, boundary)
 			if err != nil {
 				level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
 				continue
 			}
 
-			for _, r := range ranges {
-				jobs = append(jobs, &schedulerpb.JobSpec{
-					Topic:       s.cfg.Kafka.Topic,
-					Partition:   part,
-					StartOffset: r.start,
-					EndOffset:   r.end,
-				})
-			}
+			jobs = append(jobs, pj...)
 		}
 	}
 
@@ -225,11 +218,6 @@ func newOffsetFinder(adminClient *kadm.Client) *offsetFinder {
 		offsets:     make(map[time.Time]kadm.ListedOffsets),
 		adminClient: adminClient,
 	}
-}
-
-type offsetRange struct {
-	start int64 // the first offset to consume
-	end   int64 // the first offset not to consume
 }
 
 // offsetAfterTime is a cached version of adminClient.ListOffsetsAfterMilli that
@@ -259,11 +247,11 @@ var _ offsetStore = (*offsetFinder)(nil)
 // computePartitionJobs returns the ranges of offsets that should be consumed
 // for the given topic and partition.
 func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, partition int32,
-	committed int64, partEnd int64, width time.Duration, boundaryTime time.Time) ([]offsetRange, error) {
+	committed int64, partEnd int64, width time.Duration, boundaryTime time.Time) ([]*schedulerpb.JobSpec, error) {
 
 	if committed >= partEnd {
 		// No new data to consume.
-		return []offsetRange{}, nil
+		return []*schedulerpb.JobSpec{}, nil
 	}
 
 	// boundaryTime is intended to be exclusive. (i.e., consume up to but not including 11:00 AM.)
@@ -277,10 +265,10 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 
 	if committed >= windowEndOffset {
 		// No new data to consume.
-		return []offsetRange{}, nil
+		return []*schedulerpb.JobSpec{}, nil
 	}
 
-	starts := []int64{}
+	jobs := []*schedulerpb.JobSpec{}
 
 	for pb := boundaryTime.Add(-width); true; pb = pb.Add(-width) {
 		off, err := offs.offsetAfterTime(ctx, topic, partition, pb)
@@ -292,30 +280,38 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 			break
 		}
 		if off >= windowEndOffset {
-			// Found an offset beyond our window. Move along.
+			// Found an offset exceeding our window. Move along.
 			continue
 		}
 
-		if len(starts) == 0 || off != starts[len(starts)-1] {
-			starts = append(starts, off)
+		if len(jobs) == 0 || off != jobs[len(jobs)-1].StartOffset {
+			jobs = append(jobs, &schedulerpb.JobSpec{
+				Topic:       topic,
+				Partition:   partition,
+				StartOffset: off,
+			})
+		}
+
+		if off == committed {
+			// We've reached the committed offset, so we're done.
+			break
 		}
 	}
 
-	// We have a slice of start offsets. Put them in increasing order, then transform them into (startInclusive, endExclusive) pairs.
+	// We have a slice of jobs with start offsets. Put them in increasing order,
+	// then fill in the exclusive end offsets.
 
-	slices.Reverse(starts)
-	ranges := make([]offsetRange, len(starts))
+	slices.Reverse(jobs)
 
-	for i, s := range starts {
-		ranges[i].start = s
-		if i < len(starts)-1 {
-			ranges[i].end = starts[i+1]
+	for i := range jobs {
+		if i < len(jobs)-1 {
+			jobs[i].EndOffset = jobs[i+1].StartOffset
 		} else {
-			ranges[i].end = windowEndOffset
+			jobs[i].EndOffset = windowEndOffset
 		}
 	}
 
-	return ranges, nil
+	return jobs, nil
 }
 
 func (s *BlockBuilderScheduler) fetchLag(ctx context.Context) (kadm.GroupLag, error) {

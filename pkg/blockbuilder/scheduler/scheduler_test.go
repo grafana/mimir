@@ -438,28 +438,39 @@ func TestLessThan(t *testing.T) {
 	assert.False(t, specLessThan(schedulerpb.JobSpec{CommitRecTs: now}, schedulerpb.JobSpec{CommitRecTs: now}))
 }
 
+type timeOffset struct {
+	time   int64
+	offset int64
+}
+
 func TestConsumptionRanges(t *testing.T) {
 	ctx := context.Background()
 
+	type offsetRange struct {
+		start int64
+		end   int64
+	}
+
 	tests := map[string]struct {
-		offsets        map[int64]int64
+		offsets        []timeOffset
 		commit         int64
 		partEnd        int64
 		width          time.Duration
 		boundary       time.Time
 		expectedRanges []offsetRange
+		msg            string
 	}{
 		"basic consumption ranges": {
-			offsets: map[int64]int64{
-				100: 1000,
-				101: 1001,
-				200: 2000,
-				300: 3000,
-				400: 4000,
-				500: 5000,
-				599: 5999,
-				600: 6000,
-				700: 7000,
+			offsets: []timeOffset{
+				{100, 1000},
+				{101, 1001},
+				{200, 2000},
+				{300, 3000},
+				{400, 4000},
+				{500, 5000},
+				{599, 5999},
+				{600, 6000},
+				{700, 7000},
 			},
 			commit:   2000,
 			partEnd:  10001,
@@ -469,24 +480,25 @@ func TestConsumptionRanges(t *testing.T) {
 				{start: 2000, end: 4000},
 				{start: 4000, end: 6000},
 			},
+			msg: "consumption should exclude the offset on the boundry, but otherwise cover (commit, boundary]",
 		},
 		"no new data": {
 			// End offset is the one that was consumed last time.
-			offsets: map[int64]int64{
-				100: 1000,
-				101: 1001,
-				199: 1999,
+			offsets: []timeOffset{
+				{100, 1000},
+				{101, 1001},
+				{199, 1999},
 			},
 			commit:         2000,
-			partEnd:        2000,
+			partEnd:        2001,
 			width:          200 * time.Millisecond,
 			boundary:       time.UnixMilli(600),
 			expectedRanges: []offsetRange{},
 		},
 		"old data with single unconsumed record": {
-			offsets: map[int64]int64{
-				199: 1999,
-				200: 2000,
+			offsets: []timeOffset{
+				{199, 1999},
+				{200, 2000},
 			},
 			commit:   2000,
 			partEnd:  2001,
@@ -497,45 +509,79 @@ func TestConsumptionRanges(t *testing.T) {
 			},
 		},
 		"one record: no new data": {
-			offsets: map[int64]int64{
-				199: 1999,
+			offsets: []timeOffset{
+				{199, 1999},
 			},
 			commit:         2000,
 			partEnd:        2000,
 			width:          200 * time.Millisecond,
-			boundary:       time.UnixMilli(599),
+			boundary:       time.UnixMilli(600),
 			expectedRanges: []offsetRange{},
 		},
-		"initial consumption: no data": {
-			offsets:        map[int64]int64{},
+		"boundary before data -> no ranges": {
+			offsets: []timeOffset{
+				{1000, 1000},
+				{1001, 1001},
+				{1002, 1002},
+			},
+			commit:         1000,
+			partEnd:        1003,
+			width:          200 * time.Millisecond,
+			boundary:       time.UnixMilli(600),
+			expectedRanges: []offsetRange{},
+		},
+		"boundary at start of data": {
+			offsets: []timeOffset{
+				{3000, 3000},
+				{4000, 4000},
+			},
+			commit:         3000,
+			partEnd:        4001,
+			width:          200 * time.Millisecond,
+			boundary:       time.UnixMilli(3000),
+			expectedRanges: []offsetRange{},
+			msg:            "all data is >= boundary -> no eligible jobs",
+		},
+		"boundary at end of data": {
+			offsets: []timeOffset{
+				{3000, 3000},
+			},
+			commit:         3000,
+			partEnd:        3001,
+			width:          200 * time.Millisecond,
+			boundary:       time.UnixMilli(3000),
+			expectedRanges: []offsetRange{},
+		},
+		"empty partition: no data": {
+			offsets:        []timeOffset{},
 			commit:         0,
 			partEnd:        0,
 			width:          200 * time.Millisecond,
-			boundary:       time.UnixMilli(599),
+			boundary:       time.UnixMilli(600),
 			expectedRanges: []offsetRange{},
 		},
 		"data gaps wider than range width": {
-			offsets: map[int64]int64{
-				99:  999,
-				100: 1000,
-				101: 1001,
-				102: 1002,
-				103: 1003,
-				104: 1004,
-				105: 1005,
-				106: 1006,
-				107: 1007,
-				108: 1008,
-				109: 1009,
-				110: 1010,
-				111: 1011,
-				112: 1012,
-				// (large gap that would result in duplicate ranges given a naive implementation)
-				500: 1013,
-				501: 1014,
-				502: 1015,
-				503: 1016,
-				600: 1017,
+			offsets: []timeOffset{
+				{99, 999},
+				{100, 1000},
+				{101, 1001},
+				{102, 1002},
+				{103, 1003},
+				{104, 1004},
+				{105, 1005},
+				{106, 1006},
+				{107, 1007},
+				{108, 1008},
+				{109, 1009},
+				{110, 1010},
+				{111, 1011},
+				{112, 1012},
+				// (large gap that would produce duplicate jobs in a naive implementation)
+				{500, 1013},
+				{501, 1014},
+				{502, 1015},
+				{503, 1016},
+				{600, 1017},
 			},
 			commit:   1000,
 			partEnd:  10001,
@@ -546,46 +592,67 @@ func TestConsumptionRanges(t *testing.T) {
 				{start: 1013, end: 1017},
 			},
 		},
-		// more cases:
-		// - boundary is before any data
-		// - boundary is after all data
-		// - boundary is in the middle of the data
-		// - boundary is at the end of the data
-		// - boundary is at the start of the data
-		// - boundary is in the middle of the data
-		// - boundary is at the end of the data
+		"records with the same timestamp": {
+			offsets: []timeOffset{
+				{100, 1000},
+				{101, 1001},
+				{102, 1002},
+				{102, 1003},
+				{102, 1004},
+				{102, 1005},
+				{102, 1006},
+				{102, 1007},
+				{102, 1008},
+			},
+			commit:   1000,
+			partEnd:  1009,
+			width:    100 * time.Millisecond,
+			boundary: time.UnixMilli(600),
+			expectedRanges: []offsetRange{
+				{start: 1000, end: 1009},
+			},
+		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			println(name)
-			offset := make(map[time.Time]int64, len(tt.offsets))
-			for a, b := range tt.offsets {
-				offset[time.UnixMilli(a)] = b
-			}
-			f := &mockOffsetFinder{offsets: offset, end: tt.partEnd}
-			r, err := computePartitionJobs(ctx, f, "topic", 0, tt.commit, tt.partEnd, tt.width, tt.boundary)
+
+			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.partEnd}
+			j, err := computePartitionJobs(ctx, f, "topic", 0, tt.commit, tt.partEnd, tt.width, tt.boundary)
 			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedRanges, r)
+
+			// Convert offsetRange to JobSpec.
+			expectedJobs := make([]*schedulerpb.JobSpec, len(tt.expectedRanges))
+			for i, r := range tt.expectedRanges {
+				expectedJobs[i] = &schedulerpb.JobSpec{
+					Topic:       "topic",
+					Partition:   0,
+					StartOffset: r.start,
+					EndOffset:   r.end,
+				}
+			}
+			assert.Equal(t, expectedJobs, j, tt.msg)
 		})
 	}
 }
 
 // Create an offsetStore that we can just prepopulate with offset scenarios.
 type mockOffsetFinder struct {
-	offsets map[time.Time]int64
+	offsets []timeOffset
 	end     int64
 }
 
 func (o *mockOffsetFinder) offsetAfterTime(ctx context.Context, topic string, partition int32, t time.Time) (int64, error) {
-	// scan the offsets map and return the lowest offset whose time is after t.
+	// scan the offsets slice and return the lowest offset whose time is after t.
 	mint := time.Time{}
 	off := int64(-1)
-	for k, v := range o.offsets {
-		if k.After(t) {
-			if mint.IsZero() || mint.After(k) {
-				mint = k
-				off = v
+	for _, pair := range o.offsets {
+		pairTime := time.UnixMilli(pair.time)
+		if pairTime.After(t) {
+			if mint.IsZero() || mint.After(pairTime) {
+				mint = pairTime
+				off = pair.offset
 			}
 		}
 	}
