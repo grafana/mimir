@@ -1545,6 +1545,7 @@ type mockConfigProvider struct {
 	verifyChunks                 map[string]bool
 	perTenantInMemoryCache       map[string]int
 	maxLookback                  map[string]time.Duration
+	maxPerBlockUploadConurrency  map[string]int
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -1560,6 +1561,7 @@ func newMockConfigProvider() *mockConfigProvider {
 		verifyChunks:                 make(map[string]bool),
 		perTenantInMemoryCache:       make(map[string]int),
 		maxLookback:                  make(map[string]time.Duration),
+		maxPerBlockUploadConurrency:  make(map[string]int),
 	}
 }
 
@@ -1625,6 +1627,13 @@ func (m *mockConfigProvider) S3SSEKMSKeyID(string) string {
 
 func (m *mockConfigProvider) S3SSEKMSEncryptionContext(string) string {
 	return ""
+}
+
+func (m *mockConfigProvider) CompactorMaxPerBlockUploadConcurrency(userID string) int {
+	if result, ok := m.maxPerBlockUploadConurrency[userID]; ok {
+		return result
+	}
+	return 1
 }
 
 func (m *mockConfigProvider) CompactorMaxLookback(user string) time.Duration {

@@ -463,7 +463,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		begin := time.Now()
 
 		opts := []objstore.UploadOption{
-			objstore.WithUploadConcurrency(maxBlockUploadConcurrency),
+			objstore.WithUploadConcurrency(c.maxPerBlockUploadConcurrency),
 		}
 
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, nil, opts...); err != nil {
@@ -838,6 +838,7 @@ type BucketCompactor struct {
 	skipUnhealthyBlocks           bool
 	uploadSparseIndexHeaders      bool
 	sparseIndexHeaderSamplingRate int
+	maxPerBlockUploadConcurrency  int
 	sparseIndexHeaderconfig       indexheader.Config
 	ownJob                        ownCompactionJobFunc
 	sortJobs                      JobsOrderFunc
@@ -865,10 +866,16 @@ func NewBucketCompactor(
 	uploadSparseIndexHeaders bool,
 	sparseIndexHeaderSamplingRate int,
 	sparseIndexHeaderconfig indexheader.Config,
+	maxPerBlockUploadConcurrency int,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
 		return nil, errors.Errorf("invalid concurrency level (%d), concurrency level must be > 0", concurrency)
 	}
+
+	if maxPerBlockUploadConcurrency <= 0 {
+		return nil, errors.Errorf("invalid per block upload concurrency level (%d), concurrency must be > 0", maxPerBlockUploadConcurrency)
+	}
+
 	return &BucketCompactor{
 		logger:                        logger,
 		sy:                            sy,
@@ -887,6 +894,7 @@ func NewBucketCompactor(
 		uploadSparseIndexHeaders:      uploadSparseIndexHeaders,
 		sparseIndexHeaderSamplingRate: sparseIndexHeaderSamplingRate,
 		sparseIndexHeaderconfig:       sparseIndexHeaderconfig,
+		maxPerBlockUploadConcurrency:  maxPerBlockUploadConcurrency,
 	}, nil
 }
 
