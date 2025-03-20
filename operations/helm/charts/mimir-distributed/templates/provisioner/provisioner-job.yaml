@@ -12,7 +12,7 @@ metadata:
     {{- with .Values.provisioner.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-    "helm.sh/hook": {{ .Values.enterprise.provisioner.hookType | quote }}
+    "helm.sh/hook": {{ .Values.provisioner.hookType | quote }}
     "helm.sh/hook-weight": "20"
   namespace: {{ .Release.Namespace | quote }}
 spec:
@@ -50,7 +50,7 @@ spec:
           args:
             - -bootstrap-path=/bootstrap
             - -cluster-name={{ include "mimir.clusterName" $ }}
-            - -api-url={{ $.Values.provisioner.apiUrl $ }}
+            - -api-url={{ tpl $.Values.provisioner.apiUrl $ }}
             - -tenant={{ $tenant.name }}
             - -access-policy=write-{{ $tenant.name }}:{{ $tenant.name }}:metrics:write
             - -access-policy=read-{{ $tenant.name }}:{{ $tenant.name }}:metrics:read
@@ -87,10 +87,9 @@ spec:
               # Note: the following bash commands should always return a success status code. 
               # Therefore, in case the token file does not exist, the first clause of the 
               # or-operation is successful.
-              {{- $secretPrefix := .Values.provisioner.provisionedSecretPrefix | default (include "mimir.resourceName" (dict "ctx" . "component" "token")) }}
               {{- range .Values.provisioner.additionalTenants }}
               ! test -s /bootstrap/token-write-{{ .name }} || \
-                kubectl --namespace "{{ .secretNamespace }}" create secret generic "{{ $secretPrefix }}-{{ .name }}" \
+                kubectl --namespace "{{ .secretNamespace }}" create secret generic "{{ tpl $.Values.provisioner.provisionedSecretPrefix $ }}-{{ .name }}" \
                   --from-literal=token-write="$(cat /bootstrap/token-write-{{ .name }})" \
                   --from-literal=token-read="$(cat /bootstrap/token-read-{{ .name }})"
               {{- end }}

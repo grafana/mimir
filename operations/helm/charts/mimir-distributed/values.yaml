@@ -4153,11 +4153,11 @@ provisioner:
   # -- Whether the job should be part of the deployment
   enabled: false
   # -- Name of the secret to store provisioned tokens in
-  provisionedSecretPrefix: null
+  provisionedSecretPrefix: '{{ template "mimir.fullname" . }}'
   # -- Hook type(s) to customize when the job runs.  defaults to post-install
-  hookType: "post-install"
+  hookType: "post-install,post-upgrade"
   # -- URL for the admin API service.
-  apiUrl: ""
+  apiUrl: 'http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}'
   # -- Additional tenants to be created. Each tenant will get a read and write policy
   # and associated token. Tenant must have a name and a namespace for the secret containing
   # the token to be created in. For example:
@@ -4192,7 +4192,7 @@ provisioner:
     # -- Docker image repository
     repository: grafanalabs-global/docker-enterprise-provisioner-prod/enterprise-provisioner
     # -- Overrides the image tag whose default is the chart's appVersion
-    tag: null
+    tag: latest
     # -- Overrides the image tag with an image digest
     digest: null
     # -- Docker image pull policy
