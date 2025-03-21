@@ -4144,6 +4144,60 @@ kubectlImage:
   # -- The kubectl image pull policy
   pullPolicy: IfNotPresent
 
+# Settings for the provisioner job. Can only be enabled if enterprise.enabled is true - requires license.
+# The provisioner job creates tenants, read and write access policies and associated tokens based on configuration
+# provided in the additionalTenants section and creates secrets to store the provisioned tokens.
+# It does not affect any existing tenants, access policies and tokens.
+# Note: Uses tokengenJob.adminTokenSecret value to mount the admin token used to call the admin api.
+provisioner:
+  # -- Whether the job should be part of the deployment
+  enabled: false
+  # -- Name of the secret to store provisioned tokens in
+  provisionedSecretPrefix: '{{ template "mimir.fullname" . }}'
+  # -- Hook type(s) to customize when the job runs.  defaults to post-install
+  hookType: "post-install,post-upgrade"
+  # -- URL for the admin API service.
+  apiUrl: 'http://{{ template "mimir.fullname" . }}-admin-api.{{ .Release.Namespace }}.svc:{{ include "mimir.serverHttpListenPort" . }}'
+  # -- Additional tenants to be created. Each tenant will get a read and write policy
+  # and associated token. Tenant must have a name and a namespace for the secret containing
+  # the token to be created in. For example:
+  # additionalTenants:
+  #   - name: mimir
+  #     secretNamespace: grafana
+  additionalTenants: []
+  # -- Additional Kubernetes environment
+  env: []
+  # -- Additional labels for the `provisioner` Job
+  labels: {}
+  # -- Additional annotations for the `provisioner` Job
+  annotations: {}
+  # -- Affinity for tokengen Pods
+  affinity: {}
+  # -- Node selector for tokengen Pods
+  nodeSelector: {}
+  # -- Tolerations for tokengen Pods
+  tolerations: []
+  # -- The name of the PriorityClass for provisioner Job
+  priorityClassName: null
+  # -- Run containers as nonroot user (uid=10001)`
+  securityContext:
+    runAsNonRoot: true
+    runAsGroup: 10001
+    runAsUser: 10001
+    fsGroup: 10001
+  # -- Provisioner image to Utilize
+  image:
+    # -- The Docker registry
+    registry: us-docker.pkg.dev
+    # -- Docker image repository
+    repository: grafanalabs-global/docker-enterprise-provisioner-prod/enterprise-provisioner
+    # -- Overrides the image tag whose default is the chart's appVersion
+    tag: latest
+    # -- Docker image pull policy
+    pullPolicy: IfNotPresent
+  # -- Volume mounts to add to the provisioner pods
+  extraVolumeMounts: []
+
 # Settings for the admin_api service providing authentication and authorization service.
 # Can only be enabled if enterprise.enabled is true - requires license.
 admin_api:
