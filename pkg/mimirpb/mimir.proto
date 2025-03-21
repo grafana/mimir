@@ -37,6 +37,26 @@ message WriteRequest {
 
 message WriteResponse {}
 
+message WriteRequestV2 {
+  reserved 1;
+  enum SourceEnum {
+    API = 0;
+    RULE = 1;
+  }
+  SourceEnum Source = 2;
+  reserved 3;
+  repeated string symbols = 4;
+  repeated TimeSeriesV2 timeseries = 5 [(gogoproto.nullable) = false];
+
+  // Skip validation of label names and values.
+  bool skip_label_validation = 1000;
+
+  // Skip label count validation.
+  bool skip_label_count_validation = 1001;
+}
+
+message WriteResponseV2 {}
+
 enum ErrorCause {
   UNKNOWN_CAUSE = 0;
   REPLICAS_DID_NOT_MATCH = 1;
@@ -63,6 +83,21 @@ message TimeSeries {
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
   repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
+}
+
+message TimeSeriesV2 {
+  repeated uint32 labels_refs = 1;
+  // Identical to V1.
+  repeated Sample samples = 2 [(gogoproto.nullable) = false];
+
+  // TODO: Deviating a bit for these two, faster testing and using the V1 equivalents.
+  // Histograms is _nearly_ compatible with v1. Not enough to skew results.
+  repeated Histogram histograms = 3 [(gogoproto.nullable) = false];
+  // TODO: Exemplars has a labelset that can be turned to ref's. V2 me.
+  repeated Exemplar exemplars = 4 [(gogoproto.nullable) = false];
+
+  MetricMetadataV2 metadata = 5 [(gogoproto.nullable) = false];
+  int64 created_timestamp = 6;
 }
 
 message LabelPair {
@@ -92,6 +127,28 @@ message MetricMetadata {
   string metric_family_name = 2;
   string help = 4;
   string unit = 5;
+}
+
+message MetricMetadataV2 {
+  enum MetricType {
+    METRIC_TYPE_UNSPECIFIED    = 0;
+    METRIC_TYPE_COUNTER        = 1;
+    METRIC_TYPE_GAUGE          = 2;
+    METRIC_TYPE_HISTOGRAM      = 3;
+    METRIC_TYPE_GAUGEHISTOGRAM = 4;
+    METRIC_TYPE_SUMMARY        = 5;
+    METRIC_TYPE_INFO           = 6;
+    METRIC_TYPE_STATESET       = 7;
+  }
+  MetricType type = 1;
+  // help_ref is a reference to the Request.symbols array representing help
+  // text for the metric. Help is optional, reference should point to an empty string in
+  // such a case.
+  uint32 help_ref = 3;
+  // unit_ref is a reference to the Request.symbols array representing a unit
+  // for the metric. Unit is optional, reference should point to an empty string in
+  // such a case.
+  uint32 unit_ref = 4;
 }
 
 message Metric {
