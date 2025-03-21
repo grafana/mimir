@@ -37,6 +37,7 @@ Entries should include a reference to the Pull Request that introduced the chang
   * `-store-gateway.sharding-ring.heartbeat-timeout` set to `10m`
 * [CHANGE] Memcached: Use 3 replicas for all cache types by default in `large.yaml` and `small.yaml`. #10739
 * [CHANGE] Memcached: Honor `global.clusterDomain` when building hostnames for each cache cluster. #10858
+* [ENHANCEMENT] Upgrade Mimir and GEM to [2.16.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#2160). #10962
 * [ENHANCEMENT] Minio: update subchart to v5.4.0. #10346
 * [ENHANCEMENT] Individual mimir components can override their container images via the *.image values. The component's image definitions always override the values set in global `image` or `enterprise.image`. #10340
 * [ENHANCEMENT] Alertmanager, compactor, ingester, and store-gateway StatefulSets can configure their PVC template name via the corresponding *.persistentVolume.name values. #10376
