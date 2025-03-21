@@ -411,6 +411,8 @@ type headMetrics struct {
 	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
 	oooHistogram              prometheus.Histogram
 	mmapChunksTotal           prometheus.Counter
+	walReplayUnknownRefsTotal *prometheus.CounterVec
+	wblReplayUnknownRefsTotal *prometheus.CounterVec
 }
 
 const (
@@ -542,6 +544,14 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_mmap_chunks_total",
 			Help: "Total number of chunks that were memory-mapped.",
 		}),
+		walReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_wal_replay_unknown_refs_total",
+			Help: "Total number of unknown series references encountered during WAL replay.",
+		}, []string{"type"}),
+		wblReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_wbl_replay_unknown_refs_total",
+			Help: "Total number of unknown series references encountered during WBL replay.",
+		}, []string{"type"}),
 	}
 
 	if r != nil {
@@ -610,6 +620,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				}
 				return float64(val)
 			}),
+			m.walReplayUnknownRefsTotal,
+			m.wblReplayUnknownRefsTotal,
 		)
 	}
 	return m
