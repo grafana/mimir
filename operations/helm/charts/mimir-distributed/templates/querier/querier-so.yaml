@@ -30,7 +30,7 @@ spec:
       {{- if .Values.kedaAutoscaling.authentication.enabled }}
       authModes: "{{ .Values.kedaAutoscaling.authentication.authModes }}"
       {{- end }}
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5",{{ include "toPromQLLabelSelector" .Values.kedaAutoscaling.toPromQLLabelSelector }}}[1m]))
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5",{{ include "toPromQLLabelSelector" (dict "selector" .Values.kedaAutoscaling.toPromQLLabelSelector "operator" .Values.kedaAutoscaling.toPromQLLabelOperator) }}}[1m]))
       serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}
       threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}
@@ -48,7 +48,7 @@ spec:
       {{- if .Values.kedaAutoscaling.authentication.enabled }}
       authModes: "{{ .Values.kedaAutoscaling.authentication.authModes }}"
       {{- end }}
-      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="{{ .Release.Namespace }}",{{ include "toPromQLLabelSelector" .Values.kedaAutoscaling.toPromQLLabelSelector }}}[1m]))
+      query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="{{ .Release.Namespace }}",{{ include "toPromQLLabelSelector" (dict "selector" .Values.kedaAutoscaling.toPromQLLabelSelector "operator" .Values.kedaAutoscaling.toPromQLLabelOperator) }}}[1m]))
       serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}
       threshold: {{ .Values.querier.kedaAutoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}
@@ -65,7 +65,7 @@ spec:
   {{- $autoscaling := .Values.querier.kedaAutoscaling -}}
   {{- if .Values.querier.kedaAutoscaling.predictiveScalingEnabled }}
   - metadata:
-      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5",{{ include "toPromQLLabelSelector" .Values.kedaAutoscaling.toPromQLLabelSelector }}}[{{$autoscaling.predictiveScalingLookback}}] offset {{$autoscaling.predictiveScalingPeriod}}))
+      query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="{{ .Release.Namespace }}",quantile="0.5",{{ include "toPromQLLabelSelector" (dict "selector" .Values.kedaAutoscaling.toPromQLLabelSelector "operator" .Values.kedaAutoscaling.toPromQLLabelOperator) }}}[{{$autoscaling.predictiveScalingLookback}}] offset {{$autoscaling.predictiveScalingPeriod}}))
       serverAddress: {{ include "mimir.kedaPrometheusAddress" (dict "ctx" $) }}
       threshold: {{ $autoscaling.querySchedulerInflightRequestsThreshold | quote }}
       {{- if .Values.kedaAutoscaling.customHeaders }}
