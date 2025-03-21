@@ -126,6 +126,10 @@ func (r *PrometheusRangeQueryRequest) GetStep() int64 {
 	return r.step
 }
 
+func (r *PrometheusRangeQueryRequest) SetStep(newStep int64) {
+	r.step = newStep
+}
+
 func (r *PrometheusRangeQueryRequest) GetQuery() string {
 	if r.queryExpr != nil {
 		return r.queryExpr.String()
@@ -328,6 +332,8 @@ func (r *PrometheusInstantQueryRequest) GetEnd() int64 {
 func (r *PrometheusInstantQueryRequest) GetStep() int64 {
 	return 0
 }
+
+func (r *PrometheusInstantQueryRequest) SetStep(newStep int64) {}
 
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 // as determined from the start timestamp and any range vector or offset in the query.

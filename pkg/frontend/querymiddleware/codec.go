@@ -123,6 +123,8 @@ type MetricsQueryRequest interface {
 	GetEnd() int64
 	// GetStep returns the step of the request in milliseconds.
 	GetStep() int64
+	// SetStep sets the step of the request in milliseconds.
+	SetStep(newStep int64)
 	// GetQuery returns the query of the request.
 	GetQuery() string
 	// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
