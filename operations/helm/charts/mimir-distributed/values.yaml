@@ -485,6 +485,11 @@ mimir:
 #       max_fetched_series_per_query: 100000
 runtimeConfig: {}
 
+# In some case, user want to manage runtime config externally, to prevent runtimeConfig get overwritten when helm-chart is being deployed,
+# set apply_runtime.enabled to false.
+apply_runtime:
+  enabled: true
+
 # RBAC configuration
 rbac:
   # -- If true, PodSecurityPolicy will be rendered by the chart on Kuberentes 1.24.
