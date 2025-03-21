@@ -521,7 +521,7 @@ func (c *MultitenantCompactor) uploadMeta(ctx context.Context, logger log.Logger
 	if err := json.NewEncoder(buf).Encode(meta); err != nil {
 		return errors.Wrap(err, "failed to encode block metadata")
 	}
-	if err := userBkt.Upload(ctx, dst, buf); err != nil {
+	if err := userBkt.Upload(ctx, dst, bytes.NewReader(buf.Bytes())); err != nil {
 		return errors.Wrapf(err, "failed uploading %s to bucket", name)
 	}
 

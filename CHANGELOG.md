@@ -10,6 +10,7 @@
 * [ENHANCEMENT] Store-gateway: Download sparse headers uploaded by compactors. Compactors have to be configured with `-compactor.upload-sparse-index-headers=true` option. #10879
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
+* [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952
 * [BUGFIX] Querier: return NaN from `irate()` if the second-last sample in the range is NaN and Prometheus' query engine is in use. #10956
 * [BUGFIX] Ruler: don't count alerts towards `cortex_prometheus_notifications_dropped_total` if they are dropped due to alert relabelling. #10956
 
