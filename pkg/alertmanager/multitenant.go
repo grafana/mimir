@@ -816,7 +816,7 @@ func (am *MultitenantAlertmanager) syncStates(ctx context.Context, cfg amConfig)
 		}
 	}
 
-	if err := userAM.mergeFullExternalState(s.State); err != nil {
+	if err := userAM.mergeFullGrafanaState(s.State); err != nil {
 		return err
 	}
 	userAM.usingGrafanaState.Store(true)

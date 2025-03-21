@@ -439,3 +439,44 @@ func TestStateReplication_GetFullState(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeGrafanaState(t *testing.T) {
+	// Oversized messages should be broadcasted for Grafana state taken from object storage.
+	replicator := newFakeReplicator()
+	replicator.read = readStateResult{res: nil, err: nil}
+
+	store := newFakeAlertStore()
+
+	reg := prometheus.NewPedanticRegistry()
+	s := newReplicatedStates("test", 3, replicator, store, log.NewNopLogger(), reg)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), s))
+	})
+
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		require.NoError(t, s.WaitReady(ctx))
+	}
+
+	// Cancel the context to avoid other goroutines pulling the broadcasted messages from <-s.msgc.
+	cancel()
+
+	// Send the oversized state in a separate goroutine.
+	data := []byte(strings.Repeat("a", 1000))
+	go func() {
+		require.NoError(t, s.MergeGrafanaState([]*clusterpb.FullState{{
+			Parts: []clusterpb.Part{{
+				Key:  "sil:test",
+				Data: data,
+			}},
+		}}))
+	}()
+
+	// Check for broadcasted messages.
+	p := <-s.msgc
+	require.Equal(t, data, p.Data)
+}
