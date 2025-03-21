@@ -3962,7 +3962,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -compactor.max-lookback
 [compactor_max_lookback: <duration> | default = 0s]
 
-# (advanced) Maximum number of TSDB segment files that can be uploaded
+# (advanced) Maximum number of TSDB segment files that you can upload
 # concurrently per block.
 # CLI flag: -compactor.max-per-block-upload-concurrency
 [compactor_max_per_block_upload_concurrency: <int> | default = 8]
