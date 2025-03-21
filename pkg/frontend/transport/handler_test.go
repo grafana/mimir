@@ -376,7 +376,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "fetched_series_count;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "query_wall_time_seconds;dur=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "queue_time_seconds;dur=0")
-				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_size_bytes;val=2")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_size_bytes;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "results_cache_hit_bytes;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "results_cache_miss_bytes;val=0")

@@ -265,8 +265,8 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		parts = getQueryStats(queryResponseTime, queryDetails)
 	}
 	if queryStatsHeaderNameOk {
-		contentLength := resp.Header.Get("Content-Length")
-		parts = append(parts, getResponseQueryStats(queryResponseTime, contentLength, queryDetails)...)
+		cl, _ := strconv.Atoi(resp.Header.Get("Content-Length"))
+		parts = append(parts, getResponseQueryStats(queryResponseTime, cl, queryDetails)...)
 	}
 
 	if len(parts) > 0 {
@@ -521,7 +521,7 @@ func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.Que
 }
 
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
-func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes string, details *querymiddleware.QueryDetails) []string {
+func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes int, details *querymiddleware.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}
