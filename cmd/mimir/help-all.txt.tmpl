@@ -1222,7 +1222,7 @@ Usage of ./cmd/mimir/mimir:
   -compactor.max-opening-blocks-concurrency int
     	Number of goroutines opening blocks before compaction. (default 1)
   -compactor.max-per-block-upload-concurrency int
-    	Maximum number of TSDB segment files that can be uploaded concurrently per block. (default 8)
+    	Maximum number of TSDB segment files that the compactor can upload concurrently per block. (default 8)
   -compactor.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from the long term storage. (default 20)
   -compactor.no-blocks-file-cleanup-enabled

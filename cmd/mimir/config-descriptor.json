@@ -5137,7 +5137,7 @@
           "kind": "field",
           "name": "compactor_max_per_block_upload_concurrency",
           "required": false,
-          "desc": "Maximum number of TSDB segment files that can be uploaded concurrently per block.",
+          "desc": "Maximum number of TSDB segment files that the compactor can upload concurrently per block.",
           "fieldValue": null,
           "fieldDefaultValue": 8,
           "fieldFlag": "compactor.max-per-block-upload-concurrency",
