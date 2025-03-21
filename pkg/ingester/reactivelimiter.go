@@ -82,7 +82,7 @@ func newBlockingLimiter(cfg *reactivelimiter.Config, requestType string, logger 
 		return nil
 	}
 
-	limiter := reactivelimiter.NewBlockingLimiter(cfg, log.With(logger, "requestType", requestType))
+	limiter := reactivelimiter.NewBlockingLimiter(cfg, log.With(logger, "request_type", requestType))
 	registerReactiveLimiterMetrics(limiter, requestType, registerer)
 	return limiter
 }
