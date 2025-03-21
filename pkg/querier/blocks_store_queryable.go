@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv"
@@ -41,6 +42,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/storage/shardlayout"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
@@ -153,6 +155,8 @@ type BlocksStoreQueryable struct {
 
 	stores                   BlocksStoreSet
 	finder                   BlocksFinder
+	discoverer               shardlayout.IndexHeaderMetaDiscoverer
+	synchronizer             *shardlayout.Synchronizer
 	consistency              *BlocksConsistency
 	logger                   log.Logger
 	queryStoreAfter          time.Duration
@@ -168,6 +172,7 @@ type BlocksStoreQueryable struct {
 func NewBlocksStoreQueryable(
 	stores BlocksStoreSet,
 	finder BlocksFinder,
+	discoverer shardlayout.IndexHeaderMetaDiscoverer,
 	consistency *BlocksConsistency,
 	limits BlocksStoreLimits,
 	queryStoreAfter time.Duration,
@@ -175,7 +180,8 @@ func NewBlocksStoreQueryable(
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*BlocksStoreQueryable, error) {
-	manager, err := services.NewManager(stores, finder)
+	synchronizer, err := shardlayout.NewSynchronizer(discoverer)
+	manager, err := services.NewManager(stores, finder, synchronizer)
 	if err != nil {
 		return nil, errors.Wrap(err, "register blocks storage queryable subservices")
 	}
@@ -183,6 +189,8 @@ func NewBlocksStoreQueryable(
 	q := &BlocksStoreQueryable{
 		stores:                   stores,
 		finder:                   finder,
+		discoverer:               discoverer,
+		synchronizer:             synchronizer,
 		consistency:              consistency,
 		queryStoreAfter:          queryStoreAfter,
 		logger:                   logger,
@@ -215,6 +223,26 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		return nil, errors.Wrap(err, "create caching bucket")
 	}
 	bucketClient = cachingBucket
+
+	allowedTenants := util.NewAllowedTenants(gatewayCfg.EnabledTenants, gatewayCfg.DisabledTenants)
+	if len(gatewayCfg.EnabledTenants) > 0 {
+		level.Info(logger).Log("msg", "store-gateway using enabled users", "enabled", gatewayCfg.EnabledTenants)
+	}
+	if len(gatewayCfg.DisabledTenants) > 0 {
+		level.Info(logger).Log("msg", "store-gateway using disabled users", "disabled", gatewayCfg.DisabledTenants)
+	}
+	indexHeaderDiscoverer := shardlayout.NewBucketIndexHeaderMetaDiscoverer(
+		cachingBucket,
+		storageCfg,
+		backoff.Config{
+			MinBackoff: 1 * time.Second,
+			MaxBackoff: 10 * time.Second,
+			MaxRetries: 3,
+		},
+		allowedTenants,
+		logger,
+		reg,
+	)
 
 	// Create the blocks finder.
 	finder := NewBucketIndexBlocksFinder(BucketIndexBlocksFinderConfig{
@@ -268,7 +296,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 
 	streamingBufferSize := querierCfg.StreamingChunksPerStoreGatewaySeriesBufferSize
 
-	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
+	return NewBlocksStoreQueryable(stores, finder, indexHeaderDiscoverer, consistency, limits, querierCfg.QueryStoreAfter, streamingBufferSize, logger, reg)
 }
 
 func (q *BlocksStoreQueryable) starting(ctx context.Context) error {
