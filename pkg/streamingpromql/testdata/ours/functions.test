@@ -677,7 +677,7 @@ eval_warn range from 0 to 8m step 1m idelta(metric[3m1s])
   {case="all nh"} _ {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}}
   {case="all nhcb"} _ {{schema:-53 count:-3 sum:14 custom_values:[5 10] buckets:[-1 -2] counter_reset_hint:gauge}} {{schema:-53 count:13 sum:-12 custom_values:[5 10] buckets:[7 6] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}} {{schema:-53 custom_values:[5 10] buckets:[-7 -8] counter_reset_hint:gauge}}
 
-eval_warn range from 0 to 8m step 1m irate(metric{case!="2 floats with NaN 2 middle samples", case!="2 floats with NaN middle sample"}[3m1s])
+eval_warn range from 0 to 8m step 1m irate(metric[3m1s])
   {case="2 floats"} _ 0.06666666666666667 0.06666666666666667 0.06666666666666667
   {case="2 floats and nh last sample"} _ 0.06666666666666667
   {case="2 floats and nh middle sample"} _ _ 0.03333333333333333 0.03333333333333333
@@ -695,10 +695,8 @@ eval_warn range from 0 to 8m step 1m irate(metric{case!="2 floats with NaN 2 mid
   {case="all floats with reset"} _ 0.1 0.016666666666666666 0.1 0.016666666666666666 0.1 0.016666666666666666 0.1 0.1
   {case="all nh"} _ {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}} {{schema:3 sum:0 count:0 buckets:[0 0 0] counter_reset_hint:gauge}}
   {case="all nhcb"} _ {{schema:-53 count:0.03333333333333333 sum:0.25 custom_values:[5 10] buckets:[0 0.03333333333333333] counter_reset_hint:gauge}} {{schema:-53 count:0.21666666666666667 sum:-0.2 custom_values:[5 10] buckets:[0.11666666666666667 0.1] counter_reset_hint:gauge}} {{schema:-53 count:0.25 sum:0.05 custom_values:[5 10] buckets:[0 0] counter_reset_hint:gauge}} {{schema:-53 count:0.25 sum:0.05 custom_values:[5 10] buckets:[0 0] counter_reset_hint:gauge}} {{schema:-53 count:0.25 sum:0.05 custom_values:[5 10] buckets:[0 0] counter_reset_hint:gauge}}
-# These cases currently fails with Prometheus' engine due to https://github.com/prometheus/prometheus/pull/16199.
-# Once that PR is vendored into Mimir, remove this test and re-enable the corresponding test case in ours/functions.test.
-# {case="2 floats with NaN middle sample"} _ NaN NaN NaN NaN
-# {case="2 floats with NaN 2 middle samples"} _ NaN NaN NaN NaN NaN
+  {case="2 floats with NaN middle sample"} _ NaN NaN NaN NaN
+  {case="2 floats with NaN 2 middle samples"} _ NaN NaN NaN NaN NaN
 
 clear
 

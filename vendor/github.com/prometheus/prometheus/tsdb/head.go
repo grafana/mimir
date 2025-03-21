@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 	"go.uber.org/atomic"
@@ -93,6 +93,16 @@ type Head struct {
 	bytesPool           zeropool.Pool[[]byte]
 	memChunkPool        sync.Pool
 
+	// These pools are used during WAL/WBL replay.
+	wlReplaySeriesPool          zeropool.Pool[[]record.RefSeries]
+	wlReplaySamplesPool         zeropool.Pool[[]record.RefSample]
+	wlReplaytStonesPool         zeropool.Pool[[]tombstones.Stone]
+	wlReplayExemplarsPool       zeropool.Pool[[]record.RefExemplar]
+	wlReplayHistogramsPool      zeropool.Pool[[]record.RefHistogramSample]
+	wlReplayFloatHistogramsPool zeropool.Pool[[]record.RefFloatHistogramSample]
+	wlReplayMetadataPool        zeropool.Pool[[]record.RefMetadata]
+	wlReplayMmapMarkersPool     zeropool.Pool[[]record.RefMmapMarker]
+
 	// All series addressable by their ID or hash.
 	series *stripeSeries
 
@@ -151,11 +161,6 @@ type HeadOptions struct {
 
 	// EnableNativeHistograms enables the ingestion of native histograms.
 	EnableNativeHistograms atomic.Bool
-
-	// EnableOOONativeHistograms enables the ingestion of OOO native histograms.
-	// It will only take effect if EnableNativeHistograms is set to true and the
-	// OutOfOrderTimeWindow is > 0
-	EnableOOONativeHistograms atomic.Bool
 
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
@@ -401,6 +406,8 @@ type headMetrics struct {
 	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
 	oooHistogram              prometheus.Histogram
 	mmapChunksTotal           prometheus.Counter
+	walReplayUnknownRefsTotal *prometheus.CounterVec
+	wblReplayUnknownRefsTotal *prometheus.CounterVec
 }
 
 const (
@@ -532,6 +539,14 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_mmap_chunks_total",
 			Help: "Total number of chunks that were memory-mapped.",
 		}),
+		walReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_wal_replay_unknown_refs_total",
+			Help: "Total number of unknown series references encountered during WAL replay.",
+		}, []string{"type"}),
+		wblReplayUnknownRefsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_wbl_replay_unknown_refs_total",
+			Help: "Total number of unknown series references encountered during WBL replay.",
+		}, []string{"type"}),
 	}
 
 	if r != nil {
@@ -600,6 +615,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 				}
 				return float64(val)
 			}),
+			m.walReplayUnknownRefsTotal,
+			m.wblReplayUnknownRefsTotal,
 		)
 	}
 	return m
@@ -1050,16 +1067,6 @@ func (h *Head) EnableNativeHistograms() {
 // DisableNativeHistograms disables the native histogram feature.
 func (h *Head) DisableNativeHistograms() {
 	h.opts.EnableNativeHistograms.Store(false)
-}
-
-// EnableOOONativeHistograms enables the ingestion of out-of-order native histograms.
-func (h *Head) EnableOOONativeHistograms() {
-	h.opts.EnableOOONativeHistograms.Store(true)
-}
-
-// DisableOOONativeHistograms disables the ingestion of out-of-order native histograms.
-func (h *Head) DisableOOONativeHistograms() {
-	h.opts.EnableOOONativeHistograms.Store(false)
 }
 
 // PostingsCardinalityStats returns highest cardinality stats by label and value names.
@@ -2334,6 +2341,10 @@ type memChunk struct {
 
 // len returns the length of memChunk list, including the element it was called on.
 func (mc *memChunk) len() (count int) {
+	if mc.prev == nil {
+		return 1
+	}
+
 	elem := mc
 	for elem != nil {
 		count++
@@ -2345,6 +2356,9 @@ func (mc *memChunk) len() (count int) {
 // oldest returns the oldest element on the list.
 // For single element list this will be the same memChunk oldest() was called on.
 func (mc *memChunk) oldest() (elem *memChunk) {
+	if mc.prev == nil {
+		return mc
+	}
 	elem = mc
 	for elem.prev != nil {
 		elem = elem.prev
@@ -2356,6 +2370,9 @@ func (mc *memChunk) oldest() (elem *memChunk) {
 func (mc *memChunk) atOffset(offset int) (elem *memChunk) {
 	if offset == 0 {
 		return mc
+	}
+	if offset == 1 {
+		return mc.prev
 	}
 	if offset < 0 {
 		return nil
@@ -2370,7 +2387,6 @@ func (mc *memChunk) atOffset(offset int) (elem *memChunk) {
 			break
 		}
 	}
-
 	return elem
 }
 

@@ -5,11 +5,14 @@
 ### Grafana Mimir
 
 * [CHANGE] Ruler: Remove experimental CLI flag `-ruler-storage.cache.rule-group-enabled` to enable or disable caching the contents of rule groups. Caching rule group contents is now always enabled when a cache is configured for the ruler. #10949
+* [CHANGE] Ingester: Out-of-order native histograms are now enabled whenever both native histogram and out-of-order ingestion is enabled. The `-ingester.ooo-native-histograms-ingestion-enabled` CLI flag and corresponding `ooo_native_histograms_ingestion_enabled` runtime configuration option have been removed. #10956
 * [ENHANCEMENT] Ingester: Add support for exporting native histogram cost attribution metrics (`cortex_ingester_attributed_active_native_histogram_series` and `cortex_ingester_attributed_active_native_histogram_buckets`) with labels specified by customers to a custom Prometheus registry. #10892
 * [ENHANCEMENT] Store-gateway: Download sparse headers uploaded by compactors. Compactors have to be configured with `-compactor.upload-sparse-index-headers=true` option. #10879
 * [BUGFIX] OTLP: Fix response body and Content-Type header to align with spec. #10852
 * [BUGFIX] Compactor: fix issue where block becomes permanently stuck when the Compactor's block cleanup job partially deletes a block. #10888
 * [BUGFIX] Storage: fix intermittent failures in S3 upload retries. #10952
+* [BUGFIX] Querier: return NaN from `irate()` if the second-last sample in the range is NaN and Prometheus' query engine is in use. #10956
+* [BUGFIX] Ruler: don't count alerts towards `cortex_prometheus_notifications_dropped_total` if they are dropped due to alert relabelling. #10956
 
 ### Mixin
 
@@ -99,6 +102,7 @@
 * [ENHANCEMENT] gRPC clients: Add `cortex_client_request_invalid_cluster_validation_labels_total` metrics, that are used by Mimir's gRPC clients to track invalid cluster validations. #10767
 * [ENHANCEMENT] Add experimental metric `cortex_distributor_dropped_native_histograms_total` to measure native histograms silently dropped when native histograms are disabled for a tenant. #10760
 * [ENHANCEMENT] Compactor: Add experimental `-compactor.upload-sparse-index-headers` option. When enabled, the compactor will attempt to upload sparse index headers to object storage. This prevents latency spikes after adding store-gateway replicas. #10684
+* [ENHANCEMENT] Ruler: add support for YAML aliases in `alert`, `record` and `expr` fields in rule groups. https://github.com/prometheus/prometheus/pull/14957 #10884
 * [ENHANCEMENT] Memcached: Add experimental `-<prefix>.memcached.addresses-provider` flag to use alternate DNS service discovery backends when discovering Memcached hosts. #10895
 * [BUGFIX] Distributor: Use a boolean to track changes while merging the ReplicaDesc components, rather than comparing the objects directly. #10185
 * [BUGFIX] Querier: fix timeout responding to query-frontend when response size is very close to `-querier.frontend-client.grpc-max-send-msg-size`. #10154
@@ -120,9 +124,11 @@
 * [BUGFIX] Distributor: Report partially converted OTLP requests with status 400 Bad Request. #10588
 * [BUGFIX] Ruler: fix issue where rule evaluations could be missed while shutting down a ruler instance if that instance owns many rule groups. prometheus/prometheus#15804 #10762
 * [BUGFIX] Ingester: Add additional check on reactive limiter queue sizes. #10722
-* [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. https://github.com/prometheus/prometheus/pull/16060 #10824
+* [BUGFIX] TSDB: fix unknown series errors and possible lost data during WAL replay when series are removed from the head due to inactivity and reappear before the next WAL checkpoint. https://github.com/prometheus/prometheus/pull/16060 https://github.com/prometheus/prometheus/pull/16231 #10824 #10955
 * [BUGFIX] Querier: fix issue where `label_join` could incorrectly return multiple series with the same labels rather than failing with `vector cannot contain metrics with the same labelset`. https://github.com/prometheus/prometheus/pull/15975 #10826
 * [BUGFIX] Querier: fix issue where counter resets on native histograms could be incorrectly under- or over-counted when using subqueries. https://github.com/prometheus/prometheus/pull/15987 #10871
+* [BUGFIX] Querier: fix incorrect annotation emitted when `quantile_over_time` is evaluated over a range with both histograms and floats. https://github.com/prometheus/prometheus/pull/16018 #10884
+* [BUGFIX] Querier: fix duplicated double quotes in invalid label name error from `count_values`. https://github.com/prometheus/prometheus/pull/16054 #10884
 * [BUGFIX] Ingester: fix goroutines and memory leak when experimental ingest storage enabled and a server-side error occurs during metrics ingestion. #10915
 * [BUGFIX] Alertmanager: Avoid fetching Grafana state if Grafana AM compatibility is not enabled. #10857
 

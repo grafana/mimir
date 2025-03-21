@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/tenant"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"

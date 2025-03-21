@@ -632,14 +632,24 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	level.Debug(logger).Log("msg", "attempting to unmarshal rulegroup", "userID", userID, "group", string(payload))
 
 	rg := rulefmt.RuleGroup{}
-	err = yaml.Unmarshal(payload, &rg)
-	if err != nil {
+	if err = yaml.Unmarshal(payload, &rg); err != nil {
 		level.Error(logger).Log("msg", "unable to unmarshal rule group payload", "err", err.Error())
 		http.Error(w, ErrBadRuleGroup.Error(), http.StatusBadRequest)
 		return
 	}
 
-	errs := a.ruler.manager.ValidateRuleGroup(rg)
+	// Why do we unmarshal the rule group twice like this?
+	// Prometheus' validation methods require access to the original YAML nodes to produce errors with
+	// position (line and column) information, but we want to work with the non-YAML rulefmt.RuleGroup type.
+	// See https://github.com/prometheus/prometheus/pull/16252 for more discussion of this.
+	node := rulefmt.RuleGroupNode{}
+	if err = yaml.Unmarshal(payload, &node); err != nil {
+		level.Error(logger).Log("msg", "unable to unmarshal rule group payload", "err", err.Error())
+		http.Error(w, ErrBadRuleGroup.Error(), http.StatusBadRequest)
+		return
+	}
+
+	errs := a.ruler.manager.ValidateRuleGroup(rg, node)
 	if len(errs) > 0 {
 		e := []string{}
 		for _, err := range errs {

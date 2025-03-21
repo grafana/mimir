@@ -31,7 +31,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -945,11 +945,6 @@ func (i *Ingester) applyTSDBSettings() {
 		} else {
 			db.db.DisableNativeHistograms()
 		}
-		if i.limits.OOONativeHistogramsIngestionEnabled(userID) {
-			db.db.EnableOOONativeHistograms()
-		} else {
-			db.db.DisableOOONativeHistograms()
-		}
 	}
 }
 
@@ -1302,14 +1297,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 				cast.IncrementDiscardedSamples(labels, 1, reasonPerMetricSeriesLimit, startAppend)
 				updateFirstPartial(i.errorSamplers.maxSeriesPerMetricLimitExceeded, func() softError {
 					return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.sampleOutOfOrderCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonSampleOutOfOrder, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					e := newNativeHistogramValidationError(globalerror.NativeHistogramOOODisabled, err, model.Time(timestamp), labels)
-					return e
 				})
 			},
 			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
@@ -2822,7 +2809,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 		BlockPostingsForMatchersCacheForce:    i.cfg.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce,
 		BlockPostingsForMatchersCacheMetrics:  i.tsdbMetrics.blockPostingsForMatchersCacheMetrics,
 		EnableNativeHistograms:                i.limits.NativeHistogramsIngestionEnabled(userID),
-		EnableOOONativeHistograms:             i.limits.OOONativeHistogramsIngestionEnabled(userID),
 		SecondaryHashFunction:                 secondaryTSDBHashFunctionForUser(userID),
 	}, nil)
 	if err != nil {
