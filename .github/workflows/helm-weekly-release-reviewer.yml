@@ -1,5 +1,12 @@
-name: Auto-review Grafanabot PRs
-on: pull_request
+name: Auto-review helm-weekly-release PRs
+
+on:
+  pull_request:
+    types: [opened]
+    branches:
+      - main
+    paths:
+      - operations/helm/charts/**
 
 permissions:
   pull-requests: write
@@ -7,10 +14,10 @@ permissions:
   id-token: write
 
 jobs:
-  dependabot-reviewer:
+  auto-reviewer:
     runs-on: ubuntu-latest
 
-    if: ${{ github.event.pull_request.user.login == 'grafanabot' }}
+    if: ${{ ! github.event.pull_request.head.repo.fork && github.event.pull_request.user.login == 'github-actions[bot]' }}
 
     steps:
       - name: Checkout Repository
@@ -34,7 +41,7 @@ jobs:
 
       - name: Approve and auto-merge
         id: auto-merge
-        if: contains(github.event.pull_request.head.ref, 'helm-chart-weekly-')
+        if: startsWith(github.event.pull_request.head.ref, 'helm-chart-weekly-')
         run: |
           gh pr merge --auto --squash "$PR_URL"
           gh pr review $PR_URL \
@@ -46,7 +53,7 @@ jobs:
       - name: Manual review is required
         if: steps.auto-merge.conclusion != 'success'
         run: |
-          gh pr comment $PR_URL --body "**This PR from grafanabot requires manual review.**"
+          gh pr comment $PR_URL --body "**This PR requires manual review.**"
 
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
