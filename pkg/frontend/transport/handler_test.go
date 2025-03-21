@@ -437,7 +437,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 			require.Empty(t, activities)
 
 			if tt.assertHeaders != nil {
-				tt.assertHeaders(t, resp.Result().Header())
+				tt.assertHeaders(t, resp.Result().Header)
 			}
 			if tt.cfg.QueryStatsEnabled {
 				require.Len(t, logger.logMessages, 1)
