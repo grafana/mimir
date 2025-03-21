@@ -12,7 +12,7 @@ import (
 
 type Config struct {
 	ConsumerGroup      string        `yaml:"consumer_group"`
-	SchedulingInterval time.Duration `yaml:"kafka_monitor_interval"`
+	SchedulingInterval time.Duration `yaml:"scheduling_interval"`
 	ConsumeInterval    time.Duration `yaml:"consume_interval"`
 	StartupObserveTime time.Duration `yaml:"startup_observe_time"`
 	JobLeaseExpiry     time.Duration `yaml:"job_lease_expiry"`
