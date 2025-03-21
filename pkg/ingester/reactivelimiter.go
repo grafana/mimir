@@ -45,13 +45,13 @@ func newIngesterReactiveLimiter(prioritizerConfig *reactivelimiter.RejectionPrio
 		// Capture rejection metrics from the prioritizer
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_rejection_rate",
-			Help: "Ingester prioritizer rejection rate.",
+			Help: "The prioritized rate at which requests should be rejected.",
 		}, func() float64 {
 			return prioritizer.RejectionRate()
 		})
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_rejection_threshold",
-			Help: "Ingester prioritizer rejection threshold.",
+			Help: "The priority threshold below which requests should be rejected.",
 		}, func() float64 {
 			return float64(prioritizer.RejectionThreshold())
 		})
