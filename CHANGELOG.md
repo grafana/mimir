@@ -17,7 +17,6 @@
 * [ENHANCEMENT] Alerts: Make `MimirRolloutStuck` a critical alert if it has been firing for 6h. #10890
 * [BUGFIX] Dashboards: fix "Mimir / Tenants" legends for non-Kubernetes deployments. #10891
 
-
 ### Jsonnet
 
 ### Mimirtool
