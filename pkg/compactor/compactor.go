@@ -250,6 +250,9 @@ type ConfigProvider interface {
 	// CompactorMaxLookback returns the duration of the compactor lookback period, blocks uploaded before the lookback period aren't
 	// considered in compactor cycles
 	CompactorMaxLookback(userID string) time.Duration
+
+	// CompactorMaxPerBlockUploadConcurrency returns the maximum number of TSDB files that can be uploaded concurrently for each block.
+	CompactorMaxPerBlockUploadConcurrency(userID string) int
 }
 
 // MultitenantCompactor is a multi-tenant TSDB block compactor based on Thanos.
@@ -846,6 +849,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.compactorCfg.UploadSparseIndexHeaders,
 		c.compactorCfg.SparseIndexHeadersSamplingRate,
 		c.compactorCfg.SparseIndexHeadersConfig,
+		c.cfgProvider.CompactorMaxPerBlockUploadConcurrency(userID),
 	)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket compactor")

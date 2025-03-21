@@ -5124,6 +5124,17 @@
         },
         {
           "kind": "field",
+          "name": "compactor_max_per_block_upload_concurrency",
+          "required": false,
+          "desc": "Maximum number of TSDB segment files that the compactor can upload concurrently per block.",
+          "fieldValue": null,
+          "fieldDefaultValue": 8,
+          "fieldFlag": "compactor.max-per-block-upload-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "s3_sse_type",
           "required": false,
           "desc": "S3 server-side encryption type. Required to enable server-side encryption overrides for a specific tenant. If not set, the default S3 client settings are used.",

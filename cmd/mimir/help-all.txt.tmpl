@@ -1221,6 +1221,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Blocks uploaded before the lookback aren't considered in compactor cycles. If set, this value should be larger than all values in `-blocks-storage.tsdb.block-ranges-period`. A value of 0s means that all blocks are considered regardless of their upload time.
   -compactor.max-opening-blocks-concurrency int
     	Number of goroutines opening blocks before compaction. (default 1)
+  -compactor.max-per-block-upload-concurrency int
+    	Maximum number of TSDB segment files that the compactor can upload concurrently per block. (default 8)
   -compactor.meta-sync-concurrency int
     	Number of Go routines to use when syncing block meta files from the long term storage. (default 20)
   -compactor.no-blocks-file-cleanup-enabled

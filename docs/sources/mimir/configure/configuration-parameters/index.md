@@ -3955,6 +3955,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -compactor.max-lookback
 [compactor_max_lookback: <duration> | default = 0s]
 
+# (advanced) Maximum number of TSDB segment files that the compactor can upload
+# concurrently per block.
+# CLI flag: -compactor.max-per-block-upload-concurrency
+[compactor_max_per_block_upload_concurrency: <int> | default = 8]
+
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings
 # are used.

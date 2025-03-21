@@ -243,7 +243,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, prometheus.NewPedanticRegistry())
 		cfg := indexheader.Config{VerifyOnLoad: true}
 		bComp, err := NewBucketCompactor(
-			logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 4, metrics, true, 32, cfg,
+			logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 4, metrics, true, 32, cfg, 8,
 		)
 		require.NoError(t, err)
 
