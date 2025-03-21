@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/promslog"
 	"go.uber.org/atomic"
@@ -161,11 +161,6 @@ type HeadOptions struct {
 
 	// EnableNativeHistograms enables the ingestion of native histograms.
 	EnableNativeHistograms atomic.Bool
-
-	// EnableOOONativeHistograms enables the ingestion of OOO native histograms.
-	// It will only take effect if EnableNativeHistograms is set to true and the
-	// OutOfOrderTimeWindow is > 0
-	EnableOOONativeHistograms atomic.Bool
 
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
@@ -1072,16 +1067,6 @@ func (h *Head) EnableNativeHistograms() {
 // DisableNativeHistograms disables the native histogram feature.
 func (h *Head) DisableNativeHistograms() {
 	h.opts.EnableNativeHistograms.Store(false)
-}
-
-// EnableOOONativeHistograms enables the ingestion of out-of-order native histograms.
-func (h *Head) EnableOOONativeHistograms() {
-	h.opts.EnableOOONativeHistograms.Store(true)
-}
-
-// DisableOOONativeHistograms disables the ingestion of out-of-order native histograms.
-func (h *Head) DisableOOONativeHistograms() {
-	h.opts.EnableOOONativeHistograms.Store(false)
 }
 
 // PostingsCardinalityStats returns highest cardinality stats by label and value names.
@@ -2356,6 +2341,10 @@ type memChunk struct {
 
 // len returns the length of memChunk list, including the element it was called on.
 func (mc *memChunk) len() (count int) {
+	if mc.prev == nil {
+		return 1
+	}
+
 	elem := mc
 	for elem != nil {
 		count++
@@ -2367,6 +2356,9 @@ func (mc *memChunk) len() (count int) {
 // oldest returns the oldest element on the list.
 // For single element list this will be the same memChunk oldest() was called on.
 func (mc *memChunk) oldest() (elem *memChunk) {
+	if mc.prev == nil {
+		return mc
+	}
 	elem = mc
 	for elem.prev != nil {
 		elem = elem.prev
@@ -2378,6 +2370,9 @@ func (mc *memChunk) oldest() (elem *memChunk) {
 func (mc *memChunk) atOffset(offset int) (elem *memChunk) {
 	if offset == 0 {
 		return mc
+	}
+	if offset == 1 {
+		return mc.prev
 	}
 	if offset < 0 {
 		return nil
@@ -2392,7 +2387,6 @@ func (mc *memChunk) atOffset(offset int) (elem *memChunk) {
 			break
 		}
 	}
-
 	return elem
 }
 

@@ -26,8 +26,9 @@ import (
 	mimir_stats "github.com/grafana/mimir/pkg/querier/stats"
 )
 
-// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
 func init() {
+	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
+	// nolint:staticcheck
 	model.NameValidationScheme = model.LegacyValidation
 }
 

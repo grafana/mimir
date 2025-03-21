@@ -14,7 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"

@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
-	"github.com/oklog/ulid"
+	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"

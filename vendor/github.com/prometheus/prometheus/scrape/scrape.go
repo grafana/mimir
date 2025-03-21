@@ -456,7 +456,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 		for _, t := range targets {
 			// Replicate .Labels().IsEmpty() with a loop here to avoid generating garbage.
 			nonEmpty := false
-			t.LabelsRange(func(l labels.Label) { nonEmpty = true })
+			t.LabelsRange(func(_ labels.Label) { nonEmpty = true })
 			switch {
 			case nonEmpty:
 				all = append(all, t)
@@ -820,7 +820,7 @@ func (s *targetScraper) scrape(ctx context.Context) (*http.Response, error) {
 	return s.client.Do(s.req.WithContext(ctx))
 }
 
-func (s *targetScraper) readResponse(ctx context.Context, resp *http.Response, w io.Writer) (string, error) {
+func (s *targetScraper) readResponse(_ context.Context, resp *http.Response, w io.Writer) (string, error) {
 	defer func() {
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
@@ -1034,8 +1034,6 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 			}
 		}
 		c.metaMtx.Unlock()
-
-		c.iter++
 	}
 
 	// Swap current and previous series.
@@ -1045,6 +1043,8 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 	for k := range c.seriesCur {
 		delete(c.seriesCur, k)
 	}
+
+	c.iter++
 }
 
 func (c *scrapeCache) get(met []byte) (*cacheEntry, bool, bool) {
@@ -1700,7 +1700,7 @@ loop:
 			t = *parsedTimestamp
 		}
 
-		if sl.cache.getDropped(met) {
+		if sl.cache.getDropped(met) || isHistogram && !sl.enableNativeHistogramIngestion {
 			continue
 		}
 		ce, seriesCached, seriesAlreadyScraped := sl.cache.get(met)
@@ -1747,25 +1747,25 @@ loop:
 			err = storage.ErrDuplicateSampleForTimestamp
 		} else {
 			if sl.enableCTZeroIngestion {
-				if ctMs := p.CreatedTimestamp(); ctMs != nil {
-					if isHistogram && sl.enableNativeHistogramIngestion {
+				if ctMs := p.CreatedTimestamp(); ctMs != 0 {
+					if isHistogram {
 						if h != nil {
-							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, h, nil)
+							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, ctMs, h, nil)
 						} else {
-							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, *ctMs, nil, fh)
+							ref, err = app.AppendHistogramCTZeroSample(ref, lset, t, ctMs, nil, fh)
 						}
 					} else {
-						ref, err = app.AppendCTZeroSample(ref, lset, t, *ctMs)
+						ref, err = app.AppendCTZeroSample(ref, lset, t, ctMs)
 					}
 					if err != nil && !errors.Is(err, storage.ErrOutOfOrderCT) { // OOO is a common case, ignoring completely for now.
 						// CT is an experimental feature. For now, we don't need to fail the
 						// scrape on errors updating the created timestamp, log debug.
-						sl.l.Debug("Error when appending CT in scrape loop", "series", string(met), "ct", *ctMs, "t", t, "err", err)
+						sl.l.Debug("Error when appending CT in scrape loop", "series", string(met), "ct", ctMs, "t", t, "err", err)
 					}
 				}
 			}
 
-			if isHistogram && sl.enableNativeHistogramIngestion {
+			if isHistogram {
 				if h != nil {
 					ref, err = app.AppendHistogram(ref, lset, t, h, nil)
 				} else {
