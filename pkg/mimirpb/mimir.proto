@@ -40,8 +40,8 @@ message WriteResponse {}
 message WriteRequestV2 {
   reserved 1;
   enum SourceEnum {
-    API = 0;
-    RULE = 1;
+    SOURCE_API = 0;
+    SOURCE_RULE = 1;
   }
   SourceEnum Source = 2;
   reserved 3;
