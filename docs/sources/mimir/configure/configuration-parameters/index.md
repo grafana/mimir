@@ -1876,6 +1876,14 @@ results_cache:
 # CLI flag: -query-frontend.shard-active-series-queries
 [shard_active_series_queries: <boolean> | default = false]
 
+# (experimental) True to enable dynamic step calculation for range series queries.
+# CLI flag: -query-frontend.dynamic_step_enabled
+[dynamic_step_enabled: <boolean> | default = false]
+
+# (experimental) The maximum complexity level to allow in a query when dynamic
+# step calculation is enabled.
+[dynamic_step_complexity_threshold: <float> | default = 1]
+
 # (experimental) Set to true to use the zero-allocation response decoder for
 # active series queries.
 # CLI flag: -query-frontend.use-active-series-decoder
