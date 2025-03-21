@@ -633,8 +633,8 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		servs = append(servs, i.utilizationBasedLimiter)
 	}
 
-	if i.reactiveLimiter != nil {
-		servs = append(servs, i.reactiveLimiter)
+	if i.reactiveLimiter.service != nil {
+		servs = append(servs, i.reactiveLimiter.service)
 	}
 
 	if i.ingestPartitionLifecycler != nil {
