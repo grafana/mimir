@@ -1,4 +1,4 @@
-{{- if not .Values.federation_frontend.disableOtherComponents }}
+{{- if and (not .Values.federation_frontend.disableOtherComponents) (.Values.apply_runtime.enabled) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
