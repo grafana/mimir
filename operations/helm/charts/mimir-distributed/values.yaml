@@ -4193,8 +4193,6 @@ provisioner:
     repository: grafanalabs-global/docker-enterprise-provisioner-prod/enterprise-provisioner
     # -- Overrides the image tag whose default is the chart's appVersion
     tag: latest
-    # -- Overrides the image tag with an image digest
-    digest: null
     # -- Docker image pull policy
     pullPolicy: IfNotPresent
   # -- Volume mounts to add to the provisioner pods
