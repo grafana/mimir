@@ -146,7 +146,10 @@ type PrometheusResponseExtractor struct{}
 
 // Extract extracts response for specific a range from a response.
 func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Response {
-	promRes := from.(*PrometheusResponse)
+	promRes, ok := from.GetPrometheusResponse()
+	if !ok {
+		panic("expected PrometheusResponse")
+	}
 	var data *PrometheusData
 	if promRes.Data != nil {
 		data = &PrometheusData{
@@ -166,7 +169,10 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 // ResponseWithoutHeaders is useful in caching data without headers since
 // we anyways do not need headers for sending back the response so this saves some space by reducing size of the objects.
 func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Response {
-	promRes := resp.(*PrometheusResponse)
+	promRes, ok := resp.GetPrometheusResponse()
+	if !ok {
+		panic("expected PrometheusResponse")
+	}
 	var data *PrometheusData
 	if promRes.Data != nil {
 		data = &PrometheusData{
@@ -365,6 +371,8 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 
 	for i := 1; i < len(extents); i++ {
 		if accumulator.End+r.GetStep() < extents[i].Start {
+			// The response is marsheld in mergeCacheExtentsWithAccumulator, so we can safely close it afterwards
+			defer accumulator.Response.Close()
 			mergedExtents, err = mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
 			if err != nil {
 				return nil, err
@@ -401,6 +409,8 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 		}
 	}
 
+	// The response is marsheld in mergeCacheExtentsWithAccumulator, so we can safely close it afterwards
+	defer accumulator.Response.Close()
 	return mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
 }
 
