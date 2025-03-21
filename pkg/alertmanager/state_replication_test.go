@@ -468,12 +468,12 @@ func TestMergeGrafanaState(t *testing.T) {
 	// Send the oversized state in a separate goroutine.
 	data := []byte(strings.Repeat("a", 1000))
 	go func() {
-		s.MergeGrafanaState([]*clusterpb.FullState{{
+		require.NoError(t, s.MergeGrafanaState([]*clusterpb.FullState{{
 			Parts: []clusterpb.Part{{
 				Key:  "sil:test",
 				Data: data,
 			}},
-		}})
+		}}))
 	}()
 
 	// Check for broadcasted messages.
