@@ -592,6 +592,28 @@ Requires [authentication](#authentication).
 #### Headers
 
 - `Sharding-Control` - _optional_ - Integer value specifying how many shards to use for request execution.
+- `X-Mimir-Response-Query-Stats` - _optional_ - Boolean value specifying if the response must have query stats in the `Server-Timing` header.
+
+#### Response headers
+
+- `Server-Timing` - _optional_ - Contains query execution stats if the `X-Mimir-Response-Query-Stats` header is set to `true`.
+  The content of the header is a comma-separated list of key-value pairs, where the key is the name of the metric and the value is the metric value.
+  The contents of this header might change without notice. For example: `Server-Timing: encode_time_seconds;dur=0.041, estimated_series_count;val=31950, fetched_chunk_bytes;val=23791904, fetched_chunks_count;val=329964, fetched_index_bytes;val=28647863, fetched_series_count;val=29906, query_wall_time_seconds;dur=6259.888, queue_time_seconds;dur=0.020, response_size_bytes;val=118, response_time;dur=6267.381, results_cache_hit_bytes;val=0, results_cache_miss_bytes;val=0, sharded_queries;val=0, split_queries;val=0`
+  - Metrics:
+    - `encode_time_seconds`: The time, in seconds, spent at the frontend encoding the query's final results. This value does not include time spent serializing results at the querier.
+    - `estimated_series_count`: The estimated number of series to be fetched for the query.
+    - `fetched_chunk_bytes`: The number of bytes of the chunks fetched for the query, after any deduplication.
+    - `fetched_chunks_count`: The number of chunks fetched for the query, after any deduplication.
+    - `fetched_index_bytes`: The number of index bytes fetched on the store-gateway for the query.
+    - `fetched_series_count`: The number of series fetched for the query.
+    - `query_wall_time_seconds`: The sum of all wall time, in seconds, spent in the querier to run the query.
+    - `queue_time_seconds`: The sum of durations, in seconds, that the query spent in the queue, before being handled by querier.
+    - `response_size_bytes`: The number of bytes of the response.
+    - `response_time`: The time, in milliseconds, spent processing the query.
+    - `results_cache_hit_bytes`: The number of results cache hits.
+    - `results_cache_miss_bytes`: The number of results cache misses.
+    - `sharded_queries`: The number of sharded queries run. Set to `0` if sharding is disabled, or if the query can't be sharded.
+    - `split_queries`: The number of split partial queries run. Set to `0` if splitting is disabled, or if the query can't be split.
 
 #### Response format
 

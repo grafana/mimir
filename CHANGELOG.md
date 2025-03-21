@@ -49,6 +49,7 @@
 * [CHANGE] Store-gateway: Include posting sampling rate in sparse index headers. When the sampling rate isn't set in a sparse index header, store gateway rebuilds the sparse header with the configured `blocks-storage.bucket-store.posting-offsets-in-mem-sampling` value. If the sparse header's sampling rate is set but doesn't match the configured rate, store gateway either rebuilds the sparse header or downsamples to the configured sampling rate. #10684 #10878
 * [CHANGE] Distributor: Return specific error message when burst size limit is exceeded. #10835
 * [CHANGE] Ingester: enable native histograms ingestion by default, meaning`ingester.native-histograms-ingestion-enabled` defaults to true. #10867
+* [FEATURE] Query Frontend: Expose query stats in the `Server-Timing` header when the `X-Mimir-Response-Query-Stats: true` header is present in the request. #10192
 * [FEATURE] Ingester/Distributor: Add support for exporting cost attribution metrics (`cortex_ingester_attributed_active_series`, `cortex_distributor_received_attributed_samples_total`, and `cortex_discarded_attributed_samples_total`) with labels specified by customers to a custom Prometheus registry. This feature enables more flexible billing data tracking. #10269 #10702
 * [FEATURE] Ruler: Added `/ruler/tenants` endpoints to list the discovered tenants with rule groups. #10738
 * [FEATURE] Distributor: Add experimental Influx handler. #10153
