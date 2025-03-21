@@ -16,6 +16,7 @@ package tsdb
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -25,6 +26,8 @@ import (
 	"time"
 
 	"go.uber.org/atomic"
+
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -52,13 +55,39 @@ type histogramRecord struct {
 	fh  *histogram.FloatHistogram
 }
 
+type seriesRefSet struct {
+	refs map[chunks.HeadSeriesRef]struct{}
+	mtx  sync.Mutex
+}
+
+func (s *seriesRefSet) merge(other map[chunks.HeadSeriesRef]struct{}) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	maps.Copy(s.refs, other)
+}
+
+func (s *seriesRefSet) count() int {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	return len(s.refs)
+}
+
+func counterAddNonZero(v *prometheus.CounterVec, value float64, lvs ...string) {
+	if value > 0 {
+		v.WithLabelValues(lvs...).Add(value)
+	}
+}
+
 func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk, lastSegment int) (err error) {
-	// Track number of samples that referenced a series we don't know about
+	// Track number of missing series records that were referenced by other records.
+	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
+	// Track number of different records that referenced a series we don't know about
 	// for error reporting.
-	var unknownRefs atomic.Uint64
+	var unknownSampleRefs atomic.Uint64
 	var unknownExemplarRefs atomic.Uint64
 	var unknownHistogramRefs atomic.Uint64
 	var unknownMetadataRefs atomic.Uint64
+	var unknownTombstoneRefs atomic.Uint64
 	// Track number of series records that had overlapping m-map chunks.
 	var mmapOverlappingChunks atomic.Uint64
 
@@ -101,8 +130,9 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		processors[i].setup()
 
 		go func(wp *walSubsetProcessor) {
-			unknown, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks)
-			unknownRefs.Add(unknown)
+			missingSeries, unknownSamples, unknownHistograms, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks)
+			unknownSeriesRefs.merge(missingSeries)
+			unknownSampleRefs.Add(unknownSamples)
 			mmapOverlappingChunks.Add(overlapping)
 			unknownHistogramRefs.Add(unknownHistograms)
 			wg.Done()
@@ -112,16 +142,14 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	wg.Add(1)
 	exemplarsInput = make(chan record.RefExemplar, 300)
 	go func(input <-chan record.RefExemplar) {
+		missingSeries := make(map[chunks.HeadSeriesRef]struct{})
 		var err error
 		defer wg.Done()
 		for e := range input {
 			ms := h.series.getByID(e.Ref)
 			if ms == nil {
 				unknownExemplarRefs.Inc()
-				continue
-			}
-
-			if e.T < h.minValidTime.Load() {
+				missingSeries[e.Ref] = struct{}{}
 				continue
 			}
 			// At the moment the only possible error here is out of order exemplars, which we shouldn't see when
@@ -131,6 +159,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				h.logger.Warn("Unexpected error when replaying WAL on exemplar record", "err", err)
 			}
 		}
+		unknownSeriesRefs.merge(missingSeries)
 	}(exemplarsInput)
 
 	go func() {
@@ -231,6 +260,7 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	}()
 
 	// The records are always replayed from the oldest to the newest.
+	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
 Outer:
 	for d := range decoded {
 		switch v := d.(type) {
@@ -297,8 +327,12 @@ Outer:
 					if itv.Maxt < h.minValidTime.Load() {
 						continue
 					}
+					if r, ok := multiRef[chunks.HeadSeriesRef(s.Ref)]; ok {
+						s.Ref = storage.SeriesRef(r)
+					}
 					if m := h.series.getByID(chunks.HeadSeriesRef(s.Ref)); m == nil {
-						unknownRefs.Inc()
+						unknownTombstoneRefs.Inc()
+						missingSeries[chunks.HeadSeriesRef(s.Ref)] = struct{}{}
 						continue
 					}
 					h.tombstones.AddInterval(s.Ref, itv)
@@ -307,6 +341,12 @@ Outer:
 			tstonesPool.Put(v)
 		case []record.RefExemplar:
 			for _, e := range v {
+				if e.T < h.minValidTime.Load() {
+					continue
+				}
+				if r, ok := multiRef[e.Ref]; ok {
+					e.Ref = r
+				}
 				exemplarsInput <- e
 			}
 			exemplarsPool.Put(v)
@@ -384,9 +424,13 @@ Outer:
 			floatHistogramsPool.Put(v)
 		case []record.RefMetadata:
 			for _, m := range v {
+				if r, ok := multiRef[m.Ref]; ok {
+					m.Ref = r
+				}
 				s := h.series.getByID(m.Ref)
 				if s == nil {
 					unknownMetadataRefs.Inc()
+					missingSeries[m.Ref] = struct{}{}
 					continue
 				}
 				s.meta = &metadata.Metadata{
@@ -400,6 +444,7 @@ Outer:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
 	}
+	unknownSeriesRefs.merge(missingSeries)
 
 	if decodeErr != nil {
 		return decodeErr
@@ -422,14 +467,23 @@ Outer:
 		return fmt.Errorf("read records: %w", err)
 	}
 
-	if unknownRefs.Load()+unknownExemplarRefs.Load()+unknownHistogramRefs.Load()+unknownMetadataRefs.Load() > 0 {
+	if unknownSampleRefs.Load()+unknownExemplarRefs.Load()+unknownHistogramRefs.Load()+unknownMetadataRefs.Load()+unknownTombstoneRefs.Load() > 0 {
 		h.logger.Warn(
 			"Unknown series references",
-			"samples", unknownRefs.Load(),
+			"series", unknownSeriesRefs.count(),
+			"samples", unknownSampleRefs.Load(),
 			"exemplars", unknownExemplarRefs.Load(),
 			"histograms", unknownHistogramRefs.Load(),
 			"metadata", unknownMetadataRefs.Load(),
+			"tombstones", unknownTombstoneRefs.Load(),
 		)
+
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSeriesRefs.count()), "series")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownSampleRefs.Load()), "samples")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownExemplarRefs.Load()), "exemplars")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownHistogramRefs.Load()), "histograms")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownMetadataRefs.Load()), "metadata")
+		counterAddNonZero(h.metrics.walReplayUnknownRefsTotal, float64(unknownTombstoneRefs.Load()), "tombstones")
 	}
 	if count := mmapOverlappingChunks.Load(); count > 0 {
 		h.logger.Info("Overlapping m-map chunks on duplicate series records", "count", count)
@@ -561,9 +615,12 @@ func (wp *walSubsetProcessor) reuseHistogramBuf() []histogramRecord {
 // processWALSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
-func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (unknownRefs, unknownHistogramRefs, mmapOverlappingChunks uint64) {
+func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (map[chunks.HeadSeriesRef]struct{}, uint64, uint64, uint64) {
 	defer close(wp.output)
 	defer close(wp.histogramsOutput)
+
+	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
+	var unknownSampleRefs, unknownHistogramRefs, mmapOverlappingChunks uint64
 
 	minValidTime := h.minValidTime.Load()
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
@@ -586,7 +643,8 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 		for _, s := range in.samples {
 			ms := h.series.getByID(s.Ref)
 			if ms == nil {
-				unknownRefs++
+				unknownSampleRefs++
+				missingSeries[s.Ref] = struct{}{}
 				continue
 			}
 			if s.T <= ms.mmMaxTime {
@@ -619,6 +677,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			ms := h.series.getByID(s.ref)
 			if ms == nil {
 				unknownHistogramRefs++
+				missingSeries[s.ref] = struct{}{}
 				continue
 			}
 			if s.t <= ms.mmMaxTime {
@@ -649,13 +708,15 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 	}
 	h.updateMinMaxTime(mint, maxt)
 
-	return unknownRefs, unknownHistogramRefs, mmapOverlappingChunks
+	return missingSeries, unknownSampleRefs, unknownHistogramRefs, mmapOverlappingChunks
 }
 
 func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
-	// Track number of samples, histogram samples, m-map markers, that referenced a series we don't know about
+	// Track number of missing series records that were referenced by other records.
+	unknownSeriesRefs := &seriesRefSet{refs: make(map[chunks.HeadSeriesRef]struct{}), mtx: sync.Mutex{}}
+	// Track number of samples, histogram samples, and m-map markers that referenced a series we don't know about
 	// for error reporting.
-	var unknownRefs, unknownHistogramRefs, mmapMarkerUnknownRefs atomic.Uint64
+	var unknownSampleRefs, unknownHistogramRefs, mmapMarkerUnknownRefs atomic.Uint64
 
 	lastSeq, lastOff := lastMmapRef.Unpack()
 	// Start workers that each process samples for a partition of the series ID space.
@@ -693,8 +754,9 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		processors[i].setup()
 
 		go func(wp *wblSubsetProcessor) {
-			unknown, unknownHistograms := wp.processWBLSamples(h)
-			unknownRefs.Add(unknown)
+			missingSeries, unknownSamples, unknownHistograms := wp.processWBLSamples(h)
+			unknownSeriesRefs.merge(missingSeries)
+			unknownSampleRefs.Add(unknownSamples)
 			unknownHistogramRefs.Add(unknownHistograms)
 			wg.Done()
 		}(&processors[i])
@@ -762,6 +824,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	}()
 
 	// The records are always replayed from the oldest to the newest.
+	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
 	for d := range decodedCh {
 		switch v := d.(type) {
 		case []record.RefSample:
@@ -814,6 +877,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 				ms := h.series.getByID(rm.Ref)
 				if ms == nil {
 					mmapMarkerUnknownRefs.Inc()
+					missingSeries[rm.Ref] = struct{}{}
 					continue
 				}
 				idx := uint64(ms.ref) % uint64(concurrency)
@@ -887,6 +951,7 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 			panic(fmt.Errorf("unexpected decodedCh type: %T", d))
 		}
 	}
+	unknownSeriesRefs.merge(missingSeries)
 
 	if decodeErr != nil {
 		return decodeErr
@@ -902,9 +967,21 @@ func (h *Head) loadWBL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		return fmt.Errorf("read records: %w", err)
 	}
 
-	if unknownRefs.Load() > 0 || mmapMarkerUnknownRefs.Load() > 0 {
-		h.logger.Warn("Unknown series references for ooo WAL replay", "samples", unknownRefs.Load(), "mmap_markers", mmapMarkerUnknownRefs.Load())
+	if unknownSampleRefs.Load()+unknownHistogramRefs.Load()+mmapMarkerUnknownRefs.Load() > 0 {
+		h.logger.Warn(
+			"Unknown series references for ooo WAL replay",
+			"series", unknownSeriesRefs.count(),
+			"samples", unknownSampleRefs.Load(),
+			"histograms", unknownHistogramRefs.Load(),
+			"mmap_markers", mmapMarkerUnknownRefs.Load(),
+		)
+
+		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal, float64(unknownSeriesRefs.count()), "series")
+		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal, float64(unknownSampleRefs.Load()), "samples")
+		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal, float64(unknownHistogramRefs.Load()), "histograms")
+		counterAddNonZero(h.metrics.wblReplayUnknownRefsTotal, float64(mmapMarkerUnknownRefs.Load()), "mmap_markers")
 	}
+
 	return nil
 }
 
@@ -972,9 +1049,12 @@ func (wp *wblSubsetProcessor) reuseHistogramBuf() []histogramRecord {
 
 // processWBLSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
-func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs, unknownHistogramRefs uint64) {
+func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (map[chunks.HeadSeriesRef]struct{}, uint64, uint64) {
 	defer close(wp.output)
 	defer close(wp.histogramsOutput)
+
+	missingSeries := make(map[chunks.HeadSeriesRef]struct{})
+	var unknownSampleRefs, unknownHistogramRefs uint64
 
 	oooCapMax := h.opts.OutOfOrderCapMax.Load()
 	// We don't check for minValidTime for ooo samples.
@@ -992,7 +1072,8 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs, unknownHi
 		for _, s := range in.samples {
 			ms := h.series.getByID(s.Ref)
 			if ms == nil {
-				unknownRefs++
+				unknownSampleRefs++
+				missingSeries[s.Ref] = struct{}{}
 				continue
 			}
 			if math.Float64bits(s.V) == value.QuietZeroNaN {
@@ -1020,6 +1101,7 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs, unknownHi
 			ms := h.series.getByID(s.ref)
 			if ms == nil {
 				unknownHistogramRefs++
+				missingSeries[s.ref] = struct{}{}
 				continue
 			}
 			var chunkCreated bool
@@ -1050,7 +1132,7 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs, unknownHi
 
 	h.updateMinOOOMaxOOOTime(mint, maxt)
 
-	return unknownRefs, unknownHistogramRefs
+	return missingSeries, unknownSampleRefs, unknownHistogramRefs
 }
 
 const (
