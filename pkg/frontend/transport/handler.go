@@ -260,6 +260,19 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hs[h] = vs
 	}
 
+	var parts []string
+	if f.cfg.QueryStatsEnabled {
+		parts = getQueryStats(queryResponseTime, queryDetails)
+	}
+	if queryStatsHeaderNameOk {
+		contentLength := resp.Header.Get("Content-Length")
+		parts = append(parts, getResponseQueryStats(queryResponseTime, contentLength, queryDetails)...)
+	}
+
+	if len(parts) > 0 {
+		hs.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
+	}
+
 	w.WriteHeader(resp.StatusCode)
 	// we don't check for copy error as there is no much we can do at this point
 	queryResponseSize, _ := io.Copy(w, resp.Body)
@@ -271,16 +284,6 @@ func (f *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.reportQueryStats(r, params, startTime, queryResponseTime, queryResponseSize, queryDetails, resp.StatusCode, nil)
 	}
 
-	var parts []string
-	if f.cfg.QueryStatsEnabled {
-		parts = getQueryStats(queryResponseTime, queryDetails)
-	}
-	if queryStatsHeaderNameOk {
-		parts = append(parts, getResponseQueryStats(queryResponseTime, queryResponseSize, queryDetails)...)
-	}
-	if len(parts) > 0 {
-		hs.Set(ServiceTimingHeaderName, strings.Join(parts, ", "))
-	}
 }
 
 // reportSlowQuery reports slow queries.
@@ -518,7 +521,7 @@ func getQueryStats(queryResponseTime time.Duration, details *querymiddleware.Que
 }
 
 // getResponseQueryStats returns the response query stats in the format of Server-Timing header.
-func getResponseQueryStats(queryResponseTime time.Duration, queryResponseSizeBytes int64, details *querymiddleware.QueryDetails) []string {
+func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes string, details *querymiddleware.QueryDetails) []string {
 	if details == nil {
 		return nil
 	}
@@ -532,7 +535,7 @@ func getResponseQueryStats(queryResponseTime time.Duration, queryResponseSizeByt
 		statsValue(fetchedSeriesCount, stats.LoadFetchedSeries()),
 		statsValue(queryWallTimeSeconds, stats.LoadWallTime().Seconds()),
 		statsValue(queueTimeSeconds, stats.LoadQueueTime().Seconds()),
-		statsValue(responseSizeBytes, queryResponseSizeBytes),
+		statsValue(responseSizeBytes, contentLengthBytes),
 		statsValue(responseTime, queryResponseTime),
 		statsValue(resultsCacheHitBytes, details.ResultsCacheHitBytes),
 		statsValue(resultsCacheMissBytes, details.ResultsCacheMissBytes),
