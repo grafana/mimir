@@ -28,8 +28,9 @@ Entries should be ordered as follows:
 Entries should include a reference to the Pull Request that introduced the change.
 
 ## main / unreleased
-* [ENHANCEMENT] Add optional helm update job for provisioning tenants. #10864
-* [ENHANCEMENT] Add extra values for KEDA autoscaling, to support authenticaiton, ignoreNullValues, unsafeSsl, and support PromQLLabelSelector. #10265
+
+## 5.7.0-rc.0
+
 * [CHANGE] Tokengen: Added k8s secret storage for the admin token. #5237
 * [CHANGE] Memcached: Update to Memcached 1.6.34. #10318
 * [CHANGE] Ring: relaxed the hash ring heartbeat timeout for store-gateways: #10634
@@ -41,6 +42,8 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Alertmanager, compactor, ingester, and store-gateway StatefulSets can configure their PVC template name via the corresponding *.persistentVolume.name values. #10376
 * [ENHANCEMENT] Set resources for smoke-test job. #10608
 * [ENHANCEMENT] All components can expose additional ports with their respective services via the *.service.extraPorts values. This allows exposing the containers that components declare in `extraContainers`. #10659
+* [ENHANCEMENT] Add optional Helm update job for provisioning tenants. #10864
+* [ENHANCEMENT] Add extra values for KEDA autoscaling to support authentication, `ignoreNullValues`, `unsafeSsl`, and `PromQLLabelSelector`. #10265
 * [BUGFIX] Create proper in-cluster remote URLs when gateway and nginx are disabled. #10625
 * [BUGFIX] Fix calculation of `mimir.siToBytes` and use floating point arithmetics. #10044
 
