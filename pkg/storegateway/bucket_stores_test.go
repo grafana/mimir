@@ -607,7 +607,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			nextSeriesIdx := 0
 
 			if testData.expectedSamplesForOutOfOrderChunks != nil {
-				assert.Equal(t, seriesWithOutOfOrderChunks, promLabels(seriesSet[nextSeriesIdx]))
+				assert.Equal(t, seriesWithOutOfOrderChunks, promLabels(seriesSet[nextSeriesIdx].Series))
 
 				samples, err := readSamplesFromChunks(seriesSet[nextSeriesIdx].Chunks)
 				require.NoError(t, err)
@@ -617,7 +617,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			}
 
 			if testData.expectedSamplesForOverlappingChunks != nil {
-				assert.Equal(t, seriesWithOverlappingChunks, promLabels(seriesSet[nextSeriesIdx]))
+				assert.Equal(t, seriesWithOverlappingChunks, promLabels(seriesSet[nextSeriesIdx].Series))
 
 				samples, err := readSamplesFromChunks(seriesSet[nextSeriesIdx].Chunks)
 				require.NoError(t, err)
@@ -671,7 +671,7 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 	require.NoError(t, db.Snapshot(userDir, true))
 }
 
-func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storepb.Series, annotations.Annotations, error) {
+func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storepb.CustomSeries, annotations.Annotations, error) {
 	req := &storepb.SeriesRequest{
 		MinTime: minT,
 		MaxTime: maxT,
