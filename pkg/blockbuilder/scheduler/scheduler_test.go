@@ -480,7 +480,7 @@ func TestConsumptionRanges(t *testing.T) {
 				{start: 2000, end: 4000},
 				{start: 4000, end: 6000},
 			},
-			msg: "consumption should exclude the offset on the boundry, but otherwise cover (commit, boundary]",
+			msg: "consumption should exclude the offset on the boundary, but otherwise cover (commit, boundary]",
 		},
 		"no new data": {
 			// End offset is the one that was consumed last time.
@@ -649,7 +649,7 @@ type mockOffsetFinder struct {
 	end     int64
 }
 
-func (o *mockOffsetFinder) offsetAfterTime(ctx context.Context, topic string, partition int32, t time.Time) (int64, error) {
+func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, topic string, partition int32, t time.Time) (int64, error) {
 	// scan the offsets slice and return the lowest offset whose time is after t.
 	mint := time.Time{}
 	off := int64(-1)
