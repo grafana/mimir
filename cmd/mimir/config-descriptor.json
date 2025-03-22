@@ -4439,17 +4439,6 @@
         },
         {
           "kind": "field",
-          "name": "ooo_native_histograms_ingestion_enabled",
-          "required": false,
-          "desc": "Enable experimental out-of-order native histogram ingestion. This only takes effect if the `-ingester.out-of-order-time-window` value is greater than zero and if `-ingester.native-histograms-ingestion-enabled = true`",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "ingester.ooo-native-histograms-ingestion-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "active_series_custom_trackers",
           "required": false,
           "desc": "Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero.",
@@ -4735,8 +4724,7 @@
           "fieldValue": null,
           "fieldDefaultValue": 300000000000,
           "fieldFlag": "query-frontend.results-cache-ttl-for-errors",
-          "fieldType": "duration",
-          "fieldCategory": "experimental"
+          "fieldType": "duration"
         },
         {
           "kind": "field",
@@ -5133,6 +5121,17 @@
           "fieldFlag": "compactor.max-lookback",
           "fieldType": "duration",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "compactor_max_per_block_upload_concurrency",
+          "required": false,
+          "desc": "Maximum number of TSDB segment files that the compactor can upload concurrently per block.",
+          "fieldValue": null,
+          "fieldDefaultValue": 8,
+          "fieldFlag": "compactor.max-per-block-upload-concurrency",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -7075,8 +7074,7 @@
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.cache-errors",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldType": "boolean"
         },
         {
           "kind": "field",
@@ -15210,17 +15208,6 @@
           "required": false,
           "desc": "",
           "blockEntries": [
-            {
-              "kind": "field",
-              "name": "rule_group_enabled",
-              "required": false,
-              "desc": "Enabling caching of rule group contents if a cache backend is configured.",
-              "fieldValue": null,
-              "fieldDefaultValue": false,
-              "fieldFlag": "ruler-storage.cache.rule-group-enabled",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
             {
               "kind": "field",
               "name": "backend",

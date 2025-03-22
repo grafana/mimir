@@ -42,7 +42,7 @@ func randomGranularPriority(priority Priority) int {
 type PriorityLimiter interface {
 	Metrics
 
-	// AcquirePermit attempts to acquire a permit, potentially blocking up to maxExecutionTime.
+	// AcquirePermit attempts to acquire a permit, potentially blocking based on the prioriter current rejection threshold.
 	// The request priority must be greater than the current priority threshold for admission.
 	AcquirePermit(ctx context.Context, priority Priority) (Permit, error)
 
@@ -81,7 +81,7 @@ func (l *priorityLimiter) CanAcquirePermit(priority Priority) bool {
 
 func (l *priorityLimiter) canAcquirePermit(granularPriority int) bool {
 	// Threshold against the limiter's max capacity
-	maxBlocked := int(float64(l.Limit()) * l.config.MaxRejectionFactor)
+	_, _, _, maxBlocked := l.queueStats()
 	if l.reactiveLimiter.Blocked() >= maxBlocked {
 		return false
 	}
@@ -92,11 +92,4 @@ func (l *priorityLimiter) canAcquirePermit(granularPriority int) bool {
 
 func (l *priorityLimiter) RejectionRate() float64 {
 	return l.prioritizer.RejectionRate()
-}
-
-func (l *priorityLimiter) getAndResetStats() (limit, inflight, queued, rejectionThreshold, maxQueue int) {
-	limit = l.Limit()
-	rejectionThreshold = int(float64(limit) * l.config.InitialRejectionFactor)
-	maxQueue = int(float64(limit) * l.config.MaxRejectionFactor)
-	return limit, l.Inflight(), l.Blocked(), rejectionThreshold, maxQueue
 }

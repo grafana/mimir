@@ -1839,7 +1839,7 @@ results_cache:
 # CLI flag: -query-frontend.cache-results
 [cache_results: <boolean> | default = false]
 
-# (experimental) Cache non-transient errors from queries.
+# Cache non-transient errors from queries.
 # CLI flag: -query-frontend.cache-errors
 [cache_errors: <boolean> | default = false]
 
@@ -2375,11 +2375,6 @@ local:
   [directory: <string> | default = ""]
 
 cache:
-  # (experimental) Enabling caching of rule group contents if a cache backend is
-  # configured.
-  # CLI flag: -ruler-storage.cache.rule-group-enabled
-  [rule_group_enabled: <boolean> | default = false]
-
   # Backend for ruler storage cache, if not empty. The cache is supported for
   # any storage backend except "local". Supported values: memcached, redis.
   # CLI flag: -ruler-storage.cache.backend
@@ -3551,13 +3546,6 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.native-histograms-ingestion-enabled
 [native_histograms_ingestion_enabled: <boolean> | default = true]
 
-# (experimental) Enable experimental out-of-order native histogram ingestion.
-# This only takes effect if the `-ingester.out-of-order-time-window` value is
-# greater than zero and if `-ingester.native-histograms-ingestion-enabled =
-# true`
-# CLI flag: -ingester.ooo-native-histograms-ingestion-enabled
-[ooo_native_histograms_ingestion_enabled: <boolean> | default = true]
-
 # (advanced) Custom trackers for active metrics. If there are active series
 # matching a provided matcher (map value), the count is exposed in the custom
 # trackers metric labeled using the tracker name (map key). Zero-valued counts
@@ -3749,7 +3737,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -query-frontend.results-cache-ttl-for-labels-query
 [results_cache_ttl_for_labels_query: <duration> | default = 0s]
 
-# (experimental) Time to live duration for cached non-transient errors
+# Time to live duration for cached non-transient errors
 # CLI flag: -query-frontend.results-cache-ttl-for-errors
 [results_cache_ttl_for_errors: <duration> | default = 5m]
 
@@ -3966,6 +3954,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # blocks are considered regardless of their upload time.
 # CLI flag: -compactor.max-lookback
 [compactor_max_lookback: <duration> | default = 0s]
+
+# (advanced) Maximum number of TSDB segment files that the compactor can upload
+# concurrently per block.
+# CLI flag: -compactor.max-per-block-upload-concurrency
+[compactor_max_per_block_upload_concurrency: <int> | default = 8]
 
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings

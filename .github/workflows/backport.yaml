@@ -6,31 +6,11 @@ on:
       - closed
       - labeled
 
-permissions:
-  contents: read
-  id-token: write
-
 jobs:
   main:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Retrieve GitHub App credentials from Vault
-        id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
-        with:
-          repo_secrets: |
-            APP_ID=mimir-github-bot:app_id
-            PRIVATE_KEY=mimir-github-bot:private_key
-
-      - name: Generate GitHub App token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ env.APP_ID }}
-          private-key: ${{ env.PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
       - name: Checkout Actions
         uses: actions/checkout@v4
         with:
@@ -46,6 +26,6 @@ jobs:
       - name: Run backport
         uses: ./actions/backport
         with:
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           labelsToAdd: "backport"
           title: "[{{base}}] {{originalTitle}}"
