@@ -813,10 +813,12 @@ type CustomStreamingSeriesBatch struct {
 
 // Release back to pool.
 func (m *CustomStreamingSeriesBatch) Release() {
-	for _, s := range m.Series {
+	for i, s := range m.Series {
 		//nolint:staticcheck
-		labelAdaptersPool.Put(s.Labels)
+		labelAdaptersPool.Put(s.Labels[:0])
+		m.Series[i].Labels = nil
 	}
+	m.Series = m.Series[:0]
 	streamingSeriesBatchPool.Put(m.StreamingSeriesBatch)
 	m.StreamingSeriesBatch = nil
 }
@@ -1045,9 +1047,8 @@ func (m *CustomStreamingChunksBatch) Release() {
 
 // ReleaseChunk releases chk back to the pool.
 func ReleaseChunk(chk *Chunk) {
-	chk.Data = chk.Data[:0]
 	//nolint:staticcheck
-	chunkDataPool.Put(chk.Data)
+	chunkDataPool.Put(chk.Data[:0])
 	chk.Data = nil
 }
 
