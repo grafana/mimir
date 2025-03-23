@@ -1063,7 +1063,7 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, true, nil
 		}
 
-		return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+		return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, errors.Wrap(err, "receive from gRPC stream")
 	}
 
 	// Response may either contain series, streaming series, warning or hints.
@@ -1093,7 +1093,7 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 	}
 
 	if h := resp.GetHints(); h != nil {
-		hints := hintspb.SeriesResponseHints{}
+		var hints hintspb.SeriesResponseHints
 		if err := types.UnmarshalAny(h, &hints); err != nil {
 			return mySeries, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, errors.Wrapf(err, "failed to unmarshal series hints from %s", c.RemoteAddress())
 		}
