@@ -16,6 +16,7 @@ type Config struct {
 	ConsumeInterval    time.Duration `yaml:"consume_interval"`
 	StartupObserveTime time.Duration `yaml:"startup_observe_time"`
 	JobLeaseExpiry     time.Duration `yaml:"job_lease_expiry"`
+	LookbackOnNoCommit time.Duration `yaml:"lookback_on_no_commit" category:"advanced"`
 
 	// Config parameters defined outside the block-builder-scheduler config and are injected dynamically.
 	Kafka ingest.KafkaConfig `yaml:"-"`
@@ -27,6 +28,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.ConsumeInterval, "block-builder-scheduler.consume-interval", 1*time.Hour, "Interval between consumption cycles.")
 	f.DurationVar(&cfg.StartupObserveTime, "block-builder-scheduler.startup-observe-time", 25*time.Second, "How long to observe worker state before scheduling jobs.")
 	f.DurationVar(&cfg.JobLeaseExpiry, "block-builder-scheduler.job-lease-expiry", 2*time.Minute, "How long a job lease will live for before expiring.")
+	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder-scheduler.lookback-on-no-commit", 1*time.Hour, "How much to look back if a commit is not found for a partition.")
 }
 
 func (cfg *Config) Validate() error {

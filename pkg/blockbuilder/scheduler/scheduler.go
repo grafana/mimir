@@ -169,10 +169,75 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 	}
 }
 
-func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb.JobSpec, error) {
-	lag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.ConsumerGroup, 0)
+type topicPartition struct {
+	topic     string
+	partition int32
+}
+
+type partitionOffsets struct {
+	start int64
+	end   int64
+}
+
+func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic string, committed kadm.Offsets, fallbackTime time.Time) (map[topicPartition]partitionOffsets, error) {
+	startOffsets, err := s.adminClient.ListStartOffsets(ctx, topic)
 	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed to get group lag", "err", err)
+		return nil, fmt.Errorf("list start offsets: %w", err)
+	}
+	endOffsets, err := s.adminClient.ListEndOffsets(ctx, topic)
+	if err != nil {
+		return nil, fmt.Errorf("list end offsets: %w", err)
+	}
+	fallbackOffsets, err := s.adminClient.ListOffsetsAfterMilli(ctx, fallbackTime.UnixMilli(), topic)
+	if err != nil {
+		return nil, fmt.Errorf("list fallback offsets: %w", err)
+	}
+
+	offs := make(map[topicPartition]partitionOffsets)
+
+	// If the group-partition in offsets doesn't have a commit, fall back depending on where fallbackOffsetMillis points at.
+	for t, pt := range startOffsets.Offsets() {
+		if t != topic {
+			continue
+		}
+		for partition, startOffset := range pt {
+			var consumeOffset int64
+			committedOff, ok := committed.Lookup(t, partition)
+			if ok {
+				consumeOffset = committedOff.At
+			} else {
+				// Nothing committed for this partition. Rewind to fallback offset instead.
+				o, ok := fallbackOffsets.Lookup(t, partition)
+				if !ok {
+					return nil, fmt.Errorf("partition %d not found in fallback offsets for topic %s", partition, t)
+				}
+				consumeOffset = max(startOffset.At, o.Offset)
+			}
+
+			end, ok := endOffsets.Lookup(t, partition)
+			if !ok {
+				return nil, fmt.Errorf("partition %d not found in end offsets for topic %s", partition, t)
+			}
+
+			offs[topicPartition{t, partition}] = partitionOffsets{
+				start: consumeOffset,
+				end:   end.Offset,
+			}
+
+			partStr := fmt.Sprint(partition)
+			s.metrics.partitionStartOffset.WithLabelValues(partStr).Set(float64(startOffset.At))
+			s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(end.Offset))
+			//s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(committedOff.At))
+		}
+	}
+
+	return offs, nil
+}
+
+func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb.JobSpec, error) {
+	consumeOffs, err := s.consumptionOffsets(ctx, s.cfg.Kafka.Topic, s.snapCommitted(), time.Now().Add(-s.cfg.LookbackOnNoCommit))
+	if err != nil {
+		level.Warn(s.logger).Log("msg", "failed to get consumption offsets", "err", err)
 		return nil, err
 	}
 
@@ -184,23 +249,14 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 	of := newOffsetFinder(s.adminClient)
 	jobs := []*schedulerpb.JobSpec{}
 
-	if ps, ok := lag[s.cfg.Kafka.Topic]; ok {
-		for part, gl := range ps {
-			partStr := fmt.Sprint(part)
-			s.metrics.partitionStartOffset.WithLabelValues(partStr).Set(float64(gl.Start.Offset))
-			s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(gl.End.Offset))
-			s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(gl.Commit.At))
-
-			// TODO: Don't use the commit offset Kafka told us, as s.committed is more up-to-date.
-
-			pj, err := computePartitionJobs(ctx, of, s.cfg.Kafka.Topic, part, gl.Commit.At, gl.End.Offset, s.cfg.ConsumeInterval, boundary)
-			if err != nil {
-				level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
-				continue
-			}
-
-			jobs = append(jobs, pj...)
+	for tp, off := range consumeOffs {
+		pj, err := computePartitionJobs(ctx, of, tp.topic, tp.partition,
+			off.start, off.end, boundary, s.cfg.ConsumeInterval)
+		if err != nil {
+			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
+			continue
 		}
+		jobs = append(jobs, pj...)
 	}
 
 	return jobs, nil
@@ -249,7 +305,7 @@ var _ offsetStore = (*offsetFinder)(nil)
 // computePartitionJobs returns the ranges of offsets that should be consumed
 // for the given topic and partition.
 func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, partition int32,
-	committed int64, partEnd int64, width time.Duration, boundaryTime time.Time) ([]*schedulerpb.JobSpec, error) {
+	committed int64, partEnd int64, boundaryTime time.Time, width time.Duration) ([]*schedulerpb.JobSpec, error) {
 
 	if committed >= partEnd {
 		// No new data to consume.
@@ -460,8 +516,8 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 			}
 		}
 
-		// EndOffset is inclusive, so we need to commit EndOffset+1.
-		s.advanceCommittedOffset(j.Topic, j.Partition, j.EndOffset+1)
+		// EndOffset is exclusive. It is the next offset to consume.
+		s.advanceCommittedOffset(j.Topic, j.Partition, j.EndOffset)
 		logger.Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
