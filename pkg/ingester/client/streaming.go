@@ -279,7 +279,7 @@ func (s *SeriesChunksStreamReader) GetChunks(seriesIndex uint64) (_ []Chunk, err
 	// Take ownership of chunks.
 	chks := series.Chunks
 	series.Chunks = nil
-	// TODO: Fix me.
+	// TODO: Safely release series.
 	// series.Release()
 	return chks, nil
 }

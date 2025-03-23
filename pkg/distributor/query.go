@@ -11,7 +11,6 @@ import (
 	"context"
 	"io"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -67,7 +66,7 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 		if err != nil {
 			return err
 		}
-		/* TODO: Fix me.
+		/* TODO: Fix me. How to ensure that the results can be freed?
 		defer func() {
 			for _, r := range results {
 				r.Release()
@@ -202,19 +201,7 @@ func mergeExemplarQueryResponses(results []*ingester_client.ExemplarQueryRespons
 
 	result := make([]mimirpb.CustomTimeSeries, len(exemplarResults))
 	for i, k := range keys {
-		ts := exemplarResults[k]
-		for i, l := range ts.Labels {
-			// TODO: Do we need to clone?
-			ts.Labels[i].Name = strings.Clone(l.Name)
-			ts.Labels[i].Value = strings.Clone(l.Value)
-		}
-		for i, e := range ts.Exemplars {
-			for j, l := range e.Labels {
-				ts.Exemplars[i].Labels[j].Name = strings.Clone(l.Name)
-				ts.Exemplars[i].Labels[j].Value = strings.Clone(l.Value)
-			}
-		}
-		result[i] = ts
+		result[i] = exemplarResults[k]
 	}
 
 	return &ingester_client.ExemplarQueryResponse{Timeseries: result}
@@ -417,18 +404,6 @@ func receiveResponse(stream ingester_client.Ingester_QueryStreamClient, streamin
 			}
 		}
 
-		for i, ts := range resp.Timeseries {
-			for j, l := range ts.Labels {
-				resp.Timeseries[i].Labels[j].Name = strings.Clone(l.Name)
-				resp.Timeseries[i].Labels[j].Value = strings.Clone(l.Value)
-			}
-			for j, e := range ts.Exemplars {
-				for k, l := range e.Labels {
-					resp.Timeseries[i].Exemplars[j].Labels[k].Name = strings.Clone(l.Name)
-					resp.Timeseries[i].Exemplars[j].Labels[k].Value = strings.Clone(l.Value)
-				}
-			}
-		}
 		result.timeseriesBatches = append(result.timeseriesBatches, resp.Timeseries)
 	} else if len(resp.Chunkseries) > 0 {
 		// Enforce the max chunks limits.
@@ -450,15 +425,6 @@ func receiveResponse(stream ingester_client.Ingester_QueryStreamClient, streamin
 			return 0, nil, false, err
 		}
 
-		for i, s := range resp.Chunkseries {
-			for j, l := range s.Labels {
-				resp.Chunkseries[i].Labels[j].Name = strings.Clone(l.Name)
-				resp.Chunkseries[i].Labels[j].Value = strings.Clone(l.Value)
-			}
-			for j, c := range s.Chunks {
-				resp.Chunkseries[i].Chunks[j].Data = slices.Clone(c.Data)
-			}
-		}
 		result.chunkseriesBatches = append(result.chunkseriesBatches, resp.Chunkseries)
 	} else if len(resp.StreamingSeries) > 0 {
 		labelsBatch := make([]labels.Labels, 0, len(resp.StreamingSeries))
