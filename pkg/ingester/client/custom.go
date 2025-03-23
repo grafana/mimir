@@ -934,10 +934,13 @@ func (m *QueryStreamResponse) Release() {
 	for _, s := range m.StreamingSeries {
 		s.Release()
 	}
-	m.StreamingSeriesChunks = nil
+	m.StreamingSeries = nil
+	/* TODO: Seems broken
 	for _, s := range m.StreamingSeriesChunks {
 		s.Release()
 	}
+	m.StreamingSeriesChunks = nil
+	*/
 }
 
 // Release back to pool.
