@@ -174,90 +174,117 @@ func TestBlockBuilder_StartWithExistingCommit(t *testing.T) {
 	)
 }
 
-func TestBlockBuilder_StartWithExistingCommit_PullMode(t *testing.T) {
+func TestBlockBuilder_PullMode(t *testing.T) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	t.Cleanup(func() { cancel(errors.New("test done")) })
 
-	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-	kafkaClient := mustKafkaClient(t, kafkaAddr)
-	kafkaClient.AddConsumeTopics(testTopic)
+	tenants := []string{"1", "2", "3"}
+	samplesPerTenant := 10
 
-	cfg, overrides := blockBuilderPullModeConfig(t, kafkaAddr)
-
-	// Producing some records
-	cycleEndStartup := cycleEndBefore(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
-
-	var producedSamples []mimirpb.Sample
-	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
-	for kafkaRecTime.Before(cycleEndStartup) {
-		samples := produceSamples(ctx, t, kafkaClient, 0, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
-		producedSamples = append(producedSamples, samples...)
-
-		kafkaRecTime = kafkaRecTime.Add(cfg.ConsumeInterval / 2)
-	}
-	require.NotEmpty(t, producedSamples)
-
-	// Fetch all the records that were produced to choose one to commit.
-	var recs []*kgo.Record
-	for len(recs) < len(producedSamples) {
-		fetches := kafkaClient.PollFetches(ctx)
-		require.NoError(t, fetches.Err())
-		recs = append(recs, fetches.Records()...)
-	}
-	require.Len(t, recs, len(producedSamples))
-
-	// Choosing the midpoint record to commit and as the last seen record as well.
-	commitRec := recs[len(recs)/2]
-	require.NotNil(t, commitRec)
-
-	lastRec := commitRec
-	blockEnd := commitRec.Timestamp.Truncate(cfg.ConsumeInterval).Add(cfg.ConsumeInterval)
-
-	scheduler := &mockSchedulerClient{}
-	scheduler.addJob(
-		schedulerpb.JobKey{
-			Id:    "test-job-4898",
-			Epoch: 90000,
+	// We have 10 records per tenant. And there are 3 tenants.
+	cases := []struct {
+		name                   string
+		startOffset, endOffset int64
+		// For per tenant slice.
+		expSampleRangeStart int
+		expSampleRangeEnd   int
+	}{
+		{
+			name:                "first offset till somewhere in between",
+			startOffset:         0,
+			endOffset:           3 * 6,
+			expSampleRangeStart: 0,
+			expSampleRangeEnd:   6,
 		},
-		schedulerpb.JobSpec{
-			Topic:          testTopic,
-			Partition:      0,
-			StartOffset:    commitRec.Offset + 1,
-			EndOffset:      3000000,
-			CommitRecTs:    commitRec.Timestamp,
-			LastSeenOffset: lastRec.Offset,
-			LastBlockEndTs: blockEnd,
-			CycleEndTs:     cycleEndStartup,
-			CycleEndOffset: int64(len(producedSamples)),
+		{
+			name:                "somewhere in between till last offset",
+			startOffset:         int64(3 * 6),
+			endOffset:           3 * 10,
+			expSampleRangeStart: 6,
+			expSampleRangeEnd:   10,
 		},
-	)
+		{
+			name:                "somewhere in between to somewhere in between",
+			startOffset:         int64(3 * 3),
+			endOffset:           3 * 6,
+			expSampleRangeStart: 3,
+			expSampleRangeEnd:   6,
+		},
+		{
+			name:                "entire partition",
+			startOffset:         0,
+			endOffset:           3 * 10,
+			expSampleRangeStart: 0,
+			expSampleRangeEnd:   10,
+		},
+	}
 
-	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
-	require.NoError(t, err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+			kafkaClient := mustKafkaClient(t, kafkaAddr)
+			kafkaClient.AddConsumeTopics(testTopic)
 
-	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
-	})
+			cfg, overrides := blockBuilderPullModeConfig(t, kafkaAddr)
 
-	// Wait for end of the cycles. We expect at least several cycles because of how the pushed records were structured.
-	require.Eventually(t, func() bool {
-		return scheduler.completeJobCallCount() > 0
-	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
+			producedSamples := make(map[string][]mimirpb.Sample, 0)
+			recsPerTenant := 0
+			kafkaRecTime := time.Now().Add(-time.Hour)
+			for range samplesPerTenant {
+				for _, tenant := range tenants {
+					samples := produceSamples(ctx, t, kafkaClient, 1, kafkaRecTime, tenant, kafkaRecTime.Add(-time.Minute))
+					producedSamples[tenant] = append(producedSamples[tenant], samples...)
+				}
+				recsPerTenant++
 
-	require.EqualValues(t,
-		[]schedulerpb.JobKey{{Id: "test-job-4898", Epoch: 90000}},
-		scheduler.completeJobCalls,
-	)
+				kafkaRecTime = kafkaRecTime.Add(10 * time.Minute)
+			}
+			require.NotEmpty(t, producedSamples)
 
-	// Because there is a commit, on startup, block-builder must consume samples only after the commit.
-	expSamples := producedSamples[1+(len(producedSamples)/2):]
+			scheduler := &mockSchedulerClient{}
+			scheduler.addJob(
+				schedulerpb.JobKey{
+					Id:    "test-job-4898",
+					Epoch: 90000,
+				},
+				schedulerpb.JobSpec{
+					Topic:       testTopic,
+					Partition:   1,
+					StartOffset: c.startOffset,
+					EndOffset:   c.endOffset,
+				},
+			)
 
-	compareQueryWithDir(t,
-		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
-		expSamples, nil,
-		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
-	)
+			bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
+			require.NoError(t, err)
+
+			require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+			})
+
+			require.Eventually(t, func() bool {
+				return scheduler.completeJobCallCount() > 0
+			}, 5*time.Second, 100*time.Millisecond, "expected job completion")
+
+			require.EqualValues(t,
+				[]schedulerpb.JobKey{{Id: "test-job-4898", Epoch: 90000}},
+				scheduler.completeJobCalls,
+			)
+
+			for _, tenant := range tenants {
+				expSamples := producedSamples[tenant][c.expSampleRangeStart:c.expSampleRangeEnd]
+
+				compareQueryWithDir(t,
+					path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant),
+					expSamples, nil,
+					labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+				)
+			}
+
+		})
+	}
+
 }
 
 // When there is no commit on startup, and the first cycleEnd is at T, and all the samples are from before T-lookback, then
@@ -310,76 +337,6 @@ func TestBlockBuilder_StartWithLookbackOnNoCommit(t *testing.T) {
 	`), "cortex_blockbuilder_consumer_lag_records"))
 
 	// There should be no samples in the tsdb.
-	compareQueryWithDir(t,
-		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
-		nil, nil,
-		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
-	)
-}
-
-// When there is no commit on startup, and the first cycleEnd is at T, and all the samples are from before T-lookback, then
-// the first consumption cycle skips all the records.
-func TestBlockBuilder_StartWithLookbackOnNoCommit_PullMode(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancelCause(context.Background())
-	t.Cleanup(func() { cancel(errors.New("test done")) })
-
-	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-	kafkaClient := mustKafkaClient(t, kafkaAddr)
-
-	cfg, overrides := blockBuilderPullModeConfig(t, kafkaAddr)
-	cfg.LookbackOnNoCommit = 3 * time.Hour
-
-	// Producing some records, all before LookbackOnNoCommit
-	var firstRecordTime time.Time
-	kafkaRecTime := time.Now().Truncate(cfg.ConsumeInterval).Add(-7 * time.Hour).Add(29 * time.Minute)
-	for range 3 {
-		kafkaRecTime = kafkaRecTime.Add(cfg.ConsumeInterval / 2)
-		if firstRecordTime.IsZero() {
-			firstRecordTime = kafkaRecTime
-		}
-		produceSamples(ctx, t, kafkaClient, 0, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
-	}
-
-	fallback := time.Now().Add(-cfg.LookbackOnNoCommit)
-
-	scheduler := &mockSchedulerClient{}
-	scheduler.addJob(
-		schedulerpb.JobKey{
-			Id:    "test-job-4898",
-			Epoch: 90001,
-		},
-		schedulerpb.JobSpec{
-			Topic:          testTopic,
-			Partition:      0,
-			StartOffset:    1,
-			EndOffset:      5,
-			CommitRecTs:    fallback,
-			LastSeenOffset: 0,
-			LastBlockEndTs: time.UnixMilli(0),
-			CycleEndTs:     kafkaRecTime,
-			CycleEndOffset: 3,
-		},
-	)
-
-	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
-	require.NoError(t, err)
-
-	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
-	})
-
-	require.Eventually(t, func() bool {
-		return bb.jobIteration.Load() > 0
-	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
-
-	require.EqualValues(t,
-		[]schedulerpb.JobKey{{Id: "test-job-4898", Epoch: 90001}},
-		scheduler.completeJobCalls,
-	)
-
 	compareQueryWithDir(t,
 		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
 		nil, nil,
@@ -457,112 +414,6 @@ func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection(t *testing.T) {
 	)
 }
 
-// When there are no records to consume before the last cycle section, the whole cycle should bail.
-func TestBlockBuilder_ReachHighWatermarkBeforeLastCycleSection_PullMode(t *testing.T) {
-	ctx, cancel := context.WithCancelCause(context.Background())
-	t.Cleanup(func() { cancel(errors.New("test done")) })
-
-	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-	kafkaClient := mustKafkaClient(t, kafkaAddr)
-	cfg, overrides := blockBuilderPullModeConfig(t, kafkaAddr)
-
-	// Producing backlog of records in partition 0.
-	// For this test, the last-produced record must belong to the second to last cycle's section; i.e. the last section has nothing to consume.
-	cycleEndStartup := cycleEndBefore(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
-
-	var producedSamples []mimirpb.Sample
-	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-5 * time.Hour).Add(29 * time.Minute)
-	firstKafkaRecTime := kafkaRecTime.Add(-time.Minute)
-	lastKafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeInterval)
-	for kafkaRecTime.Before(lastKafkaRecTime) {
-		samples := produceSamples(ctx, t, kafkaClient, 0, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
-		producedSamples = append(producedSamples, samples...)
-
-		kafkaRecTime = kafkaRecTime.Add(cfg.ConsumeInterval / 2)
-	}
-	require.NotEmpty(t, producedSamples)
-
-	var p1RecTime time.Time
-
-	// Produce extra record to partition 1 to verify that block-builder finished the whole cycle and didn't get stuck consuming partition 0.
-	{
-		const partition = 1
-		kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-time.Minute)
-		p1RecTime = kafkaRecTime
-		samples := floatSample(kafkaRecTime.UnixMilli(), 100)
-		val := createWriteRequest(t, "1", samples, nil)
-		produceRecords(ctx, t, kafkaClient, kafkaRecTime, "1", testTopic, partition, val)
-		producedSamples = append(producedSamples, samples...)
-	}
-
-	scheduler := &mockSchedulerClient{}
-	scheduler.addJob(
-		schedulerpb.JobKey{
-			Id:    "test-job-p0-4898",
-			Epoch: 90002,
-		},
-		schedulerpb.JobSpec{
-			Topic:          testTopic,
-			Partition:      0,
-			StartOffset:    0,
-			EndOffset:      int64(len(producedSamples)),
-			CommitRecTs:    firstKafkaRecTime,
-			LastSeenOffset: 0,
-			LastBlockEndTs: time.UnixMilli(0),
-			CycleEndTs:     kafkaRecTime,
-			CycleEndOffset: int64(len(producedSamples) - 2),
-		},
-	)
-	// A second job to include the extra record in partition 1.
-	scheduler.addJob(
-		schedulerpb.JobKey{
-			Id:    "test-job-p1-4899",
-			Epoch: 90070,
-		},
-		schedulerpb.JobSpec{
-			Topic:          testTopic,
-			Partition:      1,
-			StartOffset:    0,
-			EndOffset:      1,
-			CommitRecTs:    p1RecTime,
-			LastSeenOffset: 0,
-			LastBlockEndTs: time.UnixMilli(0),
-			CycleEndTs:     p1RecTime.Add(1 * time.Minute),
-			CycleEndOffset: 1,
-		},
-	)
-
-	reg := prometheus.NewPedanticRegistry()
-	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), reg, overrides, scheduler)
-	require.NoError(t, err)
-
-	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
-	})
-
-	// Wait for both jobs to complete.
-	require.Eventually(t, func() bool {
-		return bb.jobIteration.Load() >= 2
-	}, 20*time.Second, 100*time.Millisecond, "expected job completion")
-
-	assert.Equal(t, 1, scheduler.runCallCount())
-	assert.Equal(t, 3, scheduler.getJobCallCount(), "expect 2 completed getJob calls and one in-flight")
-	assert.Equal(t, 2, scheduler.completeJobCallCount())
-	assert.Equal(t, 0, scheduler.closeCallCount())
-
-	require.EqualValues(t,
-		[]schedulerpb.JobKey{{Id: "test-job-p0-4898", Epoch: 90002}, {Id: "test-job-p1-4899", Epoch: 90070}},
-		scheduler.completeJobCalls,
-	)
-
-	compareQueryWithDir(t,
-		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
-		producedSamples, nil,
-		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
-	)
-}
-
 func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 	t.Parallel()
 
@@ -609,82 +460,6 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 
 	// Wait for end of the cycles. We expect at least several cycles because of how the pushed records were structured.
 	require.Eventually(t, func() bool { return kafkaCommits.Load() > 1 }, 5*time.Second, 100*time.Millisecond, "expected kafka commits")
-
-	for _, tenant := range tenants {
-		compareQueryWithDir(t,
-			path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, tenant),
-			producedPerTenantSamples[tenant], nil,
-			labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
-		)
-	}
-}
-
-func TestBlockBuilder_WithMultipleTenants_PullMode(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancelCause(context.Background())
-	t.Cleanup(func() { cancel(errors.New("test done")) })
-
-	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-
-	kafkaClient := mustKafkaClient(t, kafkaAddr)
-	kafkaClient.AddConsumeTopics(testTopic)
-
-	cfg, overrides := blockBuilderPullModeConfig(t, kafkaAddr)
-
-	cycleEndStartup := cycleEndBefore(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
-	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-cfg.ConsumeInterval)
-	firstTime := kafkaRecTime
-
-	scheduler := &mockSchedulerClient{}
-	scheduler.addJob(
-		schedulerpb.JobKey{
-			Id:    "test-job-4898",
-			Epoch: 90003,
-		},
-		schedulerpb.JobSpec{
-			Topic:          testTopic,
-			Partition:      0,
-			StartOffset:    0,
-			EndOffset:      30,
-			CommitRecTs:    firstTime,
-			LastSeenOffset: 0,
-			LastBlockEndTs: firstTime,
-			CycleEndTs:     cycleEndStartup,
-			CycleEndOffset: 30,
-		},
-	)
-
-	producedPerTenantSamples := make(map[string][]mimirpb.Sample, 0)
-	tenants := []string{"1", "2", "3"}
-
-	// Producing some records for multiple tenants
-	for range 10 {
-		for _, tenant := range tenants {
-			samples := produceSamples(ctx, t, kafkaClient, 0, kafkaRecTime, tenant, kafkaRecTime)
-			producedPerTenantSamples[tenant] = append(producedPerTenantSamples[tenant], samples...)
-		}
-
-		kafkaRecTime = kafkaRecTime.Add(15 * time.Second)
-	}
-
-	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
-	require.NoError(t, err)
-
-	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
-	})
-
-	// Wait for end of the cycles. We expect at least several cycles because of how the pushed records were structured.
-	require.Eventually(t, func() bool {
-		return scheduler.completeJobCallCount() > 0
-	}, 5*time.Second, 100*time.Millisecond, "expected job completion")
-
-	require.EqualValues(t,
-		[]schedulerpb.JobKey{{Id: "test-job-4898", Epoch: 90003}},
-		scheduler.completeJobCalls,
-	)
 
 	for _, tenant := range tenants {
 		compareQueryWithDir(t,
@@ -1049,90 +824,6 @@ func TestPartitionStateFromLag(t *testing.T) {
 	}
 }
 
-func TestPullMode(t *testing.T) {
-	ctx, cancel := context.WithCancelCause(context.Background())
-	t.Cleanup(func() { cancel(errors.New("test done")) })
-
-	_, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
-	kafkaClient := mustKafkaClient(t, kafkaAddr)
-	kafkaClient.AddConsumeTopics(testTopic)
-
-	cfg, overrides := blockBuilderPullModeConfig(t, kafkaAddr)
-
-	startTime := time.Date(2024, 12, 20, 6, 10, 0, 0, time.UTC)
-	var expSamples []mimirpb.Sample
-
-	for i := range 5 {
-		expSamples = append(expSamples, produceSamples(ctx, t, kafkaClient, 0, startTime, "1",
-			startTime.Add(time.Duration(i)*time.Hour),
-		)...)
-		expSamples = append(expSamples, produceSamples(ctx, t, kafkaClient, 1, startTime, "1",
-			// Shift slightly to avoid duplicate timestamps.
-			startTime.Add(time.Duration(i)*time.Hour).Add(1*time.Minute),
-		)...)
-	}
-
-	scheduler := &mockSchedulerClient{}
-	scheduler.addJob(
-		schedulerpb.JobKey{
-			Id:    "test-job-p0-0",
-			Epoch: 220,
-		},
-		schedulerpb.JobSpec{
-			Topic:          testTopic,
-			Partition:      0,
-			StartOffset:    0,
-			EndOffset:      6,
-			CommitRecTs:    startTime.Add(-1 * time.Minute),
-			LastSeenOffset: 0,
-			LastBlockEndTs: startTime.Add(-1 * time.Minute),
-			CycleEndTs:     startTime.Add(6 * time.Hour),
-			CycleEndOffset: 5,
-		},
-	)
-	scheduler.addJob(
-		schedulerpb.JobKey{
-			Id:    "test-job-p1-0",
-			Epoch: 233,
-		},
-		schedulerpb.JobSpec{
-			Topic:          testTopic,
-			Partition:      1,
-			StartOffset:    0,
-			EndOffset:      6,
-			CommitRecTs:    startTime.Add(-1 * time.Minute),
-			LastSeenOffset: 0,
-			LastBlockEndTs: startTime.Add(-1 * time.Minute),
-			CycleEndTs:     startTime.Add(6 * time.Hour),
-			CycleEndOffset: 5,
-		},
-	)
-
-	bb, err := newWithSchedulerClient(cfg, test.NewTestingLogger(t), prometheus.NewPedanticRegistry(), overrides, scheduler)
-	require.NoError(t, err)
-
-	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
-		require.Equal(t, 1, scheduler.closeCallCount())
-	})
-
-	require.Eventually(t, func() bool {
-		return scheduler.completeJobCallCount() == 2
-	}, 5*time.Second, 100*time.Millisecond, "expected to complete two jobs")
-
-	require.EqualValues(t,
-		[]schedulerpb.JobKey{{Id: "test-job-p0-0", Epoch: 220}, {Id: "test-job-p1-0", Epoch: 233}},
-		scheduler.completeJobCalls,
-	)
-
-	compareQueryWithDir(t,
-		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
-		expSamples, nil,
-		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
-	)
-}
-
 func TestNoPartiallyConsumedRegions(t *testing.T) {
 	t.Parallel()
 
@@ -1438,26 +1129,8 @@ func (m *mockSchedulerClient) addJob(key schedulerpb.JobKey, spec schedulerpb.Jo
 	}{key: key, spec: spec})
 }
 
-func (m *mockSchedulerClient) runCallCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.runCalls
-}
-
-func (m *mockSchedulerClient) getJobCallCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.getJobCalls
-}
-
 func (m *mockSchedulerClient) completeJobCallCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.completeJobCalls)
-}
-
-func (m *mockSchedulerClient) closeCallCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.closeCalls
 }
