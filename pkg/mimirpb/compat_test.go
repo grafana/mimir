@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -787,4 +788,93 @@ func makeSeries(n int) [][]LabelAdapter {
 	}
 
 	return series
+}
+
+func TestWriteRequestSourceConversion(t *testing.T) {
+	tests := []struct {
+		name     string
+		v1Source WriteRequest_SourceEnum
+		v2Source WriteRequestV2_SourceEnum
+	}{
+		{
+			name:     "api",
+			v1Source: API,
+			v2Source: SOURCE_API,
+		},
+		{
+			name:     "rule",
+			v1Source: RULE,
+			v2Source: SOURCE_RULE,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v2 := FromWriteRequestSourceToWriteRequestV2Source(tt.v1Source)
+			require.Equal(t, tt.v2Source, v2)
+
+			v1 := FromWriteRequestV2SourceToWriteRequestSource(tt.v2Source)
+			require.Equal(t, tt.v1Source, v1)
+		})
+	}
+}
+
+func TestMetricMetadataConversion(t *testing.T) {
+	symbols := writev2.NewSymbolTable()
+	symbols.Symbolize("help text")
+	symbols.Symbolize("unit text")
+
+	tests := []struct {
+		name    string
+		v1      *MetricMetadata
+		v2      MetricMetadataV2
+		symbols []string
+	}{
+		{
+			name: "complete metadata",
+			v1: &MetricMetadata{
+				Type: COUNTER,
+				Help: "help text",
+				Unit: "unit text",
+			},
+			v2: MetricMetadataV2{
+				Type:    MetricMetadataV2_MetricType(COUNTER),
+				HelpRef: 1,
+				UnitRef: 2,
+			},
+			symbols: symbols.Symbols(),
+		},
+		{
+			name: "metadata without help and unit",
+			v1: &MetricMetadata{
+				Type: GAUGE,
+			},
+			v2: MetricMetadataV2{
+				Type: MetricMetadataV2_MetricType(GAUGE),
+			},
+			symbols: symbols.Symbols(),
+		},
+		{
+			name:    "nil metadata",
+			v1:      nil,
+			v2:      MetricMetadataV2{},
+			symbols: symbols.Symbols(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test V1 -> V2 conversion
+			gotV2 := FromMetricMetadataToMetricMetadataV2(tt.v1, symbols)
+			require.Equal(t, tt.v2, gotV2)
+
+			// Test V2 -> V1 conversion
+			gotV1 := FromMetricMetadataV2ToMetricMetadata(tt.v2, tt.symbols)
+			if tt.v1 == nil {
+				require.Nil(t, gotV1)
+			} else {
+				require.Equal(t, *tt.v1, *gotV1)
+			}
+		})
+	}
 }

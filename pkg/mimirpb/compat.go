@@ -19,6 +19,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
+	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/jsonutil"
 )
@@ -673,4 +675,141 @@ loop:
 	}
 
 	return numLabels, true
+}
+
+func FromWriteRequestToWriteRequestV2(req *WriteRequest) *WriteRequestV2 {
+	if req == nil {
+		return nil
+	}
+
+	source := FromWriteRequestSourceToWriteRequestV2Source(req.Source)
+	symbols := writev2.NewSymbolTable()
+
+	timeseries := make([]TimeSeriesV2, 0, len(req.Timeseries))
+	for i, ts := range req.Timeseries {
+		buf := make([]uint32, len(ts.Labels)*2)
+		labelRefs := symbols.SymbolizeLabels(FromLabelAdaptersToLabels(ts.Labels), buf)
+
+		var metadata MetricMetadataV2
+		if i < len(req.Metadata) {
+			metadata = FromMetricMetadataToMetricMetadataV2(req.Metadata[i], symbols)
+		}
+
+		timeseries = append(timeseries, TimeSeriesV2{
+			LabelsRefs:       labelRefs,
+			Samples:          ts.Samples,
+			Histograms:       ts.Histograms,
+			Exemplars:        ts.Exemplars,
+			Metadata:         metadata,
+			CreatedTimestamp: 0, // This field is not present in V1, defaulting to 0
+		})
+	}
+
+	return &WriteRequestV2{
+		Source:                   source,
+		Symbols:                  symbols.Symbols(),
+		Timeseries:               timeseries,
+		SkipLabelValidation:      req.SkipLabelValidation,
+		SkipLabelCountValidation: req.SkipLabelCountValidation,
+	}
+}
+
+func FromWriteRequestV2ToWriteRequest(req *WriteRequestV2) *WriteRequest {
+	if req == nil {
+		return nil
+	}
+
+	source := FromWriteRequestV2SourceToWriteRequestSource(req.Source)
+	symbols := req.Symbols
+
+	timeseries := make([]PreallocTimeseries, 0, len(req.Timeseries))
+	metadata := make([]*MetricMetadata, 0, len(req.Timeseries))
+
+	for _, ts := range req.Timeseries {
+		sb := labels.NewScratchBuilder(len(ts.LabelsRefs) / 2)
+		lbls := desymbolizeLabels(&sb, ts.LabelsRefs, symbols)
+		adps := FromLabelsToLabelAdapters(lbls)
+
+		tsv1 := PreallocTimeseries{
+			TimeSeries: &TimeSeries{
+				Labels:     adps,
+				Samples:    ts.Samples,
+				Histograms: ts.Histograms,
+				Exemplars:  ts.Exemplars,
+			},
+		}
+		metadata = append(metadata, FromMetricMetadataV2ToMetricMetadata(ts.Metadata, symbols))
+		timeseries = append(timeseries, tsv1)
+	}
+
+	return &WriteRequest{
+		Source:                   source,
+		Timeseries:               timeseries,
+		Metadata:                 metadata,
+		SkipLabelValidation:      req.SkipLabelValidation,
+		SkipLabelCountValidation: req.SkipLabelCountValidation,
+	}
+}
+
+func FromMetricMetadataToMetricMetadataV2(metadata *MetricMetadata, symbols writev2.SymbolsTable) MetricMetadataV2 {
+	if metadata == nil {
+		return MetricMetadataV2{}
+	}
+
+	result := MetricMetadataV2{
+		Type: MetricMetadataV2_MetricType(metadata.Type),
+	}
+
+	if metadata.Help != "" {
+		result.HelpRef = symbols.Symbolize(metadata.Help)
+	}
+	if metadata.Unit != "" {
+		result.UnitRef = symbols.Symbolize(metadata.Unit)
+	}
+
+	return result
+}
+
+func FromMetricMetadataV2ToMetricMetadata(metadata MetricMetadataV2, symbols []string) *MetricMetadata {
+	if metadata == (MetricMetadataV2{}) {
+		return nil
+	}
+
+	return &MetricMetadata{
+		Type: MetricMetadata_MetricType(metadata.Type),
+		Help: symbols[metadata.HelpRef],
+		Unit: symbols[metadata.UnitRef],
+	}
+}
+
+func FromWriteRequestSourceToWriteRequestV2Source(source WriteRequest_SourceEnum) WriteRequestV2_SourceEnum {
+	switch source {
+	case API:
+		return SOURCE_API
+	case RULE:
+		return SOURCE_RULE
+	default:
+		return SOURCE_API
+	}
+}
+
+func FromWriteRequestV2SourceToWriteRequestSource(source WriteRequestV2_SourceEnum) WriteRequest_SourceEnum {
+	switch source {
+	case SOURCE_API:
+		return API
+	case SOURCE_RULE:
+		return RULE
+	default:
+		return API
+	}
+}
+
+// desymbolizeLabels decodes label references, with given symbols to labels.
+func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) labels.Labels {
+	b.Reset()
+	for i := 0; i < len(labelRefs); i += 2 {
+		b.Add(symbols[labelRefs[i]], symbols[labelRefs[i+1]])
+	}
+	b.Sort()
+	return b.Labels()
 }
