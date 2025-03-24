@@ -341,7 +341,7 @@ func TestOffsetMovement(t *testing.T) {
 	requireOffset(t, sched.committed, "ingest", 2, 6222, "should create knowledge of partition 2")
 }
 
-func TestAdvanceCommitted(t *testing.T) {
+func TestKafkaFlush(t *testing.T) {
 	sched, _ := mustScheduler(t)
 	ctx := context.Background()
 	var err error
