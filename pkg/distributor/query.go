@@ -431,7 +431,7 @@ func receiveResponse(stream ingester_client.Ingester_QueryStreamClient, streamin
 		streamingSeriesCount += len(resp.StreamingSeries)
 
 		for _, s := range resp.StreamingSeries {
-			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
+			l := mimirpb.FromLabelAdaptersToLabels(s.Labels)
 
 			if err := queryLimiter.AddSeries(l); err != nil {
 				return 0, nil, false, err
