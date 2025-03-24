@@ -729,7 +729,7 @@ consumerLoop:
 		// PollFetches can return a non-failed fetch with zero records. In such a case, with only the fetches at hands,
 		// we cannot tell if the consumer has already reached the latest end of the partition, i.e. no more records to consume,
 		// or there is more data in the backlog, and we must retry the poll. That's why the consumer loop above has to guard
-		// the iterations against the endOffset, so it retried the polling up until the expected end of the partition is reached.
+		// the iterations against the endOffset, so it retries the polling up until the expected end of the partition is reached.
 		fetches := b.kafkaClient.PollFetches(ctx)
 		fetches.EachError(func(_ string, _ int32, err error) {
 			if !errors.Is(err, context.Canceled) {
