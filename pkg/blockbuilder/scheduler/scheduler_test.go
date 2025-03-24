@@ -341,50 +341,42 @@ func TestOffsetMovement(t *testing.T) {
 	requireOffset(t, sched.committed, "ingest", 2, 6222, "should create knowledge of partition 2")
 }
 
-func TestKafkaFlush(t *testing.T) {
+func TestAdvanceCommitted(t *testing.T) {
 	sched, _ := mustScheduler(t)
-
 	ctx := context.Background()
-	l, err := sched.fetchLag(ctx)
+	var err error
+	sched.committed, err = sched.fetchCommittedOffsets(ctx)
 	require.NoError(t, err)
-	sched.committed = commitOffsetsFromLag(l)
 
 	sched.completeObservationMode()
 
-	flushAndRequireOffsets := func(topic string, offsets map[int32]int64) {
+	flushAndRequireOffsets := func(topic string, offsets map[int32]int64, args ...interface{}) {
 		require.NoError(t, sched.flushOffsetsToKafka(ctx))
-		l, err = sched.fetchLag(ctx)
+		offs, err := sched.fetchCommittedOffsets(ctx)
 		require.NoError(t, err)
-		offs := commitOffsetsFromLag(l)
 		for partition, expected := range offsets {
-			requireOffset(t, offs, topic, partition, expected)
+			requireOffset(t, offs, topic, partition, expected, args...)
 		}
 	}
 
-	flushAndRequireOffsets("ingest", map[int32]int64{
-		0: 0,
-		1: 0,
-		2: 0,
-		3: 0,
-	})
+	flushAndRequireOffsets("ingest", map[int32]int64{}, "no group found -> no offsets")
 
 	sched.advanceCommittedOffset("ingest", 1, 2000)
 	flushAndRequireOffsets("ingest", map[int32]int64{
-		0: 0,
 		1: 2000,
-		2: 0,
-		3: 0,
 	})
 
-	// Introducing a partition that wasn't initially present should work.
 	sched.advanceCommittedOffset("ingest", 4, 65535)
 	flushAndRequireOffsets("ingest", map[int32]int64{
-		0: 0,
 		1: 2000,
-		2: 0,
-		3: 0,
 		4: 65535,
 	})
+
+	sched.advanceCommittedOffset("ingest", 1, 4000)
+	flushAndRequireOffsets("ingest", map[int32]int64{
+		1: 4000,
+		4: 65535,
+	}, "should be able to advance an existing offset")
 }
 
 func TestMonitor(t *testing.T) {

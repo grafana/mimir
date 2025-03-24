@@ -17,9 +17,9 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kerr"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/blockbuilder"
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/ingest"
 )
@@ -83,11 +83,15 @@ func (s *BlockBuilderScheduler) starting(ctx context.Context) error {
 
 	go func() {
 		defer wg.Done()
-		lag, err := s.fetchLag(ctx)
+
+		c, err := s.fetchCommittedOffsets(ctx)
 		if err != nil {
 			panic(err)
 		}
-		s.committed = commitOffsetsFromLag(lag)
+
+		s.mu.Lock()
+		s.committed = c
+		s.mu.Unlock()
 	}()
 	go func() {
 		defer wg.Done()
@@ -179,6 +183,8 @@ type partitionOffsets struct {
 	end   int64
 }
 
+// consumptionOffsets returns the begin and end offsets for each partition, falling back to the
+// fallbackTime if there is no committed offset for a partition.
 func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic string, committed kadm.Offsets, fallbackTime time.Time) (map[topicPartition]partitionOffsets, error) {
 	startOffsets, err := s.adminClient.ListStartOffsets(ctx, topic)
 	if err != nil {
@@ -193,7 +199,7 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 		return nil, fmt.Errorf("list fallback offsets: %w", err)
 	}
 
-	offs := make(map[topicPartition]partitionOffsets)
+	offs := make(map[topicPartition]partitionOffsets, len(startOffsets.Offsets()))
 
 	// If the group-partition in offsets doesn't have a commit, fall back depending on where fallbackOffsetMillis points at.
 	for t, pt := range startOffsets.Offsets() {
@@ -375,36 +381,49 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 	return jobs, nil
 }
 
-func (s *BlockBuilderScheduler) fetchLag(ctx context.Context) (kadm.GroupLag, error) {
+// fetchCommittedOffsets fetches the committed offsets for the given consumer group.
+// It returns empty offsets if the consumer group is not found.
+func (s *BlockBuilderScheduler) fetchCommittedOffsets(ctx context.Context) (kadm.Offsets, error) {
 	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: time.Second,
 		MaxRetries: 10,
 	})
 	var lastErr error
+
 	for boff.Ongoing() {
-		groupLag, err := blockbuilder.GetGroupLag(ctx, s.adminClient, s.cfg.Kafka.Topic, s.cfg.ConsumerGroup, 0)
+		offs, err := s.adminClient.FetchOffsets(ctx, s.cfg.ConsumerGroup)
 		if err != nil {
-			lastErr = fmt.Errorf("lag: %w", err)
+			if !errors.Is(err, kerr.GroupIDNotFound) {
+				lastErr = fmt.Errorf("fetch offsets: %w", err)
+				boff.Wait()
+				continue
+			}
+		}
+
+		if err := offs.Error(); err != nil {
+			lastErr = fmt.Errorf("fetch offsets got error in response: %w", err)
 			boff.Wait()
 			continue
 		}
 
-		return groupLag, nil
-	}
+		committed := make(kadm.Offsets)
 
-	return kadm.GroupLag{}, lastErr
-}
-
-// commitOffsetsFromLag computes the committed offset info from the given lag.
-func commitOffsetsFromLag(lag kadm.GroupLag) kadm.Offsets {
-	offsets := make(kadm.Offsets)
-	for _, ps := range lag {
-		for _, gl := range ps {
-			offsets.Add(gl.Commit)
+		for _, ps := range offs {
+			for _, o := range ps {
+				committed.Add(kadm.Offset{
+					Topic:       o.Topic,
+					Partition:   o.Partition,
+					At:          o.At,
+					LeaderEpoch: o.LeaderEpoch,
+				})
+			}
 		}
+
+		return committed, nil
 	}
-	return offsets
+
+	return kadm.Offsets{}, lastErr
 }
 
 func (s *BlockBuilderScheduler) snapCommitted() kadm.Offsets {
