@@ -31,6 +31,7 @@ const (
 	maxCasRetries              = 10          // max retries in CAS operation
 	noChangeDetectedRetrySleep = time.Second // how long to sleep after no change was detected in CAS
 	notifyMsgQueueSize         = 1024        // size of buffered channels to handle memberlist messages
+	watchPrefixBufferSize      = 128         // size of buffered channel for the WatchPrefix function
 )
 
 // Client implements kv.Client interface, by using memberlist.KV
@@ -171,6 +172,9 @@ type KVConfig struct {
 	// How much space to use to keep received and sent messages in memory (for troubleshooting).
 	MessageHistoryBufferBytes int `yaml:"message_history_buffer_bytes" category:"advanced"`
 
+	// Size of the buffer for key watchers.
+	WatchPrefixBufferSize int `yaml:"watch_prefix_buffer_size" category:"advanced"`
+
 	TCPTransport TCPTransportConfig `yaml:",inline"`
 
 	MetricsNamespace string `yaml:"-"`
@@ -210,6 +214,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.StringVar(&cfg.ClusterLabel, prefix+"memberlist.cluster-label", mlDefaults.Label, "The cluster label is an optional string to include in outbound packets and gossip streams. Other members in the memberlist cluster will discard any message whose label doesn't match the configured one, unless the 'cluster-label-verification-disabled' configuration option is set to true.")
 	f.BoolVar(&cfg.ClusterLabelVerificationDisabled, prefix+"memberlist.cluster-label-verification-disabled", mlDefaults.SkipInboundLabelCheck, "When true, memberlist doesn't verify that inbound packets and gossip streams have the cluster label matching the configured one. This verification should be disabled while rolling out the change to the configured cluster label in a live memberlist cluster.")
 	f.DurationVar(&cfg.BroadcastTimeoutForLocalUpdatesOnShutdown, prefix+"memberlist.broadcast-timeout-for-local-updates-on-shutdown", 10*time.Second, "Timeout for broadcasting all remaining locally-generated updates to other nodes when shutting down. Only used if there are nodes left in the memberlist cluster, and only applies to locally-generated updates, not to broadcast messages that are result of incoming gossip updates. 0 = no timeout, wait until all locally-generated updates are sent.")
+	f.IntVar(&cfg.WatchPrefixBufferSize, prefix+"memberlist.watch-prefix-buffer-size", watchPrefixBufferSize, "Size of the buffered channel for the WatchPrefix function.")
 
 	cfg.TCPTransport.RegisterFlagsWithPrefix(f, prefix)
 }
@@ -298,6 +303,7 @@ type KV struct {
 	casFailures                         prometheus.Counter
 	casSuccesses                        prometheus.Counter
 	watchPrefixDroppedNotifications     *prometheus.CounterVec
+	numberOfKeyNotifications            prometheus.Gauge
 
 	storeValuesDesc        *prometheus.Desc
 	storeTombstones        *prometheus.GaugeVec
@@ -896,7 +902,7 @@ func (m *KV) WatchKey(ctx context.Context, key string, codec codec.Codec, f func
 // Watching ends when 'f' returns false, context is done, or this client is shut down.
 func (m *KV) WatchPrefix(ctx context.Context, prefix string, codec codec.Codec, f func(string, interface{}) bool) {
 	// we use bigger buffer here, since keys are interesting and we don't want to lose them.
-	w := make(chan string, 16)
+	w := make(chan string, m.cfg.WatchPrefixBufferSize)
 
 	// register watcher
 	m.watchersMu.Lock()
@@ -991,6 +997,7 @@ func (m *KV) sendKeyNotifications() {
 			return nil
 		}
 		newMap := make(map[string]struct{})
+		m.numberOfKeyNotifications.Set(float64(len(m.keyNotifications)))
 		notifs := m.keyNotifications
 		m.keyNotifications = newMap
 		return notifs

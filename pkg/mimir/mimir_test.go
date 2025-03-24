@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/memberlist"
 	dslog "github.com/grafana/dskit/log"
 	dskit_metrics "github.com/grafana/dskit/metrics"
 	"github.com/grafana/dskit/server"
@@ -164,6 +165,9 @@ func TestMimir(t *testing.T) {
 		}},
 		Querier: querier.Config{
 			QueryEngine: "prometheus",
+		},
+		MemberlistKV: memberlist.KVConfig{
+			WatchPrefixBufferSize: 128,
 		},
 	}
 	require.NoError(t, cfg.Server.LogLevel.Set("info"))
