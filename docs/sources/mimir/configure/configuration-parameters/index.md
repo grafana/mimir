@@ -1876,7 +1876,7 @@ results_cache:
 # CLI flag: -query-frontend.shard-active-series-queries
 [shard_active_series_queries: <boolean> | default = false]
 
-# (experimental) True to enable dynamic step calculation for range series queries.
+# (experimental) Set to true to enable dynamic step calculation for range series queries.
 # CLI flag: -query-frontend.dynamic_step_enabled
 [dynamic_step_enabled: <boolean> | default = false]
 
