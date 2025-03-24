@@ -8,8 +8,8 @@ keywords:
   - Grafana Enterprise Metrics
   - Grafana metrics
 cascade:
-  MIMIR_VERSION: "v2.15.x"
-  GEM_VERSION: "v2.15.x"
+  MIMIR_VERSION: "v2.16.x"
+  GEM_VERSION: "v2.16.x"
   ALLOY_VERSION: "latest"
 ---
 
