@@ -635,7 +635,7 @@ func TestWriter_WriteSync(t *testing.T) {
 		}
 
 		// Estimate the size of each record written in this test.
-		writeReqRecords, err := marshalWriteRequestToRecords(partitionID, tenantID, createWriteRequest(), maxProducerRecordDataBytesLimit)
+		writeReqRecords, err := marshalWriteRequestToRecords(partitionID, tenantID, createWriteRequest(), maxProducerRecordDataBytesLimit, protoWriteRequestRecordSerializer{})
 		require.NoError(t, err)
 		require.Len(t, writeReqRecords, 1)
 		estimatedRecordSize := len(writeReqRecords[0].Value)
@@ -889,7 +889,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 	require.NotZero(t, req.Metadata)
 
 	t.Run("should return 1 record if the input WriteRequest size is less than the size limit", func(t *testing.T) {
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size()*2)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, req.Size()*2, protoWriteRequestRecordSerializer{})
 		require.NoError(t, err)
 		require.Len(t, records, 1)
 
@@ -903,7 +903,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 	t.Run("should return multiple records if the input WriteRequest size is bigger than the size limit", func(t *testing.T) {
 		const limit = 100
 
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit, protoWriteRequestRecordSerializer{})
 		require.NoError(t, err)
 		require.Len(t, records, 4)
 
@@ -946,7 +946,7 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 	t.Run("should return multiple records, larger than the limit, if the Timeseries and Metadata entries in the WriteRequest are bigger than limit", func(t *testing.T) {
 		const limit = 1
 
-		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit)
+		records, err := marshalWriteRequestToRecords(1, "user-1", req, limit, protoWriteRequestRecordSerializer{})
 		require.NoError(t, err)
 		require.Len(t, records, 6)
 
@@ -1006,7 +1006,7 @@ func BenchmarkMarshalWriteRequestToRecords_NoSplitting(b *testing.B) {
 
 	b.Run("marshalWriteRequestToRecords()", func(b *testing.B) {
 		for n := 0; n < b.N; n++ {
-			records, err := marshalWriteRequestToRecords(1, "user-1", req, 1024*1024*1024)
+			records, err := marshalWriteRequestToRecords(1, "user-1", req, 1024*1024*1024, protoWriteRequestRecordSerializer{})
 			if err != nil {
 				b.Fatal(err)
 			}

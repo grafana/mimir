@@ -60,8 +60,9 @@ type Writer struct {
 
 	// We support multiple Kafka clients to better parallelize the workload. The number of
 	// clients is fixed during the Writer lifecycle, but they're initialised lazily.
-	writersMx sync.RWMutex
-	writers   []*KafkaProducer
+	writersMx  sync.RWMutex
+	writers    []*KafkaProducer
+	serializer recordSerializer
 
 	// Metrics.
 	writeLatency      prometheus.Histogram
@@ -78,6 +79,7 @@ func NewWriter(kafkaCfg KafkaConfig, logger log.Logger, reg prometheus.Registere
 		logger:                     logger,
 		registerer:                 reg,
 		writers:                    make([]*KafkaProducer, kafkaCfg.WriteClients),
+		serializer:                 serializerFromCfg(kafkaCfg),
 		maxInflightProduceRequests: 20,
 
 		// Metrics.
@@ -139,7 +141,7 @@ func (w *Writer) WriteSync(ctx context.Context, partitionID int32, userID string
 	}
 
 	// Create records out of the write request.
-	records, err := marshalWriteRequestToRecords(partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes)
+	records, err := marshalWriteRequestToRecords(partitionID, userID, req, w.kafkaCfg.ProducerMaxRecordSizeBytes, w.serializer)
 	if err != nil {
 		return err
 	}
@@ -220,12 +222,12 @@ func (w *Writer) getKafkaWriterForPartition(partitionID int32) (*KafkaProducer, 
 // have their data size limited to maxSize. The reason is that the WriteRequest is split
 // by each individual Timeseries and Metadata: if a single Timeseries or Metadata is bigger than
 // maxSize, than the resulting record will be bigger than the limit as well.
-func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int) ([]*kgo.Record, error) {
+func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimirpb.WriteRequest, maxSize int, serializer recordSerializer) ([]*kgo.Record, error) {
 	reqSize := req.Size()
 
 	if reqSize <= maxSize {
 		// No need to split the request. We can take a fast path.
-		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, reqSize)
+		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, reqSize, serializer)
 		if err != nil {
 			return nil, err
 		}
@@ -233,14 +235,14 @@ func marshalWriteRequestToRecords(partitionID int32, tenantID string, req *mimir
 		return []*kgo.Record{rec}, nil
 	}
 
-	return marshalWriteRequestsToRecords(partitionID, tenantID, mimirpb.SplitWriteRequestByMaxMarshalSize(req, reqSize, maxSize))
+	return marshalWriteRequestsToRecords(partitionID, tenantID, mimirpb.SplitWriteRequestByMaxMarshalSize(req, reqSize, maxSize), serializer)
 }
 
-func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*mimirpb.WriteRequest) ([]*kgo.Record, error) {
+func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*mimirpb.WriteRequest, serializer recordSerializer) ([]*kgo.Record, error) {
 	records := make([]*kgo.Record, 0, len(reqs))
 
 	for _, req := range reqs {
-		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, req.Size())
+		rec, err := marshalWriteRequestToRecord(partitionID, tenantID, req, req.Size(), serializer)
 		if err != nil {
 			return nil, err
 		}
@@ -251,20 +253,56 @@ func marshalWriteRequestsToRecords(partitionID int32, tenantID string, reqs []*m
 	return records, nil
 }
 
-func marshalWriteRequestToRecord(partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize int) (*kgo.Record, error) {
+func marshalWriteRequestToRecord(partitionID int32, tenantID string, req *mimirpb.WriteRequest, reqSize int, serializer recordSerializer) (*kgo.Record, error) {
 	// Marshal the request.
-	data := make([]byte, reqSize)
-	n, err := req.MarshalToSizedBuffer(data[:reqSize])
+	data, err := serializer.serialize(req, reqSize)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to serialise write request")
 	}
-	data = data[:n]
 
 	return &kgo.Record{
 		Key:       []byte(tenantID), // We don't partition based on the key, so the value here doesn't make any difference.
 		Value:     data,
 		Partition: partitionID,
 	}, nil
+}
+
+type recordSerializer interface {
+	serialize(req *mimirpb.WriteRequest, reqSize int) ([]byte, error)
+}
+
+func serializerFromCfg(k KafkaConfig) recordSerializer {
+	if k.FormatRemoteWriteV2Enabled {
+		return remoteWriteV2RecordSerializer{}
+	}
+	return protoWriteRequestRecordSerializer{}
+}
+
+type protoWriteRequestRecordSerializer struct{}
+
+func (p protoWriteRequestRecordSerializer) serialize(req *mimirpb.WriteRequest, reqSize int) ([]byte, error) {
+	data := make([]byte, reqSize)
+	n, err := req.MarshalToSizedBuffer(data[:reqSize])
+	if err != nil {
+		return nil, err
+	}
+	data = data[:n]
+	return data, nil
+}
+
+type remoteWriteV2RecordSerializer struct{}
+
+func (r remoteWriteV2RecordSerializer) serialize(req *mimirpb.WriteRequest, reqSize int) ([]byte, error) {
+	reqV2 := mimirpb.FromWriteRequestToWriteRequestV2(req)
+	reqSize = reqV2.Size()
+
+	data := make([]byte, reqSize)
+	n, err := reqV2.MarshalToSizedBuffer(data[:reqSize])
+	if err != nil {
+		return nil, err
+	}
+	data = data[:n]
+	return data, nil
 }
 
 func successfulProduceRecordsStats(results kgo.ProduceResults) (count, sizeBytes int) {

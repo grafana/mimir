@@ -119,6 +119,8 @@ type KafkaConfig struct {
 	IngestionConcurrencyMax       int `yaml:"ingestion_concurrency_max"`
 	IngestionConcurrencyBatchSize int `yaml:"ingestion_concurrency_batch_size"`
 
+	FormatRemoteWriteV2Enabled bool `yaml:"format_remote_write_v2_enabled"`
+
 	// IngestionConcurrencyQueueCapacity controls how many batches can be enqueued for flushing series to the TSDB HEAD.
 	// We don't want to push any batches in parallel and instead want to prepare the next ones while the current one finishes, hence the buffer of 5.
 	// For example, if we flush 1 batch/sec, then batching 2 batches/sec doesn't make us faster.
@@ -182,6 +184,8 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.IntVar(&cfg.FetchConcurrencyMax, prefix+"fetch-concurrency-max", 0, "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.")
 	f.BoolVar(&cfg.UseCompressedBytesAsFetchMaxBytes, prefix+"use-compressed-bytes-as-fetch-max-bytes", true, "When enabled, the fetch request MaxBytes field is computed using the compressed size of previous records. When disabled, MaxBytes is computed using uncompressed bytes. Different Kafka implementations interpret MaxBytes differently.")
 	f.IntVar(&cfg.MaxBufferedBytes, prefix+"max-buffered-bytes", 100_000_000, "The maximum number of buffered records ready to be processed. This limit applies to the sum of all inflight requests. Set to 0 to disable the limit.")
+
+	f.BoolVar(&cfg.FormatRemoteWriteV2Enabled, prefix+"format-remote-write-v2-enabled", false, "Change the record format for the ingest queue to remote-write v2.0.")
 
 	f.IntVar(&cfg.IngestionConcurrencyMax, prefix+"ingestion-concurrency-max", 0, "The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.")
 	f.IntVar(&cfg.IngestionConcurrencyBatchSize, prefix+"ingestion-concurrency-batch-size", 150, "The number of timeseries to batch together before ingesting to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
