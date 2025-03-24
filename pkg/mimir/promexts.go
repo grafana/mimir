@@ -12,5 +12,5 @@ func init() {
 	promqlext.ExtendPromQL()
 	// Mimir doesn't support Prometheus' UTF-8 metric/label name scheme yet.
 	// nolint:staticcheck
-	model.NameValidationScheme = model.LegacyValidation
+	model.NameValidationScheme = model.UTF8Validation
 }
