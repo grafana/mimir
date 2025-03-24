@@ -1044,6 +1044,13 @@ func (t *Mimir) readyHandler(sm *services.Manager, shutdownRequested *atomic.Boo
 			}
 		}
 
+		if t.UsageTracker != nil {
+			if err := t.UsageTracker.CheckReady(r.Context()); err != nil {
+				http.Error(w, "Usage Tracker not ready: "+err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+		}
+
 		util.WriteTextResponse(w, "ready")
 	}
 }
