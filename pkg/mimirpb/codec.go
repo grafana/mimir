@@ -39,7 +39,7 @@ func messageV2Of(v any) protobufproto.Message {
 // Unmarshal is the same as google.golang.org/grpc/encoding/proto.codecV2's Unmarshal, but without buffer reuse,
 // as explained below.
 func (c *disablePoolingOnUnmarshalWorkaroundCodec) Unmarshal(data mem.BufferSlice, v any) error {
-	// Taking a reference to data and not freeing buf below ensures the buffer is never reused, which allows us to continue
+	// Not freeing buf below ensures the buffer is never reused, which allows us to continue
 	// using our custom unmarshalling logic that retains a reference the underlying byte slice to avoid copying.
 	//
 	// This is a temporary workaround until we've modified all instances of this unmarshalling logic to use something that
@@ -52,8 +52,6 @@ func (c *disablePoolingOnUnmarshalWorkaroundCodec) Unmarshal(data mem.BufferSlic
 	if vv == nil {
 		return fmt.Errorf("failed to unmarshal, message is %T, want proto.Message", v)
 	}
-
-	data.Ref() // HACK: take a reference to data, to ensure it's never freed - see above.
 
 	buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
 	// HACK: never call buf.Free() - see above.
