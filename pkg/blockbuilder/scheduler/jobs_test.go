@@ -24,7 +24,7 @@ func testSpecLess(a, b testSpec) bool {
 }
 
 func TestAssign(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess)
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess, noOpJobCreationPolicy[testSpec]{})
 
 	j0, j0spec, err := s.assign("w0")
 	require.Empty(t, j0.id)
@@ -52,7 +52,7 @@ func TestAssign(t *testing.T) {
 }
 
 func TestAssignComplete(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess)
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess, noOpJobCreationPolicy[testSpec]{})
 
 	{
 		err := s.completeJob(jobKey{"rando job", 965}, "w0")
@@ -96,7 +96,7 @@ func TestAssignComplete(t *testing.T) {
 }
 
 func TestLease(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess)
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess, noOpJobCreationPolicy[testSpec]{})
 	s.addOrUpdate("job1", testSpec{topic: "hello", commitRecTs: time.Now()})
 	jk, jspec, err := s.assign("w0")
 	require.NotZero(t, jk.id)
@@ -137,7 +137,7 @@ func TestLease(t *testing.T) {
 // TestImportJob tests the importJob method - the method that is called to learn
 // about jobs in-flight from a previous scheduler instance.
 func TestImportJob(t *testing.T) {
-	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess)
+	s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess, noOpJobCreationPolicy[testSpec]{})
 	spec := testSpec{commitRecTs: time.Now().Add(-1 * time.Hour)}
 	require.NoError(t, s.importJob(jobKey{"job1", 122}, "w0", spec))
 	require.NoError(t, s.importJob(jobKey{"job1", 123}, "w2", spec))
@@ -152,6 +152,44 @@ func TestImportJob(t *testing.T) {
 	require.Equal(t, spec, j.spec)
 	require.Equal(t, "w2", j.assignee)
 }
+
+// TestJobCreationPolicies tests the behavior of different job creation policies.
+func TestJobCreationPolicies(t *testing.T) {
+	t.Run("noOpJobCreationPolicy", func(t *testing.T) {
+		s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess, noOpJobCreationPolicy[testSpec]{})
+
+		// noOp policy should always allow job creation
+		s.addOrUpdate("job1", testSpec{topic: "topic1"})
+		s.addOrUpdate("job2", testSpec{topic: "topic2"})
+
+		_, ok1 := s.jobs["job1"]
+		_, ok2 := s.jobs["job2"]
+		require.True(t, ok1, "job1 should be created")
+		require.True(t, ok2, "job2 should be created")
+	})
+
+	t.Run("allowNone", func(t *testing.T) {
+		s := newJobQueue(988*time.Hour, test.NewTestingLogger(t), testSpecLess, allowNoneJobCreationPolicy[testSpec]{})
+
+		// allowNone policy should never allow job creation
+		s.addOrUpdate("job1", testSpec{topic: "topic1"})
+		s.addOrUpdate("job2", testSpec{topic: "topic2"})
+
+		_, ok1 := s.jobs["job1"]
+		_, ok2 := s.jobs["job2"]
+		require.False(t, ok1, "job1 should not be created")
+		require.False(t, ok2, "job2 should not be created")
+	})
+}
+
+// allowNoneJobCreationPolicy is a job creation policy that never allows job creation.
+type allowNoneJobCreationPolicy[T any] struct{}
+
+func (p allowNoneJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ []*T) bool {
+	return false
+}
+
+var _ jobCreationPolicy[any] = (*allowNoneJobCreationPolicy[any])(nil)
 
 func TestMinHeap(t *testing.T) {
 	n := 517

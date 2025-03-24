@@ -147,7 +147,15 @@ func (s *BlockBuilderScheduler) completeObservationMode() {
 		return
 	}
 
-	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, s.logger, specLessThan)
+	var policy jobCreationPolicy[schedulerpb.JobSpec]
+
+	if s.cfg.MaxJobsPerPartition > 0 {
+		policy = limitPerPartitionJobCreationPolicy{partitionLimit: s.cfg.MaxJobsPerPartition}
+	} else {
+		policy = noOpJobCreationPolicy[schedulerpb.JobSpec]{}
+	}
+
+	s.jobs = newJobQueue(s.cfg.JobLeaseExpiry, s.logger, specLessThan, policy)
 	s.finalizeObservations()
 	s.observations = nil
 	s.observationComplete = true
@@ -605,3 +613,25 @@ var _ schedulerpb.BlockBuilderSchedulerServer = (*BlockBuilderScheduler)(nil)
 func specLessThan(a, b schedulerpb.JobSpec) bool {
 	return a.CommitRecTs.Before(b.CommitRecTs)
 }
+
+type limitPerPartitionJobCreationPolicy struct {
+	partitionLimit int
+}
+
+// canCreateJob allows at most $partitionLimit jobs per partition.
+func (p limitPerPartitionJobCreationPolicy) canCreateJob(_ jobKey, spec *schedulerpb.JobSpec, existingJobs []*schedulerpb.JobSpec) bool {
+	remaining := p.partitionLimit - 1 // -1: we're about to add one.
+
+	for _, existing := range existingJobs {
+		if existing.Topic == spec.Topic && existing.Partition == spec.Partition {
+			remaining--
+			if remaining < 0 {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+var _ jobCreationPolicy[schedulerpb.JobSpec] = (*limitPerPartitionJobCreationPolicy)(nil)

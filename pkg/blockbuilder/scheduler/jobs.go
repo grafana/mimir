@@ -20,8 +20,9 @@ var (
 )
 
 type jobQueue[T any] struct {
-	leaseExpiry time.Duration
-	logger      log.Logger
+	leaseExpiry    time.Duration
+	logger         log.Logger
+	creationPolicy jobCreationPolicy[T]
 
 	mu         sync.Mutex
 	epoch      int64
@@ -29,10 +30,11 @@ type jobQueue[T any] struct {
 	unassigned jobHeap[*job[T]]
 }
 
-func newJobQueue[T any](leaseExpiry time.Duration, logger log.Logger, lessFunc func(T, T) bool) *jobQueue[T] {
+func newJobQueue[T any](leaseExpiry time.Duration, logger log.Logger, lessFunc func(T, T) bool, jobCreationPolicy jobCreationPolicy[T]) *jobQueue[T] {
 	return &jobQueue[T]{
-		leaseExpiry: leaseExpiry,
-		logger:      logger,
+		leaseExpiry:    leaseExpiry,
+		logger:         logger,
+		creationPolicy: jobCreationPolicy,
 
 		jobs: make(map[string]*job[T]),
 
@@ -126,7 +128,17 @@ func (s *jobQueue[T]) addOrUpdate(id string, spec T) {
 		return
 	}
 
-	// Otherwise, add a new job.
+	// Otherwise, we need to add a new job. See if the policy would allow it.
+
+	existingJobs := make([]*T, 0, len(s.jobs))
+	for _, j := range s.jobs {
+		existingJobs = append(existingJobs, &j.spec)
+	}
+	if !s.creationPolicy.canCreateJob(jobKey{id: id}, &spec, existingJobs) {
+		level.Debug(s.logger).Log("msg", "job creation policy disallowed job", "job_id", id)
+		return
+	}
+
 	j := &job[T]{
 		key: jobKey{
 			id:    id,
@@ -264,3 +276,15 @@ func (h *jobHeap[T]) Pop() any {
 }
 
 var _ heap.Interface = (*jobHeap[int])(nil)
+
+type jobCreationPolicy[T any] interface {
+	canCreateJob(jobKey, *T, []*T) bool
+}
+
+type noOpJobCreationPolicy[T any] struct{}
+
+func (p noOpJobCreationPolicy[T]) canCreateJob(_ jobKey, _ *T, _ []*T) bool {
+	return true
+}
+
+var _ jobCreationPolicy[any] = (*noOpJobCreationPolicy[any])(nil)

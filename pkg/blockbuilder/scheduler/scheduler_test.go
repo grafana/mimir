@@ -191,7 +191,7 @@ func TestObservations(t *testing.T) {
 	}
 
 	{
-		nq := newJobQueue(988*time.Hour, test.NewTestingLogger(t), specLessThan)
+		nq := newJobQueue(988*time.Hour, test.NewTestingLogger(t), specLessThan, noOpJobCreationPolicy[schedulerpb.JobSpec]{})
 		sched.jobs = nq
 		sched.finalizeObservations()
 		require.Len(t, nq.jobs, 0, "No observations, no jobs")
@@ -662,3 +662,50 @@ func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32,
 }
 
 var _ offsetStore = (*mockOffsetFinder)(nil)
+
+func TestLimitNPolicy(t *testing.T) {
+	allow1 := limitPerPartitionJobCreationPolicy{partitionLimit: 1}
+
+	ok := allow1.canCreateJob(jobKey{id: "job1"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 0}, []*schedulerpb.JobSpec{})
+	require.True(t, ok)
+
+	ok = allow1.canCreateJob(jobKey{id: "job4"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 0}, []*schedulerpb.JobSpec{
+		{Topic: "topic", Partition: 1},
+	})
+	require.True(t, ok)
+
+	ok = allow1.canCreateJob(jobKey{id: "job5"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 1}, []*schedulerpb.JobSpec{
+		{Topic: "topic", Partition: 1},
+	})
+	require.False(t, ok)
+
+	ok = allow1.canCreateJob(jobKey{id: "job5"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 1}, []*schedulerpb.JobSpec{
+		{Topic: "topic", Partition: 2},
+		{Topic: "topic", Partition: 3},
+		{Topic: "topic", Partition: 3},
+	})
+	require.True(t, ok)
+
+	allow2 := limitPerPartitionJobCreationPolicy{partitionLimit: 2}
+	ok = allow2.canCreateJob(jobKey{id: "job6"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 1}, []*schedulerpb.JobSpec{
+		{Topic: "topic", Partition: 2},
+		{Topic: "topic", Partition: 3},
+	})
+	require.True(t, ok)
+	ok = allow2.canCreateJob(jobKey{id: "job6"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 1}, []*schedulerpb.JobSpec{
+		{Topic: "topic", Partition: 1},
+		{Topic: "topic", Partition: 2},
+	})
+	require.True(t, ok)
+	ok = allow2.canCreateJob(jobKey{id: "job6"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 1}, []*schedulerpb.JobSpec{
+		{Topic: "topic", Partition: 1},
+		{Topic: "topic", Partition: 1},
+	})
+	require.False(t, ok)
+	ok = allow2.canCreateJob(jobKey{id: "job6"}, &schedulerpb.JobSpec{Topic: "topic", Partition: 1}, []*schedulerpb.JobSpec{
+		{Topic: "topic", Partition: 1},
+		{Topic: "topic", Partition: 1},
+		{Topic: "topic", Partition: 1},
+	})
+	require.False(t, ok)
+}
