@@ -878,3 +878,73 @@ func TestMetricMetadataConversion(t *testing.T) {
 		})
 	}
 }
+
+func TestV1MarshallsToEmptyV2(t *testing.T) {
+	req := &WriteRequest{
+		Source:              RULE,
+		SkipLabelValidation: true,
+		Timeseries: []PreallocTimeseries{
+			{TimeSeries: &TimeSeries{
+				Labels:     FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1", "pod", "test-application-123456")),
+				Samples:    []Sample{{TimestampMs: 20}},
+				Exemplars:  []Exemplar{{TimestampMs: 30}},
+				Histograms: []Histogram{{Timestamp: 10}},
+			}},
+			{TimeSeries: &TimeSeries{
+				Labels:  FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2", "pod", "test-application-123456")),
+				Samples: []Sample{{TimestampMs: 30}},
+			}},
+		},
+		Metadata: []*MetricMetadata{
+			{Type: COUNTER, MetricFamilyName: "series_1", Help: "This is the first test metric."},
+			{Type: COUNTER, MetricFamilyName: "series_2", Help: "This is the second test metric."},
+			{Type: COUNTER, MetricFamilyName: "series_3", Help: "This is the third test metric."},
+		},
+	}
+
+	reqSize := req.Size()
+	data := make([]byte, reqSize)
+	n, err := req.MarshalToSizedBuffer(data[:reqSize])
+	require.NoError(t, err)
+	data = data[:n]
+
+	reqv2 := &WriteRequestV2{}
+	err = reqv2.Unmarshal(data)
+	require.NoError(t, err)
+	require.Equal(t, SOURCE_RULE, reqv2.Source)
+	require.Nil(t, reqv2.Symbols)
+	require.Nil(t, reqv2.Timeseries)
+}
+
+func TestV2MarshallsToEmptyV1(t *testing.T) {
+	req := &WriteRequestV2{
+		Source:              SOURCE_RULE,
+		SkipLabelValidation: true,
+		Timeseries: []TimeSeriesV2{
+			{
+				LabelsRefs: []uint32{0, 1, 2, 3},
+				Samples:    []Sample{{TimestampMs: 20}},
+				Exemplars:  []Exemplar{{TimestampMs: 30}},
+				Histograms: []Histogram{{Timestamp: 10}},
+			},
+			{
+				LabelsRefs: []uint32{0, 4, 2, 3},
+				Samples:    []Sample{{TimestampMs: 30}},
+			},
+		},
+		Symbols: []string{labels.MetricName, "series_1", "pod", "test-application-123456", "series_2"},
+	}
+
+	reqSize := req.Size()
+	data := make([]byte, reqSize)
+	n, err := req.MarshalToSizedBuffer(data[:reqSize])
+	require.NoError(t, err)
+	data = data[:n]
+
+	reqv1 := &WriteRequest{}
+	err = reqv1.Unmarshal(data)
+	require.NoError(t, err)
+	require.Equal(t, RULE, reqv1.Source)
+	require.Nil(t, reqv1.Timeseries)
+	require.Nil(t, reqv1.Metadata)
+}
