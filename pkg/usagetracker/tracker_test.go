@@ -109,19 +109,20 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		require.Error(t, trackers["b1"].CheckReady(context.Background()), "Tracker b1 should not be ready yet")
 	})
 
-	t.Run("new instance takes partitions, old instance gracefully shut downs them", func(t *testing.T) {
+	t.Run("new instance takes partitions, old shut downs them", func(t *testing.T) {
 		t.Parallel()
 
 		// lostPartitionsShutdownGracePeriod should be long enough for this test not to be flaky,
 		// but also short enough to keep the test fast
 		const lostPartitionsShutdownGracePeriod = time.Second
-		configureLostPartitionsShutdownGracePeriod := func(cfg *Config) {
+		configure := func(cfg *Config) {
 			cfg.LostPartitionsShutdownGracePeriod = lostPartitionsShutdownGracePeriod
+			cfg.MaxPartitionsToCreatePerReconcile = testPartitionsCount
 		}
 
 		ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(t)
-		a0 := newTestUsageTracker(t, 0, "zone-a", ikv, pkv, cluster, configureLostPartitionsShutdownGracePeriod)
-		b0 := newTestUsageTracker(t, 0, "zone-b", ikv, pkv, cluster, configureLostPartitionsShutdownGracePeriod)
+		a0 := newTestUsageTracker(t, 0, "zone-a", ikv, pkv, cluster, configure)
+		b0 := newTestUsageTracker(t, 0, "zone-b", ikv, pkv, cluster, configure)
 		trackers := map[string]*UsageTracker{
 			"a0": a0,
 			"b0": b0,
@@ -129,16 +130,19 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
 
 		// Create trackers and check that they're ready.
-		reconcileAllTrackersPartitionCountTimes(t, trackers)
+		require.NoError(t, a0.reconcilePartitions(context.Background()))
+		require.NoError(t, b0.reconcilePartitions(context.Background()))
 		requireAllTrackersReady(t, trackers)
 
 		// Start zone-a-1.
-		a1 := newTestUsageTracker(t, 1, "zone-a", ikv, pkv, cluster)
+		a1 := newTestUsageTracker(t, 1, "zone-a", ikv, pkv, cluster, configure)
 		trackers["a1"] = a1
 
 		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
-		// Reconcile again (no need to reconcile so many times, but it's a noop after the needed amount).
-		reconcileAllTrackersPartitionCountTimes(t, trackers)
+
+		// Reconcile both, they will create all the needed partitions.
+		require.NoError(t, a0.reconcilePartitions(context.Background()))
+		require.NoError(t, a1.reconcilePartitions(context.Background()))
 
 		// All trackers should be ready.
 		requireAllTrackersReady(t, trackers)
@@ -164,13 +168,15 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 			}
 		}, time.Second, 100*time.Millisecond)
 
-		// Reconcile once more after ring is updated to make sure that zone-a-0 has tracked all the lost partitions with their times.
-		reconcileAllTrackersPartitionCountTimes(t, trackers)
+		// Reconcile zone-a-0 once more after ring is updated to make sure that all the lost partitions with their times.
+		require.NoError(t, a0.reconcilePartitions(context.Background()))
 
 		// Wait until old partitions are lost.
 		time.Sleep(lostPartitionsShutdownGracePeriod)
 
-		reconcileAllTrackersPartitionCountTimes(t, trackers)
+		// Now zone-a-0 will shutdown partitions, zone-a-1 does a noop reconciliation.
+		require.NoError(t, a0.reconcilePartitions(context.Background()))
+		require.NoError(t, a1.reconcilePartitions(context.Background()))
 
 		// zone-a-0 should have 8 partitions, zone-a-1 should have 8, this is deterministic at this point.
 		a0.partitionsMtx.RLock()
