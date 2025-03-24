@@ -37,7 +37,7 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 			"a0": newTestUsageTracker(t, 0, "zone-a", ikv, pkv, cluster),
 			"b0": newTestUsageTracker(t, 0, "zone-b", ikv, pkv, cluster),
 		}
-		waitUntilAllTrackersSeeAllInstnacesInTheirZones(t, trackers)
+		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
 
 		// First checks, we haven't done any kind of reconciliation yet, so no partitions should be active yet, no partitions have owners.
 		requireAllTrackersNotReady(t, trackers)
@@ -84,7 +84,7 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 			"a1": newTestUsageTracker(t, 1, "zone-a", ikv, pkv, cluster),
 			"b1": newTestUsageTracker(t, 1, "zone-b", ikv, pkv, cluster),
 		}
-		waitUntilAllTrackersSeeAllInstnacesInTheirZones(t, trackers)
+		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
 
 		// Usage-trackers have started now, we run reconciliations but nothing should happen yet
 		// because previous instances (-0) are not running yet.
@@ -126,7 +126,7 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 			"a0": a0,
 			"b0": b0,
 		}
-		waitUntilAllTrackersSeeAllInstnacesInTheirZones(t, trackers)
+		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
 
 		// Create trackers and check that they're ready.
 		reconcileAllTrackersPartitionCountTimes(t, trackers)
@@ -136,7 +136,7 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		a1 := newTestUsageTracker(t, 1, "zone-a", ikv, pkv, cluster)
 		trackers["a1"] = a1
 
-		waitUntilAllTrackersSeeAllInstnacesInTheirZones(t, trackers)
+		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
 		// Reconcile again (no need to reconcile so many times, but it's a noop after the needed amount).
 		reconcileAllTrackersPartitionCountTimes(t, trackers)
 
@@ -204,7 +204,7 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 				cfg.MaxPartitionsToCreatePerReconcile = testPartitionsCount / expectedZoneBReconcilesToCreateAllPartitions
 			}),
 		}
-		waitUntilAllTrackersSeeAllInstnacesInTheirZones(t, trackers)
+		waitUntilAllTrackersSeeAllInstancesInTheirZones(t, trackers)
 
 		// Reconcile once:
 		for key, ut := range trackers {
@@ -244,7 +244,7 @@ func requireAllTrackersNotReady(t *testing.T, trackers map[string]*UsageTracker)
 		require.Error(t, ut.CheckReady(context.Background()), "Tracker %q should not be ready yet", key)
 	}
 }
-func waitUntilAllTrackersSeeAllInstnacesInTheirZones(t *testing.T, trackers map[string]*UsageTracker) {
+func waitUntilAllTrackersSeeAllInstancesInTheirZones(t *testing.T, trackers map[string]*UsageTracker) {
 	require.EventuallyWithT(t, func(t *assert.CollectT) {
 		trackersPerZone := map[string]int{}
 		for _, ut := range trackers {
