@@ -641,7 +641,7 @@ type mockOffsetFinder struct {
 	end     int64
 }
 
-func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, topic string, partition int32, t time.Time) (int64, error) {
+func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32, t time.Time) (int64, error) {
 	// scan the offsets slice and return the lowest offset whose time is after t.
 	mint := time.Time{}
 	off := int64(-1)
