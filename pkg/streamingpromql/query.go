@@ -40,7 +40,6 @@ var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Query struct {
 	queryable                storage.Queryable
-	opts                     promql.QueryOpts
 	statement                *parser.EvalStmt
 	root                     types.Operator
 	engine                   *Engine
@@ -62,6 +61,11 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
 
+	lookbackDelta := opts.LookbackDelta()
+	if lookbackDelta == 0 {
+		lookbackDelta = engine.lookbackDelta
+	}
+
 	maxEstimatedMemoryConsumptionPerQuery, err := engine.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
@@ -76,7 +80,6 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 
 	q := &Query{
 		queryable:                queryable,
-		opts:                     opts,
 		engine:                   engine,
 		qs:                       qs,
 		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, engine.queriesRejectedDueToPeakMemoryConsumption),
@@ -88,7 +91,7 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 			Start:         start,
 			End:           end,
 			Interval:      interval, // 0 for instant queries
-			LookbackDelta: opts.LookbackDelta(),
+			LookbackDelta: lookbackDelta,
 		},
 	}
 
@@ -150,10 +153,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 
 	switch e := expr.(type) {
 	case *parser.VectorSelector:
-		lookbackDelta := q.opts.LookbackDelta()
-		if lookbackDelta == 0 {
-			lookbackDelta = q.engine.lookbackDelta
-		}
+		lookbackDelta := q.statement.LookbackDelta
 
 		return &selectors.InstantVectorSelector{
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
