@@ -7,7 +7,7 @@ becomes:
     cluster!="eu-west",app="my-app"
 */}}
 {{- define "toPromQLLabelSelector" -}}
-  {{- if .selector }}
+  {{- if . }}
     {{- $labels := "" }}
     {{- range $expression := . }}
       {{- $labels = printf "%s%s," $labels $expression }}
