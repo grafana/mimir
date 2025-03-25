@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/gogo/protobuf/proto"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 )
 
@@ -181,7 +183,7 @@ func (d *EliminateCommonSubexpressions) groupPaths(paths []*path, offset int) []
 
 func (d *EliminateCommonSubexpressions) applyDeduplication(group []*path, offset int) error {
 	duplicatePathLength := d.findCommonSubexpressionLength(group, offset+1)
-	duplicate := &Duplicate{Inner: group[0].NodeAtOffsetFromLeaf(duplicatePathLength - 1)}
+	duplicate := &Duplicate{Inner: group[0].NodeAtOffsetFromLeaf(duplicatePathLength - 1), DuplicateDetails: &DuplicateDetails{}}
 
 	for _, path := range group {
 		parentOfDuplicate := path.NodeAtOffsetFromLeaf(duplicatePathLength)
@@ -272,11 +274,12 @@ func (p *path) Clone() *path {
 }
 
 type Duplicate struct {
+	*DuplicateDetails
 	Inner planning.Node
 }
 
-func (d *Duplicate) Type() string {
-	return "Duplicate"
+func (d *Duplicate) Details() proto.Message {
+	return d.DuplicateDetails
 }
 
 func (d *Duplicate) Children() []planning.Node {

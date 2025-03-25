@@ -5,21 +5,15 @@ package planning
 import (
 	"fmt"
 	"slices"
-	"strconv"
-	"strings"
-	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/gogo/protobuf/proto"
 )
 
 // TODO: actually generate some / all of this automatically
 // TODO: tests for equality edge cases
-// TODO: tests for descriptions
 
-func (a *AggregateExpression) Type() string {
-	return "AggregateExpression"
+func (a *AggregateExpression) Details() proto.Message {
+	return a.AggregateExpressionDetails
 }
 
 func (a *AggregateExpression) Children() []Node {
@@ -54,32 +48,6 @@ func (a *AggregateExpression) Equals(other Node) bool {
 		slices.Equal(a.Grouping, otherAggregateExpression.Grouping) &&
 		a.Without == otherAggregateExpression.Without
 }
-
-func (a *AggregateExpression) Describe() string {
-	builder := &strings.Builder{}
-	builder.WriteString(a.Op.String())
-
-	if a.Without || len(a.Grouping) > 0 {
-		if a.Without {
-			builder.WriteString(" without (")
-		} else {
-			builder.WriteString(" by (")
-		}
-
-		for i, l := range a.Grouping {
-			if i > 0 {
-				builder.WriteString(", ")
-			}
-
-			builder.WriteString(l)
-		}
-
-		builder.WriteString(")")
-	}
-
-	return builder.String()
-}
-
 func (a *AggregateExpression) ChildrenLabels() []string {
 	if a.Param == nil {
 		return []string{""}
@@ -88,8 +56,8 @@ func (a *AggregateExpression) ChildrenLabels() []string {
 	return []string{"expression", "parameter"}
 }
 
-func (b *BinaryExpression) Type() string {
-	return "BinaryExpression"
+func (b *BinaryExpression) Details() proto.Message {
+	return b.BinaryExpressionDetails
 }
 
 func (b *BinaryExpression) Children() []Node {
@@ -117,65 +85,25 @@ func (b *BinaryExpression) Equals(other Node) bool {
 		b.ReturnBool == otherBinaryExpression.ReturnBool
 }
 
-func (b *BinaryExpression) Describe() string {
-	builder := &strings.Builder{}
-
-	builder.WriteString("LHS ")
-	builder.WriteString(b.Op.String())
-
-	if b.ReturnBool {
-		builder.WriteString(" bool")
-	}
-
-	if b.VectorMatching != nil {
-		if b.VectorMatching.On || len(b.VectorMatching.MatchingLabels) > 0 {
-			if b.VectorMatching.On {
-				builder.WriteString(" on (")
-			} else {
-				builder.WriteString(" ignoring (")
-			}
-
-			for i, l := range b.VectorMatching.MatchingLabels {
-				if i > 0 {
-					builder.WriteString(", ")
-				}
-
-				builder.WriteString(l)
-			}
-
-			builder.WriteRune(')')
-		}
-
-		if b.VectorMatching.Card == parser.CardOneToMany || b.VectorMatching.Card == parser.CardManyToOne {
-			if b.VectorMatching.Card == parser.CardOneToMany {
-				builder.WriteString(" group_right (")
-			} else {
-				builder.WriteString(" group_left (")
-			}
-
-			for i, l := range b.VectorMatching.Include {
-				if i > 0 {
-					builder.WriteString(", ")
-				}
-
-				builder.WriteString(l)
-			}
-
-			builder.WriteRune(')')
-		}
-	}
-
-	builder.WriteString(" RHS")
-
-	return builder.String()
-}
-
 func (b *BinaryExpression) ChildrenLabels() []string {
 	return []string{"LHS", "RHS"}
 }
 
-func (f *FunctionCall) Type() string {
-	return "FunctionCall"
+func (v *VectorMatching) Equals(other *VectorMatching) bool {
+	if v == nil && other == nil {
+		// Both are nil.
+		return true
+	}
+
+	return v != nil && other != nil &&
+		v.On == other.On &&
+		v.Card == other.Card &&
+		slices.Equal(v.MatchingLabels, other.MatchingLabels) &&
+		slices.Equal(v.Include, other.Include)
+}
+
+func (f *FunctionCall) Details() proto.Message {
+	return f.FunctionCallDetails
 }
 
 func (f *FunctionCall) Children() []Node {
@@ -196,11 +124,11 @@ func (f *FunctionCall) Equals(other Node) bool {
 		})
 }
 
-func (f *FunctionCall) Describe() string {
-	return fmt.Sprintf("%v(...)", f.FunctionName)
-}
-
 func (f *FunctionCall) ChildrenLabels() []string {
+	if len(f.Args) == 0 {
+		return nil
+	}
+
 	if len(f.Args) == 1 {
 		return []string{""}
 	}
@@ -214,8 +142,8 @@ func (f *FunctionCall) ChildrenLabels() []string {
 	return l
 }
 
-func (n *NumberLiteral) Type() string {
-	return "NumberLiteral"
+func (n *NumberLiteral) Details() proto.Message {
+	return n.NumberLiteralDetails
 }
 
 func (n *NumberLiteral) Children() []Node {
@@ -236,16 +164,12 @@ func (n *NumberLiteral) Equals(other Node) bool {
 	return ok && n.Value == otherLiteral.Value
 }
 
-func (n *NumberLiteral) Describe() string {
-	return strconv.FormatFloat(n.Value, 'g', -1, 64)
-}
-
 func (n *NumberLiteral) ChildrenLabels() []string {
 	return nil
 }
 
-func (n *StringLiteral) Type() string {
-	return "StringLiteral"
+func (n *StringLiteral) Details() proto.Message {
+	return n.StringLiteralDetails
 }
 
 func (n *StringLiteral) Children() []Node {
@@ -266,16 +190,12 @@ func (n *StringLiteral) Equals(other Node) bool {
 	return ok && n.Value == otherLiteral.Value
 }
 
-func (n *StringLiteral) Describe() string {
-	return strconv.QuoteToASCII(n.Value)
-}
-
 func (n *StringLiteral) ChildrenLabels() []string {
 	return nil
 }
 
-func (u *UnaryExpression) Type() string {
-	return "UnaryExpression"
+func (u *UnaryExpression) Details() proto.Message {
+	return u.UnaryExpressionDetails
 }
 
 func (u *UnaryExpression) Children() []Node {
@@ -300,16 +220,12 @@ func (u *UnaryExpression) Equals(other Node) bool {
 		u.Inner.Equals(otherUnaryExpression.Inner)
 }
 
-func (u *UnaryExpression) Describe() string {
-	return u.Op.String()
-}
-
 func (u *UnaryExpression) ChildrenLabels() []string {
 	return []string{""}
 }
 
-func (v *VectorSelector) Type() string {
-	return "VectorSelector"
+func (v *VectorSelector) Details() proto.Message {
+	return v.VectorSelectorDetails
 }
 
 func (v *VectorSelector) Children() []Node {
@@ -329,54 +245,16 @@ func (v *VectorSelector) Equals(other Node) bool {
 
 	return ok &&
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
-		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && *v.Timestamp == *otherVectorSelector.Timestamp)) &&
+		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Timestamp == otherVectorSelector.Timestamp.Timestamp)) &&
 		v.Offset == otherVectorSelector.Offset
-}
-
-func (v *VectorSelector) Describe() string {
-	return describeSelector(v.Matchers, v.Timestamp, v.Offset, nil)
-}
-
-func describeSelector(matchers []*labels.Matcher, ts *int64, offset time.Duration, rng *time.Duration) string {
-	builder := &strings.Builder{}
-	builder.WriteRune('{')
-	for i, m := range matchers {
-		if i > 0 {
-			builder.WriteString(", ")
-		}
-
-		builder.WriteString(m.String())
-	}
-	builder.WriteRune('}')
-
-	if rng != nil {
-		builder.WriteRune('[')
-		builder.WriteString(rng.String())
-		builder.WriteRune(']')
-	}
-
-	if ts != nil {
-		builder.WriteString(" @ ")
-		builder.WriteString(strconv.FormatInt(*ts, 10))
-		builder.WriteString(" (")
-		builder.WriteString(timestamp.Time(*ts).Format(time.RFC3339))
-		builder.WriteRune(')')
-	}
-
-	if offset != 0 {
-		builder.WriteString(" offset ")
-		builder.WriteString(offset.String())
-	}
-
-	return builder.String()
 }
 
 func (v *VectorSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func (m *MatrixSelector) Type() string {
-	return "MatrixSelector"
+func (m *MatrixSelector) Details() proto.Message {
+	return m.MatrixSelectorDetails
 }
 
 func (m *MatrixSelector) Children() []Node {
@@ -396,27 +274,23 @@ func (m *MatrixSelector) Equals(other Node) bool {
 
 	return ok &&
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
-		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && *m.Timestamp == *otherMatrixSelector.Timestamp)) &&
+		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Timestamp == otherMatrixSelector.Timestamp.Timestamp)) &&
 		m.Offset == otherMatrixSelector.Offset &&
 		m.Range == otherMatrixSelector.Range
-}
-
-func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range)
 }
 
 func (m *MatrixSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func matchersEqual(a, b *labels.Matcher) bool {
+func matchersEqual(a, b *LabelMatcher) bool {
 	return a.Type == b.Type &&
 		a.Name == b.Name &&
 		a.Value == b.Value
 }
 
-func (s *Subquery) Type() string {
-	return "Subquery"
+func (s *Subquery) Details() proto.Message {
+	return s.SubqueryDetails
 }
 
 func (s *Subquery) Children() []Node {
@@ -437,35 +311,10 @@ func (s *Subquery) Equals(other Node) bool {
 	otherSubquery, ok := other.(*Subquery)
 
 	return ok &&
-		((s.Timestamp == nil && otherSubquery.Timestamp == nil) || (s.Timestamp != nil && otherSubquery.Timestamp != nil && *s.Timestamp == *otherSubquery.Timestamp)) &&
+		((s.Timestamp == nil && otherSubquery.Timestamp == nil) || (s.Timestamp != nil && otherSubquery.Timestamp != nil && s.Timestamp.Timestamp == otherSubquery.Timestamp.Timestamp)) &&
 		s.Offset == otherSubquery.Offset &&
 		s.Range == otherSubquery.Range &&
 		s.Step == otherSubquery.Step
-}
-
-func (s *Subquery) Describe() string {
-	builder := &strings.Builder{}
-
-	builder.WriteRune('[')
-	builder.WriteString(s.Range.String())
-	builder.WriteRune(':')
-	builder.WriteString(s.Step.String())
-	builder.WriteRune(']')
-
-	if s.Timestamp != nil {
-		builder.WriteString(" @ ")
-		builder.WriteString(strconv.FormatInt(*s.Timestamp, 10))
-		builder.WriteString(" (")
-		builder.WriteString(timestamp.Time(*s.Timestamp).Format(time.RFC3339))
-		builder.WriteRune(')')
-	}
-
-	if s.Offset != 0 {
-		builder.WriteString(" offset ")
-		builder.WriteString(s.Offset.String())
-	}
-
-	return builder.String()
 }
 
 func (s *Subquery) ChildrenLabels() []string {
