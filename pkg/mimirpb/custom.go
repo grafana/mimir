@@ -10,6 +10,7 @@ import (
 	"math"
 	"sync"
 
+	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/histogram"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/encoding/proto"
@@ -50,7 +51,34 @@ func messageV2Of(v any) protobufproto.Message {
 }
 
 func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
-	return c.codec.Marshal(v)
+	vv := messageV2Of(v)
+	if vv == nil {
+		return nil, fmt.Errorf("proto: failed to marshal, message is %T, want proto.Message", v)
+	}
+
+	var size int
+	if sizer, ok := v.(gogoproto.Sizer); ok {
+		size = sizer.Size()
+	}
+	var data mem.BufferSlice
+
+	if mem.IsBelowBufferPoolingThreshold(size) {
+		buf, err := protobufproto.Marshal(vv)
+		if err != nil {
+			return nil, err
+		}
+		data = append(data, mem.SliceBuffer(buf))
+	} else {
+		pool := mem.DefaultBufferPool()
+		buf := pool.Get(size)
+		if _, err := (protobufproto.MarshalOptions{}).MarshalAppend((*buf)[:0], vv); err != nil {
+			pool.Put(buf)
+			return nil, err
+		}
+		data = append(data, mem.NewBuffer(buf, pool))
+	}
+
+	return data, nil
 }
 
 // Unmarshal customizes gRPC unmarshalling.
