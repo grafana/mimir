@@ -5,11 +5,13 @@ package plan
 import (
 	"context"
 	"fmt"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"slices"
 
 	"github.com/gogo/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type EliminateCommonSubexpressions struct{}
@@ -100,8 +102,8 @@ func (d *EliminateCommonSubexpressions) accumulatePaths(root planning.Node) []*p
 }
 
 func (d *EliminateCommonSubexpressions) accumulatePath(node planning.Node, soFar *path) []*path {
-	_, isVS := node.(*planning.VectorSelector)
-	_, isMS := node.(*planning.MatrixSelector)
+	_, isVS := node.(*core.VectorSelector)
+	_, isMS := node.(*core.MatrixSelector)
 
 	if isVS || isMS {
 		return []*path{soFar}
@@ -308,4 +310,12 @@ func (d *Duplicate) Describe() string {
 
 func (d *Duplicate) ChildrenLabels() []string {
 	return []string{""}
+}
+
+func (d *Duplicate) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
+	return parentTimeRange
+}
+
+func (d *Duplicate) OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	panic("TODO")
 }

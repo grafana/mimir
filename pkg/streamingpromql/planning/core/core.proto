@@ -2,10 +2,11 @@
 
 syntax = "proto3";
 
-package planning;
+package core;
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -49,6 +50,7 @@ message BinaryExpressionDetails {
   BinaryOperation op = 1;
   VectorMatching vectorMatching = 2;
   bool returnBool = 3;
+  PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
 }
 
 // Why don't we just use the parser.ItemType values?
@@ -85,7 +87,11 @@ message VectorMatching {
 
 message FunctionCallDetails {
   string functionName = 1;
-  PositionRange expressionPosition = 2 [(gogoproto.nullable) = false];
+
+  // Labels used by absent() or absent_over_time(). Only populated if this instance is for either of these two functions.
+  repeated cortexpb.LabelPair absentLabels = 2 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
+
+  PositionRange expressionPosition = 3 [(gogoproto.nullable) = false];
 }
 
 message NumberLiteralDetails {
