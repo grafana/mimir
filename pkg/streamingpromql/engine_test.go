@@ -189,8 +189,13 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 // Test cases that are not supported by the streaming engine are commented out (or, if the entire file is not supported, .disabled is appended to the file name).
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
 func TestUpstreamTestCases(t *testing.T) {
-	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	optsWithoutQueryPlanner := NewTestEngineOpts()
+	engineWithoutQueryPlanner, err := NewEngine(optsWithoutQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+
+	optsWithQueryPlanner := NewTestEngineOpts()
+	optsWithQueryPlanner.UseQueryPlanning = true
+	engineWithQueryPlanner, err := NewEngine(optsWithQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
 	testdataFS := os.DirFS("./testdata")
@@ -203,20 +208,33 @@ func TestUpstreamTestCases(t *testing.T) {
 			require.NoError(t, err)
 			defer f.Close()
 
-			testScript, err := io.ReadAll(f)
+			b, err := io.ReadAll(f)
 			require.NoError(t, err)
 
-			promqltest.RunTest(t, string(testScript), engine)
+			testScript := string(b)
+
+			t.Run("Without query planner", func(t *testing.T) {
+				promqltest.RunTest(t, testScript, engineWithoutQueryPlanner)
+			})
+
+			t.Run("With query planner", func(t *testing.T) {
+				promqltest.RunTest(t, testScript, engineWithQueryPlanner)
+			})
 		})
 	}
 }
 
 func TestOurTestCases(t *testing.T) {
-	opts := NewTestEngineOpts()
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	optsWithoutQueryPlanner := NewTestEngineOpts()
+	mimirEngineWithoutQueryPlanner, err := NewEngine(optsWithoutQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+	optsWithQueryPlanner := NewTestEngineOpts()
+	optsWithQueryPlanner.UseQueryPlanning = true
+	mimirEngineWithQueryPlanner, err := NewEngine(optsWithQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+
+	prometheusEngine := promql.NewEngine(optsWithoutQueryPlanner.CommonOpts)
 
 	testdataFS := os.DirFS("./testdata")
 	testFiles, err := fs.Glob(testdataFS, "ours*/*.test")
@@ -233,8 +251,12 @@ func TestOurTestCases(t *testing.T) {
 
 			testScript := string(b)
 
-			t.Run("Mimir's engine", func(t *testing.T) {
-				promqltest.RunTest(t, testScript, mimirEngine)
+			t.Run("Mimir's engine (without query planner)", func(t *testing.T) {
+				promqltest.RunTest(t, testScript, mimirEngineWithoutQueryPlanner)
+			})
+
+			t.Run("Mimir's engine (with query planner)", func(t *testing.T) {
+				promqltest.RunTest(t, testScript, mimirEngineWithQueryPlanner)
 			})
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.

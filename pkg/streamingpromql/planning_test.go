@@ -4,6 +4,7 @@ package streamingpromql
 
 import (
 	"context"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"testing"
 	"time"
 
@@ -54,15 +55,15 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  0,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "env", Value: "prod"},
 								{Type: 1, Name: "cluster", Value: "cluster-2"},
 								{Type: 2, Name: "name", Value: "foo.*"},
 								{Type: 3, Name: "node", Value: "small-nodes-.*"},
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 84},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 84},
 						}),
 						Type:        "VectorSelector",
 						Description: `{env="prod", cluster!="cluster-2", name=~"foo.*", node!~"small-nodes-.*", __name__="some_metric"}`,
@@ -79,15 +80,15 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  0,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "env", Value: "prod"},
 								{Type: 1, Name: "cluster", Value: "cluster-2"},
 								{Type: 2, Name: "name", Value: "foo.*"},
 								{Type: 3, Name: "node", Value: "small-nodes-.*"},
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 84},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 84},
 						}),
 						Type:        "VectorSelector",
 						Description: `{env="prod", cluster!="cluster-2", name=~"foo.*", node!~"small-nodes-.*", __name__="some_metric"}`,
@@ -104,12 +105,12 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  0,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							Timestamp:          &planning.Timestamp{Timestamp: 0},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 15},
+							Timestamp:          &core.Timestamp{Timestamp: 0},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 15},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"} @ 0 (1970-01-01T00:00:00Z)`,
@@ -126,12 +127,12 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  0,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							Timestamp:          &planning.Timestamp{Timestamp: 3000},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 21},
+							Timestamp:          &core.Timestamp{Timestamp: 3000},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 21},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"} @ 3000 (1970-01-01T00:00:03Z)`,
@@ -148,12 +149,12 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  0,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							Timestamp:          &planning.Timestamp{Timestamp: 5000},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 19},
+							Timestamp:          &core.Timestamp{Timestamp: 5000},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 19},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"} @ 5000 (1970-01-01T00:00:05Z)`,
@@ -170,12 +171,12 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  0,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Offset:             30 * time.Second,
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 22},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 22},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"} offset 30s`,
@@ -192,12 +193,12 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  0,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.MatrixSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.MatrixSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 15},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 15},
 						}),
 						Type:        "MatrixSelector",
 						Description: `{__name__="some_metric"}[1m0s]`,
@@ -214,13 +215,13 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  0,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.MatrixSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.MatrixSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
-							Timestamp:          &planning.Timestamp{Timestamp: 0},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 19},
+							Timestamp:          &core.Timestamp{Timestamp: 0},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 19},
 						}),
 						Type:        "MatrixSelector",
 						Description: `{__name__="some_metric"}[1m0s] @ 0 (1970-01-01T00:00:00Z)`,
@@ -229,47 +230,67 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			},
 		},
 		"matrix selector with '@ start()'": {
-			expr:      `some_metric[1m] @ start()`,
+			expr:      `rate(some_metric[1m] @ start())`,
 			timeRange: rangeQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  0,
+				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.MatrixSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.MatrixSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
-							Timestamp:          &planning.Timestamp{Timestamp: 3000},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 25},
+							Timestamp:          &core.Timestamp{Timestamp: 3000},
+							ExpressionPosition: core.PositionRange{Start: 5, End: 30},
 						}),
 						Type:        "MatrixSelector",
 						Description: `{__name__="some_metric"}[1m0s] @ 3000 (1970-01-01T00:00:03Z)`,
+					},
+					{
+						Details: marshalDetails(&core.FunctionCallDetails{
+							FunctionName:       "rate",
+							ExpressionPosition: core.PositionRange{Start: 0, End: 31},
+						}),
+						Type:           "FunctionCall",
+						Description:    `rate(...)`,
+						Children:       []int64{0},
+						ChildrenLabels: []string{""},
 					},
 				},
 			},
 		},
 		"matrix selector with '@ end()'": {
-			expr:      `some_metric[1m] @ end()`,
+			expr:      `rate(some_metric[1m] @ end())`,
 			timeRange: rangeQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: rangeQueryEncodedTimeRange,
-				RootNode:  0,
+				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.MatrixSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.MatrixSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
 							Range:              60 * time.Second,
-							Timestamp:          &planning.Timestamp{Timestamp: 5000},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 23},
+							Timestamp:          &core.Timestamp{Timestamp: 5000},
+							ExpressionPosition: core.PositionRange{Start: 5, End: 28},
 						}),
 						Type:        "MatrixSelector",
 						Description: `{__name__="some_metric"}[1m0s] @ 5000 (1970-01-01T00:00:05Z)`,
+					},
+					{
+						Details: marshalDetails(&core.FunctionCallDetails{
+							FunctionName:       "rate",
+							ExpressionPosition: core.PositionRange{Start: 0, End: 29},
+						}),
+						Type:           "FunctionCall",
+						Description:    `rate(...)`,
+						Children:       []int64{0},
+						ChildrenLabels: []string{""},
 					},
 				},
 			},
@@ -283,11 +304,11 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  0,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 1, End: 12},
+							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
@@ -304,9 +325,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  0,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.NumberLiteralDetails{
+						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              12,
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 2},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 2},
 						}),
 						Type:        "NumberLiteral",
 						Description: `12`,
@@ -323,9 +344,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  0,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.StringLiteralDetails{
+						Details: marshalDetails(&core.StringLiteralDetails{
 							Value:              "abc",
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 5},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 5},
 						}),
 						Type:        "StringLiteral",
 						Description: `"abc"`,
@@ -342,9 +363,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  0,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.FunctionCallDetails{
+						Details: marshalDetails(&core.FunctionCallDetails{
 							FunctionName:       "time",
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 6},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 6},
 						}),
 						Type:        "FunctionCall",
 						Description: `time(...)`,
@@ -361,9 +382,9 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  0,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.FunctionCallDetails{
+						Details: marshalDetails(&core.FunctionCallDetails{
 							FunctionName:       "year",
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 6},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 6},
 						}),
 						Type:        "FunctionCall",
 						Description: `year(...)`,
@@ -380,19 +401,19 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 5, End: 16},
+							ExpressionPosition: core.PositionRange{Start: 5, End: 16},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.FunctionCallDetails{
+						Details: marshalDetails(&core.FunctionCallDetails{
 							FunctionName:       "year",
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 17},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 17},
 						}),
 						Type:           "FunctionCall",
 						Children:       []int64{0},
@@ -411,19 +432,19 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 1, End: 12},
+							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.UnaryExpressionDetails{
-							Op:                 planning.UNARY_SUB,
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 12},
+						Details: marshalDetails(&core.UnaryExpressionDetails{
+							Op:                 core.UNARY_SUB,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 12},
 						}),
 						Type:           "UnaryExpression",
 						Children:       []int64{0},
@@ -442,19 +463,19 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 4, End: 15},
+							ExpressionPosition: core.PositionRange{Start: 4, End: 15},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.AggregateExpressionDetails{
-							Op:                 planning.AGGREGATION_SUM,
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 16},
+						Details: marshalDetails(&core.AggregateExpressionDetails{
+							Op:                 core.AGGREGATION_SUM,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 16},
 						}),
 						Type:           "AggregateExpression",
 						Children:       []int64{0},
@@ -473,20 +494,20 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 14, End: 25},
+							ExpressionPosition: core.PositionRange{Start: 14, End: 25},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.AggregateExpressionDetails{
-							Op:                 planning.AGGREGATION_SUM,
+						Details: marshalDetails(&core.AggregateExpressionDetails{
+							Op:                 core.AGGREGATION_SUM,
 							Grouping:           []string{"foo"},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 26},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 26},
 						}),
 						Type:           "AggregateExpression",
 						Children:       []int64{0},
@@ -505,21 +526,21 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 19, End: 30},
+							ExpressionPosition: core.PositionRange{Start: 19, End: 30},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.AggregateExpressionDetails{
-							Op:                 planning.AGGREGATION_SUM,
+						Details: marshalDetails(&core.AggregateExpressionDetails{
+							Op:                 core.AGGREGATION_SUM,
 							Grouping:           []string{"foo"},
 							Without:            true,
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 31},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 31},
 						}),
 						Type:           "AggregateExpression",
 						Children:       []int64{0},
@@ -538,27 +559,27 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  2,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 8, End: 19},
+							ExpressionPosition: core.PositionRange{Start: 8, End: 19},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.NumberLiteralDetails{
+						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              3,
-							ExpressionPosition: planning.PositionRange{Start: 5, End: 6},
+							ExpressionPosition: core.PositionRange{Start: 5, End: 6},
 						}),
 						Type:        "NumberLiteral",
 						Description: `3`,
 					},
 					{
-						Details: marshalDetails(&planning.AggregateExpressionDetails{
-							Op:                 planning.AGGREGATION_TOPK,
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 20},
+						Details: marshalDetails(&core.AggregateExpressionDetails{
+							Op:                 core.AGGREGATION_TOPK,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 20},
 						}),
 						Type:           "AggregateExpression",
 						Children:       []int64{0, 1},
@@ -577,24 +598,25 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  2,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.NumberLiteralDetails{
+						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              2,
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 1},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 1},
 						}),
 						Type:        "NumberLiteral",
 						Description: `2`,
 					},
 					{
-						Details: marshalDetails(&planning.NumberLiteralDetails{
+						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              3,
-							ExpressionPosition: planning.PositionRange{Start: 4, End: 5},
+							ExpressionPosition: core.PositionRange{Start: 4, End: 5},
 						}),
 						Type:        "NumberLiteral",
 						Description: `3`,
 					},
 					{
-						Details: marshalDetails(&planning.BinaryExpressionDetails{
-							Op: planning.BINARY_ADD,
+						Details: marshalDetails(&core.BinaryExpressionDetails{
+							Op:                 core.BINARY_ADD,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 5},
 						}),
 						Type:           "BinaryExpression",
 						Children:       []int64{0, 1},
@@ -613,26 +635,27 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  2,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.NumberLiteralDetails{
+						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              2,
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 1},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 1},
 						}),
 						Type:        "NumberLiteral",
 						Description: `2`,
 					},
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 4, End: 15},
+							ExpressionPosition: core.PositionRange{Start: 4, End: 15},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.BinaryExpressionDetails{
-							Op: planning.BINARY_MUL,
+						Details: marshalDetails(&core.BinaryExpressionDetails{
+							Op:                 core.BINARY_MUL,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 15},
 						}),
 						Type:           "BinaryExpression",
 						Children:       []int64{0, 1},
@@ -651,27 +674,28 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  2,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 11},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.NumberLiteralDetails{
+						Details: marshalDetails(&core.NumberLiteralDetails{
 							Value:              2,
-							ExpressionPosition: planning.PositionRange{Start: 19, End: 20},
+							ExpressionPosition: core.PositionRange{Start: 19, End: 20},
 						}),
 						Type:        "NumberLiteral",
 						Description: `2`,
 					},
 					{
-						Details: marshalDetails(&planning.BinaryExpressionDetails{
-							Op:         planning.BINARY_GTR,
-							ReturnBool: true,
+						Details: marshalDetails(&core.BinaryExpressionDetails{
+							Op:                 core.BINARY_GTR,
+							ReturnBool:         true,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 20},
 						}),
 						Type:           "BinaryExpression",
 						Children:       []int64{0, 1},
@@ -690,29 +714,30 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  2,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 11},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 14, End: 31},
+							ExpressionPosition: core.PositionRange{Start: 14, End: 31},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_other_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.BinaryExpressionDetails{
-							Op:             planning.BINARY_MUL,
-							VectorMatching: &planning.VectorMatching{},
+						Details: marshalDetails(&core.BinaryExpressionDetails{
+							Op:                 core.BINARY_MUL,
+							VectorMatching:     &core.VectorMatching{},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 31},
 						}),
 						Type:           "BinaryExpression",
 						Children:       []int64{0, 1},
@@ -731,32 +756,33 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  2,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 11},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 23, End: 40},
+							ExpressionPosition: core.PositionRange{Start: 23, End: 40},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_other_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.BinaryExpressionDetails{
-							Op: planning.BINARY_MUL,
-							VectorMatching: &planning.VectorMatching{
+						Details: marshalDetails(&core.BinaryExpressionDetails{
+							Op: core.BINARY_MUL,
+							VectorMatching: &core.VectorMatching{
 								MatchingLabels: []string{"foo"},
 								On:             true,
 							},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 40},
 						}),
 						Type:           "BinaryExpression",
 						Children:       []int64{0, 1},
@@ -775,32 +801,33 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  2,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 11},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 29, End: 46},
+							ExpressionPosition: core.PositionRange{Start: 29, End: 46},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_other_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.BinaryExpressionDetails{
-							Op: planning.BINARY_MUL,
-							VectorMatching: &planning.VectorMatching{
+						Details: marshalDetails(&core.BinaryExpressionDetails{
+							Op: core.BINARY_MUL,
+							VectorMatching: &core.VectorMatching{
 								MatchingLabels: []string{"foo"},
 								On:             false,
 							},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 46},
 						}),
 						Type:           "BinaryExpression",
 						Children:       []int64{0, 1},
@@ -819,34 +846,35 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  2,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 11},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 11},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_other_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 46, End: 63},
+							ExpressionPosition: core.PositionRange{Start: 46, End: 63},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_other_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.BinaryExpressionDetails{
-							Op: planning.BINARY_MUL,
-							VectorMatching: &planning.VectorMatching{
+						Details: marshalDetails(&core.BinaryExpressionDetails{
+							Op: core.BINARY_MUL,
+							VectorMatching: &core.VectorMatching{
 								Card:           parser.CardManyToOne,
 								MatchingLabels: []string{"foo"},
 								Include:        []string{"bar"},
 								On:             false,
 							},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 63},
 						}),
 						Type:           "BinaryExpression",
 						Children:       []int64{0, 1},
@@ -865,20 +893,20 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 1, End: 12},
+							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.SubqueryDetails{
+						Details: marshalDetails(&core.SubqueryDetails{
 							Range:              time.Minute,
 							Step:               time.Second,
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 20},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 20},
 						}),
 						Type:           "Subquery",
 						Children:       []int64{0},
@@ -897,20 +925,20 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 1, End: 12},
+							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.SubqueryDetails{
+						Details: marshalDetails(&core.SubqueryDetails{
 							Range:              time.Minute,
 							Step:               23 * time.Second,
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 18},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 18},
 						}),
 						Type:           "Subquery",
 						Children:       []int64{0},
@@ -929,21 +957,21 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 1, End: 12},
+							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.SubqueryDetails{
+						Details: marshalDetails(&core.SubqueryDetails{
 							Range:              time.Minute,
 							Step:               time.Second,
 							Offset:             3 * time.Second,
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 30},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 30},
 						}),
 						Type:           "Subquery",
 						Children:       []int64{0},
@@ -962,21 +990,21 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				RootNode:  1,
 				Nodes: []*planning.EncodedNode{
 					{
-						Details: marshalDetails(&planning.VectorSelectorDetails{
-							Matchers: []*planning.LabelMatcher{
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
 								{Type: 0, Name: "__name__", Value: "some_metric"},
 							},
-							ExpressionPosition: planning.PositionRange{Start: 1, End: 12},
+							ExpressionPosition: core.PositionRange{Start: 1, End: 12},
 						}),
 						Type:        "VectorSelector",
 						Description: `{__name__="some_metric"}`,
 					},
 					{
-						Details: marshalDetails(&planning.SubqueryDetails{
+						Details: marshalDetails(&core.SubqueryDetails{
 							Range:              time.Minute,
 							Step:               time.Second,
-							Timestamp:          &planning.Timestamp{Timestamp: 0},
-							ExpressionPosition: planning.PositionRange{Start: 0, End: 24},
+							Timestamp:          &core.Timestamp{Timestamp: 0},
+							ExpressionPosition: core.PositionRange{Start: 0, End: 24},
 						}),
 						Type:           "Subquery",
 						Children:       []int64{0},

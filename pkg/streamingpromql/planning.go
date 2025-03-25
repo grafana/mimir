@@ -5,6 +5,9 @@ package streamingpromql
 import (
 	"context"
 	"fmt"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -29,6 +32,12 @@ func (e *Engine) NewQueryPlan(ctx context.Context, qs string, timeRange types.Qu
 	expr, err := runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
 	if err != nil {
 		return nil, err
+	}
+
+	if !timeRange.IsInstant {
+		if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
+			return nil, fmt.Errorf("query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(expr.Type()))
+		}
 	}
 
 	expr, err = runASTStage("Pre-processing", observer, func() (parser.Expr, error) {
@@ -119,12 +128,12 @@ func runPlanningStage(stageName string, observer PlanningObserver, stage func() 
 func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	switch expr := expr.(type) {
 	case *parser.VectorSelector:
-		return &planning.VectorSelector{
-			VectorSelectorDetails: &planning.VectorSelectorDetails{
-				Matchers:           planning.LabelMatchersFrom(expr.LabelMatchers),
-				Timestamp:          planning.TimestampFrom(expr.Timestamp),
+		return &core.VectorSelector{
+			VectorSelectorDetails: &core.VectorSelectorDetails{
+				Matchers:           core.LabelMatchersFrom(expr.LabelMatchers),
+				Timestamp:          core.TimestampFrom(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
-				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
 		}, nil
 
@@ -134,13 +143,13 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			return nil, fmt.Errorf("expected expression for MatrixSelector to be of type VectorSelector, got %T", expr.VectorSelector)
 		}
 
-		return &planning.MatrixSelector{
-			MatrixSelectorDetails: &planning.MatrixSelectorDetails{
-				Matchers:           planning.LabelMatchersFrom(vs.LabelMatchers),
-				Timestamp:          planning.TimestampFrom(vs.Timestamp),
+		return &core.MatrixSelector{
+			MatrixSelectorDetails: &core.MatrixSelectorDetails{
+				Matchers:           core.LabelMatchersFrom(vs.LabelMatchers),
+				Timestamp:          core.TimestampFrom(vs.Timestamp),
 				Offset:             vs.OriginalOffset,
 				Range:              expr.Range,
-				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
 		}, nil
 
@@ -159,19 +168,19 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			}
 		}
 
-		op, err := planning.AggregationOperationFrom(expr.Op)
+		op, err := core.AggregationOperationFrom(expr.Op)
 		if err != nil {
 			return nil, err
 		}
 
-		return &planning.AggregateExpression{
+		return &core.AggregateExpression{
 			Inner: inner,
 			Param: param,
-			AggregateExpressionDetails: &planning.AggregateExpressionDetails{
+			AggregateExpressionDetails: &core.AggregateExpressionDetails{
 				Op:                 op,
 				Grouping:           expr.Grouping,
 				Without:            expr.Without,
-				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
 		}, nil
 
@@ -186,18 +195,19 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			return nil, err
 		}
 
-		op, err := planning.BinaryOperationFrom(expr.Op)
+		op, err := core.BinaryOperationFrom(expr.Op)
 		if err != nil {
 			return nil, err
 		}
 
-		return &planning.BinaryExpression{
+		return &core.BinaryExpression{
 			LHS: lhs,
 			RHS: rhs,
-			BinaryExpressionDetails: &planning.BinaryExpressionDetails{
-				Op:             op,
-				VectorMatching: planning.VectorMatchingFrom(expr.VectorMatching),
-				ReturnBool:     expr.ReturnBool,
+			BinaryExpressionDetails: &core.BinaryExpressionDetails{
+				Op:                 op,
+				VectorMatching:     core.VectorMatchingFrom(expr.VectorMatching),
+				ReturnBool:         expr.ReturnBool,
+				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
 		}, nil
 
@@ -213,13 +223,19 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			args = append(args, node)
 		}
 
-		return &planning.FunctionCall{
+		f := &core.FunctionCall{
 			Args: args,
-			FunctionCallDetails: &planning.FunctionCallDetails{
+			FunctionCallDetails: &core.FunctionCallDetails{
 				FunctionName:       expr.Func.Name,
-				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
-		}, nil
+		}
+
+		if expr.Func.Name == "absent" || expr.Func.Name == "absent_over_time" {
+			f.AbsentLabels = mimirpb.FromLabelsToLabelAdapters(functions.CreateLabelsForAbsentFunction(expr.Args[0]))
+		}
+
+		return f, nil
 
 	case *parser.SubqueryExpr:
 		inner, err := e.nodeFromExpr(expr.Expr)
@@ -233,14 +249,14 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			step = time.Duration(e.noStepSubqueryIntervalFn(expr.Range.Milliseconds())) * time.Millisecond
 		}
 
-		return &planning.Subquery{
+		return &core.Subquery{
 			Inner: inner,
-			SubqueryDetails: &planning.SubqueryDetails{
-				Timestamp:          planning.TimestampFrom(expr.Timestamp),
+			SubqueryDetails: &core.SubqueryDetails{
+				Timestamp:          core.TimestampFrom(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
 				Range:              expr.Range,
 				Step:               step,
-				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
 		}, nil
 
@@ -250,32 +266,37 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			return nil, err
 		}
 
-		op, err := planning.UnaryOperationFrom(expr.Op)
+		if expr.Op == parser.ADD {
+			// +(anything) is the same as (anything), so don't bother creating a unary expression node.
+			return inner, nil
+		}
+
+		op, err := core.UnaryOperationFrom(expr.Op)
 		if err != nil {
 			return nil, err
 		}
 
-		return &planning.UnaryExpression{
+		return &core.UnaryExpression{
 			Inner: inner,
-			UnaryExpressionDetails: &planning.UnaryExpressionDetails{
+			UnaryExpressionDetails: &core.UnaryExpressionDetails{
 				Op:                 op,
-				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
 		}, nil
 
 	case *parser.NumberLiteral:
-		return &planning.NumberLiteral{
-			NumberLiteralDetails: &planning.NumberLiteralDetails{
+		return &core.NumberLiteral{
+			NumberLiteralDetails: &core.NumberLiteralDetails{
 				Value:              expr.Val,
-				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
 		}, nil
 
 	case *parser.StringLiteral:
-		return &planning.StringLiteral{
-			StringLiteralDetails: &planning.StringLiteralDetails{
+		return &core.StringLiteral{
+			StringLiteralDetails: &core.StringLiteralDetails{
 				Value:              expr.Val,
-				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
 		}, nil
 
@@ -292,9 +313,34 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 }
 
 // Materialize converts a query plan into an executable query.
-func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, q storage.Queryable, opts promql.QueryOpts) (promql.Query, error) {
-	// TODO
-	panic("TODO")
+func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, queryable storage.Queryable, opts promql.QueryOpts) (promql.Query, error) {
+	if opts == nil {
+		opts = promql.NewPrometheusQueryOpts(false, 0)
+	}
+
+	q, err := e.newQuery(ctx, queryable, opts, plan.TimeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	q.operatorFactories = make(map[planning.Node]planning.OperatorFactory)
+	q.operatorParams = &planning.OperatorParameters{
+		Queryable:                q.queryable,
+		MemoryConsumptionTracker: q.memoryConsumptionTracker,
+		Annotations:              q.annotations,
+		Stats:                    q.stats,
+		LookbackDelta:            q.lookbackDelta,
+	}
+
+	q.root, err = q.convertNodeToOperator(plan.Root, plan.TimeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: what to do with Statement()?
+	// TODO: what to do with active query tracker? Expects expression to use
+
+	return q, nil
 }
 
 type AnalysisResult struct {

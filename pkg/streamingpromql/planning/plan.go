@@ -4,6 +4,9 @@ package planning
 
 import (
 	"fmt"
+	"github.com/grafana/mimir/pkg/streamingpromql/limiting"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"reflect"
 	"time"
 
@@ -62,7 +65,23 @@ type Node interface {
 	// Returning an empty string for a label is valid.
 	ChildrenLabels() []string
 
-	// FIXME: most of the above methods can be generated automatically
+	// ChildrenTimeRange returns the time range used by children of this node.
+	//
+	// Most nodes will return timeRange as is, with the exception of subqueries.
+	ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange
+
+	// OperatorFactory returns a factory that produces operators for this node.
+	OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *OperatorParameters) (OperatorFactory, error)
+
+	// FIXME: implementations for many of the above methods can be generated automatically
+}
+
+type OperatorParameters struct {
+	Queryable                storage.Queryable
+	MemoryConsumptionTracker *limiting.MemoryConsumptionTracker
+	Annotations              *annotations.Annotations
+	Stats                    *types.QueryStats
+	LookbackDelta            time.Duration
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {
@@ -246,6 +265,7 @@ type NodeFactory func() Node
 // Map of details message type (eg. "planning.SubqueryDetails") to a factory method that returns a new instance of that type of node (eg. Subquery).
 var knownNodeTypes = map[string]NodeFactory{}
 
+// RegisterNodeFactory registers a NodeFactory used during deserialization of a query plan.
 func RegisterNodeFactory(f NodeFactory) {
 	n := f()
 	details := n.Details()

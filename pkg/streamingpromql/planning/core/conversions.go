@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package planning
+package core
 
 import (
 	"fmt"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -76,6 +75,12 @@ func LabelMatchersToPrometheusType(matchers []*LabelMatcher) ([]*labels.Matcher,
 	return converted, nil
 }
 
+func matchersEqual(a, b *LabelMatcher) bool {
+	return a.Type == b.Type &&
+		a.Name == b.Name &&
+		a.Value == b.Value
+}
+
 var itemTypeToAggregationOperation = map[parser.ItemType]AggregationOperation{
 	parser.SUM:          AGGREGATION_SUM,
 	parser.AVG:          AGGREGATION_AVG,
@@ -109,6 +114,11 @@ func (o AggregationOperation) Describe() string {
 	}
 
 	return item.String()
+}
+
+func (o AggregationOperation) ToItemType() (parser.ItemType, bool) {
+	item, ok := aggregationOperationToItemType[o]
+	return item, ok
 }
 
 var itemTypeToBinaryOperation = map[parser.ItemType]BinaryOperation{
@@ -150,6 +160,11 @@ func (o BinaryOperation) Describe() string {
 	return item.String()
 }
 
+func (o BinaryOperation) ToItemType() (parser.ItemType, bool) {
+	item, ok := binaryOperationToItemType[o]
+	return item, ok
+}
+
 func UnaryOperationFrom(itemType parser.ItemType) (UnaryOperation, error) {
 	if itemType != parser.SUB {
 		return UNARY_UNKNOWN, compat.NewNotSupportedError(fmt.Sprintf("unknown unary operation: %v", itemType.String()))
@@ -180,4 +195,12 @@ func invert[A, B comparable](original map[A]B) map[B]A {
 	}
 
 	return inverted
+}
+
+func (t *Timestamp) ToInt64() *int64 {
+	if t == nil {
+		return nil
+	}
+
+	return &t.Timestamp
 }
