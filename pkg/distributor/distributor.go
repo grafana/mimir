@@ -145,6 +145,7 @@ type Distributor struct {
 	incomingExemplars                *prometheus.CounterVec
 	incomingMetadata                 *prometheus.CounterVec
 	nonHASamples                     *prometheus.CounterVec
+	failedHARequests                 *prometheus.CounterVec
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
 	incomingSamplesPerRequest        *prometheus.HistogramVec
@@ -438,6 +439,10 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name: "cortex_distributor_non_ha_samples_received_total",
 			Help: "The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.",
 		}, []string{"user"}),
+		failedHARequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_failed_ha_requests_total",
+			Help: "The total number of requests for a user that has HA tracking turned on, but the sample didn't contain both HA labels.",
+		}, []string{"user", "metric_name", "reason"}),
 		dedupedSamples: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_distributor_deduped_samples_total",
 			Help: "The total number of deduplicated samples.",
@@ -736,6 +741,7 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.droppedNativeHistograms.DeleteLabelValues(userID)
 
 	filter := prometheus.Labels{"user": userID}
+	d.failedHARequests.DeletePartialMatch(filter)
 	d.dedupedSamples.DeletePartialMatch(filter)
 	d.discardedSamplesTooManyHaClusters.DeletePartialMatch(filter)
 	d.discardedSamplesRateLimited.DeletePartialMatch(filter)
@@ -763,16 +769,25 @@ func (d *Distributor) stopping(_ error) error {
 // Returns a boolean that indicates whether or not we want to remove the replica label going forward,
 // and an error that indicates whether we want to accept samples based on the cluster/replica found in ts.
 // nil for the error means accept the sample.
-func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica string) (removeReplicaLabel bool, _ error) {
+func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica string) (removeReplicaLabel bool, _ string, _ error) {
 	// If the sample doesn't have either HA label, accept it.
 	// At the moment we want to accept these samples by default.
-	if cluster == "" || replica == "" {
-		return false, nil
+	if missingClusterLabel, missingReplicaLabel := cluster == "", replica == ""; missingClusterLabel || missingReplicaLabel {
+		var reason string
+		switch {
+		case missingClusterLabel && missingReplicaLabel:
+			reason = "missing_both_labels"
+		case missingClusterLabel:
+			reason = "missing_cluster_label"
+		case missingReplicaLabel:
+			reason = "missing_replica_label"
+		}
+		return false, reason, nil
 	}
 
 	// If replica label is too long, don't use it. We accept the sample here, but it will fail validation later anyway.
 	if len(replica) > d.limits.MaxLabelValueLength(userID) {
-		return false, nil
+		return false, "label_too_long", nil
 	}
 
 	// At this point we know we have both HA labels, we should lookup
@@ -781,9 +796,9 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 	// checkReplica would have returned an error if there was a real error talking to Consul,
 	// or if the replica is not the currently elected replica.
 	if err != nil { // Don't accept the sample.
-		return false, err
+		return false, "others", err
 	}
-	return true, nil
+	return true, "", nil
 }
 
 // validateSamples validates samples of a single timeseries and removes the ones with duplicated timestamps.
@@ -994,7 +1009,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		haReplicaLabel := d.limits.HAReplicaLabel(userID)
-		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+		cluster, replica, metricName := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
 
@@ -1011,7 +1026,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 			numSamples += len(ts.Samples) + len(ts.Histograms)
 		}
 
-		removeReplica, err := d.checkSample(ctx, userID, cluster, replica)
+		removeReplica, keepReplicaReason, err := d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
 			if errors.As(err, &replicasDidNotMatchError{}) {
 				// These samples have been deduped.
@@ -1036,6 +1051,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		} else {
 			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
 			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
+			d.failedHARequests.WithLabelValues(userID, metricName, keepReplicaReason).Inc()
 		}
 
 		return next(ctx, pushReq)

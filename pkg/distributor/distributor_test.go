@@ -360,6 +360,7 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		"cortex_distributor_exemplars_in_total",
 		"cortex_distributor_metadata_in_total",
 		"cortex_distributor_non_ha_samples_received_total",
+		"cortex_distributor_failed_ha_requests_total",
 		"cortex_distributor_latest_seen_sample_timestamp_seconds",
 		"cortex_distributor_dropped_native_histograms_total",
 	}
@@ -374,7 +375,10 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 	d.incomingExemplars.WithLabelValues("userA").Add(5)
 	d.incomingMetadata.WithLabelValues("userA").Add(5)
 	d.nonHASamples.WithLabelValues("userA").Add(5)
-	d.dedupedSamples.WithLabelValues("userA", "cluster1").Inc() // We cannot clean this metric
+	d.dedupedSamples.WithLabelValues("userA", "cluster1").Inc()
+	d.failedHARequests.WithLabelValues("userA", "foo", "missing_cluster_label").Inc()
+	d.failedHARequests.WithLabelValues("userA", "foo", "missing_replica_label").Inc()
+	d.failedHARequests.WithLabelValues("userB", "bar", "missing_cluster_label").Inc()
 	d.latestSeenSampleTimestampPerUser.WithLabelValues("userA").Set(1111)
 	d.droppedNativeHistograms.WithLabelValues("userA").Inc()
 
@@ -398,6 +402,12 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 		# HELP cortex_distributor_non_ha_samples_received_total The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.
 		# TYPE cortex_distributor_non_ha_samples_received_total counter
 		cortex_distributor_non_ha_samples_received_total{user="userA"} 5
+
+		# HELP cortex_distributor_failed_ha_requests_total The total number of requests for a user that has HA tracking turned on, but the sample didn't contain both HA labels.
+		# TYPE cortex_distributor_failed_ha_requests_total counter
+		cortex_distributor_failed_ha_requests_total{metric_name="foo",reason="missing_cluster_label",user="userA"} 1
+		cortex_distributor_failed_ha_requests_total{metric_name="foo",reason="missing_replica_label",user="userA"} 1
+		cortex_distributor_failed_ha_requests_total{metric_name="bar",reason="missing_cluster_label",user="userB"} 1
 
 		# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 		# TYPE cortex_distributor_received_metadata_total counter
@@ -440,6 +450,10 @@ func TestDistributor_MetricsCleanup(t *testing.T) {
 
 		# HELP cortex_distributor_non_ha_samples_received_total The total number of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.
 		# TYPE cortex_distributor_non_ha_samples_received_total counter
+
+		# HELP cortex_distributor_failed_ha_requests_total The total number of requests for a user that has HA tracking turned on, but the sample didn't contain both HA labels.
+		# TYPE cortex_distributor_failed_ha_requests_total counter
+		cortex_distributor_failed_ha_requests_total{metric_name="bar",reason="missing_cluster_label",user="userB"} 1
 
 		# HELP cortex_distributor_received_metadata_total The total number of received metadata, excluding rejected.
 		# TYPE cortex_distributor_received_metadata_total counter
