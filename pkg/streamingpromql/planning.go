@@ -18,10 +18,10 @@ import (
 )
 
 type PlanningObserver interface {
-	OnASTStageComplete(stageName string, updatedExpr parser.Expr, duration time.Duration)
-	OnAllASTStagesComplete(finalExpr parser.Expr)
-	OnPlanningStageComplete(stageName string, updatedPlan *planning.QueryPlan, duration time.Duration)
-	OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan)
+	OnASTStageComplete(stageName string, updatedExpr parser.Expr, duration time.Duration) error
+	OnAllASTStagesComplete(finalExpr parser.Expr) error
+	OnPlanningStageComplete(stageName string, updatedPlan *planning.QueryPlan, duration time.Duration) error
+	OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error
 }
 
 // TODO: timeout
@@ -47,7 +47,9 @@ func (e *Engine) NewQueryPlan(ctx context.Context, qs string, timeRange types.Qu
 		}
 	}
 
-	observer.OnAllASTStagesComplete(expr)
+	if err := observer.OnAllASTStagesComplete(expr); err != nil {
+		return nil, err
+	}
 
 	plan, err := runPlanningStage("Original plan", observer, func() (*planning.QueryPlan, error) {
 		root, err := e.nodeFromExpr(expr)
@@ -75,7 +77,9 @@ func (e *Engine) NewQueryPlan(ctx context.Context, qs string, timeRange types.Qu
 		}
 	}
 
-	observer.OnAllPlanningStagesComplete(plan)
+	if err := observer.OnAllPlanningStagesComplete(plan); err != nil {
+		return nil, err
+	}
 
 	return plan, err
 }
@@ -88,7 +92,10 @@ func runASTStage(stageName string, observer PlanningObserver, stage func() (pars
 	}
 
 	duration := time.Since(start)
-	observer.OnASTStageComplete(stageName, expr, duration)
+
+	if err := observer.OnASTStageComplete(stageName, expr, duration); err != nil {
+		return nil, err
+	}
 
 	return expr, nil
 }
@@ -101,7 +108,10 @@ func runPlanningStage(stageName string, observer PlanningObserver, stage func() 
 	}
 
 	duration := time.Since(start)
-	observer.OnPlanningStageComplete(stageName, plan, duration)
+
+	if err := observer.OnPlanningStageComplete(stageName, plan, duration); err != nil {
+		return nil, err
+	}
 
 	return plan, nil
 }
@@ -320,20 +330,24 @@ func (e *Engine) Analyze(ctx context.Context, qs string, timeRange types.QueryTi
 
 type NoopPlanningObserver struct{}
 
-func (n NoopPlanningObserver) OnASTStageComplete(stageName string, updatedExpr parser.Expr, duration time.Duration) {
+func (n NoopPlanningObserver) OnASTStageComplete(stageName string, updatedExpr parser.Expr, duration time.Duration) error {
 	// Nothing to do.
+	return nil
 }
 
-func (n NoopPlanningObserver) OnAllASTStagesComplete(finalExpr parser.Expr) {
+func (n NoopPlanningObserver) OnAllASTStagesComplete(finalExpr parser.Expr) error {
 	// Nothing to do.
+	return nil
 }
 
-func (n NoopPlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan *planning.QueryPlan, duration time.Duration) {
+func (n NoopPlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan *planning.QueryPlan, duration time.Duration) error {
 	// Nothing to do.
+	return nil
 }
 
-func (n NoopPlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) {
+func (n NoopPlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error {
 	// Nothing to do.
+	return nil
 }
 
 type AnalysisPlanningObserver struct {
@@ -351,38 +365,60 @@ func NewAnalysisPlanningObserver(expr string, timeRange types.QueryTimeRange, en
 	}
 }
 
-func (o *AnalysisPlanningObserver) OnASTStageComplete(stageName string, updatedExpr parser.Expr, duration time.Duration) {
+func (o *AnalysisPlanningObserver) OnASTStageComplete(stageName string, updatedExpr parser.Expr, duration time.Duration) error {
 	o.Result.ASTStages = append(o.Result.ASTStages, ASTStage{
 		Name:             stageName,
 		Duration:         &duration,
 		OutputExpression: updatedExpr.Pretty(0),
 	})
+
+	return nil
 }
 
-func (o *AnalysisPlanningObserver) OnAllASTStagesComplete(finalExpr parser.Expr) {
+func (o *AnalysisPlanningObserver) OnAllASTStagesComplete(finalExpr parser.Expr) error {
 	o.Result.ASTStages = append(o.Result.ASTStages, ASTStage{
 		Name:             "Final expression",
 		OutputExpression: finalExpr.Pretty(0),
 	})
+
+	return nil
 }
 
-func (o *AnalysisPlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan *planning.QueryPlan, duration time.Duration) {
-	plan, _ := updatedPlan.ToEncodedPlan(true, false) // TODO: what to do if encoding fails?
-	planBytes, _ := jsoniter.Marshal(plan)            // TODO: what to do if marshalling fails?
+func (o *AnalysisPlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan *planning.QueryPlan, duration time.Duration) error {
+	plan, err := updatedPlan.ToEncodedPlan(true, false)
+	if err != nil {
+		return err
+	}
+
+	planBytes, err := jsoniter.Marshal(plan)
+	if err != nil {
+		return err
+	}
 
 	o.Result.PlanningStages = append(o.Result.PlanningStages, PlanningStage{
 		Name:       stageName,
 		Duration:   &duration,
 		OutputPlan: planBytes,
 	})
+
+	return nil
 }
 
-func (o *AnalysisPlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) {
-	plan, _ := finalPlan.ToEncodedPlan(true, false) // TODO: what to do if encoding fails?
-	planBytes, _ := jsoniter.Marshal(plan)          // TODO: what to do if marshalling fails?
+func (o *AnalysisPlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error {
+	plan, err := finalPlan.ToEncodedPlan(true, false)
+	if err != nil {
+		return err
+	}
+
+	planBytes, err := jsoniter.Marshal(plan)
+	if err != nil {
+		return err
+	}
 
 	o.Result.PlanningStages = append(o.Result.PlanningStages, PlanningStage{
 		Name:       "Final plan",
 		OutputPlan: planBytes,
 	})
+
+	return nil
 }
