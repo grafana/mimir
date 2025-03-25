@@ -35,6 +35,8 @@ var (
 	ErrNoMemcachedAddresses                    = errors.New("no memcached addresses provided")
 	ErrMemcachedMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
 
+	dnsProviders = []string{dns.GolangResolverType.String(), dns.MiekgdnsResolverType.String(), dns.MiekgdnsResolverType2.String()}
+
 	_ Cache = (*MemcachedClient)(nil)
 )
 
@@ -72,6 +74,10 @@ type MemcachedClientConfig struct {
 	// Addresses specifies the list of memcached addresses. The addresses get
 	// resolved with the DNS provider.
 	Addresses flagext.StringSliceCSV `yaml:"addresses"`
+
+	// AddressesProvider specifies the DNS provider used for resolving memcached
+	// addresses.
+	AddressesProvider dns.ResolverType `yaml:"addresses_provider" category:"experimental"`
 
 	// Timeout specifies the socket read/write timeout.
 	Timeout time.Duration `yaml:"timeout"`
@@ -114,10 +120,16 @@ type MemcachedClientConfig struct {
 
 	// TLS to use to connect to the Memcached server.
 	TLS dstls.ClientConfig `yaml:",inline"`
+
+	// DNSIgnoreStartupFailures allows the client to start even if initial DNS resolution fails.
+	// When true, DNS failures are logged but client creation succeeds.
+	DNSIgnoreStartupFailures bool `yaml:"dns_ignore_startup_failures" category:"experimental"`
 }
 
 func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(&c.Addresses, prefix+"addresses", "Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.")
+	c.AddressesProvider = dns.MiekgdnsResolverType
+	f.Var(&c.AddressesProvider, prefix+"addresses-provider", fmt.Sprintf("DNS provider used for resolving memcached addresses. Available providers %s", strings.Join(dnsProviders, ", ")))
 	f.DurationVar(&c.Timeout, prefix+"timeout", 200*time.Millisecond, "The socket read/write timeout.")
 	f.DurationVar(&c.ConnectTimeout, prefix+"connect-timeout", 200*time.Millisecond, "The connection timeout.")
 	f.Float64Var(&c.MinIdleConnectionsHeadroomPercentage, prefix+"min-idle-connections-headroom-percentage", -1, "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.")
@@ -129,6 +141,7 @@ func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.F
 	f.IntVar(&c.MaxItemSize, prefix+"max-item-size", 1024*1024, "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.")
 	f.BoolVar(&c.TLSEnabled, prefix+"tls-enabled", false, "Enable connecting to Memcached with TLS.")
 	c.TLS.RegisterFlagsWithPrefix(prefix, f)
+	f.BoolVar(&c.DNSIgnoreStartupFailures, prefix+"dns-ignore-startup-failures", false, "Allow client creation even if initial DNS resolution fails.")
 }
 
 func (c *MemcachedClientConfig) Validate() error {
@@ -215,7 +228,21 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	if reg != nil {
 		reg = prometheus.WrapRegistererWith(prometheus.Labels{labelCacheName: name}, reg)
 	}
-	return newMemcachedClient(logger, client, selector, config, reg, name)
+	mcClient, err := newMemcachedClient(logger, client, selector, config, reg, name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Start the background DNS resolution
+	go mcClient.resolveAddrsLoop()
+
+	// Do initial DNS resolution
+	if err := mcClient.resolveAddrs(); err != nil && !config.DNSIgnoreStartupFailures {
+		mcClient.Stop()
+		return nil, err
+	}
+
+	return mcClient, nil
 }
 
 func newMemcachedClient(
@@ -229,13 +256,7 @@ func newMemcachedClient(
 	reg = prometheus.WrapRegistererWith(
 		prometheus.Labels{labelCacheBackend: backendValueMemcached},
 		prometheus.WrapRegistererWithPrefix(cacheMetricNamePrefix, reg))
-
-	addressProvider := dns.NewProvider(
-		logger,
-		reg,
-		dns.MiekgdnsResolverType,
-	)
-
+	addressProvider := dns.NewProvider(logger, reg, config.AddressesProvider)
 	metrics := newClientMetrics(reg)
 
 	c := &MemcachedClient{
@@ -268,14 +289,6 @@ func newMemcachedClient(
 	},
 		func() float64 { return 1 },
 	)
-
-	// As soon as the client is created it must ensure that memcached server
-	// addresses are resolved, so we're going to trigger an initial addresses
-	// resolution here.
-	if err := c.resolveAddrs(); err != nil {
-		return nil, err
-	}
-	go c.resolveAddrsLoop()
 
 	return c, nil
 }
@@ -718,10 +731,10 @@ func (c *MemcachedClient) resolveAddrs() error {
 	if err := c.addressProvider.Resolve(ctx, c.config.Addresses); err != nil {
 		level.Error(c.logger).Log("msg", "failed to resolve addresses for memcached", "addresses", strings.Join(c.config.Addresses, ","), "err", err)
 	}
-	// Fail in case no server address is resolved.
+	// Return error in case no server address is resolved.
 	servers := c.addressProvider.Addresses()
 	if len(servers) == 0 {
-		return fmt.Errorf("no server address resolved for %s", c.name)
+		return fmt.Errorf("no memcached server addresses were resolved")
 	}
 
 	return c.selector.SetServers(servers...)
