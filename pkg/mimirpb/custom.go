@@ -51,20 +51,78 @@ func messageV2Of(v any) protobufproto.Message {
 }
 
 func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
-	return c.codec.Marshal(v)
+	vv := messageV2Of(v)
+	if vv == nil {
+		return nil, fmt.Errorf("proto: failed to marshal, message is %T, want proto.Message", v)
+	}
+
+	var size int
+	if sizer, ok := v.(gogoproto.Sizer); ok {
+		size = sizer.Size()
+	} else {
+		size = protobufproto.Size(vv)
+	}
+
+	var data mem.BufferSlice
+	// MarshalWithSize should be the most optimized method.
+	if marshaler, ok := v.(MarshalerWithSize); ok {
+		var buf []byte
+		var err error
+		buf, err = marshaler.MarshalWithSize(size)
+		if err != nil {
+			return nil, err
+		}
+		data = append(data, mem.SliceBuffer(buf))
+	} else if mem.IsBelowBufferPoolingThreshold(size) {
+		marshaler, ok := v.(gogoproto.Marshaler)
+		var buf []byte
+		var err error
+		if ok {
+			buf, err = marshaler.Marshal()
+		} else {
+			buf, err = protobufproto.Marshal(vv)
+		}
+		if err != nil {
+			return nil, err
+		}
+		data = append(data, mem.SliceBuffer(buf))
+	} else {
+		pool := mem.DefaultBufferPool()
+		buf := pool.Get(size)
+		var err error
+		marshaler, ok := v.(SizedMarshaler)
+		if ok {
+			_, err = marshaler.MarshalToSizedBuffer((*buf)[:size])
+		} else {
+			_, err = (protobufproto.MarshalOptions{}).MarshalAppend((*buf)[:0], vv)
+		}
+		if err != nil {
+			pool.Put(buf)
+			return nil, err
+		}
+		data = append(data, mem.NewBuffer(buf, pool))
+	}
+
+	return data, nil
 }
 
 // Unmarshal customizes gRPC unmarshalling.
 // If v wraps BufferHolder, its SetBuffer method is called with the unmarshalling buffer.
 func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
-	vv := messageV2Of(v)
 	buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
 	// Decrement buf's reference count. Note though that if v wraps BufferHolder,
 	// we increase buf's reference count first so it doesn't go to zero.
 	defer buf.Free()
 
-	if err := protobufproto.Unmarshal(buf.ReadOnlyData(), vv); err != nil {
-		return err
+	if unmarshaler, ok := v.(gogoproto.Unmarshaler); ok {
+		if err := unmarshaler.Unmarshal(buf.ReadOnlyData()); err != nil {
+			return err
+		}
+	} else {
+		vv := messageV2Of(v)
+		if err := protobufproto.Unmarshal(buf.ReadOnlyData(), vv); err != nil {
+			return err
+		}
 	}
 
 	if holder, ok := v.(interface {
@@ -917,11 +975,14 @@ func (m *CustomMetric) Unmarshal(data []byte) error {
 	return nil
 }
 
-// orderAwareMetricMetadata is a tuple (index, metadata) that knows its own position in a metadata slice.
-// It's tied to custom logic that unmarshals RW2 metadata into a map, and allows us to
-// remember the order that metadata arrived in when unmarshalling.
-type orderAwareMetricMetadata struct {
-	MetricMetadata
-	// order is the 0-based index of this metadata object in a wider metadata array.
-	order int
+// SizedMarshaler supports marshaling a protobuf message to a sized buffer.
+type SizedMarshaler interface {
+	// MarshalToSizedBuffer appends the wire-format encoding of m to b.
+	MarshalToSizedBuffer(b []byte) (int, error)
+}
+
+// MarshalerWithSize supports marshaling a protobuf message with a predetermined buffer size.
+type MarshalerWithSize interface {
+	// MarshalToSizedBuffer returns a wire format byte slice of the given size.
+	MarshalWithSize(size int) ([]byte, error)
 }
