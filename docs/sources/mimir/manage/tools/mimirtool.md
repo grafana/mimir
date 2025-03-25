@@ -310,9 +310,10 @@ For more information, refer to the [documentation of Mimirtool Github Action](ht
 
 Configuration options relevant to rules commands:
 
-| Flag           | Description                                        |
-| -------------- | -------------------------------------------------- |
-| `--auth-token` | Authentication token for bearer token or JWT auth. |
+| Flag                              | Description                                                  |
+| --------------------------------- | ------------------------------------------------------------ |
+| `--auth-token`                    | Authentication token for bearer token or JWT auth.           |
+| `--enable-experimental-functions` | Enable parsing experimental PromQL functions (e.g. `sort()`) |
 
 #### List rules
 
@@ -683,6 +684,12 @@ X-Prom-Label-Policy: 1234:%7Bnamespace=%22A%22%7D
 
 You can analyze your Grafana or Hosted Grafana instance to determine which metrics are used and exported. You can also extract metrics from dashboard JSON files and rules YAML files.
 
+Configuration options relevant to analyze commands:
+
+| Environment variable | Flag                              | Description                                                       |
+| -------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| -                    | `--enable-experimental-functions` | Enables parsing PromQL queries containing experimental functions. |
+
 #### Grafana
 
 The following command runs against your Grafana instance, downloads its dashboards, and extracts the Prometheus
@@ -799,9 +806,9 @@ mimirtool analyze rule-file <file>
 
 ##### Configuration
 
-| Environment variable | Flag       | Description                                                             |
-| -------------------- | ---------- | ----------------------------------------------------------------------- |
-| -                    | `--output` | Sets the output file path, which by default is `metrics-in-ruler.json`. |
+| Environment variable | Flag                              | Description                                                             |
+| -------------------- | --------------------------------- | ----------------------------------------------------------------------- |
+| -                    | `--output`                        | Sets the output file path, which by default is `metrics-in-ruler.json`. |
 
 #### Prometheus
 
