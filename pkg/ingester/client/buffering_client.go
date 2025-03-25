@@ -93,7 +93,10 @@ type wrappedRequest struct {
 }
 
 func (w *wrappedRequest) Marshal() ([]byte, error) {
-	size := w.WriteRequest.Size()
+	return w.MarshalWithSize(w.Size())
+}
+
+func (w *wrappedRequest) MarshalWithSize(size int) ([]byte, error) {
 	buf, slabID := w.slabPool.Get(size)
 
 	if w.slabID == 0 {
@@ -120,4 +123,4 @@ func (w *wrappedRequest) ReturnBuffersToPool() {
 	w.moreSlabIDs = nil
 }
 
-var _ mimirpb.SizedMarshaler = wrappedRequest{}
+var _ mimirpb.MarshalerWithSize = &wrappedRequest{}

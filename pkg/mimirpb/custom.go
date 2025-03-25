@@ -64,7 +64,16 @@ func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
 	}
 
 	var data mem.BufferSlice
-	if mem.IsBelowBufferPoolingThreshold(size) {
+	// MarshalWithSize should be the most optimized method.
+	if marshaler, ok := v.(MarshalerWithSize); ok {
+		var buf []byte
+		var err error
+		buf, err = marshaler.MarshalWithSize(size)
+		if err != nil {
+			return nil, err
+		}
+		data = append(data, mem.SliceBuffer(buf))
+	} else if mem.IsBelowBufferPoolingThreshold(size) {
 		marshaler, ok := v.(gogoproto.Marshaler)
 		var buf []byte
 		var err error
@@ -934,4 +943,10 @@ func (m *CustomMetric) Unmarshal(data []byte) error {
 type SizedMarshaler interface {
 	// MarshalToSizedBuffer appends the wire-format encoding of m to b.
 	MarshalToSizedBuffer(b []byte) (int, error)
+}
+
+// MarshalerWithSize supports marshaling a protobuf message with a predetermined buffer size.
+type MarshalerWithSize interface {
+	// MarshalToSizedBuffer returns a wire format byte slice of the given size.
+	MarshalWithSize(size int) ([]byte, error)
 }
