@@ -59,9 +59,11 @@ func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
 	var size int
 	if sizer, ok := v.(gogoproto.Sizer); ok {
 		size = sizer.Size()
+	} else {
+		size = protobufproto.Size(vv)
 	}
-	var data mem.BufferSlice
 
+	var data mem.BufferSlice
 	if mem.IsBelowBufferPoolingThreshold(size) {
 		buf, err := protobufproto.Marshal(vv)
 		if err != nil {
