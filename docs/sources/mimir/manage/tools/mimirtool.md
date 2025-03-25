@@ -806,9 +806,9 @@ mimirtool analyze rule-file <file>
 
 ##### Configuration
 
-| Environment variable | Flag                              | Description                                                             |
-| -------------------- | --------------------------------- | ----------------------------------------------------------------------- |
-| -                    | `--output`                        | Sets the output file path, which by default is `metrics-in-ruler.json`. |
+| Environment variable | Flag       | Description                                                             |
+| -------------------- | ---------- | ----------------------------------------------------------------------- |
+| -                    | `--output` | Sets the output file path, which by default is `metrics-in-ruler.json`. |
 
 #### Prometheus
 
