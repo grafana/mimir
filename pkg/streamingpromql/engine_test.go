@@ -3392,3 +3392,57 @@ func TestQueryStats(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryStatementLookbackDelta(t *testing.T) {
+	limitsProvider := NewStaticQueryLimitsProvider(0)
+	stats := stats.NewQueryMetrics(nil)
+	logger := log.NewNopLogger()
+
+	runTest := func(t *testing.T, engine promql.QueryEngine, queryOpts promql.QueryOpts, expectedLookbackDelta time.Duration) {
+		q, err := engine.NewInstantQuery(context.Background(), nil, queryOpts, "1", time.Now())
+		require.NoError(t, err)
+
+		require.Equal(t, expectedLookbackDelta, q.Statement().(*parser.EvalStmt).LookbackDelta)
+	}
+
+	t.Run("engine with no lookback delta configured", func(t *testing.T) {
+		engineOpts := NewTestEngineOpts()
+		engine, err := NewEngine(engineOpts, limitsProvider, stats, logger)
+		require.NoError(t, err)
+
+		t.Run("lookback delta not set in query options", func(t *testing.T) {
+			queryOpts := promql.NewPrometheusQueryOpts(false, 0)
+			runTest(t, engine, queryOpts, defaultLookbackDelta)
+		})
+
+		t.Run("no query options provided", func(t *testing.T) {
+			runTest(t, engine, nil, defaultLookbackDelta)
+		})
+
+		t.Run("lookback delta set in query options", func(t *testing.T) {
+			queryOpts := promql.NewPrometheusQueryOpts(false, 14*time.Minute)
+			runTest(t, engine, queryOpts, 14*time.Minute)
+		})
+	})
+
+	t.Run("engine with lookback delta configured", func(t *testing.T) {
+		engineOpts := NewTestEngineOpts()
+		engineOpts.CommonOpts.LookbackDelta = 12 * time.Minute
+		engine, err := NewEngine(engineOpts, limitsProvider, stats, logger)
+		require.NoError(t, err)
+
+		t.Run("lookback delta not set in query options", func(t *testing.T) {
+			queryOpts := promql.NewPrometheusQueryOpts(false, 0)
+			runTest(t, engine, queryOpts, 12*time.Minute)
+		})
+
+		t.Run("no query options provided", func(t *testing.T) {
+			runTest(t, engine, nil, 12*time.Minute)
+		})
+
+		t.Run("lookback delta set in query options", func(t *testing.T) {
+			queryOpts := promql.NewPrometheusQueryOpts(false, 14*time.Minute)
+			runTest(t, engine, queryOpts, 14*time.Minute)
+		})
+	})
+}
