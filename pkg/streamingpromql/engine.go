@@ -86,8 +86,9 @@ type Engine struct {
 	// (indicating something was not returned to a pool).
 	pedantic bool
 
-	astOptimizers  []optimize.ASTOptimizer
-	planOptimizers []optimize.QueryPlanOptimizer
+	useQueryPlanning bool
+	astOptimizers    []optimize.ASTOptimizer
+	planOptimizers   []optimize.QueryPlanOptimizer
 }
 
 // RegisterASTOptimizer registers an AST optimizer used with this engine.
