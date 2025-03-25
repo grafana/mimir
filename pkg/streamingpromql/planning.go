@@ -110,10 +110,12 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	switch expr := expr.(type) {
 	case *parser.VectorSelector:
 		return &planning.VectorSelector{
-			Matchers:           expr.LabelMatchers,
-			Timestamp:          expr.Timestamp,
-			Offset:             expr.OriginalOffset,
-			ExpressionPosition: expr.PositionRange(),
+			VectorSelectorDetails: &planning.VectorSelectorDetails{
+				Matchers:           planning.LabelMatchersFrom(expr.LabelMatchers),
+				Timestamp:          planning.TimestampFrom(expr.Timestamp),
+				Offset:             expr.OriginalOffset,
+				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+			},
 		}, nil
 
 	case *parser.MatrixSelector:
@@ -123,11 +125,13 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}
 
 		return &planning.MatrixSelector{
-			Matchers:           vs.LabelMatchers,
-			Timestamp:          vs.Timestamp,
-			Offset:             vs.OriginalOffset,
-			Range:              expr.Range,
-			ExpressionPosition: expr.PositionRange(),
+			MatrixSelectorDetails: &planning.MatrixSelectorDetails{
+				Matchers:           planning.LabelMatchersFrom(vs.LabelMatchers),
+				Timestamp:          planning.TimestampFrom(vs.Timestamp),
+				Offset:             vs.OriginalOffset,
+				Range:              expr.Range,
+				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+			},
 		}, nil
 
 	case *parser.AggregateExpr:
@@ -145,13 +149,20 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			}
 		}
 
+		op, err := planning.AggregationOperationFrom(expr.Op)
+		if err != nil {
+			return nil, err
+		}
+
 		return &planning.AggregateExpression{
-			Op:                 expr.Op,
-			Inner:              inner,
-			Param:              param,
-			Grouping:           expr.Grouping,
-			Without:            expr.Without,
-			ExpressionPosition: expr.PositionRange(),
+			Inner: inner,
+			Param: param,
+			AggregateExpressionDetails: &planning.AggregateExpressionDetails{
+				Op:                 op,
+				Grouping:           expr.Grouping,
+				Without:            expr.Without,
+				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+			},
 		}, nil
 
 	case *parser.BinaryExpr:
@@ -165,12 +176,19 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			return nil, err
 		}
 
+		op, err := planning.BinaryOperationFrom(expr.Op)
+		if err != nil {
+			return nil, err
+		}
+
 		return &planning.BinaryExpression{
-			Op:             expr.Op,
-			LHS:            lhs,
-			RHS:            rhs,
-			VectorMatching: planning.VectorMatchingFromParserType(expr.VectorMatching),
-			ReturnBool:     expr.ReturnBool,
+			LHS: lhs,
+			RHS: rhs,
+			BinaryExpressionDetails: &planning.BinaryExpressionDetails{
+				Op:             op,
+				VectorMatching: planning.VectorMatchingFrom(expr.VectorMatching),
+				ReturnBool:     expr.ReturnBool,
+			},
 		}, nil
 
 	case *parser.Call:
@@ -186,9 +204,11 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}
 
 		return &planning.FunctionCall{
-			FunctionName:       expr.Func.Name,
-			Args:               args,
-			ExpressionPosition: expr.PositionRange(),
+			Args: args,
+			FunctionCallDetails: &planning.FunctionCallDetails{
+				FunctionName:       expr.Func.Name,
+				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+			},
 		}, nil
 
 	case *parser.SubqueryExpr:
@@ -204,12 +224,14 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}
 
 		return &planning.Subquery{
-			Inner:              inner,
-			Timestamp:          expr.Timestamp,
-			Offset:             expr.OriginalOffset,
-			Range:              expr.Range,
-			Step:               step,
-			ExpressionPosition: expr.PositionRange(),
+			Inner: inner,
+			SubqueryDetails: &planning.SubqueryDetails{
+				Timestamp:          planning.TimestampFrom(expr.Timestamp),
+				Offset:             expr.OriginalOffset,
+				Range:              expr.Range,
+				Step:               step,
+				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+			},
 		}, nil
 
 	case *parser.UnaryExpr:
@@ -218,22 +240,33 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			return nil, err
 		}
 
+		op, err := planning.UnaryOperationFrom(expr.Op)
+		if err != nil {
+			return nil, err
+		}
+
 		return &planning.UnaryExpression{
-			Op:                 expr.Op,
-			Inner:              inner,
-			ExpressionPosition: expr.PositionRange(),
+			Inner: inner,
+			UnaryExpressionDetails: &planning.UnaryExpressionDetails{
+				Op:                 op,
+				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+			},
 		}, nil
 
 	case *parser.NumberLiteral:
 		return &planning.NumberLiteral{
-			Value:              expr.Val,
-			ExpressionPosition: expr.PositionRange(),
+			NumberLiteralDetails: &planning.NumberLiteralDetails{
+				Value:              expr.Val,
+				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+			},
 		}, nil
 
 	case *parser.StringLiteral:
 		return &planning.StringLiteral{
-			Value:              expr.Val,
-			ExpressionPosition: expr.PositionRange(),
+			StringLiteralDetails: &planning.StringLiteralDetails{
+				Value:              expr.Val,
+				ExpressionPosition: planning.PositionRangeFrom(expr.PositionRange()),
+			},
 		}, nil
 
 	case *parser.ParenExpr:
@@ -246,20 +279,6 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	default:
 		return nil, fmt.Errorf("unknown expression type: %T", expr)
 	}
-}
-
-func (e *Engine) EncodeQueryPlan(plan *planning.QueryPlan) ([]byte, error) {
-	return e.jsonConfig.Marshal(plan)
-}
-
-func (e *Engine) DecodeQueryPlan(data []byte) (*planning.QueryPlan, error) {
-	plan := &planning.QueryPlan{}
-
-	if err := e.jsonConfig.Unmarshal(data, plan); err != nil {
-		return nil, err
-	}
-
-	return plan, nil
 }
 
 // Materialize converts a query plan into an executable query.
@@ -348,20 +367,22 @@ func (o *AnalysisPlanningObserver) OnAllASTStagesComplete(finalExpr parser.Expr)
 }
 
 func (o *AnalysisPlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan *planning.QueryPlan, duration time.Duration) {
-	plan, _ := o.Engine.EncodeQueryPlan(updatedPlan) // TODO: what to do if encoding fails?
+	plan, _ := updatedPlan.ToEncodedPlan(true, false) // TODO: what to do if encoding fails?
+	planBytes, _ := jsoniter.Marshal(plan)            // TODO: what to do if marshalling fails?
 
 	o.Result.PlanningStages = append(o.Result.PlanningStages, PlanningStage{
 		Name:       stageName,
 		Duration:   &duration,
-		OutputPlan: plan,
+		OutputPlan: planBytes,
 	})
 }
 
 func (o *AnalysisPlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) {
-	plan, _ := o.Engine.EncodeQueryPlan(finalPlan) // TODO: what to do if encoding fails?
+	plan, _ := finalPlan.ToEncodedPlan(true, false) // TODO: what to do if encoding fails?
+	planBytes, _ := jsoniter.Marshal(plan)          // TODO: what to do if marshalling fails?
 
 	o.Result.PlanningStages = append(o.Result.PlanningStages, PlanningStage{
 		Name:       "Final plan",
-		OutputPlan: plan,
+		OutputPlan: planBytes,
 	})
 }
