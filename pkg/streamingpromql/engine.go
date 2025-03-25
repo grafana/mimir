@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
@@ -72,10 +71,6 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 
 		pedantic: opts.Pedantic,
-
-		jsonConfig: jsoniter.Config{
-			EscapeHTML: false,
-		}.Froze(),
 	}, nil
 }
 
@@ -98,7 +93,6 @@ type Engine struct {
 
 	astOptimizers  []optimize.ASTOptimizer
 	planOptimizers []optimize.QueryPlanOptimizer
-	jsonConfig     jsoniter.API
 }
 
 // RegisterASTOptimizer registers an AST optimizer used with this engine.
