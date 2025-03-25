@@ -40,7 +40,6 @@ var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Query struct {
 	queryable                storage.Queryable
-	opts                     promql.QueryOpts
 	statement                *parser.EvalStmt
 	root                     types.Operator
 	engine                   *Engine
@@ -81,7 +80,6 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 
 	q := &Query{
 		queryable:                queryable,
-		opts:                     opts,
 		engine:                   engine,
 		qs:                       qs,
 		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, engine.queriesRejectedDueToPeakMemoryConsumption),
