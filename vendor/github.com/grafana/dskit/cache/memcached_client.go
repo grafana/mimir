@@ -34,8 +34,6 @@ const (
 var (
 	ErrNoMemcachedAddresses                    = errors.New("no memcached addresses provided")
 	ErrMemcachedMaxAsyncConcurrencyNotPositive = errors.New("max async concurrency must be positive")
-	ErrInvalidWriteBufferSizeBytes             = errors.New("invalid write buffer size specified (must be greater than 0)")
-	ErrInvalidReadBufferSizeBytes              = errors.New("invalid read buffer size specified (must be greater than 0)")
 
 	dnsProviders = []string{dns.GolangResolverType.String(), dns.MiekgdnsResolverType.String(), dns.MiekgdnsResolverType2.String()}
 
@@ -87,14 +85,6 @@ type MemcachedClientConfig struct {
 	// ConnectTimeout specifies the connection timeout.
 	ConnectTimeout time.Duration `yaml:"connect_timeout"`
 
-	// WriteBufferSizeBytes specifies the size of the write buffer (in bytes). The buffer
-	// is allocated for each connection.
-	WriteBufferSizeBytes int `yaml:"write_buffer_size_bytes" category:"experimental"`
-
-	// ReadBufferSizeBytes specifies the size of the read buffer (in bytes). The buffer
-	// is allocated for each connection.
-	ReadBufferSizeBytes int `yaml:"read_buffer_size_bytes" category:"experimental"`
-
 	// MinIdleConnectionsHeadroomPercentage specifies the minimum number of idle connections
 	// to keep open as a percentage of the number of recently used idle connections.
 	// If negative, idle connections are kept open indefinitely.
@@ -142,8 +132,6 @@ func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.F
 	f.Var(&c.AddressesProvider, prefix+"addresses-provider", fmt.Sprintf("DNS provider used for resolving memcached addresses. Available providers %s", strings.Join(dnsProviders, ", ")))
 	f.DurationVar(&c.Timeout, prefix+"timeout", 200*time.Millisecond, "The socket read/write timeout.")
 	f.DurationVar(&c.ConnectTimeout, prefix+"connect-timeout", 200*time.Millisecond, "The connection timeout.")
-	f.IntVar(&c.WriteBufferSizeBytes, prefix+"write-buffer-size-bytes", 4096, "The size of the write buffer (in bytes). The buffer is allocated for each connection to memcached.")
-	f.IntVar(&c.ReadBufferSizeBytes, prefix+"read-buffer-size-bytes", 4096, "The size of the read buffer (in bytes). The buffer is allocated for each connection to memcached.")
 	f.Float64Var(&c.MinIdleConnectionsHeadroomPercentage, prefix+"min-idle-connections-headroom-percentage", -1, "The minimum number of idle connections to keep open as a percentage (0-100) of the number of recently used idle connections. If negative, idle connections are kept open indefinitely.")
 	f.IntVar(&c.MaxIdleConnections, prefix+"max-idle-connections", 100, "The maximum number of idle connections that will be maintained per address.")
 	f.IntVar(&c.MaxAsyncConcurrency, prefix+"max-async-concurrency", 50, "The maximum number of concurrent asynchronous operations can occur.")
@@ -159,12 +147,6 @@ func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.F
 func (c *MemcachedClientConfig) Validate() error {
 	if len(c.Addresses) == 0 {
 		return ErrNoMemcachedAddresses
-	}
-	if c.WriteBufferSizeBytes <= 0 {
-		return ErrInvalidWriteBufferSizeBytes
-	}
-	if c.ReadBufferSizeBytes <= 0 {
-		return ErrInvalidReadBufferSizeBytes
 	}
 
 	// Set async only available when MaxAsyncConcurrency > 0.
@@ -226,8 +208,6 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	client := memcache.NewFromSelector(selector)
 	client.Timeout = config.Timeout
 	client.ConnectTimeout = config.ConnectTimeout
-	client.WriteBufferSizeBytes = config.WriteBufferSizeBytes
-	client.ReadBufferSizeBytes = config.ReadBufferSizeBytes
 	client.MinIdleConnsHeadroomPercentage = config.MinIdleConnectionsHeadroomPercentage
 	client.MaxIdleConns = config.MaxIdleConnections
 
@@ -297,9 +277,7 @@ func newMemcachedClient(
 		Name: clientInfoMetricName,
 		Help: "A metric with a constant '1' value labeled by configuration options from which memcached client was configured.",
 		ConstLabels: prometheus.Labels{
-			"timeout":                                  config.Timeout.String(),
-			"write_buffer_size_bytes":                  strconv.Itoa(config.WriteBufferSizeBytes),
-			"read_buffer_size_bytes":                   strconv.Itoa(config.ReadBufferSizeBytes),
+			"timeout": config.Timeout.String(),
 			"min_idle_connections_headroom_percentage": fmt.Sprintf("%f.2", config.MinIdleConnectionsHeadroomPercentage),
 			"max_idle_connections":                     strconv.Itoa(config.MaxIdleConnections),
 			"max_async_concurrency":                    strconv.Itoa(config.MaxAsyncConcurrency),
