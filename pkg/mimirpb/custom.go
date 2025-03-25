@@ -65,7 +65,14 @@ func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
 
 	var data mem.BufferSlice
 	if mem.IsBelowBufferPoolingThreshold(size) {
-		buf, err := protobufproto.Marshal(vv)
+		marshaler, ok := v.(gogoproto.Marshaler)
+		var buf []byte
+		var err error
+		if ok {
+			buf, err = marshaler.Marshal()
+		} else {
+			buf, err = protobufproto.Marshal(vv)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +80,14 @@ func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
 	} else {
 		pool := mem.DefaultBufferPool()
 		buf := pool.Get(size)
-		if _, err := (protobufproto.MarshalOptions{}).MarshalAppend((*buf)[:0], vv); err != nil {
+		var err error
+		marshaler, ok := v.(SizedMarshaler)
+		if ok {
+			_, err = marshaler.MarshalToSizedBuffer((*buf)[:size])
+		} else {
+			_, err = (protobufproto.MarshalOptions{}).MarshalAppend((*buf)[:0], vv)
+		}
+		if err != nil {
 			pool.Put(buf)
 			return nil, err
 		}
@@ -914,4 +928,10 @@ func (m *CustomMetric) Unmarshal(data []byte) error {
 		return io.ErrUnexpectedEOF
 	}
 	return nil
+}
+
+// SizedMarshaler supports marshaling a protobuf message to a sized buffer.
+type SizedMarshaler interface {
+	// MarshalToSizedBuffer appends the wire-format encoding of m to b.
+	MarshalToSizedBuffer(b []byte) (int, error)
 }

@@ -119,3 +119,5 @@ func (w *wrappedRequest) ReturnBuffersToPool() {
 	}
 	w.moreSlabIDs = nil
 }
+
+var _ mimirpb.SizedMarshaler = wrappedRequest{}
