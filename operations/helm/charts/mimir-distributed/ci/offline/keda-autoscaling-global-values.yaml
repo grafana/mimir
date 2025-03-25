@@ -9,9 +9,7 @@ kedaAutoscaling:
   ignoreNullValues: true
   unsafeSsl: false
   toPromQLLabelSelector:
-    cluster: "my-cluster-name"
-  toPromQLLabelOperator:
-    cluster: "="
+    - cluster="my-cluster-name"
   authentication:
     enabled: true
     authModes: "basic"
