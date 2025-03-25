@@ -222,13 +222,8 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.1 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
-<<<<<<< HEAD
-	github.com/grafana/gomemcache v0.0.0-20250228145437-da7b95fd2ac1
-	github.com/hashicorp/consul/api v1.31.0 // indirect
-=======
 	github.com/grafana/gomemcache v0.0.0-20250318131618-74242eea118d
 	github.com/hashicorp/consul/api v1.31.2 // indirect
->>>>>>> ec3000eacf (fix(deps): update github.com/grafana/dskit digest to 22a660c (#10965))
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
