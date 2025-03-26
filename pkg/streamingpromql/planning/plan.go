@@ -12,14 +12,13 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/prometheus/model/timestamp"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type QueryPlan struct {
-	TimeRange types.QueryTimeRange `json:"timeRange"`
+	TimeRange types.QueryTimeRange
 	Root      Node
 }
 
@@ -176,10 +175,6 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 	e.nodesToIndex[n] = idx
 
 	return idx, nil
-}
-
-func (p *EncodedQueryPlan) ToJSON() ([]byte, error) {
-	return jsoniter.Marshal(p)
 }
 
 func (p *EncodedQueryPlan) ToDecodedPlan() (*QueryPlan, error) {
