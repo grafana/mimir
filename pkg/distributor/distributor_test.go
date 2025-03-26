@@ -2198,7 +2198,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "ingestion rate limit",
+			expectedErr: "ingestion burst size limit",
 		},
 		"too many labels limit reached": {
 			prepareConfig: func(limits *validation.Limits) {
