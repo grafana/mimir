@@ -332,21 +332,44 @@ func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeR
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 	}
 
-	factory, ok := functions.InstantVectorFunctionOperatorFactories[e.Func.Name]
-	if !ok {
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
-	}
-
-	args := make([]types.Operator, len(e.Args))
-	for i := range e.Args {
-		a, err := q.convertToOperator(e.Args[i], timeRange)
+	switch e.Func.Name {
+	case "absent":
+		inner, err := q.convertToInstantVectorOperator(e.Args[0], timeRange)
 		if err != nil {
 			return nil, err
 		}
-		args[i] = a
-	}
 
-	return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, timeRange, e.Args)
+		lbls := functions.CreateLabelsForAbsentFunction(e.Args[0])
+
+		return functions.NewAbsent(inner, lbls, timeRange, q.memoryConsumptionTracker, e.PosRange), nil
+
+	case "absent_over_time":
+		inner, err := q.convertToRangeVectorOperator(e.Args[0], timeRange)
+		if err != nil {
+			return nil, err
+		}
+
+		lbls := functions.CreateLabelsForAbsentFunction(e.Args[0])
+
+		return functions.NewAbsentOverTime(inner, lbls, timeRange, q.memoryConsumptionTracker, e.PosRange), nil
+
+	default:
+		factory, ok := functions.InstantVectorFunctionOperatorFactories[e.Func.Name]
+		if !ok {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
+		}
+
+		args := make([]types.Operator, len(e.Args))
+		for i := range e.Args {
+			a, err := q.convertToOperator(e.Args[i], timeRange)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = a
+		}
+
+		return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, timeRange, e.Args)
+	}
 }
 
 func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.QueryTimeRange) (types.RangeVectorOperator, error) {

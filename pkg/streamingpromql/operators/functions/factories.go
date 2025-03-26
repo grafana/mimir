@@ -78,40 +78,6 @@ func InstantVectorTransformationFunctionOperatorFactory(name string, seriesDataF
 	return SingleInputVectorFunctionOperatorFactory(name, f)
 }
 
-func AbsentFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange, argExpressions parser.Expressions) (types.InstantVectorOperator, error) {
-	functionName := "absent"
-	if len(args) != 1 && len(argExpressions) != 1 {
-		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", functionName, len(args))
-	}
-	inner, ok := args[0].(types.InstantVectorOperator)
-	if !ok {
-		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", functionName, args[0])
-	}
-
-	var o types.InstantVectorOperator = NewAbsent(inner, CreateLabelsForAbsentFunction(argExpressions[0]), timeRange, memoryConsumptionTracker, expressionPosition)
-
-	return o, nil
-}
-
-func AbsentOverTimeFunctionOperatorFactory(args []types.Operator, memoryConsumptionTracker *limiting.MemoryConsumptionTracker, _ *annotations.Annotations, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange, argExpressions parser.Expressions) (types.InstantVectorOperator, error) {
-	functionName := "absent_over_time"
-	if len(args) != 1 || len(argExpressions) != 1 {
-		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected exactly 1 argument for %s, got %v", functionName, len(args))
-	}
-
-	inner, ok := args[0].(types.RangeVectorOperator)
-	if !ok {
-		return nil, fmt.Errorf("expected a range vector argument for %s, got %T", functionName, args[0])
-	}
-
-	var o types.InstantVectorOperator = NewAbsentOverTime(inner, CreateLabelsForAbsentFunction(argExpressions[0]), timeRange, memoryConsumptionTracker, expressionPosition)
-
-	return o, nil
-}
-
 func TimeTransformationFunctionOperatorFactory(name string, seriesDataFunc InstantVectorSeriesFunction) InstantVectorFunctionOperatorFactory {
 	f := FunctionOverInstantVectorDefinition{
 		SeriesDataFunc:         seriesDataFunc,
@@ -570,10 +536,9 @@ func SortOperatorFactory(descending bool) InstantVectorFunctionOperatorFactory {
 //
 // Do not modify this map directly at runtime. Instead, call RegisterInstantVectorFunctionOperatorFactory.
 var InstantVectorFunctionOperatorFactories = map[string]InstantVectorFunctionOperatorFactory{
+	// absent and absent_over_time are handled as special cases.
 	//lint:sorted
 	"abs":                InstantVectorTransformationFunctionOperatorFactory("abs", Abs),
-	"absent":             AbsentFunctionOperatorFactory,
-	"absent_over_time":   AbsentOverTimeFunctionOperatorFactory,
 	"acos":               InstantVectorTransformationFunctionOperatorFactory("acos", Acos),
 	"acosh":              InstantVectorTransformationFunctionOperatorFactory("acosh", Acosh),
 	"asin":               InstantVectorTransformationFunctionOperatorFactory("asin", Asin),
