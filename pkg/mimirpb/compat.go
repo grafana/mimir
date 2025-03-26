@@ -687,23 +687,32 @@ func FromWriteRequestToWriteRequestV2(req *WriteRequest) *WriteRequestV2 {
 	symbols := writev2.NewSymbolTable()
 
 	timeseries := make([]TimeSeriesV2, 0, len(req.Timeseries))
-	for i, ts := range req.Timeseries {
+	for _, ts := range req.Timeseries {
 		buf := make([]uint32, len(ts.Labels)*2)
 		labelRefs := symbols.SymbolizeLabels(FromLabelAdaptersToLabels(ts.Labels), buf)
-
-		var metadata MetricMetadataV2
-		if i < len(req.Metadata) {
-			metadata = FromMetricMetadataToMetricMetadataV2(req.Metadata[i], symbols)
-		}
 
 		timeseries = append(timeseries, TimeSeriesV2{
 			LabelsRefs:       labelRefs,
 			Samples:          ts.Samples,
 			Histograms:       ts.Histograms,
 			Exemplars:        ts.Exemplars,
-			Metadata:         metadata,
 			CreatedTimestamp: 0, // This field is not present in V1, defaulting to 0
 		})
+	}
+
+	for i, metadata := range req.Metadata {
+		metadatav2 := FromMetricMetadataToMetricMetadataV2(metadata, &symbols)
+		if i < len(req.Timeseries) {
+			timeseries[i].Metadata = metadatav2
+		} else {
+			lbls := labels.FromStrings(labels.MetricName, metadata.MetricFamilyName)
+			buf := make([]uint32, 2)
+			shell := TimeSeriesV2{
+				LabelsRefs: symbols.SymbolizeLabels(lbls, buf),
+				Metadata:   metadatav2,
+			}
+			timeseries = append(timeseries, shell)
+		}
 	}
 
 	return &WriteRequestV2{
@@ -723,12 +732,22 @@ func FromWriteRequestV2ToWriteRequest(req *WriteRequestV2) *WriteRequest {
 	source := FromWriteRequestV2SourceToWriteRequestSource(req.Source)
 	symbols := req.Symbols
 
+	// We might over-allocate if we have more metadata than timeseries. Ideally this is uncommon...
 	timeseries := make([]PreallocTimeseries, 0, len(req.Timeseries))
 	metadata := make([]*MetricMetadata, 0, len(req.Timeseries))
 
 	for _, ts := range req.Timeseries {
+		mtd := FromMetricMetadataV2ToMetricMetadata(ts.Metadata, symbols)
+		if len(ts.LabelsRefs) == 2 && len(ts.Samples) == 0 && len(ts.Exemplars) == 0 && len(ts.Histograms) == 0 {
+			// It was a shell timeseries holding a metadata. We already got the metadata, read the name and drop it.
+			mtd.MetricFamilyName = symbols[ts.LabelsRefs[1]]
+			metadata = append(metadata, mtd)
+			continue
+		}
+
 		sb := labels.NewScratchBuilder(len(ts.LabelsRefs) / 2)
-		lbls := desymbolizeLabels(&sb, ts.LabelsRefs, symbols)
+		lbls, metricName := desymbolizeLabels(&sb, ts.LabelsRefs, symbols)
+		mtd.MetricFamilyName = metricName
 		adps := FromLabelsToLabelAdapters(lbls)
 
 		tsv1 := PreallocTimeseries{
@@ -739,8 +758,8 @@ func FromWriteRequestV2ToWriteRequest(req *WriteRequestV2) *WriteRequest {
 				Exemplars:  ts.Exemplars,
 			},
 		}
-		metadata = append(metadata, FromMetricMetadataV2ToMetricMetadata(ts.Metadata, symbols))
 		timeseries = append(timeseries, tsv1)
+		metadata = append(metadata, mtd)
 	}
 
 	return &WriteRequest{
@@ -752,7 +771,7 @@ func FromWriteRequestV2ToWriteRequest(req *WriteRequestV2) *WriteRequest {
 	}
 }
 
-func FromMetricMetadataToMetricMetadataV2(metadata *MetricMetadata, symbols writev2.SymbolsTable) MetricMetadataV2 {
+func FromMetricMetadataToMetricMetadataV2(metadata *MetricMetadata, symbols *writev2.SymbolsTable) MetricMetadataV2 {
 	if metadata == nil {
 		return MetricMetadataV2{}
 	}
@@ -806,13 +825,17 @@ func FromWriteRequestV2SourceToWriteRequestSource(source WriteRequestV2_SourceEn
 }
 
 // desymbolizeLabels decodes label references, with given symbols to labels.
-func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) labels.Labels {
+func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) (labels.Labels, string) {
 	b.Reset()
+	metricName := ""
 	for i := 0; i < len(labelRefs); i += 2 {
 		b.Add(symbols[labelRefs[i]], symbols[labelRefs[i+1]])
+		if symbols[labelRefs[i]] == labels.MetricName {
+			metricName = symbols[labelRefs[i+1]]
+		}
 	}
 	b.Sort()
-	return b.Labels()
+	return b.Labels(), metricName
 }
 
 func DetectV2Timeseries(marshalled []byte) (bool, error) {
