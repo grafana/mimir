@@ -179,6 +179,20 @@ local filename = 'mimir-tenants.json';
       )
     )
 
+    .addRowIf(
+      $._config.gateway_per_tenant_metrics_enabled,
+      $.row('Tenant gateway requests').addPanel(
+        $.timeseriesPanel('Reads') +
+        $.qpsPanel('cortex_per_tenant_request_total{tenant=~"$user", route=~"%s"}' % $.queries.read_http_routes_regex)
+      ).addPanel(
+        $.timeseriesPanel('Writes') +
+        $.qpsPanel('cortex_per_tenant_request_total{tenant=~"$user", route=~"%s"}' % $.queries.write_http_routes_regex)
+      ).addPanel(
+        $.timeseriesPanel('Other') +
+        $.qpsPanel('cortex_per_tenant_request_total{tenant=~"$user", route!~"%s", route!~"%s"}' % [$.queries.read_http_routes_regex, $.queries.write_http_routes_regex]),
+      )
+    )
+
     .addRow(
       $.row('Exemplars and native histograms')
       .addPanel(

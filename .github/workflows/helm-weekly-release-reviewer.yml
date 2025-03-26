@@ -17,27 +17,11 @@ jobs:
   auto-reviewer:
     runs-on: ubuntu-latest
 
-    if: ${{ ! github.event.pull_request.head.repo.fork && github.event.pull_request.user.login == 'github-actions[bot]' }}
+    if: ${{ ! github.event.pull_request.head.repo.fork && github.event.pull_request.user.login == 'mimir-github-bot[bot]' }}
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-
-      - name: Retrieve GitHub App Credentials from Vault
-        id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@get-vault-secrets-v1.0.1
-        with:
-          repo_secrets: |
-            APP_ID=mimir-github-bot:app_id
-            PRIVATE_KEY=mimir-github-bot:private_key
-
-      - name: Generate GitHub App Token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ env.APP_ID }}
-          private-key: ${{ env.PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
 
       - name: Approve and auto-merge
         id: auto-merge
@@ -48,13 +32,12 @@ jobs:
           --approve -b "**I'm approving** this pull request, since it is a helm release."
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
       - name: Manual review is required
         if: steps.auto-merge.conclusion != 'success'
         run: |
           gh pr comment $PR_URL --body "**This PR requires manual review.**"
-
         env:
           PR_URL: ${{github.event.pull_request.html_url}}
           GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
