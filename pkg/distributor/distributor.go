@@ -1010,8 +1010,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 
 		haReplicaLabel := d.limits.HAReplicaLabel(userID)
 		cluster, replica, metricName := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
-		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
-		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
+		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples, failedHARequests.
+		cluster, replica, metricName = strings.Clone(cluster), strings.Clone(replica), strings.Clone(metricName)
 
 		span := opentracing.SpanFromContext(ctx)
 		if span != nil {
