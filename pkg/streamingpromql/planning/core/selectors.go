@@ -3,11 +3,12 @@
 package core
 
 import (
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 )
 
 func describeSelector(matchers []*LabelMatcher, ts *Timestamp, offset time.Duration, rng *time.Duration) string {

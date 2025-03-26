@@ -4,14 +4,14 @@ package core
 
 import (
 	"fmt"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/topkbottomk"
-	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"slices"
 	"strings"
 
 	"github.com/gogo/protobuf/proto"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/topkbottomk"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 

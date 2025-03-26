@@ -4,7 +4,6 @@ package streamingpromql
 
 import (
 	"context"
-	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"testing"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 

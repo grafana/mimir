@@ -4,6 +4,7 @@ package planning
 
 import (
 	"errors"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 

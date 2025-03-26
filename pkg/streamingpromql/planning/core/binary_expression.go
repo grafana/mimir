@@ -4,15 +4,17 @@ package core
 
 import (
 	"fmt"
+	"slices"
+	"strings"
+
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/promql/parser"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/prometheus/prometheus/promql/parser"
-	"slices"
-	"strings"
 )
 
 type BinaryExpression struct {

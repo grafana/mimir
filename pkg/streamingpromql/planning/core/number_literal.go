@@ -4,11 +4,13 @@ package core
 
 import (
 	"fmt"
+	"strconv"
+
 	"github.com/gogo/protobuf/proto"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"strconv"
 )
 
 type NumberLiteral struct {

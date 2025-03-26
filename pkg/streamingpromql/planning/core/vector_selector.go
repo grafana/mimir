@@ -2,11 +2,13 @@ package core
 
 import (
 	"fmt"
+	"slices"
+
 	"github.com/gogo/protobuf/proto"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"slices"
 )
 
 type VectorSelector struct {

@@ -5,12 +5,12 @@ package plan
 import (
 	"context"
 	"fmt"
-	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"slices"
 
 	"github.com/gogo/protobuf/proto"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
