@@ -48,6 +48,7 @@ type Query struct {
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 	stats                    *types.QueryStats
+	lookbackDelta            time.Duration
 
 	// Time range of the top-level query.
 	// Subqueries may use a different range.
@@ -85,6 +86,7 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 		memoryConsumptionTracker: limiting.NewMemoryConsumptionTracker(maxEstimatedMemoryConsumptionPerQuery, engine.queriesRejectedDueToPeakMemoryConsumption),
 		annotations:              annotations.New(),
 		stats:                    &types.QueryStats{},
+		lookbackDelta:            lookbackDelta,
 
 		statement: &parser.EvalStmt{
 			Expr:          expr,
@@ -95,7 +97,7 @@ func newQuery(ctx context.Context, queryable storage.Queryable, opts promql.Quer
 		},
 	}
 
-	if q.IsInstant() {
+	if start == end && interval == 0 {
 		q.topLevelQueryTimeRange = types.NewInstantQueryTimeRange(start)
 	} else {
 		q.topLevelQueryTimeRange = types.NewRangeQueryTimeRange(start, end, interval)
@@ -153,7 +155,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 
 	switch e := expr.(type) {
 	case *parser.VectorSelector:
-		lookbackDelta := q.statement.LookbackDelta
+		lookbackDelta := q.lookbackDelta
 
 		return &selectors.InstantVectorSelector{
 			MemoryConsumptionTracker: q.memoryConsumptionTracker,
@@ -544,10 +546,6 @@ func (q *Query) convertFunctionCallToScalarOperator(e *parser.Call, timeRange ty
 	return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, timeRange)
 }
 
-func (q *Query) IsInstant() bool {
-	return q.statement.Start == q.statement.End && q.statement.Interval == 0
-}
-
 func (q *Query) Exec(ctx context.Context) *promql.Result {
 	defer q.root.Close()
 
@@ -584,7 +582,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 			"expr", q.qs,
 		)
 
-		if q.IsInstant() {
+		if q.topLevelQueryTimeRange.IsInstant {
 			msg = append(msg,
 				"queryType", "instant",
 				"time", q.topLevelQueryTimeRange.StartT,
@@ -602,9 +600,8 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes))
 	}()
 
-	switch q.statement.Expr.Type() {
-	case parser.ValueTypeMatrix:
-		root := q.root.(types.RangeVectorOperator)
+	switch root := q.root.(type) {
+	case types.RangeVectorOperator:
 		series, err := root.SeriesMetadata(ctx)
 		if err != nil {
 			return &promql.Result{Err: err}
@@ -617,15 +614,14 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		}
 
 		q.result = &promql.Result{Value: v}
-	case parser.ValueTypeVector:
-		root := q.root.(types.InstantVectorOperator)
+	case types.InstantVectorOperator:
 		series, err := root.SeriesMetadata(ctx)
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
 		defer types.PutSeriesMetadataSlice(series)
 
-		if q.IsInstant() {
+		if q.topLevelQueryTimeRange.IsInstant {
 			v, err := q.populateVectorFromInstantVectorOperator(ctx, root, series)
 			if err != nil {
 				return &promql.Result{Err: err}
@@ -640,30 +636,21 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 
 			q.result = &promql.Result{Value: v}
 		}
-	case parser.ValueTypeScalar:
-		root := q.root.(types.ScalarOperator)
+	case types.ScalarOperator:
 		d, err := root.GetValues(ctx)
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
 
-		if q.IsInstant() {
+		if q.topLevelQueryTimeRange.IsInstant {
 			q.result = &promql.Result{Value: q.populateScalarFromScalarOperator(d)}
 		} else {
 			q.result = &promql.Result{Value: q.populateMatrixFromScalarOperator(d)}
 		}
-	case parser.ValueTypeString:
-		if q.IsInstant() {
-			root := q.root.(types.StringOperator)
-			str := root.GetValue()
-			q.result = &promql.Result{Value: q.populateStringFromStringOperator(str)}
-		} else {
-			// This should be caught in newQuery above
-			return &promql.Result{Err: fmt.Errorf("query expression produces a %s, but expression for range queries must produce an instant vector or scalar", parser.DocumentedType(q.statement.Expr.Type()))}
-		}
+	case types.StringOperator:
+		q.result = &promql.Result{Value: q.populateStringFromStringOperator(root)}
 	default:
-		// This should be caught in newQuery above.
-		return &promql.Result{Err: compat.NewNotSupportedError(fmt.Sprintf("unsupported result type %s", parser.DocumentedType(q.statement.Expr.Type())))}
+		return &promql.Result{Err: fmt.Errorf("operator %T produces unknown result type", root)}
 	}
 
 	// To make comparing to Prometheus' engine easier, only return the annotations if there are some, otherwise, return nil.
@@ -674,15 +661,15 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	return q.result
 }
 
-func (q *Query) populateStringFromStringOperator(str string) promql.String {
+func (q *Query) populateStringFromStringOperator(o types.StringOperator) promql.String {
 	return promql.String{
-		T: timeMilliseconds(q.statement.Start),
-		V: str,
+		T: q.topLevelQueryTimeRange.StartT,
+		V: o.GetValue(),
 	}
 }
 
 func (q *Query) populateVectorFromInstantVectorOperator(ctx context.Context, o types.InstantVectorOperator, series []types.SeriesMetadata) (promql.Vector, error) {
-	ts := timeMilliseconds(q.statement.Start)
+	ts := q.topLevelQueryTimeRange.StartT
 	v, err := types.VectorPool.Get(len(series), q.memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -891,8 +878,4 @@ func (q *Query) Cancel() {
 
 func (q *Query) String() string {
 	return q.qs
-}
-
-func timeMilliseconds(t time.Time) int64 {
-	return t.UnixNano() / int64(time.Millisecond/time.Nanosecond)
 }
