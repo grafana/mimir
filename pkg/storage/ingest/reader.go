@@ -35,11 +35,6 @@ const (
 	// kafkaOffsetEnd is a special offset value that means the end of the partition.
 	kafkaOffsetEnd = int64(-1)
 
-	// defaultMinBytesMaxWaitTime is the time the Kafka broker can wait for MinBytes to be filled.
-	// This is usually used when there aren't enough records available to fulfil MinBytes, so the broker waits for more records to be produced.
-	// Warpstream clamps this between 5s and 30s.
-	defaultMinBytesMaxWaitTime = 5 * time.Second
-
 	// ReaderMetricsPrefix is the reader metrics prefix used by the ingest storage.
 	ReaderMetricsPrefix = "cortex_ingest_storage_reader"
 )
@@ -119,7 +114,7 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		newConsumer:                           consumer,
 		consumerGroup:                         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		consumedOffsetWatcher:                 NewPartitionOffsetWatcher(),
-		concurrentFetchersMinBytesMaxWaitTime: defaultMinBytesMaxWaitTime,
+		concurrentFetchersMinBytesMaxWaitTime: kafkaCfg.FetchMaxWait,
 		logger:                                log.With(logger, "partition", partitionID),
 		reg:                                   reg,
 	}
