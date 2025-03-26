@@ -1172,7 +1172,7 @@ groups:
 
             # Tolerate failures during the forced TSDB head compaction, because samples older than the
             # new "head min time" will fail to be appended while the forced compaction is running.
-            unless (max by (cluster, namespace, instance) (cortex_ingester_tsdb_forced_compactions_in_progress) > 0)
+            unless (max by (cluster, namespace, instance) (max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress[1m])) > 0)
           for: 5m
           labels:
             severity: critical

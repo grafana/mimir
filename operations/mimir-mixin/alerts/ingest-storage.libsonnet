@@ -134,7 +134,7 @@
 
             # Tolerate failures during the forced TSDB head compaction, because samples older than the
             # new "head min time" will fail to be appended while the forced compaction is running.
-            unless (max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (cortex_ingester_tsdb_forced_compactions_in_progress) > 0)
+            unless (max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress[1m])) > 0)
           ||| % $._config,
           labels: {
             severity: 'critical',
