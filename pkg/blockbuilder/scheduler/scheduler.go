@@ -605,7 +605,7 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 			return fmt.Errorf("observe update: %w", err)
 		}
 
-		logger.Log("msg", "recovered job")
+		level.Info(logger).Log("msg", "recovered job")
 		return nil
 	}
 
@@ -627,13 +627,13 @@ func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete 
 
 		// EndOffset is exclusive. It is the next offset to consume.
 		s.advanceCommittedOffset(j.Topic, j.Partition, j.EndOffset)
-		logger.Log("msg", "completed job")
+		level.Info(logger).Log("msg", "completed job")
 	} else {
 		// It's an in-progress job whose lease we need to renew.
 		if err := s.jobs.renewLease(key, workerID); err != nil {
 			return fmt.Errorf("renew lease: %w", err)
 		}
-		logger.Log("msg", "renewed lease")
+		level.Info(logger).Log("msg", "renewed lease")
 	}
 	return nil
 }
@@ -653,6 +653,8 @@ func (s *BlockBuilderScheduler) updateObservation(key jobKey, workerID string, c
 	// Otherwise, we've seen it before. Higher epochs win, and cause earlier ones to fail.
 
 	if key.epoch < rj.key.epoch {
+		level.Warn(s.logger).Log("msg", "bad epoch", "job_id", key.id,
+			"epoch", key.epoch, "existing_epoch", rj.key.epoch, "existing_worker", rj.workerID)
 		return errBadEpoch
 	}
 
