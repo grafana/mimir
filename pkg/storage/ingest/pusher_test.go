@@ -1522,3 +1522,59 @@ func setupQueue(t *testing.T, capacity, batchSize int, series []mimirpb.Prealloc
 
 	return queue
 }
+
+func TestRW2RecordFormat(t *testing.T) {
+	req := &mimirpb.WriteRequest{
+		Source:              mimirpb.RULE,
+		SkipLabelValidation: true,
+		Timeseries: []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{
+				Labels:     mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1", "pod", "test-application-123456")),
+				Samples:    []mimirpb.Sample{{TimestampMs: 20}},
+				Exemplars:  []mimirpb.Exemplar{{TimestampMs: 30}},
+				Histograms: []mimirpb.Histogram{{Timestamp: 10}},
+			}},
+			{TimeSeries: &mimirpb.TimeSeries{
+				Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2", "pod", "test-application-123456")),
+				Samples: []mimirpb.Sample{{TimestampMs: 30}},
+			}},
+		},
+		Metadata: []*mimirpb.MetricMetadata{
+			{Type: mimirpb.COUNTER, MetricFamilyName: "series_1", Help: "This is the first test metric."},
+			{Type: mimirpb.COUNTER, MetricFamilyName: "series_2", Help: "This is the second test metric."},
+			// {Type: mimirpb.COUNTER, MetricFamilyName: "series_3", Help: "This is the third test metric."},
+		},
+	}
+
+	serializer := remoteWriteV2RecordSerializer{}
+	bytes, err := serializer.serialize(req, req.Size())
+	require.NoError(t, err)
+
+	isv2, err := mimirpb.DetectV2Timeseries(bytes)
+	require.True(t, isv2)
+	require.NoError(t, err)
+
+	r := record{
+		ctx:      context.Background(),
+		tenantID: "my-tenant",
+		content:  bytes,
+	}
+	deserializer := rw1and2RecordDeserializer{}
+	pr := deserializer.deserialize(r, 1234)
+	require.NoError(t, pr.err)
+	reqResult := pr.WriteRequest
+
+	require.Equal(t, mimirpb.RULE, reqResult.Source)
+	require.True(t, reqResult.SkipLabelValidation)
+	require.Len(t, reqResult.Timeseries, 2)
+	require.Len(t, reqResult.Timeseries[0].Labels, 2)
+	require.Len(t, reqResult.Timeseries[0].Samples, 1)
+	require.Equal(t, reqResult.Timeseries[0].Samples[0].TimestampMs, int64(20))
+	require.Len(t, reqResult.Timeseries[0].Exemplars, 1)
+	require.Equal(t, reqResult.Timeseries[0].Exemplars[0].TimestampMs, int64(30))
+	require.Len(t, reqResult.Timeseries[0].Histograms, 1)
+	require.Equal(t, reqResult.Timeseries[0].Histograms[0].Timestamp, int64(10))
+	require.Len(t, reqResult.Timeseries[1].Labels, 2)
+	require.Len(t, reqResult.Timeseries[1].Samples, 1)
+	require.Equal(t, reqResult.Timeseries[1].Samples[0].TimestampMs, int64(30))
+}
