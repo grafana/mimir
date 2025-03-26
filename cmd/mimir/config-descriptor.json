@@ -764,6 +764,49 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "block",
+              "name": "http",
+              "required": false,
+              "desc": "",
+              "blockEntries": [
+                {
+                  "kind": "field",
+                  "name": "enabled",
+                  "required": false,
+                  "desc": "When enabled, cluster label validation is executed: configured cluster validation label is compared with the cluster validation label received through the requests.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.http.enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "soft_validation",
+                  "required": false,
+                  "desc": "When enabled, soft cluster label validation is executed. Can be enabled only together with server.cluster-validation.http.enabled",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "server.cluster-validation.http.soft-validation",
+                  "fieldType": "boolean",
+                  "fieldCategory": "experimental"
+                },
+                {
+                  "kind": "field",
+                  "name": "excluded_paths",
+                  "required": false,
+                  "desc": "Comma-separated list of url paths that are excluded from the cluster validation check.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": "",
+                  "fieldFlag": "server.cluster-validation.http.excluded-paths",
+                  "fieldType": "string",
+                  "fieldCategory": "experimental"
+                }
+              ],
+              "fieldValue": null,
+              "fieldDefaultValue": null
             }
           ],
           "fieldValue": null,
@@ -7051,6 +7094,27 @@
           "fieldFlag": "query-frontend.downstream-url",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "client_cluster_validation",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "label",
+              "required": false,
+              "desc": "Optionally define the cluster validation label.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "query-frontend.client-cluster-validation.label",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,

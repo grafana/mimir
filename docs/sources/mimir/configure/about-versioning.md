@@ -214,6 +214,7 @@ The following features are currently experimental:
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
   - Spinning off (as actual range queries) subqueries from instant queries (`-query-frontend.instant-queries-with-subquery-spin-off` and the `instant_queries_with_subquery_spin_off` per-tenant limit)
   - Enable PromQL experimental functions per-tenant (`-query-frontend.enabled-promql-experimental-functions` and the `enabled_promql_experimental_functions` per-tenant limit)
+  - Support for cluster validation via `-query-frontend.client-cluster-validation.label`.
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -257,6 +258,9 @@ The following features are currently experimental:
     - `-server.cluster-validation.label`
     - `-server.cluster-validation.grpc.enabled`
     - `-server.cluster-validation.grpc.soft-validation`
+    - `-server.cluster-validation.http.enabled`
+    - `-server.cluster-validation.http.soft-validation`
+    - `-server.cluster-validation.http.excluded-paths`
 - gRPC clients
   - Cross-cluster validation support for gRPC communication:
     - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
