@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -191,7 +192,7 @@ type partitionOffsets struct {
 	end   int64
 }
 
-// consumptionOffsets returns the begin and end offsets for each partition, falling back to the
+// consumptionOffsets returns the resumption and end offsets for each partition, falling back to the
 // fallbackTime if there is no committed offset for a partition.
 func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic string, committed kadm.Offsets, fallbackTime time.Time) (map[topicPartition]partitionOffsets, error) {
 	startOffsets, err := s.adminClient.ListStartOffsets(ctx, topic)
@@ -215,16 +216,29 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 			continue
 		}
 		for partition, startOffset := range pt {
+			partStr := fmt.Sprint(partition)
+
 			var consumeOffset int64
 			committedOff, ok := committed.Lookup(t, partition)
 			if ok {
+				s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(committedOff.At))
+
 				consumeOffset = committedOff.At
+				if partition >= 0 && partition <= 4 {
+					level.Debug(s.logger).Log("msg", "found commit offset", "topic", t, "partition", partition, "offset", consumeOffset)
+				}
 			} else {
 				// Nothing committed for this partition. Rewind to fallback offset instead.
 				o, ok := fallbackOffsets.Lookup(t, partition)
 				if !ok {
 					return nil, fmt.Errorf("partition %d not found in fallback offsets for topic %s", partition, t)
 				}
+
+				if partition >= 0 && partition <= 4 {
+					level.Debug(s.logger).Log("msg", "no commit, so falling back to max of startOffset and fallbackOffset",
+						"topic", t, "partition", partition, "startOffset", startOffset.At, "fallbackOffset", o.Offset)
+				}
+
 				consumeOffset = max(startOffset.At, o.Offset)
 			}
 
@@ -233,15 +247,17 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 				return nil, fmt.Errorf("partition %d not found in end offsets for topic %s", partition, t)
 			}
 
+			if partition >= 0 && partition <= 4 {
+				level.Debug(s.logger).Log("msg", "consumptionOffsets", "topic", t, "partition", partition, "start", startOffset.At, "end", end.Offset, "consumeOffset", consumeOffset)
+			}
+
 			offs[topicPartition{t, partition}] = partitionOffsets{
 				start: consumeOffset,
 				end:   end.Offset,
 			}
 
-			partStr := fmt.Sprint(partition)
 			s.metrics.partitionStartOffset.WithLabelValues(partStr).Set(float64(startOffset.At))
 			s.metrics.partitionEndOffset.WithLabelValues(partStr).Set(float64(end.Offset))
-			//s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(committedOff.At))
 		}
 	}
 
@@ -255,21 +271,38 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 		return nil, err
 	}
 
-	// We choose a boundary time that is the current time rounded down to the nearest hour.
+	// We choose a boundary time that is the current time rounded down to the job size.
 	// We want to create jobs that will consume everything up but not including this boundary.
 	// A later run will create job(s) for the boundary and beyond.
 
-	boundary := time.Now().Truncate(time.Hour)
-	of := newOffsetFinder(s.adminClient)
+	boundary := time.Now().Truncate(s.cfg.JobSize)
+	of := newOffsetFinder(s.adminClient, s.logger)
+	minScanTime := time.Now().Add(-s.cfg.MaxScanAge)
 	jobs := []*schedulerpb.JobSpec{}
 
 	for tp, off := range consumeOffs {
+		if tp.partition >= 0 && tp.partition <= 4 {
+			level.Debug(s.logger).Log("msg", "computing jobs for partition", "topic", tp.topic, "partition", tp.partition, "start", off.start, "end", off.end, "boundary", boundary)
+		}
+
 		pj, err := computePartitionJobs(ctx, of, tp.topic, tp.partition,
-			off.start, off.end, boundary, s.cfg.ConsumeInterval)
+			off.start, off.end, boundary, s.cfg.JobSize, minScanTime)
 		if err != nil {
 			level.Warn(s.logger).Log("msg", "failed to get consumption ranges", "err", err)
 			continue
 		}
+
+		// Log details of each job for debugging purposes
+		for _, job := range pj {
+			level.Debug(s.logger).Log(
+				"msg", "created job",
+				"topic", job.Topic,
+				"partition", job.Partition,
+				"startOffset", job.StartOffset,
+				"endOffset", job.EndOffset,
+			)
+		}
+
 		jobs = append(jobs, pj...)
 	}
 
@@ -283,35 +316,52 @@ type offsetStore interface {
 type offsetFinder struct {
 	offsets     map[time.Time]kadm.ListedOffsets
 	adminClient *kadm.Client
+	logger      log.Logger
 }
 
-func newOffsetFinder(adminClient *kadm.Client) *offsetFinder {
+func newOffsetFinder(adminClient *kadm.Client, logger log.Logger) *offsetFinder {
 	return &offsetFinder{
 		offsets:     make(map[time.Time]kadm.ListedOffsets),
 		adminClient: adminClient,
+		logger:      logger,
 	}
 }
 
 // offsetAfterTime is a cached version of adminClient.ListOffsetsAfterMilli that
-// makes use of the fact that we're always asking about the same points in time.
+// makes use of the fact that we want to ask about the same times for all partitions.
 func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partition int32, t time.Time) (int64, error) {
 	offs, ok := o.offsets[t]
 	if !ok {
-		offs, err := o.adminClient.ListOffsetsAfterMilli(ctx, t.UnixMilli(), topic)
+		var err error
+		offs, err = o.adminClient.ListOffsetsAfterMilli(ctx, t.UnixMilli(), topic)
 		if err != nil {
 			return 0, err
 		}
+		if offs.Error() != nil {
+			return 0, offs.Error()
+		}
+
+		if partition >= 0 && partition <= 4 {
+			for _, p := range offs.Offsets() {
+				for _, oo := range p {
+					if oo.Partition == partition {
+						level.Debug(o.logger).Log("msg", "Offset found for ts", "ts", t, "topic", oo.Topic, "partition", oo.Partition, "offset", oo.At)
+					}
+				}
+			}
+		}
+
 		o.offsets[t] = offs
 	}
 
-	l, ok := offs.Lookup(topic, partition)
+	po, ok := offs.Lookup(topic, partition)
 	if !ok {
-		return 0, fmt.Errorf("no offset found for partition %d at time %s", partition, t)
+		return 0, nil
 	}
-	if l.Err != nil {
-		return 0, fmt.Errorf("failed to get offset for partition %d at time %s: %w", partition, t, l.Err)
+	if po.Err != nil {
+		return 0, fmt.Errorf("failed to get offset for partition %d at time %s: %w", partition, t, po.Err)
 	}
-	return l.Offset, nil
+	return po.Offset, nil
 }
 
 var _ offsetStore = (*offsetFinder)(nil)
@@ -319,7 +369,7 @@ var _ offsetStore = (*offsetFinder)(nil)
 // computePartitionJobs returns the ranges of offsets that should be consumed
 // for the given topic and partition.
 func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, partition int32,
-	committed int64, partEnd int64, boundaryTime time.Time, width time.Duration) ([]*schedulerpb.JobSpec, error) {
+	committed int64, partEnd int64, boundaryTime time.Time, jobSize time.Duration, minScanTime time.Time) ([]*schedulerpb.JobSpec, error) {
 
 	if committed >= partEnd {
 		// No new data to consume.
@@ -342,10 +392,9 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 
 	jobs := []*schedulerpb.JobSpec{}
 
-	// Iterate backwards from the boundary time by width, stopping when we've
-	// crossed the committed offset.
-
-	for pb := boundaryTime.Add(-width); ; pb = pb.Add(-width) {
+	// Iterate backwards from the boundary time by job size, stopping when we've
+	// either crossed the committed offset or the min scan time.
+	for pb := boundaryTime.Add(-jobSize); minScanTime.Before(pb); pb = pb.Add(-jobSize) {
 		off, err := offs.offsetAfterTime(ctx, topic, partition, pb)
 		if err != nil {
 			return nil, err
@@ -355,7 +404,7 @@ func computePartitionJobs(ctx context.Context, offs offsetStore, topic string, p
 			break
 		}
 		if off >= windowEndOffset {
-			// Found an offset exceeding our window. Move along.
+			// Found an offset exceeding our window. Ignore and keep looking.
 			continue
 		}
 
@@ -448,7 +497,33 @@ func (s *BlockBuilderScheduler) snapCommitted() kadm.Offsets {
 
 func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
 	offsets := s.snapCommitted()
-	return s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, offsets)
+	err := s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, offsets)
+	if err != nil {
+		return fmt.Errorf("commit offsets: %w", err)
+	}
+
+	level.Debug(s.logger).Log("msg", "flushed offsets to Kafka", "offsets", offsetsStr(offsets))
+
+	return nil
+}
+
+// offsetsStr returns a string representation of the given offsets.
+func offsetsStr(offsets kadm.Offsets) string {
+	var b strings.Builder
+	offsets.Each(func(o kadm.Offset) {
+		if o.At == 0 {
+			return
+		}
+		if b.Len() > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%s/%d=%d", o.Topic, o.Partition, o.At)
+	})
+	offsetsStr := b.String()
+	if offsetsStr == "" {
+		offsetsStr = "<none>"
+	}
+	return offsetsStr
 }
 
 // advanceCommittedOffset advances the committed offset for the given topic/partition.

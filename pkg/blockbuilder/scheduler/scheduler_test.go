@@ -41,8 +41,10 @@ func mustSchedulerWithKafkaAddr(t *testing.T, addr string) (*BlockBuilderSchedul
 		Kafka: ingest.KafkaConfig{
 			Topic: "ingest",
 		},
-		ConsumerGroup:      "test-builder",
-		SchedulingInterval: 1000000 * time.Hour,
+		ConsumerGroup:       "test-builder",
+		SchedulingInterval:  1000000 * time.Hour,
+		JobSize:             1 * time.Hour,
+		MaxJobsPerPartition: 1,
 	}
 	reg := prometheus.NewPedanticRegistry()
 	sched, err := New(cfg, test.NewTestingLogger(t), reg)
@@ -431,7 +433,7 @@ func TestLessThan(t *testing.T) {
 }
 
 type timeOffset struct {
-	time   int64
+	time   time.Time
 	offset int64
 }
 
@@ -439,185 +441,254 @@ func TestConsumptionRanges(t *testing.T) {
 	ctx := context.Background()
 
 	type offsetRange struct {
-		start int64
-		end   int64
+		start, end int64
 	}
 
 	tests := map[string]struct {
 		offsets        []timeOffset
 		commit         int64
 		partEnd        int64
-		width          time.Duration
+		jobSize        time.Duration
 		boundary       time.Time
 		expectedRanges []offsetRange
+		minScanTime    time.Time
 		msg            string
 	}{
-		"basic consumption ranges": {
+		"basic hour-based consumption ranges": {
 			offsets: []timeOffset{
-				{100, 1000},
-				{101, 1001},
-				{200, 2000},
-				{300, 3000},
-				{400, 4000},
-				{500, 5000},
-				{599, 5999},
-				{600, 6000},
-				{700, 7000},
+				{time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC), 1000},
+				{time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC), 2000},
+				{time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC), 3000},
+				{time.Date(2025, 3, 1, 13, 0, 0, 0, time.UTC), 4000},
+				{time.Date(2025, 3, 1, 14, 0, 0, 0, time.UTC), 5000},
+				{time.Date(2025, 3, 1, 14, 30, 0, 0, time.UTC), 5500},
+				{time.Date(2025, 3, 1, 15, 0, 0, 0, time.UTC), 6000},
+				{time.Date(2025, 3, 1, 16, 0, 0, 0, time.UTC), 7000},
 			},
-			commit:   2000,
-			partEnd:  10001,
-			width:    200 * time.Millisecond,
-			boundary: time.UnixMilli(600),
+			commit:      2000,
+			partEnd:     10001,
+			jobSize:     1 * time.Hour,
+			boundary:    time.Date(2025, 3, 1, 15, 0, 0, 0, time.UTC),
+			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 0, time.UTC),
 			expectedRanges: []offsetRange{
-				{start: 2000, end: 4000},
-				{start: 4000, end: 6000},
+				{start: 2000, end: 3000},
+				{start: 3000, end: 4000},
+				{start: 4000, end: 5000},
+				{start: 5000, end: 6000},
 			},
 			msg: "consumption should exclude the offset on the boundary, but otherwise cover (commit, boundary]",
 		},
 		"no new data": {
 			// End offset is the one that was consumed last time.
 			offsets: []timeOffset{
-				{100, 1000},
-				{101, 1001},
-				{199, 1999},
+				{time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC), 1000},
+				{time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC), 1001},
+				{time.Date(2025, 3, 1, 10, 0, 0, 199*1000000, time.UTC), 1999},
 			},
 			commit:         2000,
 			partEnd:        2001,
-			width:          200 * time.Millisecond,
-			boundary:       time.UnixMilli(600),
+			jobSize:        200 * time.Millisecond,
+			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
 			expectedRanges: []offsetRange{},
 		},
 		"old data with single unconsumed record": {
 			offsets: []timeOffset{
-				{199, 1999},
-				{200, 2000},
+				{time.Date(2025, 3, 1, 10, 0, 0, 199*1000000, time.UTC), 1999},
+				{time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC), 2000},
 			},
-			commit:   2000,
-			partEnd:  2001,
-			width:    200 * time.Millisecond,
-			boundary: time.UnixMilli(600),
+			commit:      2000,
+			partEnd:     2001,
+			jobSize:     200 * time.Millisecond,
+			boundary:    time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
 			expectedRanges: []offsetRange{
 				{start: 2000, end: 2001},
 			},
 		},
 		"one record: no new data": {
 			offsets: []timeOffset{
-				{199, 1999},
+				{time.Date(2025, 3, 1, 10, 0, 0, 199*1000000, time.UTC), 1999},
 			},
 			commit:         2000,
 			partEnd:        2000,
-			width:          200 * time.Millisecond,
-			boundary:       time.UnixMilli(600),
+			jobSize:        200 * time.Millisecond,
+			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
 			expectedRanges: []offsetRange{},
 		},
 		"boundary before data -> no ranges": {
 			offsets: []timeOffset{
-				{1000, 1000},
-				{1001, 1001},
-				{1002, 1002},
+				{time.Date(2025, 3, 1, 10, 0, 0, 1000*1000000, time.UTC), 1000},
+				{time.Date(2025, 3, 1, 10, 0, 0, 1001*1000000, time.UTC), 1001},
+				{time.Date(2025, 3, 1, 10, 0, 0, 1002*1000000, time.UTC), 1002},
 			},
 			commit:         1000,
 			partEnd:        1003,
-			width:          200 * time.Millisecond,
-			boundary:       time.UnixMilli(600),
+			jobSize:        200 * time.Millisecond,
+			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
 			expectedRanges: []offsetRange{},
 		},
 		"boundary at start of data": {
 			offsets: []timeOffset{
-				{3000, 3000},
-				{4000, 4000},
+				{time.Date(2025, 3, 1, 10, 0, 0, 3000*1000000, time.UTC), 3000},
+				{time.Date(2025, 3, 1, 10, 0, 0, 4000*1000000, time.UTC), 4000},
 			},
 			commit:         3000,
 			partEnd:        4001,
-			width:          200 * time.Millisecond,
-			boundary:       time.UnixMilli(3000),
+			jobSize:        200 * time.Millisecond,
+			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 3000*1000000, time.UTC),
+			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 3000*1000000, time.UTC),
 			expectedRanges: []offsetRange{},
 			msg:            "all data is >= boundary -> no eligible jobs",
 		},
 		"boundary at end of data": {
 			offsets: []timeOffset{
-				{3000, 3000},
+				{time.Date(2025, 3, 1, 10, 0, 0, 3000*1000000, time.UTC), 3000},
 			},
 			commit:         3000,
 			partEnd:        3001,
-			width:          200 * time.Millisecond,
-			boundary:       time.UnixMilli(3000),
+			jobSize:        200 * time.Millisecond,
+			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 3000*1000000, time.UTC),
+			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 3000*1000000, time.UTC),
 			expectedRanges: []offsetRange{},
 		},
 		"empty partition: no data": {
 			offsets:        []timeOffset{},
 			commit:         0,
 			partEnd:        0,
-			width:          200 * time.Millisecond,
-			boundary:       time.UnixMilli(600),
+			jobSize:        200 * time.Millisecond,
+			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
 			expectedRanges: []offsetRange{},
 		},
 		"data gaps wider than range width": {
 			offsets: []timeOffset{
-				{99, 999},
-				{100, 1000},
-				{101, 1001},
-				{102, 1002},
-				{103, 1003},
-				{104, 1004},
-				{105, 1005},
-				{106, 1006},
-				{107, 1007},
-				{108, 1008},
-				{109, 1009},
-				{110, 1010},
-				{111, 1011},
-				{112, 1012},
+				{time.Date(2025, 3, 1, 10, 0, 0, 99*1000000, time.UTC), 999},
+				{time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC), 1000},
+				{time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC), 1001},
+				{time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC), 1002},
+				{time.Date(2025, 3, 1, 10, 0, 0, 103*1000000, time.UTC), 1003},
+				{time.Date(2025, 3, 1, 10, 0, 0, 104*1000000, time.UTC), 1004},
+				{time.Date(2025, 3, 1, 10, 0, 0, 105*1000000, time.UTC), 1005},
+				{time.Date(2025, 3, 1, 10, 0, 0, 106*1000000, time.UTC), 1006},
+				{time.Date(2025, 3, 1, 10, 0, 0, 107*1000000, time.UTC), 1007},
+				{time.Date(2025, 3, 1, 10, 0, 0, 108*1000000, time.UTC), 1008},
+				{time.Date(2025, 3, 1, 10, 0, 0, 109*1000000, time.UTC), 1009},
+				{time.Date(2025, 3, 1, 10, 0, 0, 110*1000000, time.UTC), 1010},
+				{time.Date(2025, 3, 1, 10, 0, 0, 111*1000000, time.UTC), 1011},
+				{time.Date(2025, 3, 1, 10, 0, 0, 112*1000000, time.UTC), 1012},
 				// (large gap that would produce duplicate jobs in a naive implementation)
-				{500, 1013},
-				{501, 1014},
-				{502, 1015},
-				{503, 1016},
-				{600, 1017},
+				{time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC), 1013},
+				{time.Date(2025, 3, 1, 10, 0, 0, 501*1000000, time.UTC), 1014},
+				{time.Date(2025, 3, 1, 10, 0, 0, 502*1000000, time.UTC), 1015},
+				{time.Date(2025, 3, 1, 10, 0, 0, 503*1000000, time.UTC), 1016},
+				{time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC), 1017},
 			},
-			commit:   1000,
-			partEnd:  10001,
-			width:    100 * time.Millisecond,
-			boundary: time.UnixMilli(600),
+			commit:      1000,
+			partEnd:     10001,
+			jobSize:     100 * time.Millisecond,
+			boundary:    time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
 			expectedRanges: []offsetRange{
 				{start: 1000, end: 1013},
 				{start: 1013, end: 1017},
 			},
 		},
-		"records with the same timestamp": {
+		"records with the duplicate timestamps": {
 			offsets: []timeOffset{
-				{100, 1000},
-				{101, 1001},
-				{102, 1002},
-				{102, 1003},
-				{102, 1004},
-				{102, 1005},
-				{102, 1006},
-				{102, 1007},
-				{102, 1008},
+				{time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC), 1000},
+				{time.Date(2025, 3, 1, 10, 0, 0, 101*1000000, time.UTC), 1001},
+				{time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC), 1002},
+				{time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC), 1003},
+				{time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC), 1004},
+				{time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC), 1005},
+				{time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC), 1006},
+				{time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC), 1007},
+				{time.Date(2025, 3, 1, 10, 0, 0, 102*1000000, time.UTC), 1008},
 			},
-			commit:   1000,
-			partEnd:  1009,
-			width:    100 * time.Millisecond,
-			boundary: time.UnixMilli(600),
+			commit:      1000,
+			partEnd:     1009,
+			jobSize:     100 * time.Millisecond,
+			boundary:    time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
 			expectedRanges: []offsetRange{
 				{start: 1000, end: 1009},
 			},
 		},
+		"no data between commit and time boundary": {
+			offsets: []timeOffset{
+				{time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC), 1000},
+				{time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC), 1001},
+				{time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC), 1002},
+				{time.Date(2025, 3, 1, 10, 0, 0, 400*1000000, time.UTC), 1003},
+				{time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC), 1004},
+			},
+			commit:      1000,
+			partEnd:     1005,
+			jobSize:     100 * time.Millisecond,
+			boundary:    time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC),
+			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 200*1000000, time.UTC),
+			expectedRanges: []offsetRange{
+				{start: 1000, end: 1001},
+			},
+		},
+		"commit before retention window": {
+			offsets: []timeOffset{
+				{time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC), 1003},
+				{time.Date(2025, 3, 1, 10, 0, 0, 400*1000000, time.UTC), 1004},
+				{time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC), 1005},
+			},
+			commit:      1000,
+			partEnd:     1005,
+			jobSize:     100 * time.Millisecond,
+			boundary:    time.Date(2025, 3, 1, 10, 0, 0, 500*1000000, time.UTC),
+			minScanTime: time.Date(2025, 2, 20, 10, 0, 0, 500*1000000, time.UTC),
+			expectedRanges: []offsetRange{
+				{start: 1003, end: 1004},
+				{start: 1004, end: 1005},
+			},
+		},
+		"committed before min scan time": {
+			offsets: []timeOffset{
+				{time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC), 1001},
+				{time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC), 1002},
+				{time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC), 1003},
+				{time.Date(2025, 3, 1, 10, 0, 0, 400*1000000, time.UTC), 1004},
+			},
+			commit:      1001,
+			partEnd:     1004,
+			jobSize:     100 * time.Millisecond,
+			boundary:    time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime: time.Date(2025, 3, 1, 10, 0, 0, 150*1000000, time.UTC),
+			expectedRanges: []offsetRange{
+				{start: 1002, end: 1003},
+				{start: 1003, end: 1004},
+			},
+		},
+		"min scan time later than any data": {
+			offsets: []timeOffset{
+				{time.Date(2025, 3, 1, 10, 0, 0, 100*1000000, time.UTC), 1001},
+				{time.Date(2025, 3, 1, 10, 0, 0, 200*1000000, time.UTC), 1002},
+				{time.Date(2025, 3, 1, 10, 0, 0, 300*1000000, time.UTC), 1003},
+				{time.Date(2025, 3, 1, 10, 0, 0, 400*1000000, time.UTC), 1004},
+			},
+			commit:         1001,
+			partEnd:        1004,
+			jobSize:        100 * time.Millisecond,
+			boundary:       time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
+			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 900*1000000, time.UTC),
+			expectedRanges: []offsetRange{},
+		},
 	}
-
-	/*
-		Testing todos:
-		- test that the boundary works appropriately when $now is right next to it. (Like right at the beginning of the hour.)
-
-	*/
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			println(name)
 
 			f := &mockOffsetFinder{offsets: tt.offsets, end: tt.partEnd}
-			j, err := computePartitionJobs(ctx, f, "topic", 0, tt.commit, tt.partEnd, tt.boundary, tt.width)
+			j, err := computePartitionJobs(ctx, f, "topic", 0, tt.commit, tt.partEnd, tt.boundary, tt.jobSize, tt.minScanTime)
 			assert.NoError(t, err)
 
 			// Convert offsetRange to JobSpec.
@@ -635,7 +706,7 @@ func TestConsumptionRanges(t *testing.T) {
 	}
 }
 
-// Create an offsetStore that we can just prepopulate with offset scenarios.
+// Create an offset finder that we can prepopulate with offset scenarios.
 type mockOffsetFinder struct {
 	offsets []timeOffset
 	end     int64
@@ -646,10 +717,9 @@ func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32,
 	mint := time.Time{}
 	off := int64(-1)
 	for _, pair := range o.offsets {
-		pairTime := time.UnixMilli(pair.time)
-		if pairTime.After(t) {
-			if mint.IsZero() || mint.After(pairTime) {
-				mint = pairTime
+		if pair.time.After(t) {
+			if mint.IsZero() || mint.After(pair.time) {
+				mint = pair.time
 				off = pair.offset
 			}
 		}
