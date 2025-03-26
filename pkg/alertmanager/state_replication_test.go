@@ -450,8 +450,7 @@ func TestMergeGrafanaState(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	s := newReplicatedStates("test", 3, replicator, store, log.NewNopLogger(), reg)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), s))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), s))
 	})
@@ -461,9 +460,6 @@ func TestMergeGrafanaState(t *testing.T) {
 		defer cancel()
 		require.NoError(t, s.WaitReady(ctx))
 	}
-
-	// Cancel the context to avoid other goroutines pulling the broadcasted messages from <-s.msgc.
-	cancel()
 
 	// Send the oversized state in a separate goroutine.
 	data := []byte(strings.Repeat("a", 1000))
@@ -477,6 +473,17 @@ func TestMergeGrafanaState(t *testing.T) {
 	}()
 
 	// Check for broadcasted messages.
-	p := <-s.msgc
-	require.Equal(t, data, p.Data)
+	require.Eventually(t, func() bool {
+		replicator.mtx.Lock()
+		defer replicator.mtx.Unlock()
+		return len(replicator.results) == 1
+	}, time.Second, time.Millisecond)
+
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
+# HELP alertmanager_state_replication_total Number of times we have tried to replicate a state to other alertmanagers.
+# TYPE alertmanager_state_replication_total counter
+alertmanager_state_replication_total{key="sil:test"} 1
+	`),
+		"alertmanager_state_replication_total",
+	))
 }
