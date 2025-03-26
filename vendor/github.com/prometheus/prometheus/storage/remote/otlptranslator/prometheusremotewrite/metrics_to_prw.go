@@ -25,12 +25,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/multierr"
 
 	"github.com/prometheus/prometheus/prompb"
-	prometheustranslator "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheus"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -44,6 +44,7 @@ type Settings struct {
 	AllowUTF8                         bool
 	PromoteResourceAttributes         []string
 	KeepIdentifyingResourceAttributes bool
+	ConvertHistogramsToNHCB           bool
 
 	// Mimir specifics.
 	EnableCreatedTimestampZeroIngestion        bool
@@ -113,9 +114,9 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 
 				var promName string
 				if settings.AllowUTF8 {
-					promName = prometheustranslator.BuildMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+					promName = otlptranslator.BuildMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
 				} else {
-					promName = prometheustranslator.BuildCompliantMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
+					promName = otlptranslator.BuildCompliantMetricName(metric, settings.Namespace, settings.AddMetricSuffixes)
 				}
 				c.metadata = append(c.metadata, prompb.MetricMetadata{
 					Type:             otelMetricTypeToPromMetricType(metric),
@@ -157,10 +158,21 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 						errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
 						break
 					}
-					if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName, logger); err != nil {
-						errs = multierr.Append(errs, err)
-						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-							return
+					if settings.ConvertHistogramsToNHCB {
+						ws, err := c.addCustomBucketsHistogramDataPoints(ctx, dataPoints, resource, settings, promName)
+						annots.Merge(ws)
+						if err != nil {
+							errs = multierr.Append(errs, err)
+							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+								return
+							}
+						}
+					} else {
+						if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, promName, logger); err != nil {
+							errs = multierr.Append(errs, err)
+							if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+								return
+							}
 						}
 					}
 				case pmetric.MetricTypeExponentialHistogram:
