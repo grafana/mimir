@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/topkbottomk"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -312,7 +313,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			return nil, err
 		}
 
-		return unaryNegationOfInstantVectorOperatorFactory(inner, q.memoryConsumptionTracker, e.PositionRange(), timeRange), nil
+		return functions.UnaryNegationOfInstantVectorOperatorFactory(inner, q.memoryConsumptionTracker, e.PositionRange(), timeRange), nil
 
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
@@ -331,7 +332,7 @@ func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeR
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 	}
 
-	factory, ok := instantVectorFunctionOperatorFactories[e.Func.Name]
+	factory, ok := functions.InstantVectorFunctionOperatorFactories[e.Func.Name]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 	}
@@ -493,7 +494,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 }
 
 func (q *Query) convertFunctionCallToScalarOperator(e *parser.Call, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
-	factory, ok := scalarFunctionOperatorFactories[e.Func.Name]
+	factory, ok := functions.ScalarFunctionOperatorFactories[e.Func.Name]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 	}
