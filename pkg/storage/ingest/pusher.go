@@ -40,7 +40,8 @@ type pusherConsumer struct {
 	metrics *pusherConsumerMetrics
 	logger  log.Logger
 
-	kafkaConfig KafkaConfig
+	kafkaConfig  KafkaConfig
+	deserializer recordDeserializer
 
 	pusher Pusher
 }
@@ -51,11 +52,21 @@ func newPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *pusherConsu
 	// and potentially ingesting a batch if they encounter any error.
 	// We can safely ignore client errors and continue ingesting. We abort ingesting if we get any other error.
 	return &pusherConsumer{
-		pusher:      pusher,
-		kafkaConfig: kafkaCfg,
-		metrics:     metrics,
-		logger:      logger,
+		pusher:       pusher,
+		kafkaConfig:  kafkaCfg,
+		deserializer: deserializerFromCfg(kafkaCfg),
+		metrics:      metrics,
+		logger:       logger,
 	}
+}
+
+type parsedRecord struct {
+	*mimirpb.WriteRequest
+	// ctx holds the tracing baggage for this record/request.
+	ctx      context.Context
+	tenantID string
+	err      error
+	index    int
 }
 
 // Consume implements the recordConsumer interface.
@@ -64,15 +75,6 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 	defer func(processingStart time.Time) {
 		c.metrics.processingTimeSeconds.Observe(time.Since(processingStart).Seconds())
 	}(time.Now())
-
-	type parsedRecord struct {
-		*mimirpb.WriteRequest
-		// ctx holds the tracing baggage for this record/request.
-		ctx      context.Context
-		tenantID string
-		err      error
-		index    int
-	}
 
 	recordsChannel := make(chan parsedRecord)
 
@@ -92,18 +94,7 @@ func (c pusherConsumer) Consume(ctx context.Context, records []record) (returnEr
 			default:
 			}
 
-			parsed := parsedRecord{
-				ctx:          r.ctx,
-				tenantID:     r.tenantID,
-				WriteRequest: &mimirpb.WriteRequest{},
-				index:        index,
-			}
-
-			// We don't free the WriteRequest slices because they are being freed by a level below.
-			err := parsed.WriteRequest.Unmarshal(r.content)
-			if err != nil {
-				parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
-			}
+			parsed := c.deserializer.deserialize(r, index)
 
 			// Now that we're done, check again before we send it to the channel.
 			select {
@@ -682,4 +673,63 @@ func (q *batchingQueue) collectErrors() multierror.MultiError {
 	q.errsMx.Unlock()
 
 	return returnErrs
+}
+
+type recordDeserializer interface {
+	deserialize(r record, index int) parsedRecord
+}
+
+func deserializerFromCfg(k KafkaConfig) recordDeserializer {
+	if k.FormatRemoteWriteV2Enabled {
+		return rw1and2RecordDeserializer{}
+	}
+	return protoWriteRequestRecordDeserializer{}
+}
+
+type protoWriteRequestRecordDeserializer struct{}
+
+func (p protoWriteRequestRecordDeserializer) deserialize(r record, index int) parsedRecord {
+	parsed := parsedRecord{
+		ctx:          r.ctx,
+		tenantID:     r.tenantID,
+		WriteRequest: &mimirpb.WriteRequest{},
+		index:        index,
+	}
+
+	// We don't free the WriteRequest slices because they are being freed by a level below.
+	err := parsed.WriteRequest.Unmarshal(r.content)
+	if err != nil {
+		parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
+	}
+	return parsed
+}
+
+type rw1and2RecordDeserializer struct{}
+
+func (rw rw1and2RecordDeserializer) deserialize(r record, index int) parsedRecord {
+	parsed := parsedRecord{
+		ctx:          r.ctx,
+		tenantID:     r.tenantID,
+		WriteRequest: &mimirpb.WriteRequest{},
+		index:        index,
+	}
+	isv2, err := mimirpb.DetectV2Timeseries(r.content)
+	if err != nil {
+		parsed.err = fmt.Errorf("failed to detect v1 or v2")
+	}
+
+	if isv2 {
+		rwv2 := &mimirpb.WriteRequestV2{}
+		err := rwv2.Unmarshal(r.content)
+		if err != nil {
+			parsed.err = fmt.Errorf("parsing ingest consumer write request v2: %w", err)
+		}
+		parsed.WriteRequest = mimirpb.FromWriteRequestV2ToWriteRequest(rwv2)
+	} else {
+		err := parsed.WriteRequest.Unmarshal(r.content)
+		if err != nil {
+			parsed.err = fmt.Errorf("parsing ingest consumer write request: %w", err)
+		}
+	}
+	return parsed
 }
