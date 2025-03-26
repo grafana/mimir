@@ -28,7 +28,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.ConsumerGroup, "block-builder-scheduler.consumer-group", "block-builder", "The Kafka consumer group used for getting/setting commmitted offsets.")
 	f.DurationVar(&cfg.SchedulingInterval, "block-builder-scheduler.scheduling-interval", 20*time.Second, "How frequently to recompute the schedule.")
 	f.DurationVar(&cfg.JobSize, "block-builder-scheduler.job-size", 1*time.Hour, "How long jobs (and therefore blocks) should be.")
-	f.DurationVar(&cfg.StartupObserveTime, "block-builder-scheduler.startup-observe-time", 25*time.Second, "How long to observe worker state before scheduling jobs.")
+	f.DurationVar(&cfg.StartupObserveTime, "block-builder-scheduler.startup-observe-time", 1*time.Minute, "How long to observe worker state before scheduling jobs.")
 	f.DurationVar(&cfg.JobLeaseExpiry, "block-builder-scheduler.job-lease-expiry", 2*time.Minute, "How long a job lease will live before expiring.")
 	f.DurationVar(&cfg.LookbackOnNoCommit, "block-builder-scheduler.lookback-on-no-commit", 6*time.Hour, "How much to look back if a commit is not found for a partition.")
 	f.DurationVar(&cfg.MaxScanAge, "block-builder-scheduler.max-scan-age", 12*time.Hour, "The oldest record age to consider when scanning for jobs.")
