@@ -415,22 +415,22 @@ func (e *Engine) Analyze(ctx context.Context, qs string, timeRange types.QueryTi
 
 type NoopPlanningObserver struct{}
 
-func (n NoopPlanningObserver) OnASTStageComplete(stageName string, updatedExpr parser.Expr, duration time.Duration) error {
+func (n NoopPlanningObserver) OnASTStageComplete(string, parser.Expr, time.Duration) error {
 	// Nothing to do.
 	return nil
 }
 
-func (n NoopPlanningObserver) OnAllASTStagesComplete(finalExpr parser.Expr) error {
+func (n NoopPlanningObserver) OnAllASTStagesComplete(parser.Expr) error {
 	// Nothing to do.
 	return nil
 }
 
-func (n NoopPlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan *planning.QueryPlan, duration time.Duration) error {
+func (n NoopPlanningObserver) OnPlanningStageComplete(string, *planning.QueryPlan, time.Duration) error {
 	// Nothing to do.
 	return nil
 }
 
-func (n NoopPlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error {
+func (n NoopPlanningObserver) OnAllPlanningStagesComplete(*planning.QueryPlan) error {
 	// Nothing to do.
 	return nil
 }

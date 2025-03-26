@@ -17,7 +17,7 @@ func (c *CollapseConstants) Name() string {
 }
 
 // TODO: tests
-func (c *CollapseConstants) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+func (c *CollapseConstants) Apply(_ context.Context, expr parser.Expr) (parser.Expr, error) {
 	return c.apply(expr), nil
 }
 
