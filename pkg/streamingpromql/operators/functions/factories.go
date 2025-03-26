@@ -90,7 +90,7 @@ func AbsentFunctionOperatorFactory(args []types.Operator, memoryConsumptionTrack
 		return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", functionName, args[0])
 	}
 
-	var o types.InstantVectorOperator = NewAbsent(inner, argExpressions[0], timeRange, memoryConsumptionTracker, expressionPosition)
+	var o types.InstantVectorOperator = NewAbsent(inner, CreateLabelsForAbsentFunction(argExpressions[0]), timeRange, memoryConsumptionTracker, expressionPosition)
 
 	return o, nil
 }
@@ -107,7 +107,7 @@ func AbsentOverTimeFunctionOperatorFactory(args []types.Operator, memoryConsumpt
 		return nil, fmt.Errorf("expected a range vector argument for %s, got %T", functionName, args[0])
 	}
 
-	var o types.InstantVectorOperator = NewAbsentOverTime(inner, argExpressions[0], timeRange, memoryConsumptionTracker, expressionPosition)
+	var o types.InstantVectorOperator = NewAbsentOverTime(inner, CreateLabelsForAbsentFunction(argExpressions[0]), timeRange, memoryConsumptionTracker, expressionPosition)
 
 	return o, nil
 }
