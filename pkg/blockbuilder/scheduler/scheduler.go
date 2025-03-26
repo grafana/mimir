@@ -82,12 +82,15 @@ func (s *BlockBuilderScheduler) stopping(_ error) error {
 }
 
 func (s *BlockBuilderScheduler) running(ctx context.Context) error {
+	level.Info(s.logger).Log("msg", "entering observation mode")
+
 	if err := s.observe(ctx); err != nil {
 		level.Error(s.logger).Log("msg", "failed to observe updates", "err", err)
 		return fmt.Errorf("observe: %w", err)
 	}
 
 	s.completeObservationMode()
+	level.Info(s.logger).Log("msg", "entering normal operation")
 
 	updateTick := time.NewTicker(s.cfg.SchedulingInterval)
 	defer updateTick.Stop()
