@@ -1542,7 +1542,7 @@ func TestRW2RecordFormat(t *testing.T) {
 		Metadata: []*mimirpb.MetricMetadata{
 			{Type: mimirpb.COUNTER, MetricFamilyName: "series_1", Help: "This is the first test metric."},
 			{Type: mimirpb.COUNTER, MetricFamilyName: "series_2", Help: "This is the second test metric."},
-			// {Type: mimirpb.COUNTER, MetricFamilyName: "series_3", Help: "This is the third test metric."},
+			{Type: mimirpb.COUNTER, MetricFamilyName: "series_3", Help: "This is the third test metric."},
 		},
 	}
 
@@ -1577,4 +1577,15 @@ func TestRW2RecordFormat(t *testing.T) {
 	require.Len(t, reqResult.Timeseries[1].Labels, 2)
 	require.Len(t, reqResult.Timeseries[1].Samples, 1)
 	require.Equal(t, reqResult.Timeseries[1].Samples[0].TimestampMs, int64(30))
+
+	require.Len(t, reqResult.Metadata, 3)
+	require.Equal(t, reqResult.Metadata[0].MetricFamilyName, "series_1")
+	require.Equal(t, reqResult.Metadata[1].MetricFamilyName, "series_2")
+	require.Equal(t, reqResult.Metadata[2].MetricFamilyName, "series_3")
+	require.Equal(t, reqResult.Metadata[0].Type, mimirpb.COUNTER)
+	require.Equal(t, reqResult.Metadata[1].Type, mimirpb.COUNTER)
+	require.Equal(t, reqResult.Metadata[2].Type, mimirpb.COUNTER)
+	require.Equal(t, reqResult.Metadata[0].Help, "This is the first test metric.")
+	require.Equal(t, reqResult.Metadata[1].Help, "This is the second test metric.")
+	require.Equal(t, reqResult.Metadata[2].Help, "This is the third test metric.")
 }

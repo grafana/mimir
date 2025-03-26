@@ -865,7 +865,7 @@ func TestMetricMetadataConversion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test V1 -> V2 conversion
-			gotV2 := FromMetricMetadataToMetricMetadataV2(tt.v1, symbols)
+			gotV2 := FromMetricMetadataToMetricMetadataV2(tt.v1, &symbols)
 			require.Equal(t, tt.v2, gotV2)
 
 			// Test V2 -> V1 conversion
