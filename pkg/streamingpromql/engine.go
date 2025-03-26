@@ -88,23 +88,23 @@ type Engine struct {
 	// (indicating something was not returned to a pool).
 	pedantic bool
 
-	useQueryPlanning bool
-	astOptimizers    []optimize.ASTOptimizer
-	planOptimizers   []optimize.QueryPlanOptimizer
+	useQueryPlanning       bool
+	astOptimizationPasses  []optimize.ASTOptimizationPass
+	planOptimizationPasses []optimize.QueryPlanOptimizationPass
 }
 
-// RegisterASTOptimizer registers an AST optimizer used with this engine.
+// RegisterASTOptimizationPass registers an AST optimization pass used with this engine.
 //
 // This method is not thread-safe and must not be called concurrently with any other method on this type.
-func (e *Engine) RegisterASTOptimizer(o optimize.ASTOptimizer) {
-	e.astOptimizers = append(e.astOptimizers, o)
+func (e *Engine) RegisterASTOptimizationPass(o optimize.ASTOptimizationPass) {
+	e.astOptimizationPasses = append(e.astOptimizationPasses, o)
 }
 
-// RegisterQueryPlanOptimizer registers a query plan optimizer used with this engine.
+// RegisterQueryPlanOptimizationPass registers a query plan optimization pass used with this engine.
 //
 // This method is not thread-safe and must not be called concurrently with any other method on this type.
-func (e *Engine) RegisterQueryPlanOptimizer(o optimize.QueryPlanOptimizer) {
-	e.planOptimizers = append(e.planOptimizers, o)
+func (e *Engine) RegisterQueryPlanOptimizationPass(o optimize.QueryPlanOptimizationPass) {
+	e.planOptimizationPasses = append(e.planOptimizationPasses, o)
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {

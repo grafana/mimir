@@ -842,10 +842,10 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		return nil, err
 	}
 
-	streamingEngine.RegisterASTOptimizer(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimisations such as common subexpression elimination.
-	streamingEngine.RegisterASTOptimizer(&ast.CollapseConstants{})
+	streamingEngine.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
+	streamingEngine.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 
-	streamingEngine.RegisterQueryPlanOptimizer(&plan.EliminateCommonSubexpressions{})
+	streamingEngine.RegisterQueryPlanOptimizationPass(&plan.EliminateCommonSubexpressions{})
 
 	analysisHandler := frontend.AnalysisHandler(streamingEngine)
 	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler, analysisHandler)

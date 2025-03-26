@@ -12,9 +12,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// SortLabelsAndMatchers is an optimizer that ensures that all label names and matchers are sorted.
+// SortLabelsAndMatchers is an optimization pass that ensures that all label names and matchers are sorted.
 //
-// This allows subsequent optimizers to assume that label names and matchers are sorted, which simplifies their implementation.
+// This allows subsequent optimization passes to assume that label names and matchers are sorted, which simplifies their implementation.
 type SortLabelsAndMatchers struct{}
 
 func (s *SortLabelsAndMatchers) Name() string {

@@ -10,12 +10,12 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 )
 
-type ASTOptimizer interface {
+type ASTOptimizationPass interface {
 	Name() string
 	Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error)
 }
 
-type QueryPlanOptimizer interface {
+type QueryPlanOptimizationPass interface {
 	Name() string
 	Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error)
 }
