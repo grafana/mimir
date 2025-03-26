@@ -832,6 +832,10 @@ var DoubleExponentialSmoothing = FunctionOverRangeVectorDefinition{
 // trend factor increases the influence. of trends. Algorithm taken from
 // https://en.wikipedia.org/wiki/Exponential_smoothing .
 func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args []types.ScalarData, timeRange types.QueryTimeRange, emitAnnotation types.EmitAnnotationFunc, _ *limiting.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	if !step.Floats.Any() && !step.Histograms.Any() {
+		return 0, false, nil, nil
+	}
+
 	smoothingFactor := args[0].Samples[timeRange.PointIndex(step.StepT)].F
 	if smoothingFactor <= 0 || smoothingFactor >= 1 {
 		return 0, false, nil, fmt.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", smoothingFactor)
