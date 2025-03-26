@@ -121,6 +121,6 @@ func (f *FunctionCall) OperatorFactory(children []types.Operator, timeRange type
 		return planning.NewSingleUseOperatorFactory(o), nil
 
 	default:
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("function '%v'", f.FunctionName))
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.FunctionName))
 	}
 }

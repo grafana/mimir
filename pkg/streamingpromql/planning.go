@@ -6,8 +6,10 @@ import (
 	"context"
 	"fmt"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"slices"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -213,6 +215,16 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.Call:
+		// e.Func.Name is already validated and canonicalised by the parser. Meaning we don't need to check if the function name
+		// refers to a function that exists, nor normalise the casing etc. before checking if it is disabled.
+		if _, found := slices.BinarySearch(e.features.DisabledFunctions, expr.Func.Name); found {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
+		}
+
+		if !isKnownFunction(expr.Func.Name) {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
+		}
+
 		args := make([]planning.Node, 0, len(expr.Args))
 
 		for _, arg := range expr.Args {
@@ -311,6 +323,18 @@ func (e *Engine) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 	default:
 		return nil, fmt.Errorf("unknown expression type: %T", expr)
 	}
+}
+
+func isKnownFunction(name string) bool {
+	if _, ok := functions.InstantVectorFunctionOperatorFactories[name]; ok {
+		return true
+	}
+
+	if _, ok := functions.ScalarFunctionOperatorFactories[name]; ok {
+		return true
+	}
+
+	return name == "absent" || name == "absent_over_time"
 }
 
 // Materialize converts a query plan into an executable query.
