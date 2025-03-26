@@ -36,7 +36,17 @@ func Test_runDoubleExponentialSmoothing(t *testing.T) {
 			wantHasFloat: false,
 		},
 		{
-			name: "total 6 points",
+			name: "6 points in head, 0 points in tail",
+			args: args{
+				fHead:           []promql.FPoint{{F: 1}, {F: 1}, {F: 1}, {F: 1}, {F: 1}, {F: 1}},
+				smoothingFactor: 0.1,
+				trendFactor:     0.1,
+			},
+			wantFloat:    1,
+			wantHasFloat: true,
+		},
+		{
+			name: "3 points in head, 3 points in tail",
 			args: args{
 				fHead:           []promql.FPoint{{F: 1}, {F: 1}, {F: 1}},
 				fTail:           []promql.FPoint{{F: 1}, {F: 1}, {F: 1}},
@@ -47,7 +57,18 @@ func Test_runDoubleExponentialSmoothing(t *testing.T) {
 			wantHasFloat: true,
 		},
 		{
-			name: "two points in head",
+			name: "4 points in head, 2 points in tail",
+			args: args{
+				fHead:           []promql.FPoint{{F: 1}, {F: 1}, {F: 1}, {F: 1}},
+				fTail:           []promql.FPoint{{F: 1}, {F: 1}},
+				smoothingFactor: 0.1,
+				trendFactor:     0.1,
+			},
+			wantFloat:    1,
+			wantHasFloat: true,
+		},
+		{
+			name: "2 points in head, 4 points in tail",
 			args: args{
 				fHead:           []promql.FPoint{{F: 1}, {F: 1}},
 				fTail:           []promql.FPoint{{F: 1}, {F: 1}, {F: 1}, {F: 1}},
@@ -58,7 +79,7 @@ func Test_runDoubleExponentialSmoothing(t *testing.T) {
 			wantHasFloat: true,
 		},
 		{
-			name: "one point in head",
+			name: "1 points in head, 5 points in tail",
 			args: args{
 				fHead:           []promql.FPoint{{F: 1}},
 				fTail:           []promql.FPoint{{F: 1}, {F: 1}, {F: 1}, {F: 1}, {F: 1}},

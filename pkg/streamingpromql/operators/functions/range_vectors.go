@@ -870,24 +870,28 @@ func runDoubleExponentialSmoothing(fHead []promql.FPoint, fTail []promql.FPoint,
 		estimatedTrend = fHead[1].F - fHead[0].F
 	}
 
-	accumulate := func(samples []promql.FPoint, head bool) {
+	actualPointIndex := 0
+	accumulate := func(samples []promql.FPoint) {
 		var x, y float64
 
-		for i, sample := range samples {
+		for _, sample := range samples {
 			// Scale the raw value against the smoothing factor.
 			x = smoothingFactor * sample.F
 
-			// Scale the last smoothed value for all samples except the first one in head.
-			if !head || i > 0 {
+			// Scale the last smoothed value for all samples except the first two points (point at actualPointIndex 0 and 1),
+			// regardless whether they are in head or tail.
+			if actualPointIndex > 1 {
 				estimatedTrend = trendFactor*(smooth1-smooth0) + (1-trendFactor)*estimatedTrend
+			} else {
+				actualPointIndex += 1
 			}
 			y = (1 - smoothingFactor) * (smooth1 + estimatedTrend)
 
 			smooth0, smooth1 = smooth1, x+y
 		}
 	}
-	accumulate(fHead[1:], true)
-	accumulate(fTail, false)
+	accumulate(fHead[1:])
+	accumulate(fTail)
 
 	return smooth1, true, nil, nil
 }
