@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/promql"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_runDoubleExponentialSmoothing(t *testing.T) {
@@ -92,17 +93,13 @@ func Test_runDoubleExponentialSmoothing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotFloat, gotHasFloat, _, err := runDoubleExponentialSmoothing(tt.args.fHead, tt.args.fTail, tt.args.smoothingFactor, tt.args.trendFactor)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("runDoubleExponentialSmoothing() error = %v, wantErr %v", err, tt.wantErr)
-				return
+			gotFloat, gotHasFloat, _, err := calculateDoubleExponentialSmoothing(tt.args.fHead, tt.args.fTail, tt.args.smoothingFactor, tt.args.trendFactor)
+
+			if tt.wantErr {
+				require.Error(t, err)
 			}
-			if gotFloat != tt.wantFloat {
-				t.Errorf("runDoubleExponentialSmoothing() gotFloat = %v, wantFloat %v", gotFloat, tt.wantFloat)
-			}
-			if gotHasFloat != tt.wantHasFloat {
-				t.Errorf("runDoubleExponentialSmoothing() gotHasFloat = %v, wantHasFloat %v", gotHasFloat, tt.wantHasFloat)
-			}
+			require.Equal(t, tt.wantFloat, gotFloat)
+			require.Equal(t, tt.wantHasFloat, gotHasFloat)
 		})
 	}
 }
