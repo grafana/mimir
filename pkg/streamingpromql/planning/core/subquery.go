@@ -4,14 +4,16 @@ package core
 
 import (
 	"fmt"
-	"github.com/gogo/protobuf/proto"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators"
-	"github.com/grafana/mimir/pkg/streamingpromql/planning"
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/model/timestamp"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/operators"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type Subquery struct {

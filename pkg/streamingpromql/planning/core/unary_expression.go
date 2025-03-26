@@ -4,7 +4,9 @@ package core
 
 import (
 	"fmt"
+
 	"github.com/gogo/protobuf/proto"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
