@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/aggregations/topkbottomk"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/binops"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/scalars"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -312,7 +313,7 @@ func (q *Query) convertToInstantVectorOperator(expr parser.Expr, timeRange types
 			return nil, err
 		}
 
-		return unaryNegationOfInstantVectorOperatorFactory(inner, q.memoryConsumptionTracker, e.PositionRange(), timeRange), nil
+		return functions.UnaryNegationOfInstantVectorOperatorFactory(inner, q.memoryConsumptionTracker, e.PositionRange(), timeRange), nil
 
 	case *parser.StepInvariantExpr:
 		// One day, we'll do something smarter here.
@@ -331,21 +332,44 @@ func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeR
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 	}
 
-	factory, ok := instantVectorFunctionOperatorFactories[e.Func.Name]
-	if !ok {
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
-	}
-
-	args := make([]types.Operator, len(e.Args))
-	for i := range e.Args {
-		a, err := q.convertToOperator(e.Args[i], timeRange)
+	switch e.Func.Name {
+	case "absent":
+		inner, err := q.convertToInstantVectorOperator(e.Args[0], timeRange)
 		if err != nil {
 			return nil, err
 		}
-		args[i] = a
-	}
 
-	return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, timeRange, e.Args)
+		lbls := functions.CreateLabelsForAbsentFunction(e.Args[0])
+
+		return functions.NewAbsent(inner, lbls, timeRange, q.memoryConsumptionTracker, e.PosRange), nil
+
+	case "absent_over_time":
+		inner, err := q.convertToRangeVectorOperator(e.Args[0], timeRange)
+		if err != nil {
+			return nil, err
+		}
+
+		lbls := functions.CreateLabelsForAbsentFunction(e.Args[0])
+
+		return functions.NewAbsentOverTime(inner, lbls, timeRange, q.memoryConsumptionTracker, e.PosRange), nil
+
+	default:
+		factory, ok := functions.InstantVectorFunctionOperatorFactories[e.Func.Name]
+		if !ok {
+			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
+		}
+
+		args := make([]types.Operator, len(e.Args))
+		for i := range e.Args {
+			a, err := q.convertToOperator(e.Args[i], timeRange)
+			if err != nil {
+				return nil, err
+			}
+			args[i] = a
+		}
+
+		return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, timeRange)
+	}
 }
 
 func (q *Query) convertToRangeVectorOperator(expr parser.Expr, timeRange types.QueryTimeRange) (types.RangeVectorOperator, error) {
@@ -493,7 +517,7 @@ func (q *Query) convertToScalarOperator(expr parser.Expr, timeRange types.QueryT
 }
 
 func (q *Query) convertFunctionCallToScalarOperator(e *parser.Call, timeRange types.QueryTimeRange) (types.ScalarOperator, error) {
-	factory, ok := scalarFunctionOperatorFactories[e.Func.Name]
+	factory, ok := functions.ScalarFunctionOperatorFactories[e.Func.Name]
 	if !ok {
 		return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", e.Func.Name))
 	}
