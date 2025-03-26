@@ -53,7 +53,7 @@ func (d *EliminateCommonSubexpressions) Name() string {
 // # Combinations of all of the above
 // b + b + sum(a) + sum(a) + sum(rate(foo[1m])) + max(rate(foo[1m])) + a
 
-func (d *EliminateCommonSubexpressions) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
+func (d *EliminateCommonSubexpressions) Apply(_ context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
 	// FIXME: there's certainly a more efficient way to do this
 	// FIXME: need to consider selector time ranges when doing this (eg. if subqueries are involved)
 	// - introduce "TimeRange(parent types.QueryTimeRange) types.QueryTimeRange" method on Node?
@@ -316,6 +316,6 @@ func (d *Duplicate) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) type
 	return parentTimeRange
 }
 
-func (d *Duplicate) OperatorFactory(children []types.Operator, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func (d *Duplicate) OperatorFactory(_ []types.Operator, _ types.QueryTimeRange, _ *planning.OperatorParameters) (planning.OperatorFactory, error) {
 	panic("TODO")
 }

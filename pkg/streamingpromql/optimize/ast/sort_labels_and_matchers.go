@@ -22,8 +22,8 @@ func (s *SortLabelsAndMatchers) Name() string {
 }
 
 // TODO: tests
-func (s *SortLabelsAndMatchers) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
-	parser.Inspect(expr, func(node parser.Node, nodes []parser.Node) error {
+func (s *SortLabelsAndMatchers) Apply(_ context.Context, expr parser.Expr) (parser.Expr, error) {
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
 		switch expr := node.(type) {
 		case *parser.VectorSelector:
 			// Note that VectorSelectors sort their labels when pretty printing, so this change may not be visible when printing as PromQL.
