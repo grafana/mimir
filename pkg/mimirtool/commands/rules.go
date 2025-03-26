@@ -884,8 +884,8 @@ func save(nss map[string]rules.RuleNamespace, i bool) error {
 		if !i {
 			filepath = filepath + ".result"
 		}
-		err = os.WriteFile(filepath, payload, 0644) // #nosec G306 -- Uses system umask to restrict file permissions instead of hardcoding values
-		if err != nil {
+
+		if err := os.WriteFile(filepath, payload, 0644); err != nil {
 			return err
 		}
 	}

@@ -210,7 +210,7 @@ func TestReaders_CreationWithEmptyContents(t *testing.T) {
 	t.Run("fileReader", func(t *testing.T) {
 		dir := t.TempDir()
 		filePath := path.Join(dir, "test-file")
-		require.NoError(t, os.WriteFile(filePath, nil, 0600))
+		require.NoError(t, os.WriteFile(filePath, nil, 0700))
 
 		f, err := os.Open(filePath)
 		require.NoError(t, err)
@@ -231,7 +231,7 @@ func testReaders(t *testing.T, test func(t *testing.T, r *fileReader)) {
 	t.Run("FileReaderWithZeroOffset", func(t *testing.T) {
 		dir := t.TempDir()
 		filePath := path.Join(dir, "test-file")
-		require.NoError(t, os.WriteFile(filePath, testReaderContents, 0600))
+		require.NoError(t, os.WriteFile(filePath, testReaderContents, 0700))
 
 		f, err := os.Open(filePath)
 		require.NoError(t, err)
@@ -251,7 +251,7 @@ func testReaders(t *testing.T, test func(t *testing.T, r *fileReader)) {
 
 		dir := t.TempDir()
 		filePath := path.Join(dir, "test-file")
-		require.NoError(t, os.WriteFile(filePath, fileBytes, 0600))
+		require.NoError(t, os.WriteFile(filePath, fileBytes, 0700))
 
 		f, err := os.Open(filePath)
 		require.NoError(t, err)

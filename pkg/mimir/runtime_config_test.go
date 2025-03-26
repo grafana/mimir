@@ -219,7 +219,7 @@ overrides:
     active_series_additional_custom_trackers:
       additional: '{foo="user_1_additional"}'
       common:     '{foo="user_1_additional"}'
-`), 0600))
+`), os.ModePerm))
 
 	// Start the runtime config manager.
 	cfg := Config{}
