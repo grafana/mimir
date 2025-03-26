@@ -109,14 +109,20 @@ func (c *codecV2) Marshal(v any) (mem.BufferSlice, error) {
 // Unmarshal customizes gRPC unmarshalling.
 // If v wraps BufferHolder, its SetBuffer method is called with the unmarshalling buffer.
 func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
-	vv := messageV2Of(v)
 	buf := data.MaterializeToBuffer(mem.DefaultBufferPool())
 	// Decrement buf's reference count. Note though that if v wraps BufferHolder,
 	// we increase buf's reference count first so it doesn't go to zero.
 	defer buf.Free()
 
-	if err := protobufproto.Unmarshal(buf.ReadOnlyData(), vv); err != nil {
-		return err
+	if unmarshaler, ok := v.(gogoproto.Unmarshaler); ok {
+		if err := unmarshaler.Unmarshal(buf.ReadOnlyData()); err != nil {
+			return err
+		}
+	} else {
+		vv := messageV2Of(v)
+		if err := protobufproto.Unmarshal(buf.ReadOnlyData(), vv); err != nil {
+			return err
+		}
 	}
 
 	if holder, ok := v.(interface {
