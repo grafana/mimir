@@ -164,54 +164,51 @@ func testWithAndWithoutQueryPlanner(t *testing.T, opts EngineOpts, test func(t *
 }
 
 func TestNewRangeQuery_InvalidQueryTime(t *testing.T) {
-	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
-	require.NoError(t, err)
-	ctx := context.Background()
+	testWithAndWithoutQueryPlanner(t, NewTestEngineOpts(), func(t *testing.T, engine *Engine) {
+		ctx := context.Background()
 
-	_, err = engine.NewRangeQuery(ctx, nil, nil, "vector(0)", time.Now(), time.Now(), 0)
-	require.EqualError(t, err, "0s is not a valid interval for a range query, must be greater than 0")
+		_, err := engine.NewRangeQuery(ctx, nil, nil, "vector(0)", time.Now(), time.Now(), 0)
+		require.EqualError(t, err, "0s is not a valid interval for a range query, must be greater than 0")
 
-	start := time.Date(2024, 3, 22, 3, 0, 0, 0, time.UTC)
-	_, err = engine.NewRangeQuery(ctx, nil, nil, "vector(0)", start, start.Add(-time.Hour), time.Second)
-	require.EqualError(t, err, "range query time range is invalid: end time 2024-03-22T02:00:00Z is before start time 2024-03-22T03:00:00Z")
+		start := time.Date(2024, 3, 22, 3, 0, 0, 0, time.UTC)
+		_, err = engine.NewRangeQuery(ctx, nil, nil, "vector(0)", start, start.Add(-time.Hour), time.Second)
+		require.EqualError(t, err, "range query time range is invalid: end time 2024-03-22T02:00:00Z is before start time 2024-03-22T03:00:00Z")
+	})
 }
 
 func TestNewRangeQuery_InvalidExpressionTypes(t *testing.T) {
-	opts := NewTestEngineOpts()
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
-	require.NoError(t, err)
-	ctx := context.Background()
+	testWithAndWithoutQueryPlanner(t, NewTestEngineOpts(), func(t *testing.T, engine *Engine) {
+		ctx := context.Background()
 
-	_, err = engine.NewRangeQuery(ctx, nil, nil, "metric[3m]", time.Now(), time.Now(), time.Second)
-	require.EqualError(t, err, "query expression produces a range vector, but expression for range queries must produce an instant vector or scalar")
+		_, err := engine.NewRangeQuery(ctx, nil, nil, "metric[3m]", time.Now(), time.Now(), time.Second)
+		require.EqualError(t, err, "query expression produces a range vector, but expression for range queries must produce an instant vector or scalar")
 
-	_, err = engine.NewRangeQuery(ctx, nil, nil, `"thing"`, time.Now(), time.Now(), time.Second)
-	require.EqualError(t, err, "query expression produces a string, but expression for range queries must produce an instant vector or scalar")
+		_, err = engine.NewRangeQuery(ctx, nil, nil, `"thing"`, time.Now(), time.Now(), time.Second)
+		require.EqualError(t, err, "query expression produces a string, but expression for range queries must produce an instant vector or scalar")
+	})
 }
 
 func TestNewInstantQuery_Strings(t *testing.T) {
 	ctx := context.Background()
 	opts := NewTestEngineOpts()
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
-	require.NoError(t, err)
-
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
-	storage := promqltest.LoadedStorage(t, ``)
+	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, mimirEngine *Engine) {
+		storage := promqltest.LoadedStorage(t, ``)
 
-	expr := `"thing"`
-	q, err := mimirEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
-	require.NoError(t, err)
-	mimir := q.Exec(context.Background())
-	q.Close()
+		expr := `"thing"`
+		q, err := mimirEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
+		require.NoError(t, err)
+		mimir := q.Exec(context.Background())
+		q.Close()
 
-	q, err = prometheusEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
-	require.NoError(t, err)
-	prometheus := q.Exec(context.Background())
-	q.Close()
+		q, err = prometheusEngine.NewInstantQuery(ctx, storage, nil, expr, time.Now())
+		require.NoError(t, err)
+		prometheus := q.Exec(context.Background())
+		q.Close()
 
-	testutils.RequireEqualResults(t, expr, prometheus, mimir, false)
+		testutils.RequireEqualResults(t, expr, prometheus, mimir, false)
+	})
 }
 
 // This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
@@ -306,10 +303,14 @@ func TestOurTestCases(t *testing.T) {
 // So instead, we test these few cases here instead.
 func TestRangeVectorSelectors(t *testing.T) {
 	opts := NewTestEngineOpts()
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
 
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+	optsWithQueryPlanner := NewTestEngineOpts()
+	optsWithQueryPlanner.UseQueryPlanning = true
+	mimirEngineWithQueryPlanner, err := NewEngine(optsWithQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
 
 	baseT := timestamp.Time(0)
 	storage := promqltest.LoadedStorage(t, `
@@ -839,8 +840,12 @@ func TestRangeVectorSelectors(t *testing.T) {
 				}
 			}
 
-			t.Run("Mimir's engine", func(t *testing.T) {
+			t.Run("Mimir's engine (without query planner)", func(t *testing.T) {
 				runTest(t, mimirEngine, testCase.expr, testCase.ts, testCase.expected)
+			})
+
+			t.Run("Mimir's engine (with query planner)", func(t *testing.T) {
+				runTest(t, mimirEngineWithQueryPlanner, testCase.expr, testCase.ts, testCase.expected)
 			})
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
@@ -866,9 +871,15 @@ func TestSubqueries(t *testing.T) {
 	`
 
 	opts := NewTestEngineOpts()
+	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(t, err)
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+	optsWithQueryPlanner := NewTestEngineOpts()
+	optsWithQueryPlanner.UseQueryPlanning = true
+	mimirEngineWithQueryPlanner, err := NewEngine(optsWithQueryPlanner, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(t, err)
+
 	storage := promqltest.LoadedStorage(t, data)
 	t.Cleanup(func() { storage.Close() })
 
@@ -1283,13 +1294,17 @@ func TestSubqueries(t *testing.T) {
 				qry.Close()
 			}
 
+			t.Run("Mimir's engine (without query planner)", func(t *testing.T) {
+				runTest(t, mimirEngine)
+			})
+
+			t.Run("Mimir's engine (with query planner)", func(t *testing.T) {
+				runTest(t, mimirEngineWithQueryPlanner)
+			})
+
 			// Ensure our test cases are correct by running them against Prometheus' engine too.
 			t.Run("Prometheus' engine", func(t *testing.T) {
 				runTest(t, prometheusEngine)
-			})
-
-			t.Run("Mimir's engine", func(t *testing.T) {
-				runTest(t, mimirEngine)
 			})
 		})
 	}
