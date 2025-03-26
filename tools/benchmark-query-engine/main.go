@@ -279,6 +279,7 @@ func (a *app) allTestCaseNames() []string {
 
 	for _, c := range cases {
 		names = append(names, benchmarkName+"/"+c.Name()+"/engine=Mimir")
+		names = append(names, benchmarkName+"/"+c.Name()+"/engine=MimirWithQueryPlanner")
 		names = append(names, benchmarkName+"/"+c.Name()+"/engine=Prometheus")
 	}
 
