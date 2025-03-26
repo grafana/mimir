@@ -14,6 +14,10 @@ message EncodedQueryPlan {
   EncodedQueryTimeRange timeRange = 1 [(gogoproto.nullable) = false];
   repeated EncodedNode nodes = 2;
   int64 rootNode = 3;
+
+  // The original PromQL expression for this query.
+  // May not accurately represent the query being executed if this query was built from a query plan representing a subexpression of a query.
+  string originalExpression = 4;
 }
 
 message EncodedQueryTimeRange {

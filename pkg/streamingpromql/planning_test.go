@@ -1020,6 +1020,8 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
+			testCase.expectedPlan.OriginalExpression = testCase.expr
+
 			originalPlan, err := engine.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
 			require.NoError(t, err)
 
