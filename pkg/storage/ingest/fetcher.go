@@ -539,8 +539,11 @@ func (r *concurrentFetchers) fetchSingle(ctx context.Context, fw fetchWant) (fr 
 		return newErrorFetchResult(ctx, r.partitionID, errUnknownPartitionLeader)
 	}
 
-	// Build and send the Fetch request to the leader broker.
+	// Build the Fetch request.
 	req := r.buildFetchRequest(fw, leaderEpoch)
+	r.metrics.fetchMaxBytes.Observe(float64(req.MaxBytes))
+
+	// Send the Fetch request to the leader broker.
 	resp, err := req.RequestWith(ctx, r.client.Broker(int(leaderID)))
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
