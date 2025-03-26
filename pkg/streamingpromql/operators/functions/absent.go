@@ -114,8 +114,8 @@ func (a *Absent) Close() {
 }
 
 // CreateLabelsForAbsentFunction returns the labels that are uniquely and exactly matched
-// in a given expression. It is used in the absent functions.
-// This function is copied from Prometheus
+// in a given expression. It is used for the absent and absent_over_time functions.
+// This function is copied from Prometheus.
 func CreateLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	b := labels.NewBuilder(labels.EmptyLabels())
 
