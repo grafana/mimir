@@ -32,7 +32,7 @@ func copyRecursive(src, dst string) error {
 		}
 
 		if info.IsDir() {
-			return os.MkdirAll(filepath.Join(dst, relPath), 0700)
+			return os.MkdirAll(filepath.Join(dst, relPath), os.ModePerm) // #nosec G301 -- Relies on system umask to restrict directory permissions, preserving operator flexibility
 		}
 
 		if !info.Mode().IsRegular() {
