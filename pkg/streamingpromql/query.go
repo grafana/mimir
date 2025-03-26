@@ -41,11 +41,15 @@ var errQueryClosed = cancellation.NewErrorf("Query.Close() called")
 var errQueryFinished = cancellation.NewErrorf("query execution finished")
 
 type Query struct {
-	queryable                storage.Queryable
-	statement                *parser.EvalStmt
-	root                     types.Operator
-	engine                   *Engine
-	qs                       string
+	queryable storage.Queryable
+	statement *parser.EvalStmt
+	root      types.Operator
+	engine    *Engine
+
+	// The original PromQL expression for this query.
+	// May not accurately represent the query being executed if this query was built from a query plan representing a subexpression of a query.
+	originalExpression string
+
 	cancel                   context.CancelCauseFunc
 	memoryConsumptionTracker *limiting.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
@@ -114,7 +118,7 @@ func (e *Engine) newQueryFromExpression(ctx context.Context, queryable storage.Q
 		return nil, err
 	}
 
-	q.qs = qs
+	q.originalExpression = qs
 	q.statement = &parser.EvalStmt{
 		Expr:          expr,
 		Start:         start,
@@ -565,7 +569,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 	defer cancel(errQueryFinished)
 
 	if q.engine.activeQueryTracker != nil {
-		queryID, err := q.engine.activeQueryTracker.Insert(ctx, q.qs)
+		queryID, err := q.engine.activeQueryTracker.Insert(ctx, q.originalExpression)
 		if err != nil {
 			return &promql.Result{Err: err}
 		}
@@ -580,7 +584,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 		msg = append(msg,
 			"msg", "query stats",
 			"estimatedPeakMemoryConsumption", q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes,
-			"expr", q.qs,
+			"expr", q.originalExpression,
 		)
 
 		if q.topLevelQueryTimeRange.IsInstant {
@@ -878,5 +882,5 @@ func (q *Query) Cancel() {
 }
 
 func (q *Query) String() string {
-	return q.qs
+	return q.originalExpression
 }

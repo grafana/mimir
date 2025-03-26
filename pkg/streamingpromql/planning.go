@@ -27,7 +27,6 @@ type PlanningObserver interface {
 	OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error
 }
 
-// TODO: timeout
 func (e *Engine) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
 	expr, err := runASTStage("Parsing", observer, func() (parser.Expr, error) { return parser.ParseExpr(qs) })
 	if err != nil {
@@ -69,6 +68,8 @@ func (e *Engine) NewQueryPlan(ctx context.Context, qs string, timeRange types.Qu
 		plan := &planning.QueryPlan{
 			TimeRange: timeRange,
 			Root:      root,
+
+			OriginalExpression: qs,
 		}
 
 		return plan, nil
@@ -332,13 +333,27 @@ func (e *Engine) Materialize(ctx context.Context, plan *planning.QueryPlan, quer
 		LookbackDelta:            q.lookbackDelta,
 	}
 
+	// HACK: we need an expression to use in the active query tracker, but there's no guarantee the plan we're working with
+	// is for the original expression (the plan may represent a subexpression of the original plan, for example).
+	// This is good enough for now, but something to revisit later - perhaps we can use some kind of request ID?
+	q.originalExpression = plan.OriginalExpression
+
+	q.statement = &parser.EvalStmt{
+		Expr:          nil, // Nothing seems to use this, and we don't have a good expression to use here anyway, so don't bother setting this.
+		Start:         timestamp.Time(plan.TimeRange.StartT),
+		End:           timestamp.Time(plan.TimeRange.EndT),
+		Interval:      time.Duration(plan.TimeRange.IntervalMilliseconds) * time.Millisecond,
+		LookbackDelta: q.lookbackDelta,
+	}
+
+	if plan.TimeRange.IsInstant {
+		q.statement.Interval = 0
+	}
+
 	q.root, err = q.convertNodeToOperator(plan.Root, plan.TimeRange)
 	if err != nil {
 		return nil, err
 	}
-
-	// TODO: what to do with Statement()?
-	// TODO: what to do with active query tracker? Expects expression to use
 
 	return q, nil
 }

@@ -20,6 +20,8 @@ import (
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
 	Root      Node
+
+	OriginalExpression string
 }
 
 // Node represents a node in the query plan graph.
@@ -91,9 +93,10 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool)
 	}
 
 	encoded := &EncodedQueryPlan{
-		TimeRange: toEncodedTimeRange(p.TimeRange),
-		Nodes:     encoder.nodes,
-		RootNode:  rootNode,
+		TimeRange:          toEncodedTimeRange(p.TimeRange),
+		Nodes:              encoder.nodes,
+		RootNode:           rootNode,
+		OriginalExpression: p.OriginalExpression,
 	}
 
 	return encoded, nil
@@ -190,8 +193,9 @@ func (p *EncodedQueryPlan) ToDecodedPlan() (*QueryPlan, error) {
 	}
 
 	return &QueryPlan{
-		TimeRange: fromEncodedTimeRange(p.TimeRange),
-		Root:      root,
+		TimeRange:          fromEncodedTimeRange(p.TimeRange),
+		Root:               root,
+		OriginalExpression: p.OriginalExpression,
 	}, nil
 }
 
