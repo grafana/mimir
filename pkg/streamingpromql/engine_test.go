@@ -76,59 +76,88 @@ func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
 }
 
 func requireQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
-	requireRangeQueryIsUnsupported(t, features, expression, expectedError)
-	requireInstantQueryIsUnsupported(t, features, expression, expectedError)
+	t.Run("range query", func(t *testing.T) {
+		requireRangeQueryIsUnsupported(t, features, expression, expectedError)
+	})
+
+	t.Run("instant query", func(t *testing.T) {
+		requireInstantQueryIsUnsupported(t, features, expression, expectedError)
+	})
 }
 
 func requireQueryIsSupported(t *testing.T, features Features, expression string) {
-	requireRangeQueryIsSupported(t, features, expression)
-	requireInstantQueryIsSupported(t, features, expression)
+	t.Run("range query", func(t *testing.T) {
+		requireRangeQueryIsSupported(t, features, expression)
+	})
+
+	t.Run("instant query", func(t *testing.T) {
+		requireInstantQueryIsSupported(t, features, expression)
+	})
 }
 
 func requireRangeQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
 	opts.Features = features
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
-	require.NoError(t, err)
 
-	qry, err := engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
-	require.Error(t, err)
-	require.ErrorIs(t, err, compat.NotSupportedError{})
-	require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
-	require.Nil(t, qry)
+	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
+		qry, err := engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
+		require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
+		require.ErrorIs(t, err, compat.NotSupportedError{})
+		require.Nil(t, qry)
+	})
 }
 
 func requireInstantQueryIsUnsupported(t *testing.T, features Features, expression string, expectedError string) {
 	opts := NewTestEngineOpts()
 	opts.Features = features
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
-	require.NoError(t, err)
 
-	qry, err := engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
-	require.Error(t, err)
-	require.ErrorIs(t, err, compat.NotSupportedError{})
-	require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
-	require.Nil(t, qry)
+	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
+		qry, err := engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
+		require.Error(t, err)
+		require.ErrorIs(t, err, compat.NotSupportedError{})
+		require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
+		require.Nil(t, qry)
+	})
 }
 
 func requireRangeQueryIsSupported(t *testing.T, features Features, expression string) {
 	opts := NewTestEngineOpts()
 	opts.Features = features
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
-	require.NoError(t, err)
 
-	_, err = engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
-	require.NoError(t, err)
+	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
+		_, err := engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
+		require.NoError(t, err)
+	})
 }
 
 func requireInstantQueryIsSupported(t *testing.T, features Features, expression string) {
 	opts := NewTestEngineOpts()
 	opts.Features = features
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
-	require.NoError(t, err)
 
-	_, err = engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
-	require.NoError(t, err)
+	testWithAndWithoutQueryPlanner(t, opts, func(t *testing.T, engine *Engine) {
+		_, err := engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
+		require.NoError(t, err)
+	})
+}
+
+func testWithAndWithoutQueryPlanner(t *testing.T, opts EngineOpts, test func(t *testing.T, engine *Engine)) {
+	t.Run("with query planner", func(t *testing.T) {
+		opts.UseQueryPlanning = true
+
+		engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+		require.NoError(t, err)
+
+		test(t, engine)
+	})
+
+	t.Run("without query planner", func(t *testing.T) {
+		opts.UseQueryPlanning = false
+
+		engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+		require.NoError(t, err)
+
+		test(t, engine)
+	})
 }
 
 func TestNewRangeQuery_InvalidQueryTime(t *testing.T) {
