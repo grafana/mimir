@@ -863,6 +863,9 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 
 		if meta.Compaction.FromOutOfOrder() && b.limits.OutOfOrderBlocksExternalLabelEnabled(tenantID) {
 			// At this point the OOO data was already ingested and compacted, so there's no point in checking for the OOO feature flag
+			if meta.Thanos.Labels == nil {
+				meta.Thanos.Labels = map[string]string{}
+			}
 			meta.Thanos.Labels[mimir_tsdb.OutOfOrderExternalLabel] = mimir_tsdb.OutOfOrderExternalLabelValue
 		}
 
