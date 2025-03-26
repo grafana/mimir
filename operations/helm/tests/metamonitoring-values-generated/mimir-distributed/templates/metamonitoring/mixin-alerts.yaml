@@ -1187,12 +1187,18 @@ spec:
               message: Mimir {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} fails to consume write requests read from Kafka due to internal errors.
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimiringesterfailstoprocessrecordsfromkafka
             expr: |
-              sum by (cluster, namespace, pod) (
-                  # This is the old metric name. We're keeping support for backward compatibility.
-                rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])
-                or
-                rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[1m])
-              ) > 0
+              (
+                sum by (cluster, namespace, pod) (
+                    # This is the old metric name. We're keeping support for backward compatibility.
+                  rate(cortex_ingest_storage_reader_records_failed_total{cause="server"}[1m])
+                  or
+                  rate(cortex_ingest_storage_reader_requests_failed_total{cause="server"}[1m])
+                ) > 0
+              )
+  
+              # Tolerate failures during the forced TSDB head compaction, because samples older than the
+              # new "head min time" will fail to be appended while the forced compaction is running.
+              unless (max by (cluster, namespace, pod) (max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress[1m])) > 0)
             for: 5m
             labels:
               severity: critical
