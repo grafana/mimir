@@ -949,6 +949,7 @@ type readerMetrics struct {
 	fetchesErrors                    prometheus.Counter
 	fetchesTotal                     prometheus.Counter
 	fetchWaitDuration                prometheus.Histogram
+	fetchMaxBytes                    prometheus.Histogram
 	fetchedDiscardedRecordBytes      prometheus.Counter
 	strongConsistencyInstrumentation *StrongReadConsistencyInstrumentation[struct{}]
 	lastConsumedOffset               prometheus.Gauge
@@ -1017,6 +1018,11 @@ func newReaderMetrics(partitionID int32, reg prometheus.Registerer, metricsSourc
 		fetchWaitDuration: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:                        "cortex_ingest_storage_reader_records_batch_wait_duration_seconds",
 			Help:                        "How long a consumer spent waiting for a batch of records from the Kafka client. If fetching is faster than processing, then this will be close to 0.",
+			NativeHistogramBucketFactor: 1.1,
+		}),
+		fetchMaxBytes: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_ingest_storage_reader_records_batch_fetch_max_bytes",
+			Help:                        "The distribution of MaxBytes specified in the Fetch requests sent to Kafka.",
 			NativeHistogramBucketFactor: 1.1,
 		}),
 		fetchedDiscardedRecordBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
