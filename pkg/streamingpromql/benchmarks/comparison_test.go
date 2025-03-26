@@ -46,10 +46,16 @@ func BenchmarkQuery(b *testing.B) {
 	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
 	require.NoError(b, err)
 
+	optsWithQueryPlanner := streamingpromql.NewTestEngineOpts()
+	optsWithQueryPlanner.UseQueryPlanning = true
+	mimirEngineWithQueryPlanner, err := streamingpromql.NewEngine(optsWithQueryPlanner, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
+	require.NoError(b, err)
+
 	// Important: the names below must remain in sync with the names used in tools/benchmark-query-engine.
 	engines := map[string]promql.QueryEngine{
-		"Prometheus": prometheusEngine,
-		"Mimir":      mimirEngine,
+		"Prometheus":            prometheusEngine,
+		"Mimir":                 mimirEngine,
+		"MimirWithQueryPlanner": mimirEngineWithQueryPlanner,
 	}
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
