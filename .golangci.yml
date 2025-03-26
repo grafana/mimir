@@ -71,9 +71,11 @@ linters-settings:
       - G109
       - G112
       - G114
-      - G301
       - G302
       - G401
+
+    excludes:
+      - G301 # Relies on system umask to restrict directory permissions, preserving operator flexibility
   
   gocritic:
     disable-all: true
