@@ -165,7 +165,7 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 			}
 		}, time.Second, 100*time.Millisecond)
 
-		// Reconcile zone-a-0 once more after ring is updated to make sure that all the lost partitions with their times.
+		// Reconcile zone-a-0 once more after ring is updated to make sure that it notes all the lost partitions with their times.
 		require.NoError(t, a0.reconcilePartitions(context.Background()))
 
 		// Wait until old partitions are lost.
