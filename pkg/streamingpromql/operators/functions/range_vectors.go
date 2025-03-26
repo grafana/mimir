@@ -848,6 +848,10 @@ func doubleExponentialSmoothing(step *types.RangeVectorStepData, _ float64, args
 		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 	}
 
+	return runDoubleExponentialSmoothing(fHead, fTail, smoothingFactor, trendFactor)
+}
+
+func runDoubleExponentialSmoothing(fHead []promql.FPoint, fTail []promql.FPoint, smoothingFactor float64, trendFactor float64) (float64, bool, *histogram.FloatHistogram, error) {
 	if (len(fHead) + len(fTail)) < 2 {
 		return 0, false, nil, nil
 	}
