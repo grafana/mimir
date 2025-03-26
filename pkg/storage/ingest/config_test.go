@@ -229,6 +229,24 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.KafkaConfig.AutoCreateTopicDefaultPartitions = -1
 			},
 		},
+		"should fail if Kafka fetch max wait is less than 5s": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.FetchMaxWait = 2 * time.Second
+			},
+			expectedErr: ErrInvalidFetchMaxWait,
+		},
+		"should fail if Kafka fetch max wait is greater than 30s": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.KafkaConfig.Address = "localhost"
+				cfg.KafkaConfig.Topic = "test"
+				cfg.KafkaConfig.FetchMaxWait = 32 * time.Second
+			},
+			expectedErr: ErrInvalidFetchMaxWait,
+		},
 	}
 
 	for testName, testData := range tests {
