@@ -368,7 +368,7 @@ func (q *Query) convertFunctionCallToInstantVectorOperator(e *parser.Call, timeR
 			args[i] = a
 		}
 
-		return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, timeRange, e.Args)
+		return factory(args, q.memoryConsumptionTracker, q.annotations, e.PosRange, timeRange)
 	}
 }
 
