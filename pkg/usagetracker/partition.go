@@ -134,6 +134,7 @@ func (p *partition) run(ctx context.Context) error {
 	defer ticker.Stop()
 
 	wg := &sync.WaitGroup{}
+	wg.Add(2)
 	go p.consumeSeriesCreatedEvents(ctx, wg)
 	go p.publishSeriesCreatedEvents(ctx, wg)
 	defer wg.Wait()
@@ -162,7 +163,6 @@ func (p *partition) stop(_ error) error {
 }
 
 func (p *partition) consumeSeriesCreatedEvents(ctx context.Context, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 	for ctx.Err() == nil {
 		fetches := p.eventsKafkaReader.PollRecords(ctx, 0)
@@ -192,14 +192,13 @@ func (p *partition) consumeSeriesCreatedEvents(ctx context.Context, wg *sync.Wai
 }
 
 func (p *partition) publishSeriesCreatedEvents(ctx context.Context, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 
 	publish := make(chan []*kgo.Record)
 	defer close(publish)
 
 	for w := 0; w < p.cfg.CreatedSeriesEventsPublishConcurrency; w++ {
-		wg.Add(1)
+		wg.Add(1) // Can do this because delta is positive right now.
 		go func() {
 			defer wg.Done()
 			for batch := range publish {

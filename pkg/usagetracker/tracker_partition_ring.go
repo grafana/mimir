@@ -29,6 +29,11 @@ type PartitionRingConfig struct {
 
 	// lifecyclerPollingInterval is the lifecycler polling interval. This setting is used to lower it in tests.
 	lifecyclerPollingInterval time.Duration `yaml:"-"`
+
+	// waitOwnersDurationOnPending is how long each owner should have been added to the
+	// partition before it's considered eligible for the WaitOwnersCountOnPending count.
+	// This setting is used to lower it in tests.
+	waitOwnersDurationOnPending time.Duration `yaml:"-"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -38,11 +43,15 @@ func (cfg *PartitionRingConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *PartitionRingConfig) ToLifecyclerConfig(partitionID int32, instanceID string) ring.PartitionInstanceLifecyclerConfig {
+	waitOwnersDurationOnPending := cfg.waitOwnersDurationOnPending
+	if waitOwnersDurationOnPending == 0 {
+		waitOwnersDurationOnPending = 10 * time.Second // Default value without test override.
+	}
 	return ring.PartitionInstanceLifecyclerConfig{
 		PartitionID:                          partitionID,
 		InstanceID:                           instanceID,
 		WaitOwnersCountOnPending:             1,
-		WaitOwnersDurationOnPending:          10 * time.Second,
+		WaitOwnersDurationOnPending:          waitOwnersDurationOnPending,
 		DeleteInactivePartitionAfterDuration: 1 * time.Hour,
 		PollingInterval:                      cfg.lifecyclerPollingInterval,
 	}

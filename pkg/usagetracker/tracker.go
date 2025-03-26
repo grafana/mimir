@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -130,6 +131,8 @@ type UsageTracker struct {
 
 	lostPartitions map[int32]time.Time
 
+	ready atomic.Bool
+
 	// Dependencies.
 	subservicesWatcher *services.FailureWatcher
 }
@@ -234,8 +237,7 @@ func (t *UsageTracker) reconcilePartitions(ctx context.Context) error {
 	}
 
 	logger := log.With(t.logger, "reconciliation_time", time.Now().UTC().Truncate(time.Second).Format(time.RFC3339))
-	totalInstances := t.instancesServingPartitions()
-	start, end, err := instancePartitions(t.instanceID, totalInstances, int32(t.cfg.Partitions))
+	start, end, totalInstances, err := t.instancePartitions()
 	if err != nil {
 		level.Error(logger).Log("msg", "unable to calculate partitions, skipping reconcile", "err", err)
 		return nil
@@ -335,6 +337,9 @@ losingPartitions:
 	}
 	if skipped > 0 {
 		level.Info(logger).Log("msg", "max partitions to create reached, skipping the rest until next reconcile", "added", added, "skipped", skipped)
+	} else if !t.ready.Load() {
+		level.Info(logger).Log("msg", "all partitions created, marking as ready")
+		t.ready.Store(true)
 	}
 
 	level.Info(logger).Log(
@@ -439,6 +444,36 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 		return nil, err
 	}
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
+}
+
+// CheckReady performs a readiness check.
+// An instance is ready when it has instantiated all the partitions that should belong to it according to the ring.
+func (t *UsageTracker) CheckReady(_ context.Context) error {
+	start, end, _, err := t.instancePartitions()
+	if err != nil {
+		return fmt.Errorf("unable to calculate partitions belonging to this instance: %w", err)
+	}
+
+	var pending []int32
+	t.partitionsMtx.RLock()
+	for pid := start; pid < end; pid++ {
+		if _, ok := t.partitions[pid]; !ok {
+			pending = append(pending, pid)
+		}
+	}
+	t.partitionsMtx.RUnlock()
+
+	if len(pending) > 0 {
+		return fmt.Errorf("pending to instantiate %d partitions: %v", len(pending), pending)
+	}
+
+	return nil
+}
+
+func (t *UsageTracker) instancePartitions() (start, end, totalInstances int32, err error) {
+	totalInstances = t.instancesServingPartitions()
+	start, end, err = instancePartitions(t.instanceID, totalInstances, int32(t.cfg.Partitions))
+	return start, end, totalInstances, err
 }
 
 // instancesServingPartitions returns the number of instances that are responsible for serving partitions.
