@@ -90,6 +90,8 @@ func (s *BlockBuilderScheduler) starting(ctx context.Context) error {
 			panic(err)
 		}
 
+		level.Debug(s.logger).Log("msg", "loaded initial committed offsets", "offsets", offsetsStr(c))
+
 		s.mu.Lock()
 		s.committed = c
 		s.mu.Unlock()

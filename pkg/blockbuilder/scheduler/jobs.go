@@ -67,6 +67,9 @@ func (s *jobQueue[T]) assign(workerID string) (jobKey, T, error) {
 	s.epoch++
 	j.assignee = workerID
 	j.leaseExpiry = time.Now().Add(s.leaseExpiry)
+
+	level.Info(s.logger).Log("msg", "assigned job", "job_id", j.key.id, "epoch", j.key.epoch, "worker_id", workerID)
+
 	return j.key, j.spec, nil
 }
 
@@ -122,7 +125,7 @@ func (s *jobQueue[T]) addOrUpdate(id string, spec T) {
 	if j, ok := s.jobs[id]; ok {
 		// We can only update an unassigned job.
 		if j.assignee == "" {
-			level.Info(s.logger).Log("msg", "updated job", "job_id", id)
+			level.Debug(s.logger).Log("msg", "updated job", "job_id", id)
 			j.spec = spec
 		}
 		return
@@ -181,7 +184,7 @@ func (s *jobQueue[T]) renewLease(key jobKey, workerID string) error {
 
 	j.leaseExpiry = time.Now().Add(s.leaseExpiry)
 
-	level.Info(s.logger).Log("msg", "renewed lease", "job_id", key.id, "epoch", key.epoch, "worker_id", workerID)
+	level.Debug(s.logger).Log("msg", "renewed lease", "job_id", key.id, "epoch", key.epoch, "worker_id", workerID)
 
 	return nil
 }
