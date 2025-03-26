@@ -885,7 +885,3 @@ func (q *Query) Cancel() {
 func (q *Query) String() string {
 	return q.qs
 }
-
-func timeMilliseconds(t time.Time) int64 {
-	return t.UnixNano() / int64(time.Millisecond/time.Nanosecond)
-}
