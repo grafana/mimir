@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -148,12 +149,8 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		requireAllTrackersReady(t, trackers)
 
 		// zone-a-0 should have 16 partitions, zone-a-1 should have 8, this is deterministic at this point.
-		a0.partitionsMtx.RLock()
-		require.Len(t, a0.partitions, 16)
-		a0.partitionsMtx.RUnlock()
-		a1.partitionsMtx.RLock()
-		require.Len(t, a1.partitions, 8)
-		a1.partitionsMtx.RUnlock()
+		withRLock(&a0.partitionsMtx, func() { require.Len(t, a0.partitions, 16) })
+		withRLock(&a1.partitionsMtx, func() { require.Len(t, a1.partitions, 8) })
 
 		// Check eventually because partitionRing update might be delayed.
 		partitionRing := a0.partitionRing
@@ -179,12 +176,8 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		require.NoError(t, a1.reconcilePartitions(context.Background()))
 
 		// zone-a-0 should have 8 partitions, zone-a-1 should have 8, this is deterministic at this point.
-		a0.partitionsMtx.RLock()
-		require.Len(t, a0.partitions, 8)
-		a0.partitionsMtx.RUnlock()
-		a1.partitionsMtx.RLock()
-		require.Len(t, a1.partitions, 8)
-		a1.partitionsMtx.RUnlock()
+		withRLock(&a0.partitionsMtx, func() { require.Len(t, a0.partitions, 8) })
+		withRLock(&a1.partitionsMtx, func() { require.Len(t, a1.partitions, 8) })
 
 		// Check eventually that owners are updated in the ring.
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
@@ -215,9 +208,9 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 		// Reconcile once:
 		for key, ut := range trackers {
 			require.NoError(t, ut.reconcilePartitions(context.Background()), "Tracker %q could not reconcile", key)
-			ut.partitionsMtx.RLock()
-			require.Equal(t, ut.cfg.MaxPartitionsToCreatePerReconcile, len(ut.partitions))
-			ut.partitionsMtx.RUnlock()
+			withRLock(&ut.partitionsMtx, func() {
+				require.Equal(t, ut.cfg.MaxPartitionsToCreatePerReconcile, len(ut.partitions))
+			})
 		}
 
 		// Should not be ready yet:
@@ -350,6 +343,12 @@ func fakeKafkaCluster(t *testing.T, topicsToSeed ...string) *kfake.Cluster {
 	require.NoError(t, err)
 	t.Cleanup(cluster.Close)
 	return cluster
+}
+
+func withRLock(m *sync.RWMutex, fn func()) {
+	m.RLock()
+	defer m.RUnlock()
+	fn()
 }
 
 func TestInstancePartitions(t *testing.T) {
