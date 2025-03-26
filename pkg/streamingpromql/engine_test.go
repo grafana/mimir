@@ -65,131 +65,13 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 }
 
 func TestUnsupportedPromQLFeaturesWithFeatureToggles(t *testing.T) {
-	t.Run("aggregation operations", func(t *testing.T) {
-		features := EnableAllFeatures
-		features.EnableAggregationOperations = false
-
-		requireQueryIsUnsupported(t, features, "sum by (label) (metric)", "aggregation operations")
-	})
-
-	t.Run("vector/vector binary expressions with comparison operation", func(t *testing.T) {
-		features := EnableAllFeatures
-		features.EnableVectorVectorBinaryComparisonOperations = false
-
-		requireQueryIsUnsupported(t, features, "metric{} > other_metric{}", "vector/vector binary expression with '>'")
-
-		// Other operations should still be supported.
-		requireQueryIsSupported(t, features, "metric{} > 1")
-		requireQueryIsSupported(t, features, "1 > metric{}")
-		requireQueryIsSupported(t, features, "2 > bool 1")
-		requireQueryIsSupported(t, features, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, features, "metric{} + 1")
-		requireQueryIsSupported(t, features, "1 + metric{}")
-		requireQueryIsSupported(t, features, "2 + 1")
-		requireQueryIsSupported(t, features, "metric{} and other_metric{}")
-	})
-
-	t.Run("vector/scalar binary expressions with comparison operation", func(t *testing.T) {
-		features := EnableAllFeatures
-		features.EnableVectorScalarBinaryComparisonOperations = false
-
-		requireQueryIsUnsupported(t, features, "metric{} > 1", "vector/scalar binary expression with '>'")
-		requireQueryIsUnsupported(t, features, "1 > metric{}", "vector/scalar binary expression with '>'")
-
-		// Other operations should still be supported.
-		requireQueryIsSupported(t, features, "metric{} > other_metric{}")
-		requireQueryIsSupported(t, features, "2 > bool 1")
-		requireQueryIsSupported(t, features, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, features, "metric{} + 1")
-		requireQueryIsSupported(t, features, "1 + metric{}")
-		requireQueryIsSupported(t, features, "2 + 1")
-		requireQueryIsSupported(t, features, "metric{} and other_metric{}")
-	})
-
-	t.Run("scalar/scalar binary expressions with comparison operation", func(t *testing.T) {
-		features := EnableAllFeatures
-		features.EnableScalarScalarBinaryComparisonOperations = false
-
-		requireQueryIsUnsupported(t, features, "2 > bool 1", "scalar/scalar binary expression with '>'")
-
-		// Other operations should still be supported.
-		requireQueryIsSupported(t, features, "metric{} > other_metric{}")
-		requireQueryIsSupported(t, features, "metric{} > 1")
-		requireQueryIsSupported(t, features, "1 > metric{}")
-		requireQueryIsSupported(t, features, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, features, "metric{} + 1")
-		requireQueryIsSupported(t, features, "1 + metric{}")
-		requireQueryIsSupported(t, features, "2 + 1")
-		requireQueryIsSupported(t, features, "metric{} and other_metric{}")
-	})
-
-	t.Run("binary expressions with logical operations", func(t *testing.T) {
-		features := EnableAllFeatures
-		features.EnableBinaryLogicalOperations = false
-
-		requireQueryIsUnsupported(t, features, "metric{} and other_metric{}", "binary expression with 'and'")
-		requireQueryIsUnsupported(t, features, "metric{} or other_metric{}", "binary expression with 'or'")
-		requireQueryIsUnsupported(t, features, "metric{} unless other_metric{}", "binary expression with 'unless'")
-
-		// Other operations should still be supported.
-		requireQueryIsSupported(t, features, "metric{} + other_metric{}")
-		requireQueryIsSupported(t, features, "metric{} + 1")
-		requireQueryIsSupported(t, features, "1 + metric{}")
-		requireQueryIsSupported(t, features, "2 + 1")
-		requireQueryIsSupported(t, features, "metric{} > other_metric{}")
-		requireQueryIsSupported(t, features, "metric{} > 1")
-		requireQueryIsSupported(t, features, "1 > metric{}")
-		requireQueryIsSupported(t, features, "2 > bool 1")
-	})
-
-	t.Run("scalars", func(t *testing.T) {
-		features := EnableAllFeatures
-		features.EnableScalars = false
-
-		requireQueryIsUnsupported(t, features, "2", "scalar values")
-	})
-
-	t.Run("subqueries", func(t *testing.T) {
-		features := EnableAllFeatures
-		features.EnableSubqueries = false
-
-		requireQueryIsUnsupported(t, features, "sum_over_time(metric[1m:10s])", "subquery")
-	})
-
-	t.Run("one-to-many and many-to-one binary operations", func(t *testing.T) {
-		features := EnableAllFeatures
-		features.EnableOneToManyAndManyToOneBinaryOperations = false
-
-		requireQueryIsUnsupported(t, features, "metric{} + on() group_left() other_metric{}", "binary expression with many-to-one matching")
-		requireQueryIsUnsupported(t, features, "metric{} + on() group_right() other_metric{}", "binary expression with one-to-many matching")
-	})
-
 	t.Run("function disabled by name", func(t *testing.T) {
 		features := EnableAllFeatures
 		features.DisabledFunctions = []string{"histogram_quantile", "ceil", "nonexistant"}
 
+		requireQueryIsSupported(t, features, "abs(metric{})")
 		requireQueryIsUnsupported(t, features, "ceil(metric{})", "'ceil' function")
 		requireQueryIsUnsupported(t, features, "histogram_quantile(0.9, h{})", "'histogram_quantile' function")
-	})
-
-	t.Run("aggregation disabled by name", func(t *testing.T) {
-		features := EnableAllFeatures
-		features.DisabledAggregations = []string{"sum", "avg", "MAX"}
-
-		requireQueryIsUnsupported(t, features, "avg by (label) (metric{})", "'avg' aggregation disabled")
-		requireQueryIsUnsupported(t, features, "max(metric{})", "'max' aggregation disabled")
-		requireQueryIsUnsupported(t, features, "SUM(metric{})", "'sum' aggregation disabled")
-	})
-
-	t.Run("unknown aggregation name disabled", func(t *testing.T) {
-		features := EnableAllFeatures
-		features.DisabledAggregations = []string{"sum", "avg", "NotAnAgg"}
-
-		opts := NewTestEngineOpts()
-		opts.Features = features
-		_, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
-		require.Error(t, err)
-		require.EqualError(t, err, "disabled aggregation 'NotAnAgg' does not exist")
 	})
 }
 
