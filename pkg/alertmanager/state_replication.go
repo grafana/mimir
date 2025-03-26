@@ -262,6 +262,23 @@ func (s *state) Ready() bool {
 	return s.Service.State() == services.Running
 }
 
+func (s *state) MergeGrafanaState(fs []*clusterpb.FullState) error {
+	if err := s.MergeFullStates(fs); err != nil {
+		return err
+	}
+
+	for _, fs := range fs {
+		for _, p := range fs.Parts {
+			if cluster.OversizedMessage(p.Data) {
+				// When merging state, upstream Alertmanager code drops oversized messages.
+				// Manually broadcast oversized Grafana states to avoid missing silences/nflog entries.
+				s.broadcast(p.Key, p.Data)
+			}
+		}
+	}
+	return nil
+}
+
 // MergeFullStates attempts to merge all full states received from peers during settling.
 func (s *state) MergeFullStates(fs []*clusterpb.FullState) error {
 	s.mtx.Lock()
