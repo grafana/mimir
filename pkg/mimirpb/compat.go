@@ -9,6 +9,7 @@ import (
 	"bytes"
 	stdjson "encoding/json"
 	"fmt"
+	io "io"
 	"math"
 	"sort"
 	"strconv"
@@ -812,4 +813,84 @@ func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []s
 	}
 	b.Sort()
 	return b.Labels()
+}
+
+func DetectV2Timeseries(marshalled []byte) (bool, error) {
+	l := len(marshalled)
+	index := 0
+	depth := 0
+	for index < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return false, ErrIntOverflowMimir
+			}
+			if index >= l {
+				return false, io.ErrUnexpectedEOF
+			}
+			b := marshalled[index]
+			index++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+
+		if fieldNum == 5 {
+			return true, nil
+		}
+
+		// otherwise skip the field. taken from generated code skipMimir
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return false, ErrIntOverflowMimir
+				}
+				if index >= l {
+					return false, io.ErrUnexpectedEOF
+				}
+				index++
+				if marshalled[index-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			index += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return false, ErrIntOverflowMimir
+				}
+				if index >= l {
+					return false, io.ErrUnexpectedEOF
+				}
+				b := marshalled[index]
+				index++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return false, ErrInvalidLengthMimir
+			}
+			index += length
+		case 3:
+			depth++
+		case 4:
+			if depth == 0 {
+				return false, ErrUnexpectedEndOfGroupMimir
+			}
+			depth--
+		case 5:
+			index += 4
+		default:
+			return false, fmt.Errorf("proto: illegal wireType %d", wireType)
+		}
+	}
+	return false, nil
 }

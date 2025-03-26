@@ -948,3 +948,72 @@ func TestV2MarshallsToEmptyV1(t *testing.T) {
 	require.Nil(t, reqv1.Timeseries)
 	require.Nil(t, reqv1.Metadata)
 }
+
+func TestDetectV2Timeseries(t *testing.T) {
+	t.Run("v1", func(t *testing.T) {
+		reqv1 := &WriteRequest{
+			Source:              RULE,
+			SkipLabelValidation: true,
+			Timeseries: []PreallocTimeseries{
+				{TimeSeries: &TimeSeries{
+					Labels:     FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1", "pod", "test-application-123456")),
+					Samples:    []Sample{{TimestampMs: 20}},
+					Exemplars:  []Exemplar{{TimestampMs: 30}},
+					Histograms: []Histogram{{Timestamp: 10}},
+				}},
+				{TimeSeries: &TimeSeries{
+					Labels:  FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2", "pod", "test-application-123456")),
+					Samples: []Sample{{TimestampMs: 30}},
+				}},
+			},
+			Metadata: []*MetricMetadata{
+				{Type: COUNTER, MetricFamilyName: "series_1", Help: "This is the first test metric."},
+				{Type: COUNTER, MetricFamilyName: "series_2", Help: "This is the second test metric."},
+				{Type: COUNTER, MetricFamilyName: "series_3", Help: "This is the third test metric."},
+			},
+		}
+
+		// Marshal it
+		reqSize := reqv1.Size()
+		data := make([]byte, reqSize)
+		n, err := reqv1.MarshalToSizedBuffer(data[:reqSize])
+		require.NoError(t, err)
+		data = data[:n]
+
+		hasV2TS, err := DetectV2Timeseries(data)
+
+		require.NoError(t, err)
+		require.False(t, hasV2TS)
+	})
+
+	t.Run("v2", func(t *testing.T) {
+		reqv2 := &WriteRequestV2{
+			Source:              SOURCE_RULE,
+			SkipLabelValidation: true,
+			Timeseries: []TimeSeriesV2{
+				{
+					LabelsRefs: []uint32{0, 1, 2, 3},
+					Samples:    []Sample{{TimestampMs: 20}},
+					Exemplars:  []Exemplar{{TimestampMs: 30}},
+					Histograms: []Histogram{{Timestamp: 10}},
+				},
+				{
+					LabelsRefs: []uint32{0, 4, 2, 3},
+					Samples:    []Sample{{TimestampMs: 30}},
+				},
+			},
+			Symbols: []string{labels.MetricName, "series_1", "pod", "test-application-123456", "series_2"},
+		}
+
+		reqSize := reqv2.Size()
+		data := make([]byte, reqSize)
+		n, err := reqv2.MarshalToSizedBuffer(data[:reqSize])
+		require.NoError(t, err)
+		data = data[:n]
+
+		hasV2TS, err := DetectV2Timeseries(data)
+
+		require.NoError(t, err)
+		require.True(t, hasV2TS)
+	})
+}
