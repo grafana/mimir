@@ -140,6 +140,7 @@
 * [BUGFIX] Querier: fix duplicated double quotes in invalid label name error from `count_values`. https://github.com/prometheus/prometheus/pull/16054 #10884
 * [BUGFIX] Ingester: fix goroutines and memory leak when experimental ingest storage enabled and a server-side error occurs during metrics ingestion. #10915
 * [BUGFIX] Alertmanager: Avoid fetching Grafana state if Grafana AM compatibility is not enabled. #10857
+* [BUGFIX] Alertmanager: DedupStage to stop notification pipeline when the timestamp of notification log entry is after the pipeline was flushed #10989
 
 ### Mixin
 
