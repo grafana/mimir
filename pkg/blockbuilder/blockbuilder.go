@@ -162,7 +162,7 @@ func (b *BlockBuilder) starting(context.Context) (err error) {
 	if err := os.RemoveAll(b.cfg.DataDir); err != nil {
 		return fmt.Errorf("removing data dir: %w", err)
 	}
-	if err := os.MkdirAll(b.cfg.DataDir, os.ModePerm); err != nil { // #nosec G301 -- Relies on system umask to restrict directory permissions, preserving operator flexibility
+	if err := os.MkdirAll(b.cfg.DataDir, 0750); err != nil {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
 
