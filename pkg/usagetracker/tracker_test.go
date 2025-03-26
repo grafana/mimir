@@ -62,7 +62,7 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 			}
 		}
 
-		// Check that each owner ownds testParitionsCount / (len(trackers) / 2 zones) partitions.
+		// Check that each owner owns testParitionsCount / (len(trackers) / 2 zones) partitions.
 		for owner, partitions := range ownedPartitions {
 			require.Equal(t, testPartitionsCount/(len(trackers)/2), partitions, "Usage-Tracker %q should own exactly %d partitions.", owner, partitions)
 		}
