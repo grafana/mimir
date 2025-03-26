@@ -1051,7 +1051,10 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		} else {
 			// If there wasn't an error but removeReplica is false that means we didn't find both HA labels.
 			d.nonHASamples.WithLabelValues(userID).Add(float64(numSamples))
-			d.failedHARequests.WithLabelValues(userID, metricName, keepReplicaReason).Inc()
+			if d.limits.TrackHAFailures(userID) {
+				d.failedHARequests.WithLabelValues(userID, metricName, keepReplicaReason).Inc()
+				level.Warn(d.log).Log("msg", "failed check to remove replica label", "user", userID, "metric", metricName, "reason", keepReplicaReason, "cluster", cluster, "replica", replica, "labels", req.Timeseries[0].Labels)
+			}
 		}
 
 		return next(ctx, pushReq)

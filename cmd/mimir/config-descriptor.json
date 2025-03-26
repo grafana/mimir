@@ -4169,6 +4169,16 @@
         },
         {
           "kind": "field",
+          "name": "track_ha_failures",
+          "required": false,
+          "desc": "Flag to enable detailed tracking of failures with metrics and logs for HA Prometheus setups.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "distributor.ha-tracker.track-failures",
+          "fieldType": "boolean"
+        },
+        {
+          "kind": "field",
           "name": "ha_cluster_label",
           "required": false,
           "desc": "Prometheus label to look for in samples to identify a Prometheus HA cluster.",

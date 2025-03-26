@@ -113,6 +113,7 @@ type Limits struct {
 	IngestionBurstSize                          int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
 	IngestionBurstFactor                        float64             `yaml:"ingestion_burst_factor" json:"ingestion_burst_factor" category:"experimental"`
 	AcceptHASamples                             bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
+	TrackHAFailures                             bool                `yaml:"track_ha_failures" json:"track_ha_failures"`
 	HAClusterLabel                              string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
 	HAReplicaLabel                              string              `yaml:"ha_replica_label" json:"ha_replica_label"`
 	HAMaxClusters                               int                 `yaml:"ha_max_clusters" json:"ha_max_clusters"`
@@ -284,6 +285,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.IngestionBurstSize, IngestionBurstSizeFlag, 200000, "Per-tenant allowed ingestion burst size (in number of samples).")
 	f.Float64Var(&l.IngestionBurstFactor, IngestionBurstFactorFlag, 0, "Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate, this burst-factor must be greater than or equal to 1. If this is set it will override the ingestion-burst-size option.")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all tenants, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
+	f.BoolVar(&l.TrackHAFailures, "distributor.ha-tracker.track-failures", false, "Flag to enable detailed tracking of failures with metrics and logs for HA Prometheus setups.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
 	f.IntVar(&l.HAMaxClusters, HATrackerMaxClustersFlag, 100, "Maximum number of clusters that HA tracker will keep track of for a single tenant. 0 to disable the limit.")
@@ -614,6 +616,11 @@ func (o *Overrides) IngestionBurstFactor(userID string) float64 {
 // AcceptHASamples returns whether the distributor should track and accept samples from HA replicas for this user.
 func (o *Overrides) AcceptHASamples(userID string) bool {
 	return o.getOverridesForUser(userID).AcceptHASamples
+}
+
+// TrackHAFailures returns whether the distributor should record metrics and create logs for HA failures for this user.
+func (o *Overrides) TrackHAFailures(userID string) bool {
+	return o.getOverridesForUser(userID).TrackHAFailures
 }
 
 // ServiceOverloadStatusCodeOnRateLimitEnabled return whether the distributor uses status code 529 instead of 429 when the rate limit is exceeded.

@@ -3409,6 +3409,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -distributor.ha-tracker.enable-for-all-users
 [accept_ha_samples: <boolean> | default = false]
 
+# Flag to enable detailed tracking of failures with metrics and logs for HA
+# Prometheus setups.
+# CLI flag: -distributor.ha-tracker.track-failures
+[track_ha_failures: <boolean> | default = false]
+
 # Prometheus label to look for in samples to identify a Prometheus HA cluster.
 # CLI flag: -distributor.ha-tracker.cluster
 [ha_cluster_label: <string> | default = "cluster"]
