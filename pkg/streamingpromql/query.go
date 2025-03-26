@@ -37,7 +37,6 @@ import (
 var errQueryCancelled = cancellation.NewErrorf("query execution cancelled")
 var errQueryClosed = cancellation.NewErrorf("Query.Close() called")
 var errQueryFinished = cancellation.NewErrorf("query execution finished")
-var errStringForRangeQuery = errors.New("query expression produces a string, but expression for range queries must produce an instant vector or scalar")
 
 type Query struct {
 	queryable                storage.Queryable
@@ -649,12 +648,7 @@ func (q *Query) Exec(ctx context.Context) *promql.Result {
 			q.result = &promql.Result{Value: q.populateMatrixFromScalarOperator(d)}
 		}
 	case types.StringOperator:
-		if q.topLevelQueryTimeRange.IsInstant {
-			q.result = &promql.Result{Value: q.populateStringFromStringOperator(root)}
-		} else {
-			// This should be caught in newQuery above
-			return &promql.Result{Err: errStringForRangeQuery}
-		}
+		q.result = &promql.Result{Value: q.populateStringFromStringOperator(root)}
 	default:
 		return &promql.Result{Err: fmt.Errorf("operator %T produces unknown result type", root)}
 	}
