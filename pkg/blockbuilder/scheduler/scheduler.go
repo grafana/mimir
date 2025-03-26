@@ -73,12 +73,47 @@ func (s *BlockBuilderScheduler) starting(ctx context.Context) error {
 	}
 
 	s.adminClient = kadm.NewClient(kc)
+	return nil
+}
 
-	// The startup process for block-builder-scheduler entails learning the state of the world:
-	//  1. obtain an initial set of offset info from Kafka
-	//  2. listen to worker updates for a while to learn what the previous scheduler knew
-	// When both of those are complete, we transition from observation mode to normal operation.
+func (s *BlockBuilderScheduler) stopping(_ error) error {
+	s.adminClient.Close()
+	return nil
+}
 
+func (s *BlockBuilderScheduler) running(ctx context.Context) error {
+	if err := s.observe(ctx); err != nil {
+		level.Error(s.logger).Log("msg", "failed to observe updates", "err", err)
+		return fmt.Errorf("observe: %w", err)
+	}
+
+	s.completeObservationMode()
+
+	updateTick := time.NewTicker(s.cfg.SchedulingInterval)
+	defer updateTick.Stop()
+	for {
+		select {
+		case <-updateTick.C:
+			// These tasks are not prerequisites to updating the schedule, but
+			// we do them here rather than creating a ton of update tickers.
+			s.jobs.clearExpiredLeases()
+
+			if err := s.flushOffsetsToKafka(context.WithoutCancel(ctx)); err != nil {
+				level.Error(s.logger).Log("msg", "failed to flush offsets to Kafka", "err", err)
+				s.metrics.flushFailed.Inc()
+			}
+
+			s.updateSchedule(ctx)
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+// observe carries out the startup process for block-builder-scheduler which entails learning the state of the world:
+//  1. obtain an initial set of offset info from Kafka
+//  2. listen to worker updates for a while to learn what the previous scheduler knew
+func (s *BlockBuilderScheduler) observe(ctx context.Context) error {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -105,40 +140,7 @@ func (s *BlockBuilderScheduler) starting(ctx context.Context) error {
 	}()
 
 	wg.Wait()
-
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
-	s.completeObservationMode()
-	return nil
-}
-
-func (s *BlockBuilderScheduler) stopping(_ error) error {
-	s.adminClient.Close()
-	return nil
-}
-
-func (s *BlockBuilderScheduler) running(ctx context.Context) error {
-	updateTick := time.NewTicker(s.cfg.SchedulingInterval)
-	defer updateTick.Stop()
-	for {
-		select {
-		case <-updateTick.C:
-			// These tasks are not prerequisites to updating the schedule, but
-			// we do them here rather than creating a ton of update tickers.
-			s.jobs.clearExpiredLeases()
-
-			if err := s.flushOffsetsToKafka(context.WithoutCancel(ctx)); err != nil {
-				level.Error(s.logger).Log("msg", "failed to flush offsets to Kafka", "err", err)
-				s.metrics.flushFailed.Inc()
-			}
-
-			s.updateSchedule(ctx)
-		case <-ctx.Done():
-			return nil
-		}
-	}
+	return ctx.Err()
 }
 
 // completeObservationMode transitions the scheduler from observation mode to normal operation.
