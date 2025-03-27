@@ -465,12 +465,10 @@ func (b *BlockBuilder) consumePartition(ctx context.Context, partition int32, st
 			}
 			// The first record in the partition has a timestamp greater than the section end time.
 			// It is possible this was an idle partition that suddenly became active. Instead of trying every interval since
-			// the last commit, we shortcut to the min of first record time or the cycle end time.
+			// the last commit, we shortcut to the first record time. If it happens to be after the cycleEndTime, the loop
+			// condition will take care of exiting it properly.
 			err = nil
 			sectionEndTime = cycleEndAfter(recInFutureErr.recordTs, b.cfg.ConsumeInterval, b.cfg.ConsumeIntervalBuffer)
-			if sectionEndTime.After(cycleEndTime) {
-				sectionEndTime = cycleEndTime
-			}
 		} else {
 			sectionEndTime = sectionEndTime.Add(b.cfg.ConsumeInterval)
 		}
