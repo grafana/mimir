@@ -24,6 +24,7 @@ message EncodedQueryTimeRange {
   int64 startT = 1; // Start timestamp, in milliseconds since Unix epoch.
   int64 endT = 2; // End timestamp, in milliseconds since Unix epoch.
   int64 intervalMilliseconds = 3; // Range query interval, or 1 for instant queries. Note that this is deliberately different to parser.EvalStmt.Interval for instant queries (where it is 0) to simplify some loop conditions.
+  bool isInstant = 4;
 }
 
 message EncodedNode {
