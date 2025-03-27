@@ -231,9 +231,7 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 				s.metrics.partitionCommittedOffset.WithLabelValues(partStr).Set(float64(committedOff.At))
 
 				consumeOffset = committedOff.At
-				if partition >= 0 && partition <= 4 {
-					level.Debug(s.logger).Log("msg", "found commit offset", "topic", t, "partition", partition, "offset", consumeOffset)
-				}
+				level.Debug(s.logger).Log("msg", "found commit offset", "topic", t, "partition", partition, "offset", consumeOffset)
 			} else {
 				// Nothing committed for this partition. Rewind to fallback offset instead.
 				o, ok := fallbackOffsets.Lookup(t, partition)
@@ -241,10 +239,8 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 					return nil, fmt.Errorf("partition %d not found in fallback offsets for topic %s", partition, t)
 				}
 
-				if partition >= 0 && partition <= 4 {
-					level.Debug(s.logger).Log("msg", "no commit, so falling back to max of startOffset and fallbackOffset",
-						"topic", t, "partition", partition, "startOffset", startOffset.At, "fallbackOffset", o.Offset)
-				}
+				level.Debug(s.logger).Log("msg", "no commit, so falling back to max of startOffset and fallbackOffset",
+					"topic", t, "partition", partition, "startOffset", startOffset.At, "fallbackOffset", o.Offset)
 
 				consumeOffset = max(startOffset.At, o.Offset)
 			}
@@ -254,9 +250,7 @@ func (s *BlockBuilderScheduler) consumptionOffsets(ctx context.Context, topic st
 				return nil, fmt.Errorf("partition %d not found in end offsets for topic %s", partition, t)
 			}
 
-			if partition >= 0 && partition <= 4 {
-				level.Debug(s.logger).Log("msg", "consumptionOffsets", "topic", t, "partition", partition, "start", startOffset.At, "end", end.Offset, "consumeOffset", consumeOffset)
-			}
+			level.Debug(s.logger).Log("msg", "consumptionOffsets", "topic", t, "partition", partition, "start", startOffset.At, "end", end.Offset, "consumeOffset", consumeOffset)
 
 			offs[topicPartition{t, partition}] = partitionOffsets{
 				start: consumeOffset,
@@ -288,9 +282,7 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 	jobs := []*schedulerpb.JobSpec{}
 
 	for tp, off := range consumeOffs {
-		if tp.partition >= 0 && tp.partition <= 4 {
-			level.Debug(s.logger).Log("msg", "computing jobs for partition", "topic", tp.topic, "partition", tp.partition, "start", off.start, "end", off.end, "boundary", boundary)
-		}
+		level.Debug(s.logger).Log("msg", "computing jobs for partition", "topic", tp.topic, "partition", tp.partition, "start", off.start, "end", off.end, "boundary", boundary)
 
 		pj, err := computePartitionJobs(ctx, of, tp.topic, tp.partition,
 			off.start, off.end, boundary, s.cfg.JobSize, minScanTime)
@@ -348,12 +340,10 @@ func (o *offsetFinder) offsetAfterTime(ctx context.Context, topic string, partit
 			return 0, offs.Error()
 		}
 
-		if partition >= 0 && partition <= 4 {
-			for _, p := range offs.Offsets() {
-				for _, oo := range p {
-					if oo.Partition == partition {
-						level.Debug(o.logger).Log("msg", "Offset found for ts", "ts", t, "topic", oo.Topic, "partition", oo.Partition, "offset", oo.At)
-					}
+		for _, p := range offs.Offsets() {
+			for _, oo := range p {
+				if oo.Partition == partition {
+					level.Debug(o.logger).Log("msg", "Offset found for ts", "ts", t, "topic", oo.Topic, "partition", oo.Partition, "offset", oo.At)
 				}
 			}
 		}
