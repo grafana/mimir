@@ -14,6 +14,7 @@ import (
 	"net/url"
 	strconv "strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -192,7 +193,13 @@ func TestFrontend_ClusterValidationWhenDownstreamURLIsConfigured(t *testing.T) {
 			}
 
 			defer downstreamServer.Shutdown(context.Background()) //nolint:errcheck
-			go downstreamServer.Serve(downstreamListen)           //nolint:errcheck
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				downstreamServer.Serve(downstreamListen) //nolint:errcheck
+			}()
+			t.Cleanup(wg.Wait)
 
 			// Configure the query-frontend with the mocked downstream server.
 			config := defaultFrontendConfig()

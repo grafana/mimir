@@ -63,7 +63,7 @@ func ClusterValidationRoundTripper(cluster string, invalidClusterValidationRepor
 		}
 		msg := fmt.Sprintf("request rejected by the server: %s", clusterValidationErr.ClusterValidationErrorMessage)
 		invalidClusterValidationReporter(msg, req.URL.Path)
-		return nil, fmt.Errorf(msg)
+		return nil, fmt.Errorf("%s", msg)
 	}
 }
 
