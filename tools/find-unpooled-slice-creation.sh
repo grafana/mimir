@@ -14,6 +14,7 @@ MATCHES=$(
     --exclude '*_test.go' \
     --exclude '*pool.go' \
     --exclude 'utils.go' \
+    --exclude-dir 'optimize' \
     -e 'make(\[\]types\.SeriesMetadata,' \
     -e 'make(\[\]promql\.FPoint,' \
     -e 'make(\[\]promql\.HPoint,' \

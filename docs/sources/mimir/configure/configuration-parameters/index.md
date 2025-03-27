@@ -1672,10 +1672,15 @@ store_gateway_client:
 [lookback_delta: <duration> | default = 5m]
 
 mimir_query_engine:
-  # (experimental) Comma-separated list of function names to disable support
-  # for. Only applies if MQE is in use.
-  # CLI flag: -querier.mimir-query-engine.disabled-functions
-  [disabled_functions: <string> | default = ""]
+  features:
+    # (experimental) Comma-separated list of function names to disable support
+    # for. Only applies if MQE is in use.
+    # CLI flag: -querier.mimir-query-engine.disabled-functions
+    [disabled_functions: <string> | default = ""]
+
+  # (experimental) Use query planner when evaluating queries.
+  # CLI flag: -querier.mimir-query-engine.use-query-planning
+  [use_query_planning: <boolean> | default = false]
 ```
 
 ### frontend

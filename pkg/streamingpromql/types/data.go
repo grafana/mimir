@@ -151,12 +151,12 @@ func HasDuplicateSeries(metadata []SeriesMetadata) bool {
 }
 
 type QueryTimeRange struct {
-	StartT               int64 // Start timestamp, in milliseconds since Unix epoch.
-	EndT                 int64 // End timestamp, in milliseconds since Unix epoch.
-	IntervalMilliseconds int64 // Range query interval, or 1 for instant queries. Note that this is deliberately different to parser.EvalStmt.Interval for instant queries (where it is 0) to simplify some loop conditions.
+	StartT               int64 `json:"startT"`               // Start timestamp, in milliseconds since Unix epoch.
+	EndT                 int64 `json:"endT"`                 // End timestamp, in milliseconds since Unix epoch.
+	IntervalMilliseconds int64 `json:"intervalMilliseconds"` // Range query interval, or 1 for instant queries. Note that this is deliberately different to parser.EvalStmt.Interval for instant queries (where it is 0) to simplify some loop conditions.
 
-	StepCount int // 1 for instant queries.
-	IsInstant bool
+	StepCount int  `json:"-"` // 1 for instant queries.
+	IsInstant bool `json:"isInstant,omitempty"`
 }
 
 func NewInstantQueryTimeRange(t time.Time) QueryTimeRange {
