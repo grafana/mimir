@@ -724,6 +724,56 @@ func FromWriteRequestToWriteRequestV2(req *WriteRequest) *WriteRequestV2 {
 	}
 }
 
+func FromWriteRequestToWriteRequestV2Faster(req *WriteRequest) *WriteRequestV2 {
+	if req == nil {
+		return nil
+	}
+
+	source := FromWriteRequestSourceToWriteRequestV2Source(req.Source)
+	symbols := writev2.NewSymbolTable()
+
+	timeseries := make([]TimeSeriesV2, 0, len(req.Timeseries))
+	for _, ts := range req.Timeseries {
+		refs := make([]uint32, len(ts.Labels)*2)
+
+		for i := range ts.Labels {
+			refs[i*2] = symbols.Symbolize(ts.Labels[i].Name)
+			refs[i*2+1] = symbols.Symbolize(ts.Labels[i].Value)
+		}
+
+		timeseries = append(timeseries, TimeSeriesV2{
+			LabelsRefs:       refs,
+			Samples:          ts.Samples,
+			Histograms:       ts.Histograms,
+			Exemplars:        ts.Exemplars,
+			CreatedTimestamp: 0, // This field is not present in V1, defaulting to 0
+		})
+	}
+
+	for i, metadata := range req.Metadata {
+		metadatav2 := FromMetricMetadataToMetricMetadataV2(metadata, &symbols)
+		if i < len(req.Timeseries) {
+			timeseries[i].Metadata = metadatav2
+		} else {
+			lbls := labels.FromStrings(labels.MetricName, metadata.MetricFamilyName)
+			buf := make([]uint32, 2)
+			shell := TimeSeriesV2{
+				LabelsRefs: symbols.SymbolizeLabels(lbls, buf),
+				Metadata:   metadatav2,
+			}
+			timeseries = append(timeseries, shell)
+		}
+	}
+
+	return &WriteRequestV2{
+		Source:                   source,
+		Symbols:                  symbols.Symbols(),
+		Timeseries:               timeseries,
+		SkipLabelValidation:      req.SkipLabelValidation,
+		SkipLabelCountValidation: req.SkipLabelCountValidation,
+	}
+}
+
 func FromWriteRequestV2ToWriteRequest(req *WriteRequestV2) *WriteRequest {
 	if req == nil {
 		return nil
@@ -738,17 +788,23 @@ func FromWriteRequestV2ToWriteRequest(req *WriteRequestV2) *WriteRequest {
 
 	for _, ts := range req.Timeseries {
 		mtd := FromMetricMetadataV2ToMetricMetadata(ts.Metadata, symbols)
-		if len(ts.LabelsRefs) == 2 && len(ts.Samples) == 0 && len(ts.Exemplars) == 0 && len(ts.Histograms) == 0 {
+		if len(ts.LabelsRefs) == 2 && len(ts.Samples) == 0 && len(ts.Exemplars) == 0 && len(ts.Histograms) == 0 && mtd != nil {
 			// It was a shell timeseries holding a metadata. We already got the metadata, read the name and drop it.
 			mtd.MetricFamilyName = symbols[ts.LabelsRefs[1]]
 			metadata = append(metadata, mtd)
 			continue
 		}
 
-		sb := labels.NewScratchBuilder(len(ts.LabelsRefs) / 2)
+		/*sb := labels.NewScratchBuilder(len(ts.LabelsRefs) / 2)
 		lbls, metricName := desymbolizeLabels(&sb, ts.LabelsRefs, symbols)
-		mtd.MetricFamilyName = metricName
-		adps := FromLabelsToLabelAdapters(lbls)
+		if mtd != nil {
+			mtd.MetricFamilyName = metricName
+		}
+		adps := FromLabelsToLabelAdapters(lbls)*/
+		adps, metricName := desymbolizeLabelsDirect(ts.LabelsRefs, symbols)
+		if mtd != nil {
+			mtd.MetricFamilyName = metricName
+		}
 
 		tsv1 := PreallocTimeseries{
 			TimeSeries: &TimeSeries{
@@ -759,7 +815,9 @@ func FromWriteRequestV2ToWriteRequest(req *WriteRequestV2) *WriteRequest {
 			},
 		}
 		timeseries = append(timeseries, tsv1)
-		metadata = append(metadata, mtd)
+		if mtd != nil {
+			metadata = append(metadata, mtd)
+		}
 	}
 
 	return &WriteRequest{
@@ -825,6 +883,7 @@ func FromWriteRequestV2SourceToWriteRequestSource(source WriteRequestV2_SourceEn
 }
 
 // desymbolizeLabels decodes label references, with given symbols to labels.
+// It's take directly from prometheus.
 func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []string) (labels.Labels, string) {
 	b.Reset()
 	metricName := ""
@@ -836,6 +895,19 @@ func desymbolizeLabels(b *labels.ScratchBuilder, labelRefs []uint32, symbols []s
 	}
 	b.Sort()
 	return b.Labels(), metricName
+}
+
+func desymbolizeLabelsDirect(labelRefs []uint32, symbols []string) ([]LabelAdapter, string) {
+	name := ""
+	las := make([]LabelAdapter, len(labelRefs)/2)
+	for i := 0; i < len(labelRefs); i += 2 {
+		las[i/2].Name = symbols[labelRefs[i]]
+		las[i/2].Value = symbols[labelRefs[i+1]]
+		if las[i/2].Name == labels.MetricName {
+			name = las[i/2].Value
+		}
+	}
+	return las, name
 }
 
 func DetectV2Timeseries(marshalled []byte) (bool, error) {
