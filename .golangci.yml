@@ -76,7 +76,8 @@ linters-settings:
 
     excludes:
       - G301 # Relies on system umask to restrict directory permissions, preserving operator flexibility
-  
+      - G306 # Uses system umask to restrict file permissions instead of hardcoding values.
+
   gocritic:
     disable-all: true
     enabled-checks:
