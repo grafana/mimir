@@ -26,7 +26,7 @@ type Config struct {
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.ConsumerGroup, "block-builder-scheduler.consumer-group", "block-builder", "The Kafka consumer group used for getting/setting commmitted offsets.")
-	f.DurationVar(&cfg.SchedulingInterval, "block-builder-scheduler.scheduling-interval", 20*time.Second, "How frequently to recompute the schedule.")
+	f.DurationVar(&cfg.SchedulingInterval, "block-builder-scheduler.scheduling-interval", 1*time.Minute, "How frequently to recompute the schedule.")
 	f.DurationVar(&cfg.JobSize, "block-builder-scheduler.job-size", 1*time.Hour, "How long jobs (and therefore blocks) should be.")
 	f.DurationVar(&cfg.StartupObserveTime, "block-builder-scheduler.startup-observe-time", 1*time.Minute, "How long to observe worker state before scheduling jobs.")
 	f.DurationVar(&cfg.JobLeaseExpiry, "block-builder-scheduler.job-lease-expiry", 2*time.Minute, "How long a job lease will live before expiring.")

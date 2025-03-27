@@ -188,6 +188,20 @@ func (s *BlockBuilderScheduler) updateSchedule(ctx context.Context) {
 		return
 	}
 
+	// job computation was based on a snapshot of the committed offsets that may have changed.
+	// Nix any jobs that are now before the committed offsets.
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	jobs = slices.DeleteFunc(jobs, func(job *schedulerpb.JobSpec) bool {
+		committedOff, ok := s.committed.Lookup(job.Topic, job.Partition)
+		if !ok {
+			// create the job even if there is no committed offset.
+			return false
+		}
+		return job.StartOffset < committedOff.At
+	})
+
 	for _, job := range jobs {
 		jobID := fmt.Sprintf("%s/%d/%d", job.Topic, job.Partition, job.StartOffset)
 		s.jobs.addOrUpdate(jobID, *job)
@@ -285,7 +299,7 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 	minScanTime := time.Now().Add(-s.cfg.MaxScanAge)
 	jobs := []*schedulerpb.JobSpec{}
 
-	// randomize partition order to make job ordering fairer until we have a reliable sort mechanism.
+	// randomize partition order until we have a fair ordering mechanism.
 	rand.Shuffle(len(consumeOffs), func(i, j int) {
 		consumeOffs[i], consumeOffs[j] = consumeOffs[j], consumeOffs[i]
 	})
