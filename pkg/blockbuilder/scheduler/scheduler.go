@@ -298,7 +298,7 @@ func (s *BlockBuilderScheduler) computeJobs(ctx context.Context) ([]*schedulerpb
 		// Log details of each job for debugging purposes
 		for _, job := range pj {
 			level.Debug(s.logger).Log(
-				"msg", "created job",
+				"msg", "computed job",
 				"topic", job.Topic,
 				"partition", job.Partition,
 				"startOffset", job.StartOffset,
@@ -589,7 +589,8 @@ func (s *BlockBuilderScheduler) UpdateJob(_ context.Context, req *schedulerpb.Up
 }
 
 func (s *BlockBuilderScheduler) updateJob(key jobKey, workerID string, complete bool, j schedulerpb.JobSpec) error {
-	logger := log.With(s.logger, "job_id", key.id, "epoch", key.epoch, "worker", workerID)
+	logger := log.With(s.logger, "job_id", key.id, "epoch", key.epoch,
+		"worker", workerID, "start_offset", j.StartOffset, "end_offset", j.EndOffset)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
