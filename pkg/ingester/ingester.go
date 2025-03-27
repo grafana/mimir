@@ -3251,6 +3251,13 @@ func (i *Ingester) compactionServiceInterval() (firstInterval, standardInterval 
 
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowedTenants) {
+	// Expose a metric tracking whether there's a forced head compaction in progress.
+	// This metric can be used in alerts and when troubleshooting.
+	if force {
+		i.metrics.forcedCompactionInProgress.Set(1)
+		defer i.metrics.forcedCompactionInProgress.Set(0)
+	}
+
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
 		if !allowed.IsAllowed(userID) {
 			return nil

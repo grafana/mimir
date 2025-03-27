@@ -164,7 +164,9 @@ message Histogram {
   // timestamp is in ms format
   int64 timestamp = 15;
 
-  // Support Remote Write 2.0
+  // custom_values are not part of the specification, DO NOT use in remote write clients.
+  // Used only for converting from OpenTelemetry to Prometheus internally and
+  // to support Remote Write 2.0
   repeated double custom_values = 16;
 }
 

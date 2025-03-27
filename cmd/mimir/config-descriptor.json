@@ -7290,6 +7290,16 @@
             },
             {
               "kind": "field",
+              "name": "fetch_max_wait",
+              "required": false,
+              "desc": "The maximum amount of time a Kafka broker waits for some records before a Fetch response is returned.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000000000,
+              "fieldFlag": "ingest-storage.kafka.fetch-max-wait",
+              "fieldType": "duration"
+            },
+            {
+              "kind": "field",
               "name": "fetch_concurrency_max",
               "required": false,
               "desc": "The maximum number of concurrent fetch requests that the ingester makes when reading data from Kafka during startup. Concurrent fetch requests are issued only when there is sufficient backlog of records to consume. 0 to disable.",

@@ -470,6 +470,53 @@ func TestBlockBuilder_WithMultipleTenants(t *testing.T) {
 	}
 }
 
+func TestBlockBuilder_OutOfOrder(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancelCause(context.Background())
+	t.Cleanup(func() { cancel(errors.New("test done")) })
+
+	kafkaCluster, kafkaAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, numPartitions, testTopic)
+	kafkaClient := mustKafkaClient(t, kafkaAddr)
+	cfg, overrides := blockBuilderConfig(t, kafkaAddr)
+
+	cycleEndStartup := cycleEndBefore(time.Now(), cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer)
+
+	var producedSamples []mimirpb.Sample
+	kafkaRecTime := cycleEndStartup.Truncate(cfg.ConsumeInterval).Add(-1 * time.Hour).Add(29 * time.Minute)
+	samples := produceSamples(ctx, t, kafkaClient, 0, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
+	producedSamples = append(producedSamples, samples...)
+	// Out of order sample.
+	kafkaRecTime = kafkaRecTime.Add(-time.Minute)
+	samples = produceSamples(ctx, t, kafkaClient, 0, kafkaRecTime, "1", kafkaRecTime.Add(-time.Minute))
+	producedSamples = append(producedSamples, samples...)
+
+	// Set up a hook to track commits from block-builder to kafka. Those indicate the end of a cycle.
+	kafkaCommits := atomic.NewInt32(0)
+	kafkaCluster.ControlKey(kmsg.OffsetCommit.Int16(), func(kmsg.Request) (kmsg.Response, error, bool) {
+		kafkaCommits.Add(1)
+		return nil, nil, false
+	})
+
+	reg := prometheus.NewPedanticRegistry()
+
+	bb, err := New(cfg, test.NewTestingLogger(t), reg, overrides)
+	require.NoError(t, err)
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, bb))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, bb))
+	})
+
+	require.Eventually(t, func() bool { return kafkaCommits.Load() > 0 }, 20*time.Second, 100*time.Millisecond, "expected kafka commits")
+
+	compareQueryWithDir(t,
+		path.Join(cfg.BlocksStorage.Bucket.Filesystem.Directory, "1"),
+		producedSamples, nil,
+		labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+	)
+}
+
 func TestBlockBuilder_WithNonMonotonicRecordTimestamps(t *testing.T) {
 	t.Parallel()
 
