@@ -32,6 +32,8 @@
 
 ### Mimirtool
 
+* [FEATURE] Add `--enable-experimental-functions` flag to commands that parse PromQL to allow parsing experimental functions such as `sort_by_label()`.
+
 ### Mimir Continuous Test
 
 ### Query-tee
