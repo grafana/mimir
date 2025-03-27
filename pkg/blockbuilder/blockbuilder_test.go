@@ -1052,6 +1052,16 @@ func TestFastCatchupOnIdlePartition(t *testing.T) {
 	}
 	commitOffset(ctx, t, kafkaClient, testGroup, offset)
 
+	// When cycleEnd is before the first record, we should not be stuck in an infinite loop trying the shortcut.
+	var done atomic.Bool
+	go func() {
+		err = bb.nextConsumeCycle(ctx, cycleEndBefore(recs[0].Timestamp, cfg.ConsumeInterval, cfg.ConsumeIntervalBuffer))
+		require.NoError(t, err)
+		done.Store(true)
+	}()
+	require.Eventually(t, done.Load, 5*time.Second, 100*time.Millisecond, "expected fast catchup to finish")
+
+	// The actual fast catchup part.
 	err = bb.nextConsumeCycle(ctx, cycleEnd)
 	require.NoError(t, err)
 
