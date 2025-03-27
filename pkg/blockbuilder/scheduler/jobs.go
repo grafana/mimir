@@ -185,7 +185,6 @@ func (s *jobQueue[T]) renewLease(key jobKey, workerID string) error {
 	j.leaseExpiry = time.Now().Add(s.leaseExpiry)
 
 	level.Debug(s.logger).Log("msg", "renewed lease", "job_id", key.id, "epoch", key.epoch, "worker_id", workerID)
-
 	return nil
 }
 
@@ -229,11 +228,12 @@ func (s *jobQueue[T]) clearExpiredLeases() {
 
 	for _, j := range s.jobs {
 		if j.assignee != "" && now.After(j.leaseExpiry) {
+			priorAssignee := j.assignee
 			j.assignee = ""
 			j.failCount++
 			heap.Push(&s.unassigned, j)
 
-			level.Debug(s.logger).Log("msg", "unassigned expired lease", "job_id", j.key.id, "epoch", j.key.epoch, "assignee", j.assignee)
+			level.Debug(s.logger).Log("msg", "unassigned expired lease", "job_id", j.key.id, "epoch", j.key.epoch, "assignee", priorAssignee)
 		}
 	}
 }
