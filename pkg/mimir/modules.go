@@ -53,7 +53,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
-	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -101,6 +100,7 @@ const (
 	QueryFrontendCodec               string = "query-frontend-codec"
 	QueryFrontendTopicOffsetsReaders string = "query-frontend-topic-offsets-reader"
 	QueryFrontendTripperware         string = "query-frontend-tripperware"
+	QueryPlanner                     string = "query-planner"
 	QueryScheduler                   string = "query-scheduler"
 	Queryable                        string = "queryable"
 	Ruler                            string = "ruler"
@@ -508,7 +508,7 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, err = querier.New(
-		t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker,
+		t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker, t.QueryPlanner,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create queryable: %w", err)
@@ -833,23 +833,6 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 
 	handler := transport.NewHandler(t.Cfg.Frontend.Handler, roundTripper, util_log.Logger, t.Registerer, t.ActivityTracker)
 
-	// HACK: use actual engine instance
-	limitsProvider := streamingpromql.NewStaticQueryLimitsProvider(0)
-	queryMetrics := stats.NewQueryMetrics(t.Registerer)
-	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, t.Registerer)
-	streamingEngine, err := streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, util_log.Logger)
-	if err != nil {
-		return nil, err
-	}
-
-	streamingEngine.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
-	streamingEngine.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-
-	streamingEngine.RegisterQueryPlanOptimizationPass(&plan.EliminateCommonSubexpressions{})
-
-	analysisHandler := frontend.AnalysisHandler(streamingEngine)
-	t.API.RegisterQueryFrontendHandler(handler, t.BuildInfoHandler, analysisHandler)
-
 	w := services.NewFailureWatcher()
 	return services.NewBasicService(func(_ context.Context) error {
 		if frontendSvc != nil {
@@ -874,6 +857,25 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 		}
 		return nil
 	}), nil
+}
+
+func (t *Mimir) initQueryPlanner() (services.Service, error) {
+	if !t.Cfg.Querier.EngineConfig.MimirQueryEngine.UseQueryPlanning {
+		return nil, nil
+	}
+
+	_, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, nil, nil, nil)
+	planner := streamingpromql.NewQueryPlanner(mqeOpts)
+
+	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
+	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})
+
+	planner.RegisterQueryPlanOptimizationPass(&plan.EliminateCommonSubexpressions{})
+
+	analysisHandler := streamingpromql.AnalysisHandler(planner)
+	t.API.RegisterQueryAnalysisAPI(analysisHandler)
+
+	return nil, nil
 }
 
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
@@ -923,7 +925,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(rulerEngine, t.Registerer)
 
-		queryable, _, eng, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+		queryable, _, eng, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker, t.QueryPlanner)
 		if err != nil {
 			return nil, fmt.Errorf("could not create queryable for ruler: %w", err)
 		}
@@ -1211,6 +1213,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(QueryFrontendCodec, t.initQueryFrontendCodec, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTopicOffsetsReaders, t.initQueryFrontendTopicOffsetsReaders, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
+	mm.RegisterModule(QueryPlanner, t.initQueryPlanner, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryScheduler, t.initQueryScheduler)
 	mm.RegisterModule(Queryable, t.initQueryable, modules.UserInvisibleModule)
 	mm.RegisterModule(Ruler, t.initRuler)
@@ -1253,10 +1256,11 @@ func (t *Mimir) setupModuleManager() error {
 		Querier:                          {TenantFederation, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
-		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders},
+		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryPlanner},
+		QueryPlanner:                     {API},
 		QueryScheduler:                   {API, Overrides, MemberlistKV, Vault},
-		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV},
-		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault},
+		Queryable:                        {Overrides, DistributorService, IngesterRing, IngesterPartitionRing, API, StoreQueryable, MemberlistKV, QueryPlanner},
+		Ruler:                            {DistributorService, StoreQueryable, RulerStorage, Vault, QueryPlanner},
 		RulerStorage:                     {Overrides},
 		RuntimeConfig:                    {API},
 		Server:                           {ActivityTracker, SanityCheck, UsageStats},

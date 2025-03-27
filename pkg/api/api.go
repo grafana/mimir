@@ -472,13 +472,15 @@ func (a *API) RegisterQueryAPI(handler http.Handler, buildInfoHandler http.Handl
 	a.RegisterRoute(path.Join(a.cfg.PrometheusHTTPPrefix, "/api/v1/format_query"), handler, true, true, "GET", "POST")
 }
 
+func (a *API) RegisterQueryAnalysisAPI(handler http.Handler) {
+	a.RegisterRoute("/api/v1/analyze", handler, true, true, "POST")
+}
+
 // RegisterQueryFrontendHandler registers the Prometheus routes supported by the
 // Mimir querier service. Currently, this can not be registered simultaneously
 // with the Querier.
-func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler, analysisHandler http.Handler) {
+func (a *API) RegisterQueryFrontendHandler(h http.Handler, buildInfoHandler http.Handler) {
 	a.RegisterQueryAPI(h, buildInfoHandler)
-
-	a.RegisterRoute("/api/v1/analyze", analysisHandler, true, true, "POST")
 }
 
 func (a *API) RegisterQueryFrontend1(f *frontendv1.Frontend) {

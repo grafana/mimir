@@ -7,14 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -26,8 +24,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 		return (23 * time.Second).Milliseconds()
 	}
 
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), log.NewNopLogger())
-	require.NoError(t, err)
+	planner := NewQueryPlanner(opts)
 
 	instantQuery := types.NewInstantQueryTimeRange(timestamp.Time(1000))
 	instantQueryEncodedTimeRange := planning.EncodedQueryTimeRange{StartT: 1000, EndT: 1000, IntervalMilliseconds: 1}
@@ -1022,7 +1019,7 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			testCase.expectedPlan.OriginalExpression = testCase.expr
 
-			originalPlan, err := engine.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
+			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			// Encode plan, confirm it matches what we expect
