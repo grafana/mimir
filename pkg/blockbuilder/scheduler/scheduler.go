@@ -77,6 +77,10 @@ func (s *BlockBuilderScheduler) starting(ctx context.Context) error {
 }
 
 func (s *BlockBuilderScheduler) stopping(_ error) error {
+	if err := s.flushOffsetsToKafka(context.Background()); err != nil {
+		level.Error(s.logger).Log("msg", "failed to flush offsets at shutdown", "err", err)
+	}
+
 	s.adminClient.Close()
 	return nil
 }
@@ -493,6 +497,7 @@ func (s *BlockBuilderScheduler) snapCommitted() kadm.Offsets {
 }
 
 func (s *BlockBuilderScheduler) flushOffsetsToKafka(ctx context.Context) error {
+	// TODO: only flush if dirty.
 	offsets := s.snapCommitted()
 	err := s.adminClient.CommitAllOffsets(ctx, s.cfg.ConsumerGroup, offsets)
 	if err != nil {
